@@ -121,11 +121,14 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
     assert not hasattr(result.task_spec, "material_bindings")
-    assert tuple(item.binding_id for item in result.task_spec.inputs) == tuple(
-        item.binding_id for item in bindings
-    )
+    assert tuple(item.binding_id for item in result.task_spec.inputs) == tuple(item.binding_id for item in bindings)
     assert all(item.material_binding_digest.startswith("sha256:") for item in result.task_spec.inputs)
-    assert result.task_spec.required_outputs[0].requirement_ref == effect.effect_id
+    assert result.task_spec.required_outputs[0].requirement_ref == "requirement:output:1"
+    output_requirement = next(
+        item for item in result.task_spec.requirements if item.requirement_id == "requirement:output:1"
+    )
+    assert output_requirement.payload.kind == "output"
+    assert output_requirement.requirement_id != effect.effect_id
     assert result.task_spec.required_outputs[0].source_binding_requirement == tuple(
         item.binding_id for item in result.task_spec.inputs
     )

@@ -31,6 +31,7 @@ from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.task_intake import UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
+from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -64,9 +65,7 @@ class MultiStageObserver:
                 "discovered": self.world.discovered,
                 "confirmed": self.world.confirmed,
                 "criterion_evaluations": {
-                    "criterion:confirmed": (
-                        "satisfied" if self.world.confirmed else "unsatisfied"
-                    )
+                    "criterion:confirmed": ("satisfied" if self.world.confirmed else "unsatisfied")
                 },
             },
         )
@@ -162,7 +161,12 @@ class MultiStageIntentAndPlanModel:
                             "operation_class": "read_only",
                             "target": "current state",
                             "source_ref": source_ref,
-                        }
+                        },
+                        {
+                            "operation_class": "read_only",
+                            "target": "confirmed state",
+                            "source_ref": source_ref,
+                        },
                     ],
                     "success_criteria": ["the current state is confirmed"],
                     "success": {
@@ -171,7 +175,6 @@ class MultiStageIntentAndPlanModel:
                         "criterion_id": "criterion:confirmed",
                     },
                     "evidence_requirements": ["fresh state observations"],
-                    "task_structure": "multi_stage",
                 }
             )
         if output_schema.__name__ == "TaskPlanProviderResponse":
@@ -192,8 +195,8 @@ class MultiStageIntentAndPlanModel:
                             "objective": "Confirm discovered state",
                             "subject": "discovered state",
                             "relation": "is_completed",
-                            "requirement_refs": ["requirement:effect:1"],
-                            "effect_authorization_refs": ["requirement:effect:1"],
+                            "requirement_refs": ["requirement:effect:2"],
+                            "effect_authorization_refs": ["requirement:effect:2"],
                             "effectful": True,
                             "depends_on": ["discover"],
                         },
@@ -210,7 +213,7 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
         compiler=LLMIntentCompiler(model),
         coordinator=compose_run_coordinator(
             observer=MultiStageObserver(world),
-            planner=MultiStageActionPlanner(),
+            step_choice_planner=MultiStageActionPlanner(),
             executor=MultiStageExecutor(world),
             contract_builder=ContractBuilder(
                 requirements={
@@ -236,6 +239,7 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
                     ),
                 }
             ),
+            task_planner=PlanningRouter(complex_planner=StrictTaskPlanner(model)),
         ),
     )
 
@@ -271,7 +275,6 @@ def test_task_pipeline_wires_only_a_real_configured_provider_fallback() -> None:
         compiler=LLMIntentCompiler(FallbackModelPort((primary, fallback))),
         coordinator=compose_run_coordinator(
             observer=MultiStageObserver(MultiStageWorld()),
-            planner=MultiStageActionPlanner(),
             executor=MultiStageExecutor(MultiStageWorld()),
         ),
     )

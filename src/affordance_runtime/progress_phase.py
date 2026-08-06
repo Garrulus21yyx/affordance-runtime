@@ -110,15 +110,11 @@ class ProgressStage:
     perception_session: PerceptionSession
     route_calibrator: RouteCalibrator
     loop_evaluator: LoopEvaluator = field(default_factory=LoopEvaluator)
-    continuation_policy: ObservationContinuationPolicy = field(
-        default_factory=ObservationContinuationPolicy
-    )
+    continuation_policy: ObservationContinuationPolicy = field(default_factory=ObservationContinuationPolicy)
     observation_builder: CanonicalObservationBuilder = CanonicalObservationBuilder()
     observation_store: InMemoryObservationStore = field(default_factory=InMemoryObservationStore)
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None
-    evaluation_service: ProgressEvaluationService = field(
-        default_factory=ProgressEvaluationService
-    )
+    evaluation_service: ProgressEvaluationService = field(default_factory=ProgressEvaluationService)
     artifacts: ArtifactStore | None = None
     structural_verification_enabled: bool = True
     recovery_enabled: bool = True
@@ -130,13 +126,9 @@ class ProgressStage:
         parent = events.root()
         if stage_input.action is None:
             current_evidence = observation_predicate_evidence(stage_input.observation)
-            latest_recheck, resource_versions = observation_evidence_context_metadata(
-                stage_input.observation
-            )
+            latest_recheck, resource_versions = observation_evidence_context_metadata(stage_input.observation)
             if state.task_progress is not None:
-                admit_observation_durable_evidence(
-                    stage_input.observation, state.task_progress.durable_evidence
-                )
+                admit_observation_durable_evidence(stage_input.observation, state.task_progress.durable_evidence)
             task_completion = self.evaluation_service.evaluate_task_completion(
                 task_spec=stage_input.envelope.task_spec,
                 state=state,
@@ -175,9 +167,7 @@ class ProgressStage:
                         else ()
                     ),
                     durable_evidence=(
-                        tuple(state.task_progress.durable_evidence.records)
-                        if state.task_progress is not None
-                        else ()
+                        tuple(state.task_progress.durable_evidence.records) if state.task_progress is not None else ()
                     ),
                     latest_final_recheck_ref=latest_recheck,
                     current_resource_versions=resource_versions,
@@ -188,15 +178,14 @@ class ProgressStage:
                 step_completion,
             )
             if gaps:
-                return self._open_semantic_result(
-                    state, events, stage_input.capture, gaps
-                )
+                return self._open_semantic_result(state, events, stage_input.capture, gaps)
             progress = commit_verified_task_progress(
                 state=state,
                 trace=cast(Any, events),
                 parent=cast(Any, parent),
                 step_completion=step_completion,
                 task_planner_is_router=self.task_planner_is_router,
+                task_spec=stage_input.envelope.task_spec,
                 skill_complete=False,
             )
             return self._result(
@@ -207,7 +196,9 @@ class ProgressStage:
                     completion_committed=progress.step_completion_committed,
                     task_completion=task_completion,
                 ),
-                directive=(LoopDirective.REPEAT_OBSERVATION if progress.step_completion_committed else LoopDirective.NEXT_STAGE),
+                directive=(
+                    LoopDirective.REPEAT_OBSERVATION if progress.step_completion_committed else LoopDirective.NEXT_STAGE
+                ),
             )
         action = stage_input.action
         observation_service = PostActionObservationService(
@@ -265,13 +256,9 @@ class ProgressStage:
         )
         if state.task_progress is not None:
             state.task_progress.record_action_outcome(outcome_commit.outcome)
-            admit_observation_durable_evidence(
-                canonical, state.task_progress.durable_evidence
-            )
+            admit_observation_durable_evidence(canonical, state.task_progress.durable_evidence)
         current_evidence = observation_predicate_evidence(canonical)
-        latest_recheck, resource_versions = observation_evidence_context_metadata(
-            canonical
-        )
+        latest_recheck, resource_versions = observation_evidence_context_metadata(canonical)
         state.record_action_progress(
             action.action_signature,
             post_snapshot.observation.environment_revision,
@@ -283,9 +270,7 @@ class ProgressStage:
         if verification_ref is not None:
             events.artifact_index.append(verification_ref.path)
         self._record_route_outcome(events, action, report, post_snapshot)
-        skill_result = TaskSkillProgressService(
-            self.task_skill_runtime, self.evaluation_service
-        ).evaluate(
+        skill_result = TaskSkillProgressService(self.task_skill_runtime, self.evaluation_service).evaluate(
             action=action,
             task_spec=stage_input.envelope.task_spec,
             state=state,
@@ -314,15 +299,11 @@ class ProgressStage:
             active_step=TaskPlanLifecycle.active_step_spec(state),
             task_completion=task_completion,
             recent_action_outcomes=(
-                tuple(state.task_progress.recent_action_outcomes.records)
-                if state.task_progress is not None
-                else ()
+                tuple(state.task_progress.recent_action_outcomes.records) if state.task_progress is not None else ()
             ),
             current_evidence=current_evidence,
             durable_evidence=(
-                tuple(state.task_progress.durable_evidence.records)
-                if state.task_progress is not None
-                else ()
+                tuple(state.task_progress.durable_evidence.records) if state.task_progress is not None else ()
             ),
             latest_final_recheck_ref=latest_recheck,
             current_resource_versions=resource_versions,
@@ -371,6 +352,7 @@ class ProgressStage:
                 parent=cast(Any, events.root()),
                 step_completion=loop_evaluation.step_completion,
                 task_planner_is_router=self.task_planner_is_router,
+                task_spec=stage_input.envelope.task_spec,
                 skill_complete=skill_complete,
                 skill_progress=skill_progress,
             )
@@ -456,11 +438,7 @@ class ProgressStage:
                     else TaskCompletionEvaluationStatus.NOT_EVALUATED
                 ),
                 progress_committed=progress.step_completion_committed,
-                liveness_decision=(
-                    "advance_step"
-                    if progress.step_completion_committed
-                    else "reconcile_active_step"
-                ),
+                liveness_decision=("advance_step" if progress.step_completion_committed else "reconcile_active_step"),
             )
             output = replace(output, evaluation=evaluation)
             state.replan_count += 1
@@ -505,12 +483,24 @@ class ProgressStage:
             )
         return self._result(state, events, output, failure=failure)
 
-    def _record_route_outcome(self, events: RuntimeEventBuffer, action: ProgressActionInput, report: VerificationReport, snapshot: PerceptionCapture) -> None:
+    def _record_route_outcome(
+        self,
+        events: RuntimeEventBuffer,
+        action: ProgressActionInput,
+        report: VerificationReport,
+        snapshot: PerceptionCapture,
+    ) -> None:
         contract = action.contract
         candidate, plan = contract.grounding_candidate, contract.route_plan
         if candidate is None or plan is None or not plan.verifier_kinds:
             return
-        scope = RouteScope(plan.environment_scope, plan.action_kind or contract.action, candidate.source, candidate.compatible_executor, plan.verifier_kinds)
+        scope = RouteScope(
+            plan.environment_scope,
+            plan.action_kind or contract.action,
+            candidate.source,
+            candidate.compatible_executor,
+            plan.verifier_kinds,
+        )
         outcome = RouteOutcome.from_verification(
             outcome_id=f"route-outcome:{contract.id}:{snapshot.observation.snapshot_id}",
             scope=scope,
@@ -523,7 +513,30 @@ class ProgressStage:
             expected_cost=candidate.expected_cost,
         )
         self.route_calibrator.record(outcome)
-        events.add("RouteOutcomeRecorded", {"state": RuntimeStep.VERIFYING.value, "outcome_id": outcome.outcome_id, "status": outcome.status.value, "verification_status": outcome.verification_status.value, "trainable": outcome.status != RouteOutcomeStatus.INCONCLUSIVE, "semantic_target_id": outcome.semantic_target_id, "candidate_id": outcome.candidate_id, "contract_id": outcome.contract_id, "post_snapshot_id": outcome.post_snapshot_id, "evidence_ids": list(outcome.evidence_ids), "scope": {"environment_family": scope.environment_family, "action_kind": scope.action_kind, "source": scope.source.value, "executor": scope.executor, "verifier_kinds": list(scope.verifier_kinds)}, "latency_ms": outcome.latency_ms, "expected_cost": outcome.expected_cost})
+        events.add(
+            "RouteOutcomeRecorded",
+            {
+                "state": RuntimeStep.VERIFYING.value,
+                "outcome_id": outcome.outcome_id,
+                "status": outcome.status.value,
+                "verification_status": outcome.verification_status.value,
+                "trainable": outcome.status != RouteOutcomeStatus.INCONCLUSIVE,
+                "semantic_target_id": outcome.semantic_target_id,
+                "candidate_id": outcome.candidate_id,
+                "contract_id": outcome.contract_id,
+                "post_snapshot_id": outcome.post_snapshot_id,
+                "evidence_ids": list(outcome.evidence_ids),
+                "scope": {
+                    "environment_family": scope.environment_family,
+                    "action_kind": scope.action_kind,
+                    "source": scope.source.value,
+                    "executor": scope.executor,
+                    "verifier_kinds": list(scope.verifier_kinds),
+                },
+                "latency_ms": outcome.latency_ms,
+                "expected_cost": outcome.expected_cost,
+            },
+        )
 
     def _open_semantic_result(
         self,
@@ -558,7 +571,16 @@ class ProgressStage:
         )
 
     @staticmethod
-    def _result(state: Any, events: RuntimeEventBuffer, output: ProgressOutput, *, directive: LoopDirective = LoopDirective.NEXT_STAGE, failure: Any = None, terminal: TerminalResult | None = None, task_completion: TaskCompletionEvaluation | None = None) -> StageResult[ProgressOutput]:
+    def _result(
+        state: Any,
+        events: RuntimeEventBuffer,
+        output: ProgressOutput,
+        *,
+        directive: LoopDirective = LoopDirective.NEXT_STAGE,
+        failure: Any = None,
+        terminal: TerminalResult | None = None,
+        task_completion: TaskCompletionEvaluation | None = None,
+    ) -> StageResult[ProgressOutput]:
         return StageResult(
             output=output,
             transition=RuntimeTransition(

@@ -8,7 +8,6 @@ from pydantic import Field
 
 from affordance_runtime.source_envelope import SourceEnvelope
 from affordance_runtime.task_intake import StrictModel, TaskSpec, UserRequest
-from affordance_runtime.verification.contracts import SuccessExpression
 
 
 class SourceContextConsumer(StrEnum):
@@ -81,29 +80,28 @@ class SourceContextProjector:
             input_binding_ids,
             {item.binding_id for item in task_spec.inputs},
         )
-        admitted_criterion_ids = {
-            *_success_criterion_ids(task_spec.success),
-            *task_spec.constraint_criterion_ids,
-            *task_spec.external_effect_criterion_ids,
-            *task_spec.final_recheck_criterion_ids,
-            *(item.materialization_criterion_id for item in task_spec.required_outputs),
-        }
+        admitted_criterion_ids = {item.criterion_id for item in task_spec.criterion_source_bindings}
         _require_subset("criterion", criterion_ids, admitted_criterion_ids)
-        if not any(
-            (requirement_ids, criterion_ids, effect_authorization_ids, input_binding_ids)
-        ):
+        if not any((requirement_ids, criterion_ids, effect_authorization_ids, input_binding_ids)):
             raise ValueError("source context requires an admitted semantic identity")
         anchors = {item.anchor_id: item for item in envelope.anchors}
+        allowed_anchor_ids = _semantic_anchor_ids(
+            task_spec,
+            anchors,
+            requirement_ids=requirement_ids,
+            criterion_ids=criterion_ids,
+            effect_authorization_ids=effect_authorization_ids,
+            input_binding_ids=input_binding_ids,
+        )
+        if set(anchor_ids) - allowed_anchor_ids:
+            raise PermissionError("source context anchor is not bound to the requested semantic identity")
         excerpts: list[AnchoredExcerpt] = []
         total = 0
         for anchor_id in dict.fromkeys(anchor_ids):
             anchor = anchors.get(anchor_id)
             if anchor is None:
                 raise ValueError("source context anchor is not envelope-bound")
-            if (
-                consumer == SourceContextConsumer.OPEN_SEMANTIC_RESOLVER
-                and anchor.span is None
-            ):
+            if consumer == SourceContextConsumer.OPEN_SEMANTIC_RESOLVER and anchor.span is None:
                 raise PermissionError("open semantic resolver requires an exact linked excerpt")
             if anchor.span is None:
                 content = request.raw_text
@@ -126,7 +124,7 @@ class SourceContextProjector:
         return SourceContextView(
             consumer=consumer,
             source_envelope_ref=envelope.identity,
-            source_binding_digest=envelope.binding_digest,
+            source_binding_digest=task_spec.source_binding_digest,
             requirement_ids=requirement_ids,
             criterion_ids=criterion_ids,
             effect_authorization_ids=effect_authorization_ids,
@@ -143,13 +141,34 @@ def _require_subset(label: str, values: tuple[str, ...], allowed: set[str]) -> N
         raise PermissionError(f"source context {label} is not admitted by TaskSpec")
 
 
-def _success_criterion_ids(expression: SuccessExpression | None) -> tuple[str, ...]:
-    if expression is None:
-        return ()
-    if expression.operator == "criterion":
-        return (expression.criterion_id,)
-    return tuple(
-        criterion_id
-        for child in expression.children
-        for criterion_id in _success_criterion_ids(child)
-    )
+def _semantic_anchor_ids(
+    task_spec: TaskSpec,
+    anchors: dict[str, object],
+    *,
+    requirement_ids: tuple[str, ...],
+    criterion_ids: tuple[str, ...],
+    effect_authorization_ids: tuple[str, ...],
+    input_binding_ids: tuple[str, ...],
+) -> set[str]:
+    requested_requirements = set(requirement_ids) | set(effect_authorization_ids)
+    criterion_bindings = {item.criterion_id: item.requirement_refs for item in task_spec.criterion_source_bindings}
+    for criterion_id in criterion_ids:
+        requested_requirements.update(criterion_bindings[criterion_id])
+    allowed = {
+        anchor_id
+        for requirement in task_spec.requirements
+        if requirement.requirement_id in requested_requirements
+        for anchor_id in requirement.source_anchor_refs
+    }
+    requested_inputs = set(input_binding_ids)
+    for binding in task_spec.inputs:
+        if binding.binding_id not in requested_inputs:
+            continue
+        if binding.source_anchor_ref:
+            allowed.add(binding.source_anchor_ref)
+        if binding.source_ref in anchors:
+            allowed.add(binding.source_ref)
+        allowed.update(
+            anchor_id for anchor_id, anchor in anchors.items() if getattr(anchor, "source_id", "") == binding.source_ref
+        )
+    return allowed

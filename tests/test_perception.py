@@ -39,8 +39,6 @@ def _task(objective: str) -> TaskSpec:
                 source_anchor_refs=("test:whole_request",),
             ),
         ),
-        targets=("target",),
-        success_criteria=("task completes",),
         source_request_ref="test",
     )
 
@@ -119,8 +117,6 @@ def test_hyphenated_task_target_contributes_visual_component_terms() -> None:
                 source_anchor_refs=("test:whole_request",),
             ),
         ),
-        targets=("click-shape",),
-        success_criteria=("task completes",),
         source_request_ref="test",
     )
 
@@ -148,8 +144,6 @@ def test_ascending_number_sequence_accepts_structured_or_visual_spatial_observat
                 source_anchor_refs=("test:whole_request",),
             ),
         ),
-        targets=("ascending-numbers",),
-        success_criteria=("The sequence is accepted.",),
         source_request_ref="test",
     )
 
@@ -178,8 +172,6 @@ def test_descending_letter_sequence_requires_spatial_but_not_unrelated_visual_ap
                 source_anchor_refs=("test:whole_request",),
             ),
         ),
-        targets=("ordered-items",),
-        success_criteria=("The sequence is accepted.",),
         source_request_ref="test",
     )
 

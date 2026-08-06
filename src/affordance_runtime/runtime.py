@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.immutable import FrozenSequence, freeze_json
-from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_intake import TaskSpec, task_effect_targets
 
 
 class RuntimeStep(StrEnum):
@@ -49,12 +49,12 @@ class RunRequest:
             raise ValueError("RunRequest goal does not match TaskSpec objective")
         object.__setattr__(self, "task_id", self.task_spec.task_id)
         object.__setattr__(self, "goal", self.task_spec.objective)
-        if not self.target and self.task_spec.targets:
-            object.__setattr__(self, "target", self.task_spec.targets[0])
+        targets = task_effect_targets(self.task_spec)
+        if not self.target and targets:
+            object.__setattr__(self, "target", targets[0])
 
 
 class Executor(Protocol):
     backend: str
 
-    def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
-        ...
+    def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt: ...

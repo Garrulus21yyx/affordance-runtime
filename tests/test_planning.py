@@ -41,7 +41,12 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
 )
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
@@ -509,9 +514,11 @@ def _fixture() -> tuple[TaskSpec, StateKernel, BrowserSnapshot]:
         revision=2,
         objective="Set theme to dark",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("theme",),
-        success_criteria=("theme is dark",),
-        requested_capabilities=("settings.write",),
+        requirements=canonical_effect_requirements(
+            ("theme",), OperationClass.REVERSIBLE_WRITE, "request-1", ("settings.write",)
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("theme",)),
+        capability_ceiling=("settings.write",),
         source_request_ref="request-1",
         created_at_s=time.time(),
     )
@@ -583,8 +590,8 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
         revision=1,
         objective="Set theme to dark",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("theme",),
-        success_criteria=("theme is dark",),
+        requirements=canonical_effect_requirements(("theme",), OperationClass.REVERSIBLE_WRITE, "request-semantic", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("theme",)),
         source_request_ref="request-semantic",
     )
     proposal = PlannerProposal(
@@ -664,8 +671,8 @@ def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage
         revision=1,
         objective="Save",
         operation_class=OperationClass.READ_ONLY,
-        targets=("Save",),
-        success_criteria=("saved",),
+        requirements=canonical_effect_requirements(("Save",), OperationClass.READ_ONLY, "request-reroute", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
         source_request_ref="request-reroute",
     )
     builder = ContractBuilder(
@@ -743,8 +750,10 @@ def test_core_contract_builder_binds_both_semantic_drag_endpoints() -> None:
         revision=1,
         objective="Drag Source to Destination",
         operation_class=OperationClass.READ_ONLY,
-        targets=("sortable",),
-        success_criteria=("items are reordered",),
+        requirements=canonical_effect_requirements(
+            ("Source", "Destination"), OperationClass.READ_ONLY, "request-drag", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Source", "Destination")),
         source_request_ref="request-drag",
     )
     proposal = PlannerProposal(
@@ -975,8 +984,10 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
         revision=2,
         objective="Set theme to dark and submit",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("theme", "submit"),
-        success_criteria=("theme is dark", "form submitted"),
+        requirements=canonical_effect_requirements(
+            ("theme", "submit"), OperationClass.REVERSIBLE_WRITE, "request-1", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("theme", "submit")),
         source_request_ref="request-1",
     )
     proposal = _proposal(
@@ -1043,8 +1054,10 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
         revision=2,
         objective="Click the 3rd checkbox",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("checkbox_3_state",),
-        success_criteria=("checkbox_3_state has changed",),
+        requirements=canonical_effect_requirements(
+            ("checkbox_3_state",), OperationClass.REVERSIBLE_WRITE, "request-1", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("checkbox_3_state",)),
         source_request_ref="request-1",
     )
     snapshot = BrowserSnapshot(observation, model)
@@ -1150,8 +1163,8 @@ def test_contract_builder_binds_semantic_key_press_without_surface_parameters() 
         revision=1,
         objective="Increase slider",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("slider",),
-        success_criteria=("slider increased",),
+        requirements=canonical_effect_requirements(("slider",), OperationClass.REVERSIBLE_WRITE, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("slider",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

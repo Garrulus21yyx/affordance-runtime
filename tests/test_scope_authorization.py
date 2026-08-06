@@ -33,7 +33,12 @@ from affordance_runtime.scope_authorization import (
     authorize_observed_value_transfer,
 )
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from runtime_test_support import canonical_observation, remember_observation
 
 PROVENANCE = PlannerProposalProvenance(
@@ -282,8 +287,8 @@ def _autocomplete_task() -> TaskSpec:
         revision=1,
         objective="Enter an item that starts with 'Com'.",
         operation_class=OperationClass.READ_ONLY,
-        targets=("browser-input-field",),
-        success_criteria=("An item starting with Com is entered.",),
+        requirements=canonical_effect_requirements(("Com",), OperationClass.READ_ONLY, "scope-test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Com",)),
         source_request_ref="scope-test",
     )
 

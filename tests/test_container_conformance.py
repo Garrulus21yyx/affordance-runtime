@@ -23,7 +23,12 @@ from affordance_runtime.fixtures import LOCAL_SAAS_FIXTURE_VERSION, create_fixtu
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from runtime_test_support import canonical_observation, remember_observation
 
 
@@ -80,11 +85,7 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
     thing = WotAdapter().parse(
         {
             "id": "thing",
-            "actions": {
-                "setEnabled": {
-                    "forms": [{"href": "http://thing/actions/setEnabled", "op": "invokeaction"}]
-                }
-            },
+            "actions": {"setEnabled": {"forms": [{"href": "http://thing/actions/setEnabled", "op": "invokeaction"}]}},
         },
         environment_revision=revision,
         snapshot_id=snapshot_id,
@@ -96,22 +97,21 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
             revision,
             snapshot_id=snapshot_id,
             page_revision=model.page_revision,
-            metadata=(
-                {"image_width": 100, "image_height": 100}
-                if surface == "visual"
-                else {}
-            ),
-            target_fingerprints={
-                item.id: item.target_fingerprint for item in model.affordances
-            },
+            metadata=({"image_width": 100, "image_height": 100} if surface == "visual" else {}),
+            target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
         )
         task = TaskSpec(
             task_id=f"conformance-{surface}",
             revision=1,
             objective=CONFORMANCE_GOAL,
             operation_class=OperationClass.REVERSIBLE_WRITE,
-            targets=(model.affordances[0].label,),
-            success_criteria=("shared state enabled",),
+            requirements=canonical_effect_requirements(
+                (model.affordances[0].label,),
+                OperationClass.REVERSIBLE_WRITE,
+                "conformance-test",
+                (CONFORMANCE_CAPABILITY,),
+            ),
+            allowed_effect_refs=canonical_effect_requirement_refs((model.affordances[0].label,)),
             evidence_requirements=(
                 "visual appearance and oracle evidence"
                 if surface == "visual"
@@ -119,7 +119,7 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
                 if surface == "wot"
                 else "structural text and oracle evidence",
             ),
-            requested_capabilities=(CONFORMANCE_CAPABILITY,),
+            capability_ceiling=(CONFORMANCE_CAPABILITY,),
             source_request_ref="conformance-test",
         )
         state = StateKernel(task.task_id, task.objective)
@@ -164,10 +164,15 @@ def test_conformance_planner_consumes_canonical_request() -> None:
         revision=1,
         objective=CONFORMANCE_GOAL,
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("Enable shared state",),
-        success_criteria=("shared state enabled",),
+        requirements=canonical_effect_requirements(
+            ("Enable shared state",),
+            OperationClass.REVERSIBLE_WRITE,
+            "conformance-request-source",
+            (CONFORMANCE_CAPABILITY,),
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Enable shared state",)),
         evidence_requirements=("oracle evidence",),
-        requested_capabilities=(CONFORMANCE_CAPABILITY,),
+        capability_ceiling=(CONFORMANCE_CAPABILITY,),
         source_request_ref="conformance-request-source",
     )
 
@@ -178,9 +183,9 @@ def test_conformance_planner_consumes_canonical_request() -> None:
         canonical_observation(snapshot),
     )
     response = ConformancePlanner("dom", "http://oracle/state").propose(request)
-    contract = ConformanceContractBuilder(
-        surface="dom", oracle_state_url="http://oracle/state"
-    ).build(response.proposal, task, state, snapshot)
+    contract = ConformanceContractBuilder(surface="dom", oracle_state_url="http://oracle/state").build(
+        response.proposal, task, state, snapshot
+    )
 
     assert request.identity.snapshot_id == snapshot_id
     assert contract.required_capabilities == [CONFORMANCE_CAPABILITY]
@@ -202,9 +207,7 @@ def test_conformance_acceptance_uses_current_action_contract_schema() -> None:
     )
 
     assert _preserves_shared_contract_envelope(item)
-    assert not _preserves_shared_contract_envelope(
-        item.__class__(**{**item.__dict__, "contract_schema": "1.0"})
-    )
+    assert not _preserves_shared_contract_envelope(item.__class__(**{**item.__dict__, "contract_schema": "1.0"}))
 
 
 def test_conformance_surface_result_sequences_are_immutable_from_source_lists() -> None:

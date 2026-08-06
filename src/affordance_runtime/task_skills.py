@@ -20,7 +20,12 @@ from affordance_runtime.legacy_criteria_evidence import (
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_intake import (
+    TaskSpec,
+    task_effect_targets,
+    task_requirements_by_kind,
+    task_semantic_scope_terms,
+)
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.mechanical import VerificationReport
@@ -209,12 +214,8 @@ class TaskSkillPayload:
             applicability=tuple(_string_list(value.get("applicability"), "applicability")),
             source_traces=tuple(_string_list(value.get("source_traces"), "source_traces")),
             source_variants=tuple(_string_list(value.get("source_variants"), "source_variants")),
-            source_trace_digests=tuple(
-                _string_list(value.get("source_trace_digests", []), "source_trace_digests")
-            ),
-            mining_report_digests=tuple(
-                _string_list(value.get("mining_report_digests", []), "mining_report_digests")
-            ),
+            source_trace_digests=tuple(_string_list(value.get("source_trace_digests", []), "source_trace_digests")),
+            mining_report_digests=tuple(_string_list(value.get("mining_report_digests", []), "mining_report_digests")),
             negative_examples=tuple(_string_list(value.get("negative_examples", []), "negative_examples")),
             heldout_suite=str(value.get("heldout_suite", "")),
         )
@@ -370,9 +371,7 @@ class TaskSkillMiner:
         )[:16]
         digest_bound = all(item.source_digest and item.report_digest for item in normalized)
         if digest_bound and not all(
-            _is_sha256_digest(value)
-            for item in normalized
-            for value in (item.source_digest, item.report_digest)
+            _is_sha256_digest(value) for item in normalized for value in (item.source_digest, item.report_digest)
         ):
             raise ValueError("canonical TaskSkill traces require sha256 provenance digests")
         if any(item.source_digest or item.report_digest for item in normalized) and not digest_bound:
@@ -726,7 +725,7 @@ class AcceptedTaskSkillRuntime:
                 "TaskSkill completed",
             )
         step = payload.steps[active.next_step_index]
-        missing_capabilities = sorted(set(step.required_capabilities) - set(task.requested_capabilities))
+        missing_capabilities = sorted(set(step.required_capabilities) - set(task.capability_ceiling))
         if missing_capabilities:
             reason = "TaskSkill cannot extend task capability authority: " + ", ".join(missing_capabilities)
             self.fallthrough(state, reason)
@@ -809,7 +808,7 @@ class AcceptedTaskSkillRuntime:
 
     @staticmethod
     def _trigger_matches(payload: TaskSkillPayload, task: TaskSpec) -> bool:
-        text = " ".join((task.objective, *task.targets)).casefold()
+        text = " ".join(task_semantic_scope_terms(task)).casefold()
         terms = set(re.findall(r"[a-z0-9_-]+", text))
         family_terms = set(re.findall(r"[a-z0-9_-]+", payload.trigger.task_family))
         return bool(family_terms) and family_terms.issubset(terms)
@@ -862,9 +861,10 @@ class TaskSkillReplayEvidence:
             "source_trace_digest": self.source_trace_digest,
             "skill_payload_digest": self.skill_payload_digest,
         }
-        return "sha256:" + hashlib.sha256(
-            json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        return (
+            "sha256:"
+            + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        )
 
 
 @dataclass(frozen=True)
@@ -1070,7 +1070,9 @@ def _default_skill_bindings(
     progress: TaskSkillRunState | None,
 ) -> Mapping[str, Any] | None:
     bindings = dict(progress.bindings) if progress is not None else {}
-    entities = {_normalize(item.name): item.value for item in task.entities}
+    entities = {
+        _normalize(item.payload.subject): item.payload.value for item in task_requirements_by_kind(task, "entity")
+    }
     for parameter in payload.parameters:
         if parameter.name in bindings:
             continue
@@ -1118,7 +1120,9 @@ def _semantic_label_binding(
         if _normalize(item.role) == _normalize(query.role) and query.action in item.supported_actions
     ]
     target_matches = [
-        label for label in candidates if any(_normalize(label) == _normalize(target) for target in task.targets)
+        label
+        for label in candidates
+        if any(_normalize(label) == _normalize(target) for target in task_effect_targets(task))
     ]
     if len(target_matches) == 1:
         return target_matches[0]

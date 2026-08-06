@@ -43,7 +43,6 @@ from affordance_runtime.benchmarks.browsergym import (
     browsergym_failure_envelope,
     browsergym_profile,
     cluster_browsergym_failure_envelopes,
-    run_browsergym_episode,
     run_browsergym_generalist_episode,
     update_browsergym_batch_circuit_state,
     write_browsergym_report,
@@ -91,7 +90,12 @@ from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification.mechanical import VerifierLadder
 from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
@@ -340,8 +344,10 @@ def test_browsergym_policy_planner_projects_request_without_changing_policy_requ
         revision=1,
         objective="Click the target",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("target",),
-        success_criteria=("target clicked",),
+        requirements=canonical_effect_requirements(
+            ("target",), OperationClass.REVERSIBLE_WRITE, "browsergym-request-source", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("target",)),
         evidence_requirements=("browsergym evidence",),
         source_request_ref="browsergym-request-source",
     )
@@ -414,19 +420,28 @@ class GeneralistClickModel:
                 }
             )
         context = json.loads(messages[-1].content)
-        if self.planner_calls == 0:
-            self.first_target_id = context["affordances"][0]["id"]
+        if output_schema.__name__ == "TaskPlanProviderResponse":
+            task_spec = context["task_spec"]
+            requirement_ref = task_spec["allowed_effect_refs"][0]
+            target = context["planning"]["environment"]["affordances"][0]
+            self.first_target_id = target["semantic_target_id"]
             payload = {
-                "action_kind": PlannerActionKind.ACTIVATE,
-                "target_affordance_id": self.first_target_id,
-                "expected_effects": ["target clicked"],
+                "steps": [
+                    {
+                        "step_id": "step:click-target",
+                        "objective": "activate the admitted target",
+                        "subject": target["label"],
+                        "relation": "is_completed",
+                        "requirement_refs": [requirement_ref],
+                        "effect_authorization_refs": [requirement_ref],
+                        "effectful": True,
+                    }
+                ]
             }
+        elif output_schema.__name__ == "DisplayedChoiceCandidate":
+            payload = {"choice_id": context["choices"][0]["choice_id"]}
         else:
-            payload = {
-                "action_kind": PlannerActionKind.FINISH,
-                "done": True,
-                "result": {"official_success": True, "official_reward": 1.0},
-            }
+            raise AssertionError(f"unexpected schema: {output_schema.__name__}")
         self.calls += 1
         self.planner_calls += 1
         return output_schema.model_validate(payload)
@@ -511,39 +526,6 @@ def test_accessibility_tree_fallback_preserves_role_name_and_bid() -> None:
     assert "23" in text
 
 
-def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_path: Path) -> None:
-    environment = FakeBrowserGymEnvironment()
-    policy = OneClickPolicy()
-    result = run_browsergym_episode(
-        environment,
-        policy,
-        task_id="click-button",
-        seed=4,
-        artifact_root=tmp_path,
-    )
-
-    assert result.runtime_status == "done"
-    assert result.official_success is True
-    assert result.official_reward == 1.0
-    assert result.action_families == ["click"]
-    assert result.unsupported_actions == []
-    assert result.policy_stopped is False
-    assert environment.closed and policy.closed
-    trace_events = [json.loads(line) for line in Path(result.trace_path).read_text().splitlines()]
-    events = [item["event_type"] for item in trace_events]
-    required = [
-        "TaskCreated",
-        "PlannerProposalProduced",
-        "ContractBuilt",
-        "ActionStarted",
-        "ActionOutcomeRecorded",
-        "PostActionEvaluated",
-        "TaskCompleted",
-    ]
-    assert all(event in events for event in required)
-    assert [events.index(event) for event in required] == sorted(events.index(event) for event in required)
-
-
 def test_disabling_browsergym_observation_profile_preserves_declared_runtime_actions() -> None:
     html = (
         '<span bid="benchmark-only" browsergym_set_of_marks="1">Profile control</span>'
@@ -577,7 +559,7 @@ def test_browsergym_marks_do_not_promote_native_labels_over_their_controls() -> 
     ]
 
 
-def test_generalist_planner_port_runs_browsergym_without_external_action_policy(tmp_path: Path) -> None:
+def test_strict_task_and_choice_planners_run_browsergym_without_external_policy(tmp_path: Path) -> None:
     environment = FakeBrowserGymEnvironment()
     model = GeneralistClickModel()
 
@@ -592,9 +574,9 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert result.runtime_status == "done"
     assert result.official_success is True
     assert result.action_families == ["click"]
-    assert model.calls == 1
-    assert model.planner_calls == 0
-    assert result.model_call_count == 1
+    assert model.calls == 2
+    assert model.planner_calls == 1
+    assert result.model_call_count == 2
     assert environment.page.default_timeout_ms == 1_500
     trace_rows = [json.loads(line) for line in Path(result.trace_path).read_text().splitlines()]
     events = [row["event_type"] for row in trace_rows]
@@ -606,12 +588,10 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert "ActionChoiceSelected" in events
     assert "ContractBuilt" in events
     route = next(row["payload"] for row in trace_rows if row["event_type"] == "RouteSelected")
-    assert model.first_target_id == ""
+    assert model.first_target_id.startswith("semantic:")
     assert route["candidate_id"].startswith("candidate:dom:")
     task_plan_context = next(
-        row["payload"]["planning_context"]
-        for row in trace_rows
-        if row["event_type"] == "TaskPlanProposed"
+        row["payload"]["planning_context"] for row in trace_rows if row["event_type"] == "TaskPlanProposed"
     )
     assert task_plan_context["task_spec"]["operation_class"] == "reversible_write"
     assert task_plan_context["task_spec"]["requirements"][0]["payload"]["subject"] == "target"
@@ -654,15 +634,13 @@ def test_browsergym_episode_report_counts_successful_intent_repair(tmp_path: Pat
     )
 
     assert result.runtime_status == "done"
-    assert model.calls == 2
-    assert model.planner_calls == 0
-    assert result.model_call_count == 2
+    assert model.calls == 3
+    assert model.planner_calls == 1
+    assert result.model_call_count == 3
 
 
 def test_browsergym_model_stats_counts_repair_model_call_record() -> None:
-    nodes = (
-        SimpleNamespace(kind="MinimalIntentProposalProduced", payload={"model_call": {"latency_ms": 3}}),
-    )
+    nodes = (SimpleNamespace(kind="MinimalIntentProposalProduced", payload={"model_call": {"latency_ms": 3}}),)
 
     stats = _browsergym_model_stats(nodes, attempted_calls=3)
 
@@ -690,8 +668,8 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
         revision=1,
         objective="Choose Earth",
         operation_class=OperationClass.READ_ONLY,
-        targets=("select",),
-        success_criteria=("Earth is selected",),
+        requirements=canonical_effect_requirements(("select",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("select",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -714,7 +692,7 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
         "control_state",
         "select-bid",
         {"field": "selected_options", "value": ["earth"]},
-            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
 
@@ -738,8 +716,8 @@ def test_generalist_browsergym_adapter_uses_navigation_safe_hash_link_click() ->
         revision=1,
         objective="Open Result",
         operation_class=OperationClass.READ_ONLY,
-        targets=("result",),
-        success_criteria=("opened",),
+        requirements=canonical_effect_requirements(("result",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("result",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -792,8 +770,8 @@ def test_generalist_browsergym_adapter_uses_current_dom_click_for_collection_con
         revision=1,
         objective="Open More for @owner",
         operation_class=OperationClass.READ_ONLY,
-        targets=("@owner", "More"),
-        success_criteria=("menu opened",),
+        requirements=canonical_effect_requirements(("@owner", "More"), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("@owner", "More")),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -842,8 +820,8 @@ def test_generalist_browsergym_adapter_binds_semantic_drag_to_two_bids() -> None
         revision=1,
         objective="Drag Source to Destination",
         operation_class=OperationClass.READ_ONLY,
-        targets=("sortable",),
-        success_criteria=("items are reordered",),
+        requirements=canonical_effect_requirements(("Source", "Destination"), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Source", "Destination")),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1137,12 +1115,8 @@ def test_browsergym_observer_fuses_visual_drag_regions_with_mixed_dom(tmp_path: 
             return png
 
     requirements = PerceptionRequirements(
-        required_properties=frozenset(
-            {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
-        ),
-        acceptable_evidence=frozenset(
-            {GroundingSource.DOM, GroundingSource.VISUAL}
-        ),
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.VISUAL}),
         model_call_budget=1,
     )
     fused = _browsergym_session(
@@ -1150,9 +1124,7 @@ def test_browsergym_observer_fuses_visual_drag_regions_with_mixed_dom(tmp_path: 
         dom_executor="browsergym",
         visual_executor="browsergym",
         lease_ttl_ms=60_000,
-        perception_orchestrator=GenericPerceptionOrchestrator(
-            FakeVisualRegionProposer()
-        ),
+        perception_orchestrator=GenericPerceptionOrchestrator(FakeVisualRegionProposer()),
     ).capture(
         screenshot_path=str(tmp_path / "drag-box.png"),
         perception_requirements=requirements,
@@ -1192,18 +1164,14 @@ def test_browsergym_observer_preserves_typed_visual_provider_failure(tmp_path: P
         dom_executor="browsergym",
         visual_executor="browsergym",
         lease_ttl_ms=60_000,
-        perception_orchestrator=GenericPerceptionOrchestrator(
-            RateLimitedVisualRegionProposer()
-        ),
+        perception_orchestrator=GenericPerceptionOrchestrator(RateLimitedVisualRegionProposer()),
     )
 
     with pytest.raises(ProviderModelError, match="rate_limit_transient"):
         session.capture(
             screenshot_path=str(tmp_path / "drag-box-429.png"),
             perception_requirements=PerceptionRequirements(
-                required_properties=frozenset(
-                    {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
-                ),
+                required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
                 acceptable_evidence=frozenset({GroundingSource.VISUAL}),
                 model_call_budget=1,
             ),
@@ -1229,9 +1197,7 @@ def test_browsergym_observer_materializes_visual_grounding_before_contract_bindi
         cast(Any, CanvasPage()),
         dom_executor="browsergym",
         visual_executor="browsergym",
-        perception_orchestrator=GenericPerceptionOrchestrator(
-            point_grounder=FakeVisualGrounder()
-        ),
+        perception_orchestrator=GenericPerceptionOrchestrator(point_grounder=FakeVisualGrounder()),
     ).capture(
         screenshot_path=str(tmp_path / "view.png"),
         perception_requirements=PerceptionRequirements(
@@ -1363,7 +1329,9 @@ def test_generalist_browsergym_adapter_binds_screenshot_only_target_without_expo
 ) -> None:
     screenshot = tmp_path / "view.png"
     screenshot.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (200).to_bytes(4, "big") + (100).to_bytes(4, "big"))
-    model = browsergym_dom_adapter().transduce("<main>canvas</main>", environment_revision="rev-1", snapshot_id="snap-1")
+    model = browsergym_dom_adapter().transduce(
+        "<main>canvas</main>", environment_revision="rev-1", snapshot_id="snap-1"
+    )
     observation = Observation(
         "rev-1", screenshot_ref=str(screenshot), snapshot_id="snap-1", page_revision=model.page_revision
     )
@@ -1396,8 +1364,10 @@ def test_generalist_browsergym_adapter_binds_screenshot_only_target_without_expo
         revision=1,
         objective="Click the visual target",
         operation_class=OperationClass.READ_ONLY,
-        targets=("canvas",),
-        success_criteria=("target is clicked",),
+        requirements=canonical_effect_requirements(
+            ("Current screenshot visual target",), OperationClass.READ_ONLY, "test", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Current screenshot visual target",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1695,8 +1665,8 @@ def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
         revision=1,
         objective="Increase slider",
         operation_class=OperationClass.READ_ONLY,
-        targets=("slider",),
-        success_criteria=("slider increased",),
+        requirements=canonical_effect_requirements(("slider",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("slider",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1723,10 +1693,10 @@ def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
     )
 
     assert contract.verifier_plan[-1] == VerifierSpec(
-            "control_state",
-            "slider",
-            {"field": "aria_valuenow", "changed_from": "1"},
-            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        "control_state",
+        "slider",
+        {"field": "aria_valuenow", "changed_from": "1"},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
     assert report.passed is True
 
@@ -1755,8 +1725,8 @@ def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
         revision=1,
         objective="Scroll to top",
         operation_class=OperationClass.READ_ONLY,
-        targets=(scroll_region.label,),
-        success_criteria=("textarea at top",),
+        requirements=canonical_effect_requirements((scroll_region.label,), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs((scroll_region.label,)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1787,10 +1757,10 @@ def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
         "arguments": {"bid": "source", "key_comb": "Control+Home"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-            "control_state",
-            "source",
-            {"field": "scroll_top", "changed_from": 120},
-            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        "control_state",
+        "source",
+        {"field": "scroll_top", "changed_from": 120},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
     assert report.passed is True
 
@@ -1815,8 +1785,8 @@ def test_generalist_browsergym_text_contract_verifies_post_observation_value() -
         revision=1,
         objective="Enter Myron",
         operation_class=OperationClass.READ_ONLY,
-        targets=("text",),
-        success_criteria=("Myron is entered",),
+        requirements=canonical_effect_requirements(("text",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("text",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1868,8 +1838,8 @@ def test_generalist_browsergym_search_contract_uses_keyboard_events() -> None:
         revision=1,
         objective="Search for Ryann",
         operation_class=OperationClass.READ_ONLY,
-        targets=("search",),
-        success_criteria=("result is shown",),
+        requirements=canonical_effect_requirements(("search",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("search",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1910,8 +1880,8 @@ def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
         revision=1,
         objective="Enter 02/04/2012 as the date",
         operation_class=OperationClass.READ_ONLY,
-        targets=("date",),
-        success_criteria=("date entered",),
+        requirements=canonical_effect_requirements(("date",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("date",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1931,10 +1901,10 @@ def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
         "arguments": {"bid": "date-bid", "value": "2012-02-04"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-            "dom_attribute",
-            "date-bid",
-                {"target_attribute": "bid", "attribute": "value", "value": "2012-02-04"},
-                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        "dom_attribute",
+        "date-bid",
+        {"target_attribute": "bid", "attribute": "value", "value": "2012-02-04"},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
 
@@ -1958,8 +1928,8 @@ def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None
         revision=1,
         objective="Enter 11:10 AM as the time",
         operation_class=OperationClass.READ_ONLY,
-        targets=("time",),
-        success_criteria=("time entered",),
+        requirements=canonical_effect_requirements(("time",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("time",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1984,10 +1954,10 @@ def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None
         "arguments": {"bid": "time-bid", "value": "11:10"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-            "dom_attribute",
-            "time-bid",
-                {"target_attribute": "bid", "attribute": "value", "value": "11:10"},
-                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        "dom_attribute",
+        "time-bid",
+        {"target_attribute": "bid", "attribute": "value", "value": "11:10"},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
 
@@ -2011,8 +1981,8 @@ def test_generalist_browsergym_click_requires_state_delta_or_positive_terminal_o
         revision=1,
         objective="Click target",
         operation_class=OperationClass.READ_ONLY,
-        targets=("target",),
-        success_criteria=("target clicked",),
+        requirements=canonical_effect_requirements(("target",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("target",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -2486,59 +2456,10 @@ def test_browsergym_time_budgets_are_explicit_and_reserve_execution_time() -> No
         )
 
 
-def test_browsergym_episode_reports_unsupported_policy_action(tmp_path: Path) -> None:
-    result = run_browsergym_episode(
-        FakeBrowserGymEnvironment(),
-        UnsupportedPolicy(),
-        task_id="click-button",
-        seed=4,
-        artifact_root=tmp_path,
-    )
-    assert result.runtime_status == "aborted"
-    assert result.unsupported_actions == ["page.evaluate"]
-
-
-def test_browsergym_episode_reports_action_outside_semantic_vocabulary(tmp_path: Path) -> None:
-    result = run_browsergym_episode(
-        FakeBrowserGymEnvironment(),
-        UnsupportedSemanticPolicy(),
-        task_id="click-button",
-        seed=4,
-        artifact_root=tmp_path,
-    )
-    assert result.runtime_status == "aborted"
-    assert result.unsupported_actions == ["scroll"]
-
-
 class StoppedPolicy(OneClickPolicy):
     def propose(self, request: BrowserGymPolicyRequest) -> None:
         del request
         return None
-
-
-def test_browsergym_report_counts_early_policy_stop_as_runtime_failure(tmp_path: Path) -> None:
-    result = run_browsergym_episode(
-        FakeBrowserGymEnvironment(),
-        StoppedPolicy(),
-        task_id="click-button",
-        seed=4,
-        artifact_root=tmp_path / "artifacts",
-    )
-    report = write_browsergym_report(
-        tmp_path / "report",
-        profile="pr",
-        registered_tasks=("click-button",),
-        selected_tasks=("click-button",),
-        seeds=(4,),
-        episodes=(result,),
-    )
-    assert result.policy_stopped is True
-    assert report["runtime_failure_count"] == 1
-    assert report["runtime_error_counts"] == {"execution_failed": 1}
-    assert report["acceptance_errors"] == [
-        "runtime failure: click-button:seed-4:execution_failed",
-        "policy stopped: click-button:seed-4",
-    ]
 
 
 def test_browsergym_generalist_episode_checkpoints_are_atomic_and_reject_foreign_cases(tmp_path: Path) -> None:

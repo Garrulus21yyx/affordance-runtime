@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from time import time
-from typing import Literal
+from typing import Iterable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -85,18 +85,10 @@ class TaskInteractionRelationSpec(StrictModel):
     @model_validator(mode="after")
     def validate_endpoint_form(self) -> "TaskInteractionRelationSpec":
         if self.kind == TaskInteractionRelationKind.DRAG_TO:
-            if (
-                not self.destination.strip()
-                or self.relative_offset is not None
-                or self.destination_ordinal is not None
-            ):
+            if not self.destination.strip() or self.relative_offset is not None or self.destination_ordinal is not None:
                 raise ValueError("drag-to relation requires only a destination")
         elif self.kind == TaskInteractionRelationKind.RELATIVE_POSITION:
-            if (
-                self.destination
-                or self.relative_offset in {None, 0}
-                or self.destination_ordinal is not None
-            ):
+            if self.destination or self.relative_offset in {None, 0} or self.destination_ordinal is not None:
                 raise ValueError("relative-position relation requires only a nonzero offset")
         elif self.destination or self.relative_offset is not None or self.destination_ordinal is None:
             raise ValueError("absolute-position relation requires only a destination ordinal")
@@ -125,12 +117,6 @@ class IntentAmbiguity(StrictModel):
     reason: str = Field(min_length=1)
     blocking: bool = False
     risk: AmbiguityRisk = AmbiguityRisk.LOW
-
-
-class FieldProvenance(StrictModel):
-    field: str = Field(min_length=1)
-    source_ref: str = Field(min_length=1)
-    source_kind: str = "user"
 
 
 class FieldConfidence(StrictModel):
@@ -185,6 +171,13 @@ class TaskRequirement(StrictModel):
         return self
 
 
+class CriterionSourceBinding(StrictModel):
+    """Admitted link from one criterion identity to canonical requirements."""
+
+    criterion_id: str = Field(min_length=1, max_length=240)
+    requirement_refs: tuple[str, ...] = Field(min_length=1)
+
+
 class InputBinding(StrictModel):
     """Stable typed input value with its admitted source lineage."""
 
@@ -203,9 +196,9 @@ class InputBinding(StrictModel):
     @classmethod
     def from_material(cls, binding: MaterialBinding) -> "InputBinding":
         payload = binding.model_dump(mode="json")
-        digest = "sha256:" + hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        digest = (
+            "sha256:" + hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        )
         return cls(
             binding_id=binding.binding_id,
             requirement_ref=binding.effect_ref,
@@ -227,7 +220,6 @@ class TaskRiskPolicy(StrictModel):
     authoritative_final_recheck_required: bool = False
 
 
-
 class TaskSpec(StrictModel):
     schema_version: str = "2.0"
     task_id: str = Field(min_length=1)
@@ -242,29 +234,17 @@ class TaskSpec(StrictModel):
     forbidden_effect_refs: tuple[str, ...] = ()
     capability_ceiling: tuple[str, ...] = ()
     risk_policy: TaskRiskPolicy | None = None
-    task_structure: TaskStructure = TaskStructure.FLAT
-    targets: tuple[str, ...]
-    entities: tuple[IntentEntity, ...] = ()
-    preferences: tuple[str, ...] = ()
-    desired_outputs: tuple[str, ...] = ()
-    # Presentation-only compatibility summary; never read for planning,
-    # perception, execution, or completion authority.
-    success_criteria: tuple[str, ...]
     success: SuccessExpression | None = None
     required_outputs: tuple[OutputSpec, ...] = ()
+    criterion_source_bindings: tuple[CriterionSourceBinding, ...] = ()
     constraint_criterion_ids: tuple[str, ...] = ()
     external_effect_criterion_ids: tuple[str, ...] = ()
     final_recheck_criterion_ids: tuple[str, ...] = ()
-    constraints: tuple[str, ...] = ()
     semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
-    forbidden_effects: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
-    requested_capabilities: tuple[str, ...] = ()
-    ambiguity_status: str = "resolved"
     source_request_ref: str = Field(min_length=1)
     source_envelope_ref: str = ""
     source_binding_digest: str = ""
-    field_provenance: tuple[FieldProvenance, ...] = ()
     created_at_s: float = Field(default_factory=time)
 
     @model_validator(mode="after")
@@ -288,11 +268,16 @@ class TaskSpec(StrictModel):
             raise ValueError("task input binding ids must be unique")
         if any(item.requirement_ref not in known for item in self.inputs):
             raise ValueError("task input binding must name an admitted requirement")
-        if any(
-            output.requirement_ref and output.requirement_ref not in known
-            for output in self.required_outputs
-        ):
+        if any(output.requirement_ref and output.requirement_ref not in known for output in self.required_outputs):
             raise ValueError("required output must name an admitted requirement")
+        criterion_ids = tuple(item.criterion_id for item in self.criterion_source_bindings)
+        if len(criterion_ids) != len(set(criterion_ids)):
+            raise ValueError("criterion source binding ids must be unique")
+        if any(
+            not binding.requirement_refs or set(binding.requirement_refs) - known
+            for binding in self.criterion_source_bindings
+        ):
+            raise ValueError("criterion source binding must name admitted requirements")
         return self
 
     @property
@@ -307,13 +292,14 @@ class CompilationIssue(StrictModel):
     detail: str = ""
 
 
-
 @dataclass(frozen=True)
 class CompilationPolicy:
     allowed_operations: frozenset[OperationClass] = field(default_factory=lambda: frozenset(OperationClass))
     allowed_requested_capabilities: frozenset[str] | None = None
     denied_capabilities: frozenset[str] = frozenset()
     forbidden_effects: frozenset[str] = frozenset()
+
+
 def operation_class_rank(operation: OperationClass) -> int:
     return {
         OperationClass.READ_ONLY: 0,
@@ -322,3 +308,73 @@ def operation_class_rank(operation: OperationClass) -> int:
         OperationClass.EXTERNAL_SIDE_EFFECT: 3,
         OperationClass.IRREVERSIBLE: 4,
     }[operation]
+
+
+def task_requirements_by_kind(
+    task_spec: TaskSpec,
+    kind: Literal["effect", "entity", "constraint", "preference", "output"],
+) -> tuple[TaskRequirement, ...]:
+    return tuple(item for item in task_spec.requirements if item.payload.kind == kind)
+
+
+def task_allowed_effects(task_spec: TaskSpec) -> tuple[TaskRequirement, ...]:
+    allowed = set(task_spec.allowed_effect_refs)
+    return tuple(item for item in task_spec.requirements if item.requirement_id in allowed)
+
+
+def task_effect_targets(task_spec: TaskSpec) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(item.payload.subject for item in task_allowed_effects(task_spec)))
+
+
+def task_constraint_values(task_spec: TaskSpec) -> tuple[str, ...]:
+    refs = set(task_spec.hard_constraint_refs)
+    return tuple(item.payload.subject for item in task_spec.requirements if item.requirement_id in refs)
+
+
+def task_semantic_scope_terms(task_spec: TaskSpec) -> tuple[str, ...]:
+    """Typed admitted semantics used for scope, never objective prose."""
+
+    forbidden = set(task_spec.forbidden_effect_refs)
+    return tuple(
+        dict.fromkeys(
+            value
+            for item in task_spec.requirements
+            if item.requirement_id not in forbidden
+            for value in (item.payload.subject, item.payload.value)
+            if value.strip()
+        )
+    )
+
+
+def task_requires_decomposition(task_spec: TaskSpec) -> bool:
+    """Derive planning complexity from admitted semantics, not intake shape hints."""
+
+    return len(task_spec.allowed_effect_refs) > 1 or len(task_spec.required_outputs) > 1
+
+
+def canonical_effect_requirements(
+    subjects: Iterable[str],
+    operation_class: OperationClass,
+    source_anchor_ref: str,
+    capabilities: Iterable[str] = (),
+) -> tuple[TaskRequirement, ...]:
+    """Build explicit canonical effect rows for internal fixtures and adapters."""
+
+    capability = next(iter(capabilities), "")
+    return tuple(
+        TaskRequirement(
+            requirement_id=f"requirement:effect:{index}",
+            payload=TaskSemanticPayload(
+                kind="effect",
+                subject=str(subject),
+                operation_class=operation_class,
+                capability=capability,
+            ),
+            source_anchor_refs=(source_anchor_ref,),
+        )
+        for index, subject in enumerate(subjects, start=1)
+    )
+
+
+def canonical_effect_requirement_refs(subjects: Iterable[str]) -> tuple[str, ...]:
+    return tuple(f"requirement:effect:{index}" for index, _ in enumerate(subjects, start=1))

@@ -25,8 +25,11 @@ from affordance_runtime.stage_protocol import (
     UserInputRequest,
     build_failure_owner_handoff,
 )
-from affordance_runtime.task_intake import CompilationIssue, CompilationStatus, TaskStructure, UserRequest
-from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
+from affordance_runtime.task_intake import (
+    CompilationIssue,
+    CompilationStatus,
+    UserRequest,
+)
 from affordance_runtime.task_spec_authority import TaskSpecAdmissionResult, TaskSpecAuthority
 from affordance_runtime.trace import TraceDag, TraceNode
 
@@ -55,9 +58,7 @@ class GeneralistTaskPipeline:
         model = getattr(self.compiler, "model", None)
         if model is None:
             return
-        model_dispatcher = recovery_dispatcher_for_model(
-            model, planner=self.coordinator.planning_stage.planner
-        )
+        model_dispatcher = recovery_dispatcher_for_model(model)
         if not model_dispatcher.available_kinds:
             return
         handlers = dict(self.coordinator.recovery_stage.owner_dispatcher.handlers)
@@ -66,9 +67,7 @@ class GeneralistTaskPipeline:
         dispatcher = type(self.coordinator.recovery_stage.owner_dispatcher)(handlers)
         self.coordinator = replace(
             self.coordinator,
-            recovery_stage=replace(
-                self.coordinator.recovery_stage, owner_dispatcher=dispatcher
-            ),
+            recovery_stage=replace(self.coordinator.recovery_stage, owner_dispatcher=dispatcher),
         )
 
     async def run(self, request: UserRequest) -> TaskPipelineResult:
@@ -83,9 +82,7 @@ class GeneralistTaskPipeline:
 
         trace = TraceDag(run_id=request.request_id)
         envelope, parent = self._build_source_envelope(request, trace)
-        proposal = resolve_awaitable(
-            self.compiler.propose(request, envelope, trace=trace, parent=parent)
-        )
+        proposal = resolve_awaitable(self.compiler.propose(request, envelope, trace=trace, parent=parent))
         compilation = self._audit_and_admit(request, envelope, proposal, trace)
         return self._run_compiled(compilation, trace)
 
@@ -99,30 +96,6 @@ class GeneralistTaskPipeline:
             )
         task_spec = compilation.task_spec
         coordinator = self.coordinator
-        flow = coordinator.planning_stage.task_plan_flow
-        task_planner = flow.lifecycle.planner if flow is not None else None
-        if (
-            task_spec.task_structure == TaskStructure.MULTI_STAGE
-            and isinstance(task_planner, PlanningRouter)
-            and task_planner.complex_planner is None
-        ):
-            assert flow is not None
-            coordinator = replace(
-                coordinator,
-                planning_stage=replace(
-                    coordinator.planning_stage,
-                    task_plan_flow=replace(
-                        flow,
-                        lifecycle=replace(
-                            flow.lifecycle,
-                            planner=replace(
-                                task_planner,
-                                complex_planner=StrictTaskPlanner(self.compiler.model),
-                            ),
-                        ),
-                    ),
-                ),
-            )
         coordinator_result = coordinator.run_sync(
             RunRequest(
                 task_spec=task_spec,
@@ -148,9 +121,10 @@ class GeneralistTaskPipeline:
         trace: TraceDag,
     ) -> None:
         clarification = compilation.status == CompilationStatus.NEEDS_CLARIFICATION
-        message = "; ".join(
-            f"{item.code}:{item.field}:{item.detail}" for item in compilation.issues
-        ) or compilation.status.value
+        message = (
+            "; ".join(f"{item.code}:{item.field}:{item.detail}" for item in compilation.issues)
+            or compilation.status.value
+        )
         failure = make_failure_envelope(
             run_id=compilation.request_id,
             phase=FailurePhase.INTAKE,
@@ -273,10 +247,7 @@ class GeneralistTaskPipeline:
                 status=status,
                 request_id=request.request_id,
                 proposal=proposal,
-                issues=tuple(
-                    CompilationIssue(code=code, field="semantic_audit")
-                    for code in audit.issue_codes
-                ),
+                issues=tuple(CompilationIssue(code=code, field="semantic_audit") for code in audit.issue_codes),
             )
         else:
             result = self.task_spec_authority.admit(

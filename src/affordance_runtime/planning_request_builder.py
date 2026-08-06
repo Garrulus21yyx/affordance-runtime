@@ -31,6 +31,7 @@ from affordance_runtime.planning_request import (
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import task_constraint_values, task_semantic_scope_terms
 from affordance_runtime.task_plan_contracts import project_task_plan_views
 from affordance_runtime.unified_observation import (
     CanonicalTarget,
@@ -88,9 +89,7 @@ class PlanningRequestBuilder:
         )
         if not step_view.permits_effectful_actions:
             permitted_action_kinds = tuple(
-                item
-                for item in permitted_action_kinds
-                if item not in _EFFECTFUL_ACTION_KINDS
+                item for item in permitted_action_kinds if item not in _EFFECTFUL_ACTION_KINDS
             )
         admission = _active_step_admission(
             task_revision=task_spec.revision,
@@ -110,7 +109,7 @@ class PlanningRequestBuilder:
                 task_spec_identity=task_spec.identity,
                 task_revision=task_spec.revision,
                 objective=task_spec.objective,
-                constraints=tuple(str(item) for item in task_spec.constraints),
+                constraints=task_constraint_values(task_spec),
                 capabilities=tuple(sorted(set(envelope.capabilities))),
                 task_completion_criterion=task_completion_criterion,
                 task_completion_projection_status="typed_task_completion_external",
@@ -127,13 +126,12 @@ class PlanningRequestBuilder:
                     for item in _bounded_targets(
                         list(observation.targets),
                         task_spec.objective,
-                        task_spec.targets,
+                        task_semantic_scope_terms(task_spec),
                         limits.max_affordances,
                     )
                 ),
                 artifact_refs=tuple(
-                    _opaque_artifact_ref(item)
-                    for item in observation.artifact_refs[-limits.max_artifact_refs :]
+                    _opaque_artifact_ref(item) for item in observation.artifact_refs[-limits.max_artifact_refs :]
                 ),
             ),
             recent_outcomes=_recent_outcomes(state),
@@ -156,9 +154,7 @@ class PlanningRequestBuilder:
                 model_calls=max(0, limits.max_model_calls),
             ),
             permitted_action_kinds=permitted_action_kinds,
-            satisfied_action_targets=tuple(
-                sorted(_satisfied_action_targets(state).items())
-            ),
+            satisfied_action_targets=tuple(sorted(_satisfied_action_targets(state).items())),
             admission=admission,
         )
         if state.version != before_version:
@@ -228,9 +224,7 @@ def _active_step_admission(
     )
     if grounding.status != GroundingStatus.RESOLVED:
         return None
-    allowed = frozenset(
-        item.target_id for item in (*grounding.targets, *grounding.destinations)
-    )
+    allowed = frozenset(item.target_id for item in (*grounding.targets, *grounding.destinations))
     current_target_ids = tuple(dict.fromkeys(item.target_id for item in inventory))
     decisions = tuple(
         TargetAdmissionDecision(
@@ -265,11 +259,7 @@ def _compatibility_active_step_objective(state: StateKernel) -> str:
     if plan is None or progress is None or not progress.active_step_id:
         return ""
     return next(
-        (
-            item.objective
-            for item in plan.steps
-            if item.step_id == progress.active_step_id
-        ),
+        (item.objective for item in plan.steps if item.step_id == progress.active_step_id),
         "",
     )
 
@@ -280,28 +270,16 @@ def _compatibility_active_step_action_family(state: StateKernel) -> str:
     if plan is None or progress is None or not progress.active_step_id:
         return ""
     return next(
-        (
-            ""
-            for item in plan.steps
-            if item.step_id == progress.active_step_id
-        ),
+        ("" for item in plan.steps if item.step_id == progress.active_step_id),
         "",
     )
 
 
 def _target_view(item: CanonicalTarget) -> PlannerAffordanceView:
-    accepted_state = {
-        fact.property_name: fact.value
-        for fact in item.state_facts
-        if fact.status == FactStatus.ACCEPTED
-    }
+    accepted_state = {fact.property_name: fact.value for fact in item.state_facts if fact.status == FactStatus.ACCEPTED}
     return PlannerAffordanceView(
         target_id=item.target_id,
-        surface=(
-            _presentation_surface(item.surfaces[0])
-            if len(item.surfaces) == 1
-            else "multi_surface"
-        ),
+        surface=(_presentation_surface(item.surfaces[0]) if len(item.surfaces) == 1 else "multi_surface"),
         role=item.role,
         label=_bounded_text(item.label, 240),
         supported_actions=item.supported_actions,
@@ -309,8 +287,7 @@ def _target_view(item: CanonicalTarget) -> PlannerAffordanceView:
         confidence=None,
         conflict_codes=(
             (item.conflict_status.value,)
-            if item.conflict_status
-            in {ConflictStatus.MATERIAL_CONFLICT, ConflictStatus.INCONCLUSIVE}
+            if item.conflict_status in {ConflictStatus.MATERIAL_CONFLICT, ConflictStatus.INCONCLUSIVE}
             else ()
         ),
         source_refs=item.source_assertion_refs,
@@ -347,9 +324,7 @@ def _bounded_targets(
         ),
     )
     selected_indexes = {index for index, _item in ranked[: max(1, limit)]}
-    return [
-        item for index, item in enumerate(targets_to_bound) if index in selected_indexes
-    ]
+    return [item for index, item in enumerate(targets_to_bound) if index in selected_indexes]
 
 
 def _compact_target_state(value: dict[str, object]) -> dict[str, object]:
@@ -423,14 +398,8 @@ def _permitted_action_kinds(
     permitted = {"ask_user"}
     if allow_finish:
         permitted.add("finish")
-    canonical_actions = {
-        action
-        for target in observation.targets
-        for action in target.supported_actions
-    }
-    permitted.update(
-        action_map[action] for action in canonical_actions if action in action_map
-    )
+    canonical_actions = {action for target in observation.targets for action in target.supported_actions}
+    permitted.update(action_map[action] for action in canonical_actions if action in action_map)
     if canonical_actions & {"fill", "type", "type_text"}:
         permitted.add("focus")
     return tuple(sorted(permitted))

@@ -201,6 +201,35 @@ def test_task_planning_and_step_choice_flows_do_not_share_authority_objects() ->
     assert "TaskPlanningRequest" not in choice_flow
 
 
+def test_default_planning_stage_has_no_legacy_proposal_fallback() -> None:
+    stage = (SOURCE_ROOT / "planning_phase.py").read_text(encoding="utf-8")
+    composition = (SOURCE_ROOT / "composition.py").read_text(encoding="utf-8")
+
+    assert "PlannerPort" not in stage
+    assert "PlanningRequestBuilder" not in stage
+    assert "propose_canonical" not in stage
+    assert "self.planner.propose" not in stage
+    assert 'getattr(planner, "select"' not in composition
+    assert "cast(StepChoicePlanner, planner)" not in composition
+
+
+def test_strict_browsergym_path_does_not_construct_generalist_planner() -> None:
+    source = (SOURCE_ROOT / "benchmarks" / "browsergym_episode_runner.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "run_browsergym_generalist_episode"
+    )
+    strict_path = ast.get_source_segment(source, function) or ""
+
+    assert "GeneralistLMPlanner(" not in strict_path
+    assert "BrowserGymGeneralistPlanner(" not in strict_path
+    assert "StrictTaskPlanner(" in strict_path
+    assert "StrictStepChoicePlanner(" in strict_path
+
+
 def test_historical_profile_loads_quarantined_compatibility_algorithms() -> None:
     module_name = "affordance_runtime.compatibility_planner_algorithms"
     script = f"""

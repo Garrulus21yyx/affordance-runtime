@@ -20,7 +20,12 @@ from affordance_runtime.grounding import (
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.verification.mechanical import preflight
 from affordance_runtime.visual_contracts import VisualContractBinder
 from runtime_test_support import remember_observation
@@ -182,8 +187,8 @@ def test_browsergym_point_route_uses_unified_candidate_before_backend_encoding()
         revision=1,
         objective="Click the blue SVG point",
         operation_class=OperationClass.READ_ONLY,
-        targets=("svg",),
-        success_criteria=("point is activated",),
+        requirements=canonical_effect_requirements(("Blue point",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Blue point",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

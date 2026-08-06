@@ -14,7 +14,12 @@ from affordance_runtime.evolution import (
 from affordance_runtime.grounding import GroundingSource, UnifiedAffordance
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.task_skills import (
     IncrementalTaskSkillExecutor,
     SemanticTargetQuery,
@@ -56,8 +61,7 @@ def _canonical_skill_observation(
                 label=target.label,
                 surfaces=(GroundingSource.DOM,),
                 action_support=tuple(
-                    ActionSupport(action, (binding_id,))
-                    for action in sorted(target.supported_actions)
+                    ActionSupport(action, (binding_id,)) for action in sorted(target.supported_actions)
                 ),
                 state_facts=(),
                 binding_ids=(binding_id,),
@@ -214,8 +218,8 @@ def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoint
         revision=1,
         objective="Set Full name to Margaret",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("Full name",),
-        success_criteria=("profile value changed",),
+        requirements=canonical_effect_requirements(("Full name",), OperationClass.REVERSIBLE_WRITE, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Full name",)),
         source_request_ref="test",
     )
     bindings = {
@@ -250,9 +254,7 @@ def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoint
 def test_task_skill_mismatch_falls_through_without_losing_verified_progress() -> None:
     payload = _payload()
     observation = Observation("rev-1", snapshot_id="snap-1", page_revision="page-1")
-    target = UnifiedAffordance(
-        "semantic:other", "textbox", "Other", frozenset({"type_text"})
-    )
+    target = UnifiedAffordance("semantic:other", "textbox", "Other", frozenset({"type_text"}))
     state = StateKernel("profile-task", "Set Full name")
     remember_observation(state, observation)
     task = TaskSpec(
@@ -260,8 +262,8 @@ def test_task_skill_mismatch_falls_through_without_losing_verified_progress() ->
         revision=1,
         objective="Set Full name",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("Full name",),
-        success_criteria=("profile value changed",),
+        requirements=canonical_effect_requirements(("Full name",), OperationClass.REVERSIBLE_WRITE, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Full name",)),
         source_request_ref="test",
     )
     progress = TaskSkillProgress(
@@ -382,7 +384,11 @@ def test_task_skill_replay_gate_rejects_unbound_or_reused_reports() -> None:
     artifact = quarantine_task_skill(_payload(), registry)
     evidence = tuple(
         replace(
-            _replay(category, activated=category not in {"global_smoke", "safety_smoke"}, applicable=category not in {"global_smoke", "safety_smoke"}),
+            _replay(
+                category,
+                activated=category not in {"global_smoke", "safety_smoke"},
+                applicable=category not in {"global_smoke", "safety_smoke"},
+            ),
             replay_report_digest=_digest("one-reused-report"),
         )
         for category in ("original", "task_family", "heldout", "global_smoke", "safety_smoke")

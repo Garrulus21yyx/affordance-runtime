@@ -10,12 +10,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Awaitable, Protocol
 
-from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
+from affordance_runtime.criteria import LiteralValue, PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
     StepSpec,
 )
-from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    task_allowed_effects,
+    task_requires_decomposition,
+)
 from affordance_runtime.task_plan_contracts import (
     PlanProposal,
     TaskPlanGeneratorSource,
@@ -72,7 +77,7 @@ class PricingPlanProposalGenerator:
             StepSpec(
                 step_id="reveal-pro",
                 objective="Reveal the Pro plan limits",
-                interaction=ElementIntent("pricing.pro", task_source_refs(request.task_spec)),
+                interaction=ElementIntent("Show Pro limits", task_source_refs(request.task_spec)),
                 completion_criteria=(_target_revealed("criterion:reveal-pro", "pricing.pro"),),
                 source_refs=task_source_refs(request.task_spec),
                 requirement_refs=requirement_refs,
@@ -80,7 +85,7 @@ class PricingPlanProposalGenerator:
             StepSpec(
                 step_id="reveal-enterprise",
                 objective="Reveal the Enterprise plan limits",
-                interaction=ElementIntent("pricing.enterprise", task_source_refs(request.task_spec)),
+                interaction=ElementIntent("Show Enterprise limits", task_source_refs(request.task_spec)),
                 completion_criteria=(_target_revealed("criterion:reveal-enterprise", "pricing.enterprise"),),
                 source_refs=task_source_refs(request.task_spec),
                 requirement_refs=requirement_refs,
@@ -115,7 +120,7 @@ class PlanProposalGeneratorRouter:
         complex_task: bool | None = None,
     ) -> PlanProposal | Awaitable[PlanProposal]:
         if complex_task is None:
-            complex_task = request.task_spec.task_structure == TaskStructure.MULTI_STAGE
+            complex_task = task_requires_decomposition(request.task_spec)
         if not complex_task:
             return self.rule_generator.generate(request)
         if self.complex_generator is None:
@@ -129,22 +134,51 @@ def _steps_from_task_spec(
     default_evidence_source_kind: str,
 ) -> tuple[StepSpec, ...]:
     source_refs = task_source_refs(task_spec)
-    requirement_refs = tuple(item.requirement_id for item in task_spec.requirements)
+    allowed_effects = task_allowed_effects(task_spec)
+    requirement_refs = tuple(
+        item.requirement_id
+        for item in task_spec.requirements
+        if item.requirement_id not in set(task_spec.forbidden_effect_refs)
+    )
+    primary_effect = allowed_effects[0] if allowed_effects else None
+    primary_input = next(
+        (
+            item
+            for item in task_spec.inputs
+            if primary_effect is not None and item.requirement_ref == primary_effect.requirement_id
+        ),
+        None,
+    )
+    target = primary_effect.payload.subject if primary_effect is not None else task_spec.task_id
+    objective = (
+        primary_effect.payload.value or " ".join(filter(None, (primary_effect.payload.relation, target)))
+        if primary_effect is not None
+        else f"satisfy admitted requirements for {task_spec.task_id}"
+    )
     state_holds = task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
     return (
         StepSpec(
             step_id="step:implicit",
-            objective=task_spec.objective,
+            objective=objective,
             interaction=ElementIntent(
-                task_spec.targets[0] if task_spec.targets else task_spec.task_id,
+                target,
                 source_refs,
             ),
             completion_criteria=(
                 PredicateExpr(
                     "criterion:step:implicit",
-                    SubjectExpr("target", task_spec.targets[0] if task_spec.targets else task_spec.task_id),
-                    PredicateOperator.EXISTS if state_holds else PredicateOperator.CHANGED,
+                    SubjectExpr("target", target),
+                    (
+                        PredicateOperator.EXISTS
+                        if state_holds
+                        else PredicateOperator.EQUALS
+                        if primary_input is not None
+                        else PredicateOperator.CHANGED
+                    ),
                     _policy(default_evidence_source_kind, action_caused=not state_holds),
+                    value=(LiteralValue(primary_input.value) if primary_input is not None else None),
+                    source_refs=((primary_input.source_ref,) if primary_input is not None else ()),
+                    effect_refs=((primary_effect.requirement_id,) if primary_effect is not None else ()),
                 ),
             ),
             source_refs=source_refs,

@@ -25,7 +25,12 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.verification.contracts import SuccessExpression
 
 
@@ -54,16 +59,10 @@ class TimeoutObserver:
             revision,
             snapshot_id=snapshot_id,
             page_revision="timeout-page-v1",
-            target_fingerprints={
-                item.id: item.target_fingerprint for item in model.affordances
-            },
+            target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
             metadata={
                 "saved": self.world.saved,
-                "criterion_evaluations": (
-                    {"criterion:saved": "satisfied"}
-                    if self.world.saved
-                    else {}
-                ),
+                "criterion_evaluations": ({"criterion:saved": "satisfied"} if self.world.saved else {}),
             },
         )
         return BrowserSnapshot(observation, model)
@@ -104,10 +103,7 @@ class TimeoutPlanner:
         request: PlanningRequest,
     ) -> PlannerProposalResponse | PlannerDoneResponse:
         self.calls += 1
-        if any(
-            outcome.verification_status == "passed"
-            for outcome in request.recent_outcomes
-        ):
+        if any(outcome.verification_status == "passed" for outcome in request.recent_outcomes):
             return PlannerDoneResponse(result={"saved": True})
         return PlannerProposalResponse(
             proposal=PlannerProposal(
@@ -134,7 +130,6 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
 
     result = compose_run_coordinator(
         observer,
-        planner,
         executor,
         contract_builder=ContractBuilder(
             requirements={
@@ -153,7 +148,6 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                 )
             }
         ),
-        task_planner=None,
     ).run_sync(
         RunRequest(
             task_spec=TaskSpec(
@@ -161,14 +155,16 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                 revision=1,
                 objective="Save exactly once",
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                targets=("Save",),
-                success_criteria=("saved state is true",),
+                requirements=canonical_effect_requirements(
+                    ("Save",), OperationClass.REVERSIBLE_WRITE, "uncertain-effect-test", ("settings.write",)
+                ),
+                allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
                 success=SuccessExpression(
                     expression_id="success:saved",
                     operator="criterion",
                     criterion_id="criterion:saved",
                 ),
-                requested_capabilities=("settings.write",),
+                capability_ceiling=("settings.write",),
                 source_request_ref="uncertain-effect-test",
             ),
             capabilities=["settings.write"],
@@ -178,22 +174,19 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     assert result.status == RuntimeStep.DONE
     assert world.saved is True
     assert executor.calls == 1
-    assert planner.calls == 1
+    assert planner.calls == 0
     assert result.state.step_count == 1
     assert result.verification is not None and result.verification.passed
     assert result.state.current_failure is not None
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == "inspect_post_state"
     recovery_outcomes = [
-        node.payload["outcome"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
+        node.payload["outcome"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     ]
     assert recovery_outcomes
     assert recovery_outcomes[-1]["success"]
     assert any(
-        node.kind == "RecoveryStrategySelected"
-        and node.payload["decision"]["kind"] == "inspect_post_state"
+        node.kind == "RecoveryStrategySelected" and node.payload["decision"]["kind"] == "inspect_post_state"
         for node in result.trace.nodes
     )
     events = [node.kind for node in result.trace.nodes]

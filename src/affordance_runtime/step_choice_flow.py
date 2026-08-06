@@ -73,6 +73,35 @@ class StepChoiceFlow:
         recent_outcomes: tuple[ChoiceOutcomeSummary, ...] = (),
         budget: ChoicePlanningBudget = ChoicePlanningBudget(),
     ) -> StepChoiceFlowResult:
+        catalog_or_failure = self.build_catalog(
+            task_spec=task_spec,
+            plan_revision=plan_revision,
+            state_version=state_version,
+            step=step,
+            observation=observation,
+            capabilities=capabilities,
+        )
+        if isinstance(catalog_or_failure, ActionChoiceFailure):
+            return StepChoiceFlowResult(
+                StepChoiceFlowKind.FAILED,
+                failure_reason=catalog_or_failure.reason_code,
+            )
+        return self.choose_from_catalog(
+            catalog_or_failure,
+            recent_outcomes=recent_outcomes,
+            budget=budget,
+        )
+
+    def build_catalog(
+        self,
+        *,
+        task_spec: TaskSpec,
+        plan_revision: int,
+        state_version: int,
+        step: StepSpec,
+        observation: UnifiedObservation,
+        capabilities: frozenset[str],
+    ) -> ActionChoiceCatalog | ActionChoiceFailure:
         scope = ActiveStepScope.from_active_step(
             task_revision=task_spec.revision,
             evaluated_at_state_version=state_version,
@@ -80,7 +109,7 @@ class StepChoiceFlow:
             step=step,
             activity_status=StepActivityStatus.ACTIVE,
         )
-        catalog_or_failure = self.catalog_builder.build(
+        return self.catalog_builder.build(
             task_revision=task_spec.revision,
             task_spec=task_spec,
             plan_revision=plan_revision,
@@ -90,12 +119,14 @@ class StepChoiceFlow:
             observation=observation,
             capabilities=capabilities,
         )
-        if isinstance(catalog_or_failure, ActionChoiceFailure):
-            return StepChoiceFlowResult(
-                StepChoiceFlowKind.FAILED,
-                failure_reason=catalog_or_failure.reason_code,
-            )
-        catalog = catalog_or_failure
+
+    def choose_from_catalog(
+        self,
+        catalog: ActionChoiceCatalog,
+        *,
+        recent_outcomes: tuple[ChoiceOutcomeSummary, ...] = (),
+        budget: ChoicePlanningBudget = ChoicePlanningBudget(),
+    ) -> StepChoiceFlowResult:
         if catalog.count == 1:
             return StepChoiceFlowResult(
                 StepChoiceFlowKind.SELECTED,
@@ -119,9 +150,9 @@ class StepChoiceFlow:
                 failure_reason="step choice planner is not configured",
             )
         request = ChoicePlanningRequest(
-            task_spec.revision,
-            plan_revision,
-            step.step_id,
+            catalog.task_revision,
+            catalog.plan_revision,
+            catalog.active_step_id,
             catalog.ref,
             page,
             recent_outcomes,

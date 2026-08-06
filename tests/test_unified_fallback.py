@@ -29,7 +29,12 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -149,10 +154,7 @@ class CrossSurfaceObserver:
             ),
         )
         target = SemanticEntityResolver().resolve(
-            tuple(
-                CandidateDescriptor("button", "Visual Save", "click", "main", candidate)
-                for candidate in candidates
-            )
+            tuple(CandidateDescriptor("button", "Visual Save", "click", "main", candidate) for candidate in candidates)
         )[0]
         observation = replace(
             observation,
@@ -188,10 +190,7 @@ class FallbackPlanner:
         self,
         request: PlanningRequest,
     ) -> PlannerProposalResponse | PlannerDoneResponse:
-        if any(
-            outcome.verification_status == "passed"
-            for outcome in request.recent_outcomes
-        ):
+        if any(outcome.verification_status == "passed" for outcome in request.recent_outcomes):
             return PlannerDoneResponse(result={"saved": True})
         return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
@@ -219,15 +218,17 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
         revision=1,
         objective="Activate the visual save control at the current position",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("Visual Save",),
-        success_criteria=("saved state is true",),
+        requirements=canonical_effect_requirements(
+            ("Visual Save",), OperationClass.REVERSIBLE_WRITE, "test", ("settings.write",)
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Visual Save",)),
         success=SuccessExpression(
             expression_id="success:saved",
             operator="criterion",
             criterion_id="criterion:saved",
         ),
         source_request_ref="test",
-        requested_capabilities=("settings.write",),
+        capability_ceiling=("settings.write",),
     )
     builder = ContractBuilder(
         requirements={
@@ -248,10 +249,8 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=FallbackPlanner(),
         executor=executors,
         contract_builder=builder,
-        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
@@ -262,14 +261,12 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
     route_nodes = [node for node in result.trace.nodes if node.kind == "RouteSelected"]
     assert [node.payload["source"] for node in route_nodes] == ["visual"]
     rejected_dom_gate = next(
-        gate
-        for gate in route_nodes[0].payload["hard_gates"]
-        if gate["candidate_id"] == "candidate:dom:dom_button_1"
+        gate for gate in route_nodes[0].payload["hard_gates"] if gate["candidate_id"] == "candidate:dom:dom_button_1"
     )
     assert rejected_dom_gate == {
         "candidate_id": "candidate:dom:dom_button_1",
         "passed": False,
-        "reasons": ["required_evidence_missing"],
+        "reasons": ["source_not_acceptable", "required_evidence_missing"],
     }
     contract_nodes = [node for node in result.trace.nodes if node.kind == "ContractBuilt"]
     assert len(contract_nodes) == 1
@@ -323,7 +320,7 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
                     ttl_ms=60_000,
                     snapshot_id=snapshot_id,
                     page_revision="page-1",
-                    target_fingerprint=f"moving-point-{sequence}",
+                    target_fingerprint=f"moving-point-{left}",
                 ),
                 backend_candidates=["visual"],
                 confidence=0.95,
@@ -368,27 +365,17 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
             self,
             request: PlanningRequest,
         ) -> PlannerProposalResponse | PlannerDoneResponse:
-            if any(
-                outcome.verification_status == "passed"
-                for outcome in request.recent_outcomes
-            ):
+            if any(outcome.verification_status == "passed" for outcome in request.recent_outcomes):
                 return PlannerDoneResponse(result={"saved": True})
             return PlannerProposalResponse(
                 proposal_provenance=TEST_PROPOSAL_PROVENANCE,
                 proposal=PlannerProposal(
-                    proposal_id=(
-                        "moving-proposal-"
-                        f"{request.identity.evaluated_at_state_version}"
-                    ),
+                    proposal_id=(f"moving-proposal-{request.identity.evaluated_at_state_version}"),
                     based_on_task_revision=request.identity.task_revision,
-                    based_on_state_version=(
-                        request.identity.evaluated_at_state_version
-                    ),
+                    based_on_state_version=(request.identity.evaluated_at_state_version),
                     snapshot_id=request.identity.snapshot_id,
                     action_kind=PlannerActionKind.POINT_ACTIVATE,
-                    target_affordance_id=(
-                        request.observation.affordances[0].target_id
-                    ),
+                    target_affordance_id=(request.observation.affordances[0].target_id),
                 ),
             )
 
@@ -398,8 +385,8 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
         revision=1,
         objective="Click the visual moving target",
         operation_class=OperationClass.READ_ONLY,
-        targets=("Moving target",),
-        success_criteria=("saved state is true",),
+        requirements=canonical_effect_requirements(("Moving target",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Moving target",)),
         success=SuccessExpression(
             expression_id="success:saved",
             operator="criterion",
@@ -427,14 +414,12 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=MovingPointPlanner(),
         executor=executors,
         contract_builder=builder,
-        task_planner=None,
     ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert world.visual_clicks == 1
-    rebound = [node for node in result.trace.nodes if node.kind == "ContractReboundAtPreflight"]
-    assert len(rebound) == 1
-    assert rebound[0].payload["source_contract_hash"] != rebound[0].payload["contract_hash"]
+    assert not any(node.kind == "ContractReboundAtPreflight" for node in result.trace.nodes)
+    built = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
+    assert built.payload["target_fingerprint"] == "moving-point-200"

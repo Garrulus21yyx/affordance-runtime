@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.execution_phase import ActionStage, ActionStageInput
 from affordance_runtime.perception_phase import PerceptionStage, PerceptionStageInput
-from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.planning_phase import (
     PlanningStage,
     PlanningStageInput,
@@ -108,9 +107,7 @@ class RunCoordinator:
                     return loop.finish(terminal_failure.terminal)
                 terminal = loop.recover(
                     perception.failure,
-                    self.recovery_stage.available_commands(
-                        perception.failure, runtime_state_snapshot(loop.state)
-                    ),
+                    self.recovery_stage.available_commands(perception.failure, runtime_state_snapshot(loop.state)),
                     preserve_terminal=True,
                 )
                 if terminal is not None:
@@ -133,13 +130,8 @@ class RunCoordinator:
             )
             if recovery_observation is not None:
                 loop.commit(recovery_observation)
-                if (
-                    recovery_observation.output is not None
-                    and recovery_observation.output.verification is not None
-                ):
-                    loop.latest_verification = (
-                        recovery_observation.output.verification
-                    )
+                if recovery_observation.output is not None and recovery_observation.output.verification is not None:
+                    loop.latest_verification = recovery_observation.output.verification
                 if recovery_observation.terminal is not None:
                     return loop.finish(recovery_observation.terminal)
             progress = self.progress_stage.run(
@@ -178,9 +170,7 @@ class RunCoordinator:
             if planning.failure is not None:
                 terminal = loop.recover(
                     planning.failure,
-                    self.recovery_stage.available_commands(
-                        planning.failure, runtime_state_snapshot(loop.state)
-                    ),
+                    self.recovery_stage.available_commands(planning.failure, runtime_state_snapshot(loop.state)),
                 )
                 if terminal is not None:
                     return terminal
@@ -188,17 +178,13 @@ class RunCoordinator:
             assert planning.output is not None
             if planning.output.task_plan_changed:
                 continue
-            decision = planning.output.response
             skill_step_id = planning.output.skill_step_id
-            if (
-                not isinstance(decision, PlannerProposalResponse)
-                and (planning.output.selection is None or planning.output.catalog is None)
-            ):
+            if planning.output.selection is None or planning.output.catalog is None:
                 raise RuntimeError("planning stage returned no actionable proposal")
             action = self.action_stage.run(
                 ActionStageInput(
                     envelope=envelope,
-                    decision=decision,
+                    decision=None,
                     capture=capture,
                     observation=observation,
                     state_view=runtime_state_snapshot(loop.state),
@@ -224,9 +210,7 @@ class RunCoordinator:
             if action.failure is not None:
                 terminal = loop.recover(
                     action.failure,
-                    self.recovery_stage.available_commands(
-                        action.failure, runtime_state_snapshot(loop.state)
-                    ),
+                    self.recovery_stage.available_commands(action.failure, runtime_state_snapshot(loop.state)),
                 )
                 if terminal is not None:
                     return terminal
@@ -259,9 +243,7 @@ class RunCoordinator:
             if progress.failure is not None:
                 terminal = loop.recover(
                     progress.failure,
-                    self.recovery_stage.available_commands(
-                        progress.failure, runtime_state_snapshot(loop.state)
-                    ),
+                    self.recovery_stage.available_commands(progress.failure, runtime_state_snapshot(loop.state)),
                     terminate_all_handoffs=True,
                 )
                 if terminal is not None:
@@ -269,8 +251,7 @@ class RunCoordinator:
                 continue
             continuation = (
                 progress.output.loop_evaluation.observation_continuation
-                if progress.output is not None
-                and progress.output.loop_evaluation is not None
+                if progress.output is not None and progress.output.loop_evaluation is not None
                 else None
             )
             if continuation is not None and continuation.disposition in {

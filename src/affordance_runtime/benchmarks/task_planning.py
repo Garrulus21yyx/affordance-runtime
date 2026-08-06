@@ -297,8 +297,6 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
             ),
         ),
         allowed_effect_refs=("requirement:advance-stage",),
-        targets=("advance",),
-        success_criteria=(f"stage equals {target_stage}",),
         success=SuccessExpression(
             expression_id=f"success:stage-{target_stage}",
             operator="criterion",
@@ -311,7 +309,6 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
     counting = _CountingPlanner(planner)
     result = compose_run_coordinator(
         observer=environment,
-        planner=_StageActionPlanner(),
         executor=environment,
         contract_builder=_StageContractBuilder(),
         task_planner=counting,

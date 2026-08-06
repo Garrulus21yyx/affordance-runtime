@@ -40,7 +40,12 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
 )
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from affordance_runtime.verification.mechanical import VerifierLadder, VerifierSpec
 from runtime_test_support import legacy_step_spec, make_interaction, remember_observation
@@ -748,8 +753,8 @@ def test_generalist_builder_wires_exact_typed_value_scope() -> None:
         revision=1,
         objective="Search for Myron",
         operation_class=OperationClass.READ_ONLY,
-        targets=("Search",),
-        success_criteria=("search results are shown",),
+        requirements=canonical_effect_requirements(("Search",), OperationClass.READ_ONLY, "test", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Search",)),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

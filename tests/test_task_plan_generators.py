@@ -61,10 +61,8 @@ def _task_with_requirements() -> TaskSpec:
             _requirement("effect:submit", "submit_button", OperationClass.REVERSIBLE_WRITE),
         ),
         allowed_effect_refs=("effect:name", "effect:submit"),
-        targets=("name_field", "submit_button"),
-        success_criteria=("name field equals Alice", "form submitted"),
         evidence_requirements=("field value evidence", "submission evidence"),
-        requested_capabilities=("form.write",),
+        capability_ceiling=("form.write",),
         source_request_ref="request-1",
     )
 
@@ -81,7 +79,7 @@ def test_rule_generator_uses_flat_canonical_requirements() -> None:
     assert not hasattr(draft, "plan_version")
     assert tuple(step.step_id for step in draft.steps) == ("step:implicit",)
     assert draft.steps[0].requirement_refs == ("effect:name", "effect:submit")
-    assert draft.steps[0].objective == request.task_spec.objective
+    assert draft.steps[0].objective == "name_field"
 
 
 def test_synthetic_flat_generator_returns_single_draft_step() -> None:
@@ -91,8 +89,7 @@ def test_synthetic_flat_generator_returns_single_draft_step() -> None:
         objective="Read the account status",
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:account", "account", OperationClass.READ_ONLY),),
-        targets=("account",),
-        success_criteria=("account status visible",),
+        allowed_effect_refs=("requirement:account",),
         evidence_requirements=("DOM state evidence",),
         source_request_ref="request-1",
     )
@@ -100,7 +97,7 @@ def test_synthetic_flat_generator_returns_single_draft_step() -> None:
     draft = RulePlanProposalGenerator().generate(_request(task))
 
     assert tuple(step.step_id for step in draft.steps) == ("step:implicit",)
-    assert draft.steps[0].objective == "Read the account status"
+    assert draft.steps[0].objective == "account"
     assert draft.steps[0].source_refs[0].source_id == "request-1"
 
 
@@ -111,8 +108,6 @@ def test_pricing_task_plan_generator_returns_draft_not_accepted_plan() -> None:
         objective="Reveal pricing limits",
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:pricing", "pricing", OperationClass.READ_ONLY),),
-        targets=("pricing",),
-        success_criteria=("pricing limits visible",),
         evidence_requirements=("DOM state evidence",),
         source_request_ref="request-1",
     )

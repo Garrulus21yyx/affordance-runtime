@@ -29,8 +29,6 @@ from affordance_runtime.criteria import (
     criterion_id,
     evidence_requirement_id,
 )
-from affordance_runtime.execution_phase import ActionStageInput
-from affordance_runtime.failure_envelope import RemainingRecoveryBudgets
 from affordance_runtime.grounding import GroundingSource, SourceAssertion
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import (
@@ -41,7 +39,6 @@ from affordance_runtime.model_port import (
     ProviderModelError,
 )
 from affordance_runtime.observation_store import ObservationCommit, ObservationRef
-from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -57,9 +54,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.recovery_protocol import FailureOwner, classify_failure
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.runtime_state_projection import runtime_state_snapshot
 from affordance_runtime.simplified_runtime_contracts import (
     CriterionEvidencePolicy,
     ElementIntent,
@@ -70,7 +65,6 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
 )
 from affordance_runtime.source_assertions import SourceAssertionArbiter
-from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -84,9 +78,6 @@ from affordance_runtime.task_plan_contracts import (
     PlanProposal as PlanCandidate,
 )
 from affordance_runtime.task_plan_contracts import (
-    TaskPlan as CanonicalTaskPlan,
-)
-from affordance_runtime.task_plan_contracts import (
     TaskPlanGeneratorSource,
 )
 from affordance_runtime.task_planner import TaskPlanningRequest as TaskPlanningContext
@@ -98,7 +89,7 @@ from affordance_runtime.verification.contracts import (
     EvidenceValidityMode,
     SuccessExpression,
 )
-from runtime_test_support import canonical_observation, legacy_step_spec
+from runtime_test_support import legacy_step_spec
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -187,7 +178,6 @@ class FakeExecutor:
 def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> None:
     coordinator = compose_run_coordinator(
         observer=FakeObserver(),
-        planner=SavePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
@@ -245,7 +235,6 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
 def test_progress_stage_wires_positive_final_recheck_metadata_to_step_completion() -> None:
     result = compose_run_coordinator(
         observer=FinalRecheckObserver(),
-        planner=SavePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
         task_planner=FinalRecheckTaskPlanner(),
@@ -259,7 +248,6 @@ def test_progress_stage_wires_positive_final_recheck_metadata_to_step_completion
 def test_open_semantic_without_resolver_routes_to_typed_clarification() -> None:
     result = compose_run_coordinator(
         observer=FakeObserver(),
-        planner=SavePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
         task_planner=OpenSemanticTaskPlanner(),
@@ -277,10 +265,8 @@ def test_coordinator_continues_an_upstream_compiler_trace() -> None:
 
     result = compose_run_coordinator(
         observer=FakeObserver(),
-        planner=SavePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
-        task_planner=None,
     ).run_sync(_semantic_envelope("run-upstream"), trace)
 
     assert result.trace is trace
@@ -356,9 +342,7 @@ def test_coordinator_traces_source_assertion_decisions_and_targeted_perception()
     observer = AssertionObserver()
     result = compose_run_coordinator(
         observer=observer,
-        planner=FinishPlanner(),
         executor=FakeExecutor(),
-        task_planner=None,
     ).run_sync(_semantic_envelope("assertion-trace"))
 
     events = [node.kind for node in result.trace.nodes]
@@ -430,10 +414,8 @@ def test_coordinator_bounds_repeated_targeted_perception_requests() -> None:
     observer = LoopingObserver()
     result = compose_run_coordinator(
         observer=observer,
-        planner=FinishPlanner(),
         executor=FakeExecutor(),
         budget=RunBudget(max_active_perception_observations=2),
-        task_planner=None,
     ).run_sync(_semantic_envelope("bounded-perception"))
 
     assert observer.targeted_calls == 2
@@ -463,7 +445,6 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
     result = asyncio.run(
         compose_run_coordinator(
             observer=DriftingObserver(),
-            planner=SavePlanner(),
             executor=executor,
             contract_builder=_metadata_builder("saved"),
             task_planner=SingleStageTaskPlanner(),
@@ -859,15 +840,13 @@ def _current_state_availability_task() -> TaskSpec:
                 source_anchor_refs=("current-state-availability-request:whole_request",),
             ),
         ),
-        targets=("submit button",),
-        success_criteria=("submit button is available",),
         success=SuccessExpression(
             expression_id="success:submit-available",
             operator="criterion",
             criterion_id="criterion:submit-available",
         ),
         evidence_requirements=("current submit button observation",),
-        requested_capabilities=(),
+        capability_ceiling=(),
         source_request_ref="current-state-availability-request",
     )
 
@@ -876,7 +855,6 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
     task_planner = AsyncTwoStageTaskPlanner()
     result = compose_run_coordinator(
         observer=TwoStageObserver(),
-        planner=SubgoalAwarePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
         task_planner=task_planner,
@@ -897,7 +875,6 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
 def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() -> None:
     result = compose_run_coordinator(
         observer=CurrentStateReadOnlyObserver(),
-        planner=InitialAlreadySatisfiedPlanner(),
         executor=FakeExecutor(),
         task_planner=InitialAlreadySatisfiedTaskPlanner(),
     ).run_sync(RunRequest(task_spec=_current_state_availability_task()))
@@ -925,7 +902,6 @@ class EarlyFinishPlanner:
 def test_task_plan_rejects_planner_finish_without_verifier_backed_progress() -> None:
     result = compose_run_coordinator(
         observer=FakeObserver(),
-        planner=EarlyFinishPlanner(),
         executor=FakeExecutor(),
         task_planner=TwoStageTaskPlanner(),
     ).run_sync(_semantic_envelope())
@@ -978,7 +954,6 @@ def test_coordinator_does_not_replan_into_an_unverified_non_idempotent_repeat() 
     planner = ReplanningTaskPlanner()
     result = compose_run_coordinator(
         observer=ReplanObserver(),
-        planner=SubgoalAwarePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
         task_planner=planner,
@@ -1151,7 +1126,6 @@ def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() 
     )
     result = compose_run_coordinator(
         observer=EvidencePreservingObserver(),
-        planner=EvidenceAwareActionPlanner(),
         executor=FakeExecutor(),
         contract_builder=EvidenceAwareContractBuilder(),
         task_planner=task_planner,
@@ -1202,7 +1176,6 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
     result = asyncio.run(
         compose_run_coordinator(
             observer=StableObserver(),
-            planner=RepeatingPlanner(),
             executor=AlwaysFailExecutor(),
             contract_builder=ContractBuilder(
                 requirements={
@@ -1302,15 +1275,12 @@ def _semantic_task() -> TaskSpec:
         ),
         allowed_effect_refs=("requirement:test",),
         capability_ceiling=("settings.write",),
-        targets=("settings",),
-        success_criteria=("settings are saved",),
         success=SuccessExpression(
             expression_id="success:settings-saved",
             operator="criterion",
             criterion_id="criterion:task-success",
         ),
         evidence_requirements=("saved observation",),
-        requested_capabilities=("settings.write",),
         source_request_ref="semantic-request",
     )
 
@@ -1365,7 +1335,6 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     result = asyncio.run(
         compose_run_coordinator(
             observer=FakeObserver(),
-            planner=AsyncSemanticSavePlanner(),
             executor=FakeExecutor(),
             contract_builder=ContractBuilder(
                 requirements={
@@ -1398,143 +1367,6 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
     assert contract_event.payload["proposal_id"] == ""
     assert contract_event.payload["choice_id"].startswith("choice:")
-
-
-def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target() -> None:
-    snapshot = _snapshot(1)
-    state = StateKernel("generic-progress", "Record the Save control outcome")
-    state.remember_observation_commit(
-        ObservationCommit(
-            ObservationRef(snapshot.observation.snapshot_id, "sha256:test-snapshot"),
-            snapshot.observation.environment_revision,
-            snapshot.observation.page_revision,
-        )
-    )
-    state.install_task_plan(
-        CanonicalTaskPlan(
-            plan_id="plan-generic-progress",
-            task_id=state.task_id,
-            task_revision=1,
-            plan_version=1,
-            based_on_state_version=state.version,
-            based_on_observation_ref=snapshot.observation.snapshot_id,
-            generated_by=TaskPlanGeneratorSource.RULE,
-            steps=(
-                legacy_step_spec(
-                    step_id="save-observed",
-                    objective="Save state is recorded",
-                    interaction=ElementIntent(
-                        "Save",
-                        (SourceReference("request", "request:save"),),
-                        role="button",
-                    ),
-                    completion_criteria=(
-                        StateCriterion(
-                            criterion_id="criterion:save-observed",
-                            source_refs=(SourceReference("request", "request:save"),),
-                            subject="Save",
-                            relation=StateCriterionRelation.HAS_CHANGED,
-                            evidence_policy=CriterionEvidencePolicy(EvidenceStrength.INDEPENDENT, ("dom_state",)),
-                        ),
-                    ),
-                    source_refs=(SourceReference("request", "request:save"),),
-                ),
-            ),
-        )
-    )
-    state.activate_next_step()
-    proposal = PlannerProposal(
-        proposal_id="proposal-generic-progress",
-        based_on_task_revision=1,
-        based_on_state_version=state.version,
-        snapshot_id=snapshot.observation.snapshot_id,
-        subgoal="Save state is recorded",
-        action_kind=PlannerActionKind.ACTIVATE,
-        target_affordance_id="dom_button_1",
-    )
-    coordinator = compose_run_coordinator(
-        observer=StableObserver(),
-        planner=SubgoalAwarePlanner(),
-        executor=FakeExecutor(),
-        contract_builder=ContractBuilder(
-            requirements={
-                "dom_button_1": ContractRequirements(
-                    verifier_plan=(
-                        VerifierSpec(
-                            "observation_metadata",
-                            "saved",
-                            True,
-                            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
-                        ),
-                    ),
-                    required_capabilities=("settings.write",),
-                )
-            }
-        ),
-        task_planner=None,
-    )
-    capture = PerceptionCapture.from_browser_snapshot(snapshot)
-
-    bound = coordinator.action_stage._bind(
-        ActionStageInput(
-            envelope=RunRequest(
-                task_spec=_semantic_task().model_copy(update={"task_id": state.task_id}),
-                capabilities=["settings.write"],
-            ),
-            decision=PlannerProposalResponse(
-                proposal=proposal,
-                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
-            ),
-            capture=capture,
-            observation=canonical_observation(snapshot),
-            state_view=runtime_state_snapshot(state),
-            remaining_budgets=RemainingRecoveryBudgets(),
-        )
-    )
-
-    assert isinstance(bound, tuple)
-    contract = bound[0]
-    assert contract.verifier_plan[0].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
-    assert contract.verifier_plan[0].criterion_ids == ("criterion:save-observed",)
-    assert contract.verifier_plan[0].requirement_ids == ("request:save",)
-
-    signature = bound[1]
-    state.record_action_progress(
-        signature,
-        snapshot.observation.environment_revision,
-        verification_passed=True,
-        effect_satisfied=True,
-        post_page_revision=snapshot.observation.page_revision,
-    )
-    repeated_proposal = proposal.model_copy(
-        update={
-            "proposal_id": "proposal-generic-progress-repeat",
-            "based_on_state_version": state.version,
-        }
-    )
-    blocked = coordinator.action_stage._bind(
-        ActionStageInput(
-            envelope=RunRequest(
-                task_spec=_semantic_task().model_copy(update={"task_id": state.task_id}),
-                capabilities=["settings.write"],
-            ),
-            decision=PlannerProposalResponse(
-                proposal=repeated_proposal,
-                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
-            ),
-            capture=capture,
-            observation=canonical_observation(snapshot),
-            state_view=runtime_state_snapshot(state),
-            remaining_budgets=RemainingRecoveryBudgets(),
-        )
-    )
-
-    assert not isinstance(blocked, tuple)
-    assert blocked.failure is not None
-    assert blocked.failure.error_code == "progress_credit_invariant"
-    assert blocked.failure.phase.value == "progress"
-    assert classify_failure(blocked.failure).owner == FailureOwner.PROGRESS
-    assert blocked.directive == LoopDirective.NEXT_STAGE
 
 
 @dataclass
@@ -1596,10 +1428,8 @@ def test_progress_guard_blocks_already_verified_semantic_action() -> None:
     executor = CountingExecutor()
     result = compose_run_coordinator(
         observer=StableSavedObserver(saved=True),
-        planner=RepeatingSemanticPlanner(),
         executor=executor,
         contract_builder=_semantic_guard_builder(),
-        task_planner=None,
     ).run_sync(RunRequest(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
     assert result.status != RuntimeStep.DONE
@@ -1614,10 +1444,8 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta(tmp_pa
     executor = CountingExecutor()
     result = compose_run_coordinator(
         observer=StableSavedObserver(saved=False),
-        planner=RepeatingSemanticPlanner(),
         executor=executor,
         contract_builder=_semantic_guard_builder(),
-        task_planner=None,
         artifacts=ArtifactStore(tmp_path / "artifacts"),
     ).run_sync(RunRequest(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
@@ -1744,7 +1572,6 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
         compiler=LLMIntentCompiler(_PipelineIntentModel()),
         coordinator=compose_run_coordinator(
             observer=_PipelineObserver(),
-            planner=ActiveSubgoalSavePlanner(),
             executor=FakeExecutor(),
             contract_builder=_metadata_builder("saved"),
         ),
@@ -1778,26 +1605,6 @@ def test_async_planner_resolution_works_inside_an_existing_event_loop() -> None:
     assert asyncio.run(outer()).result == {"ok": True}
 
 
-def test_coordinator_rejects_stale_task_revision_before_execution() -> None:
-    task = _semantic_task()
-    result = asyncio.run(
-        compose_run_coordinator(
-            observer=StableObserver(),
-            planner=AsyncSemanticSavePlanner(revision=2),
-            executor=FakeExecutor(),
-            contract_builder=ContractBuilder(),
-            task_planner=None,
-        ).run(RunRequest(task_spec=task))
-    )
-
-    assert result.status == RuntimeStep.ABORTED
-    assert result.error_code == RuntimeErrorCode.STALE_TASK_REVISION
-    assert "PlannerProposalRejected" in [node.kind for node in result.trace.nodes]
-    assert "PlannerProposalValidated" not in [node.kind for node in result.trace.nodes]
-    assert "PlannerProposalProduced" not in [node.kind for node in result.trace.nodes]
-    assert result.state.last_receipt is None
-
-
 class MissingProvenancePlanner(AsyncSemanticSavePlanner):
     async def propose(
         self,
@@ -1809,30 +1616,6 @@ class MissingProvenancePlanner(AsyncSemanticSavePlanner):
         )
 
 
-def test_coordinator_rejects_missing_proposal_provenance_before_execution() -> None:
-    result = asyncio.run(
-        compose_run_coordinator(
-            observer=StableObserver(),
-            planner=MissingProvenancePlanner(),
-            executor=FakeExecutor(),
-            contract_builder=ContractBuilder(),
-            task_planner=None,
-        ).run(RunRequest(task_spec=_semantic_task()))
-    )
-
-    assert result.status == RuntimeStep.ABORTED
-    assert result.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
-    rejected = next(node for node in result.trace.nodes if node.kind == "PlannerProposalRejected")
-    assert rejected.payload["rejection_code"] == "missing_provenance"
-    assert rejected.payload["provenance"] is None
-    assert "PlannerProposalValidated" not in [node.kind for node in result.trace.nodes]
-    assert result.state.last_receipt is None
-    assert result.state.current_failure is not None
-    assert result.state.current_failure.phase.value == "proposal_validation"
-    terminal = next(node for node in reversed(result.trace.nodes) if node.kind == "FailureOwnerRouted")
-    assert terminal.payload["owner"] == "terminal"
-
-
 class ClarifyingPlanner(AsyncSemanticSavePlanner):
     async def propose(
         self,
@@ -1840,23 +1623,6 @@ class ClarifyingPlanner(AsyncSemanticSavePlanner):
     ) -> PlannerClarificationResponse:
         del request
         return PlannerClarificationResponse("Which settings profile should be changed?")
-
-
-def test_semantic_planner_can_request_clarification_without_contract_or_effect() -> None:
-    result = asyncio.run(
-        compose_run_coordinator(
-            observer=StableObserver(),
-            planner=ClarifyingPlanner(),
-            executor=FakeExecutor(),
-            contract_builder=ContractBuilder(),
-            task_planner=None,
-        ).run(RunRequest(task_spec=_semantic_task()))
-    )
-
-    assert result.status == RuntimeStep.WAITING_CLARIFICATION
-    assert result.state.last_receipt is None
-    assert result.result["clarification"] == "Which settings profile should be changed?"
-    assert "ClarificationRequested" in [node.kind for node in result.trace.nodes]
 
 
 class QuotaExhaustedPlanner:
@@ -1881,63 +1647,3 @@ class LegacyNoProposalPlanner:
             reason_code="legacy_decision_without_proposal",
             message="legacy planner did not produce an action",
         )
-
-
-def test_request_planner_unsupported_reason_reaches_recovery_failure() -> None:
-    result = compose_run_coordinator(
-        observer=StableObserver(),
-        planner=UnsupportedChoicePlanner(),
-        executor=FakeExecutor(),
-        task_planner=None,
-    ).run_sync(RunRequest(task_spec=_semantic_task()))
-
-    assert result.state.last_receipt is None
-    assert result.state.current_failure is not None
-    assert result.state.current_failure.error_code == "no_feasible_action_choice"
-    assert result.state.current_failure.message == ("Runtime could not construct an active-step action choice.")
-    assert result.state.current_recovery_decision is None
-    assert any(node.kind == "FailureOwnerRouted" and node.payload["owner"] == "terminal" for node in result.trace.nodes)
-
-
-def test_legacy_planner_no_proposal_fails_closed_without_replan() -> None:
-    result = compose_run_coordinator(
-        observer=StableObserver(),
-        planner=LegacyNoProposalPlanner(),
-        executor=FakeExecutor(),
-        budget=RunBudget(max_recoveries=2),
-        task_planner=None,
-    ).run_sync(RunRequest(task_spec=_semantic_task()))
-
-    assert result.state.current_failure is not None
-    assert result.state.current_failure.error_code == "legacy_decision_without_proposal"
-    assert result.state.current_recovery_decision is None
-    assert any(node.kind == "FailureOwnerRouted" and node.payload["owner"] == "terminal" for node in result.trace.nodes)
-    assert result.state.replan_count == 0
-
-
-def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tmp_path) -> None:
-    task = _semantic_task().model_copy(update={"task_id": "provider-defer"})
-    result = compose_run_coordinator(
-        observer=StableObserver(),
-        planner=QuotaExhaustedPlanner(),
-        executor=FakeExecutor(),
-        artifacts=ArtifactStore(tmp_path / "artifacts"),
-        task_planner=None,
-    ).run_sync(RunRequest(task_spec=task))
-
-    assert result.status == RuntimeStep.DEFERRED
-    assert result.error_code == RuntimeErrorCode.QUOTA_EXHAUSTED
-    assert result.result == {
-        "deferred": True,
-        "provider_failure": "quota_exhausted",
-        "retry_after_s": 60,
-        "resumable": True,
-    }
-    event = next(node for node in result.trace.nodes if node.kind == "PlannerDeferred")
-    assert event.payload["resumable"] is True
-    assert result.state.current_failure is not None
-    assert result.state.current_failure.phase.value == "provider_context"
-    handoff = next(node for node in reversed(result.trace.nodes) if node.kind == "FailureOwnerRouted")
-    assert handoff.payload["owner"] == "terminal"
-    assert "FailureDetected" in [node.kind for node in result.trace.nodes]
-    assert (tmp_path / "artifacts/provider-defer/run.json").exists()

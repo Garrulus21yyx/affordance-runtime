@@ -13,7 +13,12 @@ from affordance_runtime.integrations.task_api import (
     TaskRuntimeService,
     TaskToolAdapter,
 )
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 
 
 def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> None:
@@ -148,9 +153,11 @@ def _task_spec(revision: int, *, objective: str = "Update settings") -> TaskSpec
         revision=revision,
         objective=objective,
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("settings",),
-        success_criteria=("settings updated",),
-        requested_capabilities=("settings.write",),
+        requirements=canonical_effect_requirements(
+            ("settings",), OperationClass.REVERSIBLE_WRITE, "request-clarify", ("settings.write",)
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
+        capability_ceiling=("settings.write",),
         source_request_ref="request-clarify",
     )
 

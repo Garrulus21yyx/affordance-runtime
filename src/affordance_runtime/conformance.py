@@ -38,7 +38,12 @@ from affordance_runtime.planning import (
 from affordance_runtime.planning_contracts import PlannerDoneResponse, PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 
 CONFORMANCE_GOAL = "Enable one reversible shared state with independent oracle evidence."
 CONFORMANCE_CAPABILITY = "conformance.write.reversible"
@@ -111,7 +116,9 @@ class ConformanceContractBuilder(ActionContractMaterializer):
     surface: str = "dom"
     oracle_state_url: str = ""
 
-    def build(self, proposal: PlannerProposal, task_spec: TaskSpec, state: Any, snapshot: BrowserSnapshot, observation=None) -> ActionContract:
+    def build(
+        self, proposal: PlannerProposal, task_spec: TaskSpec, state: Any, snapshot: BrowserSnapshot, observation=None
+    ) -> ActionContract:
         self.requirements = {
             **self.requirements,
             proposal.target_affordance_id: ContractRequirements(
@@ -186,9 +193,10 @@ class WotConformanceObserver:
             "properties": td.get("properties"),
             "actions": td.get("actions"),
         }
-        revision = "sha256:" + hashlib.sha256(
-            json.dumps(semantic_td, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        revision = (
+            "sha256:"
+            + hashlib.sha256(json.dumps(semantic_td, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        )
         snapshot_id = f"snap_{uuid4().hex}"
         thing = WotAdapter().parse(
             td,
@@ -234,17 +242,18 @@ def run_cross_surface_conformance(
         _post_json(f"{oracle_url.rstrip('/')}/reset", {})
         run_id = f"cross-surface-{surface}"
         artifact_store = ArtifactStore(output_dir / "runs")
-        planner = ConformancePlanner(surface, oracle_state_url)
         envelope = RunRequest(
             task_spec=TaskSpec(
                 task_id=run_id,
                 revision=1,
                 objective=CONFORMANCE_GOAL,
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                targets=("shared state",),
-                success_criteria=("shared state is enabled",),
+                requirements=canonical_effect_requirements(
+                    ("shared state",), OperationClass.REVERSIBLE_WRITE, "conformance", (CONFORMANCE_CAPABILITY,)
+                ),
+                allowed_effect_refs=canonical_effect_requirement_refs(("shared state",)),
                 evidence_requirements=("independent oracle evidence",),
-                requested_capabilities=(CONFORMANCE_CAPABILITY,),
+                capability_ceiling=(CONFORMANCE_CAPABILITY,),
                 source_request_ref="conformance",
             ),
             capabilities=[CONFORMANCE_CAPABILITY],
@@ -260,7 +269,6 @@ def run_cross_surface_conformance(
                 router.register(DomExecutor(session))
                 result = compose_run_coordinator(
                     observer=session,
-                    planner=planner,
                     executor=router,
                     artifacts=artifact_store,
                     contract_builder=contract_builder,
@@ -273,7 +281,6 @@ def run_cross_surface_conformance(
                 router.register(VisualExecutor(session))
                 result = compose_run_coordinator(
                     observer=observer,
-                    planner=planner,
                     executor=router,
                     artifacts=artifact_store,
                     contract_builder=contract_builder,
@@ -283,7 +290,6 @@ def run_cross_surface_conformance(
             router.register(WotExecutor())
             result = compose_run_coordinator(
                 observer=WotConformanceObserver(wot_td_url),
-                planner=planner,
                 executor=router,
                 artifacts=artifact_store,
                 contract_builder=contract_builder,
@@ -306,7 +312,8 @@ def run_cross_surface_conformance(
                 screenshot_refs=[
                     ref
                     for node in result.trace.nodes
-                    if node.kind in {"ObservationCaptured", "PostActionObservationCaptured", "TargetedPerceptionCaptured"}
+                    if node.kind
+                    in {"ObservationCaptured", "PostActionObservationCaptured", "TargetedPerceptionCaptured"}
                     for ref in node.payload.get("artifact_refs", [])
                     if ref.endswith(".png")
                 ],

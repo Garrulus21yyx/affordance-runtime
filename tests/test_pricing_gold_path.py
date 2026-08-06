@@ -96,10 +96,9 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     result = asyncio.run(
         compose_run_coordinator(
             observer=session,
-            planner=PricingPlanner(),
             executor=router,
             contract_builder=pricing_contract_builder(),
-            task_planner=None,
+            task_planner=PricingTaskPlanner(),
             artifacts=ArtifactStore(tmp_path / "artifacts"),
         ).run(
             RunRequest(
@@ -109,8 +108,6 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
                     objective="extract pricing",
                     operation_class=OperationClass.READ_ONLY,
                     requirements=(_requirement("requirement:extract-pricing", "Extract Pro and Enterprise pricing"),),
-                    targets=("Pro", "Enterprise"),
-                    success_criteria=("pricing is structurally visible",),
                     success=pricing_success_expression(),
                     required_outputs=pricing_required_outputs(),
                     source_request_ref="pricing-test",
@@ -121,7 +118,8 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     )
 
     assert result.status == RuntimeStep.DONE
-    assert result.result["plans"] == PRICING_DATA
+    assert result.result["plans"]["output_id"] == "plans"
+    assert result.result["plans"]["materialization_criterion_id"] == ("criterion:pricing-enterprise-visible")
     assert result.state.step_count == 2
     assert result.state.step_count == 2
     assert result.state.last_receipt is not None
@@ -145,8 +143,6 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
                 "Reveal Pro and Enterprise plan limits with structural evidence",
             ),
         ),
-        targets=("Pro", "Enterprise"),
-        success_criteria=("both pricing plans are structurally visible",),
         success=pricing_success_expression(),
         required_outputs=pricing_required_outputs(),
         evidence_requirements=("post-action DOM evidence for each plan",),
@@ -155,7 +151,6 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
 
     result = compose_run_coordinator(
         observer=session,
-        planner=PricingPlanner(),
         executor=router,
         contract_builder=pricing_contract_builder(),
         task_planner=PricingTaskPlanner(),
@@ -198,8 +193,6 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
         objective="Reveal pricing",
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:reveal-pricing", "Reveal Pro and Enterprise pricing"),),
-        targets=("Pro", "Enterprise"),
-        success_criteria=("both pricing plans are visible",),
         evidence_requirements=("structural pricing evidence",),
         source_request_ref="pricing-request-source",
     )
@@ -274,8 +267,6 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
                 ),
             ),
             allowed_effect_refs=("requirement:reference-action",),
-            targets=(expected_label,),
-            success_criteria=(f"{expected_label} completed",),
             evidence_requirements=(f"{expected_label} evidence",),
             source_request_ref="reference-request-source",
         )

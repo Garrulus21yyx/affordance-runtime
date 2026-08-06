@@ -16,11 +16,8 @@ from affordance_runtime.execution_phase import ActionStage
 from affordance_runtime.observation_store import InMemoryObservationStore
 from affordance_runtime.perception_phase import PerceptionStage
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
-from affordance_runtime.planning import PlannerProposalValidator
-from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.planning_phase import PlanningStage
 from affordance_runtime.progress_phase import ProgressStage
-from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
 from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryStage
@@ -42,7 +39,6 @@ _DEFAULT_TASK_PLANNER = object()
 
 def compose_run_coordinator(
     observer: ObservationSource,
-    planner: PlannerPort,
     executor: Executor,
     *,
     verifier: VerifierLadder | None = None,
@@ -53,8 +49,6 @@ def compose_run_coordinator(
     budget: RunBudget | None = None,
     features: RuntimeFeatures | None = None,
     contract_builder: ActionContractBuilder | ActionContractMaterializer | None = None,
-    proposal_validator: PlannerProposalValidator | None = None,
-    proposal_recovery_policy: ProposalRejectionRecoveryPolicy | None = None,
     task_planner: TaskPlannerPort | None | object = _DEFAULT_TASK_PLANNER,
     step_choice_planner: StepChoicePlanner | None = None,
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None,
@@ -103,18 +97,10 @@ def compose_run_coordinator(
         if resolved_task_planner is not None
         else None
     )
-    resolved_step_choice_planner = step_choice_planner
-    if resolved_step_choice_planner is None:
-        compatibility_selector = getattr(planner, "select", None)
-        if callable(compatibility_selector):
-            resolved_step_choice_planner = cast(StepChoicePlanner, planner)
     planning = PlanningStage(
-        planner=planner,
         task_plan_flow=plan_flow,
-        step_choice_flow=StepChoiceFlow(resolved_step_choice_planner),
+        step_choice_flow=StepChoiceFlow(step_choice_planner),
         task_skill_runtime=task_skill_runtime,
-        proposal_validator=proposal_validator or PlannerProposalValidator(),
-        proposal_recovery_policy=(proposal_recovery_policy or ProposalRejectionRecoveryPolicy()),
     )
     if contract_builder is None:
         resolved_contract_builder = ActionContractBuilder(ActionContractMaterializer())

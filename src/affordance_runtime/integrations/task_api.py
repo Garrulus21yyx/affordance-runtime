@@ -12,7 +12,7 @@ from time import time
 from typing import Any, Callable
 
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
-from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_intake import TaskSpec, task_effect_targets
 
 
 class ServiceRunStatus(StrEnum):
@@ -46,9 +46,9 @@ class TaskRequest:
             raise ValueError("TaskRequest run_id does not match TaskSpec task_id")
         if self.goal and self.goal != task_spec.objective:
             raise ValueError("TaskRequest goal does not match TaskSpec objective")
-        requested_capabilities = set(task_spec.requested_capabilities)
-        if not set(self.capabilities).issubset(requested_capabilities):
-            raise ValueError("TaskRequest grants exceed TaskSpec requested_capabilities")
+        capability_ceiling = set(task_spec.capability_ceiling)
+        if not set(self.capabilities).issubset(capability_ceiling):
+            raise ValueError("TaskRequest grants exceed TaskSpec capability_ceiling")
 
     def to_dict(self) -> dict[str, Any]:
         value = {
@@ -174,11 +174,11 @@ class TaskRuntimeService:
             view.request = replace(
                 view.request,
                 goal=task_spec.objective,
-                target=task_spec.targets[0] if task_spec.targets else view.request.target,
+                target=(task_effect_targets(task_spec) or (view.request.target,))[0],
                 capabilities=[
                     capability
                     for capability in view.request.capabilities
-                    if capability in set(task_spec.requested_capabilities)
+                    if capability in set(task_spec.capability_ceiling)
                 ],
                 task_spec=task_spec,
             )

@@ -34,7 +34,14 @@ from affordance_runtime.semantic_audit import SemanticAudit, SemanticAuditStatus
 from affordance_runtime.source_context import TaskSpecGap
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, RequestedEffect, TaskSpec, UserRequest
+from affordance_runtime.task_intake import (
+    OperationClass,
+    RequestedEffect,
+    TaskSpec,
+    UserRequest,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.task_spec_authority import MinimalIntentProposal, TaskSpecAuthority
 from affordance_runtime.unified_observation import (
     CoverageCompleteness,
@@ -91,8 +98,8 @@ def _completion_task() -> TaskSpec:
         revision=1,
         objective="save record",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("record",),
-        success_criteria=("record saved",),
+        requirements=canonical_effect_requirements(("record",), OperationClass.REVERSIBLE_WRITE, "request:redline", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("record",)),
         success=SuccessExpression(
             expression_id="success:root",
             operator="criterion",
@@ -240,15 +247,17 @@ def _case_multi_binding() -> None:
         state_version=2,
         observation_ref=observation.epoch_id,
         active_step_id="step:active",
-        choices=(_choices(1)[0].__class__(
-            choice_id="choice:save",
-            task_revision=1,
-            state_version=2,
-            snapshot_id="observation:2",
-            active_step_id="step:active",
-            action_kind=PlannerActionKind.ACTIVATE,
-            target_id="target:save",
-        ),),
+        choices=(
+            _choices(1)[0].__class__(
+                choice_id="choice:save",
+                task_revision=1,
+                state_version=2,
+                snapshot_id="observation:2",
+                active_step_id="step:active",
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_id="target:save",
+            ),
+        ),
     )
     assert catalog.count == 1
     assert len([item for item in observation.bindings if item.semantic_target_id == "target:save"]) == 2
@@ -318,7 +327,12 @@ def _case_prose_not_completion() -> None:
     evaluation = TaskCompletionEvaluator().evaluate(
         task_spec=_completion_task(),
         criterion_results=(),
-        result_payload={"receipt_success": True, "latest_report_passed": True, "plan_exhausted": True, "summary": "done"},
+        result_payload={
+            "receipt_success": True,
+            "latest_report_passed": True,
+            "plan_exhausted": True,
+            "summary": "done",
+        },
         output_source_bindings={"record": ("resource:1",)},
     )
     assert evaluation.status != CriterionStatus.SATISFIED and not evaluation.completed
@@ -354,7 +368,13 @@ def _case_default_thin_source() -> None:
     envelope = SourceEnvelopeBuilder().build(request)
     proposal = MinimalIntentProposal(
         objective="Open settings",
-        requested_effects=(RequestedEffect(operation_class=OperationClass.NAVIGATION, target="settings", source_ref=envelope.whole_request_anchor.anchor_id),),
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
         success_criteria=("settings visible",),
     )
     result = TaskSpecAuthority().admit(request, envelope, proposal)
@@ -364,12 +384,48 @@ def _case_default_thin_source() -> None:
     assert importlib.util.find_spec("affordance_runtime.source_ledger") is None
 
 
+def test_task_spec_v2_has_one_canonical_field_set() -> None:
+    assert set(TaskSpec.model_fields) == {
+        "schema_version",
+        "task_id",
+        "revision",
+        "objective",
+        "operation_class",
+        "requirements",
+        "inputs",
+        "allowed_effect_refs",
+        "hard_constraint_refs",
+        "preference_refs",
+        "forbidden_effect_refs",
+        "capability_ceiling",
+        "risk_policy",
+        "success",
+        "required_outputs",
+        "criterion_source_bindings",
+        "constraint_criterion_ids",
+        "external_effect_criterion_ids",
+        "final_recheck_criterion_ids",
+        "semantic_value_constraints",
+        "evidence_requirements",
+        "source_request_ref",
+        "source_envelope_ref",
+        "source_binding_digest",
+        "created_at_s",
+    }
+
+
 def _case_audit_negative_authority() -> None:
     request = UserRequest(request_id="audit", raw_text="Open settings")
     envelope = SourceEnvelopeBuilder().build(request)
     proposal = MinimalIntentProposal(
         objective="Open settings",
-        requested_effects=(RequestedEffect(operation_class=OperationClass.NAVIGATION, target="settings", source_ref=envelope.whole_request_anchor.anchor_id),),
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
         success_criteria=("settings visible",),
     )
     result = SemanticAudit().evaluate(envelope, proposal, material_conflicts=("recipient",))
@@ -393,34 +449,20 @@ def _case_p1_recovery_commit_boundaries() -> None:
         for node in ast.walk(loop_tree)
         if isinstance(node, ast.Call)
     }
-    assert loop_calls.isdisjoint(
-        {"classify_failure", "build_failure_owner_handoff", "verify"}
-    )
+    assert loop_calls.isdisjoint({"classify_failure", "build_failure_owner_handoff", "verify"})
 
-    committer_tree = ast.parse(
-        (RUNTIME / "runtime_committer.py").read_text(encoding="utf-8")
-    )
+    committer_tree = ast.parse((RUNTIME / "runtime_committer.py").read_text(encoding="utf-8"))
     committer = next(
-        node
-        for node in committer_tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "RuntimeCommitter"
+        node for node in committer_tree.body if isinstance(node, ast.ClassDef) and node.name == "RuntimeCommitter"
     )
-    methods = {
-        node.name for node in committer.body if isinstance(node, ast.FunctionDef)
-    }
+    methods = {node.name for node in committer.body if isinstance(node, ast.FunctionDef)}
     names = {node.id for node in ast.walk(committer) if isinstance(node, ast.Name)}
     assert methods.isdisjoint({"commit_failure_owner", "commit_action"})
-    assert names.isdisjoint(
-        {"RecoveryOutcome", "classify_failure", "build_failure_owner_handoff"}
-    )
+    assert names.isdisjoint({"RecoveryOutcome", "classify_failure", "build_failure_owner_handoff"})
     assert not (RUNTIME / "task_planning.py").exists()
     assert not (RUNTIME / "legacy_task_plan_provider.py").exists()
     planner_tree = ast.parse((RUNTIME / "task_planner.py").read_text(encoding="utf-8"))
-    imported_modules = {
-        node.module or ""
-        for node in ast.walk(planner_tree)
-        if isinstance(node, ast.ImportFrom)
-    }
+    imported_modules = {node.module or "" for node in ast.walk(planner_tree) if isinstance(node, ast.ImportFrom)}
     assert "affordance_runtime.task_planning" not in imported_modules
 
 

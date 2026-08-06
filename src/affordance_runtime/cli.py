@@ -17,10 +17,7 @@ from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
 from affordance_runtime.planners import (
-    ExportPlanner,
-    PricingPlanner,
     PricingTaskPlanner,
-    SettingsPlanner,
     export_contract_builder,
     extract_pricing,
     pricing_contract_builder,
@@ -28,7 +25,6 @@ from affordance_runtime.planners import (
     pricing_success_expression,
     settings_contract_builder,
 )
-from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -409,11 +405,6 @@ def run_scenario(
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
-    planners: dict[str, PlannerPort] = {
-        "pricing": PricingPlanner(),
-        "settings": SettingsPlanner(),
-        "export": ExportPlanner(),
-    }
     capabilities = {
         "pricing": [],
         "settings": ["settings.write.reversible"],
@@ -444,8 +435,6 @@ def run_scenario(
                     OperationClass.READ_ONLY,
                 ),
             ),
-            targets=("Pro", "Enterprise"),
-            success_criteria=("both requested pricing plans are structurally visible",),
             success=pricing_success_expression(),
             required_outputs=pricing_required_outputs(),
             evidence_requirements=("post-action DOM evidence for each pricing plan",),
@@ -476,20 +465,10 @@ def run_scenario(
                 ),
             ),
             allowed_effect_refs=(() if profile_operation == OperationClass.READ_ONLY else (profile_requirement_id,)),
-            targets={
-                "pricing": ("Pro", "Enterprise"),
-                "settings": ("notifications",),
-                "export": ("report",),
-            }[scenario],
-            success_criteria={
-                "pricing": ("both requested pricing plans are structurally visible",),
-                "settings": ("notification setting is persisted",),
-                "export": ("approved report file is exported",),
-            }[scenario],
             success=(pricing_success_expression() if scenario == "pricing" else None),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
             evidence_requirements=("independent post-action evidence",),
-            requested_capabilities=tuple(
+            capability_ceiling=tuple(
                 capabilities_override if capabilities_override is not None else capabilities[scenario]
             ),
             source_request_ref="reference-cli-accepted-profile",
@@ -519,16 +498,10 @@ def run_scenario(
                 ),
             ),
             allowed_effect_refs=(() if default_operation == OperationClass.READ_ONLY else (default_requirement_id,)),
-            targets={
-                "pricing": ("Pro", "Enterprise"),
-                "settings": ("notifications",),
-                "export": ("report",),
-            }[scenario],
-            success_criteria=("requested scenario result is independently verified",),
             success=(pricing_success_expression() if scenario == "pricing" else None),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
             evidence_requirements=("independent post-action evidence",),
-            requested_capabilities=tuple(
+            capability_ceiling=tuple(
                 capabilities_override if capabilities_override is not None else capabilities[scenario]
             ),
             source_request_ref="reference-cli",
@@ -541,7 +514,6 @@ def run_scenario(
         router.register(DomExecutor(session))
         result = compose_run_coordinator(
             observer=session,
-            planner=planners[scenario],
             executor=router,
             contract_builder={
                 "pricing": pricing_contract_builder(),
@@ -550,13 +522,7 @@ def run_scenario(
             }[scenario],
             artifacts=ArtifactStore(artifact_root),
             approval_provider=approval_provider,
-            task_planner=(
-                PricingTaskPlanner()
-                if task_planning
-                else PlanningRouter()
-                if runtime_features.structural_verification
-                else None
-            ),
+            task_planner=(PricingTaskPlanner() if scenario == "pricing" else PlanningRouter()),
             features=runtime_features,
             task_skill_runtime=(loaded_profile.task_skill_runtime if loaded_profile is not None else None),
             runtime_profile_digest=(loaded_profile.profile_digest if loaded_profile is not None else ""),

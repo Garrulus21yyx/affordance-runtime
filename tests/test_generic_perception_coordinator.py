@@ -189,6 +189,12 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
     proposer = RecordingRegionProposer()
     observer = RecordingBrowserSession(page, proposer)
     pointer = CanvasPointer(page)
+    visual_target = observer.capture(
+        perception_requirements=PerceptionRequirements(
+            required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+            model_call_budget=1,
+        )
+    ).unified_affordances[0]
     task = TaskSpec(
         task_id="generic-visual-run",
         revision=1,
@@ -201,8 +207,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
                 OperationClass.READ_ONLY,
             ),
         ),
-        targets=("blue canvas control",),
-        success_criteria=("the page reports activated",),
+        allowed_effect_refs=("requirement:activate-canvas",),
         success=SuccessExpression(
             expression_id="success:activated",
             operator="criterion",
@@ -214,11 +219,23 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
 
     coordinator = compose_run_coordinator(
         observer=observer,
-        planner=VisualSemanticPlanner(),
         executor=VisualExecutor(pointer),
-        contract_builder=VerifiedVisualContractBuilder(),  # type: ignore[arg-type]
+        contract_builder=ContractBuilder(
+            requirements={
+                visual_target.semantic_target_id: ContractRequirements(
+                    verifier_plan=(
+                        VerifierSpec(
+                            "dom_contains",
+                            "page",
+                            "activated",
+                            criterion_ids=("criterion:activated",),
+                            progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                        ),
+                    )
+                )
+            }
+        ),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-        task_planner=None,
     )
     result = coordinator.run_sync(RunRequest(task_spec=task))
 
@@ -226,7 +243,11 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
     assert result.result == {}
     assert pointer.clicks == [(400, 300)]
     assert len(proposer.requests) >= 2
-    assert all(request.instruction == "Activate the blue visual canvas control" for request in proposer.requests)
+    assert all(
+        request.instruction == "Activate the blue visual canvas control"
+        for request in proposer.requests
+        if request.instruction
+    )
     assert all(
         isinstance(arguments["perception_requirements"], PerceptionRequirements)
         and EvidenceKind.VISUAL_APPEARANCE in arguments["perception_requirements"].required_properties
@@ -364,6 +385,7 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
     executors = ExecutorRouter()
     executors.register(dom)
     executors.register(VisualExecutor(pointer))
+    initial_targets = observer.capture().unified_affordances
     task = TaskSpec(
         task_id="generic-dom-visual-fallback",
         revision=1,
@@ -372,30 +394,42 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
         requirements=(
             _task_requirement(
                 "requirement:save-changes",
-                "Save changes using the visible control",
+                "Save changes",
                 OperationClass.REVERSIBLE_WRITE,
             ),
         ),
         allowed_effect_refs=("requirement:save-changes",),
-        targets=("Save changes",),
-        success_criteria=("the page reports saved",),
         success=SuccessExpression(
             expression_id="success:saved",
             operator="criterion",
             criterion_id="criterion:saved",
         ),
         evidence_requirements=("current page state",),
-        requested_capabilities=("settings.write",),
+        capability_ceiling=("settings.write",),
         source_request_ref="test-request",
     )
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=ActivateSemanticPlanner(),
         executor=executors,
-        contract_builder=VerifiedSaveContractBuilder(),  # type: ignore[arg-type]
+        contract_builder=ContractBuilder(
+            requirements={
+                target.semantic_target_id: ContractRequirements(
+                    verifier_plan=(
+                        VerifierSpec(
+                            "dom_contains",
+                            "page",
+                            "saved",
+                            criterion_ids=("criterion:saved",),
+                            progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                        ),
+                    ),
+                    idempotency_key="generic-settings-save-v1",
+                )
+                for target in initial_targets
+            }
+        ),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
@@ -482,23 +516,20 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
                 OperationClass.READ_ONLY,
             ),
         ),
-        targets=("Target",),
-        success_criteria=("the current target is activated",),
+        allowed_effect_refs=("requirement:activate-point",),
         evidence_requirements=("visual appearance and spatial position",),
         source_request_ref="test-request",
     )
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=InconclusivePlanner(),
         executor=VisualExecutor(CanvasPointer(page)),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
         budget=RunBudget(max_active_perception_observations=1),
-        task_planner=None,
     ).run_sync(RunRequest(task_spec=task))
 
-    assert result.status == RuntimeStep.FAILED
-    assert result.result == {"status": "inconclusive", "reason": "source conflict"}
+    assert result.status == RuntimeStep.ABORTED
+    assert result.result == {}
     assert "TaskCompleted" not in [node.kind for node in result.trace.nodes]
     events = [node.kind for node in result.trace.nodes]
     assert events.count("TargetedPerceptionCaptured") == 1

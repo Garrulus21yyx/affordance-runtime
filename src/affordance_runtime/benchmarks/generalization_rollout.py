@@ -83,7 +83,12 @@ from affordance_runtime.recovery_owner_dispatcher import (
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -128,11 +133,7 @@ class _SurfaceWorld:
             metadata={
                 "saved": self.saved,
                 "viewport_size": [640, 480],
-                "criterion_evaluations": {
-                    "criterion:surface-saved": (
-                        "satisfied" if self.saved else "unsatisfied"
-                    )
-                },
+                "criterion_evaluations": {"criterion:surface-saved": ("satisfied" if self.saved else "unsatisfied")},
             },
             artifact_refs=[f"fixture:{self.surface.value}:{self.sequence}"],
         )
@@ -378,12 +379,8 @@ class _DisclosureWorld:
                 "expanded": self.expanded,
                 "submitted": self.submitted,
                 "criterion_evaluations": {
-                    "criterion:disclosure-expanded": (
-                        "satisfied" if self.expanded else "unsatisfied"
-                    ),
-                    "criterion:provider-recovered": (
-                        "satisfied" if self.provider_recovered else "unsatisfied"
-                    ),
+                    "criterion:disclosure-expanded": ("satisfied" if self.expanded else "unsatisfied"),
+                    "criterion:provider-recovered": ("satisfied" if self.provider_recovered else "unsatisfied"),
                 },
             },
         )
@@ -686,14 +683,27 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
         revision=1,
         objective=f"Save through the {surface.value} surface",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=(
-            "Archive record"
-            if surface == Surface.ACCESSIBILITY
-            else "Save marker"
-            if surface == Surface.SVG
-            else "saved",
+        requirements=canonical_effect_requirements(
+            (
+                "Archive record"
+                if surface == Surface.ACCESSIBILITY
+                else "Save marker"
+                if surface == Surface.SVG
+                else "saved",
+            ),
+            OperationClass.REVERSIBLE_WRITE,
+            f"g5-rollout:{revision}",
+            (),
         ),
-        success_criteria=("saved state is true",),
+        allowed_effect_refs=canonical_effect_requirement_refs(
+            (
+                "Archive record"
+                if surface == Surface.ACCESSIBILITY
+                else "Save marker"
+                if surface == Surface.SVG
+                else "saved",
+            )
+        ),
         success=SuccessExpression(
             expression_id="success:surface-saved",
             operator="criterion",
@@ -704,7 +714,6 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
     )
     result = compose_run_coordinator(
         observer=world,
-        planner=planner,
         executor=world,
         contract_builder=ActionContractMaterializer(
             requirements={
@@ -720,7 +729,6 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
                 )
             }
         ),
-        task_planner=None,
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
     ).run_sync(RunRequest(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
@@ -745,26 +753,25 @@ def _run_compatibility_pair(
     ):
         world = _DisclosureWorld()
         model = _ClarificationModel()
-        delegate = GeneralistLMPlanner(model, planner_profile=profile)
-        planner = _DoneAfterDisclosurePlanner(delegate)
         task = TaskSpec(
             task_id=f"g5-{profile.value}-disclosure",
             revision=1,
             objective="Expand the section below.",
             operation_class=OperationClass.REVERSIBLE_WRITE,
-            targets=("Section",),
-        success_criteria=("expanded state is true",),
-        success=SuccessExpression(
-            expression_id="success:disclosure-expanded",
-            operator="criterion",
-            criterion_id="criterion:disclosure-expanded",
-        ),
+            requirements=canonical_effect_requirements(
+                ("Section",), OperationClass.REVERSIBLE_WRITE, f"g5-rollout:{revision}", ()
+            ),
+            allowed_effect_refs=canonical_effect_requirement_refs(("Section",)),
+            success=SuccessExpression(
+                expression_id="success:disclosure-expanded",
+                operator="criterion",
+                criterion_id="criterion:disclosure-expanded",
+            ),
             evidence_requirements=("expanded metadata",),
             source_request_ref=f"g5-rollout:{revision}",
         )
         result = compose_run_coordinator(
             observer=world,
-            planner=planner,
             executor=world,
             contract_builder=ActionContractMaterializer(
                 requirements={
@@ -780,7 +787,6 @@ def _run_compatibility_pair(
                     ),
                 }
             ),
-            task_planner=None,
             artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
         ).run_sync(RunRequest(task_spec=task))
         _write_case_manifest(output_dir, result, revision)
@@ -807,8 +813,6 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         revision=1,
         objective="Recover provider capacity without dispatching an effect",
         operation_class=OperationClass.READ_ONLY,
-        targets=(),
-        success_criteria=("provider recovery is recorded",),
         success=SuccessExpression(
             expression_id="success:provider-recovered",
             operator="criterion",
@@ -819,25 +823,16 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
     )
     result = compose_run_coordinator(
         observer=world,
-        planner=planner,
         executor=world,
-        task_planner=None,
-        recovery_owner_dispatcher=RecoveryOwnerDispatcher(
-            {RecoveryKind.SWITCH_PROVIDER: owner}
-        ),
+        recovery_owner_dispatcher=RecoveryOwnerDispatcher({RecoveryKind.SWITCH_PROVIDER: owner}),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
     ).run_sync(RunRequest(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
     recovery_success = any(
-        node.kind == "RecoveryOutcomeRecorded"
-        and bool(node.payload.get("outcome", {}).get("success"))
+        node.kind == "RecoveryOutcomeRecorded" and bool(node.payload.get("outcome", {}).get("success"))
         for node in result.trace.nodes
     )
-    success = (
-        result.status == RuntimeStep.DONE
-        and owner.calls == 1
-        and recovery_success
-    )
+    success = result.status == RuntimeStep.DONE and owner.calls == 1 and recovery_success
     return _ExecutedCase(result, planner.calls, planner.calls, 0, success, True)
 
 
@@ -930,18 +925,10 @@ def _write_case_manifest(
             "run_id": result.run_id,
             "status": result.status.value,
             "contract_hash": (
-                result.state.current_contract.contract_hash
-                if result.state.current_contract is not None
-                else ""
+                result.state.current_contract.contract_hash if result.state.current_contract is not None else ""
             ),
-            "receipt_ids": (
-                [result.state.last_receipt.contract_id]
-                if result.state.last_receipt is not None
-                else []
-            ),
-            "verification_status": (
-                result.verification.status.value if result.verification is not None else "none"
-            ),
+            "receipt_ids": ([result.state.last_receipt.contract_id] if result.state.last_receipt is not None else []),
+            "verification_status": (result.verification.status.value if result.verification is not None else "none"),
             "observation_epochs": [
                 str(node.payload.get("snapshot_id") or "")
                 for node in result.trace.nodes
@@ -949,8 +936,7 @@ def _write_case_manifest(
             ],
             "trace_events": [item.kind for item in result.trace.nodes],
             "artifacts": [
-                {"path": item.path, "sha256": item.sha256, "media_type": item.media_type}
-                for item in result.artifacts
+                {"path": item.path, "sha256": item.sha256, "media_type": item.media_type} for item in result.artifacts
             ],
         },
     )

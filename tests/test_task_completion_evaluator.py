@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.verification.contracts import (
     CriterionEvaluation,
     CriterionStatus,
@@ -32,8 +37,8 @@ def test_typed_completion_contracts_are_immutable_and_task_bound() -> None:
         revision=1,
         objective="save settings",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("settings",),
-        success_criteria=("legacy display only",),
+        requirements=canonical_effect_requirements(("settings",), OperationClass.REVERSIBLE_WRITE, "request:save", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
         success=success,
         required_outputs=(
             OutputSpec(
@@ -47,9 +52,7 @@ def test_typed_completion_contracts_are_immutable_and_task_bound() -> None:
     evaluation = TaskCompletionEvaluation(
         status=CriterionStatus.SATISFIED,
         root_criterion_id=task.success.expression_id,
-        criterion_results=(
-            CriterionEvaluation("criterion:saved", CriterionStatus.SATISFIED),
-        ),
+        criterion_results=(CriterionEvaluation("criterion:saved", CriterionStatus.SATISFIED),),
         result_payload={"saved_record": {"id": "record:1"}},
     )
 
@@ -73,9 +76,7 @@ def test_typed_completion_contracts_are_immutable_and_task_bound() -> None:
         ),
     ],
 )
-def test_success_expression_rejects_incomplete_shapes(
-    build: object, message: str
-) -> None:
+def test_success_expression_rejects_incomplete_shapes(build: object, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         build()  # type: ignore[operator]
 
@@ -191,8 +192,10 @@ def test_task_completion_requires_full_typed_closure(
         revision=1,
         objective="save settings",
         operation_class=OperationClass.EXTERNAL_SIDE_EFFECT,
-        targets=("settings",),
-        success_criteria=("legacy display only",),
+        requirements=canonical_effect_requirements(
+            ("settings",), OperationClass.EXTERNAL_SIDE_EFFECT, "request:save", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
         success=SuccessExpression(
             expression_id="success:root",
             operator="all_of",
@@ -234,26 +237,18 @@ def test_high_risk_completion_requires_declared_effect_and_authoritative_recheck
         revision=1,
         objective="perform external effect",
         operation_class=operation_class,
-        targets=("external-system",),
-        success_criteria=("effect observed",),
+        requirements=canonical_effect_requirements(("external-system",), operation_class, "request:high-risk", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("external-system",)),
         success=_leaf("criterion:effect-observed"),
         source_request_ref="request:high-risk",
     )
 
     evaluation = TaskCompletionEvaluator().evaluate(
         task_spec=task,
-        criterion_results=(
-            CriterionEvaluation(
-                "criterion:effect-observed", CriterionStatus.SATISFIED
-            ),
-        ),
+        criterion_results=(CriterionEvaluation("criterion:effect-observed", CriterionStatus.SATISFIED),),
         result_payload={"effect": "observed"},
     )
 
     assert evaluation.status == CriterionStatus.UNKNOWN
-    assert evaluation.uncertain_external_effects == (
-        "task_spec:external_effect_evaluation_required",
-    )
-    assert evaluation.missing_rechecks == (
-        "task_spec:authoritative_final_recheck_required",
-    )
+    assert evaluation.uncertain_external_effects == ("task_spec:external_effect_evaluation_required",)
+    assert evaluation.missing_rechecks == ("task_spec:authoritative_final_recheck_required",)

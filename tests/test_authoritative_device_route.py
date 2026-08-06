@@ -21,7 +21,12 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -63,21 +68,25 @@ class DeviceObserver:
             ttl_ms=60_000,
         )
         dom = replace(dom_model.affordances[0], backend_candidates=["dom"])
-        wot = WotAdapter().parse(
-            {
-                "id": "lamp",
-                "base": "http://fixture",
-                "actions": {
-                    "power": {
-                        "forms": [{"href": "/power", "op": "invokeaction"}],
-                    }
+        wot = (
+            WotAdapter()
+            .parse(
+                {
+                    "id": "lamp",
+                    "base": "http://fixture",
+                    "actions": {
+                        "power": {
+                            "forms": [{"href": "/power", "op": "invokeaction"}],
+                        }
+                    },
                 },
-            },
-            environment_revision=environment_revision,
-            snapshot_id=snapshot_id,
-            page_revision=page_revision,
-            ttl_ms=60_000,
-        ).affordances[0]
+                environment_revision=environment_revision,
+                snapshot_id=snapshot_id,
+                page_revision=page_revision,
+                ttl_ms=60_000,
+            )
+            .affordances[0]
+        )
         observation = Observation(
             environment_revision,
             snapshot_id=snapshot_id,
@@ -99,8 +108,7 @@ class DeviceObserver:
             ),
         )
         target = SemanticEntityResolver().resolve(
-            CandidateDescriptor("control", "Power", "activate", "lamp", item)
-            for item in candidates
+            CandidateDescriptor("control", "Power", "activate", "lamp", item) for item in candidates
         )[0]
         observation = replace(
             observation,
@@ -164,28 +172,27 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
     world = DeviceWorld()
     observer = DeviceObserver(world)
     executors = ExecutorRouter()
-    executors.register(
-        WotExecutor(send=lambda method, url, **kwargs: _turn_on(world, method, url, kwargs))
-    )
+    executors.register(WotExecutor(send=lambda method, url, **kwargs: _turn_on(world, method, url, kwargs)))
     task = TaskSpec(
         task_id="authoritative-device-route",
         revision=1,
         objective="Turn on the authoritative device property",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("Power",),
-        success_criteria=("device power is true",),
+        requirements=canonical_effect_requirements(
+            ("Power",), OperationClass.REVERSIBLE_WRITE, "test", ("device.write",)
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Power",)),
         success=SuccessExpression(
             expression_id="success:device-power",
             operator="criterion",
             criterion_id="criterion:device-power",
         ),
         evidence_requirements=("authoritative device state",),
-        requested_capabilities=("device.write",),
+        capability_ceiling=("device.write",),
         source_request_ref="test",
     )
     result = compose_run_coordinator(
         observer,
-        DevicePlanner(),
         executors,
         contract_builder=ContractBuilder(
             requirements={
@@ -203,7 +210,6 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
                 )
             }
         ),
-        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["device.write"]))
 
     assert result.status == RuntimeStep.DONE
@@ -211,11 +217,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
     assert result.verification is not None and result.verification.passed
     route = next(node for node in result.trace.nodes if node.kind == "RouteSelected")
     assert route.payload["source"] == GroundingSource.WOT.value
-    dom_gate = next(
-        item
-        for item in route.payload["hard_gates"]
-        if item["candidate_id"].startswith("candidate:dom:")
-    )
+    dom_gate = next(item for item in route.payload["hard_gates"] if item["candidate_id"].startswith("candidate:dom:"))
     assert dom_gate["passed"] is False
     assert "source_not_acceptable" in dom_gate["reasons"]
 

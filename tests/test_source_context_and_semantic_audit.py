@@ -1,4 +1,6 @@
-from affordance_runtime.material_contracts import MaterialEffectKind
+import pytest
+
+from affordance_runtime.material_contracts import MaterialEffectKind, MaterialField
 from affordance_runtime.semantic_audit import (
     SemanticAudit,
     SemanticAuditStatus,
@@ -86,3 +88,49 @@ def test_execution_consumer_cannot_obtain_source_context() -> None:
     assert view.context_only is True
     assert view.requirement_ids == (task_spec.requirements[0].requirement_id,)
     assert view.excerpts[0].content == request.raw_text
+    assert view.source_binding_digest == task_spec.source_binding_digest
+
+
+def test_source_context_rejects_anchor_from_an_unrequested_requirement() -> None:
+    raw_text = "Open alpha then inspect beta"
+    request = UserRequest(request_id="bound-context", raw_text=raw_text)
+    alpha_start = raw_text.index("alpha")
+    beta_start = raw_text.index("beta")
+    envelope = SourceEnvelopeBuilder().build(
+        request,
+        exact_anchors=(
+            (MaterialField.RESOURCE, alpha_start, alpha_start + len("alpha")),
+            (MaterialField.FILE, beta_start, beta_start + len("beta")),
+        ),
+    )
+    alpha_anchor, beta_anchor = envelope.anchors[1:]
+    proposal = MinimalIntentProposal(
+        objective=raw_text,
+        requested_effects=(
+            RequestedEffect(
+                effect_id="effect:alpha",
+                operation_class=OperationClass.NAVIGATION,
+                target="alpha",
+                source_ref=alpha_anchor.anchor_id,
+            ),
+            RequestedEffect(
+                effect_id="effect:beta",
+                operation_class=OperationClass.READ_ONLY,
+                target="beta",
+                source_ref=beta_anchor.anchor_id,
+            ),
+        ),
+        success_criteria=("alpha opened", "beta inspected"),
+    )
+    admitted = TaskSpecAuthority().admit(request, envelope, proposal)
+    assert admitted.task_spec is not None
+
+    with pytest.raises(PermissionError, match="not bound"):
+        SourceContextProjector().project(
+            request,
+            envelope,
+            admitted.task_spec,
+            consumer=SourceContextConsumer.TASK_PLANNER,
+            anchor_ids=(beta_anchor.anchor_id,),
+            requirement_ids=("effect:alpha",),
+        )

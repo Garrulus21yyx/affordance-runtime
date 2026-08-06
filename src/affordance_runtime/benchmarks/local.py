@@ -21,8 +21,7 @@ from affordance_runtime.coordinator import RuntimeFeatures
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import EXPORT_SHA256, LOCAL_SAAS_FIXTURE_VERSION, PRICING_DATA, create_fixture_server
-from affordance_runtime.planners import ExportPlanner, PricingPlanner, SettingsPlanner, extract_pricing
-from affordance_runtime.planning_contracts import PlannerPort
+from affordance_runtime.planners import extract_pricing
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 
 
@@ -119,7 +118,9 @@ class LocalSaasRunCase:
             steps=result.state.step_count,
             latency_ms=(time.perf_counter() - started_at) * 1_000.0,
             stale_actions_blocked=int("EnvironmentDriftDetected" in event_types),
-            effect_receipts=int(bool(result.verification and result.verification.passed and scenario in {"settings", "export"})),
+            effect_receipts=int(
+                bool(result.verification and result.verification.passed and scenario in {"settings", "export"})
+            ),
             verifier_false_accepts=false_accept,
             unsafe_side_effects=unsafe,
             recovery_attempts=recovery_attempts,
@@ -131,8 +132,7 @@ class LocalSaasRunCase:
             effective_recovery_actions=sum(
                 1
                 for node in result.trace.nodes
-                if node.kind == "RecoveryOutcomeRecorded"
-                and bool(node.payload.get("outcome", {}).get("success"))
+                if node.kind == "RecoveryOutcomeRecorded" and bool(node.payload.get("outcome", {}).get("success"))
             ),
             duplicate_effect_risks=int(recovery_actions.count("retry_idempotent") > 1),
             semantic_replay_success=status_success and oracle_success,
@@ -185,7 +185,12 @@ class LocalSaasRunCase:
                     session.click("text=Show Enterprise limits")
                     plans = extract_pricing(str(session.capture().observation.metadata.get("html") or ""))
                     expected_plans: dict[str, dict[str, Any]] = {
-                        name: {"users": value["users"], "projects": value["projects"], "support": value["support"], "visible": True}
+                        name: {
+                            "users": value["users"],
+                            "projects": value["projects"],
+                            "support": value["support"],
+                            "visible": True,
+                        }
                         for name, value in PRICING_DATA.items()
                     }
                     return plans == expected_plans, 0, 2, ""
@@ -217,12 +222,6 @@ class LocalSaasRunCase:
         features: RuntimeFeatures,
     ) -> tuple[Any, bool]:
         target = f"{self.base_url}/{ {'pricing': 'pricing', 'settings': 'settings', 'export': 'reports'}[scenario] }"
-        planners: dict[str, PlannerPort] = {
-            "pricing": PricingPlanner(),
-            "settings": SettingsPlanner(),
-            "export": ExportPlanner(),
-        }
-        planner = planners[scenario]
         with BrowserSession.launch(target, headless=self.headless) as session:
             self.observed_browser_version = self.observed_browser_version or session.browser_version
             router = ExecutorRouter()
@@ -231,7 +230,6 @@ class LocalSaasRunCase:
             run_id = f"{scenario}-{variant}-seed-{seed}"
             result = compose_run_coordinator(
                 observer=observer,
-                planner=planner,
                 executor=router,
                 approval_provider=(
                     ConfiguredApprovalProvider("benchmark", {"report.export"})
@@ -243,10 +241,14 @@ class LocalSaasRunCase:
             ).run_sync(
                 RunRequest(
                     run_id,
-                    {"pricing": "extract pricing", "settings": "enable notifications", "export": "export report"}[scenario],
+                    {"pricing": "extract pricing", "settings": "enable notifications", "export": "export report"}[
+                        scenario
+                    ],
                     target=target,
                     constraints={"approval_required": scenario == "export"},
-                    capabilities=["settings.write.reversible"] if scenario == "settings" else (["report.export"] if scenario == "export" else []),
+                    capabilities=["settings.write.reversible"]
+                    if scenario == "settings"
+                    else (["report.export"] if scenario == "export" else []),
                 )
             )
         state = _json_request(f"{self.base_url}/api/state")
@@ -255,7 +257,10 @@ class LocalSaasRunCase:
         elif scenario == "settings":
             oracle = state["settings"]["notifications"] == "enabled"
         else:
-            oracle = any(item.get("effect") == "report.export" and item.get("sha256") == EXPORT_SHA256 for item in state["audit_log"])
+            oracle = any(
+                item.get("effect") == "report.export" and item.get("sha256") == EXPORT_SHA256
+                for item in state["audit_log"]
+            )
         return result, oracle
 
 
@@ -289,7 +294,9 @@ def run_local_benchmark(
             seed_semantics="deterministic_distinct_layout_v2",
         ).to_dict()
         fingerprints = {seed: {run.fixture_variant for run in report.runs if run.seed == seed} for seed in seeds}
-        seed_fingerprints = {next(iter(values)) for values in fingerprints.values() if len(values) == 1 and "" not in values}
+        seed_fingerprints = {
+            next(iter(values)) for values in fingerprints.values() if len(values) == 1 and "" not in values
+        }
         if any(len(values) != 1 or "" in values for values in fingerprints.values()) or (
             len(seeds) > 1 and len(seed_fingerprints) != len(seeds)
         ):

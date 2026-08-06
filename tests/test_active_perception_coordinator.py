@@ -36,7 +36,12 @@ from affordance_runtime.planning_contracts import (
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.source_assertions import SourceAssertionArbiter
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.unified_grounding import candidate_from_affordance
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -138,8 +143,8 @@ def _task() -> TaskSpec:
         revision=1,
         objective="Save the requested setting",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("Save",),
-        success_criteria=("setting is saved",),
+        requirements=canonical_effect_requirements(("Save",), OperationClass.REVERSIBLE_WRITE, "request-1", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
         success=SuccessExpression(
             expression_id="success:effect-present",
             operator="criterion",
@@ -336,9 +341,7 @@ def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> N
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=FinishAfterObservationPlanner(),
         executor=RecordingExecutor(),
-        task_planner=None,
     ).run_sync(
         RunRequest(
             task_spec=_task().model_copy(
@@ -351,7 +354,7 @@ def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> N
     )
 
     events = [node.kind for node in result.trace.nodes]
-    assert result.status == RuntimeStep.FAILED
+    assert result.status == RuntimeStep.ABORTED
     assert observer.targeted_captures == 0
     assert "EvidenceGapDetected" in events
     assert "TargetedPerceptionBudgetExhausted" in events
@@ -365,9 +368,7 @@ def test_targeted_probe_resolves_injected_conflict_in_a_new_epoch() -> None:
     observer = ResolvingConflictObserver()
     result = compose_run_coordinator(
         observer=observer,
-        planner=FinishAfterObservationPlanner(),
         executor=RecordingExecutor(),
-        task_planner=None,
     ).run_sync(
         RunRequest(
             task_spec=_task().model_copy(
@@ -392,33 +393,31 @@ def test_targeted_probe_resolves_injected_conflict_in_a_new_epoch() -> None:
     )
 
 
-def test_material_preflight_conflict_surviving_probe_blocks_effectful_execution() -> None:
+def test_material_conflict_surviving_probe_blocks_effectful_execution() -> None:
     observer = PreflightConflictObserver()
     executor = RecordingExecutor()
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=OneContractPlanner(),
         executor=executor,
         contract_builder=_contract_builder(verify_effect=True),
-        task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
     ).run_sync(RunRequest(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.ABORTED
-    assert result.error_code == RuntimeErrorCode.PRECONDITION_FAILED
+    assert result.error_code is None
     assert executor.contracts == []
     assert observer.targeted_captures == 1
     assert "ActivePerceptionPlanned" in events
     assert "ProbeStarted" in events
     assert "ProbeCompleted" in events
     assert "EvidenceGapUnresolved" in events
-    assert "PreflightBlocked" in events
+    assert "PerceptionBlockedEffectfulAction" in events
     assert result.state.perception_resolution is not None
     assert result.state.perception_resolution.blocks_effectful_action
     assert result.state.current_failure is not None
-    assert result.state.current_failure.phase.value == "preflight"
+    assert result.state.current_failure.phase.value == "fusion"
     assert "FailureDetected" in events
 
 
@@ -444,10 +443,8 @@ def test_inconclusive_verification_probes_fresh_evidence_without_repeating_effec
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=OneContractPlanner(),
         executor=executor,
         contract_builder=_contract_builder(),
-        task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
     ).run_sync(RunRequest(task_spec=_task()))
 
@@ -500,9 +497,7 @@ class RecoveryInspectionObserver:
 
 
 class RecoveryAwarePlanner:
-    def propose(
-        self, request: PlanningRequest
-    ) -> PlannerProposalResponse | PlannerDoneResponse:
+    def propose(self, request: PlanningRequest) -> PlannerProposalResponse | PlannerDoneResponse:
         if request.recent_outcomes:
             return PlannerDoneResponse(result={"effect_confirmed": True})
         return OneContractPlanner().propose(request)
@@ -533,10 +528,8 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
 
     result = compose_run_coordinator(
         observer=observer,
-        planner=RecoveryAwarePlanner(),
         executor=executor,
         contract_builder=_contract_builder(verify_effect=True),
-        task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
     ).run_sync(RunRequest(task_spec=_task()))
 
@@ -549,9 +542,7 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     assert "FailureDetected" in events
     assert "RecoveryOutcomeRecorded" in events
     recovery_outcome = next(
-        node.payload["outcome"]
-        for node in reversed(result.trace.nodes)
-        if node.kind == "RecoveryOutcomeRecorded"
+        node.payload["outcome"] for node in reversed(result.trace.nodes) if node.kind == "RecoveryOutcomeRecorded"
     )
     assert recovery_outcome["success"]
     assert recovery_outcome["changed_dimensions"][0] == "effect_status"

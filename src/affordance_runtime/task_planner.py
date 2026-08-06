@@ -21,7 +21,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
     interaction_for_state,
 )
-from affordance_runtime.task_intake import StrictModel, TaskSpec, TaskStructure
+from affordance_runtime.task_intake import StrictModel, TaskSpec
 from affordance_runtime.task_plan_contracts import PlanProposal, TaskPlanGeneratorSource
 from affordance_runtime.task_source_references import task_source_refs
 from affordance_runtime.verification.contracts import (
@@ -161,11 +161,9 @@ class PlanningRouter:
                 gap_code="plan_exhausted_without_new_milestone",
                 requirement_refs=tuple(item.requirement_id for item in request.task_spec.requirements),
             )
-        if request.task_spec.task_structure != TaskStructure.MULTI_STAGE:
-            return RulePlanProposalGenerator().generate(request)
-        if self.complex_planner is None:
-            return RulePlanProposalGenerator().generate(request)
-        return self.complex_planner.propose(request)
+        if self.complex_planner is not None:
+            return self.complex_planner.propose(request)
+        return RulePlanProposalGenerator().generate(request)
 
 
 class TaskPlanStepProposal(StrictModel):
@@ -217,6 +215,7 @@ class StrictTaskPlanner:
 
     model: ModelPort
     config: ModelConfig = field(default_factory=task_planner_model_config)
+    model_call_count: int = field(default=0, init=False)
 
     async def propose(self, request: TaskPlanningRequest) -> PlanProposal:
         payload = serialize_task_planning_request(request)
@@ -230,6 +229,7 @@ class StrictTaskPlanner:
                 ),
             ),
         )
+        self.model_call_count += 1
         response = await self.model.generate_structured(
             messages,
             TaskPlanProviderResponse,

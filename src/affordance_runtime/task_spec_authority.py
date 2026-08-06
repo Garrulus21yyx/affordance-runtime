@@ -14,6 +14,7 @@ from affordance_runtime.task_intake import (
     CompilationIssue,
     CompilationPolicy,
     CompilationStatus,
+    CriterionSourceBinding,
     InputBinding,
     IntentAmbiguity,
     IntentEntity,
@@ -74,9 +75,7 @@ class TaskSpecAuthority:
     """Validate, canonicalize and admit exactly one TaskSpec revision."""
 
     policy: CompilationPolicy = field(default_factory=CompilationPolicy)
-    material_binding_policy: MaterialBindingPolicy = field(
-        default_factory=MaterialBindingPolicy
-    )
+    material_binding_policy: MaterialBindingPolicy = field(default_factory=MaterialBindingPolicy)
 
     def admit(
         self,
@@ -142,9 +141,7 @@ class TaskSpecAuthority:
             key=operation_class_rank,
         )
         effects = tuple(
-            effect.model_copy(
-                update={"effect_id": effect.effect_id or f"requirement:effect:{index}"}
-            )
+            effect.model_copy(update={"effect_id": effect.effect_id or f"requirement:effect:{index}"})
             for index, effect in enumerate(proposal.requested_effects, start=1)
         )
         requirements = _canonical_requirements(proposal, effects, envelope)
@@ -153,26 +150,22 @@ class TaskSpecAuthority:
         outputs = tuple(
             output.model_copy(
                 update={
-                    "requirement_ref": output.requirement_ref
-                    or _default_output_requirement(requirements),
+                    "requirement_ref": f"requirement:output:{index}",
                     "source_binding_requirement": (
                         output.source_binding_requirement
                         if output.source_binding_requirement != ("source:any",)
                         else tuple(
                             item.binding_id
                             for item in inputs
-                            if item.requirement_ref
-                            == (
-                                output.requirement_ref
-                                or _default_output_requirement(requirements)
-                            )
+                            if not output.requirement_ref or item.requirement_ref == output.requirement_ref
                         )
                         or output.source_binding_requirement
                     ),
                 }
             )
-            for output in proposal.required_outputs
+            for index, output in enumerate(proposal.required_outputs, start=1)
         )
+        criterion_source_bindings = _criterion_source_bindings(proposal, requirements, outputs)
         task_spec = TaskSpec(
             task_id=task_id or request.request_id,
             revision=revision,
@@ -182,55 +175,32 @@ class TaskSpecAuthority:
             inputs=inputs,
             allowed_effect_refs=tuple(item.effect_id for item in effects),
             hard_constraint_refs=tuple(
-                item.requirement_id
-                for item in requirements
-                if item.payload.kind == "constraint"
+                item.requirement_id for item in requirements if item.payload.kind == "constraint"
             ),
-            preference_refs=tuple(
-                item.requirement_id
-                for item in requirements
-                if item.payload.kind == "preference"
-            ),
+            preference_refs=tuple(item.requirement_id for item in requirements if item.payload.kind == "preference"),
             forbidden_effect_refs=tuple(
                 item.requirement_id
                 for item in requirements
                 if item.payload.kind == "effect" and item.payload.subject in proposal.forbidden_effects
             ),
-            capability_ceiling=_ordered_unique(
-                item.capability for item in effects if item.capability
-            ),
+            capability_ceiling=_ordered_unique(item.capability for item in effects if item.capability),
             risk_policy=TaskRiskPolicy(
                 maximum_operation_class=operation,
-                approval_required=operation
-                in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
+                approval_required=operation in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
                 authoritative_final_recheck_required=operation
                 in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
             ),
-            task_structure=proposal.task_structure,
-            targets=_ordered_unique(item.target for item in effects),
-            entities=proposal.entities,
-            preferences=proposal.preferences,
-            desired_outputs=proposal.desired_outputs,
-            success_criteria=proposal.success_criteria,
             success=proposal.success,
             required_outputs=outputs,
+            criterion_source_bindings=criterion_source_bindings,
             constraint_criterion_ids=proposal.constraint_criterion_ids,
             external_effect_criterion_ids=proposal.external_effect_criterion_ids,
             final_recheck_criterion_ids=proposal.final_recheck_criterion_ids,
-            constraints=proposal.constraints,
             semantic_value_constraints=proposal.semantic_value_constraints,
-            forbidden_effects=proposal.forbidden_effects,
             evidence_requirements=proposal.evidence_requirements,
-            requested_capabilities=_ordered_unique(
-                item.capability for item in proposal.requested_effects if item.capability
-            ),
-            ambiguity_status="resolved" if not proposal.ambiguities else "non_blocking",
             source_request_ref=request.request_id,
             source_envelope_ref=envelope.identity,
-            source_binding_digest=self.material_binding_policy.binding_digest(
-                envelope, proposal.material_bindings
-            ),
-            field_provenance=(),
+            source_binding_digest=self.material_binding_policy.binding_digest(envelope, proposal.material_bindings),
         )
         assert all(item.requirement_ref in requirement_ids for item in inputs)
         return TaskSpecAdmissionResult(
@@ -248,14 +218,8 @@ class TaskSpecAuthority:
     ) -> list[CompilationIssue]:
         if envelope.request_id != request.request_id:
             return [CompilationIssue(code="source_envelope_request_mismatch", field="request_id")]
-        authority_source_ids = {
-            item.source_id for item in envelope.sources if item.kind != SourceKind.TARGET
-        }
-        authorized = {
-            item.anchor_id
-            for item in envelope.anchors
-            if item.source_id in authority_source_ids
-        }
+        authority_source_ids = {item.source_id for item in envelope.sources if item.kind != SourceKind.TARGET}
+        authorized = {item.anchor_id for item in envelope.anchors if item.source_id in authority_source_ids}
         authorized.update(authority_source_ids)
         issues: list[CompilationIssue] = []
         forbidden = {_normalized(item) for item in (*self.policy.forbidden_effects, *proposal.forbidden_effects)}
@@ -275,23 +239,43 @@ class TaskSpecAuthority:
                     )
                 )
             if effect.operation_class not in self.policy.allowed_operations:
-                issues.append(CompilationIssue(code="operation_denied", field="requested_effects", detail=effect.operation_class.value))
+                issues.append(
+                    CompilationIssue(
+                        code="operation_denied", field="requested_effects", detail=effect.operation_class.value
+                    )
+                )
             if effect.capability in self.policy.denied_capabilities:
-                issues.append(CompilationIssue(code="capability_denied", field="requested_effects", detail=effect.capability))
+                issues.append(
+                    CompilationIssue(code="capability_denied", field="requested_effects", detail=effect.capability)
+                )
             if (
                 effect.capability
                 and self.policy.allowed_requested_capabilities is not None
                 and effect.capability not in self.policy.allowed_requested_capabilities
             ):
-                issues.append(CompilationIssue(code="capability_not_allowed", field="requested_effects", detail=effect.capability))
+                issues.append(
+                    CompilationIssue(code="capability_not_allowed", field="requested_effects", detail=effect.capability)
+                )
             if forbidden.intersection({_normalized(effect.target), _normalized(effect.description)}):
-                issues.append(CompilationIssue(code="forbidden_effect", field="requested_effects", detail=effect.target))
+                issues.append(
+                    CompilationIssue(code="forbidden_effect", field="requested_effects", detail=effect.target)
+                )
         for index, entity in enumerate(proposal.entities):
             if entity.source_ref not in authorized:
-                issues.append(CompilationIssue(code="unsourced_intent_entity", field=f"entities[{index}]", detail=entity.source_ref))
+                issues.append(
+                    CompilationIssue(
+                        code="unsourced_intent_entity", field=f"entities[{index}]", detail=entity.source_ref
+                    )
+                )
         for index, constraint in enumerate(proposal.semantic_value_constraints):
             if constraint.source_ref not in authorized:
-                issues.append(CompilationIssue(code="unsourced_semantic_value_constraint", field=f"semantic_value_constraints[{index}]", detail=constraint.source_ref))
+                issues.append(
+                    CompilationIssue(
+                        code="unsourced_semantic_value_constraint",
+                        field=f"semantic_value_constraints[{index}]",
+                        detail=constraint.source_ref,
+                    )
+                )
         issues.extend(
             self.material_binding_policy.validate(
                 request,
@@ -335,6 +319,19 @@ def _canonical_requirements(
     ]
     rows.extend(
         TaskRequirement(
+            requirement_id=f"requirement:entity:{index}",
+            payload=TaskSemanticPayload(
+                kind="entity",
+                subject=entity.name,
+                relation="equals",
+                value=entity.value,
+            ),
+            source_anchor_refs=(entity.source_ref,),
+        )
+        for index, entity in enumerate(proposal.entities, start=1)
+    )
+    rows.extend(
+        TaskRequirement(
             requirement_id=f"requirement:constraint:{index}",
             payload=TaskSemanticPayload(kind="constraint", subject=value),
             source_anchor_refs=(whole,),
@@ -357,11 +354,67 @@ def _canonical_requirements(
         )
         for index, value in enumerate(proposal.forbidden_effects, start=1)
     )
+    rows.extend(
+        TaskRequirement(
+            requirement_id=f"requirement:output:{index}",
+            payload=TaskSemanticPayload(
+                kind="output",
+                subject=output.output_id,
+                relation="materialized_by",
+                value=output.materialization_criterion_id,
+            ),
+            source_anchor_refs=(whole,),
+        )
+        for index, output in enumerate(proposal.required_outputs, start=1)
+    )
+    rows.extend(
+        TaskRequirement(
+            requirement_id=f"requirement:desired-output:{index}",
+            payload=TaskSemanticPayload(kind="output", subject=value),
+            source_anchor_refs=(whole,),
+        )
+        for index, value in enumerate(proposal.desired_outputs, start=1)
+    )
     return tuple(rows)
 
 
-def _default_output_requirement(requirements: tuple[TaskRequirement, ...]) -> str:
-    return next(
-        (item.requirement_id for item in requirements if item.payload.kind == "effect"),
-        requirements[0].requirement_id if requirements else "",
+def _criterion_source_bindings(
+    proposal: MinimalIntentProposal,
+    requirements: tuple[TaskRequirement, ...],
+    outputs: tuple[OutputSpec, ...],
+) -> tuple[CriterionSourceBinding, ...]:
+    requirement_ids = tuple(item.requirement_id for item in requirements)
+    effect_refs = tuple(
+        item.requirement_id
+        for item in requirements
+        if item.payload.kind == "effect" and item.payload.relation != "forbidden"
     )
+    constraint_refs = tuple(item.requirement_id for item in requirements if item.payload.kind == "constraint")
+    rows: dict[str, list[str]] = {}
+
+    def bind(criterion_id: str, refs: tuple[str, ...]) -> None:
+        if not criterion_id or not refs:
+            return
+        bucket = rows.setdefault(criterion_id, [])
+        bucket.extend(ref for ref in refs if ref not in bucket)
+
+    for index, criterion_id in enumerate(proposal.constraint_criterion_ids):
+        bind(criterion_id, (constraint_refs[index],) if index < len(constraint_refs) else constraint_refs)
+    for criterion_id in (*proposal.external_effect_criterion_ids, *proposal.final_recheck_criterion_ids):
+        bind(criterion_id, effect_refs)
+    for output in outputs:
+        bind(output.materialization_criterion_id, (output.requirement_ref,))
+    for criterion_id in _success_criterion_ids(proposal.success):
+        bind(criterion_id, requirement_ids)
+    return tuple(
+        CriterionSourceBinding(criterion_id=criterion_id, requirement_refs=tuple(refs))
+        for criterion_id, refs in rows.items()
+    )
+
+
+def _success_criterion_ids(expression: SuccessExpression | None) -> tuple[str, ...]:
+    if expression is None:
+        return ()
+    if expression.operator == "criterion":
+        return (expression.criterion_id,)
+    return tuple(criterion_id for child in expression.children for criterion_id in _success_criterion_ids(child))

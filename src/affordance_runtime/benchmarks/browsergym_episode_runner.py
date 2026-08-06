@@ -87,7 +87,14 @@ from affordance_runtime.step_choice_planner import (
     STEP_CHOICE_PROMPT_VERSION,
     StrictStepChoicePlanner,
 )
-from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
+from affordance_runtime.task_intake import (
+    CompilationStatus,
+    OperationClass,
+    TaskSpec,
+    UserRequest,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
 from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
@@ -562,8 +569,10 @@ def run_browsergym_episode(
         revision=1,
         objective=goal,
         operation_class=OperationClass.READ_ONLY,
-        targets=(task_id,),
-        success_criteria=("official BrowserGym environment terminates with positive reward",),
+        requirements=canonical_effect_requirements(
+            (task_id,), OperationClass.READ_ONLY, f"browsergym:{task_id}:seed:{seed}", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs((task_id,)),
         success=SuccessExpression(
             expression_id="success:browsergym-official-grade",
             operator="criterion",
@@ -575,7 +584,6 @@ def run_browsergym_episode(
     try:
         result = compose_run_coordinator(
             observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
-            planner=BrowserGymPlanner(policy, episode, bindings),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
             budget=RunBudget(
@@ -586,7 +594,6 @@ def run_browsergym_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
-            task_planner=None,
         ).run_sync(RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]))
         planner_error = next(
             (
@@ -750,25 +757,18 @@ def run_browsergym_generalist_episode(
             }
         )
         perception_requirements = derive_perception_requirements(task_spec)
-        planner_limits = PlannerLimits(
-            max_steps=max_steps,
-            max_observations=max_steps * 3 + 3,
-            max_recoveries=3,
-            max_effectful_actions=max_steps + 1,
-        )
-        planner = BrowserGymGeneralistPlanner(
+        task_planner = StrictTaskPlanner(model)
+        choice_planner = StrictStepChoicePlanner(
             model,
-            episode,
             config=browsergym_planner_model_config(
                 timeout_s=model_timeout_s,
                 planner_profile=planner_profile,
+            ).model_copy(
+                update={
+                    "max_tokens": 128,
+                    "prompt_version": STEP_CHOICE_PROMPT_VERSION,
+                }
             ),
-            limits=planner_limits,
-            max_model_calls=max(
-                0,
-                max_model_calls - (4 if task_spec.task_structure == TaskStructure.MULTI_STAGE else 3),
-            ),
-            planner_profile=planner_profile,
         )
         result = compose_run_coordinator(
             observer=BrowserGymObserver(
@@ -778,7 +778,6 @@ def run_browsergym_generalist_episode(
                 perception_requirements=perception_requirements,
                 task_terms=perception_task_terms(task_spec),
             ),
-            planner=planner,
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
             budget=RunBudget(
@@ -789,9 +788,9 @@ def run_browsergym_generalist_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
-            task_planner=PlanningRouter(complex_planner=StrictTaskPlanner(model)),
-            step_choice_planner=planner.step_choice_planner,
-            recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
+            task_planner=PlanningRouter(complex_planner=task_planner),
+            step_choice_planner=choice_planner,
+            recovery_owner_dispatcher=recovery_dispatcher_for_model(model),
         ).run_sync(
             RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]),
             intake_trace,
@@ -808,7 +807,7 @@ def run_browsergym_generalist_episode(
         model_stats = {
             **_browsergym_model_stats(
                 result.trace.nodes,
-                planner.model_call_count + intent_compiler.model_call_count,
+                task_planner.model_call_count + choice_planner.model_call_count + intent_compiler.model_call_count,
             ),
             **_browsergym_planning_stats(result.trace.nodes),
             **_browsergym_adaptive_runtime_stats(result.trace.nodes),

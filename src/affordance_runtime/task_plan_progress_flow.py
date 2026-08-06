@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from affordance_runtime.criteria import criterion_ids
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag, TraceNode
@@ -43,17 +44,14 @@ def commit_verified_task_progress(
     parent: TraceNode,
     step_completion: CriterionEvaluation | None,
     task_planner_is_router: bool,
+    task_spec: TaskSpec | None = None,
     skill_complete: bool,
     skill_progress: TaskSkillRunState | None = None,
 ) -> VerifiedTaskProgressCommit:
     if state.task_plan is None or state.task_progress is None:
         return VerifiedTaskProgressCommit(parent, False, False, False)
     step = TaskPlanLifecycle.active_step_spec(state)
-    if (
-        step_completion is not None
-        and step_completion.status == CriterionStatus.SATISFIED
-        and step is not None
-    ):
+    if step_completion is not None and step_completion.status == CriterionStatus.SATISFIED and step is not None:
         state.complete_step(
             step.step_id,
             step_completion.evidence_refs,
@@ -81,11 +79,7 @@ def commit_verified_task_progress(
             },
             parents=[parent.id],
         )
-        if not (
-            len(state.task_plan.steps) > 1
-            or not task_planner_is_router
-            or skill_complete
-        ):
+        if not (len(state.task_plan.steps) > 1 or not task_planner_is_router or skill_complete):
             return VerifiedTaskProgressCommit(parent, True, True, False)
         if skill_complete and skill_progress is not None:
             state.final_result = {
@@ -99,7 +93,15 @@ def commit_verified_task_progress(
                 parents=[parent.id],
             )
         else:
-            state.final_result = {
+            output_payload = {
+                output.result_key or output.output_id: {
+                    "output_id": output.output_id,
+                    "requirement_ref": output.requirement_ref,
+                    "materialization_criterion_id": output.materialization_criterion_id,
+                }
+                for output in (task_spec.required_outputs if task_spec is not None else ())
+            }
+            state.final_result = output_payload or {
                 "task_plan_id": state.task_plan.plan_id,
                 "completed_step_ids": list(state.task_progress.completed_step_ids),
             }

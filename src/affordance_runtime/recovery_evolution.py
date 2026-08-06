@@ -47,7 +47,12 @@ from affordance_runtime.planning_contracts import PlannerDoneResponse, PlannerPr
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
 from affordance_runtime.verification.contracts import SuccessExpression
 
 MANDATORY_RECOVERY_REPLAYS = {"original", "task_family", "global_smoke", "safety_smoke"}
@@ -71,9 +76,7 @@ def _snapshot(*, effect_verified: bool = False, sequence: int = 1) -> BrowserSna
             metadata={
                 "effect_verified": effect_verified,
                 "criterion_evaluations": {
-                    "criterion:recovery-effect-verified": (
-                        "satisfied" if effect_verified else "unsatisfied"
-                    )
+                    "criterion:recovery-effect-verified": ("satisfied" if effect_verified else "unsatisfied")
                 },
             },
         ),
@@ -249,24 +252,27 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
     registry.propose(artifact)
     quarantine_path = output_dir / "quarantined-registry.json"
     EvolutionRegistryStore(quarantine_path).save(registry)
-    quarantined_before = EvolutionRegistryStore(quarantine_path).load().artifacts[artifact.id].status == EvolutionStatus.QUARANTINED
+    quarantined_before = (
+        EvolutionRegistryStore(quarantine_path).load().artifacts[artifact.id].status == EvolutionStatus.QUARANTINED
+    )
 
     replay_results = {
         "original": _run_candidate_fixture(artifact, "recovery-original", "repeated", True, output_dir / "candidate"),
         "task_family": _run_candidate_fixture(artifact, "recovery-family", "repeated", True, output_dir / "candidate"),
         "global_smoke": _run_candidate_fixture(artifact, "recovery-global", "success", False, output_dir / "candidate"),
-        "safety_smoke": _run_candidate_fixture(artifact, "recovery-safety", "uncertain", False, output_dir / "candidate"),
+        "safety_smoke": _run_candidate_fixture(
+            artifact, "recovery-safety", "uncertain", False, output_dir / "candidate"
+        ),
     }
-    baseline_depth = sum(
-        node.kind == "RecoveryStrategySelected" for node in baseline.trace.nodes
-    )
+    baseline_depth = sum(node.kind == "RecoveryStrategySelected" for node in baseline.trace.nodes)
     replays = [
-        _replay_evidence(category, result, baseline_depth=baseline_depth)
-        for category, result in replay_results.items()
+        _replay_evidence(category, result, baseline_depth=baseline_depth) for category, result in replay_results.items()
     ]
     passed_categories = {item.category for item in replays if item.passed}
     artifact.regression_results = {
-        "candidate_cascade_depth": float(max(item.cascade_depth for item in replays if item.category != "global_smoke")),
+        "candidate_cascade_depth": float(
+            max(item.cascade_depth for item in replays if item.category != "global_smoke")
+        ),
         "unsafe_side_effect_rate": float(sum(item.unsafe_side_effects for item in replays)),
         "blind_retry_rate": float(
             sum("retry" in item.recovery_actions for item in replays if item.category == "safety_smoke")
@@ -275,11 +281,7 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         / len(MANDATORY_RECOVERY_REPLAYS),
     }
     runtime_recovery_response = payload.response in {kind.value for kind in RecoveryKind}
-    if (
-        quarantined_before
-        and runtime_recovery_response
-        and MANDATORY_RECOVERY_REPLAYS <= passed_categories
-    ):
+    if quarantined_before and runtime_recovery_response and MANDATORY_RECOVERY_REPLAYS <= passed_categories:
         decision = registry.accept_if_regression_passes(
             artifact.id,
             rules=[
@@ -356,7 +358,6 @@ def _run_fixture(
     world = RecoveryFixtureWorld()
     return compose_run_coordinator(
         observer=StableRecoveryObserver(world),
-        planner=RecoveryFixturePlanner(idempotent),
         executor=RecoveryFixtureExecutor(mode, world),
         contract_builder=ActionContractMaterializer(
             requirements={
@@ -366,9 +367,7 @@ def _run_fixture(
                             "observation_metadata",
                             "effect_verified",
                             True,
-                            criterion_ids=(
-                                "criterion:recovery-effect-verified",
-                            ),
+                            criterion_ids=("criterion:recovery-effect-verified",),
                             progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                         ),
                     ),
@@ -379,7 +378,6 @@ def _run_fixture(
         artifacts=ArtifactStore(artifact_root),
         runtime_profile_digest=runtime_profile_digest,
         loaded_profile_artifact_ids=loaded_profile_artifact_ids,
-        task_planner=None,
     ).run_sync(
         RunRequest(
             task_spec=TaskSpec(
@@ -387,8 +385,10 @@ def _run_fixture(
                 revision=1,
                 objective="exercise recovery cascade",
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                targets=("Save",),
-                success_criteria=("effect verified",),
+                requirements=canonical_effect_requirements(
+                    ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-evolution", ()
+                ),
+                allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
                 success=SuccessExpression(
                     expression_id="success:recovery-effect-verified",
                     operator="criterion",
@@ -411,11 +411,7 @@ def _replay_evidence(category: str, result: Any, *, baseline_depth: int) -> Reco
     duplicate = int(sum(item == "retry_idempotent" for item in actions) > 1)
     unsafe = int("retry" in actions and category == "safety_smoke")
     if category in {"original", "task_family"}:
-        passed = (
-            depth <= baseline_depth
-            and result.status == RuntimeStep.ABORTED
-            and duplicate == 0
-        )
+        passed = depth <= baseline_depth and result.status == RuntimeStep.ABORTED and duplicate == 0
     elif category == "global_smoke":
         passed = result.status == RuntimeStep.DONE and not actions
     else:
@@ -462,10 +458,7 @@ def _prove_recovery_rollback(
     context = EvolutionRecoveryContext(failure_signature=signature, task_id="recovery-original")
     patched = profile.recovery_policy().decide(contract, None, context).kind == EvolutionRecoveryAction.ABORT
     profile.rollback(artifact_id)
-    restored = (
-        profile.recovery_policy().decide(contract, None, context).kind
-        == RecoveryKind.RETRY_IDEMPOTENT
-    )
+    restored = profile.recovery_policy().decide(contract, None, context).kind == RecoveryKind.RETRY_IDEMPOTENT
 
     rolled_back = deepcopy(loaded)
     rolled_back.rollback(artifact_id, reason="M8.3 rollback proof", reviewer="automated-recovery-gate")

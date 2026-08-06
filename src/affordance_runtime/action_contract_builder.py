@@ -46,7 +46,7 @@ from affordance_runtime.scope_authorization import (
     authorize_observed_value_transfer,
 )
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_intake import TaskSpec, task_semantic_scope_terms
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.visual_contracts import VisualContractBinder
 
@@ -68,9 +68,7 @@ class ActionContractMaterializer:
         observation: UnifiedObservation | None = None,
     ) -> ActionContract:
         canonical = observation or CanonicalObservationBuilder().build(
-            PerceptionCapture.from_browser_snapshot(snapshot)
-            if isinstance(snapshot, BrowserSnapshot)
-            else snapshot
+            PerceptionCapture.from_browser_snapshot(snapshot) if isinstance(snapshot, BrowserSnapshot) else snapshot
         )
         if proposal.based_on_task_revision != task_spec.revision:
             raise ProposalRejected(ProposalRejectionCode.STALE_TASK_REVISION)
@@ -150,7 +148,7 @@ class ActionContractMaterializer:
             dict.fromkeys(
                 [
                     *contract_requirements.required_capabilities,
-                    *task_spec.requested_capabilities,
+                    *task_spec.capability_ceiling,
                 ]
             )
         )
@@ -276,10 +274,15 @@ class ActionContractMaterializer:
                 f"target:{affordance.id}:parameters:{sorted(parameters.items())}"
             )
         scope_authorization = None
-        if contract.grounding_candidate is not None and source_resolution is not None:
+        if (
+            contract.grounding_candidate is not None
+            and source_resolution is not None
+            and not getattr(proposal, "selection_id", "")
+        ):
+            scope_terms = task_semantic_scope_terms(task_spec)
             ordinal_constraint = resolve_global_ordinal_constraint(
-                objective=task_spec.objective,
-                targets=task_spec.targets,
+                objective="",
+                targets=scope_terms,
                 affordances=snapshot_collection_affordances(snapshot),
             )
             scope_decision = self._value_transfer_scope_decision(
@@ -295,8 +298,8 @@ class ActionContractMaterializer:
                     target_label=source_resolution.target.label,
                     target_role=source_resolution.target.role,
                     parameters=proposal.parameters,
-                    objective=task_spec.objective,
-                    targets=task_spec.targets,
+                    objective="",
+                    targets=scope_terms,
                     unified_affordances=tuple(canonical.targets),
                     observation=canonical,
                     bindings=canonical.bindings,
@@ -312,11 +315,7 @@ class ActionContractMaterializer:
                 raise ProposalRejected(
                     rejection,
                     scope_decision.detail,
-                    reason_code=(
-                        scope_decision.reason.value
-                        if scope_decision.reason is not None
-                        else ""
-                    ),
+                    reason_code=(scope_decision.reason.value if scope_decision.reason is not None else ""),
                 )
             scope_authorization = scope_decision.authorization
         return replace(
@@ -344,9 +343,7 @@ class ActionContractMaterializer:
         if source_target_id is None:
             return None
         source_target = next(
-            (
-                item for item in snapshot.targets if item.target_id == source_target_id
-            ),
+            (item for item in snapshot.targets if item.target_id == source_target_id),
             None,
         )
         safe_sources: list[tuple[GroundingCandidate, str]] = []
@@ -400,9 +397,7 @@ class ActionContractMaterializer:
                 snapshot=snapshot,
                 observation=observation,
                 available_executors=(
-                    available_executors
-                    if available_executors is not None
-                    else self._available_executors(observation)
+                    available_executors if available_executors is not None else self._available_executors(observation)
                 ),
                 verifier_kinds=(
                     verifier_kinds
@@ -421,10 +416,7 @@ class ActionContractMaterializer:
             raise ProposalRejected(code, detail) from exc
 
     def _available_executors(self, snapshot: UnifiedObservation) -> frozenset[str]:
-        return frozenset(
-            candidate.compatible_executor
-            for candidate in snapshot.bindings
-        )
+        return frozenset(candidate.compatible_executor for candidate in snapshot.bindings)
 
     def _route_verifier_kinds(
         self,
@@ -434,9 +426,7 @@ class ActionContractMaterializer:
         requirements = self.requirements.get(semantic_target_id)
         if requirements is None:
             target = next(
-                (
-                    item for item in snapshot.targets if item.target_id == semantic_target_id
-                ),
+                (item for item in snapshot.targets if item.target_id == semantic_target_id),
                 None,
             )
             source_ids = (
@@ -463,7 +453,6 @@ class ActionContractMaterializer:
             (item for item in snapshot.affordance_model.affordances if item.id == affordance_id),
             None,
         )
-
 
 
 @dataclass(frozen=True)
