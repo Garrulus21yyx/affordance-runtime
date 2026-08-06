@@ -6,21 +6,15 @@ import inspect
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, cast
 
-from affordance_runtime.action_choice_catalog import (
-    ActionChoiceCatalog,
-    ActionChoiceCatalogBuilder,
-)
-from affordance_runtime.action_selection import ActionSelectionValidator
-from affordance_runtime.active_step_scope import ActiveStepScope
+from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.choice_contracts import (
-    ActionChoiceFailure,
     ActionSelection,
     AskUser,
-    ChoicePlanningRequest,
-    SelectChoice,
+    ChoicePlanningBudget,
+    DeferChoice,
+    ReportPlanIssue,
 )
-from affordance_runtime.choice_presentation import ChoicePresentationProjector
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import (
     FailureClass,
@@ -57,6 +51,11 @@ from affordance_runtime.stage_protocol import (
     RuntimeTransition,
     StageResult,
     TerminalResult,
+)
+from affordance_runtime.step_choice_flow import (
+    StepChoiceFlow,
+    StepChoiceFlowKind,
+    recent_choice_outcomes,
 )
 from affordance_runtime.task_plan_contracts import project_task_plan_views
 from affordance_runtime.task_plan_flow import (
@@ -107,16 +106,9 @@ class PlanningStage:
     task_plan_flow: TaskPlanFlow | None = None
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None
     proposal_validator: PlannerProposalValidator = field(default_factory=PlannerProposalValidator)
-    proposal_recovery_policy: ProposalRejectionRecoveryPolicy = field(
-        default_factory=ProposalRejectionRecoveryPolicy
-    )
+    proposal_recovery_policy: ProposalRejectionRecoveryPolicy = field(default_factory=ProposalRejectionRecoveryPolicy)
     request_builder: PlanningRequestBuilder = field(default_factory=PlanningRequestBuilder)
-    catalog_builder: ActionChoiceCatalogBuilder = field(default_factory=ActionChoiceCatalogBuilder)
-    presentation_projector: ChoicePresentationProjector = field(
-        default_factory=ChoicePresentationProjector
-    )
-    selection_validator: ActionSelectionValidator = field(default_factory=ActionSelectionValidator)
-    runtime_profile_digest: str = ""
+    step_choice_flow: StepChoiceFlow = field(default_factory=lambda: StepChoiceFlow(None))
 
     def run(self, stage_input: PlanningStageInput) -> StageResult[PlanningOutput]:
         planned = self._prepare_task_plan(stage_input)
@@ -163,9 +155,7 @@ class PlanningStage:
             )
         return self._validate_response(stage_input, response, skill_step_id, events)
 
-    def _prepare_action_choice(
-        self, stage_input: PlanningStageInput
-    ) -> StageResult[PlanningOutput] | None:
+    def _prepare_action_choice(self, stage_input: PlanningStageInput) -> StageResult[PlanningOutput] | None:
         task_spec = stage_input.envelope.task_spec
         if task_spec is None:
             return None
@@ -179,111 +169,95 @@ class PlanningStage:
             task_revision=task_spec.revision,
             progress=progress,
         )
-        if (
-            step_progress_view.activity_status != StepActivityStatus.ACTIVE
-            or not step_progress_view.active_step_id
-        ):
+        if step_progress_view.activity_status != StepActivityStatus.ACTIVE or not step_progress_view.active_step_id:
             return None
         step = next(
-            (
-                item for item in task_plan_view.steps
-                if item.step_id == step_progress_view.active_step_id
-            ),
+            (item for item in task_plan_view.steps if item.step_id == step_progress_view.active_step_id),
             None,
         )
         if step is None:
             return None
-        scope = ActiveStepScope.from_active_step(
-            task_revision=task_spec.revision,
-            evaluated_at_state_version=stage_input.state_view.version,
-            snapshot_id=stage_input.observation.epoch_id,
-            step=step,
-            activity_status=StepActivityStatus.ACTIVE,
-        )
-        catalog_or_failure = self.catalog_builder.build(
-            task_revision=task_spec.revision,
+        choice = self.step_choice_flow.choose(
             task_spec=task_spec,
             plan_revision=getattr(plan, "plan_version", 1),
             state_version=stage_input.state_view.version,
             step=step,
-            scope=scope,
             observation=stage_input.observation,
             capabilities=frozenset(stage_input.envelope.capabilities),
+            recent_outcomes=recent_choice_outcomes(stage_input.state_view.recent_action_outcomes),
+            budget=ChoicePlanningBudget(
+                model_calls_remaining=max(0, stage_input.remaining_budgets.model_calls),
+            ),
         )
-        if isinstance(catalog_or_failure, ActionChoiceFailure):
+        if choice.kind == StepChoiceFlowKind.FAILED:
             return self._failure(
                 stage_input,
                 FailurePhase.STEP_PLANNING,
-                FailureClass.GROUNDING,
+                FailureClass.PLANNING,
                 RuntimeErrorCode.PLANNER_FAILED,
-                catalog_or_failure.reason_code,
+                choice.failure_reason,
                 events=(
                     _event(
                         "ActionChoiceCatalogRejected",
                         stage_input.state_view.phase,
-                        reason_code=catalog_or_failure.reason_code,
+                        reason_code=choice.failure_reason,
                     ),
                 ),
             )
-        catalog = catalog_or_failure
-        page = None
-        if catalog.count == 1:
-            selection = self.selection_validator.select_unique(catalog)
-            source = "runtime_unique_choice"
-        else:
-            page = self.presentation_projector.project(catalog)
-            selector = getattr(self.planner, "select", None)
-            if not callable(selector):
-                return self._failure(
-                    stage_input,
-                    FailurePhase.STEP_PLANNING,
-                    FailureClass.PLANNING,
-                    RuntimeErrorCode.PLANNER_FAILED,
-                    "step choice planner does not implement select(ChoicePlanningRequest)",
-                )
-            request = ChoicePlanningRequest(
-                task_spec.revision,
-                catalog.plan_revision,
-                step.step_id,
-                catalog.ref,
-                page,
+        if choice.kind == StepChoiceFlowKind.ASK_USER:
+            assert isinstance(choice.response, AskUser)
+            result = {"clarification": choice.response.question}
+            return StageResult(
+                output=PlanningOutput(),
+                transition=RuntimeTransition(
+                    phase=RuntimeStep.WAITING_CLARIFICATION,
+                    final_result=result,
+                ),
+                events=(
+                    _event(
+                        "ClarificationRequested",
+                        RuntimeStep.WAITING_CLARIFICATION.value,
+                        **result,
+                    ),
+                ),
+                terminal=TerminalResult(
+                    "",
+                    "clarification_required",
+                    RuntimeStep.WAITING_CLARIFICATION,
+                ),
+                directive=LoopDirective.WAIT_USER,
             )
-            value = selector(request)
-            proposal = resolve_awaitable(value) if inspect.isawaitable(value) else value
-            if isinstance(proposal, AskUser):
-                result = {"clarification": proposal.question}
-                return StageResult(
-                    output=PlanningOutput(),
-                    transition=RuntimeTransition(
-                        phase=RuntimeStep.WAITING_CLARIFICATION,
-                        final_result=result,
+        if choice.kind == StepChoiceFlowKind.DEFER:
+            assert isinstance(choice.response, DeferChoice)
+            return StageResult(
+                output=PlanningOutput(),
+                transition=RuntimeTransition(
+                    phase=RuntimeStep.DEFERRED,
+                    final_result={"deferred": True, "reason": choice.response.reason},
+                ),
+                events=(
+                    _event(
+                        "PlannerDeferred",
+                        RuntimeStep.DEFERRED.value,
+                        reason=choice.response.reason,
                     ),
-                    events=(
-                        _event(
-                            "ClarificationRequested",
-                            RuntimeStep.WAITING_CLARIFICATION.value,
-                            **result,
-                        ),
-                    ),
-                    terminal=TerminalResult(
-                        "",
-                        "clarification_required",
-                        RuntimeStep.WAITING_CLARIFICATION,
-                    ),
-                    directive=LoopDirective.WAIT_USER,
-                )
-            if isinstance(proposal, ActionSelection):
-                proposal = SelectChoice(proposal.choice_id, proposal.reason_summary)
-            if not isinstance(proposal, SelectChoice):
-                return self._failure(
-                    stage_input,
-                    FailurePhase.STEP_PLANNING,
-                    FailureClass.VALIDATION,
-                    RuntimeErrorCode.PLANNER_FAILED,
-                    "step choice planner returned a non-selection control response",
-                )
-            selection = self.selection_validator.validate(proposal, catalog, page)
-            source = "step_choice_planner"
+                ),
+                terminal=TerminalResult("", "choice_deferred", RuntimeStep.DEFERRED),
+                directive=LoopDirective.TERMINAL,
+            )
+        if choice.kind == StepChoiceFlowKind.PLAN_ISSUE:
+            assert isinstance(choice.response, ReportPlanIssue)
+            return self._failure(
+                stage_input,
+                FailurePhase.TASK_PLANNING,
+                FailureClass.PLANNING,
+                RuntimeErrorCode.PLANNER_FAILED,
+                choice.response.kind,
+            )
+        catalog = choice.catalog
+        selection = choice.selection
+        if catalog is None or selection is None:
+            raise RuntimeError("selected choice flow result is incomplete")
         events = (
             _event(
                 "ActionChoiceCatalogBuilt",
@@ -297,8 +271,8 @@ class PlanningStage:
                 "ActionChoiceSelected",
                 stage_input.state_view.phase,
                 choice_id=selection.choice_id,
-                selection_source=source,
-                presented_choice_count=len(page.choices) if page is not None else 0,
+                selection_source=choice.selection_source,
+                presented_choice_count=(len(choice.page.choices) if choice.page is not None else 0),
             ),
         )
         return StageResult(
@@ -306,9 +280,7 @@ class PlanningStage:
             events=events,
         )
 
-    def _prepare_task_plan(
-        self, stage_input: PlanningStageInput
-    ) -> StageResult[PlanningOutput] | None:
+    def _prepare_task_plan(self, stage_input: PlanningStageInput) -> StageResult[PlanningOutput] | None:
         task_spec = stage_input.envelope.task_spec
         if self.task_plan_flow is None or task_spec is None:
             return None
@@ -519,7 +491,9 @@ class PlanningStage:
                     stage_input.state_view.phase,
                     proposal_id=proposal.proposal_id,
                     semantic_target=semantic_target_descriptor(stage_input.observation, proposal.target_affordance_id),
-                    semantic_destination=semantic_target_descriptor(stage_input.observation, proposal.destination_affordance_id),
+                    semantic_destination=semantic_target_descriptor(
+                        stage_input.observation, proposal.destination_affordance_id
+                    ),
                     proposal=proposal.model_dump(mode="json"),
                     provenance=provenance.model_dump(mode="json"),
                 ),
@@ -540,7 +514,11 @@ class PlanningStage:
         view = stage_input.state_view
         if view.task_plan is not None and not TaskPlanLifecycle.completed(cast(Any, view)):
             status = str(response.result.get("status") or "").casefold()
-            safe_stop = status in {"blocked", "incomplete", "inconclusive", "unsupported"} and view.last_receipt is None and view.effectful_action_count == 0
+            safe_stop = (
+                status in {"blocked", "incomplete", "inconclusive", "unsupported"}
+                and view.last_receipt is None
+                and view.effectful_action_count == 0
+            )
             if not safe_stop:
                 return self._failure(
                     stage_input,
@@ -649,7 +627,7 @@ class PlanningStage:
             error_code=error_code,
             message=message,
             state_version=view.version,
-            task_revision=plan.task_revision if plan is not None else stage_input.envelope.task_spec.revision if stage_input.envelope.task_spec is not None else 1,
+            task_revision=(plan.task_revision if plan is not None else stage_input.envelope.task_spec.revision if stage_input.envelope.task_spec is not None else 1),
             plan_version=plan.plan_version if plan is not None else 0,
             active_step_id=view.task_progress.active_step_id if view.task_progress is not None else "",
             observation_epoch_id=stage_input.observation.epoch_id,
@@ -662,9 +640,7 @@ class PlanningStage:
         return StageResult(events=events, failure=failure)
 
 
-def task_skill_progress(
-    runtime: object | None, state: object
-) -> TaskSkillRunState | None:
+def task_skill_progress(runtime: object | None, state: object) -> TaskSkillRunState | None:
     progress_for = getattr(runtime, "progress_for", None)
     progress = progress_for(state) if callable(progress_for) else None
     return progress if isinstance(progress, TaskSkillRunState) else None
@@ -709,12 +685,34 @@ def _task_skill_events(
         )
     ]
     if decision.newly_activated and decision.payload is not None:
-        events.append(_event("TaskSkillActivated", stage_input.state_view.phase, skill_id=decision.payload.skill_id, version=decision.payload.version))
+        events.append(
+            _event(
+                "TaskSkillActivated",
+                stage_input.state_view.phase,
+                skill_id=decision.payload.skill_id,
+                version=decision.payload.version,
+            )
+        )
     if decision.exposure is not None and decision.exposure.proposal is not None and decision.payload is not None:
-        events.append(_event("TaskSkillStepExposed", stage_input.state_view.phase, skill_id=decision.payload.skill_id, step_id=decision.exposure.step_id))
+        events.append(
+            _event(
+                "TaskSkillStepExposed",
+                stage_input.state_view.phase,
+                skill_id=decision.payload.skill_id,
+                step_id=decision.exposure.step_id,
+            )
+        )
     elif decision.attempted and decision.reason:
         progress = task_skill_progress(runtime, stage_input.state_view)
-        events.append(_event("TaskSkillFellThrough", stage_input.state_view.phase, reason=decision.reason, preserved_evidence=list(progress.evidence) if progress else [], fallback="system_2"))
+        events.append(
+            _event(
+                "TaskSkillFellThrough",
+                stage_input.state_view.phase,
+                reason=decision.reason,
+                preserved_evidence=list(progress.evidence) if progress else [],
+                fallback="system_2",
+            )
+        )
     return tuple(events)
 
 

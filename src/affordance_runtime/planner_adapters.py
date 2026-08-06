@@ -6,18 +6,11 @@ import inspect
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Mapping, Protocol
 
-from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.generalist_planner import PlannerLimits
-from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planner_context import PlannerContextBuilder
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance, PlannerProposalSource
 from affordance_runtime.planning_contracts import PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.planning_request_builder import PlanningRequestBuilder, PlanningRequestLimits
-from affordance_runtime.runtime import RunRequest
-from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.unified_observation import UnifiedObservation
 
 
 class ParentProposalSource(Protocol):
@@ -27,22 +20,8 @@ class ParentProposalSource(Protocol):
     ) -> Mapping[str, Any] | Awaitable[Mapping[str, Any]]: ...
 
 
-class PlanningRequestBuilderPort(Protocol):
-    def build(
-        self,
-        envelope: RunRequest,
-        state: StateKernel,
-        observation: UnifiedObservation,
-    ) -> PlanningRequest: ...
-
-
 class PlannerContextBuilderPort(Protocol):
-    def build(
-        self,
-        request: PlanningRequest,
-        state: StateKernel | None = None,
-        snapshot: BrowserSnapshot | None = None,
-    ) -> Any: ...
+    def build(self, request: PlanningRequest) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -60,20 +39,7 @@ class ParentAgentPlannerAdapter:
     source: ParentProposalSource
     limits: PlannerLimits = field(default_factory=PlannerLimits)
     accepted_knowledge: tuple[str, ...] = ()
-    planning_request_builder: PlanningRequestBuilderPort | None = None
     context_builder: PlannerContextBuilderPort | None = None
-
-    async def propose_legacy(
-        self,
-        envelope: RunRequest,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> _ParentProposalResult:
-        observation = CanonicalObservationBuilder().build(
-            PerceptionCapture.from_browser_snapshot(snapshot)
-        )
-        request = self._planning_request_builder().build(envelope, state, observation)
-        return await self._propose_result(request)
 
     async def propose(
         self,
@@ -107,21 +73,6 @@ class ParentAgentPlannerAdapter:
                 "affordance_count": len(context.affordances),
                 "granted_capabilities": list(context.granted_capabilities),
             },
-        )
-
-    def _planning_request_builder(self) -> PlanningRequestBuilderPort:
-        if self.planning_request_builder is not None:
-            return self.planning_request_builder
-        return PlanningRequestBuilder(
-            limits=PlanningRequestLimits(
-                max_steps=self.limits.max_steps,
-                max_observations=self.limits.max_observations,
-                max_recoveries=self.limits.max_recoveries,
-                max_effectful_actions=self.limits.max_effectful_actions,
-                max_affordances=self.limits.max_affordances,
-                max_artifact_refs=self.limits.max_artifact_refs,
-            ),
-            accepted_knowledge=self.accepted_knowledge,
         )
 
     def _context_builder(self) -> PlannerContextBuilderPort:

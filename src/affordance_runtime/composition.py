@@ -29,6 +29,8 @@ from affordance_runtime.runtime import Executor
 from affordance_runtime.runtime_committer import RuntimeCommitter
 from affordance_runtime.runtime_result_phase import RuntimeResultPhase
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
+from affordance_runtime.step_choice_flow import StepChoiceFlow
+from affordance_runtime.step_choice_planner import StepChoicePlanner
 from affordance_runtime.task_plan_flow import TaskPlanFlow
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort
@@ -54,6 +56,7 @@ def compose_run_coordinator(
     proposal_validator: PlannerProposalValidator | None = None,
     proposal_recovery_policy: ProposalRejectionRecoveryPolicy | None = None,
     task_planner: TaskPlannerPort | None | object = _DEFAULT_TASK_PLANNER,
+    step_choice_planner: StepChoicePlanner | None = None,
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None,
     runtime_profile_digest: str = "",
     loaded_profile_artifact_ids: tuple[str, ...] = (),
@@ -90,9 +93,7 @@ def compose_run_coordinator(
     )
     if task_planner is _DEFAULT_TASK_PLANNER:
         task_planner = PlanningRouter()
-    resolved_task_planner = (
-        None if task_planner is None else cast(TaskPlannerPort, task_planner)
-    )
+    resolved_task_planner = None if task_planner is None else cast(TaskPlannerPort, task_planner)
     plan_flow = (
         TaskPlanFlow(
             TaskPlanLifecycle(
@@ -102,15 +103,18 @@ def compose_run_coordinator(
         if resolved_task_planner is not None
         else None
     )
+    resolved_step_choice_planner = step_choice_planner
+    if resolved_step_choice_planner is None:
+        compatibility_selector = getattr(planner, "select", None)
+        if callable(compatibility_selector):
+            resolved_step_choice_planner = cast(StepChoicePlanner, planner)
     planning = PlanningStage(
         planner=planner,
         task_plan_flow=plan_flow,
+        step_choice_flow=StepChoiceFlow(resolved_step_choice_planner),
         task_skill_runtime=task_skill_runtime,
         proposal_validator=proposal_validator or PlannerProposalValidator(),
-        proposal_recovery_policy=(
-            proposal_recovery_policy or ProposalRejectionRecoveryPolicy()
-        ),
-        runtime_profile_digest=runtime_profile_digest,
+        proposal_recovery_policy=(proposal_recovery_policy or ProposalRejectionRecoveryPolicy()),
     )
     if contract_builder is None:
         resolved_contract_builder = ActionContractBuilder(ActionContractMaterializer())
@@ -145,9 +149,7 @@ def compose_run_coordinator(
         capability_gate_enabled=resolved_features.capability_gate,
         recovery_enabled=resolved_features.recovery,
         approval_required_risks=frozenset(resolved_gate.approval_required_risks),
-        approval_required_capabilities=frozenset(
-            resolved_gate.approval_required_capabilities
-        ),
+        approval_required_capabilities=frozenset(resolved_gate.approval_required_capabilities),
     )
     progress = ProgressStage(
         execution_loop=execution_loop,

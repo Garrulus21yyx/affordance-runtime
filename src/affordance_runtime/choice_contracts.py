@@ -88,7 +88,9 @@ class ActionChoice:
             "target_id": target_id,
             "target_label": target_label,
             "target_role": target_role,
-            "relevant_current_state": relevant_current_state if isinstance(relevant_current_state, FrozenDict) else FrozenDict(relevant_current_state or {}),
+            "relevant_current_state": relevant_current_state
+            if isinstance(relevant_current_state, FrozenDict)
+            else FrozenDict(relevant_current_state or {}),
             "destination_id": destination_id,
             "parameters": parameters if isinstance(parameters, FrozenDict) else FrozenDict(parameters or {}),
             "criterion_ids": tuple(criterion_ids),
@@ -198,6 +200,26 @@ class ChoicePlanningRequest:
     active_step_id: str
     catalog_ref: CatalogRef
     page: ChoicePage
+    recent_outcomes: tuple["ChoiceOutcomeSummary", ...] = ()
+    budget: "ChoicePlanningBudget" = field(default_factory=lambda: ChoicePlanningBudget())
+
+
+@dataclass(frozen=True)
+class ChoiceOutcomeSummary:
+    action_kind: str
+    target_id: str
+    verification_passed: bool
+    effect_satisfied: bool
+
+
+@dataclass(frozen=True)
+class ChoicePlanningBudget:
+    model_calls_remaining: int = 1
+    pages_remaining: int = 0
+
+    def __post_init__(self) -> None:
+        if self.model_calls_remaining < 0 or self.pages_remaining < 0:
+            raise ValueError("choice planning budget cannot be negative")
 
 
 @dataclass(frozen=True)

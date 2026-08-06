@@ -19,9 +19,9 @@ from affordance_runtime.simplified_runtime_contracts import (
 )
 from affordance_runtime.task_plan_contracts import (
     InitialTaskPlanRequest,
-    PlanCandidate,
     PlanIssueKind,
     PlanIssueReport,
+    PlanProposal,
     TaskPlanAuthority,
     TaskPlanDecision,
     TaskPlanDecisionStatus,
@@ -91,8 +91,8 @@ def _candidate(
     *steps: StepSpec,
     observation_ref: str = "snapshot:1",
     state_version: int = 3,
-) -> PlanCandidate:
-    return PlanCandidate(
+) -> PlanProposal:
+    return PlanProposal(
         task_spec_identity="sha256:task",
         task_revision=1,
         generated_by=TaskPlanGeneratorSource.RULE,
@@ -215,7 +215,7 @@ def _progress_view() -> StepProgressView:
 def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
     draft = _candidate(_step("step:a"), _step("step:b", depends_on=("step:a",)))
 
-    assert isinstance(draft, PlanCandidate)
+    assert isinstance(draft, PlanProposal)
     assert not hasattr(draft, "plan_id")
     assert not hasattr(draft, "plan_version")
     assert not hasattr(draft, "supersedes_plan_id")
@@ -229,7 +229,7 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
     with pytest.raises(ValueError, match="cycle"):
         _candidate(_step("step:a", depends_on=("step:b",)), _step("step:b", depends_on=("step:a",)))
     with pytest.raises(ValueError, match="forbidden implementation detail"):
-        PlanCandidate(
+        PlanProposal(
             task_spec_identity="sha256:task",
             task_revision=1,
             generated_by=TaskPlanGeneratorSource.LLM,
@@ -241,7 +241,7 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
 
 
 def test_plan_candidate_is_the_canonical_unaccepted_plan_model() -> None:
-    candidate = PlanCandidate(
+    candidate = PlanProposal(
         task_spec_identity="sha256:task",
         task_revision=1,
         generated_by=TaskPlanGeneratorSource.RULE,
@@ -250,7 +250,7 @@ def test_plan_candidate_is_the_canonical_unaccepted_plan_model() -> None:
         source_refs=(_source(),),
     )
 
-    assert isinstance(candidate, PlanCandidate)
+    assert isinstance(candidate, PlanProposal)
     assert not hasattr(candidate, "plan_id")
     assert not hasattr(candidate, "plan_version")
 

@@ -22,7 +22,7 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_contracts import (
     InitialTaskPlanRequest,
-    PlanCandidate,
+    PlanProposal,
     TaskPlan,
     TaskPlanAuthority,
     TaskPlanDecision,
@@ -35,10 +35,18 @@ from affordance_runtime.task_planner import (
     PlanningAffordanceState,
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
+    TaskPlannerResponse,
     TaskPlanningBudgetSummary,
-    TaskPlanningContext,
+    TaskPlanningFailure,
     TaskPlanningFailureSummary,
+    TaskPlanningGap,
+    TaskPlanningNoPlan,
     TaskPlanningRecoverySummary,
+    TaskPlanningRequest,
+)
+from affordance_runtime.task_planning_trigger import (
+    TaskPlanningTriggerKind,
+    evaluate_task_planning_trigger,
 )
 from affordance_runtime.unified_observation import UnifiedObservation
 
@@ -63,30 +71,32 @@ class TaskPlanBudgetLimits(Protocol):
 
 
 class TaskPlannerPort(Protocol):
-    def generate_candidate(
-        self, context: TaskPlanningContext
-    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
+    def propose(self, request: TaskPlanningRequest) -> TaskPlannerResponse | Awaitable[TaskPlannerResponse]: ...
 
 
 @dataclass(frozen=True)
 class TaskPlanTransition:
     """A proposed immutable plan transition, before state mutation."""
 
-    context: TaskPlanningContext
+    request: TaskPlanningRequest
     plan: TaskPlan
     decision: TaskPlanDecision
     previous_plan: TaskPlan | None = None
 
 
+TaskPlanPreparation = TaskPlanTransition | TaskPlanningNoPlan | TaskPlanningGap | TaskPlanningFailure
+
+
 class TaskPlanReplacementReason(StrEnum):
     STEP_ACTION_BUDGET_EXHAUSTED = "step_action_budget_exhausted"
     ACTIVE_STEP_ACTION_FAMILY_UNAVAILABLE = "active_step_action_family_unavailable"
-    ACTIVE_STEP_OUTCOME_ALREADY_SATISFIED = (
-        "active_step_outcome_already_satisfied"
-    )
-    ACTIVE_STEP_OUTCOME_STATE_UNSUPPORTED = (
-        "active_step_outcome_state_unsupported"
-    )
+    ACTIVE_STEP_OUTCOME_ALREADY_SATISFIED = "active_step_outcome_already_satisfied"
+    ACTIVE_STEP_OUTCOME_STATE_UNSUPPORTED = "active_step_outcome_state_unsupported"
+    PLAN_EXHAUSTED = "plan_exhausted"
+    PLAN_ASSUMPTION_INVALID = "plan_assumption_invalid"
+    ENVIRONMENT_BOUNDARY_CHANGED = "environment_boundary_changed"
+    TASK_REVISION_CHANGED = "task_revision_changed"
+    STEP_INFEASIBLE = "step_infeasible"
 
 
 @dataclass(frozen=True)
@@ -115,30 +125,31 @@ class TaskPlanLifecycle:
         state: StateKernel,
         snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
-    ) -> TaskPlanTransition:
+    ) -> TaskPlanPreparation:
         context = self.build_context(task_spec, state, snapshot, budget, reason="initial")
-        candidate = _resolve_plan_candidate(self.planner.generate_candidate(context))
+        response = _resolve_task_planner_response(self.planner.propose(context))
+        if not isinstance(response, PlanProposal):
+            return response
+        candidate = response
         decision = self.authority.admit_initial(
-                InitialTaskPlanRequest(
-                    task_spec_identity=task_spec.identity,
-                    task_revision=task_spec.revision,
-                    evaluated_at_state_version=state.version,
-                    objective=task_spec.objective,
-                    operation_class=task_spec.operation_class,
-                    observation_refs=(snapshot.epoch_id,),
-                    remaining_budget_steps=budget.max_steps,
-                    allowed_requirement_ids=tuple(
-                        item.requirement_id for item in task_spec.requirements
-                    ),
-                    allowed_effect_ids=task_spec.allowed_effect_refs,
-                    task_id=task_spec.task_id,
-                ),
-                candidate,
-            )
+            InitialTaskPlanRequest(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=state.version,
+                objective=task_spec.objective,
+                operation_class=task_spec.operation_class,
+                observation_refs=(snapshot.epoch_id,),
+                remaining_budget_steps=budget.max_steps,
+                allowed_requirement_ids=tuple(item.requirement_id for item in task_spec.requirements),
+                allowed_effect_ids=task_spec.allowed_effect_refs,
+                task_id=task_spec.task_id,
+            ),
+            candidate,
+        )
         if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
             raise ValueError("initial TaskPlan candidate was not accepted")
         plan = decision.plan
-        return TaskPlanTransition(context=context, plan=plan, decision=decision)
+        return TaskPlanTransition(request=context, plan=plan, decision=decision)
 
     def propose_replacement(
         self,
@@ -148,40 +159,41 @@ class TaskPlanLifecycle:
         budget: TaskPlanBudgetLimits,
         *,
         reason: str,
-    ) -> TaskPlanTransition:
+    ) -> TaskPlanPreparation:
         previous_plan = state.task_plan
         if previous_plan is None or state.task_progress is None:
             raise ValueError("cannot replan without an active TaskPlan")
         context = self.build_context(task_spec, state, snapshot, budget, reason=reason)
-        candidate = _resolve_plan_candidate(self.planner.generate_candidate(context))
+        response = _resolve_task_planner_response(self.planner.propose(context))
+        if not isinstance(response, PlanProposal):
+            return response
+        candidate = response
         decision = self.authority.admit_revision(
-                TaskPlanRevisionRequest(
-                    task_spec_identity=task_spec.identity,
-                    task_revision=task_spec.revision,
-                    evaluated_at_state_version=state.version,
-                    previous_plan=_plan_view(previous_plan, task_spec, state),
-                    previous_progress=_progress_view(previous_plan, state),
-                    trigger=TaskPlanRevisionTrigger(
-                        kind=_revision_trigger_kind(reason),
-                        reason_code=reason,
-                        affected_step_id=state.task_progress.active_step_id,
-                    ),
-                    operation_class=task_spec.operation_class,
-                    observation_refs=(snapshot.epoch_id,),
-                    remaining_budget_steps=budget.max_steps,
-                    allowed_requirement_ids=tuple(
-                        item.requirement_id for item in task_spec.requirements
-                    ),
-                    allowed_effect_ids=task_spec.allowed_effect_refs,
-                    task_id=task_spec.task_id,
+            TaskPlanRevisionRequest(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=state.version,
+                previous_plan=_plan_view(previous_plan, task_spec, state),
+                previous_progress=_progress_view(previous_plan, state),
+                trigger=TaskPlanRevisionTrigger(
+                    kind=_revision_trigger_kind(reason),
+                    reason_code=reason,
+                    affected_step_id=state.task_progress.active_step_id,
                 ),
-                candidate,
-            )
+                operation_class=task_spec.operation_class,
+                observation_refs=(snapshot.epoch_id,),
+                remaining_budget_steps=budget.max_steps,
+                allowed_requirement_ids=tuple(item.requirement_id for item in task_spec.requirements),
+                allowed_effect_ids=task_spec.allowed_effect_refs,
+                task_id=task_spec.task_id,
+            ),
+            candidate,
+        )
         if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
             raise ValueError("replacement TaskPlan candidate was not accepted")
         plan = decision.plan
         return TaskPlanTransition(
-            context=context,
+            request=context,
             plan=plan,
             decision=decision,
             previous_plan=previous_plan,
@@ -204,14 +216,30 @@ class TaskPlanLifecycle:
     ) -> TaskPlanReplacementDecision:
         """Decide whether the current plan needs replacement without mutation."""
 
-        if state.task_plan is None or state.task_progress is None:
+        del snapshot, budget
+        trigger = evaluate_task_planning_trigger(task_spec, state)
+        if trigger.kind in {
+            TaskPlanningTriggerKind.INITIAL,
+            TaskPlanningTriggerKind.REUSE_ACTIVE_PLAN,
+        }:
             return TaskPlanReplacementDecision()
-        if self.should_replan(state):
-            return TaskPlanReplacementDecision(
-                reason=TaskPlanReplacementReason.STEP_ACTION_BUDGET_EXHAUSTED,
-                step_id=state.task_progress.active_step_id,
-            )
-        return TaskPlanReplacementDecision()
+        reasons = {
+            TaskPlanningTriggerKind.REPLAN_EXHAUSTED: TaskPlanReplacementReason.PLAN_EXHAUSTED,
+            TaskPlanningTriggerKind.REPLAN_STEP_INFEASIBLE: TaskPlanReplacementReason.STEP_INFEASIBLE,
+            TaskPlanningTriggerKind.REPLAN_ASSUMPTION_DISPROVED: TaskPlanReplacementReason.PLAN_ASSUMPTION_INVALID,
+            TaskPlanningTriggerKind.REPLAN_ENVIRONMENT_BOUNDARY: TaskPlanReplacementReason.ENVIRONMENT_BOUNDARY_CHANGED,
+            TaskPlanningTriggerKind.REPLAN_TASK_REVISION: TaskPlanReplacementReason.TASK_REVISION_CHANGED,
+        }
+        reason = reasons[trigger.kind]
+        if (
+            trigger.kind == TaskPlanningTriggerKind.REPLAN_STEP_INFEASIBLE
+            and "action budget exhausted" in trigger.detail
+        ):
+            reason = TaskPlanReplacementReason.STEP_ACTION_BUDGET_EXHAUSTED
+        return TaskPlanReplacementDecision(
+            reason=reason,
+            step_id=trigger.step_id,
+        )
 
     @staticmethod
     def completed(state: StateKernel) -> bool:
@@ -241,7 +269,7 @@ class TaskPlanLifecycle:
         budget: TaskPlanBudgetLimits,
         *,
         reason: str,
-    ) -> TaskPlanningContext:
+    ) -> TaskPlanningRequest:
         plan = state.task_plan
         progress = state.task_progress
         affordances = tuple(
@@ -282,22 +310,14 @@ class TaskPlanLifecycle:
             TaskPlanningRecoverySummary(
                 incident_id=failure.failure_id,
                 root_error_code=failure.error_code,
-                terminal_outcome=(
-                    recovery_decision.reentry_phase.value
-                    if recovery_decision is not None
-                    else ""
-                ),
+                terminal_outcome=(recovery_decision.reentry_phase.value if recovery_decision is not None else ""),
                 findings=(failure.failure_class.value,),
-                attempted_actions=(
-                    (recovery_decision.kind.value,)
-                    if recovery_decision is not None
-                    else ()
-                ),
+                attempted_actions=((recovery_decision.kind.value,) if recovery_decision is not None else ()),
             )
             if failure is not None
             else None
         )
-        return TaskPlanningContext(
+        return TaskPlanningRequest(
             task_spec=task_spec,
             state_version=state.version,
             reason=reason,
@@ -343,10 +363,16 @@ class TaskPlanLifecycle:
         )
 
 
-def _resolve_plan_candidate(value: PlanCandidate | Awaitable[PlanCandidate]) -> PlanCandidate:
-    if not hasattr(value, "__await__"):
-        return value
-    return cast(PlanCandidate, resolve_awaitable(value))
+def _resolve_task_planner_response(
+    value: TaskPlannerResponse | Awaitable[TaskPlannerResponse],
+) -> TaskPlannerResponse:
+    resolved = resolve_awaitable(value) if hasattr(value, "__await__") else value
+    if not isinstance(
+        resolved,
+        (PlanProposal, TaskPlanningNoPlan, TaskPlanningGap, TaskPlanningFailure),
+    ):
+        raise TypeError(f"unsupported task planner response: {type(resolved).__name__}")
+    return cast(TaskPlannerResponse, resolved)
 
 
 def _revision_trigger_kind(reason: str) -> str:
@@ -395,10 +421,7 @@ def _progress_view(plan: TaskPlan, state: StateKernel) -> StepProgressView:
         completed_step_ids=completed,
         failed_step_ids=failed,
         ready_step_ids=ready,
-        evidence_by_step_id=tuple(
-            (step_id, progress.evidence_for_step(step_id))
-            for step_id in completed
-        ),
+        evidence_by_step_id=tuple((step_id, progress.evidence_for_step(step_id)) for step_id in completed),
     )
 
 
@@ -413,11 +436,7 @@ def _planning_affordance_state(
 
     input_type = str(state.get("input_type") or "").casefold()
     raw_value = state.get("control_value")
-    control_value = (
-        raw_value[:240]
-        if isinstance(raw_value, str) and input_type != "password"
-        else None
-    )
+    control_value = raw_value[:240] if isinstance(raw_value, str) and input_type != "password" else None
     raw_options = state.get("selected_options")
     selected_options = (
         tuple(item[:160] for item in raw_options[:20] if isinstance(item, str))

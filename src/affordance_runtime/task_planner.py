@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Awaitable, Protocol
+from typing import Awaitable, Protocol, TypeAlias
 from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 
 from affordance_runtime.criteria import LiteralValue, PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
+from affordance_runtime.planning_request_serializer import (
+    serialize_task_planning_request,
+)
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import (
     SourceReference,
@@ -19,7 +22,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     interaction_for_state,
 )
 from affordance_runtime.task_intake import StrictModel, TaskSpec, TaskStructure
-from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
+from affordance_runtime.task_plan_contracts import PlanProposal, TaskPlanGeneratorSource
 from affordance_runtime.task_source_references import task_source_refs
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
@@ -101,7 +104,7 @@ class TaskPlanningBudgetSummary(StrictModel):
     effectful_actions_remaining: int = Field(ge=0)
 
 
-class TaskPlanningContext(StrictModel):
+class TaskPlanningRequest(StrictModel):
     """Bounded current canonical state supplied to a proposal generator."""
 
     schema_version: str = "2.0"
@@ -121,10 +124,27 @@ class TaskPlanningContext(StrictModel):
     remaining_budget: TaskPlanningBudgetSummary
 
 
+class TaskPlanningNoPlan(StrictModel):
+    reason: str = Field(min_length=1, max_length=480)
+
+
+class TaskPlanningGap(StrictModel):
+    gap_code: str = Field(min_length=1, max_length=120)
+    requirement_refs: tuple[str, ...] = ()
+    detail: str = Field(default="", max_length=480)
+
+
+class TaskPlanningFailure(StrictModel):
+    error_code: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=480)
+    retryable: bool = False
+
+
+TaskPlannerResponse: TypeAlias = PlanProposal | TaskPlanningNoPlan | TaskPlanningGap | TaskPlanningFailure
+
+
 class TaskPlannerPort(Protocol):
-    def generate_candidate(
-        self, context: TaskPlanningContext
-    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
+    def propose(self, request: TaskPlanningRequest) -> TaskPlannerResponse | Awaitable[TaskPlannerResponse]: ...
 
 
 @dataclass(frozen=True)
@@ -133,16 +153,19 @@ class PlanningRouter:
 
     complex_planner: TaskPlannerPort | None = None
 
-    def generate_candidate(
-        self, context: TaskPlanningContext
-    ) -> PlanCandidate | Awaitable[PlanCandidate]:
-        from affordance_runtime.task_plan_generators import RulePlanCandidateGenerator
+    def propose(self, request: TaskPlanningRequest) -> TaskPlannerResponse | Awaitable[TaskPlannerResponse]:
+        from affordance_runtime.task_plan_generators import RulePlanProposalGenerator
 
-        if context.task_spec.task_structure != TaskStructure.MULTI_STAGE:
-            return RulePlanCandidateGenerator().generate(context)
+        if request.reason == "plan_exhausted":
+            return TaskPlanningGap(
+                gap_code="plan_exhausted_without_new_milestone",
+                requirement_refs=tuple(item.requirement_id for item in request.task_spec.requirements),
+            )
+        if request.task_spec.task_structure != TaskStructure.MULTI_STAGE:
+            return RulePlanProposalGenerator().generate(request)
         if self.complex_planner is None:
-            return RulePlanCandidateGenerator().generate(context)
-        return self.complex_planner.generate_candidate(context)
+            return RulePlanProposalGenerator().generate(request)
+        return self.complex_planner.propose(request)
 
 
 class TaskPlanStepProposal(StrictModel):
@@ -190,20 +213,19 @@ _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a T
 
 @dataclass
 class StrictTaskPlanner:
-    """Provider-facing planner over the canonical bounded TaskPlanningContext."""
+    """Provider-facing planner over the canonical bounded TaskPlanningRequest."""
 
     model: ModelPort
     config: ModelConfig = field(default_factory=task_planner_model_config)
 
-    async def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
-        summary = task_spec_planning_summary(context.task_spec)
-        planning_context = context.model_dump(mode="json", exclude={"task_spec"})
+    async def propose(self, request: TaskPlanningRequest) -> PlanProposal:
+        payload = serialize_task_planning_request(request)
         messages = (
             ModelMessage(role="system", content=_TASK_PLANNER_SYSTEM_PROMPT),
             ModelMessage(
                 role="user",
                 content=json.dumps(
-                    {"task_spec": summary, "planning_context": planning_context},
+                    payload,
                     sort_keys=True,
                 ),
             ),
@@ -213,15 +235,15 @@ class StrictTaskPlanner:
             TaskPlanProviderResponse,
             self.config,
         )
-        source_refs = task_source_refs(context.task_spec)
-        return PlanCandidate(
-            task_spec_identity=context.task_spec.identity,
-            task_revision=context.task_spec.revision,
+        source_refs = task_source_refs(request.task_spec)
+        return PlanProposal(
+            task_spec_identity=request.task_spec.identity,
+            task_revision=request.task_spec.revision,
             generated_by=TaskPlanGeneratorSource.LLM,
             generator_id="strict-task-planner",
             generator_version=TASK_PLANNER_PROMPT_VERSION,
-            based_on_observation_ref=context.environment.snapshot_id,
-            based_on_state_version=context.state_version,
+            based_on_observation_ref=request.environment.snapshot_id,
+            based_on_state_version=request.state_version,
             steps=tuple(_canonical_provider_step(item, source_refs) for item in response.steps),
             assumptions=response.assumptions,
             source_refs=source_refs,
@@ -250,9 +272,7 @@ def _canonical_provider_step(
                 operator=_predicate_operator(relation),
                 policy=CriterionPolicy(
                     satisfaction=(
-                        SatisfactionMode.ACTION_CAUSED
-                        if proposal.effectful
-                        else SatisfactionMode.STATE_HOLDS
+                        SatisfactionMode.ACTION_CAUSED if proposal.effectful else SatisfactionMode.STATE_HOLDS
                     ),
                     minimum_assurance=AssuranceLevel.STRUCTURAL,
                     allowed_source_kinds=(EvidenceSourceKind.DOM_STATE,),
@@ -311,15 +331,13 @@ def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
     }
 
 
-def task_planning_context_summary(context: TaskPlanningContext) -> dict[str, object]:
-    summary = context.model_dump(mode="json", exclude={"task_spec"})
-    summary["task_spec"] = task_spec_planning_summary(context.task_spec)
+def task_planning_request_summary(request: TaskPlanningRequest) -> dict[str, object]:
+    summary = request.model_dump(mode="json", exclude={"task_spec"})
+    summary["task_spec"] = task_spec_planning_summary(request.task_spec)
     environment = summary.get("environment")
     if isinstance(environment, dict):
         parsed = urlsplit(str(environment.get("url") or ""))
         environment["url"] = (
-            f"{parsed.scheme}://{parsed.netloc}"
-            if parsed.scheme and parsed.netloc
-            else parsed.scheme or ""
+            f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else parsed.scheme or ""
         )
     return summary

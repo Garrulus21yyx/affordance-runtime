@@ -27,7 +27,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.task_planner import TaskPlanningContext
+from affordance_runtime.task_planner import TaskPlanningNoPlan, TaskPlanningRequest
 from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
@@ -88,11 +88,7 @@ class PricingPlanner:
 
     def select(self, request: ChoicePlanningRequest) -> SelectChoice:
         expected = "enterprise" if "enterprise" in request.active_step_id.casefold() else "pro"
-        choice = next(
-            item
-            for item in request.page.choices
-            if expected in item.target_label.casefold()
-        )
+        choice = next(item for item in request.page.choices if expected in item.target_label.casefold())
         return SelectChoice(choice.choice_id, "match accepted pricing step")
 
     def propose(
@@ -113,9 +109,7 @@ class PricingPlanner:
             )
         target = pro if pro is not None and pro.target_id not in satisfied else enterprise
         if target is None:
-            return PlannerUnsupportedResponse(
-                "pricing_affordance_missing", "pricing disclosure control"
-            )
+            return PlannerUnsupportedResponse("pricing_affordance_missing", "pricing disclosure control")
         plan_name = "pro" if target is pro else "enterprise"
         return _proposal_response(
             request,
@@ -130,11 +124,12 @@ class PricingPlanner:
 class PricingTaskPlanner:
     """Reference-app multi-stage plan; no selectors or backend authority."""
 
-    def generate_candidate(self, context: TaskPlanningContext):  # noqa: ANN201
-        from affordance_runtime.task_plan_generators import PricingPlanCandidateGenerator
+    def propose(self, request: TaskPlanningRequest):  # noqa: ANN201
+        from affordance_runtime.task_plan_generators import PricingPlanProposalGenerator
 
-        return PricingPlanCandidateGenerator().generate(context)
-
+        if {"reveal-pro", "reveal-enterprise"}.issubset(request.completed_step_ids):
+            return TaskPlanningNoPlan(reason="pricing milestones complete; deterministic output projection remains")
+        return PricingPlanProposalGenerator().generate(request)
 
 
 @dataclass(frozen=True)
@@ -143,9 +138,7 @@ class SettingsPlanner:
         self, request: PlanningRequest
     ) -> PlannerProposalResponse | PlannerDoneResponse | PlannerUnsupportedResponse:
         if request.recent_outcomes:
-            return PlannerDoneResponse(
-                result={"notifications": "enabled", "verified_by": "fixture_api"}
-            )
+            return PlannerDoneResponse(result={"notifications": "enabled", "verified_by": "fixture_api"})
         modal = _request_affordance_by_label(request, "Dismiss")
         if modal is not None:
             return _proposal_response(
@@ -157,9 +150,7 @@ class SettingsPlanner:
             )
         target = _request_affordance_by_label(request, "Enable notifications")
         if target is None:
-            return PlannerUnsupportedResponse(
-                "settings_affordance_missing", "settings control is unavailable"
-            )
+            return PlannerUnsupportedResponse("settings_affordance_missing", "settings control is unavailable")
         return _proposal_response(
             request,
             proposal_id="enable-notifications",
@@ -175,14 +166,10 @@ class ExportPlanner:
         self, request: PlanningRequest
     ) -> PlannerProposalResponse | PlannerDoneResponse | PlannerUnsupportedResponse:
         if request.recent_outcomes:
-            return PlannerDoneResponse(
-                result={"sha256": EXPORT_SHA256, "verified_by": "file_hash"}
-            )
+            return PlannerDoneResponse(result={"sha256": EXPORT_SHA256, "verified_by": "file_hash"})
         target = _request_affordance_by_label(request, "Export report")
         if target is None:
-            return PlannerUnsupportedResponse(
-                "export_affordance_missing", "export control is unavailable"
-            )
+            return PlannerUnsupportedResponse("export_affordance_missing", "export control is unavailable")
         return _proposal_response(
             request,
             proposal_id="export-report",

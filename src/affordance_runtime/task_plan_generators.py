@@ -17,10 +17,10 @@ from affordance_runtime.simplified_runtime_contracts import (
 )
 from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_plan_contracts import (
-    PlanCandidate,
+    PlanProposal,
     TaskPlanGeneratorSource,
 )
-from affordance_runtime.task_planner import TaskPlanningContext
+from affordance_runtime.task_planner import TaskPlanningRequest
 from affordance_runtime.task_source_references import task_source_refs
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
@@ -30,30 +30,30 @@ from affordance_runtime.verification.contracts import (
 )
 
 
-class PlanCandidateGeneratorPort(Protocol):
+class PlanProposalGeneratorPort(Protocol):
     def generate(
         self,
-        context: TaskPlanningContext,
-    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
+        request: TaskPlanningRequest,
+    ) -> PlanProposal | Awaitable[PlanProposal]: ...
 
 
 @dataclass(frozen=True)
-class RulePlanCandidateGenerator:
+class RulePlanProposalGenerator:
     """Generate a direct StepSpec proposal from accepted task meaning."""
 
     default_evidence_source_kind: str = "dom_state"
 
-    def generate(self, context: TaskPlanningContext) -> PlanCandidate:
-        task_spec = context.task_spec
+    def generate(self, request: TaskPlanningRequest) -> PlanProposal:
+        task_spec = request.task_spec
         source_refs = task_source_refs(task_spec)
-        return PlanCandidate(
+        return PlanProposal(
             task_spec_identity=task_spec.identity,
             task_revision=task_spec.revision,
             generated_by=TaskPlanGeneratorSource.RULE,
             generator_id="rule-task-plan-generator",
             generator_version="sar-3-direct-candidate",
-            based_on_observation_ref=context.environment.snapshot_id,
-            based_on_state_version=context.state_version,
+            based_on_observation_ref=request.environment.snapshot_id,
+            based_on_state_version=request.state_version,
             steps=_steps_from_task_spec(
                 task_spec,
                 default_evidence_source_kind=self.default_evidence_source_kind,
@@ -63,70 +63,64 @@ class RulePlanCandidateGenerator:
 
 
 @dataclass(frozen=True)
-class PricingPlanCandidateGenerator:
+class PricingPlanProposalGenerator:
     """Reference pricing plan draft generator, isolated from accepted-plan authority."""
 
-    def generate(self, context: TaskPlanningContext) -> PlanCandidate:
-        requirement_refs = tuple(
-            item.requirement_id for item in context.task_spec.requirements
-        )
+    def generate(self, request: TaskPlanningRequest) -> PlanProposal:
+        requirement_refs = tuple(item.requirement_id for item in request.task_spec.requirements)
         steps = (
             StepSpec(
                 step_id="reveal-pro",
                 objective="Reveal the Pro plan limits",
-                interaction=ElementIntent("pricing.pro", task_source_refs(context.task_spec)),
+                interaction=ElementIntent("pricing.pro", task_source_refs(request.task_spec)),
                 completion_criteria=(_target_revealed("criterion:reveal-pro", "pricing.pro"),),
-                source_refs=task_source_refs(context.task_spec),
+                source_refs=task_source_refs(request.task_spec),
                 requirement_refs=requirement_refs,
             ),
             StepSpec(
                 step_id="reveal-enterprise",
                 objective="Reveal the Enterprise plan limits",
-                interaction=ElementIntent(
-                    "pricing.enterprise", task_source_refs(context.task_spec)
-                ),
-                completion_criteria=(
-                    _target_revealed("criterion:reveal-enterprise", "pricing.enterprise"),
-                ),
-                source_refs=task_source_refs(context.task_spec),
+                interaction=ElementIntent("pricing.enterprise", task_source_refs(request.task_spec)),
+                completion_criteria=(_target_revealed("criterion:reveal-enterprise", "pricing.enterprise"),),
+                source_refs=task_source_refs(request.task_spec),
                 requirement_refs=requirement_refs,
                 depends_on=("reveal-pro",),
             ),
         )
-        return PlanCandidate(
-            task_spec_identity=context.task_spec.identity,
-            task_revision=context.task_spec.revision,
+        return PlanProposal(
+            task_spec_identity=request.task_spec.identity,
+            task_revision=request.task_spec.revision,
             generated_by=TaskPlanGeneratorSource.RULE,
             generator_id="pricing-task-plan-generator",
             generator_version="tpa-5-draft",
-            based_on_observation_ref=context.environment.snapshot_id,
-            based_on_state_version=context.state_version,
+            based_on_observation_ref=request.environment.snapshot_id,
+            based_on_state_version=request.state_version,
             steps=steps,
             assumptions=("pricing cards can be revealed independently",),
-            source_refs=task_source_refs(context.task_spec),
+            source_refs=task_source_refs(request.task_spec),
         )
 
 
 @dataclass(frozen=True)
-class PlanCandidateGeneratorRouter:
+class PlanProposalGeneratorRouter:
     """Route planning requests to draft generators without accepting a plan."""
 
-    rule_generator: PlanCandidateGeneratorPort = field(default_factory=RulePlanCandidateGenerator)
-    complex_generator: PlanCandidateGeneratorPort | None = None
+    rule_generator: PlanProposalGeneratorPort = field(default_factory=RulePlanProposalGenerator)
+    complex_generator: PlanProposalGeneratorPort | None = None
 
     def generate(
         self,
-        context: TaskPlanningContext,
+        request: TaskPlanningRequest,
         *,
         complex_task: bool | None = None,
-    ) -> PlanCandidate | Awaitable[PlanCandidate]:
+    ) -> PlanProposal | Awaitable[PlanProposal]:
         if complex_task is None:
-            complex_task = context.task_spec.task_structure == TaskStructure.MULTI_STAGE
+            complex_task = request.task_spec.task_structure == TaskStructure.MULTI_STAGE
         if not complex_task:
-            return self.rule_generator.generate(context)
+            return self.rule_generator.generate(request)
         if self.complex_generator is None:
-            raise ValueError("complex task requires a PlanCandidateGeneratorPort")
-        return self.complex_generator.generate(context)
+            raise ValueError("complex task requires a PlanProposalGeneratorPort")
+        return self.complex_generator.generate(request)
 
 
 def _steps_from_task_spec(
@@ -155,9 +149,7 @@ def _steps_from_task_spec(
             ),
             source_refs=source_refs,
             requirement_refs=requirement_refs,
-            effect_authorization_refs=(
-                () if state_holds else task_spec.allowed_effect_refs
-            ),
+            effect_authorization_refs=(() if state_holds else task_spec.allowed_effect_refs),
             effectful=not state_holds,
         ),
     )

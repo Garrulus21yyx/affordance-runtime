@@ -81,13 +81,15 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 from affordance_runtime.task_plan_contracts import (
-    PlanCandidate,
-    TaskPlanGeneratorSource,
+    PlanProposal as PlanCandidate,
 )
 from affordance_runtime.task_plan_contracts import (
     TaskPlan as CanonicalTaskPlan,
 )
-from affordance_runtime.task_planner import TaskPlanningContext
+from affordance_runtime.task_plan_contracts import (
+    TaskPlanGeneratorSource,
+)
+from affordance_runtime.task_planner import TaskPlanningRequest as TaskPlanningContext
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
@@ -520,7 +522,7 @@ class ReplanObserver:
 
 
 class SingleStageTaskPlanner:
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         refs = (SourceReference("request-flow", "unit:setting"),)
         return PlanCandidate(
             task_spec_identity=context.task_spec.identity,
@@ -555,7 +557,7 @@ class SingleStageTaskPlanner:
 
 
 class FinalRecheckTaskPlanner:
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         refs = (SourceReference("request-flow", "unit:setting"),)
         return PlanCandidate(
             task_spec_identity=context.task_spec.identity,
@@ -591,7 +593,7 @@ class FinalRecheckTaskPlanner:
 
 
 class OpenSemanticTaskPlanner:
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         refs = (SourceReference("request-flow", "anchor:tone"),)
         return PlanCandidate(
             task_spec_identity=context.task_spec.identity,
@@ -653,7 +655,11 @@ class FinalRecheckObserver:
 
 
 class TwoStageTaskPlanner:
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
+        self.calls += 1
         refs = (SourceReference("request-flow", "unit:setting"),)
 
         def step(step_id: str, depends_on: tuple[str, ...] = ()) -> StepSpec:
@@ -687,8 +693,8 @@ class TwoStageTaskPlanner:
 
 
 class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
-    async def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
-        return super().generate_candidate(context)
+    async def propose(self, context: TaskPlanningContext) -> PlanCandidate:
+        return super().propose(context)
 
 
 class SubgoalAwarePlanner:
@@ -701,7 +707,7 @@ class SubgoalAwarePlanner:
 
 
 class CurrentStateReadOnlyTaskPlanner:
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         refs = (SourceReference("current-state-read-only-request", "request:task"),)
         first = legacy_step_spec(
             step_id="text-field-changed",
@@ -772,7 +778,7 @@ class CurrentStateReadOnlyPlanner:
 
 
 class InitialAlreadySatisfiedTaskPlanner:
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         raise AssertionError(f"initially complete task unexpectedly planned: {context.reason}")
 
 
@@ -867,17 +873,19 @@ def _current_state_availability_task() -> TaskSpec:
 
 
 def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() -> None:
+    task_planner = AsyncTwoStageTaskPlanner()
     result = compose_run_coordinator(
         observer=TwoStageObserver(),
         planner=SubgoalAwarePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
-        task_planner=AsyncTwoStageTaskPlanner(),
+        task_planner=task_planner,
     ).run_sync(_semantic_envelope())
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_progress is not None
     assert result.state.task_progress.completed_step_ids == ("write", "confirm")
+    assert task_planner.calls == 1
     assert result.result["task_plan_id"].startswith("plan:")
     events = [node.kind for node in result.trace.nodes]
     assert events.count("StepCompleted") == 2
@@ -933,7 +941,7 @@ class ReplanningTaskPlanner:
         self.calls = 0
         self.contexts: list[TaskPlanningContext] = []
 
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         self.calls += 1
         self.contexts.append(context)
         refs = (SourceReference("request-flow", "unit:setting"),)
@@ -1022,7 +1030,7 @@ class EvidenceAwareTaskPlanner:
     def __init__(self) -> None:
         self.contexts: list[TaskPlanningContext] = []
 
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, context: TaskPlanningContext) -> PlanCandidate:
         self.contexts.append(context)
         task = context.task_spec
         discovered = any(item.step_id == "discover" and item.evidence_ids for item in context.criteria_evidence_ledger)
@@ -1068,7 +1076,7 @@ class EvidenceAwareTaskPlanner:
             generator_id="evidence-aware-test-planner",
             based_on_observation_ref=context.environment.snapshot_id,
             based_on_state_version=context.state_version,
-            steps=(discover, apply),
+            steps=((replace(apply, depends_on=()),) if discovered else (discover, apply)),
             assumptions=("the initial apply route is sufficient",),
             source_refs=refs,
         )
@@ -1153,7 +1161,7 @@ def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() 
     assert result.state.task_plan is not None
     assert result.state.task_plan.plan_version == 2
     assert result.state.task_plan.supersedes_plan_id
-    assert result.state.task_plan.steps[1].objective == "Apply using verified saved-state evidence"
+    assert result.state.task_plan.steps[0].objective == "Apply using verified saved-state evidence"
     assert result.state.task_progress is not None
     assert result.state.task_progress.completed_step_ids == ("discover", "apply")
     assert len(task_planner.contexts) == 2

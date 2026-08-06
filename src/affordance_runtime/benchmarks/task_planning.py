@@ -46,8 +46,8 @@ from affordance_runtime.task_intake import (
     TaskSemanticPayload,
     TaskSpec,
 )
-from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
-from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort, TaskPlanningContext
+from affordance_runtime.task_plan_contracts import PlanProposal, TaskPlanGeneratorSource
+from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort, TaskPlanningRequest
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -166,21 +166,21 @@ class _FixedCanonicalPlanner:
     target_stage: int
     calls: int = 0
 
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, request: TaskPlanningRequest) -> PlanProposal:
         self.calls += 1
         source_refs = (SourceReference("task-planning-ablation", "task-planning-ablation:advance"),)
-        return PlanCandidate(
-            task_spec_identity=context.task_spec.identity,
-            task_revision=context.task_spec.revision,
+        return PlanProposal(
+            task_spec_identity=request.task_spec.identity,
+            task_revision=request.task_spec.revision,
             generated_by=TaskPlanGeneratorSource.LLM,
             generator_id="controlled-task-plan",
-            based_on_observation_ref=context.environment.snapshot_id,
-            based_on_state_version=context.state_version,
+            based_on_observation_ref=request.environment.snapshot_id,
+            based_on_state_version=request.state_version,
             steps=tuple(
                 _stage_step(
                     index,
-                    requirement_refs=tuple(item.requirement_id for item in context.task_spec.requirements),
-                    effect_refs=context.task_spec.allowed_effect_refs,
+                    requirement_refs=tuple(item.requirement_id for item in request.task_spec.requirements),
+                    effect_refs=request.task_spec.allowed_effect_refs,
                 )
                 for index in range(1, self.target_stage + 1)
             ),
@@ -233,9 +233,9 @@ class _CountingPlanner:
     delegate: TaskPlannerPort
     calls: int = 0
 
-    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+    def propose(self, request: TaskPlanningRequest) -> PlanProposal:
         self.calls += 1
-        return self.delegate.generate_candidate(context)
+        return self.delegate.propose(request)
 
 
 def run_task_planning_ablation(output_dir: Path) -> dict[str, Any]:

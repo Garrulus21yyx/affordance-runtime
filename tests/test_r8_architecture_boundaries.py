@@ -93,8 +93,7 @@ def test_planner_implementations_depend_on_neutral_contract_not_coordinator() ->
     for filename in PLANNER_IMPLEMENTATION_MODULES:
         tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
         if any(
-            isinstance(node, ast.ImportFrom)
-            and node.module == "affordance_runtime.coordinator"
+            isinstance(node, ast.ImportFrom) and node.module == "affordance_runtime.coordinator"
             for node in ast.walk(tree)
         ):
             violations.append(filename)
@@ -111,21 +110,15 @@ def test_approval_sources_depend_on_neutral_contract_not_coordinator() -> None:
     assert approval_contract_path.exists()
     approval_contract_tree = ast.parse(approval_contract_path.read_text(encoding="utf-8"))
     assert not any(
-        (
-            isinstance(node, ast.ImportFrom)
-            and node.module == "affordance_runtime.coordinator"
-        )
+        (isinstance(node, ast.ImportFrom) and node.module == "affordance_runtime.coordinator")
         or (
-            isinstance(node, ast.Import)
-            and any(alias.name == "affordance_runtime.coordinator" for alias in node.names)
+            isinstance(node, ast.Import) and any(alias.name == "affordance_runtime.coordinator" for alias in node.names)
         )
         for node in ast.walk(approval_contract_tree)
     )
 
     coordinator_tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
-    coordinator_classes = {
-        node.name for node in coordinator_tree.body if isinstance(node, ast.ClassDef)
-    }
+    coordinator_classes = {node.name for node in coordinator_tree.body if isinstance(node, ast.ClassDef)}
     assert coordinator_classes.isdisjoint({"ApprovalProvider", "ConfiguredApprovalProvider"})
 
     violations: list[str] = []
@@ -140,10 +133,7 @@ def test_approval_sources_depend_on_neutral_contract_not_coordinator() -> None:
         if any(
             isinstance(node, ast.ImportFrom)
             and node.module == "affordance_runtime.coordinator"
-            and any(
-                alias.name in {"ApprovalProvider", "ConfiguredApprovalProvider"}
-                for alias in node.names
-            )
+            and any(alias.name in {"ApprovalProvider", "ConfiguredApprovalProvider"} for alias in node.names)
             for node in ast.walk(tree)
         ):
             violations.append(filename)
@@ -154,23 +144,26 @@ def test_approval_sources_depend_on_neutral_contract_not_coordinator() -> None:
     assert "ConfiguredApprovalProvider" not in coordinator_source
 
 
-def test_strict_planner_does_not_define_compatibility_task_grammar() -> None:
-    planner_path = SOURCE_ROOT / "generalist_planner.py"
-    definitions = {
-        node.name
-        for node in ast.parse(planner_path.read_text(encoding="utf-8")).body
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef))
-    }
-    assert definitions.isdisjoint(COMPATIBILITY_TASK_GRAMMAR_DEFINITIONS)
+def test_strict_planners_are_physically_separate_from_compatibility_grammar() -> None:
+    for filename in ("task_planner.py", "step_choice_planner.py"):
+        source = (SOURCE_ROOT / filename).read_text(encoding="utf-8")
+        definitions = {
+            node.name for node in ast.parse(source).body if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+        }
+        assert definitions.isdisjoint(COMPATIBILITY_TASK_GRAMMAR_DEFINITIONS)
+        assert "compatibility_planner_algorithms" not in source
+        assert "generalist_planner" not in source
 
 
 def test_strict_planner_import_and_construction_do_not_load_compatibility_algorithms() -> None:
     module_name = "affordance_runtime.compatibility_planner_algorithms"
     script = f"""
 import sys
-from affordance_runtime.generalist_planner import GeneralistLMPlanner
+from affordance_runtime.step_choice_planner import StrictStepChoicePlanner
+from affordance_runtime.task_planner import StrictTaskPlanner
 assert {module_name!r} not in sys.modules
-GeneralistLMPlanner(object())
+StrictStepChoicePlanner(object())
+StrictTaskPlanner(object())
 assert {module_name!r} not in sys.modules
 """
     completed = subprocess.run(
@@ -184,6 +177,28 @@ assert {module_name!r} not in sys.modules
         },
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_legacy_three_argument_planner_signatures_are_deleted() -> None:
+    generalist = (SOURCE_ROOT / "generalist_planner.py").read_text(encoding="utf-8")
+    context = (SOURCE_ROOT / "planner_context.py").read_text(encoding="utf-8")
+    adapters = (SOURCE_ROOT / "planner_adapters.py").read_text(encoding="utf-8")
+
+    assert "propose_legacy" not in generalist + adapters
+    assert "build_planner_context" not in generalist + context
+    assert "StateKernel" not in context + adapters
+    assert "BrowserSnapshot" not in context + adapters
+    assert not (SOURCE_ROOT / "planner_compatibility.py").exists()
+
+
+def test_task_planning_and_step_choice_flows_do_not_share_authority_objects() -> None:
+    task_flow = (SOURCE_ROOT / "task_plan_flow.py").read_text(encoding="utf-8")
+    choice_flow = (SOURCE_ROOT / "step_choice_flow.py").read_text(encoding="utf-8")
+
+    assert "ChoicePlanningRequest" not in task_flow
+    assert "ActionChoiceCatalog" not in task_flow
+    assert "TaskPlanAuthority" not in choice_flow
+    assert "TaskPlanningRequest" not in choice_flow
 
 
 def test_historical_profile_loads_quarantined_compatibility_algorithms() -> None:

@@ -87,10 +87,7 @@ def project_task_plan_views(
             completed_step_ids=completed,
             failed_step_ids=failed,
             ready_step_ids=ready,
-            evidence_by_step_id=tuple(
-                (step_id, tuple(progress.evidence_for_step(step_id)))
-                for step_id in completed
-            ),
+            evidence_by_step_id=tuple((step_id, tuple(progress.evidence_for_step(step_id))) for step_id in completed),
         ),
     )
 
@@ -112,7 +109,7 @@ class TaskPlanDecisionStatus(StrEnum):
 
 
 @dataclass(frozen=True)
-class PlanCandidate:
+class PlanProposal:
     task_spec_identity: str
     task_revision: int
     generated_by: TaskPlanGeneratorSource
@@ -345,7 +342,7 @@ class TaskPlanAuthority:
     def admit_initial(
         self,
         request: InitialTaskPlanRequest,
-        candidate: PlanCandidate,
+        candidate: PlanProposal,
     ) -> TaskPlanDecision:
         issues = self._validate(request, candidate)
         if issues:
@@ -370,7 +367,7 @@ class TaskPlanAuthority:
     def admit_revision(
         self,
         request: TaskPlanRevisionRequest,
-        candidate: PlanCandidate,
+        candidate: PlanProposal,
     ) -> TaskPlanDecision:
         issues = self._validate(request, candidate)
         if issues:
@@ -395,7 +392,7 @@ class TaskPlanAuthority:
     @staticmethod
     def _validate(
         request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-        candidate: PlanCandidate,
+        candidate: PlanProposal,
     ) -> tuple[TaskPlanIssue, ...]:
         issues: list[TaskPlanIssue] = []
         if candidate.task_spec_identity != request.task_spec_identity:
@@ -411,7 +408,17 @@ class TaskPlanAuthority:
             issues.append(TaskPlanIssue("step_budget_exceeded", "candidate exceeds remaining step budget"))
         allowed_requirements = set(request.allowed_requirement_ids)
         allowed_effects = set(request.allowed_effect_ids)
+        completed_step_ids = (
+            set(request.previous_progress.completed_step_ids) if isinstance(request, TaskPlanRevisionRequest) else set()
+        )
         for step in candidate.steps:
+            if step.step_id in completed_step_ids:
+                issues.append(
+                    TaskPlanIssue(
+                        "completed_step_reinserted",
+                        f"replacement reinserted completed step {step.step_id}",
+                    )
+                )
             if set(step.requirement_refs) - allowed_requirements:
                 issues.append(
                     TaskPlanIssue(
@@ -420,8 +427,7 @@ class TaskPlanAuthority:
                     )
                 )
             if step.effectful and (
-                not step.effect_authorization_refs
-                or set(step.effect_authorization_refs) - allowed_effects
+                not step.effect_authorization_refs or set(step.effect_authorization_refs) - allowed_effects
             ):
                 issues.append(
                     TaskPlanIssue(
@@ -436,13 +442,13 @@ class TaskPlanGeneratorPort(Protocol):
     def generate(
         self,
         request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
+    ) -> PlanProposal | Awaitable[PlanProposal]: ...
 
 
 def _bind_task_plan(
     *,
     request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-    draft: PlanCandidate,
+    draft: PlanProposal,
     plan_id: str,
     plan_version: int,
     supersedes_plan_id: str,
@@ -463,7 +469,7 @@ def _bind_task_plan(
 
 def _validate_draft_matches_request(
     request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-    draft: PlanCandidate,
+    draft: PlanProposal,
 ) -> None:
     if draft.task_spec_identity != request.task_spec_identity:
         raise ValueError("draft task identity mismatch")

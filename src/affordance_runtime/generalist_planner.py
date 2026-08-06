@@ -10,16 +10,13 @@ from importlib import import_module
 from types import ModuleType
 from typing import Any
 
-from affordance_runtime.choice_contracts import ChoicePlanningRequest, SelectChoice
 from affordance_runtime.decision_constraints import StrictDecisionConstraintBuilder
-from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
 from affordance_runtime.planner_context import (
     AffordanceSummary,
     PlannerContext,
     PlannerContextBuilder,
     PlannerLimits,
-    build_planner_context,
 )
 from affordance_runtime.planner_model_orchestrator import (
     PlannerCandidateModel,
@@ -54,9 +51,7 @@ from affordance_runtime.planning_request import (
     PlanningRequest,
     TargetAdmissionStatus,
 )
-from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
-from affordance_runtime.step_choice_planner import DisplayedChoiceCandidate
 from affordance_runtime.unified_observation import UnifiedObservation
 
 GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
@@ -287,27 +282,6 @@ class GeneralistLMPlanner:
             raise ValueError("strict-generalist profile cannot load compatibility semantic compilers")
         self.config = self.config.model_copy(update={"prompt_version": planner_prompt_version(self.planner_profile)})
 
-    async def propose_legacy(
-        self,
-        envelope: RunRequest,
-        state: Any,
-        snapshot: Any,
-    ) -> _GeneralistDecision:
-        if envelope.task_spec is None:
-            raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
-        from affordance_runtime.planner_compatibility import build_legacy_generalist_request
-
-        request, observation = build_legacy_generalist_request(
-            envelope=envelope,
-            state=state,
-            snapshot=snapshot,
-            limits=self.limits,
-            accepted_knowledge=self.accepted_knowledge,
-            allow_finish=self.allow_finish,
-            max_model_calls=self.max_model_calls,
-        )
-        return await self._propose_decision(request, observation)
-
     async def propose(
         self,
         request: PlanningRequest,
@@ -321,59 +295,6 @@ class GeneralistLMPlanner:
     ) -> PlannerResponse:
         return _planner_response(await self._propose_decision(request, observation))
 
-    async def select(self, request: ChoicePlanningRequest) -> SelectChoice:
-        messages = (
-            ModelMessage(
-                role="system",
-                content=(
-                    "Select exactly one Runtime-provided action choice. "
-                    "Return only choice_id. Do not invent actions, targets, "
-                    "parameters, effects, evidence, backend, or completion."
-                ),
-            ),
-            ModelMessage(
-                role="user",
-                content=json.dumps(
-                    {
-                        "task_revision": request.task_revision,
-                        "plan_revision": request.plan_revision,
-                        "catalog_id": request.catalog_ref.catalog_id,
-                        "catalog_digest": request.catalog_ref.catalog_digest,
-                        "active_step_id": request.active_step_id,
-                        "choices": [
-                            {
-                                "choice_id": choice.choice_id,
-                                "action_kind": choice.action_kind.value,
-                                "target_id": choice.target_id,
-                                "target_label": choice.target_label,
-                                "target_role": choice.target_role,
-                                "destination_id": choice.destination_id,
-                                "destination_label": choice.destination_label,
-                                "relevant_current_state": thaw_json_at_external_boundary(
-                                    choice.relevant_current_state
-                                ),
-                                "requirement_refs": list(choice.requirement_refs),
-                                "effect_refs": list(choice.effect_refs),
-                                "conflict_status": choice.conflict_status.value,
-                                "risk": choice.risk,
-                                "generation_reason_codes": list(choice.generation_reason_codes),
-                            }
-                            for choice in request.page.choices
-                        ],
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ),
-            ),
-        )
-        self._reserve_model_call()
-        candidate = await self.model.generate_structured(
-            messages,
-            DisplayedChoiceCandidate,
-            self.config.model_copy(update={"max_tokens": min(self.config.max_tokens, 128)}),
-        )
-        return SelectChoice(candidate.choice_id, "model_selected_presented_choice")
-
     async def _propose_decision(
         self,
         request: PlanningRequest,
@@ -382,9 +303,7 @@ class GeneralistLMPlanner:
         context = self._context_builder().build(request)
         planner_admission: dict[str, object] = {}
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            raise RuntimeError(
-                "strict GeneralistLMPlanner consumes ChoicePlanningRequest via select()"
-            )
+            raise RuntimeError("strict GeneralistLMPlanner consumes ChoicePlanningRequest via select()")
         semantic_compilers = self.semantic_compilers
         if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
             raise RuntimeError("planner semantic compiler profile was not initialized")
@@ -417,11 +336,7 @@ class GeneralistLMPlanner:
                         "compiler_id": compiled.compiler_id,
                         "evidence_ref": compiled.evidence_ref,
                     },
-                    **(
-                        {"planner_admission": planner_admission}
-                        if planner_admission
-                        else {}
-                    ),
+                    **({"planner_admission": planner_admission} if planner_admission else {}),
                 },
             )
         messages = [
@@ -475,9 +390,7 @@ class GeneralistLMPlanner:
                 require_bound_text_source=source_destination_constrained,
             )
             initial_permitted = list(decision_constraints.permitted_action_kinds)
-            initial_targets = {
-                key: list(value) for key, value in decision_constraints.compatible_target_ids.items()
-            }
+            initial_targets = {key: list(value) for key, value in decision_constraints.compatible_target_ids.items()}
             constrained_text_values = decision_constraints.allowed_text_values
             source_destination_constrained = decision_constraints.require_bound_text_source
             typed_text_constraint = decision_constraints.text_constraint
@@ -604,21 +517,6 @@ class GeneralistLMPlanner:
         if self.max_model_calls is not None and self.model_call_count >= self.max_model_calls:
             raise StructuredModelError("model call budget exhausted")
         self.model_call_count += 1
-
-    def build_context(
-        self,
-        envelope: RunRequest,
-        state: Any,
-        snapshot: Any,
-    ) -> PlannerContext:
-        return build_planner_context(
-            envelope,
-            state,
-            snapshot,
-            limits=self.limits,
-            accepted_knowledge=self.accepted_knowledge,
-            allow_finish=self.allow_finish,
-        )
 
     def _context_builder(self) -> PlannerContextBuilder:
         if self.context_builder is not None:

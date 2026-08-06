@@ -42,8 +42,8 @@ from affordance_runtime.task_intake import (
     UserRequest,
 )
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
-from affordance_runtime.task_plan_generators import RulePlanCandidateGenerator
-from affordance_runtime.task_planner import TaskPlanningContext
+from affordance_runtime.task_plan_generators import RulePlanProposalGenerator
+from affordance_runtime.task_planner import TaskPlanningRequest
 from affordance_runtime.task_skills import TaskSkillRuntimeDecision
 from affordance_runtime.task_spec_authority import MinimalIntentProposal
 from affordance_runtime.verification.contracts import SuccessExpression
@@ -280,11 +280,11 @@ class FailOnceTaskPlanner:
     def __init__(self) -> None:
         self.calls = 0
 
-    def generate_candidate(self, context: TaskPlanningContext):
+    def propose(self, request: TaskPlanningRequest):
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError("transient task-plan schema failure")
-        return RulePlanCandidateGenerator().generate(context)
+        return RulePlanProposalGenerator().generate(request)
 
 
 def _task_spec() -> TaskSpec:

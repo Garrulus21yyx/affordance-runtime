@@ -17,7 +17,11 @@ single semantic admission are cut over. P0-E5 also replaces the flawed
 binding coverage. P3 is now cut over: TaskSpec v2 owns flat admitted
 requirements, stable input bindings, authorization/constraint/preference refs,
 risk policy and source-bound outputs; StepSpec traceability is enforced and the
-legacy claim/obligation owners and task-plan provider adapter are deleted. P1 is
+legacy claim/obligation owners and task-plan provider adapter are deleted. P4
+is also cut over: rolling task planning and closed step choice are separate
+typed flows, strict providers receive only bounded typed requests, pure
+serializers expose only admitted/displayed IDs, and explicit triggers reuse an
+active feasible plan without calling the task planner. P1 is
 now cut over: accepted plans store StepSpec directly, TaskPlanAuthority is the
 single plan admission/version owner, TaskProgress is step/fact/evidence based,
 LoopEvaluator owns typed loop evaluation and perception owns four-state
@@ -39,7 +43,8 @@ extensions, with fail-closed unresolved routing already present.
 - P2-7 resolver capability: **DEMAND-GATED**
 - P2-7 unresolved fail-closed routing: **COMPLETE**
 - P3 canonical TaskSpec v2 cutover: **COMPLETE**
-- P4 rolling planning and strict step choice: **PENDING**
+- P4 rolling planning and strict step choice: **COMPLETE**
+- P5 bounded state and final compatibility deletion: **NOT STARTED**
 
 Documentation consolidation does not promote any production capability.
 
@@ -50,11 +55,11 @@ Documentation consolidation does not promote any production capability.
 | Source intake | default path is SourceEnvelope → MinimalIntentProposal → optional SemanticAudit → TaskSpecAuthority; default SourceLedger/claim/obligation owners are deleted | lightweight SourceEnvelope + risk-proportionate MaterialBinding/selective SourceAnchor; optional SemanticAudit | P0-E complete |
 | Semantic authority | TaskSpecAuthority is the only admission writer; bounded SourceContextView readers are ID-bound to admitted requirements, criteria, effects, inputs and anchors; execution consumers are denied source context | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E/P3 complete |
 | Task contract | TaskSpec v2 carries flat typed requirements, stable input bindings, authorization/constraint/preference/forbidden refs, capability ceiling, risk policy and source-bound outputs; claim/obligation/material-bridge compatibility fields are absent | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P3 complete |
-| Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; planner policy emits authority-free PlanCandidate | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 complete |
+| Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; TaskPlanningRequest → PlanProposal is typed and rolling triggers distinguish initial, reuse, exhausted, infeasible, assumption, environment and task-revision cases | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 plus P4 complete |
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
 | Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route, and causal step evidence retains its actual subject/value/source/assurance | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1 plus P2 canonical step-completion cutover complete |
-| Action choice | Runtime builds one logically full, deterministic eager/lazy/indexed Catalog before any model request; bounded ChoicePage and displayed-ID validation are separate owners | logical full Runtime Catalog before bounded semantic ChoicePage | P0-C complete |
+| Action choice | Runtime builds one logically full, deterministic eager/lazy/indexed Catalog before any model request; StepChoiceFlow receives a bounded ChoicePlanningRequest, handles deterministic 0/1/N selection, rejects hidden IDs and fails closed on an oversized truncated page | logical full Runtime Catalog before bounded semantic ChoicePage | P0-C plus P4 complete |
 | ActionContract and gates | selected choice, Catalog digest, canonical observation and current binding are sealed into ActionContract; ordered Task/Capability/Approval/Freshness admission is in-process and typed | retain and bind to canonical observation/catalog identity | P0-C complete; later policy matrix refinement pending |
 | Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
 | Verification | `LoopEvaluator` feeds canonical observation, current contract, bounded lossless recent outcomes, durable evidence, latest final-recheck identity and resource versions directly to `PredicateEvaluator`; action effect and TaskSpec completion retain their earlier owners | loop-native typed step evaluation with bounded evidence locations | P2 mandatory runtime closure complete; P2-6 deferred and P2-7 resolver demand-gated |
@@ -89,7 +94,7 @@ catalog_physical_minimality: logical_eager_lazy_indexed_P0_C_complete
 observation_indexed_epoch: canonical_P0_B_cutover_complete
 authority_in_process_composition: shared_in_process_observation_store_complete
 criterion_provider_phasing: P2_step_P2_1_through_P2_5_complete_P2_6_deferred_P2_7_resolver_pending
-typed_task_planner_trigger: P1_canonical_plan_candidate_and_authority_complete
+typed_task_planner_trigger: P4_typed_trigger_reuse_and_strict_provider_cutover_complete
 risk_derived_feature_profiles: target_not_implemented
 verification_shape: P2_typed_policy_predicates_and_mechanical_provider_matrix_complete
 task_completion_semantics: canonical_P0_A_cutover_complete
@@ -128,7 +133,14 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change | P0-A/B/C/D/E/E5, all P1 rows, P2 core (P2-1..P2-5), and P3 are complete; TaskSpec v2 and StepSpec requirement/effect traceability are canonical, and the claim/obligation compatibility owners are deleted; P2-6 and the full P2-7 resolver remain demand-driven extensions; P4 is pending |
+| production behavior change | P0-A/B/C/D/E/E5, all P1 rows, P2 core (P2-1..P2-5), P3 and P4 are complete; TaskSpec v2 and StepSpec requirement/effect traceability are canonical, rolling task planning and strict closed step choice are cut over, and legacy internal planner signatures are deleted; P2-6 and the full P2-7 resolver remain demand-driven extensions; P5 is not started |
+
+The remaining planner compatibility debt is explicit and bounded:
+`generalist_planner.py`, `compatibility_planner_algorithms.py`, and their
+one-way `planner_context.py` projection serve only the historical generalization
+comparison in `benchmarks/generalization_rollout.py::_run_compatibility_pair`.
+They are not imported by strict/default planner construction and expire at
+`P5-3` after that consumer migrates.
 
 ## 6. Historical ledger
 

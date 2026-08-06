@@ -25,7 +25,12 @@ from affordance_runtime.task_plan_lifecycle import (
     TaskPlanReplacementDecision,
     TaskPlanTransition,
 )
-from affordance_runtime.task_planner import task_planning_context_summary
+from affordance_runtime.task_planner import (
+    TaskPlanningFailure,
+    TaskPlanningGap,
+    TaskPlanningNoPlan,
+    task_planning_request_summary,
+)
 from affordance_runtime.unified_observation import UnifiedObservation
 
 
@@ -116,7 +121,7 @@ class TaskPlanCommitPreparation:
                 "generated_by": task_plan.generated_by.value,
                 "step_count": len(task_plan.steps),
                 "supersedes_plan_id": task_plan.supersedes_plan_id,
-                "planning_context": task_planning_context_summary(transition.context),
+                "planning_context": task_planning_request_summary(transition.request),
                 "validation": decision.status.value,
                 "issues": [vars(item) for item in decision.issues],
             },
@@ -182,7 +187,7 @@ class TaskPlanCommitPreparation:
                     "plan_version": task_plan.plan_version,
                     "preserved_step_ids": list(committed.completed_step_ids),
                     "active_step": committed.active_step,
-                    "planning_context": task_planning_context_summary(self.transition.context),
+                    "planning_context": task_planning_request_summary(self.transition.request),
                 },
             )
         return TaskPlanTraceProjection(
@@ -247,6 +252,10 @@ class TaskPlanFlow:
                 kind=TaskPlanFlowKind.INITIAL,
                 failure=_invocation_failure(exc, initial=True),
             )
+        if isinstance(transition, TaskPlanningNoPlan):
+            return TaskPlanFlowResult()
+        if isinstance(transition, (TaskPlanningGap, TaskPlanningFailure)):
+            return _typed_planner_failure(transition, initial=True)
         return _validated_result(TaskPlanFlowKind.INITIAL, transition)
 
     def _prepare_replacement(
@@ -271,6 +280,14 @@ class TaskPlanFlow:
                 kind=TaskPlanFlowKind.REPLACEMENT,
                 replacement=replacement,
                 failure=_invocation_failure(exc, initial=False),
+            )
+        if isinstance(transition, TaskPlanningNoPlan):
+            return TaskPlanFlowResult()
+        if isinstance(transition, (TaskPlanningGap, TaskPlanningFailure)):
+            return _typed_planner_failure(
+                transition,
+                initial=False,
+                replacement=replacement,
             )
         if transition.previous_plan is None:
             return TaskPlanFlowResult(
@@ -339,17 +356,37 @@ def _validated_result(
         replacement=replacement,
         failure=failure,
     )
+
+
 def _invocation_failure(
     exc: Exception,
     *,
     initial: bool,
 ) -> TaskPlanFlowFailure:
     return TaskPlanFlowFailure(
-        error_code=(
-            RuntimeErrorCode.PLANNER_FAILED
-            if initial
-            else RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
-        ),
+        error_code=(RuntimeErrorCode.PLANNER_FAILED if initial else RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED),
         failure_class=FailureClass.PLANNING,
         message=f"{type(exc).__name__}: {exc}"[:500],
+    )
+
+
+def _typed_planner_failure(
+    response: TaskPlanningGap | TaskPlanningFailure,
+    *,
+    initial: bool,
+    replacement: TaskPlanReplacementDecision | None = None,
+) -> TaskPlanFlowResult:
+    message = (
+        f"{response.gap_code}: {response.detail}".rstrip(": ")
+        if isinstance(response, TaskPlanningGap)
+        else f"{response.error_code}: {response.message}"
+    )
+    return TaskPlanFlowResult(
+        kind=TaskPlanFlowKind.INITIAL if initial else TaskPlanFlowKind.REPLACEMENT,
+        replacement=replacement,
+        failure=TaskPlanFlowFailure(
+            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+            failure_class=FailureClass.PLANNING,
+            message=message[:500],
+        ),
     )

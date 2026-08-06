@@ -83,6 +83,10 @@ from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.semantic_audit import SemanticAudit, SemanticAuditStatus
 from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
+from affordance_runtime.step_choice_planner import (
+    STEP_CHOICE_PROMPT_VERSION,
+    StrictStepChoicePlanner,
+)
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
 from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
 from affordance_runtime.task_spec_authority import TaskSpecAuthority
@@ -187,6 +191,7 @@ class BrowserGymGeneralistPlanner:
     max_model_calls: int = 15
     planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST
     _planner: GeneralistLMPlanner = field(init=False, repr=False)
+    _choice_planner: StrictStepChoicePlanner = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._planner = GeneralistLMPlanner(
@@ -197,6 +202,19 @@ class BrowserGymGeneralistPlanner:
             allow_finish=False,
             planner_profile=self.planner_profile,
         )
+        self._choice_planner = StrictStepChoicePlanner(
+            self.model,
+            config=self.config.model_copy(
+                update={
+                    "max_tokens": min(self.config.max_tokens, 128),
+                    "prompt_version": STEP_CHOICE_PROMPT_VERSION,
+                }
+            ),
+        )
+
+    @property
+    def step_choice_planner(self) -> StrictStepChoicePlanner:
+        return self._choice_planner
 
     def planner_context_ref(self) -> str:
         return self._planner.planner_context_ref()
@@ -212,7 +230,7 @@ class BrowserGymGeneralistPlanner:
 
     @property
     def model_call_count(self) -> int:
-        return self._planner.model_call_count
+        return self._planner.model_call_count + self._choice_planner.model_call_count
 
     def propose(
         self,
@@ -569,9 +587,7 @@ def run_browsergym_episode(
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
             task_planner=None,
-        ).run_sync(
-            RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY])
-        )
+        ).run_sync(RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]))
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -696,9 +712,7 @@ def run_browsergym_generalist_episode(
                 "content_length": envelope.content_length,
             },
         )
-        proposal = resolve_awaitable(
-            intent_compiler.propose(user_request, envelope, trace=intake_trace, parent=parent)
-        )
+        proposal = resolve_awaitable(intent_compiler.propose(user_request, envelope, trace=intake_trace, parent=parent))
         audit = SemanticAudit().evaluate(envelope, proposal)
         parent = intake_trace.add(
             "SemanticAuditEvaluated",
@@ -775,9 +789,8 @@ def run_browsergym_generalist_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
-            task_planner=PlanningRouter(
-                complex_planner=StrictTaskPlanner(model)
-            ),
+            task_planner=PlanningRouter(complex_planner=StrictTaskPlanner(model)),
+            step_choice_planner=planner.step_choice_planner,
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
         ).run_sync(
             RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]),
@@ -1118,11 +1131,7 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
         detail_code = ""
         if phase == "proposal_validation":
             rejected = next(
-                (
-                    previous
-                    for previous in reversed(nodes[:index])
-                    if previous.kind == "PlannerProposalRejected"
-                ),
+                (previous for previous in reversed(nodes[:index]) if previous.kind == "PlannerProposalRejected"),
                 None,
             )
             if rejected is not None:
@@ -1233,23 +1242,15 @@ def _browsergym_planning_stats(nodes: Sequence[Any]) -> dict[str, Any]:
             "selection_source": "unknown",
         }
     diagnostic_turn = next(
-        (
-            turn
-            for turn in reversed(turns)
-            if str(turn.payload.get("model_stage") or "unknown") != "unknown"
-        ),
+        (turn for turn in reversed(turns) if str(turn.payload.get("model_stage") or "unknown") != "unknown"),
         turns[-1],
     )
     payload = diagnostic_turn.payload
     return {
         "planning_turn_count": len(turns),
         "model_stage": str(payload.get("model_stage") or "unknown"),
-        "grounded_target_count": _optional_nonnegative_int(
-            payload.get("grounded_target_count")
-        ),
-        "action_choice_count": _optional_nonnegative_int(
-            payload.get("action_choice_count")
-        ),
+        "grounded_target_count": _optional_nonnegative_int(payload.get("grounded_target_count")),
+        "action_choice_count": _optional_nonnegative_int(payload.get("action_choice_count")),
         "selection_source": str(payload.get("selection_source") or "unknown"),
     }
 
