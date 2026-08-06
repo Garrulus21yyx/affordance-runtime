@@ -14,6 +14,7 @@ from typing import Any, Mapping
 from affordance_runtime.contracts import RiskLevel
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource
 from affordance_runtime.immutable import FrozenDict, freeze_json
+from affordance_runtime.verification.contracts import AssuranceLevel
 
 
 class CoverageCompleteness(StrEnum):
@@ -112,7 +113,15 @@ class Freshness:
 class ActionSupport:
     action_kind: str
     candidate_ids: tuple[str, ...]
+    resource_ref: str = ""
+    operation_ref: str = ""
+    effect_class: str = ""
+    externality: str = ""
+    reversibility: str = ""
+    resource_sensitivity: str = ""
+    source_assurance: str = ""
     risk: RiskLevel = RiskLevel.LOW
+    risk_asserted: bool = False
 
     def __post_init__(self) -> None:
         if not self.action_kind.strip() or not self.candidate_ids:
@@ -206,6 +215,13 @@ class UnifiedObservationTarget:
     conflict_codes: tuple[str, ...] = ()
     source_refs: tuple[str, ...] = ()
     risk: RiskLevel = RiskLevel.LOW
+    risk_asserted: bool = False
+    operation_ref: str = ""
+    effect_class: str = ""
+    source_assurance: AssuranceLevel = AssuranceLevel.WEAK
+    externality: str = ""
+    reversibility: str = ""
+    resource_sensitivity: str = ""
 
     def __init__(
         self,
@@ -220,6 +236,13 @@ class UnifiedObservationTarget:
         conflict_codes: tuple[str, ...] = (),
         source_refs: tuple[str, ...] = (),
         risk: RiskLevel = RiskLevel.LOW,
+        risk_asserted: bool = False,
+        operation_ref: str = "",
+        effect_class: str = "",
+        source_assurance: AssuranceLevel = AssuranceLevel.WEAK,
+        externality: str = "",
+        reversibility: str = "",
+        resource_sensitivity: str = "",
     ) -> None:
         object.__setattr__(self, "target_id", target_id)
         object.__setattr__(self, "surface", surface)
@@ -231,6 +254,13 @@ class UnifiedObservationTarget:
         object.__setattr__(self, "conflict_codes", tuple(conflict_codes))
         object.__setattr__(self, "source_refs", tuple(source_refs))
         object.__setattr__(self, "risk", risk)
+        object.__setattr__(self, "risk_asserted", risk_asserted)
+        object.__setattr__(self, "operation_ref", operation_ref)
+        object.__setattr__(self, "effect_class", effect_class)
+        object.__setattr__(self, "source_assurance", source_assurance)
+        object.__setattr__(self, "externality", externality)
+        object.__setattr__(self, "reversibility", reversibility)
+        object.__setattr__(self, "resource_sensitivity", resource_sensitivity)
         if not target_id.strip() or not surface.strip() or not role.strip():
             raise ValueError("direct canonical target identity is required")
         if confidence is not None and not 0 <= confidence <= 1:

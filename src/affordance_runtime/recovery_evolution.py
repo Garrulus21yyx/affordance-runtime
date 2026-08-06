@@ -22,6 +22,11 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
@@ -49,9 +54,10 @@ from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
-    canonical_effect_requirements,
 )
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -62,7 +68,13 @@ def _snapshot(*, effect_verified: bool = False, sequence: int = 1) -> BrowserSna
     revision = "recovery-state-v1"
     snapshot_id = f"recovery-snapshot-v{sequence}"
     model = DomAdapter().transduce(
-        '<button id="save">Save</button>',
+        (
+            '<button id="save" data-runtime-operation="resource.update@v1" '
+            'data-runtime-effect-class="update" data-runtime-externality="local" '
+            'data-runtime-reversibility="reversible" '
+            'data-runtime-source-assurance="structural" '
+            'data-runtime-risk="medium">Save</button>'
+        ),
         environment_revision=revision,
         snapshot_id=snapshot_id,
         page_revision=revision,
@@ -388,8 +400,26 @@ def _run_fixture(
                 revision=1,
                 objective="exercise recovery cascade",
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                requirements=canonical_effect_requirements(
-                    ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-evolution", ()
+                requirements=(
+                    TaskRequirement(
+                        requirement_id="requirement:effect:1",
+                        payload=TaskSemanticPayload(
+                            kind="effect",
+                            subject="Save",
+                            target_identity="dom_button_1",
+                            operation_class=OperationClass.REVERSIBLE_WRITE,
+                            effect_authorization_scope=EffectAuthorizationScope(
+                                requirement_ref="requirement:effect:1",
+                                effect_class=EffectClass.UPDATE,
+                                resource_scope=ResourceScopeRef(
+                                    "dom_button_1",
+                                    ("recovery-evolution",),
+                                ),
+                                operation_constraint="resource.update@v1",
+                            ),
+                        ),
+                        source_anchor_refs=("recovery-evolution",),
+                    ),
                 ),
                 allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
                 success=SuccessExpression(

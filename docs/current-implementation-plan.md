@@ -1,7 +1,7 @@
 # Current Implementation Plan
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
-> **Execution-table revision:** 2026-08-05 granular cutover plan
+> **Execution-table revision:** 2026-08-06 P4-G concrete-action governance correction
 > **Target:** [Task Contract-centered authoritative architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Migration authority:** [Architecture evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 > **Implementation truth:** [Implementation Status](implementation-status.md)
@@ -38,6 +38,10 @@ requirement_identity_target: canonical_TaskRequirement_refs
 planning_target: observation_grounded_TaskPlan_of_StepSpec
 choice_target: full_Runtime_ActionChoiceCatalog_before_ChoicePage
 choice_presentation_target: bounded_semantic_context_without_execution_bindings
+effect_authority_target: typed_EffectAuthorizationScope_subsumes_RuntimeEffectSignature
+action_authority_result: ALLOW_DENY_UNPROVEN_proof
+runtime_risk_target: conservative_max_with_text_and_VLM_raise_only
+high_risk_target: effect_specific_material_assurance_exact_approval_preflight_and_causal_final_recheck
 catalog_realization_target: logical_complete_eager_or_lazy_indexed
 observation_realization_target: immutable_epoch_ref_plus_read_only_indexes
 authority_realization_target: modular_monolith_in_process_policy_composition
@@ -91,7 +95,8 @@ remove inside their owning migration slice, not through an unrelated rewrite.
 | `coordinator.py` | serial stage ordering and typed directives | recovery classification, semantic parsing, contract construction, evaluation, state mutation | P1-C1 complete; Coordinator only invokes typed RecoveryStage results |
 | `runtime_committer.py` | authoritative transition and trace commit | run-session lifecycle, read projections, evaluator/recovery policy | P1-C2 complete; it consumes precomputed RuntimeTransition/events/completion only |
 | `execution_phase.py` | compose one admitted action attempt | Catalog construction, planner logic, completion logic | P0-C4 action admission extracted; later phase-containment cleanup remains |
-| `choice_contracts.py` / `action_choice_catalog.py` / `action_choice_authority.py` | immutable semantic choice contracts / logical full Catalog / exact TaskSpec legality | model projection policy or backend route selection | P0-C logical membership and P3/P4 legality complete: Runtime proves exact canonical target/destination/material scope and derives effect/risk without keyword or Planner authority; split membership/digest from remaining semantic generation in P5-4, where true physical lazy/indexed realization is still pending |
+| `effect_authority_contracts.py` / `action_effect_classifier.py` / `action_choice_authority.py` | distinct scope/signature/proof contracts / Runtime signature-risk-assurance derivation / typed subsumption and narrow enabling policy | TaskSpec admission, Catalog membership, model projection, backend route, approval or execution; no independent service | P4-G must keep `EffectAuthorizationScope` and `RuntimeEffectSignature` as distinct types; proof binds evaluator-policy version and classifier is Harness-owned pure policy |
+| `choice_contracts.py` / `action_choice_builder.py` / `action_choice_generation.py` / `action_choice_catalog.py` | immutable semantic choice contract / generation and rejection / logical membership-digest-query | effect classification, typed authority evaluation, model projection, backend route selection, TaskSpec admission or copied-field-only gate proof | P4-G moved generation into focused modules and retained membership/digest/query in the 160-line Catalog owner; no parallel authority or service exists |
 | `action_contract_builder.py` | selected-choice validation and current binding materialization | execution, approval grant or completion | P0-C4 complete |
 | `task_planner.py` / `step_choice_planner.py` | strict typed task-planning / closed step-choice provider ports | Runtime authority objects, hidden Catalog entries or action dispatch | P4-2 complete; `generalist_planner.py` is an isolated historical compatibility profile used only by the generalization comparison and expires at P5-3 |
 | `progress_phase.py` | thin post-action stage façade and route-outcome composition | observation repair, task completion evaluation or TaskSkill algorithms | P1 closure complete; focused collaborators own each algorithm |
@@ -129,6 +134,7 @@ and cannot expose legacy state to canonical planners, evaluators or committers.
 | default StepSpec→SubgoalSpec→StepSpec and completed-subgoal carry-forward | `P1-P3` | **deleted** — current TaskPlan stores StepSpec directly and progress survives by facts/bindings/verified records |
 | external model provider `subgoals` wire schema in `legacy_task_plan_provider.py::LegacyTaskPlanProviderAdapter` | `P3-4` | **deleted** — strict task planning emits canonical PlanProposal/StepSpec contracts |
 | strict planner StateKernel/BrowserSnapshot/ActionChoiceBuilder signature and `planner_compatibility.py` | `P4-2` | **deleted** — strict ports accept only typed TaskPlanningRequest or ChoicePlanningRequest |
+| `TaskSemanticPayload.target_identity/destination_identity/operation_class` + unordered scalar input values as sole action authorization proof; Boolean `ChoiceAuthorityDecision.authorized`; copied choice authority fields as Task Gate proof | `P4-G6` | replace in one cutover with typed `EffectAuthorizationScope`, named parameter bindings, Runtime-derived route-specific `RuntimeEffectSignature` and versioned tri-state proof; no compatibility fallback in canonical action path |
 | historical `generalist_planner.py` / `compatibility_planner_algorithms.py` comparison profile | `P5-3` | isolated from strict/default construction; sole production consumer is `benchmarks/generalization_rollout.py::_run_compatibility_pair`; delete after that comparison migrates |
 
 P5 is not a dumping ground for deletion deferred from earlier slices. Only a
@@ -230,7 +236,7 @@ extensions rather than core closure gates.
 | ID | Deliverable and exact files | Legacy deletion/isolation | Depends on | Minimal verification | Status |
 |---|---|---|---|---|---|
 | `P3-1` | Define canonical TaskRequirement/InputBinding/OutputSpec and TaskSpec v2 in `task_intake.py`; fold P0-E5 material values into the canonical requirement/input payloads while retaining stable MaterialBinding refs/digest; admission remains in `task_spec_authority.py` | remove execution steps/action family/current UI facts and the temporary standalone `TaskSpec.material_bindings` bridge; do not add a second material registry or projector round-trip | P0-E, P2-1 | one lossless material requirement/output/binding schema case | **completed (2026-08-06; seventh redline closure reverified)** — accepted TaskSpec requires one typed success root whose leaves cite exact admitted requirement IDs and typed CriterionPolicy; high-risk admission additionally requires distinct allowed-effect-bound external ACTION_CAUSED/RECENT_ACTION and AUTHORITATIVE/FINAL_RECHECK leaves, skips duplicate source bindings already owned by success leaves, and returns typed issues for invalid construction; canonical Runtime/API requests require Authority-issued `AdmittedTaskSpec` and contain no goal-only fallback, while raw external submissions use a separate server-side intake boundary; completion has no retained evaluation cache and re-admits CURRENT_OBSERVATION, RECENT_ACTION and DURABLE evidence from their exact Runtime-owned lifetimes each epoch; final rechecks bind canonical target/fact resource versions and accept only authoritative source/strength/assurance; semantic value constraints are folded into canonical requirements and role/output authority remains fully validated |
-| `P3-2` | Add requirement/effect refs to StepSpec and authority validation in `task_plan_contracts.py` | reject steps with no TaskSpec trace or observation-grounded enabling need | P3-1, P1-P2 | one read-only and one effectful traceability case | **completed (2026-08-06; ninth redline closure reverified)** — every StepSpec carries admitted requirement refs; Runtime, not Planner, derives concrete effectfulness/risk and an immutable scope proof from exact canonical target, destination and material bindings; Catalog fails closed for an unproved scope and the Task gate independently recomputes the proof, with no keyword matcher or no-overlap allow branch |
+| `P3-2` | Add requirement/effect refs to StepSpec and authority validation in `task_plan_contracts.py` | reject steps with no TaskSpec trace or observation-grounded enabling need | P3-1, P1-P2 | one read-only and one effectful traceability case | **completed (2026-08-06)** — every StepSpec carries admitted requirement/effect refs. `8b91944` additionally removes keyword-overlap matching, but its free-form identity/coarse-operation/Boolean concrete proof is only an interim implementation and is replaced by P4-G; P3-2 completion does not claim action-time legality closure |
 | `P3-3` | Bind SourceContextView to admitted requirement/material-binding/anchor IDs in `source_context.py`; return typed TaskSpecGap | no downstream patch/reinterpret path; direct explicit bindings do not acquire synthetic spans | P3-1 | one allowed planner context and one prohibited execution read-set case | **completed (2026-08-06; second redline closure reverified)** — success leaves own exact requirement refs and SourceContext projects only their associated anchors; broad all-requirements criterion binding is absent, the view returns `TaskSpec.source_binding_digest`, and execution consumers remain denied |
 | `P3-4` | Delete the remaining compatibility-only `TaskSpec.source_claims`/`obligations` schema fields (the old IntentDraft/validator writer is already deleted; default P0-E production no longer populates, serializes or plans from graph fields) | keep optional audit storage isolated from planning/progress | P3-1–P3-3 | delete superseded compatibility schema tests; run retained intake suite | **completed (2026-08-06; fifth redline closure reverified)** — compatibility fields, obligation owners, legacy criterion adapter and legacy task-plan provider are deleted; canonical request types reject raw or missing admitted tasks, the private wrapper has one production importer, and remaining `legacy_run_request` consumers are explicitly inventoried for P5-3 deletion |
 
@@ -241,13 +247,30 @@ extensions rather than core closure gates.
 | `P4-1` | Separate `task_plan_flow.py` from new `step_choice_flow.py`; define distinct typed requests/responses | neither flow accepts the other's authority object | P1, P3 | one import/signature boundary and one two-horizon vertical case | **completed (2026-08-06)** — TaskPlanFlow and StepChoiceFlow own separate typed horizons; boundary and two-stage reuse tests pass |
 | `P4-2` | Move strict provider implementation from `generalist_planner.py` to focused `task_planner.py` and `step_choice_planner.py` | delete internal StateKernel/BrowserSnapshot/ActionChoiceBuilder signatures and converters; any external planner adapter translates one-way into typed requests and has an expiry | P4-1, P0-C | reuse planner behavior tests; delete legacy signature tests; add import-direction scan | **completed (2026-08-06; sixth redline closure reverified)** — strict providers accept only TaskPlanningRequest/ChoicePlanningRequest; `PlanningStage` and default composition have no proposal fallback or duck-typed `select` compatibility; strict BrowserGym preserves Authority-admitted task success, constructs the two strict providers, records official reward only as independent benchmark evidence, and its runner import no longer loads generalist planner/context or legacy request code; legacy BrowserGym planner/episode code is isolated in `browsergym_compatibility_episode.py` for P5-3 deletion |
 | `P4-3` | Add typed planning trigger/reuse/direct fast paths in `planning_phase.py` | no TaskPlanner call while current active step remains feasible | P4-2 | one parametrized trigger decision test | **completed (2026-08-06)** — typed initial/reuse/exhausted/infeasible/assumption/environment/task-revision triggers are explicit; active feasible plans reuse without a planner call and completed steps cannot be reinserted |
-| `P4-4` | Make `planning_request_serializer.py` pure; stage deterministic narrowing, then paging, then typed retrieval only if measured | no request/context projector reconstructs authority | P4-2 | one serializer snapshot plus one page continuation case; no OpenResolver tests until enabled | **completed (2026-08-06; ninth redline closure reverified)** — pure serializers expose only admitted/displayed IDs; Catalog membership is proven against exact TaskSpec target/destination scope before presentation and rejects a source-declared concrete-action risk above the admitted operation class; ChoicePresentation carries Runtime-derived risk and destination labels, 0/1/N behavior is deterministic, hidden IDs are rejected, and oversized truncated pages fail closed with CHOICE_SPACE_TOO_LARGE while paging and true physical lazy/indexed realization remain deferred to P5-4 |
+| `P4-4` | Make `planning_request_serializer.py` pure; stage deterministic narrowing, then paging, then typed retrieval only if measured | no request/context projector reconstructs authority | P4-2 | one serializer snapshot plus one page continuation case; no OpenResolver tests until enabled | **completed (2026-08-06)** — pure serializers expose only admitted/displayed IDs; ChoicePresentation carries Runtime-derived risk/destination fields, 0/1/N is deterministic, hidden IDs are rejected and oversized pages fail closed. Concrete effect legality is not part of serializer completion and remains blocked on P4-G |
+
+`P3-2` and `P4-4` remain complete for their deliberately narrow owners: requirement traceability and pure presentation/selection respectively. P4-G separately completed the substitutive cutover for concrete action legality without reopening those finished rows.
+
+### P4-G — Concrete action authority and high-risk governance closure
+
+This substitutive vertical migration completed as six review packets. The final
+cutover removed the old string/Boolean proof; no dual-read, shadow comparison,
+legacy fallback, or new→old→new projector remains on the canonical route.
+
+| ID | Deliverable and exact files | Legacy deletion/isolation | Depends on | Minimal verification | Status |
+|---|---|---|---|---|---|
+| `P4-G1` | Add focused `effect_authority_contracts.py` for distinct `EffectAuthorizationScope` and `RuntimeEffectSignature`, plus `ResourceScopeRef`, named `ParameterAuthorization`, `Externality`, `Reversibility`, `AuthorityStatus` and immutable proof with evaluator-policy version; update intake/TaskSpec admission so effect requirements own only the scope payload | do not add an effect graph, TaskType enum or second requirement registry; TaskSpec cannot store current action/backend/binding/signature; remove coarse `operation_class`, free-form label and unordered scalar values as authority in the same final cutover | P3 | one schema/admission matrix for operation + resource/destination + named slots + externality/reversibility | **completed (2026-08-06)** — typed scope/signature/risk/proof contracts are distinct and versioned; TaskSpec owns scope only |
+| `P4-G2` | Add focused `action_effect_classifier.py`; extend canonical observation and existing DOM/AX/Visual/SVG/WoT/API/Device adapters to emit typed operation/effect/externality/reversibility/risk/assurance assertions; derive Runtime risk as the conservative max of effect, externality, reversibility, resource, amount/recipient, capability, source uncertainty and conflict | source hints remain evidence, never sole authority; missing material classification does not default effectful action to LOW; Text/VLM may raise risk or request observation/clarification only | G1, P0-B | reuse cross-surface fixtures plus one unknown-risk/conflict/assurance and VLM raise-only matrix | **completed (2026-08-06)** — exact operation policy and typed assertions feed conservative multidimensional risk; incomplete classification is UNPROVEN |
+| `P4-G3` | Rewrite `action_choice_authority.py` as pure `EffectAuthorizationScope ⊒ RuntimeEffectSignature` subsumption; move semantic generation out of 1,143-line reviewed-baseline Catalog into `action_choice_builder.py`; keep membership/digest/query in Catalog; presentation carries proof-derived effect summary and authorization/generation reasons | delete Boolean scope proof, value-set admission, label authority and Planner-owned role/effect/risk branches; enabling policy is restricted to requirement-bound observe/focus/hover/scroll/non-commit UI/allowed-domain navigation/wait/local reversible draft and proves no external commit or unauthorized disclosure | G1-G2 | one data-driven redline: operation mismatch, swapped named params, label alias, source assurance, enabling disclosure/UNKNOWN effect, DENY vs UNPROVEN | **completed (2026-08-06)** — pure tri-state subsumption admits ALLOW only; generation/builder/catalog responsibilities are split below the containment gate |
+| `P4-G4` | Update contract/admission owners: final route rebuilds route-specific `RuntimeEffectSignature`; contract hash seals scope/signature/proof-policy, actual target/destination candidate, named parameters, externality/reversibility, risk/assurance and epoch/binding; Task Gate independently rebuilds proof; approval presentation shows concrete resource/destination/material parameters/reversibility/backend/source uncertainty | delete copied-choice-fields-only gate path; approval/capability cannot upgrade UNPROVEN; route/parameter/classification/epoch change invalidates contract/token | G3 | one forged/wrong-binding sentinel plus contract-hash/approval display/token invalidation/freshness verticals | **completed (2026-08-06)** — actual route is reclassified and reauthorized; contract/token bind the versioned proof and approval presentation |
+| `P4-G5` | Connect the small risk × source-assurance/effect policy matrix through existing material, approval, execution, recovery and LoopEvaluator/task-completion owners for send/share/payment/purchase/delete/account-security/device actuation; seal attempt/idempotency/transaction identity and preserve real authoritative observed values | no site/workflow enumeration, default second model, independent risk service or blind retry; Visual/VLM may locate high-risk target but cannot alone authorize or complete it; uncertain outcome cannot change backend/replay until authoritative lookup proves no effect | G4, P2 | reuse three verticals: low-risk read/navigation, high-risk API/WoT transaction, unknown/uncertain external effect | **completed (2026-08-06)** — every live matrix row requires exact material/capability/approval/preflight plus causal and authoritative final evidence |
+| `P4-G6` | Migrate every default caller/import, delete obsolete fields/helpers/tests, update status/redline evidence; verify containment of Catalog, execution and all touched files | canonical modules cannot import a compatibility proof; no target file gains a second domain responsibility; retained external adapter is one-way with explicit P5-3 expiry | G1-G5 | focused mismatch/parameter/assurance/enabling matrix + three reused verticals + affected suites + one full-suite checkpoint; no standalone test project or tests beyond a demonstrated failure/boundary | **completed (2026-08-06)** — default callers use typed authority; obsolete copied proof fields are deleted; `912 passed`, Ruff and diff checks are green |
 
 ### P5 — Bounded state and legacy deletion
 
 | ID | Deliverable and exact files | Legacy deletion/isolation | Depends on | Minimal verification | Status |
 |---|---|---|---|---|---|
-| `P5-1` | Add lightweight `run_ledger.py` namespaces for facts, bindings, recent outcomes and durable evidence; keep distinct lifetimes | no separate database/service per namespace | P1–P3 | one lifetime/invalidation matrix | pending |
+| `P5-1` | Add lightweight `run_ledger.py` namespaces for facts, bindings, recent outcomes and durable evidence; keep distinct lifetimes | no separate database/service per namespace | P1–P4-G | one lifetime/invalidation matrix | pending |
 | `P5-2` | Finish `observation_store.py` + Catalog refs; shrink StateKernel to current identities and committed progress | no copied presentation or full observation graph in StateKernel | P0-B/C, P5-1 | one epoch/catalog stale-reference case | pending |
 | `P5-3` | Remove only documented external/public compatibility adapters whose consumers have migrated, including `browsergym_compatibility_episode.py`; verify earlier slices already deleted all internal legacy owners | P5 cannot accept internal deletion debt from P0–P4; no parallel owner remains importable from production composition | all prior | adapter consumer inventory, architecture import scan and normal product vertical suite | pending |
 | `P5-4` | Final containment pass over `coordinator.py`, `runtime_committer.py`, `execution_phase.py` (currently 1,142 lines), strict `browsergym_episode_runner.py` (currently 1,082 lines after legacy extraction), planners and builders | any remaining multi-owner file must split or carry a dated removal gate; execution and strict BrowserGym lifecycle/metrics are the current production god-file risks | P5-3 | reuse boundary tests; no test added for line count alone | pending |
@@ -256,15 +279,15 @@ extensions rather than core closure gates.
 
 ### 7.1 Current evidence and decision
 
-Audit baseline on 2026-08-05:
+Audit baseline on 2026-08-06 at the latest reviewed push:
 
 | Measure | Current observation | Decision |
 |---|---:|---|
-| collected tests | 1476 | high count alone is not a deletion reason |
-| test files | 130 | consolidate only where ownership/failure signal is duplicated |
-| full local runtime | 14.62 seconds | currently acceptable; no performance-driven rewrite |
-| test/source LOC | about 54k / 55k | maintenance concentration requires active retirement |
-| `test_horizontal_architecture_governance.py` | 4044 lines / 124 tests / extensive source-text assertions | first cleanup target; it is itself a God test file |
+| collected tests | 899 | high count alone is not a deletion reason |
+| test files | 107 | consolidate only where ownership/failure signal is duplicated |
+| full local runtime | 15.14 seconds with `PYTHONPATH=.:src` | acceptable; no performance-driven rewrite |
+| test/source LOC | about 31.6k / 53.9k | ratio is no longer near 1:1; maintenance risk is concentrated, not suite-wide |
+| largest test files | `test_browsergym_adapter.py` 2,648; `test_coordinator.py` 1,681; `test_planning.py` 1,230 | prune/split only while their production owner is already changing |
 
 The suite is not too slow, but parts are too historical and text-coupled. Test
 cleanup therefore follows owner cutover and failure-localization value, not an
@@ -299,15 +322,20 @@ contract, manifest rule, or real behavior test can locate the same failure.
 
 Full pytest is not required after every small edit. Repeated green runs without
 a changed failure surface are test activity, not delivery evidence.
+The current repository entrypoint must include the root helper/scripts path:
+`PYTHONPATH=.:src pytest -q`. A collection run without that path is an
+environment/configuration failure, not product evidence; P4-G must not spend
+scope on rebuilding the test harness unless the repository entrypoint itself is
+explicitly selected for repair.
 
 ### 7.4 Cleanup queue
 
 | ID | Scope | Action | Exit |
 |---|---|---|---|
-| `T0` | `tests/test_horizontal_architecture_governance.py` | keep current authority/import/write boundaries; remove archived-record prose checks; consolidate amendment text checks into one data-driven current-authority matrix; split remaining tests by runtime/planning/documentation ownership only after pruning | no active test fails solely because immutable historical prose changed; no replacement test explosion |
+| `T0` | former `tests/test_horizontal_architecture_governance.py` | **complete/deleted**; do not recreate a prose-coupled replacement | current documentation gate + compact runtime redline matrix remain sufficient |
 | `T1` | tests bound to SourceLedger, Subgoal, old completion and planner compatibility | delete in the same slice that removes the owner; retain only explicit adapter contract until its dated removal | every compatibility test names a live adapter and removal gate |
 | `T2` | repeated model-port local HTTP fixtures | share transport fixture/fake clock; keep one real local transport sentinel; remove fixed shutdown/backoff cost from unit cases when this module is next touched | retry semantics remain covered without repeated wall-clock waits |
-| `T3` | large behavior test files | consolidate shared setup and parameterize equivalent failure matrices during the owning production slice, not as a standalone rewrite | fewer duplicated fixtures/assertions with unchanged boundary coverage |
+| `T3` | `test_browsergym_adapter.py`, `test_coordinator.py`, `test_planning.py`, and P4-G-touched `test_action_choice_catalog.py` | consolidate shared setup and parameterize equivalent failure matrices during the owning production slice, not as a standalone rewrite | fewer duplicated fixtures/assertions with unchanged boundary coverage |
 
 `T0` is time-boxed and may run as the one independent horizontal containment
 slice. `T1`–`T3` are performed only while their production owner is already
@@ -332,6 +360,11 @@ Before marking done:
 - legacy code and its tests are deleted or behind an explicit adapter/removal gate;
 - every surviving adapter is external-ingress-only, one-way and before its last-allowed slice;
 - TaskSpec authorization, approval binding and completion authority did not expand;
+- TaskSpec effect scope and Runtime concrete signature are distinct typed contracts; neither is reconstructed from objective/label/Planner fields;
+- concrete action proof binds operation, canonical resource/destination, named parameters, actual candidate/binding, externality/reversibility, risk/assurance, evaluator-policy version and current epoch; UNKNOWN is not LOW;
+- Text/VLM may only raise risk or request targeted observation/clarification; it cannot produce ALLOW, lower risk or create authorization;
+- Task Authority revalidates the actual ActionContract rather than fields copied from the selected choice; approval never repairs DENY/UNPROVEN;
+- approval presentation exposes concrete action/resource/destination/material parameters/reversibility/backend/source uncertainty, and any sealed-field change invalidates the token;
 - receipt, effect, step, plan and task results remain distinct;
 - Planner/Executor/Evaluator do not write StateKernel;
 - Coordinator and RuntimeCommitter contain no new domain algorithm;
@@ -348,10 +381,13 @@ Before marking done:
 | 3 | `P0-C` | establish Runtime-owned legal action space and contract binding |
 | 4 | `P0-E` | replace extraction-heavy default intake without coupling it to planning |
 | 5 | `P0-D` | freeze the completed P0 boundaries in one compact matrix |
-| 6 | `P1`–`P5` | follow dependency order in §6 |
+| 6 | `P1`–`P4` | completed core plan/evaluation/TaskSpec/strict-choice cutovers |
+| 7 | `P4-G` | **completed** — typed concrete proof and high-risk governance cut over |
+| 8 | `P5` | **NEXT** — bounded state, external compatibility deletion and final god-file containment |
 
 P0-A and P0-B may be prepared independently, but only one vertical authority
-cutover is admitted at a time. `T0` may run beside one vertical slice because it
+cutover is admitted at a time. P4-G1–G6 are review packets within that one
+cutover, not independently mergeable owners. `T0` may run beside one vertical slice because it
 does not change production behavior.
 
 ## 10. Historical detail

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from affordance_runtime.contracts import Affordance, RiskLevel
@@ -37,6 +38,11 @@ def _risk_rank(value: RiskLevel) -> int:
         RiskLevel.HIGH: 2,
         RiskLevel.IRREVERSIBLE: 3,
     }[value]
+
+
+def _single_typed_value(values: Iterable[str]) -> str:
+    known = {str(value) for value in values if str(value).strip()}
+    return next(iter(known)) if len(known) == 1 else ""
 
 
 @dataclass(frozen=True)
@@ -235,12 +241,42 @@ def _canonical_target(
             candidate_ids_by_action[action].append(candidate.candidate_id)
     action_support = tuple(
         ActionSupport(
-            action,
-            tuple(candidate_ids_by_action[action]),
-            max(
+            action_kind=action,
+            candidate_ids=tuple(candidate_ids_by_action[action]),
+            resource_ref=_single_typed_value(
+                getattr(candidate.payload, "backend_handle", "") or candidate.semantic_target_id
+                for candidate in candidates
+                if action in candidate.supported_actions
+            ),
+            operation_ref=_single_typed_value(
+                candidate.operation_ref for candidate in candidates if action in candidate.supported_actions
+            ),
+            effect_class=_single_typed_value(
+                candidate.effect_class for candidate in candidates if action in candidate.supported_actions
+            ),
+            externality=_single_typed_value(
+                candidate.externality for candidate in candidates if action in candidate.supported_actions
+            ),
+            reversibility=_single_typed_value(
+                candidate.reversibility for candidate in candidates if action in candidate.supported_actions
+            ),
+            resource_sensitivity=_single_typed_value(
+                candidate.resource_sensitivity
+                for candidate in candidates
+                if action in candidate.supported_actions
+            ),
+            source_assurance=_single_typed_value(
+                candidate.authority_source_assurance
+                for candidate in candidates
+                if action in candidate.supported_actions
+            ),
+            risk=max(
                 (candidate.risk for candidate in candidates if action in candidate.supported_actions),
                 key=_risk_rank,
                 default=RiskLevel.LOW,
+            ),
+            risk_asserted=any(
+                candidate.risk_asserted for candidate in candidates if action in candidate.supported_actions
             ),
         )
         for action in sorted(candidate_ids_by_action)

@@ -14,7 +14,7 @@ from affordance_runtime.active_perception_flow import (
     ActivePerceptionFlow,
     ActivePerceptionFlowContext,
 )
-from affordance_runtime.approval_contracts import ApprovalProvider
+from affordance_runtime.approval_contracts import ApprovalProvider, present_approval
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.choice_contracts import ActionSelection
@@ -34,6 +34,7 @@ from affordance_runtime.failure_envelope import (
     make_failure_envelope,
 )
 from affordance_runtime.grounding import GroundingSource
+from affordance_runtime.high_risk_effect_policy import policy_for_effect
 from affordance_runtime.observation_store import (
     InMemoryObservationStore,
     ObservationCommit,
@@ -407,13 +408,15 @@ class ActionStage:
             stage_input.capture.observation,
             capability_gate_enabled=self.capability_gate_enabled,
             preflight_enabled=self.preflight_enabled,
+            canonical_observation=stage_input.observation,
         )
         gate = checked.gate
         error = checked.error
         current = stage_input.capture
         artifact_refs: list[str] = []
         perception_delta = _PerceptionDelta()
-        if error is None and self.preflight_enabled:
+        policy_preflight_required = _policy_preflight_required(contract)
+        if error is None and (self.preflight_enabled or policy_preflight_required):
             current = self.perception_session.capture(_capture_request(stage_input))
             ref = self._write_observation(stage_input, current)
             if ref:
@@ -463,15 +466,17 @@ class ActionStage:
                         snapshot_id=contract.snapshot_id,
                     )
                 )
-        elif not self.preflight_enabled:
+        elif not self.preflight_enabled and not policy_preflight_required:
             events.append(_event("AblationApplied", stage_input.state_view.phase, disabled_layer="preflight"))
 
         if error == RuntimeErrorCode.APPROVAL_REQUIRED:
+            approval_presentation = present_approval(contract)
             events.append(
                 _event(
                     "HumanApprovalRequested",
                     RuntimeStep.WAITING_APPROVAL,
                     contract_hash=contract.contract_hash,
+                    approval_presentation=asdict(approval_presentation),
                 )
             )
             token = self.approval_provider.approve(contract) if self.approval_provider else None
@@ -801,6 +806,7 @@ class ActionStage:
             gate,
             capability_gate_enabled=self.capability_gate_enabled,
             include_policy=True,
+            canonical_observation=self.observation_builder.build(snapshot),
         )
         return (rebound, None) if rebound_error is None else None
 
@@ -1133,6 +1139,14 @@ def _route_events(
             contract_hash=contract.contract_hash,
         )
     ]
+
+
+def _policy_preflight_required(contract: ActionContract) -> bool:
+    signature = contract.runtime_effect_signature
+    if signature is None:
+        return False
+    policy = policy_for_effect(signature.effect_class, signature.operation_ref)
+    return bool(policy and policy.preflight_required)
 
 
 def _event(kind: str, state: RuntimeStep | str, **payload: object) -> RuntimeEvent:

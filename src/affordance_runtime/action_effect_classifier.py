@@ -1,0 +1,267 @@
+"""Harness-owned, conservative Runtime effect and risk classification."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict
+
+from affordance_runtime.effect_authority_contracts import (
+    EffectClass,
+    Externality,
+    Reversibility,
+    RuntimeEffectSignature,
+    RuntimeRiskTier,
+    RuntimeRiskVector,
+)
+from affordance_runtime.grounding import (
+    ApiGroundingPayload,
+    GroundingCandidate,
+    GroundingSource,
+    WoTGroundingPayload,
+)
+from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.unified_observation import ConflictStatus, UnifiedObservation
+from affordance_runtime.verification.contracts import AssuranceLevel
+
+_INTERACTION_POLICY = {
+    "focus": (EffectClass.INTERACTION_ONLY, Externality.LOCAL, Reversibility.REVERSIBLE),
+    "hover": (EffectClass.INTERACTION_ONLY, Externality.LOCAL, Reversibility.REVERSIBLE),
+    "scroll": (EffectClass.INTERACTION_ONLY, Externality.LOCAL, Reversibility.REVERSIBLE),
+    "wait": (EffectClass.INTERACTION_ONLY, Externality.LOCAL, Reversibility.REVERSIBLE),
+}
+_STRUCTURED_ACTION_POLICY = {
+    "fill": (EffectClass.UPDATE, Externality.LOCAL, Reversibility.REVERSIBLE, "field.set@v1"),
+    "type": (EffectClass.UPDATE, Externality.LOCAL, Reversibility.REVERSIBLE, "field.set@v1"),
+    "type_text": (EffectClass.UPDATE, Externality.LOCAL, Reversibility.REVERSIBLE, "field.set@v1"),
+    "select": (EffectClass.UPDATE, Externality.LOCAL, Reversibility.REVERSIBLE, "field.set@v1"),
+    "select_option": (EffectClass.UPDATE, Externality.LOCAL, Reversibility.REVERSIBLE, "field.set@v1"),
+    "navigate": (EffectClass.NAVIGATE, Externality.SAME_ORIGIN, Reversibility.REVERSIBLE, "navigation.navigate@v1"),
+}
+_WOT_OPERATION_POLICY = {
+    "readproperty": (EffectClass.READ, Externality.PHYSICAL_WORLD, Reversibility.REVERSIBLE),
+    "writeproperty": (EffectClass.UPDATE, Externality.PHYSICAL_WORLD, Reversibility.UNKNOWN),
+    "invokeaction": (EffectClass.INVOKE, Externality.PHYSICAL_WORLD, Reversibility.UNKNOWN),
+}
+
+
+def classify_action(
+    observation: UnifiedObservation,
+    *,
+    target_id: str,
+    action_kind: str,
+    parameters: object,
+    destination_id: str = "",
+    candidate: GroundingCandidate | None = None,
+    destination_candidate: GroundingCandidate | None = None,
+) -> RuntimeEffectSignature:
+    target = next((item for item in observation.targets if item.target_id == target_id), None)
+    destination = next((item for item in observation.targets if item.target_id == destination_id), None)
+    selected = candidate
+    normalized_action = action_kind.casefold()
+    operation_ref: str | None = None
+    resource_ref: str | None = target_id if target is not None else None
+    effect_class: EffectClass | None = None
+    externality: Externality | None = None
+    reversibility: Reversibility | None = None
+    assurance = AssuranceLevel.WEAK
+    assertion_refs: tuple[str, ...] = ()
+    resource_sensitivity = RuntimeRiskTier.LOW
+
+    if target is not None:
+        assertion_refs = tuple(getattr(target, "source_assertion_refs", getattr(target, "source_refs", ())))
+        operation_ref = _optional_text(getattr(target, "operation_ref", ""))
+        effect_class = _optional_enum(EffectClass, getattr(target, "effect_class", ""))
+        externality = _optional_enum(Externality, getattr(target, "externality", ""))
+        reversibility = _optional_enum(Reversibility, getattr(target, "reversibility", ""))
+        assurance = _optional_enum(
+            AssuranceLevel, getattr(target, "source_assurance", "")
+        ) or assurance
+        resource_sensitivity = _optional_enum(
+            RuntimeRiskTier, getattr(target, "resource_sensitivity", "")
+        ) or resource_sensitivity
+        support = next(
+            (item for item in getattr(target, "action_support", ()) if item.action_kind == normalized_action),
+            None,
+        )
+        if support is not None and selected is None:
+            resource_ref = _optional_text(support.resource_ref) or resource_ref
+            operation_ref = operation_ref or _optional_text(support.operation_ref)
+            effect_class = effect_class or _optional_enum(EffectClass, support.effect_class)
+            externality = externality or _optional_enum(Externality, support.externality)
+            reversibility = reversibility or _optional_enum(Reversibility, support.reversibility)
+            resource_sensitivity = _optional_enum(
+                RuntimeRiskTier, support.resource_sensitivity
+            ) or resource_sensitivity
+            assurance = _optional_enum(AssuranceLevel, support.source_assurance) or assurance
+
+    if selected is not None:
+        resource_ref = _candidate_resource_ref(selected) or resource_ref
+        operation_ref = operation_ref or _optional_text(selected.operation_ref) or _candidate_operation(selected)
+        effect_class = effect_class or _optional_enum(EffectClass, selected.effect_class)
+        externality = externality or _optional_enum(Externality, selected.externality)
+        reversibility = reversibility or _optional_enum(Reversibility, selected.reversibility)
+        resource_sensitivity = _optional_enum(
+            RuntimeRiskTier, selected.resource_sensitivity
+        ) or resource_sensitivity
+        asserted_assurance = _optional_enum(AssuranceLevel, selected.authority_source_assurance)
+        if asserted_assurance is not None:
+            assurance = asserted_assurance
+        elif selected.source in {GroundingSource.API, GroundingSource.WOT, GroundingSource.DEVICE}:
+            assurance = AssuranceLevel.STRUCTURAL
+        elif selected.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.SVG}:
+            assurance = max(assurance, AssuranceLevel.STRUCTURAL, key=_assurance_rank)
+        if isinstance(selected.payload, WoTGroundingPayload):
+            typed = _WOT_OPERATION_POLICY.get(selected.payload.operation.casefold())
+            if typed:
+                effect_class = effect_class or typed[0]
+                externality = externality or typed[1]
+                reversibility = reversibility or typed[2]
+
+    interaction = _INTERACTION_POLICY.get(normalized_action)
+    structured = _STRUCTURED_ACTION_POLICY.get(normalized_action)
+    if interaction:
+        effect_class = effect_class or interaction[0]
+        externality = externality or interaction[1]
+        reversibility = reversibility or interaction[2]
+        operation_ref = operation_ref or f"interaction.{normalized_action}@v1"
+        assurance = max(assurance, AssuranceLevel.STRUCTURAL, key=_assurance_rank)
+    elif structured:
+        effect_class = effect_class or structured[0]
+        externality = externality or structured[1]
+        reversibility = reversibility or structured[2]
+        operation_ref = operation_ref or structured[3]
+
+    conflict = getattr(getattr(target, "conflict_status", None), "value", "")
+    if not conflict:
+        conflict = "material_conflict" if getattr(target, "conflict_codes", ()) else "no_material_conflict"
+    risk_vector = _risk_vector(
+        effect_class=effect_class,
+        externality=externality,
+        reversibility=reversibility,
+        resource_sensitivity=resource_sensitivity,
+        parameters=parameters,
+        assurance=assurance,
+        conflict_status=conflict,
+        capability_asserted=bool(getattr(selected, "operation_ref", "")) if selected else False,
+    )
+    return RuntimeEffectSignature(
+        observation_ref=observation.epoch_id,
+        action_kind=normalized_action,
+        effect_class=effect_class,
+        target_ref=target_id if target is not None else "",
+        resource_ref=resource_ref,
+        destination_ref=destination_id if destination is not None else None,
+        operation_ref=operation_ref,
+        parameter_values=parameters,
+        externality=externality,
+        reversibility=reversibility,
+        assurance=assurance,
+        conflict_status=conflict or ConflictStatus.INCONCLUSIVE.value,
+        coverage_complete=target is not None and (not destination_id or destination is not None),
+        candidate_binding_digest=_binding_digest(selected, destination_candidate, target_id, destination_id),
+        source_refs=assertion_refs,
+        backend_operation=operation_ref or "",
+        risk_vector=risk_vector,
+    )
+
+
+def _risk_vector(
+    *,
+    effect_class: EffectClass | None,
+    externality: Externality | None,
+    reversibility: Reversibility | None,
+    resource_sensitivity: RuntimeRiskTier,
+    parameters: object,
+    assurance: AssuranceLevel,
+    conflict_status: str,
+    capability_asserted: bool,
+) -> RuntimeRiskVector:
+    effect_risk = {
+        EffectClass.READ: RuntimeRiskTier.LOW,
+        EffectClass.INTERACTION_ONLY: RuntimeRiskTier.LOW,
+        EffectClass.NAVIGATE: RuntimeRiskTier.MODERATE,
+        EffectClass.CREATE: RuntimeRiskTier.MODERATE,
+        EffectClass.UPDATE: RuntimeRiskTier.MODERATE,
+        EffectClass.SEND: RuntimeRiskTier.HIGH,
+        EffectClass.SHARE: RuntimeRiskTier.HIGH,
+        EffectClass.PAY: RuntimeRiskTier.CRITICAL,
+        EffectClass.DELETE: RuntimeRiskTier.CRITICAL,
+        EffectClass.INVOKE: RuntimeRiskTier.HIGH,
+        EffectClass.EXECUTE: RuntimeRiskTier.CRITICAL,
+        EffectClass.UNKNOWN: RuntimeRiskTier.CRITICAL,
+        None: RuntimeRiskTier.CRITICAL,
+    }[effect_class]
+    externality_risk = {
+        Externality.LOCAL: RuntimeRiskTier.LOW,
+        Externality.SAME_ORIGIN: RuntimeRiskTier.MODERATE,
+        Externality.CROSS_ORIGIN: RuntimeRiskTier.HIGH,
+        Externality.EXTERNAL_SYSTEM: RuntimeRiskTier.HIGH,
+        Externality.PHYSICAL_WORLD: RuntimeRiskTier.CRITICAL,
+        Externality.UNKNOWN: RuntimeRiskTier.CRITICAL,
+        None: RuntimeRiskTier.CRITICAL,
+    }[externality]
+    reversibility_risk = {
+        Reversibility.REVERSIBLE: RuntimeRiskTier.LOW,
+        Reversibility.COMPENSATABLE: RuntimeRiskTier.MODERATE,
+        Reversibility.IRREVERSIBLE: RuntimeRiskTier.CRITICAL,
+        Reversibility.UNKNOWN: RuntimeRiskTier.CRITICAL,
+        None: RuntimeRiskTier.CRITICAL,
+    }[reversibility]
+    material = RuntimeRiskTier.LOW
+    if isinstance(parameters, dict) or hasattr(parameters, "items"):
+        slots = {str(key).casefold() for key, _ in parameters.items()}
+        if slots & {"recipient", "payee", "amount", "currency", "principal", "permission"}:
+            material = RuntimeRiskTier.HIGH
+    return RuntimeRiskVector(
+        effect_class=effect_risk,
+        externality=externality_risk,
+        reversibility=reversibility_risk,
+        resource_sensitivity=resource_sensitivity,
+        material_parameters=material,
+        capability=RuntimeRiskTier.MODERATE if capability_asserted else RuntimeRiskTier.LOW,
+        source_uncertainty=(RuntimeRiskTier.LOW if assurance == AssuranceLevel.AUTHORITATIVE else RuntimeRiskTier.MODERATE if assurance == AssuranceLevel.STRUCTURAL else RuntimeRiskTier.HIGH),
+        conflict=(RuntimeRiskTier.CRITICAL if conflict_status in {"material_conflict", "inconclusive"} else RuntimeRiskTier.LOW),
+    )
+
+
+def _candidate_operation(candidate: GroundingCandidate) -> str | None:
+    if isinstance(candidate.payload, ApiGroundingPayload):
+        return candidate.payload.operation_id or None
+    if isinstance(candidate.payload, WoTGroundingPayload):
+        return f"wot.{candidate.payload.operation}@v1"
+    return None
+
+
+def _candidate_resource_ref(candidate: GroundingCandidate) -> str | None:
+    backend_handle = _optional_text(getattr(candidate.payload, "backend_handle", ""))
+    return backend_handle or candidate.semantic_target_id or None
+
+
+def _binding_digest(candidate, destination_candidate, target_id: str, destination_id: str) -> str:
+    payload = {
+        "target_id": target_id,
+        "destination_id": destination_id,
+        "candidate": asdict(candidate) if candidate is not None else None,
+        "destination_candidate": asdict(destination_candidate) if destination_candidate is not None else None,
+    }
+    encoded = json.dumps(to_json_compatible(payload), sort_keys=True, separators=(",", ":")).encode()
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _optional_text(value: object) -> str | None:
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_enum(enum_type, value):
+    if not value:
+        return None
+    try:
+        return enum_type(value)
+    except ValueError:
+        return None
+
+
+def _assurance_rank(value: AssuranceLevel) -> int:
+    return {AssuranceLevel.WEAK: 0, AssuranceLevel.STRUCTURAL: 1, AssuranceLevel.AUTHORITATIVE: 2}[value]

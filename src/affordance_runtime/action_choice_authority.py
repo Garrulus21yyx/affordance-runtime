@@ -1,31 +1,26 @@
-"""Typed TaskSpec authorization for concrete Runtime action choices."""
+"""Pure typed scope subsumption and versioned enabling-action policy."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-from dataclasses import dataclass
-
+from affordance_runtime.action_effect_classifier import classify_action
 from affordance_runtime.choice_contracts import ActionChoice, ChoiceRole
-from affordance_runtime.contracts import RiskLevel
-from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.effect_authority_contracts import (
+    AUTHORITY_EVALUATOR_POLICY_VERSION,
+    ActionAuthorityProof,
+    AuthorityStatus,
+    EffectAuthorizationScope,
+    EffectClass,
+    Externality,
+    Reversibility,
+    RuntimeEffectSignature,
+)
+from affordance_runtime.high_risk_effect_policy import policy_for_effect
 from affordance_runtime.simplified_runtime_contracts import StepSpec
-from affordance_runtime.task_intake import OperationClass, TaskRequirement, TaskSpec
+from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.unified_observation import UnifiedObservation
+from affordance_runtime.verification.contracts import AssuranceLevel
 
-
-@dataclass(frozen=True)
-class ChoiceAuthorityDecision:
-    """Runtime-owned proof that a concrete choice is within admitted meaning."""
-
-    authorized: bool
-    effect_refs: tuple[str, ...] = ()
-    effectful: bool = False
-    risk: RiskLevel = RiskLevel.LOW
-    target_identity: str = ""
-    destination_identity: str = ""
-    scope_digest: str = ""
-    reason_code: str = "TASK_EFFECT_TARGET_MISMATCH"
+ENABLING_ACTION_POLICY_VERSION = "enabling-action@v1"
 
 
 def authorize_choice(
@@ -33,263 +28,310 @@ def authorize_choice(
     step: StepSpec,
     task_spec: TaskSpec,
     observation: UnifiedObservation,
-) -> ChoiceAuthorityDecision:
-    """Prove concrete scope using exact typed identities; ambiguity denies authority."""
+) -> ActionAuthorityProof:
+    signature = classify_action(
+        observation,
+        target_id=choice.target_id,
+        destination_id=choice.destination_id,
+        action_kind=choice.action_kind.value,
+        parameters=choice.parameters,
+    )
+    return authorize_runtime_signature(
+        task_spec=task_spec,
+        step=step,
+        signature=signature,
+        requirement_refs=choice.requirement_refs,
+        choice_role=choice.role,
+    )
 
+
+def authorize_runtime_signature(
+    *,
+    task_spec: TaskSpec,
+    step: StepSpec | None,
+    signature: RuntimeEffectSignature,
+    requirement_refs: tuple[str, ...],
+    choice_role: ChoiceRole = ChoiceRole.DIRECT,
+) -> ActionAuthorityProof:
     known = {item.requirement_id: item for item in task_spec.requirements}
-    if not choice.requirement_refs or set(choice.requirement_refs) - set(known):
-        return ChoiceAuthorityDecision(False, reason_code="TASK_REQUIREMENT_TRACE_MISSING")
+    if not requirement_refs or set(requirement_refs) - set(known):
+        return _proof(task_spec, signature, AuthorityStatus.DENY, ("TASK_REQUIREMENT_TRACE_MISSING",))
+    if step is not None and (
+        not set(requirement_refs).issubset(step.requirement_refs)
+        or not set(step.effect_authorization_refs).issubset(requirement_refs)
+    ):
+        return _proof(task_spec, signature, AuthorityStatus.DENY, ("STEP_EFFECT_TRACE_MISMATCH",))
+    if choice_role != ChoiceRole.DIRECT:
+        return _authorize_enabling(task_spec, signature, requirement_refs)
 
-    target = next((item for item in observation.targets if item.target_id == choice.target_id), None)
-    destination = next((item for item in observation.targets if item.target_id == choice.destination_id), None)
-    if target is None or (choice.destination_id and destination is None):
-        return ChoiceAuthorityDecision(False)
-
-    # Enabling/information choices carry requirement traceability but cannot
-    # inherit effect authority merely because the Planner assigned a role.
-    if choice.role != ChoiceRole.DIRECT:
-        if choice.effect_refs or choice.effectful:
-            return ChoiceAuthorityDecision(False, reason_code="ENABLING_CHOICE_CLAIMS_EFFECT_AUTHORITY")
-        if choice.action_kind.value not in {"focus", "scroll", "wait", "navigate"}:
-            return ChoiceAuthorityDecision(False, reason_code="ENABLING_CHOICE_EFFECT_CLASS_UNPROVEN")
-        return _decision(
-            choice,
-            (),
-            False,
-            RiskLevel.LOW,
-            target.label,
-            destination.label if destination is not None else "",
-        )
-
-    requested_refs = tuple(
-        ref
-        for ref in (step.effect_authorization_refs or step.requirement_refs)
+    scopes = tuple(
+        known[ref].payload.effect_authorization_scope
+        for ref in requirement_refs
         if ref in task_spec.allowed_effect_refs
+        and known[ref].payload.effect_authorization_scope is not None
     )
-    if not requested_refs:
-        return ChoiceAuthorityDecision(False, reason_code="TASK_EFFECT_AUTHORIZATION_MISSING")
-
-    matches = tuple(
-        requirement
-        for ref in requested_refs
-        if (requirement := known.get(ref)) is not None
-        and _matches_exact_scope(requirement, target.target_id, target.label, destination)
-        and _parameters_are_admitted(choice, requirement.requirement_id, task_spec)
+    if not scopes:
+        return _proof(task_spec, signature, AuthorityStatus.UNPROVEN, ("AUTHORIZATION_SCOPE_MISSING",))
+    decisions = tuple(_subsumes(scope, signature, task_spec) for scope in scopes)
+    allowed = next((scope for scope, status, _ in decisions if status == AuthorityStatus.ALLOW), None)
+    if allowed is not None:
+        return _proof(
+            task_spec,
+            signature,
+            AuthorityStatus.ALLOW,
+            (
+                "OPERATION_MATCHED",
+                "RESOURCE_SCOPE_MATCHED",
+                "NAMED_PARAMETERS_MATCHED",
+                "EFFECT_POLICY_MATCHED",
+                "SOURCE_POLICY_MATCHED",
+            ),
+            allowed,
+            effect_refs=(allowed.requirement_ref,),
+        )
+    status = (
+        AuthorityStatus.DENY
+        if any(item[1] == AuthorityStatus.DENY for item in decisions)
+        else AuthorityStatus.UNPROVEN
     )
-    if not matches:
-        return ChoiceAuthorityDecision(False)
-
-    effect_refs = tuple(item.requirement_id for item in matches)
-    operation = max(
-        (item.payload.operation_class or OperationClass.READ_ONLY for item in matches),
-        key=_operation_rank,
+    reasons = tuple(
+        dict.fromkeys(
+            reason
+            for _, item_status, codes in decisions
+            if item_status == status
+            for reason in codes
+        )
     )
-    effectful = operation in {
-        OperationClass.REVERSIBLE_WRITE,
-        OperationClass.EXTERNAL_SIDE_EFFECT,
-        OperationClass.IRREVERSIBLE,
-    }
-    risk = _operation_risk(operation)
-    observed_risk = _observed_action_risk(target, choice.action_kind.value)
-    if _risk_rank(observed_risk) > _risk_rank(risk):
-        return ChoiceAuthorityDecision(False, reason_code="CONCRETE_ACTION_RISK_EXCEEDS_TASK_AUTHORITY")
-    return _decision(
-        choice,
-        effect_refs,
-        effectful,
-        risk,
-        target.label,
-        destination.label if destination is not None else "",
-    )
+    return _proof(task_spec, signature, status, reasons)
 
 
 def contract_matches_task_authority(
     *,
     task_spec: TaskSpec,
+    runtime_signature: RuntimeEffectSignature | None = None,
     requirement_refs: tuple[str, ...],
-    effect_refs: tuple[str, ...],
-    target_identity: str,
-    destination_identity: str,
-    action_kind: str,
     choice_role: str,
-    parameters: object,
-    effectful: bool,
-    risk: RiskLevel,
-    scope_digest: str,
-) -> bool:
-    """Independently revalidate the immutable proof at the Task gate."""
+    sealed_proof: ActionAuthorityProof | None = None,
+    **_: object,
+) -> ActionAuthorityProof:
+    if runtime_signature is None or sealed_proof is None:
+        return _proof(
+            task_spec,
+            runtime_signature or _empty_signature(),
+            AuthorityStatus.UNPROVEN,
+            ("CURRENT_RUNTIME_SIGNATURE_MISSING",),
+        )
+    proof = authorize_runtime_signature(
+        task_spec=task_spec,
+        step=None,
+        signature=runtime_signature,
+        requirement_refs=requirement_refs,
+        choice_role=ChoiceRole(choice_role),
+    )
+    if proof.status != AuthorityStatus.ALLOW:
+        return proof
+    if (
+        proof.proof_digest != sealed_proof.proof_digest
+        or proof.runtime_effect_signature_digest != sealed_proof.runtime_effect_signature_digest
+        or proof.candidate_binding_digest != sealed_proof.candidate_binding_digest
+        or proof.evaluator_policy_version != sealed_proof.evaluator_policy_version
+    ):
+        return _proof(task_spec, runtime_signature, AuthorityStatus.DENY, ("SEALED_PROOF_MISMATCH",))
+    return proof
 
-    known = {item.requirement_id: item for item in task_spec.requirements}
-    if not requirement_refs or set(requirement_refs) - set(known):
-        return False
-    if choice_role != ChoiceRole.DIRECT.value:
-        if effect_refs or effectful or risk != RiskLevel.LOW:
-            return False
-        if action_kind not in {"focus", "scroll", "wait", "navigate"}:
-            return False
-        return scope_digest == _scope_digest(
-            (), target_identity, destination_identity, parameters, False, RiskLevel.LOW, action_kind, choice_role
+
+def _subsumes(
+    scope: EffectAuthorizationScope,
+    signature: RuntimeEffectSignature,
+    task_spec: TaskSpec,
+) -> tuple[EffectAuthorizationScope, AuthorityStatus, tuple[str, ...]]:
+    unknown: list[str] = []
+    denied: list[str] = []
+    if signature.effect_class in {None, EffectClass.UNKNOWN}:
+        unknown.append("EFFECT_UNKNOWN")
+    elif signature.effect_class != scope.effect_class:
+        denied.append("EFFECT_CLASS_MISMATCH")
+    if signature.operation_ref is None:
+        unknown.append("OPERATION_UNPROVEN")
+    elif scope.operation_constraint and signature.operation_ref != scope.operation_constraint:
+        denied.append("OPERATION_MISMATCH")
+    if signature.resource_ref is None:
+        unknown.append("TARGET_SCOPE_UNPROVEN")
+    elif signature.resource_ref != scope.resource_scope.resource_ref:
+        denied.append("TARGET_SCOPE_MISMATCH")
+    expected_destination = scope.destination_scope.resource_ref if scope.destination_scope else None
+    if signature.destination_ref != expected_destination:
+        denied.append("DESTINATION_SCOPE_MISMATCH")
+    authorized_slots = {parameter.slot for parameter in scope.parameters}
+    unexpected_slots = set(signature.parameter_values) - authorized_slots
+    if unexpected_slots:
+        denied.extend(f"PARAMETER_NOT_AUTHORIZED:{slot}" for slot in sorted(unexpected_slots))
+    for parameter in scope.parameters:
+        if parameter.slot not in signature.parameter_values:
+            unknown.append(f"PARAMETER_SCOPE_UNPROVEN:{parameter.slot}")
+        elif signature.parameter_values[parameter.slot] != parameter.value:
+            denied.append(f"PARAMETER_MISMATCH:{parameter.slot}")
+    if signature.externality is None:
+        unknown.append("EXTERNALITY_UNPROVEN")
+    elif _externality_rank(signature.externality) > _externality_rank(scope.externality):
+        denied.append("EXTERNALITY_EXCEEDS_SCOPE")
+    if signature.reversibility is None or signature.reversibility == Reversibility.UNKNOWN:
+        unknown.append("REVERSIBILITY_UNPROVEN")
+    elif _reversibility_rank(signature.reversibility) > _reversibility_rank(scope.reversibility):
+        denied.append("REVERSIBILITY_EXCEEDS_SCOPE")
+    if not scope.required_capabilities.issubset(task_spec.capability_ceiling):
+        denied.append("CAPABILITY_EXCEEDS_TASK_CEILING")
+    if scope.requirement_ref in task_spec.forbidden_effect_refs:
+        denied.append("FORBIDDEN_EFFECT")
+    constraint_status = _hard_constraints(scope, signature, task_spec)
+    if constraint_status is not None:
+        (denied if constraint_status[0] == AuthorityStatus.DENY else unknown).extend(constraint_status[1])
+    if _assurance_rank(signature.assurance) < _assurance_rank(scope.minimum_source_assurance):
+        unknown.append("INSUFFICIENT_SOURCE_ASSURANCE")
+    if signature.conflict_status in {"material_conflict", "inconclusive"}:
+        unknown.append("MATERIAL_SOURCE_CONFLICT")
+    if not signature.coverage_complete:
+        unknown.append("COVERAGE_INSUFFICIENT")
+    if not scope.risk_policy_ref:
+        denied.append("RISK_POLICY_MISSING")
+    high_risk_policy = policy_for_effect(signature.effect_class, signature.operation_ref)
+    if high_risk_policy is not None:
+        actual_slots = set(signature.parameter_values)
+        if high_risk_policy.required_material_fields - actual_slots:
+            unknown.append("HIGH_RISK_MATERIAL_FIELDS_UNPROVEN")
+        if _assurance_rank(signature.assurance) < _assurance_rank(high_risk_policy.minimum_assurance):
+            unknown.append("HIGH_RISK_ASSURANCE_INSUFFICIENT")
+        if high_risk_policy.required_capability not in scope.required_capabilities:
+            denied.append("HIGH_RISK_CAPABILITY_POLICY_MISMATCH")
+        if not scope.approval_policy_ref:
+            denied.append("HIGH_RISK_APPROVAL_POLICY_MISSING")
+        if high_risk_policy.causal_evidence_required and not task_spec.external_effect_criterion_ids:
+            denied.append("HIGH_RISK_CAUSAL_EVIDENCE_POLICY_MISSING")
+        if high_risk_policy.authoritative_final_recheck and not task_spec.final_recheck_criterion_ids:
+            denied.append("HIGH_RISK_FINAL_RECHECK_POLICY_MISSING")
+    if denied:
+        return scope, AuthorityStatus.DENY, tuple(denied)
+    if unknown:
+        return scope, AuthorityStatus.UNPROVEN, tuple(unknown)
+    return scope, AuthorityStatus.ALLOW, ()
+
+
+def _authorize_enabling(
+    task_spec: TaskSpec,
+    signature: RuntimeEffectSignature,
+    requirement_refs: tuple[str, ...],
+) -> ActionAuthorityProof:
+    if not set(requirement_refs).issubset({item.requirement_id for item in task_spec.requirements}):
+        return _proof(task_spec, signature, AuthorityStatus.DENY, ("ENABLING_REQUIREMENT_TRACE_MISSING",))
+    if signature.effect_class == EffectClass.INTERACTION_ONLY:
+        if signature.externality != Externality.LOCAL or signature.reversibility != Reversibility.REVERSIBLE:
+            return _proof(task_spec, signature, AuthorityStatus.DENY, ("ENABLING_EFFECT_POLICY_FAILED",))
+        return _proof(
+            task_spec,
+            signature,
+            AuthorityStatus.ALLOW,
+            ("VERSIONED_ENABLING_POLICY_MATCHED",),
+            enabling_policy_ref=ENABLING_ACTION_POLICY_VERSION,
         )
     if (
-        not effect_refs
-        or set(effect_refs) - set(task_spec.allowed_effect_refs)
-        or set(effect_refs) - set(requirement_refs)
+        signature.effect_class == EffectClass.UPDATE
+        and signature.externality == Externality.LOCAL
+        and signature.reversibility == Reversibility.REVERSIBLE
+        and signature.action_kind in {"fill", "type", "type_text", "select", "select_option"}
     ):
-        return False
-    matches = tuple(
-        known[ref]
-        for ref in effect_refs
-        if ref in known
-        and _identity(known[ref].payload.target_identity) == _identity(target_identity)
-        and _identity(known[ref].payload.destination_identity) == _identity(destination_identity)
-    )
-    if len(matches) != len(effect_refs):
-        return False
-    operation = max(
-        (item.payload.operation_class or OperationClass.READ_ONLY for item in matches),
-        key=_operation_rank,
-    )
-    expected_effectful = operation in {
-        OperationClass.REVERSIBLE_WRITE,
-        OperationClass.EXTERNAL_SIDE_EFFECT,
-        OperationClass.IRREVERSIBLE,
-    }
-    expected_risk = _operation_risk(operation)
-    expected_digest = _scope_digest(
-        effect_refs,
-        target_identity,
-        destination_identity,
-        parameters,
-        expected_effectful,
-        expected_risk,
-        action_kind,
-        choice_role,
-    )
-    return effectful == expected_effectful and risk == expected_risk and scope_digest == expected_digest
+        admitted = {
+            item.field: item.value
+            for item in task_spec.inputs
+            if item.requirement_ref in requirement_refs
+        }
+        if not signature.parameter_values or any(
+            slot not in admitted or admitted[slot] != value
+            for slot, value in signature.parameter_values.items()
+        ):
+            return _proof(task_spec, signature, AuthorityStatus.DENY, ("ENABLING_DATA_DISCLOSURE",))
+        return _proof(
+            task_spec,
+            signature,
+            AuthorityStatus.ALLOW,
+            ("LOCAL_REVERSIBLE_DRAFT_MATCHED",),
+            enabling_policy_ref=ENABLING_ACTION_POLICY_VERSION,
+        )
+    status = AuthorityStatus.UNPROVEN if signature.effect_class in {None, EffectClass.UNKNOWN} else AuthorityStatus.DENY
+    return _proof(task_spec, signature, status, ("ENABLING_EFFECT_POLICY_FAILED",))
 
 
-def _matches_exact_scope(
-    requirement: TaskRequirement,
-    target_id: str,
-    target_label: str,
-    destination: object | None,
-) -> bool:
-    target_identity = _identity(requirement.payload.target_identity)
-    if target_identity not in {_identity(target_id), _identity(target_label)}:
-        return False
-    expected_destination = _identity(requirement.payload.destination_identity)
-    if not expected_destination:
-        return destination is None
-    if destination is None:
-        return False
-    return expected_destination in {
-        _identity(str(getattr(destination, "target_id", ""))),
-        _identity(str(getattr(destination, "label", ""))),
-    }
+def _hard_constraints(scope, signature, task_spec):
+    known = {item.requirement_id: item for item in task_spec.requirements}
+    unknown: list[str] = []
+    denied: list[str] = []
+    for ref in task_spec.hard_constraint_refs:
+        requirement = known.get(ref)
+        if requirement is None:
+            denied.append("HARD_CONSTRAINT_REF_INVALID")
+            continue
+        payload = requirement.payload
+        if payload.relation == "equals" and payload.subject in signature.parameter_values:
+            if signature.parameter_values[payload.subject] != payload.value:
+                denied.append(f"HARD_CONSTRAINT_VIOLATED:{ref}")
+        else:
+            unknown.append(f"HARD_CONSTRAINT_UNPROVEN:{ref}")
+    if denied:
+        return AuthorityStatus.DENY, denied
+    if unknown:
+        return AuthorityStatus.UNPROVEN, unknown
+    return None
 
 
-def _parameters_are_admitted(choice: ActionChoice, requirement_ref: str, task_spec: TaskSpec) -> bool:
-    material_values = {
-        _identity(item.value) for item in task_spec.inputs if item.requirement_ref == requirement_ref
-    }
-    if not material_values:
-        return True
-    concrete_values = {
-        _identity(str(value))
-        for value in choice.parameters.values()
-        if isinstance(value, (str, int, float, bool))
-    }
-    return material_values.issubset(concrete_values)
-
-
-def _decision(
-    choice: ActionChoice,
-    effect_refs: tuple[str, ...],
-    effectful: bool,
-    risk: RiskLevel,
-    target_identity: str,
-    destination_identity: str,
-) -> ChoiceAuthorityDecision:
-    return ChoiceAuthorityDecision(
-        True,
-        effect_refs,
-        effectful,
-        risk,
-        target_identity,
-        destination_identity,
-        _scope_digest(
-            effect_refs,
-            target_identity,
-            destination_identity,
-            choice.parameters,
-            effectful,
-            risk,
-            choice.action_kind.value,
-            choice.role.value,
-        ),
-        "",
+def _proof(
+    task_spec: TaskSpec,
+    signature: RuntimeEffectSignature,
+    status: AuthorityStatus,
+    reasons: tuple[str, ...],
+    scope: EffectAuthorizationScope | None = None,
+    *,
+    effect_refs: tuple[str, ...] = (),
+    enabling_policy_ref: str | None = None,
+) -> ActionAuthorityProof:
+    return ActionAuthorityProof(
+        status=status,
+        task_ref=f"{task_spec.task_id}@{task_spec.revision}",
+        authorization_scope_ref=scope.requirement_ref if scope else None,
+        authorization_scope_digest=scope.digest if scope else None,
+        enabling_policy_ref=enabling_policy_ref,
+        runtime_effect_signature_digest=signature.digest,
+        observation_ref=signature.observation_ref,
+        candidate_binding_digest=signature.candidate_binding_digest,
+        reason_codes=reasons,
+        evaluator_policy_version=AUTHORITY_EVALUATOR_POLICY_VERSION,
+        effect_refs=effect_refs,
+        runtime_risk=signature.runtime_risk,
+        effect_class=signature.effect_class,
     )
 
 
-def _scope_digest(
-    effect_refs: tuple[str, ...],
-    target_identity: str,
-    destination_identity: str,
-    parameters: object,
-    effectful: bool,
-    risk: RiskLevel,
-    action_kind: str,
-    choice_role: str,
-) -> str:
-    payload = {
-        "effect_refs": effect_refs,
-        "target_identity": _identity(target_identity),
-        "destination_identity": _identity(destination_identity),
-        "parameters": to_json_compatible(parameters),
-        "effectful": effectful,
-        "risk": risk.value,
-        "action_kind": action_kind,
-        "choice_role": choice_role,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+def _empty_signature() -> RuntimeEffectSignature:
+    return RuntimeEffectSignature("missing", "", None, "", None, None, None)
 
 
-def _identity(value: str) -> str:
-    return " ".join(value.casefold().split())
+def _assurance_rank(value: AssuranceLevel) -> int:
+    return {AssuranceLevel.WEAK: 0, AssuranceLevel.STRUCTURAL: 1, AssuranceLevel.AUTHORITATIVE: 2}[value]
 
 
-def _operation_rank(value: OperationClass) -> int:
+def _externality_rank(value: Externality) -> int:
     return {
-        OperationClass.READ_ONLY: 0,
-        OperationClass.NAVIGATION: 1,
-        OperationClass.REVERSIBLE_WRITE: 2,
-        OperationClass.EXTERNAL_SIDE_EFFECT: 3,
-        OperationClass.IRREVERSIBLE: 4,
+        Externality.LOCAL: 0,
+        Externality.SAME_ORIGIN: 1,
+        Externality.CROSS_ORIGIN: 2,
+        Externality.EXTERNAL_SYSTEM: 3,
+        Externality.PHYSICAL_WORLD: 4,
+        Externality.UNKNOWN: 5,
     }[value]
 
 
-def _operation_risk(value: OperationClass) -> RiskLevel:
+def _reversibility_rank(value: Reversibility) -> int:
     return {
-        OperationClass.READ_ONLY: RiskLevel.LOW,
-        OperationClass.NAVIGATION: RiskLevel.LOW,
-        OperationClass.REVERSIBLE_WRITE: RiskLevel.MEDIUM,
-        OperationClass.EXTERNAL_SIDE_EFFECT: RiskLevel.HIGH,
-        OperationClass.IRREVERSIBLE: RiskLevel.IRREVERSIBLE,
-    }[value]
-
-
-def _observed_action_risk(target: object, action_kind: str) -> RiskLevel:
-    action_support = tuple(getattr(target, "action_support", ()))
-    support = next((item for item in action_support if item.action_kind == action_kind), None)
-    value = getattr(support, "risk", None) if support is not None else getattr(target, "risk", RiskLevel.LOW)
-    return value if isinstance(value, RiskLevel) else RiskLevel(str(value))
-
-
-def _risk_rank(value: RiskLevel) -> int:
-    return {
-        RiskLevel.LOW: 0,
-        RiskLevel.MEDIUM: 1,
-        RiskLevel.HIGH: 2,
-        RiskLevel.IRREVERSIBLE: 3,
+        Reversibility.REVERSIBLE: 0,
+        Reversibility.COMPENSATABLE: 1,
+        Reversibility.IRREVERSIBLE: 2,
+        Reversibility.UNKNOWN: 3,
     }[value]

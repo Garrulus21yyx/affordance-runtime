@@ -29,6 +29,11 @@ from affordance_runtime.criteria import (
     criterion_id,
     evidence_requirement_id,
 )
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.grounding import GroundingSource, SourceAssertion
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import (
@@ -112,7 +117,13 @@ def _snapshot(
     environment_revision = f"environment-{sequence}"
     snapshot_id = snapshot_id or f"snapshot-{sequence}"
     model = DomAdapter().transduce(
-        "<main><button id='save'>Save</button></main>",
+        (
+            "<main><button id='save' data-runtime-operation='resource.update@v1' "
+            "data-runtime-effect-class='update' data-runtime-externality='local' "
+            "data-runtime-reversibility='reversible' "
+            "data-runtime-source-assurance='structural' "
+            "data-runtime-risk='medium'>Save</button></main>"
+        ),
         environment_revision=environment_revision,
         snapshot_id=snapshot_id,
         page_revision=f"page-{sequence}",
@@ -1299,6 +1310,16 @@ def _semantic_task() -> TaskSpec:
                     target_identity="Save",
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                     capability="settings.write",
+                    effect_authorization_scope=EffectAuthorizationScope(
+                        requirement_ref="requirement:test",
+                        effect_class=EffectClass.UPDATE,
+                        resource_scope=ResourceScopeRef(
+                            "dom_button_1",
+                            ("semantic-request:whole_request",),
+                        ),
+                        operation_constraint="resource.update@v1",
+                        required_capabilities=frozenset({"settings.write"}),
+                    ),
                 ),
                 source_anchor_refs=("semantic-request:whole_request",),
             ),
@@ -1568,9 +1589,10 @@ class _PipelineIntentModel:
                 "requested_effects": [
                     {
                         "operation_class": "reversible_write",
-                        "target": "Save",
+                        "target": "dom_button_1",
                         "capability": "settings.write",
                         "source_ref": source_ref,
+                        "operation_ref": "resource.update@v1",
                     }
                 ],
                 "success": SuccessExpression(

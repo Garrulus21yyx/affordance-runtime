@@ -8,6 +8,48 @@ from typing import Protocol
 from uuid import uuid4
 
 from affordance_runtime.contracts import ActionContract, ApprovalToken
+from affordance_runtime.immutable import FrozenDict
+
+
+@dataclass(frozen=True)
+class ApprovalPresentation:
+    contract_hash: str
+    operation_ref: str
+    resource_ref: str
+    destination_ref: str
+    material_parameters: FrozenDict
+    effect_class: str
+    externality: str
+    reversibility: str
+    backend: str
+    source_refs: tuple[str, ...]
+    source_assurance: str
+    runtime_risk: str
+    uncertainty_codes: tuple[str, ...]
+
+
+def present_approval(contract: ActionContract) -> ApprovalPresentation:
+    signature = contract.runtime_effect_signature
+    proof = contract.action_authority_proof
+    if signature is None or proof is None or not proof.authorized:
+        raise ValueError("approval presentation requires an ALLOW typed authority proof")
+    return ApprovalPresentation(
+        contract_hash=contract.contract_hash,
+        operation_ref=signature.operation_ref or "unproven",
+        resource_ref=signature.resource_ref or "unproven",
+        destination_ref=signature.destination_ref or "",
+        material_parameters=FrozenDict(signature.parameter_values),
+        effect_class=signature.effect_class.value if signature.effect_class else "unknown",
+        externality=signature.externality.value if signature.externality else "unknown",
+        reversibility=signature.reversibility.value if signature.reversibility else "unknown",
+        backend=contract.backend,
+        source_refs=signature.source_refs,
+        source_assurance=signature.assurance.value,
+        runtime_risk=signature.runtime_risk.value,
+        uncertainty_codes=tuple(
+            code for code in proof.reason_codes if "UNPROVEN" in code or "UNKNOWN" in code
+        ),
+    )
 
 
 class ApprovalProvider(Protocol):

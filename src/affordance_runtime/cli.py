@@ -13,6 +13,7 @@ from affordance_runtime.benchmarks.local import run_local_benchmark
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.coordinator import RuntimeFeatures
+from affordance_runtime.effect_authority_contracts import EffectClass
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
@@ -486,6 +487,12 @@ def run_scenario(
                     OperationClass.READ_ONLY,
                     "reference-cli",
                     (),
+                    resource_refs=(
+                        "semantic:show-pro-limits:d560036f53a2",
+                        "semantic:show-enterprise-limits:7ac4b4b12278",
+                    ),
+                    operation_ref_override="interaction.reveal@v1",
+                    effect_class_override=EffectClass.INTERACTION_ONLY,
                 ),
                 pricing_output_requirement("reference-cli"),
             ),
@@ -516,6 +523,12 @@ def run_scenario(
                     OperationClass.READ_ONLY,
                     "reference-cli-accepted-profile",
                     (),
+                    resource_refs=(
+                        "semantic:show-pro-limits:d560036f53a2",
+                        "semantic:show-enterprise-limits:7ac4b4b12278",
+                    ),
+                    operation_ref_override="interaction.reveal@v1",
+                    effect_class_override=EffectClass.INTERACTION_ONLY,
                 ),
                 pricing_output_requirement("reference-cli-accepted-profile"),
             )
@@ -573,6 +586,12 @@ def run_scenario(
                     OperationClass.READ_ONLY,
                     "reference-cli",
                     (),
+                    resource_refs=(
+                        "semantic:show-pro-limits:d560036f53a2",
+                        "semantic:show-enterprise-limits:7ac4b4b12278",
+                    ),
+                    operation_ref_override="interaction.reveal@v1",
+                    effect_class_override=EffectClass.INTERACTION_ONLY,
                 ),
                 pricing_output_requirement("reference-cli"),
             )

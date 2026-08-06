@@ -193,6 +193,13 @@ class Affordance:
     confidence: float = 1.0
     state: dict[str, Any] = field(default_factory=dict)
     risk: RiskLevel = RiskLevel.LOW
+    risk_asserted: bool = False
+    operation_ref: str = ""
+    effect_class: str = ""
+    externality: str = ""
+    reversibility: str = ""
+    resource_sensitivity: str = ""
+    authority_source_assurance: str = ""
     evidence: list[str] = field(default_factory=list)
     payload: dict[str, Any] = field(default_factory=dict)
 
@@ -467,13 +474,9 @@ class ActionContract:
     observation_ref: str = ""
     requirement_refs: tuple[str, ...] = ()
     effect_authorization_refs: tuple[str, ...] = ()
-    effectful: bool = False
-    authorized_target_identity: str = ""
-    authorized_destination_identity: str = ""
-    authorized_parameters: dict[str, Any] = field(default_factory=dict)
-    authorized_action_kind: str = ""
     choice_role: str = ""
-    authorization_scope_digest: str = ""
+    action_authority_proof: Any | None = None
+    runtime_effect_signature: Any | None = None
     route_reason: str = ""
     grounding_candidate: GroundingCandidate | None = None
     scope_authorization: ScopeAuthorization | None = None
@@ -506,7 +509,6 @@ class ActionContract:
     def __post_init__(self) -> None:
         object.__setattr__(self, "locator", freeze_json(self.locator))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
-        object.__setattr__(self, "authorized_parameters", freeze_json(self.authorized_parameters))
         object.__setattr__(self, "requirement_refs", tuple(self.requirement_refs))
         object.__setattr__(self, "effect_authorization_refs", tuple(self.effect_authorization_refs))
         if any(not item.strip() for item in (*self.requirement_refs, *self.effect_authorization_refs)):
@@ -539,6 +541,15 @@ class ActionContract:
                 or authorization.target_fingerprint != candidate.target_fingerprint
             ):
                 raise ValueError("scope authorization does not match the grounded contract target")
+
+    @property
+    def effectful(self) -> bool:
+        return bool(self.action_authority_proof and self.action_authority_proof.effectful)
+
+    @property
+    def authorization_scope_digest(self) -> str:
+        proof = self.action_authority_proof
+        return proof.authorization_scope_digest or "" if proof else ""
 
     def canonical_payload(self) -> dict[str, Any]:
         return {

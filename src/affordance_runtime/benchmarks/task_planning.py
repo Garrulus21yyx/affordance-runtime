@@ -25,6 +25,11 @@ from affordance_runtime.criteria import (
     criterion_id,
     evidence_requirement_id,
 )
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -83,7 +88,13 @@ class _StageEnvironment:
         self.capture_sequence += 1
         snapshot_id = f"stage-snapshot-{self.stage}-{self.capture_sequence}"
         model = DomAdapter().transduce(
-            "<button id='advance'>Advance</button>",
+            (
+                "<button id='advance' data-runtime-operation='resource.update@v1' "
+                "data-runtime-effect-class='update' data-runtime-externality='local' "
+                "data-runtime-reversibility='reversible' "
+                "data-runtime-source-assurance='structural' "
+                "data-runtime-risk='medium'>Advance</button>"
+            ),
             environment_revision=f"stage-{self.stage}",
             snapshot_id=snapshot_id,
             page_revision=f"stage-page-{self.stage}",
@@ -296,6 +307,15 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
                     subject="Advance",
                     target_identity="Advance",
                     operation_class=OperationClass.REVERSIBLE_WRITE,
+                    effect_authorization_scope=EffectAuthorizationScope(
+                        requirement_ref="requirement:advance-stage",
+                        effect_class=EffectClass.UPDATE,
+                        resource_scope=ResourceScopeRef(
+                            "dom_button_1",
+                            ("task-planning-ablation:advance",),
+                        ),
+                        operation_constraint="resource.update@v1",
+                    ),
                 ),
                 source_anchor_refs=("task-planning-ablation:advance",),
             ),

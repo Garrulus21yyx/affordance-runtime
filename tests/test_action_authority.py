@@ -1,0 +1,407 @@
+from __future__ import annotations
+
+import pytest
+
+from affordance_runtime.action_choice_authority import authorize_choice, contract_matches_task_authority
+from affordance_runtime.action_effect_classifier import classify_action
+from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.choice_contracts import ActionChoice, ChoiceRole
+from affordance_runtime.contracts import RiskLevel
+from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
+from affordance_runtime.effect_authority_contracts import (
+    AuthorityStatus,
+    EffectAuthorizationScope,
+    EffectClass,
+    Externality,
+    ParameterAuthorization,
+    ResourceScopeRef,
+    Reversibility,
+)
+from affordance_runtime.high_risk_effect_policy import HIGH_RISK_EFFECT_POLICIES, policy_for_effect
+from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference, StepSpec
+from affordance_runtime.task_intake import OperationClass, TaskRequirement, TaskSemanticPayload, TaskSpec
+from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceValidityMode,
+    SatisfactionMode,
+    SuccessExpression,
+)
+
+
+def _task(signature: EffectAuthorizationScope, operation_class: OperationClass) -> TaskSpec:
+    high_risk = policy_for_effect(signature.effect_class, signature.operation_constraint)
+    requirement = TaskRequirement(
+        requirement_id=signature.requirement_ref,
+        payload=TaskSemanticPayload(
+            kind="effect",
+            subject=signature.resource_scope.resource_ref,
+            target_identity=signature.resource_scope.resource_ref,
+            operation_class=operation_class,
+            capability=next(iter(signature.required_capabilities), ""),
+            effect_authorization_scope=signature,
+        ),
+        source_anchor_refs=("request:authority:whole",),
+    )
+    return TaskSpec(
+        task_id="task:authority",
+        revision=1,
+        objective="typed authority fixture",
+        operation_class=operation_class,
+        requirements=(requirement,),
+        allowed_effect_refs=(signature.requirement_ref,),
+        capability_ceiling=tuple(signature.required_capabilities),
+        success=(
+            SuccessExpression(
+                expression_id="success:authority",
+                operator="all_of",
+                children=(
+                    SuccessExpression(
+                        expression_id="success:authority-effect",
+                        operator="criterion",
+                        criterion_id="criterion:authority-effect",
+                        requirement_refs=(signature.requirement_ref,),
+                        policy=CriterionPolicy(
+                            satisfaction=SatisfactionMode.ACTION_CAUSED,
+                            validity=EvidenceValidityMode.RECENT_ACTION,
+                            causal_lineage_required=True,
+                        ),
+                    ),
+                    SuccessExpression(
+                        expression_id="success:authority-final",
+                        operator="criterion",
+                        criterion_id="criterion:authority-final",
+                        requirement_refs=(signature.requirement_ref,),
+                        policy=CriterionPolicy(
+                            validity=EvidenceValidityMode.FINAL_RECHECK,
+                            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+                        ),
+                    ),
+                ),
+            )
+            if high_risk
+            else SuccessExpression(
+                expression_id="success:authority",
+                operator="criterion",
+                criterion_id="criterion:authority",
+                requirement_refs=(signature.requirement_ref,),
+            )
+        ),
+        external_effect_criterion_ids=(("criterion:authority-effect",) if high_risk else ()),
+        final_recheck_criterion_ids=(("criterion:authority-final",) if high_risk else ()),
+        source_request_ref="request:authority",
+    )
+
+
+def _step(ref: str) -> StepSpec:
+    source = SourceReference("request:authority", "request:authority:whole")
+    return StepSpec(
+        step_id="step:authority",
+        objective="execute typed effect",
+        interaction=ElementIntent("typed resource", (source,)),
+        completion_criteria=(
+            PredicateExpr(
+                "criterion:authority",
+                SubjectExpr("semantic_target", "typed resource"),
+                PredicateOperator.CHANGED,
+                CriterionPolicy(),
+            ),
+        ),
+        source_refs=(source,),
+        requirement_refs=(ref,),
+        effect_authorization_refs=(ref,),
+        effectful=True,
+    )
+
+
+def _observation(
+    *,
+    target_id: str,
+    operation_ref: str,
+    effect_class: EffectClass,
+    risk: RiskLevel,
+    assurance: AssuranceLevel,
+    label: str = "display alias",
+    externality: Externality | None = None,
+    reversibility: Reversibility = Reversibility.REVERSIBLE,
+) -> UnifiedObservation:
+    return UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id=target_id,
+                surface="harness",
+                role="control",
+                label=label,
+                supported_actions=("activate", "type_text"),
+                state={},
+                risk=risk,
+                risk_asserted=True,
+                operation_ref=operation_ref,
+                effect_class=effect_class.value,
+                source_assurance=assurance,
+                externality=(
+                    externality
+                    or (
+                        Externality.EXTERNAL_SYSTEM
+                        if effect_class in {EffectClass.PAY, EffectClass.SEND, EffectClass.SHARE}
+                        else Externality.LOCAL
+                    )
+                ).value,
+                reversibility=reversibility.value,
+                source_refs=("assertion:typed-operation",),
+            ),
+        ),
+    )
+
+
+def _choice(ref: str, target_id: str, action: PlannerActionKind, parameters=None, role=ChoiceRole.DIRECT):
+    return ActionChoice(
+        choice_id="choice:authority",
+        task_revision=1,
+        state_version=0,
+        snapshot_id="observation:authority",
+        active_step_id="step:authority",
+        action_kind=action,
+        target_id=target_id,
+        parameters=parameters or {},
+        requirement_refs=(ref,),
+        role=role,
+    )
+
+
+@pytest.mark.parametrize("policy", HIGH_RISK_EFFECT_POLICIES, ids=lambda item: item.policy_ref)
+def test_every_high_risk_matrix_row_is_live_in_catalog_authority(policy) -> None:
+    operation_ref = min(policy.operation_refs)
+    values = {slot: f"authorized:{slot}" for slot in policy.required_material_fields}
+    externality = (
+        Externality.PHYSICAL_WORLD
+        if policy.policy_ref.startswith("safety-device")
+        else Externality.LOCAL
+        if policy.effect_class == EffectClass.DELETE
+        else Externality.EXTERNAL_SYSTEM
+    )
+    scope = EffectAuthorizationScope(
+        requirement_ref=f"requirement:{policy.policy_ref}",
+        effect_class=policy.effect_class,
+        resource_scope=ResourceScopeRef(f"resource:{policy.policy_ref}"),
+        operation_constraint=operation_ref,
+        parameters=tuple(ParameterAuthorization(slot, value) for slot, value in sorted(values.items())),
+        externality=externality,
+        reversibility=Reversibility.REVERSIBLE,
+        required_capabilities=frozenset({policy.required_capability}),
+        risk_policy_ref=policy.policy_ref,
+        minimum_source_assurance=policy.minimum_assurance,
+        approval_policy_ref="exact-contract@v1",
+    )
+    task = _task(scope, OperationClass.EXTERNAL_SIDE_EFFECT)
+    observation = _observation(
+        target_id=scope.resource_scope.resource_ref,
+        operation_ref=operation_ref,
+        effect_class=policy.effect_class,
+        risk=RiskLevel.HIGH,
+        assurance=policy.minimum_assurance,
+        externality=externality,
+    )
+    proof = authorize_choice(
+        _choice(scope.requirement_ref, scope.resource_scope.resource_ref, PlannerActionKind.ACTIVATE, values),
+        _step(scope.requirement_ref),
+        task,
+        observation,
+    )
+
+    assert proof.status == AuthorityStatus.ALLOW
+    assert proof.authorization_scope_ref == scope.requirement_ref
+
+
+def test_navigation_signature_denies_type_text_operation() -> None:
+    signature = EffectAuthorizationScope(
+        requirement_ref="requirement:navigate",
+        operation_constraint="navigation.navigate@v1",
+        resource_scope=ResourceScopeRef("resource:settings"),
+        effect_class=EffectClass.NAVIGATE,
+    )
+    proof = authorize_choice(
+        _choice(signature.requirement_ref, "resource:settings", PlannerActionKind.TYPE_TEXT, {"text": "x"}),
+        _step(signature.requirement_ref),
+        _task(signature, OperationClass.NAVIGATION),
+        _observation(
+            target_id="resource:settings",
+            operation_ref="field.set@v1",
+            effect_class=EffectClass.UPDATE,
+            risk=RiskLevel.MEDIUM,
+            assurance=AssuranceLevel.STRUCTURAL,
+        ),
+    )
+    assert proof.status == AuthorityStatus.DENY
+    assert "OPERATION_MISMATCH" in proof.reason_codes
+
+
+def test_named_parameter_swap_is_denied() -> None:
+    signature = EffectAuthorizationScope(
+        requirement_ref="requirement:payment",
+        operation_constraint="payment.commit@v1",
+        resource_scope=ResourceScopeRef("account:alice"),
+        parameters=(ParameterAuthorization("recipient", "Alice"), ParameterAuthorization("amount", "100")),
+        effect_class=EffectClass.PAY,
+        externality=Externality.EXTERNAL_SYSTEM,
+        required_capabilities=frozenset({"payment.commit"}),
+        approval_policy_ref="exact-contract@v1",
+        minimum_source_assurance=AssuranceLevel.AUTHORITATIVE,
+    )
+    proof = authorize_choice(
+        _choice(signature.requirement_ref, "account:alice", PlannerActionKind.ACTIVATE, {"recipient": "100", "amount": "Alice"}),
+        _step(signature.requirement_ref),
+        _task(signature, OperationClass.REVERSIBLE_WRITE),
+        _observation(
+            target_id="account:alice",
+            operation_ref="payment.commit@v1",
+            effect_class=EffectClass.PAY,
+            risk=RiskLevel.HIGH,
+            assurance=AssuranceLevel.AUTHORITATIVE,
+        ),
+    )
+    assert proof.status == AuthorityStatus.DENY
+    assert set(proof.reason_codes) >= {"PARAMETER_MISMATCH:recipient", "PARAMETER_MISMATCH:amount"}
+
+
+def test_uninstrumented_dom_control_has_unknown_risk() -> None:
+    model = DomAdapter().transduce(
+        "<button id='delete'>Delete account</button>",
+        environment_revision="environment:dom",
+    )
+    assert not model.affordances[0].risk_asserted
+    descriptor = classify_action(
+        UnifiedObservation(
+            snapshot_id="observation:dom",
+            page_revision="page:dom",
+            environment_revision="environment:dom",
+            observed_text="",
+            targets=(
+                UnifiedObservationTarget(
+                    target_id="dom:delete",
+                    surface="dom",
+                    role="button",
+                    label="Delete account",
+                    supported_actions=("activate",),
+                    state={},
+                ),
+            ),
+        ),
+        target_id="dom:delete",
+        action_kind="activate",
+        parameters={},
+    )
+    assert descriptor.effect_class is None
+    assert descriptor.runtime_risk.value == "critical"
+
+
+def test_task_gate_rebuilds_from_wrong_actual_binding() -> None:
+    signature = EffectAuthorizationScope(
+        requirement_ref="requirement:send",
+        operation_constraint="message.send@v1",
+        resource_scope=ResourceScopeRef("recipient:alice"),
+        effect_class=EffectClass.SEND,
+        parameters=(
+            ParameterAuthorization("recipient", "Alice"),
+            ParameterAuthorization("content", "hello"),
+        ),
+        externality=Externality.EXTERNAL_SYSTEM,
+        required_capabilities=frozenset({"communication.send"}),
+        approval_policy_ref="exact-contract@v1",
+        minimum_source_assurance=AssuranceLevel.AUTHORITATIVE,
+    )
+    task = _task(signature, OperationClass.REVERSIBLE_WRITE)
+    alice_observation = _observation(
+        target_id="recipient:alice",
+        operation_ref="message.send@v1",
+        effect_class=EffectClass.SEND,
+        risk=RiskLevel.HIGH,
+        assurance=AssuranceLevel.AUTHORITATIVE,
+    )
+    alice_choice = _choice(
+        signature.requirement_ref,
+        "recipient:alice",
+        PlannerActionKind.ACTIVATE,
+        {"recipient": "Alice", "content": "hello"},
+    )
+    copied_proof = authorize_choice(alice_choice, _step(signature.requirement_ref), task, alice_observation)
+    bob_descriptor = classify_action(
+        _observation(
+            target_id="recipient:bob",
+            operation_ref="message.send@v1",
+            effect_class=EffectClass.SEND,
+            risk=RiskLevel.HIGH,
+            assurance=AssuranceLevel.AUTHORITATIVE,
+            label="Alice",
+        ),
+        target_id="recipient:bob",
+        action_kind="activate",
+        parameters={"recipient": "Alice", "content": "hello"},
+    )
+    assert copied_proof.status == AuthorityStatus.ALLOW
+    assert not contract_matches_task_authority(
+        task_spec=task,
+        runtime_signature=bob_descriptor,
+        sealed_proof=copied_proof,
+        requirement_refs=(signature.requirement_ref,),
+        choice_role=ChoiceRole.DIRECT.value,
+    ).authorized
+
+
+def test_label_alias_does_not_equal_resource_identity_and_unknown_is_unproven() -> None:
+    signature = EffectAuthorizationScope(
+        requirement_ref="requirement:read",
+        operation_constraint="resource.read@v1",
+        resource_scope=ResourceScopeRef("resource:alice"),
+        effect_class=EffectClass.READ,
+    )
+    task = _task(signature, OperationClass.READ_ONLY)
+    proof = authorize_choice(
+        _choice(signature.requirement_ref, "resource:bob", PlannerActionKind.ACTIVATE),
+        _step(signature.requirement_ref),
+        task,
+        _observation(
+            target_id="resource:bob",
+            operation_ref="resource.read@v1",
+            effect_class=EffectClass.READ,
+            risk=RiskLevel.LOW,
+            assurance=AssuranceLevel.STRUCTURAL,
+            label="resource:alice",
+        ),
+    )
+    assert proof.status == AuthorityStatus.DENY
+    assert "TARGET_SCOPE_MISMATCH" in proof.reason_codes
+
+
+def test_enabling_type_cannot_disclose_data() -> None:
+    signature = EffectAuthorizationScope(
+        requirement_ref="requirement:read",
+        operation_constraint="resource.read@v1",
+        resource_scope=ResourceScopeRef("resource:alice"),
+        effect_class=EffectClass.READ,
+    )
+    proof = authorize_choice(
+        _choice(
+            signature.requirement_ref,
+            "resource:alice",
+            PlannerActionKind.TYPE_TEXT,
+            {"text": "secret"},
+            ChoiceRole.ENABLING,
+        ),
+        _step(signature.requirement_ref),
+        _task(signature, OperationClass.READ_ONLY),
+        _observation(
+            target_id="resource:alice",
+            operation_ref="field.set@v1",
+            effect_class=EffectClass.UPDATE,
+            risk=RiskLevel.MEDIUM,
+            assurance=AssuranceLevel.STRUCTURAL,
+        ),
+    )
+    assert proof.status == AuthorityStatus.DENY

@@ -51,7 +51,18 @@ class MultiStageObserver:
         self.sequence += 1
         snapshot_id = f"snapshot-{self.sequence}"
         model = DomAdapter().transduce(
-            '<button id="discover">Discover</button><button id="confirm">Confirm</button>',
+            (
+                '<button id="discover" data-runtime-operation="resource.update@v1" '
+                'data-runtime-effect-class="update" data-runtime-externality="local" '
+                'data-runtime-reversibility="reversible" '
+                'data-runtime-source-assurance="structural" '
+                'data-runtime-risk="medium">Discover</button>'
+                '<button id="confirm" data-runtime-operation="resource.update@v1" '
+                'data-runtime-effect-class="update" data-runtime-externality="local" '
+                'data-runtime-reversibility="reversible" '
+                'data-runtime-source-assurance="structural" '
+                'data-runtime-risk="medium">Confirm</button>'
+            ),
             environment_revision=f"revision-{int(self.world.discovered)}-{int(self.world.confirmed)}",
             snapshot_id=snapshot_id,
             page_revision="page-1",
@@ -161,14 +172,16 @@ class MultiStageIntentAndPlanModel:
                     "objective": "Discover the current state, then confirm it",
                     "requested_effects": [
                         {
-                            "operation_class": "read_only",
-                            "target": "Discover",
+                            "operation_class": "reversible_write",
+                            "target": "dom_button_1",
                             "source_ref": source_ref,
+                            "operation_ref": "resource.update@v1",
                         },
                         {
-                            "operation_class": "read_only",
-                            "target": "Confirm",
+                            "operation_class": "reversible_write",
+                            "target": "dom_button_2",
                             "source_ref": source_ref,
+                            "operation_ref": "resource.update@v1",
                         },
                     ],
                     "success": {

@@ -21,7 +21,7 @@ criterion leaf cites exact admitted requirement IDs plus typed CriterionPolicy,
 semantic value constraints are canonical constraint requirements, and every requested output
 enters completion through one required OutputSpec; StepSpec traceability is enforced and the
 legacy claim/obligation owners and task-plan provider adapter are deleted. P4
-is also cut over: rolling task planning and closed step choice are separate
+planning/port core is cut over: rolling task planning and closed step choice are separate
 typed flows, strict providers receive only bounded typed requests, pure
 serializers expose only admitted/displayed IDs, and explicit triggers reuse an
 active feasible plan without calling the task planner. Default composition no
@@ -45,10 +45,15 @@ allowed-effect-bound external ACTION_CAUSED/RECENT_ACTION and authoritative
 FINAL_RECHECK success leaves. Invalid canonical construction becomes a typed
 admission issue, and Runtime accepts final-recheck identity only when source,
 strength and assurance are authoritative.
-The strict Catalog copies the active StepSpec's exact requirement/effect refs,
-rejects concrete effect targets outside those refs before presentation, and
-ActionContract plus the Task Authority gate preserve and revalidate that
-lineage. A Runtime-registered API final-recheck provider closes the approved
+The strict Catalog now admits only choices whose Runtime-derived concrete
+`RuntimeEffectSignature` is ALLOWed by a typed `EffectAuthorizationScope`.
+Named parameters, canonical resources/destinations, externality,
+reversibility, source assurance and the multidimensional risk vector are sealed
+in a versioned `ActionAuthorityProof`. Contract construction reclassifies the
+selected route and the Task Gate independently reauthorizes the actual grounded
+transaction. The high-risk matrix enforces effect-specific material fields,
+capability, exact approval, authoritative preflight and causal/final recheck
+criteria. P4-G is therefore cut over, with P5 now next. A Runtime-registered API final-recheck provider closes the approved
 reference export path; ordinary strong HTTP evidence remains non-authoritative. P1 is
 now cut over: accepted plans store StepSpec directly, TaskPlanAuthority is the
 single plan admission/version owner, TaskProgress is step/fact/evidence based,
@@ -71,10 +76,27 @@ extensions, with fail-closed unresolved routing already present.
 - P2-7 resolver capability: **DEMAND-GATED**
 - P2-7 unresolved fail-closed routing: **COMPLETE**
 - P3 canonical TaskSpec v2 cutover: **COMPLETE**
-- P4 rolling planning and strict step choice: **COMPLETE**
-- P5 bounded state and final compatibility deletion: **NOT STARTED**
+- P4 rolling planning and strict step-choice port: **COMPLETE**
+- P4-G concrete action authority/high-risk governance: **COMPLETE**
+- P5 bounded state and final compatibility deletion: **NOT STARTED; NEXT**
 
 Documentation consolidation does not promote any production capability.
+
+### 1.1 P4-G redline closure
+
+The four negative probes that blocked the interim `8b91944` implementation now
+close at the typed authority boundary:
+
+| Probe | Current result | Closure owner |
+|---|---|---|
+| NAVIGATION TaskSpec + exact target + TYPE_TEXT choice | DENY | exact typed operation/effect subsumption |
+| admitted `recipient=Alice, amount=100` + swapped concrete fields | DENY | named parameter authorization |
+| uninstrumented DOM `Delete account` button | UNPROVEN | Runtime classification and source-assurance policy |
+| valid Alice choice but actual affordance/locator targets Bob | DENY | route-specific signature plus Task Gate reauthorization |
+
+The implementation keeps the two contracts deliberately distinct and joins
+them only through the versioned tri-state proof; no label-keyword, risk-string
+or test-specific action-enum fallback remains on the canonical path.
 
 ## 2. Current-vs-target matrix
 
@@ -83,12 +105,12 @@ Documentation consolidation does not promote any production capability.
 | Source intake | default path is SourceEnvelope → MinimalIntentProposal → optional SemanticAudit → TaskSpecAuthority; default SourceLedger/claim/obligation owners are deleted | lightweight SourceEnvelope + risk-proportionate MaterialBinding/selective SourceAnchor; optional SemanticAudit | P0-E complete |
 | Semantic authority | TaskSpecAuthority is the only canonical admission writer; `AdmittedTaskSpec` is an in-process object capability binding the exact TaskSpec, SourceEnvelope identity and revision predecessor; RunRequest and TaskRequest require that capability and have no goal-only branch; raw external `UserTaskSubmission` is admitted server-side before Runtime construction; the private P5-3 TaskSpec wrapper and explicitly named legacy request adapter are import-gated to compatibility profiles; execution consumers are denied source context | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E/P3 complete |
 | Task contract | TaskSpec v2 carries flat typed requirements, stable input bindings, fully covered authorization/constraint/preference/forbidden refs, capability ceiling, risk policy and source-bound outputs; typed success leaves carry CriterionPolicy; high-risk admission requires distinct allowed-effect-bound ACTION_CAUSED/RECENT_ACTION and AUTHORITATIVE/FINAL_RECHECK leaves and converts construction failures to typed issues; completion accepts a leaf result only after evidence satisfies that exact policy and the evaluation carries its criterion-bound policy digest; CURRENT_OBSERVATION never survives an epoch change, RECENT_ACTION is re-admitted only from the bounded Runtime outcome index, and DURABLE is re-admitted only from DurableEvidenceStore; accepted `semantic_value_constraints` and evidence-description fields are absent; every output requirement has exactly one required OutputSpec | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P3 complete |
-| Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; TaskPlanningRequest → PlanProposal is typed and rolling triggers distinguish initial, reuse, exhausted, infeasible, assumption, environment and task-revision cases; default composition and PlanningStage contain no legacy Planner proposal fallback | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 plus P4 complete |
+| Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; TaskPlanningRequest → PlanProposal is typed and rolling triggers distinguish initial, reuse, exhausted, infeasible, assumption, environment and task-revision cases; default composition and PlanningStage contain no legacy Planner proposal fallback | observation-grounded replaceable TaskPlan<StepSpec> | P1-1/P1-2 plus P4 complete |
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
 | Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route, and causal step evidence retains its actual subject/value/source/assurance | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1 plus P2 canonical step-completion cutover complete |
-| Action choice | Runtime builds one logically full, deterministic eager/lazy/indexed Catalog before any model request; exact canonical target/destination/material scope is proven without keyword matching, effectfulness and risk are Runtime-derived, and ChoicePresentation carries the resulting risk/destination semantics; StepChoiceFlow handles deterministic 0/1/N selection, rejects hidden IDs and fails closed on an oversized truncated page | logical full Runtime Catalog before bounded semantic ChoicePage | P0-C plus P3/P4 complete |
-| ActionContract and gates | selected choice, Catalog digest, canonical observation, exact authority refs and immutable concrete-scope proof are sealed into ActionContract; the Task gate independently recomputes target/destination/effect/risk legality before Capability/Approval/Freshness admission | retain and bind to canonical observation/catalog identity | P0-C/P3 complete; later policy matrix refinement pending |
+| Action choice | Runtime builds the logical Catalog before model projection and StepChoiceFlow owns deterministic 0/1/N/hidden-ID behavior. A pure typed subsumption evaluator compares exact operation/effect, canonical resource/destination, named parameters, externality/reversibility, assurance, capability ceiling and multidimensional risk; Catalog admits ALLOW only and preserves typed DENY/UNPROVEN rejection reports | `EffectAuthorizationScope ⊒ RuntimeEffectSignature → ALLOW/DENY/UNPROVEN`; Catalog admits ALLOW only; Text/VLM is raise-only | P0-C/P4/P4-G complete |
+| ActionContract and gates | selected choice, Catalog/observation refs, route-specific signature and versioned proof are sealed into the contract hash; approval is contract-hash/page/capability bound and presents resource/destination/material parameters/reversibility/backend/source uncertainty. Task Gate rebuilds authority from TaskSpec, current observation and the actual transaction before Capability/Approval/Freshness | route-specific Runtime signature + versioned proof + actual binding in contract hash; independent Task Gate reauthorization | P0-C/P4-G complete |
 | Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
 | Verification | `LoopEvaluator` feeds canonical observation, current contract, bounded lossless recent outcomes, durable evidence, latest final-recheck identity and resource versions directly to `PredicateEvaluator`; resource versions are derived from canonical target/fact content; Task completion uses the same Runtime-owned context and is recomputed without a CriterionEvaluation cache; observation metadata cannot assert causal lineage, durable admission, final-recheck authority or resource versions; action effect and TaskSpec completion retain their earlier owners | loop-native typed step evaluation with bounded evidence locations | P2 mandatory runtime closure complete; P2-6 deferred and P2-7 resolver demand-gated |
 | Criterion contracts | canonical immutable Predicate/AllOf/AnyOf/Not/OpenSemantic AST and orthogonal satisfaction/validity/assurance policy are implemented; strict `StepSpec` accepts only canonical `CriterionExpr`, while legacy providers/benchmarks canonicalize at ingress; unresolved OpenSemantic routes to a typed clarification gap | one typed criterion vocabulary independent of provider coverage | P2-1/P2-2 core complete; P2-7 full resolver demand-driven |
@@ -118,6 +140,13 @@ execution_raw_text_input: prohibited_cutover_complete
 requirement_identity: canonical_TaskRequirement_and_StepSpec_traceability_complete
 dependency_model: typed_value_refs_plus_StepSpec_depends_on
 choice_presentation_contract: canonical_P0_C_cutover_complete
+effect_authorization_scope: task_spec_typed_scope_complete_P4_G
+runtime_effect_signature: actual_candidate_backend_binding_complete_P4_G
+concrete_effect_authority: typed_subsumption_and_versioned_proof_complete_P4_G
+action_authority_decision: ALLOW_DENY_UNPROVEN_complete_P4_G
+runtime_risk_policy: conservative_multidimensional_max_and_text_VLM_raise_only_complete_P4_G
+task_gate_actual_binding_revalidation: complete_P4_G
+high_risk_action_governance: exact_material_capability_approval_preflight_causal_final_recheck_complete_P4_G
 catalog_physical_minimality: logical_full_membership_P0_C_complete_physical_lazy_indexed_deferred_P5_4
 observation_indexed_epoch: canonical_P0_B_cutover_complete
 authority_in_process_composition: shared_in_process_observation_store_complete
@@ -137,6 +166,7 @@ semantic_authority_invariants: NLI-01_through_NLI-08
 requirement_invariants: REQ-01_through_REQ-05
 dependency_invariants: DEP-01_through_DEP-03
 choice_invariants: CHOICE-13
+concrete_action_authority_invariants: AUTHZ-01_through_AUTHZ-10_plus_HRA-01_through_HRA-03_complete_P4_G
 output_invariants: OUT-01_through_OUT-03
 physical_minimality_invariants: CAT-PHY-01_OBS-PHY-01_AUTH-PHY-01_CRIT-PHY-01_PLAN-PHY-01_PROFILE-01
 cross_surface_invariants: SURFACE-01_through_SURFACE-03
@@ -161,7 +191,7 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change | P0-A/B/C/D/E/E5, all P1 rows, P2 core (P2-1..P2-5), P3 and P4 are complete; TaskSpec v2 and StepSpec requirement/effect traceability are canonical, rolling task planning and strict closed step choice are cut over, and legacy internal planner signatures are deleted; P2-6 and the full P2-7 resolver remain demand-driven extensions; P5 is not started |
+| production behavior change | P0-A/B/C/D/E/E5, all P1 rows, P2 core, P3, P4 planning/port core and P4-G typed concrete action authority/high-risk governance are complete; P2-6/full P2-7 remain demand-driven and P5 is next |
 
 The remaining planner compatibility debt is explicit and bounded:
 `generalist_planner.py`, `compatibility_planner_algorithms.py`, their one-way
@@ -180,8 +210,10 @@ profile that may import `legacy_run_request`; canonical pipeline, external
 submission, strict BrowserGym, RunRequest and TaskRequest do not accept a raw
 TaskSpec or a missing admitted task.
 
-The remaining production containment debt is separately queued at `P5-4`:
-`execution_phase.py` is currently 1,142 lines and strict
+P4-G moved semantic generation and typed authority into focused builder,
+generation-support and policy modules; `action_choice_catalog.py` now retains
+membership/digest/query ownership. Remaining production containment debt is
+separately queued at `P5-4`: `execution_phase.py` is currently 1,142 lines and strict
 `browsergym_episode_runner.py` is 1,082 lines after legacy extraction; both must
 be split by responsibility without changing P4's completed planning boundary.
 

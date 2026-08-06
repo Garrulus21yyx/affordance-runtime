@@ -3,9 +3,17 @@ from dataclasses import dataclass, replace
 from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.wot import WotAdapter
+from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import Observation, ProgressEvidenceScope, VerifierSpec
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    Externality,
+    ResourceScopeRef,
+    Reversibility,
+)
 from affordance_runtime.executors import ExecutorRouter, WotExecutor
 from affordance_runtime.grounding import GroundingSource, SourceObservation
 from affordance_runtime.planning import (
@@ -23,9 +31,10 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
-    canonical_effect_requirements,
 )
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
@@ -68,7 +77,8 @@ class DeviceObserver:
             ttl_ms=60_000,
         )
         dom = replace(dom_model.affordances[0], backend_candidates=["dom"])
-        wot = (
+        wot = replace(
+            (
             WotAdapter()
             .parse(
                 {
@@ -86,6 +96,14 @@ class DeviceObserver:
                 ttl_ms=60_000,
             )
             .affordances[0]
+            ),
+            operation_ref="resource.update@v1",
+            effect_class=EffectClass.UPDATE.value,
+            externality=Externality.PHYSICAL_WORLD.value,
+            reversibility=Reversibility.REVERSIBLE.value,
+            resource_sensitivity="moderate",
+            authority_source_assurance="authoritative",
+            risk_asserted=True,
         )
         observation = Observation(
             environment_revision,
@@ -178,8 +196,27 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
         revision=1,
         objective="Turn on the authoritative device property",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(
-            ("Power",), OperationClass.REVERSIBLE_WRITE, "test", ("device.write",)
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:effect:1",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Power",
+                    target_identity=observer.semantic_target_id,
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    capability="device.write",
+                    effect_authorization_scope=EffectAuthorizationScope(
+                        requirement_ref="requirement:effect:1",
+                        effect_class=EffectClass.UPDATE,
+                        resource_scope=ResourceScopeRef(observer.semantic_target_id, ("test",)),
+                        operation_constraint="resource.update@v1",
+                        externality=Externality.PHYSICAL_WORLD,
+                        reversibility=Reversibility.REVERSIBLE,
+                        required_capabilities=frozenset({"device.write"}),
+                    ),
+                ),
+                source_anchor_refs=("test",),
+            ),
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Power",)),
         success=SuccessExpression(
@@ -194,6 +231,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
     result = compose_run_coordinator(
         observer,
         executors,
+        approval_provider=ConfiguredApprovalProvider("test-user", {"device.write"}),
         contract_builder=ContractBuilder(
             requirements={
                 observer.semantic_target_id: ContractRequirements(

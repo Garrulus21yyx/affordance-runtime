@@ -31,6 +31,8 @@ class ChoicePresentationProjector:
                 relevant_current_state=item.relevant_current_state,
                 conflict_status=item.conflict_status,
                 risk=item.risk,
+                effect_summary=item.effect_summary,
+                authorization_reason_codes=item.authorization_reason_codes,
                 generation_reason_codes=item.generation_reason_codes,
             )
             for item in catalog_slice.choices

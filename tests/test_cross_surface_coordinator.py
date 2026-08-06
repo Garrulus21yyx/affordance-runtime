@@ -17,6 +17,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
+from affordance_runtime.effect_authority_contracts import EffectAuthorizationScope, EffectClass, ResourceScopeRef
 from affordance_runtime.executors import VisualExecutor, WotExecutor
 from affordance_runtime.planning import (
     ContractRequirements,
@@ -24,9 +25,10 @@ from affordance_runtime.planning import (
 from affordance_runtime.runtime import RunRequest, RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
-    canonical_effect_requirements,
 )
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -75,15 +77,37 @@ class EvidenceExecutor:
         )
 
 
-def _surface_task(task_id: str, objective: str, *, target: str | None = None) -> RunRequest:
+def _surface_task(
+    task_id: str,
+    objective: str,
+    *,
+    target: str | None = None,
+    resource_ref: str | None = None,
+) -> RunRequest:
+    ref = resource_ref or target or objective
     return legacy_run_request(
         task_spec=TaskSpec(
             task_id=task_id,
             revision=1,
             objective=objective,
             operation_class=OperationClass.READ_ONLY,
-            requirements=canonical_effect_requirements(
-                (target or objective,), OperationClass.READ_ONLY, "cross-surface-test", ()
+            requirements=(
+                TaskRequirement(
+                    requirement_id="requirement:effect:1",
+                    payload=TaskSemanticPayload(
+                        kind="effect",
+                        subject=target or objective,
+                        target_identity=ref,
+                        operation_class=OperationClass.READ_ONLY,
+                        effect_authorization_scope=EffectAuthorizationScope(
+                            requirement_ref="requirement:effect:1",
+                            operation_constraint="resource.read@v1",
+                            resource_scope=ResourceScopeRef(ref),
+                            effect_class=EffectClass.READ,
+                        ),
+                    ),
+                    source_anchor_refs=("cross-surface-test",),
+                ),
             ),
             allowed_effect_refs=canonical_effect_requirement_refs((target or objective,)),
             success=SuccessExpression(
@@ -96,13 +120,13 @@ def _surface_task(task_id: str, objective: str, *, target: str | None = None) ->
         )
     )
 
-
 def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
-    affordance = SomAdapter().parse(
+    affordance = replace(SomAdapter().parse(
         [{"bbox": [10, 10, 20, 20], "label": "Target"}],
         environment_revision="rev-1",
         snapshot_id="snap-1",
-    )[0]
+    )[0], operation_ref="resource.read@v1", effect_class="read", externality="local",
+        reversibility="reversible", authority_source_assurance="structural", risk_asserted=True)
     result = asyncio.run(
         compose_run_coordinator(
             StaticObserver(affordance),
@@ -121,7 +145,7 @@ def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
                     )
                 }
             ),
-        ).run(_surface_task("visual-run", "click visual target", target="Target"))
+        ).run(_surface_task("visual-run", "click visual target", target="Target", resource_ref=affordance.id))
     )
 
     assert result.status == RuntimeStep.FAILED
@@ -177,7 +201,7 @@ def test_wot_affordance_uses_task_coordinator_contract_trace_path() -> None:
 
 
 def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> None:
-    dom = (
+    dom = replace((
         DomAdapter()
         .transduce(
             "<button id='enable'>Enable shared state</button>",
@@ -185,13 +209,17 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
             snapshot_id="snap-1",
         )
         .affordances[0]
-    )
-    visual = SomAdapter().parse(
+    ), operation_ref="resource.update@v1", effect_class="update", externality="local",
+        reversibility="reversible", authority_source_assurance="structural",
+        risk=RiskLevel.MEDIUM, risk_asserted=True)
+    visual = replace(SomAdapter().parse(
         [{"bbox": [10, 10, 20, 20], "label": "Enable shared state"}],
         environment_revision="rev-visual",
         snapshot_id="snap-visual",
-    )[0]
-    wot = (
+    )[0], operation_ref="resource.update@v1", effect_class="update", externality="local",
+        reversibility="reversible", authority_source_assurance="structural",
+        risk=RiskLevel.MEDIUM, risk_asserted=True)
+    wot = replace((
         WotAdapter()
         .parse(
             {"id": "lamp", "base": "http://fixture", "actions": {"setEnabled": {"forms": [{"href": "/on"}]}}},
@@ -199,7 +227,9 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
             snapshot_id="snap-wot",
         )
         .affordances[0]
-    )
+    ), operation_ref="resource.update@v1", effect_class="update", externality="local",
+        reversibility="reversible", authority_source_assurance="structural",
+        risk=RiskLevel.MEDIUM, risk_asserted=True)
 
     def run(affordance: Affordance, executor: Any, verifier: VerifierSpec) -> RuntimeStep:
         verifier = replace(
@@ -211,8 +241,25 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
             revision=1,
             objective="Enable shared state",
             operation_class=OperationClass.REVERSIBLE_WRITE,
-            requirements=canonical_effect_requirements(
-                (affordance.label,), OperationClass.REVERSIBLE_WRITE, "surface-test", ("shared.write",)
+            requirements=(
+                TaskRequirement(
+                    requirement_id="requirement:effect:1",
+                    payload=TaskSemanticPayload(
+                        kind="effect",
+                        subject=affordance.label,
+                        target_identity=affordance.id,
+                        operation_class=OperationClass.REVERSIBLE_WRITE,
+                        capability="shared.write",
+                        effect_authorization_scope=EffectAuthorizationScope(
+                            requirement_ref="requirement:effect:1",
+                            operation_constraint="resource.update@v1",
+                            resource_scope=ResourceScopeRef(affordance.id),
+                            effect_class=EffectClass.UPDATE,
+                            required_capabilities=frozenset({"shared.write"}),
+                        ),
+                    ),
+                    source_anchor_refs=("surface-test",),
+                ),
             ),
             allowed_effect_refs=canonical_effect_requirement_refs((affordance.label,)),
             success=SuccessExpression(

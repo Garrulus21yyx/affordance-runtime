@@ -5,13 +5,15 @@ from dataclasses import replace
 import pytest
 
 from affordance_runtime.action_choice_authority import authorize_choice
-from affordance_runtime.action_choice_catalog import ActionChoiceCatalog, ActionChoiceCatalogBuilder
+from affordance_runtime.action_choice_builder import ActionChoiceCatalogBuilder
+from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.action_contract_builder import ActionContractBuilder
 from affordance_runtime.action_selection import ActionSelection
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.choice_contracts import ActionChoice, ActionChoiceFailure
 from affordance_runtime.contracts import ActionContract, RiskLevel
 from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
+from affordance_runtime.effect_authority_contracts import EffectAuthorizationScope, EffectClass, ResourceScopeRef
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
@@ -29,7 +31,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
-from affordance_runtime.verification.contracts import CriterionPolicy, SuccessExpression
+from affordance_runtime.verification.contracts import AssuranceLevel, CriterionPolicy, SuccessExpression
 
 
 def _choices():
@@ -179,9 +181,7 @@ def test_choice_presentation_uses_runtime_authority_risk_and_destination() -> No
         destination_label="Approved",
         requirement_refs=("requirement:risk",),
         effect_refs=("requirement:risk",),
-        effectful=True,
         risk="high",
-        authorization_scope_digest="sha256:authority",
     )
     catalog = ActionChoiceCatalog.from_choices(
         task_revision=1,
@@ -205,11 +205,23 @@ def _effect_task(subject: str) -> TaskSpec:
         revision=1,
         objective=f"Delete {subject}",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(
-            (f"Delete {subject}",),
-            OperationClass.REVERSIBLE_WRITE,
-            "request:catalog-authority",
-            (),
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:effect:1",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject=f"Delete {subject}",
+                    target_identity=f"target:delete:{subject.casefold()}",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    effect_authorization_scope=EffectAuthorizationScope(
+                        requirement_ref="requirement:effect:1",
+                        operation_constraint="resource.update@v1",
+                        resource_scope=ResourceScopeRef(f"target:delete:{subject.casefold()}"),
+                        effect_class=EffectClass.UPDATE,
+                    ),
+                ),
+                source_anchor_refs=("request:catalog-authority",),
+            ),
         ),
         allowed_effect_refs=canonical_effect_requirement_refs((f"Delete {subject}",)),
         success=SuccessExpression(
@@ -257,6 +269,13 @@ def _delete_observation(target: str) -> UnifiedObservation:
                 label=f"Delete {target}",
                 supported_actions=("activate",),
                 state={"enabled": True, "visible": True},
+                risk=RiskLevel.MEDIUM,
+                risk_asserted=True,
+                operation_ref="resource.update@v1",
+                effect_class=EffectClass.UPDATE.value,
+                source_assurance=AssuranceLevel.STRUCTURAL,
+                externality="local",
+                reversibility="reversible",
             ),
         ),
     )
@@ -285,7 +304,9 @@ def test_catalog_rejects_concrete_target_outside_exact_effect_authority() -> Non
     )
 
     assert isinstance(result, ActionChoiceFailure)
-    assert result.reason_code == "no_feasible_action_choice"
+    assert result.reason_code == "authority_denied"
+    assert result.build_report is not None
+    assert result.build_report.rejections
 
 
 def test_catalog_derives_effect_and_risk_instead_of_trusting_planner_flags() -> None:
@@ -639,7 +660,12 @@ def test_choice_and_action_contract_preserve_exact_authority_refs() -> None:
         target_id="target:delete:a",
         requirement_refs=("requirement:effect:1",),
         effect_refs=("requirement:effect:1",),
-        effectful=True,
+    )
+    proof = authorize_choice(choice, _effect_step("A"), task, _delete_observation("A"))
+    choice = replace(
+        choice,
+        action_authority_proof=proof,
+        risk=proof.risk.value,
     )
     catalog = ActionChoiceCatalog.from_choices(
         task_revision=1,

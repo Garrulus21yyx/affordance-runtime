@@ -6,10 +6,8 @@ import inspect
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from affordance_runtime.action_choice_catalog import (
-    ActionChoiceCatalog,
-    ActionChoiceCatalogBuilder,
-)
+from affordance_runtime.action_choice_builder import ActionChoiceCatalogBuilder
+from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.action_selection import ActionSelectionValidator
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.async_bridge import resolve_awaitable

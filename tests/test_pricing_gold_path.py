@@ -12,6 +12,7 @@ from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.cli import run_scenario
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import Observation
+from affordance_runtime.effect_authority_contracts import EffectClass
 from affordance_runtime.evolution import (
     EvolutionArtifact,
     EvolutionArtifactType,
@@ -118,6 +119,12 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
                             OperationClass.READ_ONLY,
                             "pricing-test",
                             (),
+                            resource_refs=(
+                                "semantic:show-pro-limits:d560036f53a2",
+                                "semantic:show-enterprise-limits:7ac4b4b12278",
+                            ),
+                            operation_ref_override="interaction.reveal@v1",
+                            effect_class_override=EffectClass.INTERACTION_ONLY,
                         ),
                         pricing_output_requirement("pricing-test"),
                     ),
@@ -159,6 +166,12 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
                 OperationClass.READ_ONLY,
                 "reference-test",
                 (),
+                resource_refs=(
+                    "semantic:show-pro-limits:d560036f53a2",
+                    "semantic:show-enterprise-limits:7ac4b4b12278",
+                ),
+                operation_ref_override="interaction.reveal@v1",
+                effect_class_override=EffectClass.INTERACTION_ONLY,
             ),
             pricing_output_requirement("reference-test"),
         ),

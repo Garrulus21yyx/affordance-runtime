@@ -275,6 +275,13 @@ class GroundingCandidate:
     evidence_refs: tuple[str, ...] = ()
     scope_evidence: CandidateScopeEvidence | None = None
     risk: RiskLevel = RiskLevel.LOW
+    risk_asserted: bool = False
+    operation_ref: str = ""
+    effect_class: str = ""
+    externality: str = ""
+    reversibility: str = ""
+    resource_sensitivity: str = ""
+    authority_source_assurance: str = ""
 
     def __post_init__(self) -> None:
         if not self.candidate_id or not self.semantic_target_id:

@@ -1016,6 +1016,13 @@ class DomAdapter:
                         ),
                     },
                     risk=_authored_risk(attr),
+                    risk_asserted=bool(attr.get("data-runtime-risk", "").strip()),
+                    operation_ref=attr.get("data-runtime-operation", "").strip(),
+                    effect_class=attr.get("data-runtime-effect-class", "").strip(),
+                    externality=attr.get("data-runtime-externality", "").strip(),
+                    reversibility=attr.get("data-runtime-reversibility", "").strip(),
+                    resource_sensitivity=attr.get("data-runtime-resource-sensitivity", "").strip(),
+                    authority_source_assurance=attr.get("data-runtime-source-assurance", "").strip(),
                     evidence=[url] if url else [],
                 )
             )

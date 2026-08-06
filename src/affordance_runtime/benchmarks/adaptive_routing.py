@@ -35,6 +35,11 @@ from affordance_runtime.criteria import (
     evidence_requirement_id,
     skill_step_owner_id,
 )
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
@@ -58,9 +63,10 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
-    canonical_effect_requirements,
 )
 from affordance_runtime.task_skills import (
     AcceptedTaskSkillRuntime,
@@ -156,7 +162,13 @@ class _AblationObserver:
         environment_revision = f"saved:{self.world.saved}"
         page_revision = "ablation-page-v1"
         model = DomAdapter().transduce(
-            '<button id="save">Save</button>',
+            (
+                '<button id="save" data-runtime-operation="resource.update@v1" '
+                'data-runtime-effect-class="update" data-runtime-externality="local" '
+                'data-runtime-reversibility="reversible" '
+                'data-runtime-source-assurance="structural" '
+                'data-runtime-risk="medium">Save</button>'
+            ),
             environment_revision=environment_revision,
             snapshot_id=snapshot_id,
             page_revision=page_revision,
@@ -179,6 +191,13 @@ class _AblationObserver:
             ),
             backend_candidates=["visual"],
             confidence=0.95,
+            risk=dom.risk,
+            risk_asserted=True,
+            operation_ref="resource.update@v1",
+            effect_class="update",
+            externality="local",
+            reversibility="reversible",
+            authority_source_assurance="structural",
             evidence=[f"screen-{sequence}.png"],
         )
         observation = Observation(
@@ -404,8 +423,28 @@ def run_adaptive_routing_case(
         revision=1,
         objective=objective,
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(
-            ("Save",), OperationClass.REVERSIBLE_WRITE, "m8.5-ablation", ("settings.write",)
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:effect:1",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Save",
+                    target_identity=observer.semantic_target_id,
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    capability="settings.write",
+                    effect_authorization_scope=EffectAuthorizationScope(
+                        requirement_ref="requirement:effect:1",
+                        effect_class=EffectClass.UPDATE,
+                        resource_scope=ResourceScopeRef(
+                            observer.semantic_target_id,
+                            ("m8.5-ablation",),
+                        ),
+                        operation_constraint="resource.update@v1",
+                        required_capabilities=frozenset({"settings.write"}),
+                    ),
+                ),
+                source_anchor_refs=("m8.5-ablation",),
+            ),
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
         success=SuccessExpression(

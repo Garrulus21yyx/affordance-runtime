@@ -25,6 +25,7 @@ from affordance_runtime.simplified_runtime_contracts import (
 from affordance_runtime.simplified_runtime_contracts import (
     VerificationStatus as CanonicalVerificationStatus,
 )
+from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus, VerifierLadder, preflight
 
 
@@ -76,6 +77,7 @@ class ContractExecutionLoop:
         *,
         capability_gate_enabled: bool,
         preflight_enabled: bool,
+        canonical_observation: UnifiedObservation | None = None,
     ) -> ContractCheck:
         gate = self.effective_gate(envelope)
         result = ActionAdmissionService(self.task_policy).evaluate(
@@ -92,6 +94,7 @@ class ContractExecutionLoop:
             ),
             observation=observation,
             task_spec=envelope.task_spec,
+            canonical_observation=canonical_observation,
             check_freshness=preflight_enabled,
         )
         error = result.error
@@ -108,8 +111,15 @@ class ContractExecutionLoop:
         include_policy: bool,
         require_snapshot_identity: bool = True,
         require_environment_revision: bool = True,
+        canonical_observation: UnifiedObservation | None = None,
     ) -> RuntimeErrorCode | None:
-        error = self.task_policy.check(contract, envelope.constraints, envelope.task_spec) if include_policy else None
+        error = (
+            self.task_policy.check(
+                contract, envelope.constraints, envelope.task_spec, canonical_observation
+            )
+            if include_policy
+            else None
+        )
         if error is None and capability_gate_enabled:
             error = gate.check(contract)
         if error is None:

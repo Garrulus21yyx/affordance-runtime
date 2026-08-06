@@ -7,6 +7,16 @@ from uuid import uuid4
 
 from pydantic import ConfigDict, Field, ValidationError
 
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    Externality,
+    ParameterAuthorization,
+    ResourceScopeRef,
+    Reversibility,
+)
+from affordance_runtime.effect_operation_policy import semantics_for_operation
+from affordance_runtime.high_risk_effect_policy import policy_for_effect
 from affordance_runtime.material_binding_policy import MaterialBindingPolicy
 from affordance_runtime.material_contracts import MaterialBinding
 from affordance_runtime.source_envelope import SourceEnvelope, SourceKind
@@ -34,7 +44,7 @@ from affordance_runtime.task_intake import (
     success_criterion_policies,
     success_criterion_requirement_bindings,
 )
-from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
+from affordance_runtime.verification.contracts import AssuranceLevel, OutputSpec, SuccessExpression
 
 
 class MinimalIntentProposal(StrictModel):
@@ -397,6 +407,14 @@ def _canonical_requirements(
     envelope: SourceEnvelope,
 ) -> tuple[TaskRequirement, ...]:
     whole = envelope.whole_request_anchor.anchor_id
+    bindings_by_effect = {
+        effect.effect_id: tuple(
+            ParameterAuthorization(item.field.value, item.value, item.binding_id)
+            for item in proposal.material_bindings
+            if item.effect_ref == effect.effect_id
+        )
+        for effect in effects
+    }
     rows = [
         TaskRequirement(
             requirement_id=effect.effect_id,
@@ -415,6 +433,9 @@ def _canonical_requirements(
                 operation_class=effect.operation_class,
                 material_effect_kind=effect.material_effect_kind,
                 capability=effect.capability,
+                effect_authorization_scope=_effect_authorization_scope(
+                    effect, bindings_by_effect[effect.effect_id]
+                ),
             ),
             source_anchor_refs=(effect.source_ref,),
         )
@@ -484,6 +505,74 @@ def _canonical_requirements(
         for index, output in enumerate(proposal.required_outputs, start=1)
     )
     return tuple(rows)
+
+
+def _effect_authorization_scope(
+    effect: RequestedEffect,
+    parameters: tuple[ParameterAuthorization, ...],
+) -> EffectAuthorizationScope:
+    effect_class = {
+        OperationClass.READ_ONLY: EffectClass.READ,
+        OperationClass.NAVIGATION: EffectClass.NAVIGATE,
+        OperationClass.REVERSIBLE_WRITE: EffectClass.UPDATE,
+        OperationClass.EXTERNAL_SIDE_EFFECT: EffectClass.INVOKE,
+        OperationClass.IRREVERSIBLE: EffectClass.DELETE,
+    }[effect.operation_class]
+    operation_ref = effect.operation_ref or {
+        OperationClass.READ_ONLY: "resource.read@v1",
+        OperationClass.NAVIGATION: "navigation.navigate@v1",
+        OperationClass.REVERSIBLE_WRITE: "field.set@v1" if parameters else "resource.update@v1",
+        OperationClass.EXTERNAL_SIDE_EFFECT: "external.commit@v1",
+        OperationClass.IRREVERSIBLE: "resource.delete@v1",
+    }[effect.operation_class]
+    operation_semantics = semantics_for_operation(operation_ref)
+    if operation_semantics is not None:
+        effect_class = operation_semantics.effect_class
+    destination = (
+        ResourceScopeRef(effect.interaction_relation.destination, (effect.source_ref,))
+        if effect.interaction_relation is not None
+        and effect.interaction_relation.kind == TaskInteractionRelationKind.DRAG_TO
+        else None
+    )
+    externality = (
+        Externality.EXTERNAL_SYSTEM
+        if effect.operation_class == OperationClass.EXTERNAL_SIDE_EFFECT
+        else Externality.LOCAL
+    )
+    reversibility = (
+        Reversibility.IRREVERSIBLE
+        if effect.operation_class == OperationClass.IRREVERSIBLE
+        else Reversibility.REVERSIBLE
+    )
+    if operation_semantics is not None:
+        externality = operation_semantics.externality
+        reversibility = operation_semantics.reversibility
+    high_risk_policy = policy_for_effect(effect_class, operation_ref)
+    high_risk = high_risk_policy is not None or externality in {
+        Externality.EXTERNAL_SYSTEM,
+        Externality.PHYSICAL_WORLD,
+    } or reversibility in {Reversibility.IRREVERSIBLE, Reversibility.UNKNOWN}
+    return EffectAuthorizationScope(
+        requirement_ref=effect.effect_id,
+        operation_constraint=operation_ref,
+        resource_scope=ResourceScopeRef(effect.target, (effect.source_ref,)),
+        destination_scope=destination,
+        parameters=parameters,
+        effect_class=effect_class,
+        externality=externality,
+        reversibility=reversibility,
+        risk_policy_ref=(high_risk_policy.policy_ref if high_risk_policy else "runtime-standard@v1"),
+        minimum_source_assurance=(
+            high_risk_policy.minimum_assurance
+            if high_risk_policy is not None
+            else AssuranceLevel.AUTHORITATIVE
+            if high_risk
+            else AssuranceLevel.STRUCTURAL
+        ),
+        required_capabilities=frozenset({effect.capability} if effect.capability else ()),
+        approval_policy_ref="exact-contract@v1" if high_risk else "",
+        completion_policy_ref=f"task-success:{effect.effect_id}",
+    )
 
 
 def _criterion_source_bindings(

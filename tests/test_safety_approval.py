@@ -151,9 +151,7 @@ def test_task_gate_rejects_planner_derived_effectful_false_without_runtime_scope
         selected_choice_id="choice:delete",
         requirement_refs=("requirement:effect:1",),
         effect_authorization_refs=("requirement:effect:1",),
-        effectful=False,
         risk=RiskLevel.LOW,
-        authorized_target_identity="Delete account",
     )
 
     assert TaskConstraintPolicy().check(contract, {}, task) == RuntimeErrorCode.POLICY_DENIED

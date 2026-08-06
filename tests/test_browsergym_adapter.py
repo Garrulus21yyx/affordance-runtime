@@ -275,7 +275,13 @@ class FakeBrowserGymPage:
 
     def content(self) -> str:
         status = "done" if self.done else "pending"
-        return f'<html><body><button bid="target">Target</button><p>{status}</p></body></html>'
+        return (
+            '<html><body><button bid="target" data-runtime-operation="resource.update@v1" '
+            'data-runtime-effect-class="update" data-runtime-externality="local" '
+            'data-runtime-reversibility="reversible" '
+            'data-runtime-source-assurance="structural" '
+            f'data-runtime-risk="medium">Target</button><p>{status}</p></body></html>'
+        )
 
     def screenshot(self, **kwargs: Any) -> bytes:
         payload = b"fake-png"
@@ -422,6 +428,7 @@ class GeneralistClickModel:
                             "operation_class": "reversible_write",
                             "target": "target",
                             "source_ref": source_ref,
+                            "operation_ref": "resource.update@v1",
                         }
                     ],
                     "success": {

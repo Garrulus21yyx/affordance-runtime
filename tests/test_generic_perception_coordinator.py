@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -9,10 +10,16 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     ProgressEvidenceScope,
+    RiskLevel,
     RuntimeErrorCode,
     VerifierSpec,
 )
 from affordance_runtime.coordinator import RunBudget
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
 from affordance_runtime.perception import GenericPerceptionOrchestrator
@@ -51,15 +58,28 @@ def _task_requirement(
     subject: str,
     operation_class: OperationClass,
     capability: str = "",
+    resource_ref: str = "",
 ) -> TaskRequirement:
+    scope = (
+        EffectAuthorizationScope(
+            requirement_ref=requirement_id,
+            effect_class=EffectClass.UPDATE,
+            resource_scope=ResourceScopeRef(resource_ref, (f"source:{requirement_id}",)),
+            operation_constraint="resource.update@v1",
+            required_capabilities=frozenset({capability} if capability else ()),
+        )
+        if resource_ref
+        else None
+    )
     return TaskRequirement(
         requirement_id=requirement_id,
         payload=TaskSemanticPayload(
             kind="effect",
             subject=subject,
-            target_identity=subject,
+            target_identity=resource_ref or subject,
             operation_class=operation_class,
             capability=capability,
+            effect_authorization_scope=scope,
         ),
         source_anchor_refs=(f"source:{requirement_id}",),
     )
@@ -122,6 +142,49 @@ class RecordingBrowserSession(BrowserSession):
     def capture(self, **kwargs: Any) -> BrowserSnapshot:
         self.capture_arguments.append(dict(kwargs))
         snapshot = super().capture(**kwargs)
+        typed_affordances = tuple(
+            replace(
+                item,
+                risk=RiskLevel.MEDIUM,
+                risk_asserted=True,
+                operation_ref="resource.update@v1",
+                effect_class="update",
+                externality="local",
+                reversibility="reversible",
+                authority_source_assurance="structural",
+            )
+            for item in snapshot.affordance_model.affordances
+        )
+        typed_candidates = tuple(
+            replace(
+                item,
+                risk=RiskLevel.MEDIUM,
+                risk_asserted=True,
+                operation_ref="resource.update@v1",
+                effect_class="update",
+                externality="local",
+                reversibility="reversible",
+                authority_source_assurance="structural",
+            )
+            for item in snapshot.grounding_candidates
+        )
+        candidates_by_target = {
+            target.semantic_target_id: tuple(
+                candidate
+                for candidate in typed_candidates
+                if candidate.semantic_target_id == target.semantic_target_id
+            )
+            for target in snapshot.unified_affordances
+        }
+        snapshot = replace(
+            snapshot,
+            affordance_model=replace(snapshot.affordance_model, affordances=typed_affordances),
+            grounding_candidates=typed_candidates,
+            unified_affordances=tuple(
+                replace(target, grounding_candidates=candidates_by_target[target.semantic_target_id])
+                for target in snapshot.unified_affordances
+            ),
+        )
         self.snapshots.append(snapshot)
         return snapshot
 
@@ -202,12 +265,13 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         task_id="generic-visual-run",
         revision=1,
         objective="Activate the blue visual canvas control",
-        operation_class=OperationClass.READ_ONLY,
+        operation_class=OperationClass.REVERSIBLE_WRITE,
         requirements=(
                 _task_requirement(
                     "requirement:activate-canvas",
                     visual_target.label,
-                OperationClass.READ_ONLY,
+                    OperationClass.REVERSIBLE_WRITE,
+                    resource_ref=visual_target.semantic_target_id,
             ),
         ),
         allowed_effect_refs=("requirement:activate-canvas",),
@@ -400,6 +464,7 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
                 "Save changes",
                 OperationClass.REVERSIBLE_WRITE,
                 "settings.write",
+                initial_targets[0].semantic_target_id,
             ),
         ),
         allowed_effect_refs=("requirement:save-changes",),

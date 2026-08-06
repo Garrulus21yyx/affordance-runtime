@@ -14,6 +14,11 @@ from affordance_runtime.contracts import (
     Surface,
     VerifierSpec,
 )
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource, SourceObservation
 from affordance_runtime.planning import (
@@ -31,9 +36,10 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
-    canonical_effect_requirements,
 )
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
@@ -103,7 +109,13 @@ class CrossSurfaceObserver:
     def _snapshot(self, sequence: int) -> BrowserSnapshot:
         snapshot_id = f"snapshot-{sequence}"
         model = DomAdapter().transduce(
-            '<button id="save">Visual Save</button>',
+            (
+                '<button id="save" data-runtime-operation="resource.update@v1" '
+                'data-runtime-effect-class="update" data-runtime-externality="local" '
+                'data-runtime-reversibility="reversible" '
+                'data-runtime-source-assurance="structural" '
+                'data-runtime-risk="medium">Visual Save</button>'
+            ),
             environment_revision="rev-1",
             snapshot_id=snapshot_id,
             page_revision="page-1",
@@ -126,6 +138,13 @@ class CrossSurfaceObserver:
             ),
             backend_candidates=["visual"],
             confidence=0.95,
+            risk=dom.risk,
+            risk_asserted=True,
+            operation_ref="resource.update@v1",
+            effect_class="update",
+            externality="local",
+            reversibility="reversible",
+            authority_source_assurance="structural",
             evidence=[f"screen-{sequence}.png"],
         )
         observation = Observation(
@@ -218,8 +237,25 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
         revision=1,
         objective="Activate the visual save control at the current position",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(
-            ("Visual Save",), OperationClass.REVERSIBLE_WRITE, "test", ("settings.write",)
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:effect:1",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Visual Save",
+                    target_identity=observer.semantic_target_id,
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    capability="settings.write",
+                    effect_authorization_scope=EffectAuthorizationScope(
+                        requirement_ref="requirement:effect:1",
+                        effect_class=EffectClass.UPDATE,
+                        resource_scope=ResourceScopeRef(observer.semantic_target_id, ("test",)),
+                        operation_constraint="resource.update@v1",
+                        required_capabilities=frozenset({"settings.write"}),
+                    ),
+                ),
+                source_anchor_refs=("test",),
+            ),
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Visual Save",)),
         success=SuccessExpression(
@@ -323,9 +359,15 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
                     page_revision="page-1",
                     target_fingerprint=f"moving-point-{left}",
                 ),
-                backend_candidates=["visual"],
-                confidence=0.95,
-                evidence=[f"moving-{sequence}.png"],
+                    backend_candidates=["visual"],
+                    confidence=0.95,
+                    risk_asserted=True,
+                    operation_ref="resource.update@v1",
+                    effect_class="update",
+                    externality="local",
+                    reversibility="reversible",
+                    authority_source_assurance="structural",
+                    evidence=[f"moving-{sequence}.png"],
             )
             observation = Observation(
                 "rev-1",
@@ -385,8 +427,25 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
         task_id="moving-point-task",
         revision=1,
         objective="Click the visual moving target",
-        operation_class=OperationClass.READ_ONLY,
-        requirements=canonical_effect_requirements(("Moving target",), OperationClass.READ_ONLY, "test", ()),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            requirements=(
+                TaskRequirement(
+                    requirement_id="requirement:effect:1",
+                    payload=TaskSemanticPayload(
+                        kind="effect",
+                        subject="Moving target",
+                        target_identity=observer.semantic_target_id,
+                        operation_class=OperationClass.REVERSIBLE_WRITE,
+                        effect_authorization_scope=EffectAuthorizationScope(
+                            requirement_ref="requirement:effect:1",
+                            effect_class=EffectClass.UPDATE,
+                            resource_scope=ResourceScopeRef(observer.semantic_target_id, ("test",)),
+                            operation_constraint="resource.update@v1",
+                        ),
+                    ),
+                    source_anchor_refs=("test",),
+                ),
+            ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Moving target",)),
         success=SuccessExpression(
             expression_id="success:saved",

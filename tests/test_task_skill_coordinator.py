@@ -18,6 +18,12 @@ from affordance_runtime.criteria import (
     evidence_requirement_id,
     skill_step_owner_id,
 )
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    ParameterAuthorization,
+    ResourceScopeRef,
+)
 from affordance_runtime.evolution import (
     AcceptedProfileLoader,
     CandidateRuntimeProfile,
@@ -158,8 +164,18 @@ class ProfileObserver:
             "",
         )
         if self.include_name:
-            controls.append(f'<input id="name{suffix}" placeholder="Name" value="{self.world.name}">')
-        controls.append(f'<input id="email{suffix}" placeholder="Email" value="{self.world.email}">')
+            controls.append(
+                f'<input id="name{suffix}" placeholder="Name" value="{self.world.name}" '
+                'data-runtime-operation="field.set@v1" data-runtime-effect-class="update" '
+                'data-runtime-externality="local" data-runtime-reversibility="reversible" '
+                'data-runtime-source-assurance="structural" data-runtime-risk="medium">'
+            )
+        controls.append(
+            f'<input id="email{suffix}" placeholder="Email" value="{self.world.email}" '
+            'data-runtime-operation="field.set@v1" data-runtime-effect-class="update" '
+            'data-runtime-externality="local" data-runtime-reversibility="reversible" '
+            'data-runtime-source-assurance="structural" data-runtime-risk="medium">'
+        )
         if self.variant == "heldout":
             controls.reverse()
             markup = "<section><div>Account profile</div>" + "".join(controls) + "</section>"
@@ -399,12 +415,29 @@ def _task(
     task_id: str = "profile-task",
     source_ref: str = "test",
     capability: str = "settings.write",
+    target_ids: dict[str, str],
 ) -> TaskSpec:
-    requirements = canonical_effect_requirements(
-        ("Name", "Email"),
-        OperationClass.REVERSIBLE_WRITE,
-        source_ref,
-        (capability,) if capability else (),
+    requirements = tuple(
+        TaskRequirement(
+            requirement_id=f"requirement:effect:{index}",
+            payload=TaskSemanticPayload(
+                kind="effect",
+                subject=label,
+                target_identity=target_ids[label],
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                capability=capability,
+                effect_authorization_scope=EffectAuthorizationScope(
+                    requirement_ref=f"requirement:effect:{index}",
+                    effect_class=EffectClass.UPDATE,
+                    resource_scope=ResourceScopeRef(target_ids[label], (source_ref,)),
+                    operation_constraint="field.set@v1",
+                    parameters=(ParameterAuthorization("text", value),) if label == "Name" else (),
+                    required_capabilities=frozenset({capability} if capability else ()),
+                ),
+            ),
+            source_anchor_refs=(source_ref,),
+        )
+        for index, label in enumerate(("Name", "Email"), start=1)
     )
     requirements = (
         *requirements,
@@ -481,7 +514,12 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
         ProfileExecutor(world),
         contract_builder=builder,
         task_skill_runtime=runtime,
-    ).run_sync(legacy_run_request(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(
+        legacy_run_request(
+            task_spec=_task(with_entity=True, target_ids=observer.target_ids),
+            capabilities=["settings.write"],
+        )
+    )
 
     assert result.status == RuntimeStep.DONE
     assert world.name == "Margaret"
@@ -529,7 +567,7 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
         task_skill_runtime=runtime,
     ).run_sync(
         legacy_run_request(
-            task_spec=_task(with_entity=True),
+            task_spec=_task(with_entity=True, target_ids=observer.target_ids),
             capabilities=["settings.write"],
         )
     )
@@ -552,12 +590,18 @@ def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> 
     planner = CountingSystem2Planner()
 
     runtime = _accepted_runtime(_payload())
+    authorized_target_ids = ProfileObserver(ProfileWorld()).target_ids
     result = compose_run_coordinator(
         observer,
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=runtime,
-    ).run_sync(legacy_run_request(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(
+        legacy_run_request(
+            task_spec=_task(with_entity=True, target_ids=authorized_target_ids),
+            capabilities=["settings.write"],
+        )
+    )
 
     assert result.status == RuntimeStep.ABORTED
     assert planner.calls == 0
@@ -572,7 +616,7 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
     world = ProfileWorld()
     observer = ProfileObserver(world)
     planner = CountingSystem2Planner()
-    task = _task(with_entity=True, capability="")
+    task = _task(with_entity=True, capability="", target_ids=observer.target_ids)
 
     runtime = _accepted_runtime(_payload())
     result = compose_run_coordinator(
@@ -613,7 +657,12 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
             }
         ),
         task_skill_runtime=runtime,
-    ).run_sync(legacy_run_request(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(
+        legacy_run_request(
+            task_spec=_task(with_entity=True, target_ids=observer.target_ids),
+            capabilities=["settings.write"],
+        )
+    )
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 0
@@ -654,7 +703,12 @@ def test_skill_steps_without_canonical_values_fall_through_before_action() -> No
         ProfileExecutor(world, fail_email_effect=True),
         contract_builder=builder,
         task_skill_runtime=runtime,
-    ).run_sync(legacy_run_request(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
+    ).run_sync(
+        legacy_run_request(
+            task_spec=_task(with_entity=False, target_ids=observer.target_ids),
+            capabilities=["settings.write"],
+        )
+    )
 
     assert result.status == RuntimeStep.ABORTED
     assert world.name == ""
@@ -667,7 +721,7 @@ def test_skill_steps_without_canonical_values_fall_through_before_action() -> No
     assert progress.evidence == []
     assert "canonical choice" in progress.fallthrough_reason
     assert result.state.current_failure is not None
-    assert result.state.current_failure.error_code == "planner_failed"
+    assert result.state.current_failure.error_code == "planner_proposal_rejected"
     events = [node.kind for node in result.trace.nodes]
     assert "TaskSkillStepCompleted" not in events
     assert "TaskSkillFellThrough" in events
@@ -686,6 +740,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             value=value,
             task_id=f"profile-training-{index}",
             source_ref=f"training:{index}",
+            target_ids=observer.target_ids,
         )
         result = compose_run_coordinator(
             observer,
@@ -738,6 +793,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             value=value,
             task_id=f"mined-replay-{category}",
             source_ref=f"replay:{category}",
+            target_ids=observer.target_ids,
         )
         result = compose_run_coordinator(
             observer,
@@ -849,6 +905,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
         value="Ken",
         task_id="profile-fresh-loaded-heldout",
         source_ref="heldout:fresh",
+        target_ids=observer.target_ids,
     )
     result = compose_run_coordinator(
         observer,
@@ -890,6 +947,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             value=value,
             task_id=f"profile-{category}",
             source_ref=f"replay:{category}",
+            target_ids=observer.target_ids,
         )
         started = perf_counter()
         result = compose_run_coordinator(

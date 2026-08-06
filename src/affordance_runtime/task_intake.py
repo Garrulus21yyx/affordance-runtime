@@ -11,6 +11,13 @@ from typing import Iterable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    Externality,
+    ResourceScopeRef,
+    Reversibility,
+)
 from affordance_runtime.material_contracts import MaterialBinding, MaterialEffectKind
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
@@ -117,6 +124,7 @@ class RequestedEffect(StrictModel):
     source_ref: str = Field(min_length=1)
     interaction_relation: TaskInteractionRelationSpec | None = None
     interaction_operation: TaskInteractionOperationKind = TaskInteractionOperationKind.AUTO
+    operation_ref: str = Field(default="", max_length=240)
 
 
 class IntentAmbiguity(StrictModel):
@@ -162,6 +170,7 @@ class TaskSemanticPayload(StrictModel):
     operation_class: OperationClass | None = None
     material_effect_kind: MaterialEffectKind = MaterialEffectKind.NONE
     capability: str = Field(default="", max_length=240)
+    effect_authorization_scope: EffectAuthorizationScope | None = None
 
 
 class TaskRequirement(StrictModel):
@@ -506,23 +515,78 @@ def canonical_effect_requirements(
     operation_class: OperationClass,
     source_anchor_ref: str,
     capabilities: Iterable[str] = (),
+    *,
+    resource_refs: Iterable[str] | None = None,
+    operation_ref_override: str = "",
+    effect_class_override: EffectClass | None = None,
 ) -> tuple[TaskRequirement, ...]:
     """Build explicit canonical effect rows for internal fixtures and adapters."""
 
     capability = next(iter(capabilities), "")
+    effect_class = {
+        OperationClass.READ_ONLY: EffectClass.READ,
+        OperationClass.NAVIGATION: EffectClass.NAVIGATE,
+        OperationClass.REVERSIBLE_WRITE: EffectClass.UPDATE,
+        OperationClass.EXTERNAL_SIDE_EFFECT: EffectClass.INVOKE,
+        OperationClass.IRREVERSIBLE: EffectClass.DELETE,
+    }[operation_class]
+    operation_ref = {
+        OperationClass.READ_ONLY: "resource.read@v1",
+        OperationClass.NAVIGATION: "navigation.navigate@v1",
+        OperationClass.REVERSIBLE_WRITE: "resource.update@v1",
+        OperationClass.EXTERNAL_SIDE_EFFECT: "external.commit@v1",
+        OperationClass.IRREVERSIBLE: "resource.delete@v1",
+    }[operation_class]
+    externality = (
+        Externality.EXTERNAL_SYSTEM
+        if operation_class == OperationClass.EXTERNAL_SIDE_EFFECT
+        else Externality.LOCAL
+    )
+    reversibility = (
+        Reversibility.IRREVERSIBLE
+        if operation_class == OperationClass.IRREVERSIBLE
+        else Reversibility.REVERSIBLE
+    )
+    subject_values = tuple(str(subject) for subject in subjects)
+    resource_values = tuple(str(value) for value in resource_refs) if resource_refs is not None else subject_values
+    if len(subject_values) != len(resource_values):
+        raise ValueError("canonical effect subjects and resource refs must have equal length")
     return tuple(
         TaskRequirement(
             requirement_id=f"requirement:effect:{index}",
             payload=TaskSemanticPayload(
                 kind="effect",
-                subject=str(subject),
-                target_identity=str(subject),
+                subject=subject,
+                target_identity=resource_ref,
                 operation_class=operation_class,
                 capability=capability,
+                effect_authorization_scope=EffectAuthorizationScope(
+                    requirement_ref=f"requirement:effect:{index}",
+                    effect_class=effect_class_override or effect_class,
+                    resource_scope=ResourceScopeRef(resource_ref, (source_anchor_ref,)),
+                    operation_constraint=operation_ref_override or operation_ref,
+                    externality=externality,
+                    reversibility=reversibility,
+                    minimum_source_assurance=(
+                        AssuranceLevel.AUTHORITATIVE
+                        if externality == Externality.EXTERNAL_SYSTEM or reversibility == Reversibility.IRREVERSIBLE
+                        else AssuranceLevel.STRUCTURAL
+                    ),
+                    required_capabilities=frozenset({capability} if capability else ()),
+                    approval_policy_ref=(
+                        "exact-contract@v1"
+                        if externality == Externality.EXTERNAL_SYSTEM or reversibility == Reversibility.IRREVERSIBLE
+                        else ""
+                    ),
+                    completion_policy_ref=f"task-success:requirement:effect:{index}",
+                ),
             ),
             source_anchor_refs=(source_anchor_ref,),
         )
-        for index, subject in enumerate(subjects, start=1)
+        for index, (subject, resource_ref) in enumerate(
+            zip(subject_values, resource_values, strict=True),
+            start=1,
+        )
     )
 
 

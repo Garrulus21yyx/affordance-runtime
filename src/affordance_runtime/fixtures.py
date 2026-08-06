@@ -52,11 +52,11 @@ def pricing_html(seed: int = 0, profile: str = "train") -> str:
       {distractor}
       <section id="plans">
       <article id="pro" data-plan="pro" data-visible="false" data-users="25" data-projects="100" data-support="business-hours">
-        <h2>Pro</h2><button id="{pro_button}" onclick="showPlan('pro')">Show Pro limits</button>
+        <h2>Pro</h2><button id="{pro_button}" onclick="showPlan('pro')" data-runtime-operation="interaction.reveal@v1" data-runtime-effect-class="interaction_only" data-runtime-externality="local" data-runtime-reversibility="reversible" data-runtime-source-assurance="structural" data-runtime-risk="low">Show Pro limits</button>
         <dl hidden><dt>Users</dt><dd>25</dd><dt>Projects</dt><dd>100</dd><dt>Support</dt><dd>Business hours</dd></dl>
       </article>
       <article id="enterprise" data-plan="enterprise" data-visible="false" data-users="unlimited" data-projects="unlimited" data-support="24/7">
-        <h2>Enterprise</h2><button id="{enterprise_button}" onclick="showPlan('enterprise')">Show Enterprise limits</button>
+        <h2>Enterprise</h2><button id="{enterprise_button}" onclick="showPlan('enterprise')" data-runtime-operation="interaction.reveal@v1" data-runtime-effect-class="interaction_only" data-runtime-externality="local" data-runtime-reversibility="reversible" data-runtime-source-assurance="structural" data-runtime-risk="low">Show Enterprise limits</button>
         <dl hidden><dt>Users</dt><dd>Unlimited</dd><dt>Projects</dt><dd>Unlimited</dd><dt>Support</dt><dd>24/7</dd></dl>
       </article>
       </section>

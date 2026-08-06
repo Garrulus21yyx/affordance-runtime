@@ -4,6 +4,7 @@
 > **状态：** AUTHORITATIVE EVOLUTION PLAN
 > **日期：** 2026-08-05
 > **事实基线：** `agent/migrate-runtime-components @ 55bad91e56126269af7453913cf550cb5938108f`
+> **最新实现复核：** 2026-08-06 P4-G concrete action authority/high-risk governance 已完成；精确不可变 revision 由 Git 记录。
 > **派生目标架构：** [Task Contract 中心化唯一权威目标架构](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **历史基线：** [2026-07-29 唯一权威优化目标架构](../specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
 > **2026-08-05 权威修正：** active-step 链必须先从 canonical observation 建立完整 Runtime `ActionChoiceCatalog`，再投影任何 model-facing request；§10.1 对该修正逐条登记。
@@ -12,6 +13,7 @@
 > **2026-08-05 Physical Minimality 补充：** 复核识别的过重风险按“已覆盖、补充实现约束、明确拒绝”处理；full Catalog、canonical observation、authority、Criterion、Planner 与 optional capability 不得被机械实现成 eager copy、微服务森林或默认多模型链。§10.5 登记处理结果。
 > **2026-08-05 Cross-Surface Visibility 补充：** DOM、AX、Visual、SVG、WoT、API 与 Device 显式共享同一 TaskSpec、TaskPlan、Catalog、ActionContract 与 LoopEvaluator；Planner 选择 semantic action，Runtime 在 contract 阶段选择 backend/binding。§10.6 登记处理结果。
 > **2026-08-05 Material Binding 纠偏：** exact span 从通用高风险准入门降为间接非结构化来源的 provenance 形式；准入改由 `MaterialBindingPolicy/TaskSpecAuthority` 按 effect 校验 typed material field groups。SemanticAudit 不再以“存在任意一个 material anchor”代替字段完整性。§10.7 登记处理结果。
+> **2026-08-06 Concrete Effect Authority / High-risk Governance 纠偏：** `8b91944` 的负向复核发现 operation mismatch、named-parameter swap、unknown DOM risk default-low 与 actual-binding-independent gate；P4-G 已以 typed `EffectAuthorizationScope ⊒ RuntimeEffectSignature → ActionAuthorityProof` 完成替代 cutover，并在进入 P5 前删除 canonical 字符串/复制字段 proof。§10.8 登记处理结果。
 
 ## 0. 演进决议
 
@@ -175,6 +177,28 @@ Direct/low-risk、multi-step 与 high-risk/multi-source profile 只决定 Semant
 DOM、AX、Visual、SVG、WoT、API 与 Device 统一作为 acquisition、grounding、execution 与 evidence surfaces。它们共享一份 admitted TaskSpec、一个 current `TaskPlan<StepSpec>`、一个 logical full Catalog、同一 ActionContract admission chain 与 LoopEvaluator；任何 surface 都不拥有 task meaning、planning、completion 或 commit authority。
 
 `Surface.WOT` 与 `WOT_DESCRIPTION / WOT_PROPERTY_STATE / WOT_ACTION_RESULT` 进入规范 vocabulary：Thing Description 只提供 capability/grounding metadata，property state 提供 fresh device-state evidence，action result 只提供 contract-bound receipt/outcome。Planner 只选择 backend-neutral semantic action；`ActionContractBuilder` 才基于 current observation、evidence requirement、capability、risk 与 policy 选择 current backend/binding。
+
+### 0.7 Concrete effect authority 与高风险闭包
+
+`8b91944` 的 exact identity/risk 变更保留为迁移起点，但不作为最终 contract。最终授权链固定为：
+
+```text
+TaskRequirement(kind=effect)
+    → one parameterized EffectAuthorizationScope
+
+Canonical target + actual ActionSupport/GroundingCandidate
+    → Runtime-owned RuntimeEffectSignature
+
+typed subsumption
+    → ALLOW | DENY | UNPROVEN ActionAuthorityProof
+
+ALLOW only
+    → Catalog → selected choice → actual bound ActionContract
+    → Task Gate independently rebuilds proof
+    → capability → exact contract approval → fresh preflight
+```
+
+它不采用两种错误极端：不让 Planner/label/risk score 猜 permission，也不枚举每个页面、任务或 action combination。系统只冻结少量 safety `EffectClass`、registered/versioned `OperationRef`、canonical resource scope、named parameter binding 与 risk/assurance policy。未知 classification 是 `UNPROVEN`；approval 不能补齐 proof，扩大授权只能创建新 TaskSpec revision。
 
 ## 1. 当前事实与问题边界
 
@@ -446,6 +470,21 @@ SourceEnvelope 只拥有合法 authority source 的 identity/version；SemanticA
 
 以下风险已由现有合同覆盖：选择性 SourceAnchor、risk-triggered SemanticAudit、bounded evidence 生命周期、ModelVerifier 后置、raw-text 三层边界、ChoicePresentation 与 output closure。以下风险仍需作为实现门：logical Catalog membership 与物化策略分离、observation epoch/index、authority/部署分离、operator/provider coverage 分离、typed replanning trigger 和 risk-derived profile。
 
+### 1.16 `8b91944` 仍是 coarse concrete-action proof
+
+最新 push 已正确移除 keyword token overlap，并让 Runtime 而非 Planner 派生 effectful/risk；但 production proof 仍以 free-form `target_identity/destination_identity`、coarse `operation_class`、无字段 scalar value set 与 source-declared risk 为主，最终 Task Gate 复算的也是从 choice 复制到 contract 的 authority fields，而不是 actual bound grounding candidate。
+
+针对该 revision 的四个独立负向探针均可复现：
+
+| Probe | 当前结果 | 应有结果 |
+|---|---|---|
+| TaskSpec 为 NAVIGATION，同一 exact target 上构造 TYPE_TEXT | authorized | DENY / operation mismatch |
+| admitted `recipient=Alice, amount=100`，choice 交换两个字段值 | authorized | DENY / named parameter mismatch |
+| 普通 DOM `<button>Delete account</button>` 无自报 risk | LOW | UNPROVEN 或由 Runtime policy 分类为 destructive |
+| contract 复制 Alice proof fields，但 actual `affordance_id/locator` 指向 Bob | Task gate allow | DENY / actual binding mismatch |
+
+因此 P3 requirement traceability 与 P4 closed choice port 可以保持完成，但“concrete action legality/high-risk governance complete”的表述必须撤回。该缺口进入 P4-G corrective closure，不留给 P5 containment，也不允许保留 old proof 作为 fallback/shadow owner。
+
 ## 2. 明确保留的项目资产
 
 ### 2.1 TaskPlan，但改变来源与身份
@@ -603,6 +642,16 @@ SourceContextView(
 - Planner selects the semantic action; ActionContractBuilder selects the current backend/binding。
 - route 失效时必须 fresh reobserve、rebuild contract；旧 approval/contract 不得跨 route 复用。
 
+### 3.11 Concrete effect authority 与 high-risk contract
+
+Effectful `TaskRequirement.semantic_payload` 内唯一保存 parameterized `EffectAuthorizationScope`：registered/versioned `operation_constraint`、canonical resource/destination scope、named input/binding slots、small safety effect class、externality/reversibility、minimum source assurance 与 risk/approval/completion policy refs。它只表达用户授权 ceiling，不保存 current action kind、backend、candidate、epoch 或 Runtime confidence。`allowed_effect_refs` 继续引用该 requirement ID，不新增 universal effect graph。
+
+Runtime 依据 current canonical target、actual ActionSupport/GroundingCandidate/backend operation/source assertions 生成不同类型的 concrete `RuntimeEffectSignature`，并通过 typed subsumption 得到 tri-state `ActionAuthorityProof`。Runtime risk 取 effect class、externality、reversibility、resource sensitivity、amount/recipient、capability、source uncertainty 与 conflict 的保守最大值；Text/VLM 只能升风险或触发观察/澄清，不能产生 ALLOW、降风险或创建授权。Catalog 只包含 ALLOW；DENY 与 UNPROVEN 分别进入 typed rejection/recovery。ContractBuilder 对最终 route 重新生成 signature，Task Gate 再从 TaskSpec + current observation + actual bound transaction 独立重建带 evaluator-policy version 的 proof。
+
+Planner 只可输出 step objective、interaction intent、requirement/effect authorization refs、completion、dependencies 与 budgets。`StepSpec.effectful` 若仍存在于外部兼容输入，只能作为待删除 hint；Runtime 的 effect、risk、Catalog membership、backend route 与 approval 不读取它，canonical StepSpec 最终不保存该 authority field。
+
+高风险策略采用少量 effect class × effect-specific field/policy matrix；不枚举网站、页面、TaskType 或 GUI action combination。未知 operation/effect/externality/reversibility/risk/assurance fail closed；approval 只批准已授权的 exact contract，并向用户显示 concrete action、resource/destination、named material parameters、reversibility、backend operation、来源与不确定性，不能代替 TaskSpec revision。uncertain external effect 不盲重试，完成需要 policy 要求的 causal outcome 与 authoritative final recheck。
+
 ## 4. 唯一目标生产链
 
 ```text
@@ -749,6 +798,19 @@ UserRequest
 | `P4-4` | request serializer 纯化 | 不重建 task/step/progress/observation authority |
 | `P4-5` | ChoicePresentation semantic contract | target/state/requirement/effect/conflict/risk/reason 完整；无 binding/hidden ID/raw text |
 | `P4-6` | typed TaskPlanningGate + direct/reuse fast path | 只有明确 planning/replanning trigger 调用 TaskPlanner；feasible active step 不重复生成 DAG |
+
+### P4-G：Concrete Action Authority / High-risk corrective closure
+
+P4-G 是 P5 前的阻塞性替代迁移，不是新旧并行平台。`P4-G1`–`P4-G6` 已在同一 cutover 中完成；canonical owner 已切换，字符串/Boolean proof fallback 已删除。
+
+| ID | 工作项 | 完成门 |
+|---|---|---|
+| `P4-G1` | 在 focused `effect_authority_contracts.py` 定义互不混用的 `EffectAuthorizationScope`、`RuntimeEffectSignature`、ResourceScopeRef、named ParameterAuthorization、Externality/Reversibility 与带 evaluator-policy version 的 tri-state ActionAuthorityProof；TaskSpecAuthority 只准入前者 | 不新增 effect graph/TaskType；不保留 `operation_class + label + scalar set` 作为 authorization fallback；TaskSpec 不保存 current backend/action/binding |
+| `P4-G2` | DOM/AX/Visual/SVG/WoT/API/Device adapter assertions 经 pure Runtime classifier/risk policy 汇入 concrete signature；risk 是 effect/externality/reversibility/resource/amount-recipient/capability/source uncertainty/conflict 的保守最大值 | source 未自报 risk 不再默认证明 LOW；unknown/material conflict/coverage insufficient 为 UNPROVEN；Text/VLM 只能升风险或触发观察/澄清 |
+| `P4-G3` | ActionChoiceBuilder 以 `EffectAuthorizationScope ⊒ RuntimeEffectSignature` typed subsumption 建 Catalog，保留 ALLOW proof 并区分 DENY/UNPROVEN；safe enabling 仅含 requirement-bound observe/focus/hover/scroll/non-commit menu/allowed-domain navigation/wait/local reversible draft | operation mismatch、named-parameter swap、label-only identity、source-assurance shortage、external commit、unauthorized disclosure 与 UNKNOWN effect 均不能进入 Catalog |
+| `P4-G4` | ContractBuilder 以 actual candidate/backend/binding 重建 route-specific signature；ActionContract hash 密封 scope/signature/proof-policy/binding；Task Gate 从 TaskSpec/current observation/actual transaction 独立重建 proof；approval 展示并绑定 resource/destination/material parameters/reversibility/backend/source uncertainty | copied label/digest + wrong affordance/locator 必须拒绝；approval/capability 不能覆盖 UNPROVEN；route/parameter/classification/epoch 变化需新 contract/token |
+| `P4-G5` | 接通 risk × source-assurance 与 high-risk effect-policy matrix、exact-contract single-attempt/idempotency/transaction identity、uncertain-effect recovery、causal + authoritative final-recheck closure | send/share/payment/purchase/delete/account-security/device actuation 满足 effect-specific material/assurance/approval/preflight/evaluation policy；Visual/VLM 可定位但不能单独授权/完成 high-risk；authoritative provider 保存真实 observed state；ambiguous dispatch 不盲重试或换 backend 重放 |
+| `P4-G6` | 删除旧 matcher/Boolean scope proof/Planner risk-effect fields的 authority 用途；拆分 oversized Catalog builder；同步 status/evidence | production 无 old↔new projector、dual read/shadow fallback；最小矩阵覆盖低风险 read/navigation、高风险 API/WoT transaction、unknown/uncertain effect 纵向链及 mismatch/parameter/assurance/token invalidation；无独立测试项目 |
 
 ### P5：Fact/Binding/DurableEvidence progress、epoch store 与 legacy deletion
 
@@ -1021,6 +1083,24 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | `SURFACE-02` | 一个 semantic CanonicalTarget 保留全部 current bindings、assertions、coverage 与 conflicts；不得选择 representative surface 或静默覆盖冲突。 |
 | `SURFACE-03` | Planner selects the semantic action; ActionContractBuilder selects the current backend/binding，并将 route 绑定 current observation、evidence requirement、capability、risk 与 policy。 |
 
+### 9.7 Concrete Effect Authority / High-risk 不变量
+
+| ID | 不变量 |
+|---|---|
+| `AUTHZ-01` | effectful requirement 的唯一 typed payload 包含 parameterized `EffectAuthorizationScope`；TaskSpec 不保存 `RuntimeEffectSignature`，objective/label/keyword 不恢复 operation/scope。 |
+| `AUTHZ-02` | target/destination 匹配 canonical source-bound resource scope，display label 不能单独授权。 |
+| `AUTHZ-03` | parameters 按 named slot 绑定 InputRef/BindingRef/predicate；scalar value-set inclusion 不构成授权。 |
+| `AUTHZ-04` | Runtime 从 actual current candidate/backend/binding/source assertions 构造 `RuntimeEffectSignature`，并按 Harness policy 独立推导 risk/assurance；Planner 不声明 effect/risk authority。 |
+| `AUTHZ-05` | unknown operation/effect/externality/reversibility/risk、assurance 不足、material conflict/coverage gap 为 UNPROVEN，不默认 LOW；Text/VLM 只能升风险或触发观察/澄清。 |
+| `AUTHZ-06` | Catalog 只接纳 ALLOW proof，并将 DENY/UNPROVEN 送入不同 typed recovery。 |
+| `AUTHZ-07` | enabling action 仅允许 requirement-bound INTERACTION_ONLY/local reversible draft；observe/focus/hover/scroll/non-commit UI/allowed-domain navigation/wait 仍需 no external effect/data disclosure/domain expansion proof。 |
+| `AUTHZ-08` | Contract hash 绑定 scope、route-specific signature、proof/evaluator-policy version、binding、named parameters、externality/reversibility、risk/assurance/epoch。 |
+| `AUTHZ-09` | Task Gate 从 actual bound transaction 独立重建 proof，不复算复制字段。 |
+| `AUTHZ-10` | Approval/capability 不能扩大 TaskSpec 或把 UNPROVEN 升为 ALLOW。 |
+| `HRA-01` | 高风险 effect 进入 execute 前同时满足 material fields、source assurance、capability、exact approval 与 fresh preflight。 |
+| `HRA-02` | uncertain external effect 不盲重试。 |
+| `HRA-03` | 高风险完成需要 contract-bound causality 与 policy-required authoritative FINAL_RECHECK。 |
+
 ## 10. 来源覆盖台账
 
 下表保证引用对话和现有逐条审计中的每类结论都有明确落点。详细类型和流程以派生权威架构为准。
@@ -1187,6 +1267,25 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | `MAT-06` | 字段 completeness 从 SemanticAudit 移入小型 deterministic policy | §0.2、§5、§6 P0-E、§9.2.1 | §4.2–§4.3 | ADOPT |
 | `MAT-07` | direct send、indirect attachment、amount-only payment 与 page-authority 回归 | §8.9、§9.2.1 | §17.1 | REQUIRED MINIMAL GATE |
 
+### 10.8 Concrete Effect Authority / High-risk Governance 纠偏覆盖台账
+
+| Amendment | 最新 push / 治理要求 | 本规划落点 | Spec 落点 | 状态 |
+|---|---|---|---|---|
+| `CEA-01` | 保留 `8b91944` 的 no-keyword、exact target/destination 与 Runtime risk 方向，但不得宣称 complete | §0.7、§1.16 | §0.1、§7.2.1 | ADOPT AS INTERIM |
+| `CEA-02` | Task authorization 使用 parameterized `EffectAuthorizationScope`，与 Runtime concrete signature 是不同合同；不使用 coarse operation class + label/value set | §3.11、§6 P4-G1、§9.7 | §4.6.1、§17.1 | REQUIRED |
+| `CEA-03` | Runtime 从 actual current bindings 构造 `RuntimeEffectSignature`，包含 operation/effect/externality/reversibility/risk/assurance | §3.11、§6 P4-G2、§9.7 | §7.2.1、§10 | REQUIRED |
+| `CEA-04` | ALLOW/DENY/UNPROVEN proof；Catalog 只接纳 ALLOW，unknown 不默认 LOW | §6 P4-G2–G3、§9.7 | §7.2.1、§11、§17.1 | REQUIRED |
+| `CEA-05` | Contract/Gate 独立复核 actual binding；approval 不能补 authority | §6 P4-G4、§9.7 | §8.1–§8.3、§17.1 | REQUIRED |
+| `CEA-06` | high-risk effect-specific pre/post policy、uncertain effect no retry | §6 P4-G5、§9.7 | §8.4、§9、§11、§17.1 | REQUIRED |
+| `CEA-07` | 不陷入页面/任务枚举；small EffectClass + extensible OperationRef + named parameters | §0.7、§3.11、§7 | §4.6.1、§7.2.1、§16 | REQUIRED |
+| `CEA-08` | 不新增 god file/test project；Catalog builder 拆分，复用小型 redline matrix | §6 P4-G6、§7 | §15–§17 | REQUIRED |
+| `CEA-09` | Runtime risk 取多维保守最大值；Text/VLM 只能 raise-only，不能 ALLOW、降风险或创建 scope | §3.11、§6 P4-G2、§9.7 | §0.1、§7.2.1、§17.1 | REQUIRED |
+| `CEA-10` | EnablingActionPolicy 明确允许集与 local reversible draft 边界，禁止 external commit/unauthorized disclosure/UNKNOWN effect | §6 P4-G3、§9.7 | §7.2.1、§17.1 | REQUIRED |
+| `CEA-11` | approval 向用户展示并绑定 reversibility、backend operation、sources/uncertainty；任何 route/parameter/classification 变化使 token 失效 | §3.11、§6 P4-G4、§9.7 | §8.1–§8.3、§17.1 | REQUIRED |
+| `CEA-12` | proof 绑定 evaluator policy version；risk × source-assurance matrix 决定 high-risk execute/final evidence floor | §6 P4-G1/G4/G5、§9.7 | §7.2.1、§8.4、§17.1 | REQUIRED |
+| `CEA-13` | 最小行为矩阵覆盖 low-risk read/navigation、high-risk API/WoT、unknown/uncertain effect 与 mismatch/parameter/assurance/token invalidation，不建设测试平台 | §6 P4-G6、§7 | §8.4、§17.1 | REQUIRED |
+| `CEA-14` | 审计建议把 P3-2/P4-4 整行回退 partial | 两行只分别证明 requirement traceability 与 pure presentation/selection，保持 COMPLETE；独立 P4-G 已完成 concrete action legality 闭包 | §6 P4-G、§9.7 | IMPLEMENTED |
+
 ## 11. 完成状态
 
 | 步骤 | 状态 | 产物或验证 |
@@ -1200,7 +1299,8 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | 合入 Physical Minimality 风险约束 | DONE | `CAT-PHY-01`、`OBS-PHY-01`、`AUTH-PHY-01`、`CRIT-PHY-01`、`PLAN-PHY-01`、`PROFILE-01`；审计建议按 adopt/already-covered/reject 分类 |
 | 合入 Cross-Surface Visibility 补充 | DONE | `Surface.WOT`、typed WoT evidence roles、`SURFACE-01`–`SURFACE-03`；不改变 P0–P5 顺序 |
 | 合入 Risk-proportionate Material Binding 纠偏 | DONE | `MaterialBindingKind`、effect-specific field coverage、`MAT-01`–`MAT-07`；exact span 不再是直接明确指令的通用门禁 |
+| 合入 Concrete Effect Authority / High-risk Governance 目标与实施门 | DONE (IMPLEMENTED) | `AUTHZ-01`–`AUTHZ-10`、`HRA-01`–`HRA-03`、P4-G1–G6；typed production closure 已 cut over |
 | 生成权威总图和细节板块 | DONE | 派生权威架构文档，含总图、九个板块、合同、迁移、门禁与逐条映射 |
-| 完整性、链接和事实状态自检 | DONE | 1210 项全库测试、38 项最终聚焦 source/authority/architecture/documentation 门禁、Ruff、maintained-link/lifecycle 与 diff 检查 |
+| 完整性、链接和事实状态自检 | DONE | P4-G final review：`912 passed`，Ruff 与 `git diff --check` 通过；focused authority/high-risk redline matrix 全绿 |
 
 验证使用仓库记录的 dedicated Python 3.12 环境，避免默认 `uv run` 同时求解 BrowserGym Playwright 1.44 与 web extra Playwright 1.61.0 的已知可选依赖冲突。最终结果以本次变更完成前的 fresh verification 输出为准。

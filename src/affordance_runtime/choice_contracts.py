@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TypeAlias
 
+from affordance_runtime.effect_authority_contracts import ActionAuthorityProof
 from affordance_runtime.immutable import FrozenDict
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
@@ -47,11 +48,12 @@ class ActionChoice:
     criterion_ids: tuple[str, ...] = ()
     requirement_refs: tuple[str, ...] = ()
     effect_refs: tuple[str, ...] = ()
-    effectful: bool = False
     evidence_refs: tuple[str, ...] = ()
     conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR
     risk: str = "low"
-    authorization_scope_digest: str = ""
+    action_authority_proof: ActionAuthorityProof | None = None
+    effect_summary: str = ""
+    authorization_reason_codes: tuple[str, ...] = ()
     generation_reason_codes: tuple[str, ...] = ("runtime_semantic_admission",)
     role: ChoiceRole = ChoiceRole.DIRECT
     source: ChoiceSource = ChoiceSource.RUNTIME
@@ -75,11 +77,12 @@ class ActionChoice:
         criterion_ids: tuple[str, ...] = (),
         requirement_refs: tuple[str, ...] = (),
         effect_refs: tuple[str, ...] = (),
-        effectful: bool = False,
         evidence_refs: tuple[str, ...] = (),
         conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR,
         risk: str = "low",
-        authorization_scope_digest: str = "",
+        action_authority_proof: ActionAuthorityProof | None = None,
+        effect_summary: str = "",
+        authorization_reason_codes: tuple[str, ...] = (),
         generation_reason_codes: tuple[str, ...] = ("runtime_semantic_admission",),
         role: ChoiceRole = ChoiceRole.DIRECT,
         source: ChoiceSource = ChoiceSource.RUNTIME,
@@ -103,11 +106,12 @@ class ActionChoice:
             "criterion_ids": tuple(criterion_ids),
             "requirement_refs": tuple(requirement_refs),
             "effect_refs": tuple(effect_refs),
-            "effectful": effectful,
             "evidence_refs": tuple(evidence_refs),
             "conflict_status": conflict_status,
             "risk": risk,
-            "authorization_scope_digest": authorization_scope_digest,
+            "action_authority_proof": action_authority_proof,
+            "effect_summary": effect_summary,
+            "authorization_reason_codes": tuple(authorization_reason_codes),
             "generation_reason_codes": tuple(generation_reason_codes),
             "role": role,
             "source": source,
@@ -115,6 +119,15 @@ class ActionChoice:
         for name, value in values.items():
             object.__setattr__(self, name, value)
         self.__post_init__()
+
+    @property
+    def effectful(self) -> bool:
+        return bool(self.action_authority_proof and self.action_authority_proof.effectful)
+
+    @property
+    def authorization_scope_digest(self) -> str:
+        proof = self.action_authority_proof
+        return proof.authorization_scope_digest or "" if proof else ""
 
     def __post_init__(self) -> None:
         _nonblank("choice_id", self.choice_id)
@@ -168,6 +181,7 @@ class ActionChoiceFailure:
     kind: FailureKind
     reason_code: str
     owner: FailureOwner = FailureOwner.RUNTIME_RECOVERY
+    build_report: ChoiceBuildReport | None = None
 
 
 @dataclass(frozen=True)
@@ -185,6 +199,8 @@ class ChoicePresentation:
     evidence_refs: tuple[str, ...] = ()
     conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR
     risk: str = "low"
+    effect_summary: str = ""
+    authorization_reason_codes: tuple[str, ...] = ()
     generation_reason_codes: tuple[str, ...] = ()
 
 

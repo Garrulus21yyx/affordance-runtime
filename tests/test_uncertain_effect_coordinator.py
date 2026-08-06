@@ -12,6 +12,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
+from affordance_runtime.effect_authority_contracts import EffectAuthorizationScope, EffectClass, ResourceScopeRef
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -27,9 +28,10 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
-    canonical_effect_requirements,
 )
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -49,7 +51,10 @@ class TimeoutObserver:
         revision = f"saved:{self.world.saved}"
         snapshot_id = f"timeout-snapshot-{self.sequence}"
         model = DomAdapter().transduce(
-            '<button id="save">Save</button>',
+            '<button id="save" data-runtime-operation="resource.update@v1" '
+            'data-runtime-effect-class="update" data-runtime-externality="local" '
+            'data-runtime-reversibility="reversible" data-runtime-source-assurance="structural" '
+            'data-runtime-risk="medium">Save</button>',
             environment_revision=revision,
             snapshot_id=snapshot_id,
             page_revision="timeout-page-v1",
@@ -164,9 +169,26 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                 revision=1,
                 objective="Save exactly once",
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                requirements=canonical_effect_requirements(
-                    ("Save",), OperationClass.REVERSIBLE_WRITE, "uncertain-effect-test", ("settings.write",)
-                ),
+                    requirements=(
+                        TaskRequirement(
+                            requirement_id="requirement:effect:1",
+                            payload=TaskSemanticPayload(
+                                kind="effect",
+                                subject="Save",
+                                target_identity="dom_button_1",
+                                operation_class=OperationClass.REVERSIBLE_WRITE,
+                                capability="settings.write",
+                                effect_authorization_scope=EffectAuthorizationScope(
+                                    requirement_ref="requirement:effect:1",
+                                    operation_constraint="resource.update@v1",
+                                    resource_scope=ResourceScopeRef("dom_button_1"),
+                                    effect_class=EffectClass.UPDATE,
+                                    required_capabilities=frozenset({"settings.write"}),
+                                ),
+                            ),
+                            source_anchor_refs=("uncertain-effect-test",),
+                        ),
+                    ),
                 allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
                 success=SuccessExpression(
                     expression_id="success:saved",

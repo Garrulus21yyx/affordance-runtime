@@ -4,6 +4,7 @@
 > **状态：** AUTHORITATIVE TARGET — NOT IMPLEMENTED AS A WHOLE
 > **生效日期：** 2026-08-05
 > **事实基线：** `agent/migrate-runtime-components @ 55bad91e56126269af7453913cf550cb5938108f`
+> **最新实现复核：** 2026-08-06 P4-G concrete action authority/high-risk governance 已完成；精确不可变 revision 由 Git 记录。
 > **演进来源：** [Task Contract 中心化 Runtime 架构演进规划](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 > **冲突优先级：** 本文取代 2026-07-29 权威架构中与 TaskSpec、TaskPlan、TaskProgress、observation/choice authority、criterion/evidence 和 task completion authority 冲突的目标设计；未冲突的 ActionContract、capability、approval、verification、recovery、single-writer、trace 和 benchmark governance 设计继续有效。
 > **2026-08-05 Active-step 修正：** `ActionChoiceCatalog` 必须从 canonical observation 完整建立后，才允许生成任何 model-facing `ChoicePlanningRequest`；旧的 `PlanningRequest → ActionChoiceSet` 顺序无效。
@@ -12,6 +13,7 @@
 > **2026-08-05 Physical Minimality 补充：** 本文中的完整性、authority 与 store 是逻辑合同，不自动要求全量内存物化、独立 class/service/process/database/model call；首期采用 indexed/ref-based state、in-process policy composition、typed trigger 与 risk-derived feature profile。
 > **2026-08-05 Cross-Surface Visibility 补充：** DOM、AX、Visual、SVG、WoT、API 与 Device 是共享 TaskSpec/TaskPlan/Catalog/ActionContract/LoopEvaluator 的 acquisition、grounding、execution 与 evidence surfaces；WoT 显式进入图与 vocabulary，但不形成独立 Agent/Planner/TaskSpec。
 > **2026-08-05 Material Binding 纠偏：** material authority 采用 effect-specific typed binding coverage，而不是字符级 span 配额。直接、明确的用户值可用 `DIRECT_USER_EXPLICIT` 准入；间接非结构化来源才要求 exact excerpt，结构化外部来源使用 versioned field identity。`SourceAnchor` 只证明 provenance，不能替代字段完整性、capability、approval、grounding 或 ActionContract。
+> **2026-08-06 Concrete Effect Authority / High-risk Governance 收口：** TaskSpec 只保存 parameterized typed `EffectAuthorizationScope`；Runtime 必须从 current canonical target/backend/binding 派生 concrete `RuntimeEffectSignature`，两者经 typed subsumption 得到 `ALLOW | DENY | UNPROVEN` 的 `ActionAuthorityProof`。目标 label、值集合、Planner 声明、source 自报 risk、approval 或 capability 都不能填补 proof 缺口；高风险动作只有在 proof、capability、exact contract approval、fresh preflight 与 effect-specific causal/final verification policy 全部闭合后才可执行。该收口不枚举页面/任务类型，只冻结小型 effect vocabulary、可扩展 operation refs 与字段化参数绑定。
 
 ## 0. 权威决议
 
@@ -88,6 +90,11 @@ requested output declared ≠ required output materialized
 11. **逻辑完整不等于全量物化。** full Catalog 与 canonical observation 可以使用 immutable index、lazy/query-backed membership 和 ref-based epoch；逻辑 membership、digest、coverage、conflict 与 rejection semantics 必须稳定。
 12. **逻辑 authority 不等于部署边界。** Authority 可以由 pure function、immutable validator 或同进程 policy composition 实现；只有真实的隔离、并发、规模或法规需求才允许拆成独立 service/store/model call。
 13. **Surface 只提供事实、binding、dispatch 与 evidence。** DOM/AX/Visual/SVG/WoT/API/Device 共享一套任务与动作权威；Planner 选择 semantic action，Runtime 在 ActionContractBuilder 中选择 current backend/binding。
+14. **授权 scope 与 concrete effect 分权。** TaskSpec 的 `EffectAuthorizationScope` 只表达用户允许的 effect ceiling；Runtime 的 `RuntimeEffectSignature` 只表达 current target/backend/binding 的实际动作事实。二者不得共用一个对象、从对方反向恢复，或由 Planner 创建。
+15. **授权匹配结构，不匹配字符串集合。** typed subsumption 必须同时约束 effect class、operation constraint、canonical resource scope、destination、named parameter slots、externality、reversibility、capability 与 policy；target label、subject/objective 文本、关键词和无字段名的 value set 只能用于展示或 clarification，不能证明权限。
+16. **Runtime 拥有 concrete effect/risk/assurance classification。** Adapter/source 可以提供 typed assertions，但最终 `RuntimeEffectSignature` 与 Runtime risk 由 Harness policy 合并 operation/backend facts、externality、reversibility、resource sensitivity、amount/recipient、capability、conflict、freshness 与 assurance。缺失或相互矛盾的 material classification 是 `UNPROVEN`，不是 LOW。Text/VLM 只能提高风险或触发更强观察/澄清，不能产生 ALLOW、降低风险或创建 authorization。
+17. **Action authority 是可验证 proof，不是 Boolean hint。** Catalog 只接纳 `ALLOW` proof；`DENY` 表示已证明越界，`UNPROVEN` 表示证据不足并走 perceive/clarify/block。Proof 必须绑定 evaluator policy version。Approval 与 capability 只能在 ALLOW 后继续收窄，不能把 UNPROVEN 升级为 ALLOW。
+18. **Gate 复核 actual bound transaction。** Task Authority Gate 必须使用 TaskSpec、current observation 与 ActionContract 的实际 target/destination candidate、operation、named parameters、binding/source assurance 重建 proof；不得只复算从 choice 复制到 contract 的 label/digest。
 
 ### 0.2 Active-step 核心不变量
 
@@ -232,12 +239,12 @@ flowchart TB
     PLAN --> PROG["TaskProgress"]
     PROG --> STEP["Active StepSpec"]
     STEP --> SCOPE["ActiveStepScope"]
-    TS --> ACB["Runtime ActionChoiceBuilder"]
+    TS --> ACB["Runtime ActionChoiceBuilder<br/>EffectAuthorizationScope ⊒ RuntimeEffectSignature"]
     PLAN --> ACB
     PROG --> ACB
     SCOPE --> ACB
     UO --> ACB
-    ACB --> CAT["Runtime-owned full ActionChoiceCatalog<br/>+ ChoiceBuildReport"]
+    ACB --> CAT["Runtime-owned full ActionChoiceCatalog<br/>ALLOW proofs only + typed rejections"]
     CAT --> ZERO{"0 / 1 / N choices"}
     ZERO -->|"0"| FAIL["Deterministic typed failure owner"]
     ZERO -->|"1"| SEL["Runtime ActionSelection"]
@@ -251,8 +258,8 @@ flowchart TB
     SEL --> ASV
 
     ASV --> ACC["ActionContractBuilder<br/>route canonical binding"]
-    ACC --> CONTRACT["Immutable ActionContract"]
-    CONTRACT --> GATES["Task Authority ∩ Capability ∩ Approval ∩ Freshness / Preflight"]
+    ACC --> CONTRACT["Immutable ActionContract<br/>actual binding + ActionAuthorityProof"]
+    CONTRACT --> GATES["Task Authority rebuilds actual proof<br/>∩ Capability ∩ Approval ∩ Freshness / Preflight"]
     GATES -->|"allow"| EX["Executor"]
     GATES -->|"deny / stale"| FAIL
     EX --> RCPT["ExecutionReceipt"]
@@ -584,6 +591,40 @@ AND current preflight passes
 
 `capability_ceiling` 同样不是 grant。实际 grant 可以更窄，不能更宽。
 
+### 4.6.1 Typed EffectAuthorizationScope：TaskSpec 的授权上限
+
+`allowed_effect_refs` 继续引用 canonical `TaskRequirement.requirement_id`；不新增第二张 effect registry。对 `kind="effect"` 的 requirement，其唯一 `semantic_payload` 必须包含或可无损投影出一个 parameterized `EffectAuthorizationScope`。它不包含 current action kind、backend、locator、candidate、observation epoch 或 Runtime confidence：
+
+```python
+@dataclass(frozen=True)
+class ParameterAuthorization:
+    slot: str
+    value_ref: InputRef | BindingRef | LiteralValueRef
+    predicate: ValuePredicate | None = None
+
+@dataclass(frozen=True)
+class EffectAuthorizationScope:
+    requirement_ref: RequirementRef
+    effect_class: EffectClass
+    resource_scope: ResourceScopeRef
+    operation_constraint: OperationRef | None
+    destination_scope: ResourceScopeRef | None
+    parameters: tuple[ParameterAuthorization, ...]
+    externality: Externality
+    reversibility: Reversibility
+    required_capabilities: frozenset[CapabilityId]
+    risk_policy_ref: RiskPolicyRef
+    minimum_source_assurance: AssuranceLevel
+    approval_policy_ref: ApprovalPolicyRef | None
+    completion_policy_ref: CriterionPolicyRef
+```
+
+`ResourceScopeRef` 绑定 admitted resource/account/recipient/device/artifact identity 或明确的 typed bounded predicate；label 只可作为 display alias，不能单独建立 scope。`ParameterAuthorization` 按 named slot 绑定，因此 `recipient=Alice, amount=100` 不等于 `recipient=100, amount=Alice`。对 input/binding 的 normalization 只允许 TaskSpec 中声明的 deterministic typed normalization，不能把所有 scalar value 放入无字段名集合再比较。
+
+核心 `EffectClass` 保持小而稳定：`READ / NAVIGATE / CREATE / UPDATE / DELETE / SEND / SHARE / PAY / INVOKE / EXECUTE / INTERACTION_ONLY / UNKNOWN`。具体业务差异通过 resource/destination/operation/value/capability 表达；不得增加 `DELETE_EMAIL`、`DELETE_FILE`、`DELETE_ACCOUNT` 等页面或业务组合枚举。`OperationRef` 是 namespaced、versioned、可扩展的 semantic operation identity/constraint，不是中央业务动作枚举。未解析的 effectful `UNKNOWN` 不能进入 executable authority；它只能在 admission 前解析/澄清。
+
+风险不是授权的替代物。`EffectAuthorizationScope` 说明用户允许的 typed effect ceiling；Runtime risk 可以要求更强 gate，却不能因风险等级恰好不高于某值就证明 operation、resource、destination 或 parameters 已获授权。TaskSpec scope 与 Runtime concrete signature 是两个不同合同，禁止用同一个 `EffectSignature` 类型同时承担两者。
+
 ### 4.7 旧字段迁移
 
 | 旧字段或概念 | 目标位置或处理 |
@@ -853,6 +894,7 @@ class StepSpec:
 ```
 
 `interaction_scope` 是语义范围，不包含 selector、coordinate、backend handle 或 approval token。
+Canonical `StepSpec` 不包含具有 authority 的 `effectful`、risk、backend 或 concrete operation 字段。外部兼容 provider 若仍携带 `effectful`，它最多是 edge-adapter hint，Runtime 的 Catalog、risk、gate 与 approval 完全忽略；canonical P4-G 路径已删除该 authority 用途。Planner 只能请求已有 `effect_authorization_refs`，不能宣布当前动作已经获准。
 
 ### 6.3 Step 切分规则
 
@@ -1033,6 +1075,110 @@ class ChoiceRejection:
 
 Catalog 必须密封 choice IDs，并保存完整 logical membership、输入 identities、counts 与 rejection diagnostics。小空间可以 eager materialize；大表格、虚拟列表或组合空间可以使用 immutable lazy/indexed/query-backed membership。所有实现都必须绑定同一 observation/catalog snapshot，提供确定性 `contains/get/page/query`，并使相同 canonical inputs 的 membership、ordering、rejection semantics 与 digest 相同。空 Catalog 不能丢掉“看过什么、拒绝了什么、为什么拒绝”的信息。`ChoiceBuildReport` 可以作为相同 digest 下的独立诊断记录，或由 summary/index 构成；无论物理形式如何，都不得从 model request 反推。
 
+### 7.2.1 RuntimeEffectSignature 与 authorization proof
+
+Runtime 在 Catalog admission 前，必须从 current canonical target、实际 action support、backend operation 与 candidate bindings 构造 route-independent concrete `RuntimeEffectSignature`。TaskSpec 不保存或生成该对象：
+
+```python
+@dataclass(frozen=True)
+class RuntimeEffectSignature:
+    observation_ref: ObservationRef
+    action_kind: ActionKind
+    effect_class: EffectClass | None
+    target_ref: CanonicalTargetRef
+    resource_ref: CanonicalResourceRef | None
+    destination_ref: CanonicalResourceRef | None
+    operation_ref: OperationRef | None
+    parameter_values: FrozenObject
+    externality: Externality | None
+    reversibility: Reversibility | None
+    assurance: AssuranceLevel
+    conflict_status: ConflictStatus
+    candidate_binding_digest: str
+    source_refs: tuple[str, ...]
+
+class AuthorityStatus(StrEnum):
+    ALLOW = "allow"
+    DENY = "deny"
+    UNPROVEN = "unproven"
+
+@dataclass(frozen=True)
+class ActionAuthorityProof:
+    status: AuthorityStatus
+    task_ref: TaskRef
+    authorization_scope_ref: EffectAuthorizationScopeRef | None
+    authorization_scope_digest: str | None
+    enabling_policy_ref: EnablingActionPolicyRef | None
+    runtime_effect_signature_digest: str
+    observation_ref: ObservationRef
+    candidate_binding_digest: str
+    reason_codes: tuple[str, ...]
+    evaluator_policy_version: str
+    proof_digest: str
+
+@dataclass(frozen=True)
+class ActionChoice:
+    choice_id: str
+    target_id: str
+    destination_id: str | None
+    action_kind: ActionKind
+    runtime_effect_signature_digest: str
+    authorization_proof_ref: ActionAuthorityProofRef
+    authorization_proof_digest: str
+    requirement_refs: tuple[RequirementRef, ...]
+    effect_authorization_refs: tuple[EffectAuthorizationScopeRef, ...]
+    runtime_risk: RiskLevel
+    conflict_status: ConflictStatus
+```
+
+Runtime signature 采用 Harness-owned policy composition。各 surface 能提供的不是等价 authority：
+
+| Source | 可提供的 concrete effect assertion |
+|---|---|
+| API/OpenAPI | operation、resource、named parameters、externality 与 transaction identity |
+| WoT TD / Device schema | Thing identity、property/action、input schema 与 operation binding |
+| application adapter / UIA | registered domain operation、resource identity、risk floor |
+| DOM/AX | form action/method、control/role/structure、destination；通常只提供部分 operation proof |
+| Visual/SVG | target geometry 与弱语义；可定位高风险 target，但 caption/label 不能单独证明高风险业务 effect |
+
+Source-declared typed action/risk 只是输入。一个普通网页没有 `data-runtime-risk` 或同类字段时，不能因此把未知 effectful action 默认成 LOW。operation、effect、externality、reversibility、resource identity、material parameter、assurance 或 conflict 任一无法证明时返回 `UNPROVEN`。
+
+Runtime risk 使用保守最大值而不是 TaskSpec/Planner 单值：
+
+```python
+runtime_risk = max(
+    effect_class_risk,
+    externality_risk,
+    reversibility_risk,
+    resource_sensitivity_risk,
+    amount_or_recipient_risk,
+    capability_risk,
+    source_uncertainty_risk,
+    conflict_risk,
+)
+```
+
+规范 policy tier 为 `LOW / MODERATE / HIGH / CRITICAL`；迁移期 legacy `MEDIUM/IRREVERSIBLE` 只能在 risk-policy ingress 显式映射，不得形成第二套排序。Text/VLM 可以建议更高 tier、触发 targeted observation、SemanticAudit 或 clarification；它们永远不能产生 `ALLOW`、降低 Runtime risk、创建 effect scope 或用按钮 caption 代替 typed proof。
+
+`ActionAuthorityEvaluator` 对 TaskSpec scope 与 concrete signature 做 typed subsumption，唯一允许条件是：
+
+```text
+effect class compatible
+AND operation constraint absent or matches registered operation
+AND resource exact/bounded match
+AND destination exact/bounded match
+AND every named parameter satisfies its admitted value/predicate
+AND externality/reversibility are within scope and policy
+AND required capability is within TaskSpec ceiling and current grant is checked later
+AND hard constraints hold and forbidden effects do not match
+AND source assurance/conflict/risk policies pass
+AND active Step requirement/effect refs trace to that scope
+```
+
+Planner 的 `effectful`、`risk`、choice role、objective 或 label 不参与上述证明。`ActionChoice` 只携带 Runtime signature digest、proof ref/digest 和 Runtime-derived presentation fields；Catalog membership 只包含 `ALLOW`。`DENY` 与 `UNPROVEN` 必须在 rejection report 中区分；规范 reason vocabulary 至少包括 `EFFECT_UNKNOWN`、`TARGET_SCOPE_UNPROVEN`、`DESTINATION_SCOPE_UNPROVEN`、`PARAMETER_SCOPE_UNPROVEN`、`INSUFFICIENT_SOURCE_ASSURANCE` 与 `MATERIAL_SOURCE_CONFLICT`。UNPROVEN 只能进入 targeted observation、stronger backend、clarification/ask-user 或 deny/block，不能交给 Planner 自由重写。
+
+`EnablingActionPolicy` 是 Harness-owned 的窄 policy，而不是 `role != DIRECT` 自动放行。允许候选只有 observe、focus、hover、scroll、open non-committing menu/dialog、allowed-domain navigation、wait，以及使用 admitted `InputBinding` 的 local reversible draft edit。每个 enabling choice 必须服务一个 requirement ref，其 concrete signature 为 `INTERACTION_ONLY` 或已证明的 local reversible draft，不得 external commit、删除、发送、支付、共享、改权限、执行代码、披露未授权数据或保持 `UNKNOWN` external effect。高风险动作不能借 `enabling_need` 绕过 effect scope；fill/type/upload/cross-origin transfer 只有在上述 typed input/data-disclosure policy 明确通过时才可进入 Catalog。每个 ALLOW proof 必须且只能绑定一个 `authorization_scope_ref` 或一个 versioned `enabling_policy_ref`；不得用空 scope digest 模糊表示 enabling 放行。
+
 ### 7.3 PlanningStage 的 StepChoiceFlow
 
 Coordinator 仍只编排。active-step 算法由无状态/纯 collaborator `StepChoiceFlow` 拥有：
@@ -1132,8 +1278,10 @@ class ChoicePresentation:
     destination_id: str | None
     destination_label: str | None
     relevant_current_state: FrozenObject
+    effect_summary: str
     expected_effect_refs: tuple[CriterionRef, ...]
     requirement_refs: tuple[RequirementRef, ...]
+    authorization_reason_codes: tuple[str, ...]
     generation_reason_codes: tuple[str, ...]
     evidence_refs: tuple[str, ...]
     conflict_status: ConflictStatus
@@ -1152,7 +1300,7 @@ class ChoicePage:
     projection_policy_id: str
 ```
 
-`ChoicePresentation` 是 bounded semantic context：它必须足以比较当前页内多个合法选择，但不得包含 selector、coordinate、locator、backend handle、approval token、hidden choice ID 或 unrestricted source text。其 requirement/effect linkage 只能引用 accepted TaskSpec IDs；`generation_reason_codes` 解释 Runtime 为何生成该 choice，不向 Planner 转移 choice admission authority。
+`ChoicePresentation` 是 bounded semantic context：它必须足以比较当前页内多个合法选择，但不得包含 selector、coordinate、locator、backend handle、approval token、hidden choice ID 或 unrestricted source text。`effect_summary` 只能由已准入 proof/signature 生成，用于向模型或用户解释；其 requirement/effect linkage 只能引用 accepted TaskSpec IDs。`authorization_reason_codes` 说明该 choice 通过了哪些结构化授权条件，`generation_reason_codes` 说明 Runtime 为何生成它；两者均是只读展示字段，不能由 Planner 修改，也不能反向成为 choice admission authority。
 
 若 `choice_id ∈ full catalog` 但 `choice_id ∉ current presented page`，`ActionSelectionValidator` 必须返回 `UNPRESENTED_CHOICE_ID`。模型必须先请求下一页或 typed retrieval；此规则同时封住 prompt injection 对隐藏 ID 的猜测执行。
 
@@ -1206,11 +1354,14 @@ class ActionContract:
     observation_ref: ObservationRef
     semantic_action: SemanticAction
     target_binding: TargetBinding
+    destination_binding: TargetBinding | None
     parameters: FrozenObject
     preconditions: tuple[CriterionExpr, ...]
     expected_effects: tuple[CriterionExpr, ...]
     evaluation_requirements: tuple[CriterionEvaluationRequirement, ...]
     effect_authorization_refs: tuple[str, ...]
+    action_authority_proof: ActionAuthorityProof
+    runtime_effect_signature: RuntimeEffectSignature
     required_capabilities: frozenset[CapabilityId]
     risk: RiskLevel
     validity: ContractValidity
@@ -1221,13 +1372,13 @@ class ActionContract:
 
 `ContractValidity` 至少绑定 snapshot、page/environment revision、target fingerprint、issued time 与 expiry。所有 hash-critical payload 必须先递归 normalize/freeze，再计算 digest。
 
-`ActionContractBuilder` 必须接收 selected `ActionChoice`、current `ChoiceCatalogRef` 与同一 canonical `ObservationRef`，再从 canonical target 的全部 `GroundingCandidate` 中为具体 action route/bind execution surface。它不得从 `ChoicePresentation`、label summary 或 representative source 生成 locator。若 fresh preflight 产生新 observation epoch，则旧 Catalog、selection、contract 与 approval 全部 stale，必须重建，不能把旧 choice 静默绑定到新页面。
+`ActionContractBuilder` 必须接收 selected `ActionChoice`、current `ChoiceCatalogRef` 与同一 canonical `ObservationRef`，再从 canonical target 的全部 `GroundingCandidate` 中为具体 action route/bind execution surface。它不得从 `ChoicePresentation`、label summary 或 representative source 生成 locator。Builder 必须以最终实际 target/destination candidate、backend operation 与 named parameters 重建 route-specific `RuntimeEffectSignature`；同一 semantic choice 的 DOM click、WoT invoke 与 API call 可以具有不同 operation、capability、assurance、externality/reversibility 和 risk。若 route 后 signature digest 或 binding digest 与 Catalog proof 不一致，必须重跑 typed evaluator；结果非 ALLOW 时 contract construction 立即失败，不能把 choice 的 authorized label/digest 原样复制后视为复核完成。若 fresh preflight 产生新 observation epoch，则旧 Catalog、selection、contract 与 approval 全部 stale，必须重建，不能把旧 choice 静默绑定到新页面。
 
 ### 8.2 四重 gate
 
 | Gate | 判定 | 禁止 |
 |---|---|---|
-| Task Authority | action/effect 是否可追溯到 TaskSpec allowed effects，且不违反 constraints/forbidden effects | 用关键词猜核心权限 |
+| Task Authority | 以 TaskSpec `EffectAuthorizationScope`、current observation 与 contract 的 route-specific `RuntimeEffectSignature` 独立重建 `ActionAuthorityProof`；必须为 ALLOW，且 proof/policy/binding/epoch digests 一致、不违反 constraints/forbidden effects | 用关键词、label、无字段 value set、Planner risk/effectful 或从 choice 复制的 digest 猜核心权限 |
 | Capability | 当前实际 grants 是否覆盖 contract requirements | 把 capability ceiling 当 grant |
 | Approval | 是否存在匹配 concrete contract 的有效 one-shot token | 提前批准 plan/action family |
 | Freshness/Preflight | snapshot/page/target/TTL/preconditions 是否仍成立 | 自动重定位后继续执行旧 contract |
@@ -1262,7 +1413,38 @@ sequenceDiagram
     end
 ```
 
-审批发生在具体目标、参数、风险和页面状态已知之后，执行之前。Re-ground、参数变更、snapshot 变化或 contract rebuild 必须重新审批。
+审批发生在具体 operation、resource identity、destination、named parameters、effect class、externality/reversibility、risk、backend binding 和页面状态已知之后，执行之前。ApprovalToken 必须通过 typed fields 或 `contract_hash` 绑定 TaskSpec revision、Catalog digest、observation epoch、RuntimeEffectSignature digest、proof/policy version、target/resource、destination/recipient、amount/value、backend operation、risk、expiry 与 one-shot use；Re-ground、参数变更、risk/operation classification 变化、snapshot 变化或 contract rebuild 必须重新审批。
+
+用户面对的 approval presentation 至少显示：将执行什么、作用于谁/什么资源、发送到哪里、金额/关键参数、是否可逆、当前 backend operation、证据来源与 material uncertainty。展示文本不是 approval authority；token 只绑定上述 typed contract payload。
+
+Approval 的法律含义是“用户同意执行这个已经被 Task Authority 证明在授权范围内的 concrete transaction”，不是补充 TaskSpec。`DENY`/`UNPROVEN` 不能弹出 approval 后继续；需要扩大 target、destination、amount、recipient、operation 或 destructive scope 时，必须先由用户澄清形成新 TaskSpec revision，再重建 Catalog、contract 与 approval。
+
+### 8.4 高风险动作 policy closure
+
+高风险治理使用小型 effect-policy matrix，不为每个网站/任务枚举 workflow：
+
+| Effect class / example | Action-time 必需条件 | Post-action 必需条件 |
+|---|---|---|
+| external communication / share | exact recipient/principal、channel/destination、content/resource binding；data-disclosure classification；capability；concrete approval when policy requires | contract-bound causal outcome；authoritative delivery/resource recheck when available |
+| payment / purchase / financial commit | payee/account、amount、currency、destination/resource identity；authoritative source assurance；concrete one-shot approval；fresh totals/preconditions | no blind retry；transaction/resource `FINAL_RECHECK`；uncertain effect blocks/handoffs |
+| delete / destructive mutation | exact resource and scope、destructive effect class、irreversibility/compensation policy、capability、concrete approval | causal outcome + authoritative absence/tombstone/final state recheck |
+| account/security/permission change | exact principal/account/resource/permission、minimum authoritative assurance、capability、concrete approval | authoritative account/security state recheck |
+| safety-relevant device actuation | exact Thing/device/operation/property/value、fresh device identity/state、WoT/API assurance、conflict-free binding、approval/policy interlock | authoritative device/property recheck；ambiguous dispatch never blindly repeats |
+
+对于上述动作，source assurance 低于 signature policy、material conflict、unknown operation/effect/risk、coverage insufficient、pending external result 或 final-recheck identity 不匹配都必须 fail closed。机械 evidence 优先；ModelVerifier 只能提供辅助 evidence，不能单独证明高风险 effect authority 或 completion。
+
+最低 source/evidence policy 固定为：
+
+| Risk tier | 最低执行来源 | 最低完成证据 |
+|---|---|---|
+| LOW | current Visual/DOM/AX binding 可用 | fresh observation |
+| MODERATE | structural binding 或明确 target interaction | structural/resource state |
+| HIGH | structural/authoritative operation identity | authoritative external `FINAL_RECHECK` |
+| CRITICAL | authoritative operation；policy 可要求 human takeover | authoritative transaction/resource evidence |
+
+视觉来源可以参与高风险 target 定位，但 visual caption、OCR 或 VLM summary 不能单独授予高风险 effect；必须已有 typed TaskSpec scope、concrete approval、足够强的 preflight 与 authoritative completion evidence。任何 material source conflict 在 contract admission 前阻断。
+
+高风险执行遵循 exact-contract single-attempt 语义：Executor 每个 admitted attempt 只 dispatch 一次，在 backend 支持时使用 contract-bound idempotency key，并记录 attempt/dispatch/transaction identity。timeout、transport ambiguity 或 unknown response 立即产生 `UNCERTAIN_EXTERNAL_EFFECT`；在 authoritative status/idempotency lookup 证明原动作未发生以前，不得重试、换 backend 重放或把“没有 receipt”解释为“没有 effect”。再次执行必须经过 fresh observation、new choice/proof、new contract 和 new approval，旧合同不得原地修改。
 
 ## 9. Execution、Inline Loop Evaluation 与完成权威
 
@@ -1313,6 +1495,8 @@ class LoopEvaluation:
 ```
 
 `SATISFIED` 需要充分有效 evidence；`UNSATISFIED` 需要充分反证；无 evidence 是 `UNKNOWN`；失效为 `STALE`；material disagreement 为 `CONFLICT`；缺 provider/operator 为 `UNSUPPORTED`；provider exception 为 `ERROR`。不得把这些状态压成 Boolean。
+
+authoritative provider 必须保留真实 `observed_value`、resource/transaction identity、source、freshness 与 assurance，而不是只写 `True`。Boolean pass 可作为派生显示，不能替代可重新校验的 observed state。
 
 ### 9.3 三层 evidence location 与因果证据
 
@@ -1587,6 +1771,8 @@ Planner selects the semantic action; ActionContractBuilder selects the current b
 |---|---|---|
 | acquisition budget 截断可能隐藏目标 | `PERCEPTION_COVERAGE_INSUFFICIENT` | Runtime Recovery / active perception |
 | target 存在但 required property 未采集 | `REQUIRED_STATE_UNOBSERVED` | Runtime Recovery / targeted perceive |
+| concrete operation/effect/risk/source assurance 无法证明 | `ACTION_AUTHORITY_UNPROVEN` | targeted perception / typed resolver / user clarification / block；approval 不可覆盖 |
+| concrete operation/target/destination/named parameter 已证明越界 | `ACTION_AUTHORITY_DENIED` | block；若用户确需扩大范围则新 TaskSpec revision |
 | material source conflict | `SOURCE_CONFLICT` | Runtime Recovery，high-risk 时 block/terminal |
 | coverage complete，step target 不存在 | `STEP_TARGET_NOT_PRESENT` | TaskPlanner propose replacement plan |
 | 多个合法 choices | 不是 failure | StepChoicePlanner 在 ChoicePage 上选择/检索 |
@@ -1689,6 +1875,9 @@ ArtifactStore   → DOM、截图、AX tree 等大型历史内容
 | Plan install/replace | `Coordinator / TaskTransitionService` | 发明 plan semantics |
 | Progress/fact/binding/recent outcome/durable evidence | `TaskProgressService` + bounded stores | 根据 receipt 完成 task、持久化 current facts |
 | Current full legal choice Catalog | `ActionChoiceBuilder` | 读取 presentation budget、调用模型或执行 |
+| Task effect scope contract | `TaskSpecAuthority` + immutable `EffectAuthorizationScope` | 保存 current backend/action/binding 或生成 Runtime signature |
+| Runtime effect/risk/assurance classification | Harness-owned `ActionEffectClassifier` / risk policy | 从 Planner、caption、source 自报 risk 单独授予权限或降低风险 |
+| Typed action authority proof | pure `ActionAuthorityEvaluator` | 用 approval/capability 补齐 UNPROVEN、用 label/keyword/value set 猜权限 |
 | 0-choice root-cause classification | Runtime catalog failure classifier | 把 presentation omission 当 grounding failure |
 | N-choice presentation | `ChoicePresentationProjector` | 删除/添加 Catalog member |
 | N-choice selection/retrieval | `StepChoicePlanner` | 发明动作/参数、选择未展示 ID |
@@ -1892,7 +2081,8 @@ Audit 不能补充附件中未授权的 recipient，也不能把页面建议联�
 7. **P2 — minimal CriterionPolicy + evidence providers：**2 satisfaction × 3 validity × 3 assurance；先实现 mandatory mechanical operator baseline，其他 registered operator 可返回 UNSUPPORTED；current/outcome/durable evidence 分层；mechanical providers 内化。
 8. **P3 — stable TaskSpec v2 + optional SemanticAudit：**TaskSpecAuthority 单一准入，audit 保持 trigger-based veto/clarify-only，selective SourceAnchor 冻结。
 9. **P4 — rolling TaskPlanner + strict StepChoice port：**拆分 TaskPlanFlow/StepChoiceFlow；先稳定 deterministic narrowing/small ChoicePage，再按需要引入 paging、typed retrieval；TaskPlanner 只由 typed planning trigger 调用。
-10. **P5 — bounded stores + legacy deletion：**使用 ref/index-based ObservationStore 与可组合 RunLedger namespace；Fact/Binding、RecentActionOutcome、DurableEvidence 保持逻辑生命周期隔离，并落实旧 source/completion authority 删除门。
+10. **P4-G — concrete action authority / high-risk closure：**以 `EffectAuthorizationScope ⊒ RuntimeEffectSignature → ActionAuthorityProof` 替换字符串、无字段 value set、Boolean/copy-field proof；Catalog 只接纳 ALLOW，route 后重建 proof，高风险执行闭合 exact approval、fresh preflight 与 causal/final verification。
+11. **P5 — bounded stores + legacy deletion：**使用 ref/index-based ObservationStore 与可组合 RunLedger namespace；Fact/Binding、RecentActionOutcome、DurableEvidence 保持逻辑生命周期隔离，并落实旧 source/completion authority 删除门。
 
 source/plan authority、completion authority 与 observation/choice authority 都是 correctness boundary：分别防止 intake graph 决定执行、错误宣布成功，以及合法动作在进入 ActionContract 安全链前被 presentation 错误删除。
 
@@ -1930,6 +2120,10 @@ Verification 自身的 P0–P3 优先级不可被总体阶段编号稀释：
 | `perception_phase.py` | 普通/targeted capture 后统一调用 CanonicalObservationBuilder，并输出 canonical observation ref | BrowserSnapshot 不再作为后续 Runtime semantic authority |
 | `state_kernel.py` | 增加 `current_observation_ref`、`current_choice_catalog_ref` | 停止从 planner projection 恢复 current target state |
 | `ActionContractBuilder` | 接收 selected choice、CatalogRef、Canonical ObservationRef，并从完整 candidates route binding | 禁止从 representative/model view bind；new epoch 使旧 contract/approval stale |
+| `effect_authority_contracts.py` | 仅定义 `EffectAuthorizationScope`、`RuntimeEffectSignature`、externality/reversibility、typed proof 与 digests | 不拥有 TaskSpec admission、Catalog membership、route、approval 或执行；两种合同不得合并成一个类型 |
+| `action_effect_classifier.py` / risk policy | 从 canonical assertions 与 actual candidate/backend/binding 纯派生 Runtime signature、risk 与 assurance | 不读取 Planner risk/effectful、不得将未知 effect 默认 LOW、不得成为独立服务 |
+| `action_choice_authority.py` | 执行 typed subsumption 与窄 `EnablingActionPolicy`，返回 ALLOW/DENY/UNPROVEN proof | 不做 label/keyword/value-set matching，不调用模型，不让 approval/capability 扩权 |
+| `action_choice_builder.py` / Catalog owner | builder 生成 semantic choices 与 rejection；Catalog owner 只维护 immutable membership/digest/query | 不把分类、授权、投影、route 或执行继续塞回 oversized Catalog god file |
 | `source_envelope.py` | 新增 immutable `SourceEnvelope`、`SourceAnchor` 与 deterministic builders；默认只建立 whole request、conversation/attachment/target/profile refs | 普通 entrypoint 不得 clause-split，也不得建立 claim/obligation graph |
 | `intent_compiler.py` / intake contracts | 模型只产出 `MinimalIntentProposal`；TaskSpecAuthority 做唯一 validation/admission | 删除默认 `candidate_source_claims`、`candidate_obligations`、`source_claims`、`obligations` 与 prompt 强制 graph 指令 |
 | `semantic_audit/` | 收纳原 SourceLedger 的 clause/span/coverage/conflict 能力，并仅按风险触发 | 普通 entrypoint 不调用；audit 只有 pass/veto/clarify 权，不能修改 proposal 或 TaskSpec |
@@ -2140,6 +2334,24 @@ foundation
 | `OUT-02` | TaskCompleted 要求所有 required outputs materialized，并按声明 source-bound。 |
 | `OUT-03` | Planner prose/summary 不能替代 required structured output。 |
 
+#### Concrete Effect Authority / High-risk Gate
+
+| ID | 阻塞不变量 |
+|---|---|
+| `AUTHZ-01` | 每个 effectful allowed requirement 具有唯一 parameterized `EffectAuthorizationScope`；TaskSpec 不保存 concrete `RuntimeEffectSignature`，也不存在由 objective/subject/label 恢复 operation 或 scope 的 fallback。 |
+| `AUTHZ-02` | target/destination 使用 canonical source-bound resource scope；display label 相等不能单独证明 identity。 |
+| `AUTHZ-03` | 参数按 named slot 与 admitted InputRef/BindingRef/predicate 比较；无字段 value-set 包含关系不能证明授权。 |
+| `AUTHZ-04` | Runtime 从 current canonical target、actual candidate/backend/binding 与 typed source assertions 构造 concrete `RuntimeEffectSignature` 并独立推导 risk；Planner 不拥有 effectful/risk/role classification。 |
+| `AUTHZ-05` | 未知 operation/effect/externality/reversibility/risk、assurance 不足、material conflict 或 coverage 不足为 `UNPROVEN`；不得默认 LOW 或自动放行。Text/VLM 只能升风险或触发观察/澄清，不能产生 ALLOW 或降风险。 |
+| `AUTHZ-06` | Catalog 只接纳 `ALLOW` proof，并区分 `DENY` 与 `UNPROVEN` rejection/recovery。 |
+| `AUTHZ-07` | EnablingActionPolicy 只允许 requirement-bound INTERACTION_ONLY/local reversible draft；必须证明无 external commit、高风险 effect、未授权 data disclosure 或 cross-origin expansion，不能只靠 action-kind/role whitelist。 |
+| `AUTHZ-08` | ActionContract hash 绑定 TaskSpec scope digest、route-specific RuntimeEffectSignature、proof/evaluator-policy version、target/destination binding、named parameters、externality/reversibility、risk、assurance、epoch 与 candidate digest。 |
+| `AUTHZ-09` | Task Authority Gate 从 actual bound transaction 独立重建 proof；不得只复算 choice 复制字段或 scope digest。 |
+| `AUTHZ-10` | Approval/Capability 只能收窄已经 ALLOW 的动作；任何 concrete scope 变化要求新 contract，授权范围扩大要求新 TaskSpec revision。 |
+| `HRA-01` | external/destructive/account-security/safety-device effect 必须满足 effect-specific material fields、minimum assurance、capability、approval/preflight 与 completion policy。 |
+| `HRA-02` | uncertain external effect 只能 authoritative recheck、block 或 handoff；不得自动重试。 |
+| `HRA-03` | high-risk completion 同时要求 contract-bound causal evidence 与 policy-required authoritative FINAL_RECHECK；model/receipt/toast 不能单独完成。 |
+
 #### Physical Minimality Gate
 
 | ID | 阻塞不变量 |
@@ -2210,6 +2422,15 @@ Runtime catalog construction must not call PlanningRequestBuilder
 - unknown/material conflict 不能通过空 conflict tuple 或 max source confidence 被伪装为已融合。
 - 模型返回 full Catalog 中存在但当前页未展示的 ID 时必须 `UNPRESENTED_CHOICE_ID`。
 - effectful/high-risk truncated page 没有唯一授权匹配时必须继续 retrieval/clarification。
+- 同一 target 上存在多个 operation 时，只能生成与 admitted `operation_ref` 匹配的 choice；相同 label、相同 risk 或相同 target ID 不构成 operation authority。
+- `recipient=Alice, amount=100` 与 `recipient=100, amount=Alice` 必须得到不同 authorization result；parameter field 名是 proof 的一部分。
+- 普通 DOM 页面未声明 action risk 时，potentially effectful control 必须由 Runtime classifier 得到 typed risk/effect，无法证明时为 `UNPROVEN`；不得因缺少自报属性默认 LOW。
+- 将已授权 choice 的 label/digest 复制到指向另一个 actual grounding candidate 的 ActionContract 时，Task Authority Gate 必须拒绝。
+- source assurance 不足或 DOM/Visual/WoT/API 对 operation/target/state 有 material conflict 时，高风险 choice 不得进入可审批 Catalog。
+- TaskSpec `EffectAuthorizationScope` 与 Runtime `RuntimeEffectSignature` 必须是不同类型；尝试把 current action kind/backend/binding 写入 TaskSpec 或从 TaskSpec 直接构造 concrete signature 时门禁失败。
+- Text/VLM 建议更高风险时 Runtime 可以上调或触发观察；建议更低风险、ALLOW 或新 effect scope 时必须忽略并记录 policy rejection。
+- Approval presentation 必须向用户显示 concrete resource/destination、关键参数、可逆性、来源与不确定性；任一 hash-critical typed field 改变使 token 失效。
+- LOW/MODERATE/HIGH/CRITICAL 的 source/evidence minimum 必须按 policy matrix 执行；visual-only high-risk semantics 不能取得 ALLOW。
 - acquisition policy 改变可以改变 Catalog，但必须由 SourceCoverage 与新的 observation/catalog digest 显式解释。
 - 普通低风险 request 即使超过旧 32-clause bound，也必须能通过 SourceEnvelope 默认路径进入 MinimalIntentProposal；不得因未建 source claim/obligation coverage 而失败。
 - recipient、amount、external destination 或 destructive target 缺少精确合法 anchor 时，高风险 admission 必须 veto/clarify；audit 不得替用户补值。

@@ -25,6 +25,7 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
         "observing",
         "preflight",
         "recovering",
+        "waiting_approval",
         "waiting_clarification",
         "deferred",
         "done",

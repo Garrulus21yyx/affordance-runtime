@@ -8,6 +8,7 @@ from enum import StrEnum
 from affordance_runtime.contracts import ActionContract, Observation, RuntimeErrorCode
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.mechanical import preflight
 
 
@@ -47,10 +48,13 @@ class ActionAdmissionService:
         capability_gate: CapabilityGate,
         observation: Observation,
         task_spec: TaskSpec | None = None,
+        canonical_observation: UnifiedObservation | None = None,
         check_freshness: bool = True,
     ) -> ActionAdmissionResult:
         results: list[AdmissionPolicyResult] = []
-        task_error = self.task_policy.check(contract, constraints, task_spec)
+        task_error = self.task_policy.check(
+            contract, constraints, task_spec, canonical_observation
+        )
         results.append(AdmissionPolicyResult(AdmissionGate.TASK_AUTHORITY, task_error is None, task_error))
         if task_error is not None:
             return ActionAdmissionResult(False, tuple(results))
