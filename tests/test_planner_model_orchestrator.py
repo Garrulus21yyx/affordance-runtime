@@ -103,6 +103,19 @@ def _context() -> PlannerContext:
     )
 
 
+def _constraint_requirement(relation: str, value: str, target: str = "") -> dict[str, object]:
+    return {
+        "requirement_id": f"requirement:constraint:{relation}:{value}",
+        "payload": {
+            "kind": "constraint",
+            "subject": target or "input_value",
+            "relation": relation,
+            "value": value,
+        },
+        "source_anchor_refs": ["request-1"],
+    }
+
+
 def _policy() -> PlannerCandidateRepairPolicy[PlannerCandidateModel]:
     def prebind(candidate: PlannerCandidateModel, context: PlannerContext) -> str:
         del context
@@ -305,19 +318,9 @@ def test_explicit_prefix_binds_only_one_enabled_text_target() -> None:
         update={
             "task_spec": {
                 **_context().task_spec,
-                "semantic_value_constraints": [
-                    {
-                        "relation": "prefix",
-                        "value": "Com",
-                        "target": "item",
-                        "source_ref": "request-1",
-                    },
-                    {
-                        "relation": "suffix",
-                        "value": "va",
-                        "target": "item",
-                        "source_ref": "request-1",
-                    },
+                "requirements": [
+                    _constraint_requirement("prefix", "Com", "item"),
+                    _constraint_requirement("suffix", "va", "item"),
                 ],
             }
         }
@@ -368,10 +371,13 @@ def test_active_subgoal_restricts_targets_by_semantic_phase_and_label() -> None:
 
     assert restricted["activate"] == ["search"]
     assert restricted["type_text"] == []
-    assert restrict_targets_to_active_subgoal(
-        context.model_copy(update={"active_subgoal": context.task_spec["objective"]}),
-        targets,
-    ) == targets
+    assert (
+        restrict_targets_to_active_subgoal(
+            context.model_copy(update={"active_subgoal": context.task_spec["objective"]}),
+            targets,
+        )
+        == targets
+    )
     entry_context = context.model_copy(
         update={
             "active_subgoal": "search_box_value equals Myron",
@@ -409,18 +415,10 @@ def test_current_control_value_retires_only_the_satisfied_input_obligation(
         update={
             "task_spec": {
                 **base.task_spec,
-                "semantic_value_constraints": [
-                    {
-                        "relation": relation,
-                        "value": required_value,
-                        "source_ref": "request-1",
-                    }
-                ],
+                "requirements": [_constraint_requirement(relation, required_value)],
             },
             "affordances": (
-                base.affordances[0].model_copy(
-                    update={"state": {"enabled": True, "control_value": current_value}}
-                ),
+                base.affordances[0].model_copy(update={"state": {"enabled": True, "control_value": current_value}}),
             ),
         }
     )
@@ -436,13 +434,7 @@ def test_suffix_only_multiple_values_or_multiple_controls_do_not_authorize_text(
         update={
             "task_spec": {
                 **_context().task_spec,
-                "semantic_value_constraints": [
-                    {
-                        "relation": "suffix",
-                        "value": "va",
-                        "source_ref": "request-1",
-                    }
-                ],
+                "requirements": [_constraint_requirement("suffix", "va")],
             }
         }
     )
@@ -450,9 +442,9 @@ def test_suffix_only_multiple_values_or_multiple_controls_do_not_authorize_text(
         update={
             "task_spec": {
                 **suffix.task_spec,
-                "semantic_value_constraints": [
-                    {"relation": "prefix", "value": "A", "source_ref": "request-1"},
-                    {"relation": "prefix", "value": "B", "source_ref": "request-1"},
+                "requirements": [
+                    _constraint_requirement("prefix", "A"),
+                    _constraint_requirement("prefix", "B"),
                 ],
             }
         }
@@ -596,18 +588,12 @@ def test_select_option_repair_schema_requires_only_semantic_option() -> None:
 
 
 def test_orchestrator_exhaustion_is_redacted_and_does_not_return_an_invalid_proposal() -> None:
-    model = SequenceModel(
-        (
-            {"action_kind": "type_text", "parameters": {"text": "private-value"}},
-        )
-    )
+    model = SequenceModel(({"action_kind": "type_text", "parameters": {"text": "private-value"}},))
 
     with pytest.raises(StructuredModelError) as exc_info:
         _run(model, max_candidate_repairs=1, reserve_model_call=lambda: None)
 
-    assert str(exc_info.value) == (
-        "planner candidate failed semantic validation: proposal_target_required:type_text"
-    )
+    assert str(exc_info.value) == ("planner candidate failed semantic validation: proposal_target_required:type_text")
     assert "private-value" not in str(exc_info.value)
     assert model.calls == 2
 

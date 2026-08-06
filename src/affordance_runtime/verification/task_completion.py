@@ -32,21 +32,14 @@ class TaskCompletionEvaluator:
     def criterion_ids(task_spec: TaskSpec) -> frozenset[str]:
         """Return the finite criterion set admitted into task completion state."""
 
-        success_ids = (
-            _expression_criterion_ids(task_spec.success)
-            if task_spec.success is not None
-            else frozenset()
-        )
+        success_ids = _expression_criterion_ids(task_spec.success)
         return frozenset(
             (
                 *success_ids,
                 *task_spec.constraint_criterion_ids,
                 *task_spec.external_effect_criterion_ids,
                 *task_spec.final_recheck_criterion_ids,
-                *(
-                    output.materialization_criterion_id
-                    for output in task_spec.required_outputs
-                ),
+                *(output.materialization_criterion_id for output in task_spec.required_outputs),
             )
         )
 
@@ -67,27 +60,11 @@ class TaskCompletionEvaluator:
         declared_effects = task_spec.external_effect_criterion_ids
         declared_rechecks = task_spec.final_recheck_criterion_ids
         required_effect_gap = (
-            ("task_spec:external_effect_evaluation_required",)
-            if high_risk_operation and not declared_effects
-            else ()
+            ("task_spec:external_effect_evaluation_required",) if high_risk_operation and not declared_effects else ()
         )
         required_recheck_gap = (
-            ("task_spec:authoritative_final_recheck_required",)
-            if high_risk_operation and not declared_rechecks
-            else ()
+            ("task_spec:authoritative_final_recheck_required",) if high_risk_operation and not declared_rechecks else ()
         )
-        if task_spec.success is None:
-            return TaskCompletionEvaluation(
-                status=CriterionStatus.UNKNOWN,
-                root_criterion_id="",
-                criterion_results=criterion_results,
-                missing_rechecks=required_recheck_gap,
-                uncertain_external_effects=tuple(
-                    dict.fromkeys((*uncertain_external_effects, *required_effect_gap))
-                ),
-                result_payload=result_payload,
-            )
-
         root_status = _evaluate_expression(task_spec.success, results)
         constraint_violations = tuple(
             criterion_id
@@ -95,12 +72,10 @@ class TaskCompletionEvaluator:
             if _status_for(criterion_id, results) == CriterionStatus.UNSATISFIED
         )
         constraint_statuses = tuple(
-            _status_for(criterion_id, results)
-            for criterion_id in task_spec.constraint_criterion_ids
+            _status_for(criterion_id, results) for criterion_id in task_spec.constraint_criterion_ids
         )
         external_statuses = tuple(
-            _status_for(criterion_id, results)
-            for criterion_id in task_spec.external_effect_criterion_ids
+            _status_for(criterion_id, results) for criterion_id in task_spec.external_effect_criterion_ids
         )
         unresolved_effects = tuple(
             dict.fromkeys(
@@ -133,28 +108,18 @@ class TaskCompletionEvaluator:
             result_payload,
             output_source_bindings or {},
         )
-        missing_outputs = tuple(
-            item.output_id
-            for item in output_results
-            if item.status != CriterionStatus.SATISFIED
-        )
+        missing_outputs = tuple(item.output_id for item in output_results if item.status != CriterionStatus.SATISFIED)
 
         closure_statuses = (
             root_status,
             *constraint_statuses,
             *external_statuses,
             *(
-                CriterionStatus.SATISFIED
-                if criterion_id not in missing_rechecks
-                else CriterionStatus.UNKNOWN
+                CriterionStatus.SATISFIED if criterion_id not in missing_rechecks else CriterionStatus.UNKNOWN
                 for criterion_id in task_spec.final_recheck_criterion_ids
             ),
             *(item.status for item in output_results),
-            *(
-                (CriterionStatus.UNKNOWN,)
-                if unresolved_effects or missing_rechecks
-                else ()
-            ),
+            *((CriterionStatus.UNKNOWN,) if unresolved_effects or missing_rechecks else ()),
         )
         status = _all_of_status(closure_statuses)
         return TaskCompletionEvaluation(
@@ -186,11 +151,7 @@ def _expression_criterion_ids(
 ) -> frozenset[str]:
     if expression.operator == "criterion":
         return frozenset((expression.criterion_id,))
-    return frozenset(
-        criterion_id
-        for child in expression.children
-        for criterion_id in _expression_criterion_ids(child)
-    )
+    return frozenset(criterion_id for child in expression.children for criterion_id in _expression_criterion_ids(child))
 
 
 def _status_for(
@@ -245,9 +206,7 @@ def _authoritative_recheck_satisfied(
 ) -> bool:
     result = results.get(criterion_id)
     return bool(
-        result is not None
-        and result.status == CriterionStatus.SATISFIED
-        and result.authoritative_final_recheck
+        result is not None and result.status == CriterionStatus.SATISFIED and result.authoritative_final_recheck
     )
 
 
@@ -261,9 +220,7 @@ def _evaluate_outputs(
     for output in task_spec.required_outputs:
         result_key = output.result_key or output.output_id
         criterion = results.get(output.materialization_criterion_id)
-        criterion_status = (
-            criterion.status if criterion is not None else CriterionStatus.UNKNOWN
-        )
+        criterion_status = criterion.status if criterion is not None else CriterionStatus.UNKNOWN
         materialized = result_key in result_payload and result_payload[result_key] is not None
         binding_refs = tuple(
             source_bindings.get(

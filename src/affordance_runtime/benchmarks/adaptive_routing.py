@@ -411,11 +411,6 @@ def run_adaptive_routing_case(
             criterion_id="criterion:ablation-saved",
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=(
-            ("visual appearance and saved state",)
-            if visual_primary or profile_forces_visual or case_id == "dom_failure_fallback"
-            else ("independent saved state",)
-        ),
         capability_ceiling=("settings.write",),
         source_request_ref="m8.5-ablation",
     )

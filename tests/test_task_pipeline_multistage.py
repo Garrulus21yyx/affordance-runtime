@@ -174,7 +174,6 @@ class MultiStageIntentAndPlanModel:
                         "criterion_id": "criterion:confirmed",
                         "requirement_refs": ["requirement:effect:2"],
                     },
-                    "evidence_requirements": ["fresh state observations"],
                 }
             )
         if output_schema.__name__ == "TaskPlanProviderResponse":

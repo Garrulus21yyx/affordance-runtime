@@ -151,7 +151,6 @@ def _task() -> TaskSpec:
             criterion_id="criterion:effect-present",
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=("fresh saved-state evidence",),
         source_request_ref="request-1",
     )
 

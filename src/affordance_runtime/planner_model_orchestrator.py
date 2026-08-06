@@ -150,8 +150,7 @@ class PlannerModelOrchestrator:
                 break
             if repair_attempt >= max_candidate_repairs:
                 raise StructuredModelError(
-                    f"planner candidate failed semantic validation: "
-                    f"{repair_issue}:{candidate.action_kind.value}"
+                    f"planner candidate failed semantic validation: {repair_issue}:{candidate.action_kind.value}"
                 )
             repair_permitted, repair_targets = policy.repair_constraints(
                 context,
@@ -172,9 +171,7 @@ class PlannerModelOrchestrator:
                 if action_kind in repair_permitted:
                     repair_permitted = [action_kind]
                     repair_targets = (
-                        {action_kind: list(repair_targets[action_kind])}
-                        if action_kind in repair_targets
-                        else {}
+                        {action_kind: list(repair_targets[action_kind])} if action_kind in repair_targets else {}
                     )
             allowed_press_keys: tuple[str, ...] = ()
             allowed_text_values: tuple[str, ...] = ()
@@ -192,17 +189,13 @@ class PlannerModelOrchestrator:
                 required_key = policy.required_slider_direction(candidate, context)
                 if required_key and candidate.target_affordance_id:
                     repair_permitted = [PlannerActionKind.PRESS_KEY.value]
-                    repair_targets = {
-                        PlannerActionKind.PRESS_KEY.value: [candidate.target_affordance_id]
-                    }
+                    repair_targets = {PlannerActionKind.PRESS_KEY.value: [candidate.target_affordance_id]}
                     allowed_press_keys = (required_key,)
             if repair_issue == "proposal_autocomplete_requires_prefix":
                 required_prefix = policy.autocomplete_prefix(context)
                 if required_prefix and candidate.target_affordance_id:
                     repair_permitted = [PlannerActionKind.TYPE_TEXT.value]
-                    repair_targets = {
-                        PlannerActionKind.TYPE_TEXT.value: [candidate.target_affordance_id]
-                    }
+                    repair_targets = {PlannerActionKind.TYPE_TEXT.value: [candidate.target_affordance_id]}
                     allowed_text_values = (required_prefix,)
             repair_context = {
                 "validation_error_types": repair_issue.split(","),
@@ -297,9 +290,7 @@ def compatible_target_ids(context: PlannerContext) -> dict[str, list[str]]:
     if not isinstance(rejected_target_id, str) or not rejected_target_id:
         return targets
     return {
-        action_kind: [
-            target_id for target_id in target_ids if target_id != rejected_target_id
-        ]
+        action_kind: [target_id for target_id in target_ids if target_id != rejected_target_id]
         for action_kind, target_ids in targets.items()
     }
 
@@ -318,9 +309,7 @@ def restrict_targets_to_active_subgoal(
     active_tokens = _semantic_target_tokens(active_subgoal)
     declared_action_family = context.active_subgoal_action_family.strip()
     active_action_kinds = (
-        frozenset({declared_action_family})
-        if declared_action_family
-        else _active_subgoal_action_kinds(active_subgoal)
+        frozenset({declared_action_family}) if declared_action_family else _active_subgoal_action_kinds(active_subgoal)
     )
     return {
         action_kind: [
@@ -343,16 +332,12 @@ def _active_subgoal_action_kinds(active_subgoal: str) -> frozenset[str]:
     """Return only action families stated unambiguously by the active step."""
 
     tokens = set(_semantic_target_tokens(active_subgoal))
-    if tokens.intersection({"type", "fill", "input", "write"}) or (
-        "enter" in tokens and "press" not in tokens
-    ):
+    if tokens.intersection({"type", "fill", "input", "write"}) or ("enter" in tokens and "press" not in tokens):
         return frozenset({PlannerActionKind.TYPE_TEXT.value})
     if tokens.intersection({"drag", "drop"}):
         return frozenset({PlannerActionKind.DRAG.value})
     if tokens.intersection({"select", "choose"}):
-        return frozenset(
-            {PlannerActionKind.SELECT_OPTION.value, PlannerActionKind.ACTIVATE.value}
-        )
+        return frozenset({PlannerActionKind.SELECT_OPTION.value, PlannerActionKind.ACTIVATE.value})
     if tokens.intersection({"click", "press", "open", "activate"}):
         return frozenset(
             {
@@ -417,9 +402,17 @@ def semantic_text_input_constraint(
     target = next((item for item in context.affordances if item.id == target_id), None)
     if target is None or target.state.get("enabled") is False:
         return None
-    raw_constraints = context.task_spec.get("semantic_value_constraints")
-    if not isinstance(raw_constraints, list):
+    raw_requirements = context.task_spec.get("requirements")
+    if not isinstance(raw_requirements, list):
         return None
+    raw_constraints = tuple(
+        item.get("payload")
+        for item in raw_requirements
+        if isinstance(item, dict)
+        and isinstance(item.get("payload"), dict)
+        and item["payload"].get("kind") == "constraint"
+        and item["payload"].get("relation") in {"prefix", "exact"}
+    )
     for relation in ("prefix", "exact"):
         values = tuple(
             dict.fromkeys(

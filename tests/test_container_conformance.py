@@ -119,13 +119,6 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
                 criterion_id="criterion:conformance",
                 requirement_refs=("requirement:effect:1",),
             ),
-            evidence_requirements=(
-                "visual appearance and oracle evidence"
-                if surface == "visual"
-                else "device property and oracle evidence"
-                if surface == "wot"
-                else "structural text and oracle evidence",
-            ),
             capability_ceiling=(CONFORMANCE_CAPABILITY,),
             source_request_ref="conformance-test",
         )
@@ -184,7 +177,6 @@ def test_conformance_planner_consumes_canonical_request() -> None:
             criterion_id="criterion:conformance",
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=("oracle evidence",),
         capability_ceiling=(CONFORMANCE_CAPABILITY,),
         source_request_ref="conformance-request-source",
     )

@@ -359,7 +359,6 @@ def test_browsergym_policy_planner_projects_request_without_changing_policy_requ
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("target",)),
         success=_task_success("requirement:effect:1"),
-        evidence_requirements=("browsergym evidence",),
         source_request_ref="browsergym-request-source",
     )
 
@@ -431,7 +430,6 @@ class GeneralistClickModel:
                         "criterion_id": "criterion:target-activated",
                         "requirement_refs": ["requirement:effect:1"],
                     },
-                    "evidence_requirements": ["fresh post-action state"],
                     "task_structure": "flat",
                 }
             )

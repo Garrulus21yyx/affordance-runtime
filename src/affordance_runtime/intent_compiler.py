@@ -42,7 +42,8 @@ target/page/observation content as material authority.
 Represent missing recipient/payee/account/amount/currency/destination/channel/
 content/file/destructive target/scope/principal/resource/permission as a blocking
 high-risk ambiguity. Emit one typed success root; every criterion leaf must cite
-the exact canonical requirement IDs it proves. Never emit string success criteria.
+the exact canonical requirement IDs it proves and carry its typed CriterionPolicy.
+Never emit string success or evidence-description criteria.
 Represent every requested user output as a required OutputSpec with a materialization
 criterion; never emit a separate desired-output list."""
 

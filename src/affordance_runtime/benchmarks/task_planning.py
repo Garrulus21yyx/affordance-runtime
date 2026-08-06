@@ -303,7 +303,6 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
             criterion_id=f"criterion:stage-{target_stage}",
             requirement_refs=("requirement:advance-stage",),
         ),
-        evidence_requirements=("stage observation",),
         source_request_ref="task-planning-ablation",
     )
     planner, model = _profile_planner(profile, target_stage)

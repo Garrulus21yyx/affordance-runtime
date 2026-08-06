@@ -710,7 +710,6 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
             criterion_id="criterion:surface-saved",
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=("independent saved metadata",),
         source_request_ref=f"g5-rollout:{revision}",
     )
     result = compose_run_coordinator(
@@ -769,7 +768,6 @@ def _run_compatibility_pair(
                 criterion_id="criterion:disclosure-expanded",
                 requirement_refs=("requirement:effect:1",),
             ),
-            evidence_requirements=("expanded metadata",),
             source_request_ref=f"g5-rollout:{revision}",
         )
         result = compose_run_coordinator(
@@ -825,7 +823,6 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
             criterion_id="criterion:provider-recovered",
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=("owning-port recovery receipt",),
         source_request_ref=f"g5-rollout:{revision}",
     )
     result = compose_run_coordinator(

@@ -323,7 +323,7 @@ def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
         "preference_refs": list(task_spec.preference_refs),
         "forbidden_effect_refs": list(task_spec.forbidden_effect_refs),
         "capability_ceiling": list(task_spec.capability_ceiling),
-        "success": task_spec.success.model_dump(mode="json") if task_spec.success else None,
+        "success": task_spec.success.model_dump(mode="json"),
         "required_outputs": [item.model_dump(mode="json") for item in task_spec.required_outputs],
         "risk_policy": task_spec.risk_policy.model_dump(mode="json") if task_spec.risk_policy else None,
         "source_envelope_ref": task_spec.source_envelope_ref,

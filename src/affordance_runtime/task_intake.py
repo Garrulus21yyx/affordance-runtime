@@ -240,8 +240,6 @@ class TaskSpec(StrictModel):
     constraint_criterion_ids: tuple[str, ...] = ()
     external_effect_criterion_ids: tuple[str, ...] = ()
     final_recheck_criterion_ids: tuple[str, ...] = ()
-    semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
-    evidence_requirements: tuple[str, ...] = ()
     source_request_ref: str = Field(min_length=1)
     source_envelope_ref: str = ""
     source_binding_digest: str = ""
@@ -284,6 +282,28 @@ class TaskSpec(StrictModel):
         role_ref_sets = [set(refs) for _, refs, _ in role_checks]
         if any(left & right for index, left in enumerate(role_ref_sets) for right in role_ref_sets[index + 1 :]):
             raise ValueError("task semantic role refs must be mutually exclusive")
+        canonical_role_refs = (
+            {
+                item.requirement_id
+                for item in self.requirements
+                if item.payload.kind == "effect" and item.payload.relation != "forbidden"
+            },
+            {item.requirement_id for item in self.requirements if item.payload.kind == "constraint"},
+            {item.requirement_id for item in self.requirements if item.payload.kind == "preference"},
+            {
+                item.requirement_id
+                for item in self.requirements
+                if item.payload.kind == "effect" and item.payload.relation == "forbidden"
+            },
+        )
+        supplied_role_refs = (
+            set(self.allowed_effect_refs),
+            set(self.hard_constraint_refs),
+            set(self.preference_refs),
+            set(self.forbidden_effect_refs),
+        )
+        if supplied_role_refs != canonical_role_refs:
+            raise ValueError("every canonical role requirement must appear exactly in its matching ref container")
         binding_ids = tuple(item.binding_id for item in self.inputs)
         if len(binding_ids) != len(set(binding_ids)):
             raise ValueError("task input binding ids must be unique")

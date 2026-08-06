@@ -840,13 +840,13 @@ def _current_state_availability_task() -> TaskSpec:
                 source_anchor_refs=("current-state-availability-request:whole_request",),
             ),
         ),
+        allowed_effect_refs=("requirement:submit-available",),
         success=SuccessExpression(
             expression_id="success:submit-available",
             operator="criterion",
             criterion_id="criterion:submit-available",
             requirement_refs=("requirement:submit-available",),
         ),
-        evidence_requirements=("current submit button observation",),
         capability_ceiling=(),
         source_request_ref="current-state-availability-request",
     )
@@ -1283,7 +1283,6 @@ def _semantic_task() -> TaskSpec:
             criterion_id="criterion:task-success",
             requirement_refs=("requirement:test",),
         ),
-        evidence_requirements=("saved observation",),
         source_request_ref="semantic-request",
     )
 
@@ -1552,7 +1551,6 @@ class _PipelineIntentModel:
                     criterion_id="criterion:task-success",
                     requirement_refs=("requirement:effect:1",),
                 ).model_dump(mode="json"),
-                "evidence_requirements": ["saved observation"],
             }
         )
 

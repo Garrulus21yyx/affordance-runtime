@@ -13,12 +13,13 @@ from affordance_runtime.integrations.task_api import (
     TaskRuntimeService,
     TaskToolAdapter,
 )
+from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import (
     OperationClass,
-    TaskSpec,
-    canonical_effect_requirement_refs,
-    canonical_effect_requirements,
+    RequestedEffect,
+    UserRequest,
 )
+from affordance_runtime.task_spec_authority import MinimalIntentProposal, TaskSpecAuthority
 from affordance_runtime.verification.contracts import SuccessExpression
 
 
@@ -148,26 +149,34 @@ def test_task_adapter_async_execution_keeps_event_loop_interface() -> None:
     assert value["status"] == "success"
 
 
-def _task_spec(revision: int, *, objective: str = "Update settings") -> TaskSpec:
-    return TaskSpec(
-        task_id="clarify-run",
+def _admitted_task(revision: int, *, objective: str = "Update settings"):
+    request = UserRequest(request_id="request-clarify", raw_text=objective)
+    envelope = SourceEnvelopeBuilder().build(request)
+    result = TaskSpecAuthority().admit(
+        request,
+        envelope,
+        MinimalIntentProposal(
+            objective=objective,
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="settings",
+                    capability="settings.write",
+                    source_ref=envelope.whole_request_anchor.anchor_id,
+                ),
+            ),
+            success=SuccessExpression(
+                expression_id="success:settings",
+                operator="criterion",
+                criterion_id="criterion:settings",
+                requirement_refs=("requirement:effect:1",),
+            ),
+        ),
         revision=revision,
-        objective=objective,
-        operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(
-            ("settings",), OperationClass.REVERSIBLE_WRITE, "request-clarify", ("settings.write",)
-        ),
-        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
-        capability_ceiling=("settings.write",),
-        success=SuccessExpression(
-            expression_id="success:settings",
-            operator="criterion",
-            criterion_id="criterion:settings",
-            requirement_refs=("requirement:effect:1",),
-        ),
-        source_request_ref="request-clarify",
-        created_at_s=1.0,
+        task_id="clarify-run",
     )
+    assert result.task_spec is not None
+    return result
 
 
 def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision() -> None:
@@ -177,6 +186,7 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
         )
     )
     adapter = TaskToolAdapter(service)
+    initial = _admitted_task(1)
     submitted = adapter.call(
         "gui_submit_task",
         {
@@ -185,8 +195,8 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
             "goal": "Update settings",
             "target": "settings",
             "capabilities": ["settings.write"],
-            "task_spec": _task_spec(1).model_dump(mode="json"),
-            "task_spec_admission_digest": _task_spec(1).identity,
+            "task_spec": initial.task_spec.model_dump(mode="json"),
+            "task_spec_admission_receipt": initial.admission_receipt,
         },
     )
     assert submitted["request"]["task_spec"]["revision"] == 1
@@ -197,16 +207,17 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
             "gui_revise_task",
             {
                 "run_id": "clarify-run",
-                "task_spec": _task_spec(1).model_dump(mode="json"),
-                "task_spec_admission_digest": _task_spec(1).identity,
+                "task_spec": initial.task_spec.model_dump(mode="json"),
+                "task_spec_admission_receipt": initial.admission_receipt,
             },
         )
+    revised_admission = _admitted_task(2, objective="Update the personal settings profile")
     revised = adapter.call(
         "gui_revise_task",
         {
             "run_id": "clarify-run",
-            "task_spec": _task_spec(2, objective="Update the personal settings profile").model_dump(mode="json"),
-            "task_spec_admission_digest": _task_spec(2, objective="Update the personal settings profile").identity,
+            "task_spec": revised_admission.task_spec.model_dump(mode="json"),
+            "task_spec_admission_receipt": revised_admission.admission_receipt,
         },
     )
     assert revised["status"] == "queued"
@@ -215,24 +226,26 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
 
 
 def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
+    admission = _admitted_task(1)
     request = TaskRequest(
         run_id="clarify-run",
         scenario="settings",
         goal="Update settings",
         target="settings",
-        task_spec=_task_spec(1),
-        task_spec_admission_digest=_task_spec(1).identity,
+        task_spec=admission.task_spec,
+        task_spec_admission_receipt=admission.admission_receipt,
     )
 
     assert request.capabilities == []
 
-    with pytest.raises(ValueError, match="TaskSpecAuthority admission digest"):
+    with pytest.raises(ValueError, match="TaskSpecAuthority admission receipt"):
         TaskRequest(
             run_id="clarify-run",
             scenario="settings",
             goal="Update settings",
             target="settings",
-            task_spec=_task_spec(1).model_dump(mode="json"),
+            task_spec=admission.task_spec.model_dump(mode="json"),
+            task_spec_admission_receipt=admission.task_spec.identity,
         )
 
     with pytest.raises(ValueError, match="grants exceed"):
@@ -242,6 +255,6 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
             goal="Update settings",
             target="settings",
             capabilities=["admin.superuser"],
-            task_spec=_task_spec(1),
-            task_spec_admission_digest=_task_spec(1).identity,
+            task_spec=admission.task_spec,
+            task_spec_admission_receipt=admission.admission_receipt,
         )

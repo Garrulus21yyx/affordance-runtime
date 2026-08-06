@@ -455,7 +455,6 @@ def run_scenario(
             allowed_effect_refs=canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits")),
             success=pricing_success_expression(),
             required_outputs=pricing_required_outputs(),
-            evidence_requirements=("post-action DOM evidence for each pricing plan",),
             source_request_ref="reference-cli",
         )
     elif loaded_profile is not None:
@@ -510,7 +509,6 @@ def run_scenario(
                 else _scenario_success(profile_requirement_id, scenario)
             ),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
-            evidence_requirements=("independent post-action evidence",),
             capability_ceiling=profile_capabilities,
             source_request_ref="reference-cli-accepted-profile",
         )
@@ -566,7 +564,6 @@ def run_scenario(
                 else _scenario_success(default_requirement_id, scenario)
             ),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
-            evidence_requirements=("independent post-action evidence",),
             capability_ceiling=default_capabilities,
             source_request_ref="reference-cli",
         )

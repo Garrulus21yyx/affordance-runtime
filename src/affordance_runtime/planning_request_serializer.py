@@ -161,7 +161,7 @@ def serialize_task_planning_request(request: TaskPlanningRequest) -> dict[str, o
             "preference_refs": list(task.preference_refs),
             "forbidden_effect_refs": list(task.forbidden_effect_refs),
             "capability_ceiling": list(task.capability_ceiling),
-            "success": task.success.model_dump(mode="json") if task.success else None,
+            "success": task.success.model_dump(mode="json"),
             "required_outputs": [item.model_dump(mode="json") for item in task.required_outputs],
             "risk_policy": (task.risk_policy.model_dump(mode="json") if task.risk_policy else None),
             "source_envelope_ref": task.source_envelope_ref,

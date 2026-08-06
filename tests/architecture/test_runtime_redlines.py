@@ -421,8 +421,6 @@ def test_task_spec_v2_has_one_canonical_field_set() -> None:
         "constraint_criterion_ids",
         "external_effect_criterion_ids",
         "final_recheck_criterion_ids",
-        "semantic_value_constraints",
-        "evidence_requirements",
         "source_request_ref",
         "source_envelope_ref",
         "source_binding_digest",

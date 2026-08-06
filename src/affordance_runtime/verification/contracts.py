@@ -123,6 +123,7 @@ class SuccessExpression(_FrozenModel):
     operator: Literal["criterion", "all_of", "any_of", "not"]
     criterion_id: str = ""
     requirement_refs: tuple[str, ...] = ()
+    policy: CriterionPolicy | None = None
     children: tuple[SuccessExpression, ...] = ()
 
     @model_validator(mode="after")
@@ -136,11 +137,15 @@ class SuccessExpression(_FrozenModel):
                 raise ValueError("criterion expression requirement_refs must be unique")
             if self.children:
                 raise ValueError("criterion expression cannot have children")
+            if self.policy is None:
+                object.__setattr__(self, "policy", CriterionPolicy())
             return self
         if self.criterion_id:
             raise ValueError("composite expression cannot carry criterion_id")
         if self.requirement_refs:
             raise ValueError("composite expression cannot carry requirement_refs")
+        if self.policy is not None:
+            raise ValueError("composite expression cannot carry criterion policy")
         if self.operator == "not":
             if len(self.children) != 1:
                 raise ValueError("not expression requires exactly one child")

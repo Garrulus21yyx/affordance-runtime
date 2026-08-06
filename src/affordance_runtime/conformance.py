@@ -259,7 +259,6 @@ def run_cross_surface_conformance(
                     criterion_id="criterion:shared-state-enabled",
                     requirement_refs=("requirement:effect:1",),
                 ),
-                evidence_requirements=("independent oracle evidence",),
                 capability_ceiling=(CONFORMANCE_CAPABILITY,),
                 source_request_ref="conformance",
             ),

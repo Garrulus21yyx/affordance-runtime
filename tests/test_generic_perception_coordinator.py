@@ -216,7 +216,6 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
             criterion_id="criterion:activated",
             requirement_refs=("requirement:activate-canvas",),
         ),
-        evidence_requirements=("visual appearance and post-action page state",),
         source_request_ref="test-request",
     )
 
@@ -409,7 +408,6 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
             criterion_id="criterion:saved",
             requirement_refs=("requirement:save-changes",),
         ),
-        evidence_requirements=("current page state",),
         capability_ceiling=("settings.write",),
         source_request_ref="test-request",
     )
@@ -528,7 +526,6 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
             criterion_id="criterion:activate-point",
             requirement_refs=("requirement:activate-point",),
         ),
-        evidence_requirements=("visual appearance and spatial position",),
         source_request_ref="test-request",
     )
 

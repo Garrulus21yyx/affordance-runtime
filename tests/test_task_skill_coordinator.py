@@ -410,7 +410,6 @@ def _task(
             criterion_id="criterion:profile-complete",
             requirement_refs=("requirement:effect:1", "requirement:effect:2"),
         ),
-        evidence_requirements=("independent profile state",),
         capability_ceiling=((capability,) if capability else ()),
         source_request_ref="test",
     )

@@ -14,7 +14,6 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     RiskLevel,
-    Surface,
     VerifierSpec,
 )
 from affordance_runtime.executors import VisualExecutor, WotExecutor
@@ -221,13 +220,6 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
                 requirement_refs=("requirement:effect:1",),
             ),
             capability_ceiling=("shared.write",),
-            evidence_requirements=(
-                "visual appearance"
-                if affordance.surface == Surface.VISUAL
-                else "device property"
-                if affordance.surface == Surface.WOT
-                else "structural text",
-            ),
             source_request_ref="surface-test",
         )
         requirements = ContractRequirements(

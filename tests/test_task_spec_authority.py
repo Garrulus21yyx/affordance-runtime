@@ -12,6 +12,8 @@ from affordance_runtime.task_intake import (
     CompilationStatus,
     OperationClass,
     RequestedEffect,
+    SemanticValueConstraint,
+    SemanticValueRelation,
     TaskRequirement,
     TaskRiskPolicy,
     TaskSemanticPayload,
@@ -59,6 +61,10 @@ def test_minimal_proposal_requires_typed_success_and_has_no_string_semantic_fall
     with pytest.raises(ValidationError, match="desired_outputs"):
         MinimalIntentProposal.model_validate(
             {**base, "success": _success("requirement:effect:1"), "desired_outputs": ("settings URL",)}
+        )
+    with pytest.raises(ValidationError, match="evidence_requirements"):
+        MinimalIntentProposal.model_validate(
+            {**base, "success": _success("requirement:effect:1"), "evidence_requirements": ("DOM proof",)}
         )
 
 
@@ -133,6 +139,76 @@ def test_taskspec_rejects_inconsistent_operation_capability_and_risk_aggregates(
         )
 
 
+@pytest.mark.parametrize(
+    ("kind", "relation", "operation"),
+    (
+        ("effect", "", OperationClass.REVERSIBLE_WRITE),
+        ("effect", "forbidden", OperationClass.READ_ONLY),
+        ("constraint", "", OperationClass.READ_ONLY),
+        ("preference", "", OperationClass.READ_ONLY),
+    ),
+)
+def test_taskspec_rejects_orphan_canonical_role_requirement(
+    kind: str,
+    relation: str,
+    operation: OperationClass,
+) -> None:
+    requirement = TaskRequirement(
+        requirement_id=f"requirement:{kind}:{relation or 'required'}",
+        payload=TaskSemanticPayload(
+            kind=kind,  # type: ignore[arg-type]
+            subject="semantic role",
+            relation=relation,
+            operation_class=(operation if kind == "effect" and relation != "forbidden" else None),
+        ),
+        source_anchor_refs=("authority-request:whole_request",),
+    )
+    with pytest.raises(ValidationError, match="every canonical role requirement"):
+        TaskSpec(
+            task_id=f"orphan:{kind}:{relation}",
+            revision=1,
+            objective="validate complete role coverage",
+            operation_class=operation,
+            requirements=(requirement,),
+            success=_success(requirement.requirement_id),
+            source_request_ref="authority-request",
+        )
+
+
+def test_authority_folds_semantic_value_constraint_into_canonical_constraint_requirement() -> None:
+    request, envelope = _request_and_envelope()
+    proposal = MinimalIntentProposal(
+        objective="Open account settings starting with Acc",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="account settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
+        semantic_value_constraints=(
+            SemanticValueConstraint(
+                relation=SemanticValueRelation.PREFIX,
+                value="Acc",
+                target="settings name",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
+        success=_success("requirement:effect:1"),
+    )
+
+    result = TaskSpecAuthority().admit(request, envelope, proposal)
+
+    assert result.task_spec is not None
+    constraint = next(item for item in result.task_spec.requirements if item.payload.kind == "constraint")
+    assert constraint.payload.relation == "prefix"
+    assert constraint.payload.value == "Acc"
+    assert result.task_spec.hard_constraint_refs == (constraint.requirement_id,)
+    assert result.task_spec.success.policy is not None
+    assert "semantic_value_constraints" not in TaskSpec.model_fields
+    assert "evidence_requirements" not in TaskSpec.model_fields
+
+
 def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
     request, envelope = _request_and_envelope()
     proposal = MinimalIntentProposal(
@@ -156,7 +232,8 @@ def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
     assert not hasattr(result.task_spec, "source_claims")
     assert not hasattr(result.task_spec, "obligations")
     assert result.task_spec.requirements[0].requirement_id == "requirement:effect:1"
-    assert result.admission_digest == result.task_spec.identity
+    assert result.admission_receipt.startswith("task-admission:v1:")
+    assert result.admission_receipt != result.task_spec.identity
 
 
 def test_authority_clarifies_success_leaf_with_unadmitted_requirement_ref() -> None:

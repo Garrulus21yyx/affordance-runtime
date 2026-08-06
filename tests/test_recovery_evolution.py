@@ -44,7 +44,6 @@ def test_recovery_fixture_planner_consumes_canonical_request() -> None:
             criterion_id="criterion:save",
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=("receipt evidence",),
         source_request_ref="recovery-request-source",
     )
 

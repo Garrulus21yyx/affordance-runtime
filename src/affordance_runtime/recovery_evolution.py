@@ -395,7 +395,6 @@ def _run_fixture(
                     criterion_id="criterion:recovery-effect-verified",
                     requirement_refs=("requirement:effect:1",),
                 ),
-                evidence_requirements=("receipt evidence",),
                 source_request_ref="recovery-evolution",
             )
         )

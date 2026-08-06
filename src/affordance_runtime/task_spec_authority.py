@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
+from threading import RLock
+from uuid import uuid4
 
 from pydantic import Field
 
@@ -46,7 +49,6 @@ class MinimalIntentProposal(StrictModel):
     constraint_criterion_ids: tuple[str, ...] = ()
     external_effect_criterion_ids: tuple[str, ...] = ()
     final_recheck_criterion_ids: tuple[str, ...] = ()
-    evidence_requirements: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
     material_bindings: tuple[MaterialBinding, ...] = ()
@@ -60,7 +62,7 @@ class TaskSpecAdmissionResult(StrictModel):
     request_id: str
     proposal: MinimalIntentProposal
     task_spec: TaskSpec | None = None
-    admission_digest: str = ""
+    admission_receipt: str = ""
     issues: tuple[CompilationIssue, ...] = ()
 
     @property
@@ -206,8 +208,6 @@ class TaskSpecAuthority:
             constraint_criterion_ids=proposal.constraint_criterion_ids,
             external_effect_criterion_ids=proposal.external_effect_criterion_ids,
             final_recheck_criterion_ids=proposal.final_recheck_criterion_ids,
-            semantic_value_constraints=proposal.semantic_value_constraints,
-            evidence_requirements=proposal.evidence_requirements,
             source_request_ref=request.request_id,
             source_envelope_ref=envelope.identity,
             source_binding_digest=self.material_binding_policy.binding_digest(envelope, proposal.material_bindings),
@@ -218,7 +218,7 @@ class TaskSpecAuthority:
             request_id=request.request_id,
             proposal=proposal,
             task_spec=task_spec,
-            admission_digest=task_spec.identity,
+            admission_receipt=_issue_admission_receipt(task_spec.identity),
         )
 
     def _validate(
@@ -351,6 +351,19 @@ def _canonical_requirements(
     )
     rows.extend(
         TaskRequirement(
+            requirement_id=f"requirement:value-constraint:{index}",
+            payload=TaskSemanticPayload(
+                kind="constraint",
+                subject=constraint.target or "input_value",
+                relation=constraint.relation.value,
+                value=constraint.value,
+            ),
+            source_anchor_refs=(constraint.source_ref,),
+        )
+        for index, constraint in enumerate(proposal.semantic_value_constraints, start=1)
+    )
+    rows.extend(
+        TaskRequirement(
             requirement_id=f"requirement:preference:{index}",
             payload=TaskSemanticPayload(kind="preference", subject=value),
             source_anchor_refs=(whole,),
@@ -445,3 +458,26 @@ def _canonical_binding_issues(
             )
         )
     return tuple(issues)
+
+
+_ADMISSION_RECEIPT_LIMIT = 1_024
+_ADMISSION_RECEIPTS: OrderedDict[str, str] = OrderedDict()
+_ADMISSION_RECEIPT_LOCK = RLock()
+
+
+def _issue_admission_receipt(task_spec_identity: str) -> str:
+    receipt = f"task-admission:v1:{uuid4().hex}"
+    with _ADMISSION_RECEIPT_LOCK:
+        _ADMISSION_RECEIPTS[receipt] = task_spec_identity
+        _ADMISSION_RECEIPTS.move_to_end(receipt)
+        while len(_ADMISSION_RECEIPTS) > _ADMISSION_RECEIPT_LIMIT:
+            _ADMISSION_RECEIPTS.popitem(last=False)
+    return receipt
+
+
+def verify_task_spec_admission(task_spec: TaskSpec, receipt: str) -> bool:
+    """Verify an opaque receipt issued by this process's TaskSpecAuthority."""
+
+    with _ADMISSION_RECEIPT_LOCK:
+        admitted_identity = _ADMISSION_RECEIPTS.get(receipt)
+    return bool(receipt) and admitted_identity == task_spec.identity

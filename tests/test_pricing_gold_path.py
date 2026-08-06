@@ -164,7 +164,6 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         allowed_effect_refs=canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits")),
         success=pricing_success_expression(),
         required_outputs=pricing_required_outputs(),
-        evidence_requirements=("post-action DOM evidence for each plan",),
         source_request_ref="reference-test",
     )
 
@@ -212,13 +211,13 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
         objective="Reveal pricing",
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:reveal-pricing", "Reveal Pro and Enterprise pricing"),),
+        allowed_effect_refs=("requirement:reveal-pricing",),
         success=SuccessExpression(
             expression_id="success:reveal-pricing",
             operator="criterion",
             criterion_id="criterion:reveal-pricing",
             requirement_refs=("requirement:reveal-pricing",),
         ),
-        evidence_requirements=("structural pricing evidence",),
         source_request_ref="pricing-request-source",
     )
 
@@ -298,7 +297,6 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
                 criterion_id="criterion:reference-action",
                 requirement_refs=("requirement:reference-action",),
             ),
-            evidence_requirements=(f"{expected_label} evidence",),
             source_request_ref="reference-request-source",
         )
         request = PlanningRequestBuilder().build(

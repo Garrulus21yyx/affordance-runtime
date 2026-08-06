@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.task_intake import TaskSpec, task_effect_targets
+from affordance_runtime.task_spec_authority import verify_task_spec_admission
 
 
 class ServiceRunStatus(StrEnum):
@@ -34,7 +35,7 @@ class TaskRequest:
     constraints: dict[str, Any] = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
     task_spec: TaskSpec | None = None
-    task_spec_admission_digest: str = ""
+    task_spec_admission_receipt: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "constraints", freeze_json(self.constraints))
@@ -42,11 +43,11 @@ class TaskRequest:
         task_spec = TaskSpec.model_validate(self.task_spec) if isinstance(self.task_spec, dict) else self.task_spec
         object.__setattr__(self, "task_spec", task_spec)
         if task_spec is None:
-            if self.task_spec_admission_digest:
-                raise ValueError("TaskSpec admission digest requires a TaskSpec")
+            if self.task_spec_admission_receipt:
+                raise ValueError("TaskSpec admission receipt requires a TaskSpec")
             return
-        if self.task_spec_admission_digest != task_spec.identity:
-            raise ValueError("TaskRequest requires the TaskSpecAuthority admission digest")
+        if not verify_task_spec_admission(task_spec, self.task_spec_admission_receipt):
+            raise ValueError("TaskRequest requires a valid TaskSpecAuthority admission receipt")
         if task_spec.task_id != self.run_id:
             raise ValueError("TaskRequest run_id does not match TaskSpec task_id")
         if self.goal and self.goal != task_spec.objective:
@@ -64,7 +65,7 @@ class TaskRequest:
             "constraints": to_json_compatible(self.constraints),
             "capabilities": to_json_compatible(self.capabilities),
             "task_spec": None,
-            "task_spec_admission_digest": self.task_spec_admission_digest,
+            "task_spec_admission_receipt": self.task_spec_admission_receipt,
         }
         if self.task_spec is not None:
             value["task_spec"] = self.task_spec.model_dump(mode="json")
@@ -165,7 +166,7 @@ class TaskRuntimeService:
             view.updated_at_s = time()
             return view
 
-    def revise_task(self, run_id: str, task_spec: TaskSpec, admission_digest: str) -> RunView:
+    def revise_task(self, run_id: str, task_spec: TaskSpec, admission_receipt: str) -> RunView:
         with self._lock:
             view = self._get(run_id)
             if view.status != ServiceRunStatus.WAITING_CLARIFICATION:
@@ -177,8 +178,8 @@ class TaskRuntimeService:
                 raise ValueError("TaskSpec revision cannot change task_id")
             if task_spec.revision <= previous.revision:
                 raise ValueError("TaskSpec revision must increase")
-            if admission_digest != task_spec.identity:
-                raise ValueError("TaskSpec revision requires the TaskSpecAuthority admission digest")
+            if not verify_task_spec_admission(task_spec, admission_receipt):
+                raise ValueError("TaskSpec revision requires a valid TaskSpecAuthority admission receipt")
             view.request = replace(
                 view.request,
                 goal=task_spec.objective,
@@ -189,7 +190,7 @@ class TaskRuntimeService:
                     if capability in set(task_spec.capability_ceiling)
                 ],
                 task_spec=task_spec,
-                task_spec_admission_digest=admission_digest,
+                task_spec_admission_receipt=admission_receipt,
             )
             view.execution = None
             view.approval = None
@@ -319,7 +320,7 @@ class TaskToolAdapter:
             return self.service.revise_task(
                 str(arguments["run_id"]),
                 TaskSpec.model_validate(arguments["task_spec"]),
-                str(arguments.get("task_spec_admission_digest", "")),
+                str(arguments.get("task_spec_admission_receipt", "")),
             ).to_dict()
         if tool == "gui_cancel_task":
             return self.service.cancel(str(arguments["run_id"])).to_dict()

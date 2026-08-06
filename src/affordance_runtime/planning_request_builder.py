@@ -529,7 +529,5 @@ def _task_summary(task_spec: dict[str, object]) -> dict[str, object]:
         "risk_policy",
         "success",
         "required_outputs",
-        "semantic_value_constraints",
-        "evidence_requirements",
     )
     return {key: task_spec[key] for key in keys if key in task_spec}

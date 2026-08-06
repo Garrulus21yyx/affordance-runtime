@@ -579,7 +579,6 @@ def run_browsergym_episode(
             criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
             requirement_refs=("requirement:effect:1",),
         ),
-        evidence_requirements=("official reward and termination",),
         source_request_ref=f"browsergym:{task_id}:seed:{seed}",
     )
     try:
@@ -721,6 +720,20 @@ def run_browsergym_generalist_episode(
             },
         )
         proposal = resolve_awaitable(intent_compiler.propose(user_request, envelope, trace=intake_trace, parent=parent))
+        admitted_effect_refs = tuple(
+            effect.effect_id or f"requirement:effect:{index}"
+            for index, effect in enumerate(proposal.requested_effects, start=1)
+        )
+        proposal = proposal.model_copy(
+            update={
+                "success": SuccessExpression(
+                    expression_id="success:browsergym-official-grade",
+                    operator="criterion",
+                    criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
+                    requirement_refs=admitted_effect_refs,
+                )
+            }
+        )
         audit = SemanticAudit().evaluate(envelope, proposal)
         parent = intake_trace.add(
             "SemanticAuditEvaluated",
@@ -748,16 +761,7 @@ def run_browsergym_generalist_episode(
             issue_codes = ",".join(item.code for item in compilation.issues)
             raise ValueError(f"intent compilation {compilation.status.value}: {issue_codes}")
         episode_phase = "runtime"
-        task_spec = compilation.task_spec.model_copy(
-            update={
-                "success": SuccessExpression(
-                    expression_id="success:browsergym-official-grade",
-                    operator="criterion",
-                    criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
-                    requirement_refs=compilation.task_spec.allowed_effect_refs,
-                )
-            }
-        )
+        task_spec = compilation.task_spec
         perception_requirements = derive_perception_requirements(task_spec)
         task_planner = StrictTaskPlanner(model)
         choice_planner = StrictStepChoicePlanner(
