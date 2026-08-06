@@ -76,6 +76,13 @@ class CriterionPolicy:
         object.__setattr__(self, "allowed_source_kinds", tuple(self.allowed_source_kinds))
         if self.satisfaction == SatisfactionMode.ACTION_CAUSED and not self.causal_lineage_required:
             raise ValueError("ACTION_CAUSED policy requires causal lineage")
+        if self.validity == EvidenceValidityMode.RECENT_ACTION and self.satisfaction != SatisfactionMode.ACTION_CAUSED:
+            raise ValueError("RECENT_ACTION validity is only valid for ACTION_CAUSED policy")
+        if (
+            self.validity == EvidenceValidityMode.FINAL_RECHECK
+            and self.minimum_assurance != AssuranceLevel.AUTHORITATIVE
+        ):
+            raise ValueError("FINAL_RECHECK policy requires AUTHORITATIVE minimum assurance")
 
 
 def criterion_policy_digest(criterion_id: str, policy: CriterionPolicy) -> str:

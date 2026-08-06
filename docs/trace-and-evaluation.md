@@ -31,13 +31,19 @@ Each criterion leaf uses the minimum orthogonal policy:
 
 ```text
 SatisfactionMode     = STATE_HOLDS | ACTION_CAUSED
-EvidenceValidityMode = CURRENT_OBSERVATION | DURABLE | FINAL_RECHECK
+EvidenceValidityMode = CURRENT_OBSERVATION | RECENT_ACTION | DURABLE | FINAL_RECHECK
 AssuranceLevel       = WEAK | STRUCTURAL | AUTHORITATIVE
 ```
 
 Status is one of `SATISFIED`, `UNSATISFIED`, `UNKNOWN`, `STALE`, `CONFLICT`,
 `UNSUPPORTED`, or `ERROR`. No evidence means UNKNOWN; disabled evaluation never
 creates synthetic PASSED.
+
+`RECENT_ACTION` is valid only for `ACTION_CAUSED` with required causal lineage.
+It proves that a bounded Runtime-owned ActionOutcome caused an effect in the
+past; it never proves that the state still holds. Current state needs a separate
+`STATE_HOLDS + CURRENT_OBSERVATION` leaf. `FINAL_RECHECK` requires authoritative
+source, strength, and assurance.
 
 ## 4. Evidence locations
 

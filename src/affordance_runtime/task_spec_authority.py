@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, ValidationError
 
 from affordance_runtime.material_binding_policy import MaterialBindingPolicy
 from affordance_runtime.material_contracts import MaterialBinding
@@ -30,6 +30,7 @@ from affordance_runtime.task_intake import (
     TaskStructure,
     UserRequest,
     operation_class_rank,
+    success_criterion_policies,
     success_criterion_requirement_bindings,
 )
 from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
@@ -196,7 +197,10 @@ class TaskSpecAuthority:
         )
         requirements = _canonical_requirements(proposal, effects, envelope)
         requirement_ids = {item.requirement_id for item in requirements}
-        canonical_issues = _canonical_binding_issues(proposal, requirements, effects)
+        try:
+            canonical_issues = _canonical_binding_issues(proposal, requirements, effects)
+        except (ValidationError, ValueError) as exc:
+            return _task_spec_validation_failure(request, proposal, exc)
         if canonical_issues:
             return TaskSpecAdmissionResult(
                 status=CompilationStatus.NEEDS_CLARIFICATION,
@@ -223,41 +227,49 @@ class TaskSpecAuthority:
             )
             for index, output in enumerate(proposal.required_outputs, start=1)
         )
-        criterion_source_bindings = _criterion_source_bindings(proposal, requirements, outputs)
-        task_spec = TaskSpec(
-            task_id=task_id or request.request_id,
-            revision=revision,
-            objective=proposal.objective.strip(),
-            operation_class=operation,
-            requirements=requirements,
-            inputs=inputs,
-            allowed_effect_refs=tuple(item.effect_id for item in effects),
-            hard_constraint_refs=tuple(
-                item.requirement_id for item in requirements if item.payload.kind == "constraint"
-            ),
-            preference_refs=tuple(item.requirement_id for item in requirements if item.payload.kind == "preference"),
-            forbidden_effect_refs=tuple(
-                item.requirement_id
-                for item in requirements
-                if item.payload.kind == "effect" and item.payload.subject in proposal.forbidden_effects
-            ),
-            capability_ceiling=_ordered_unique(item.capability for item in effects if item.capability),
-            risk_policy=TaskRiskPolicy(
-                maximum_operation_class=operation,
-                approval_required=operation in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
-                authoritative_final_recheck_required=operation
-                in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
-            ),
-            success=proposal.success,
-            required_outputs=outputs,
-            criterion_source_bindings=criterion_source_bindings,
-            constraint_criterion_ids=proposal.constraint_criterion_ids,
-            external_effect_criterion_ids=proposal.external_effect_criterion_ids,
-            final_recheck_criterion_ids=proposal.final_recheck_criterion_ids,
-            source_request_ref=request.request_id,
-            source_envelope_ref=envelope.identity,
-            source_binding_digest=self.material_binding_policy.binding_digest(envelope, proposal.material_bindings),
-        )
+        try:
+            criterion_source_bindings = _criterion_source_bindings(proposal, requirements, outputs)
+        except (ValidationError, ValueError) as exc:
+            return _task_spec_validation_failure(request, proposal, exc)
+        try:
+            task_spec = TaskSpec(
+                task_id=task_id or request.request_id,
+                revision=revision,
+                objective=proposal.objective.strip(),
+                operation_class=operation,
+                requirements=requirements,
+                inputs=inputs,
+                allowed_effect_refs=tuple(item.effect_id for item in effects),
+                hard_constraint_refs=tuple(
+                    item.requirement_id for item in requirements if item.payload.kind == "constraint"
+                ),
+                preference_refs=tuple(
+                    item.requirement_id for item in requirements if item.payload.kind == "preference"
+                ),
+                forbidden_effect_refs=tuple(
+                    item.requirement_id
+                    for item in requirements
+                    if item.payload.kind == "effect" and item.payload.subject in proposal.forbidden_effects
+                ),
+                capability_ceiling=_ordered_unique(item.capability for item in effects if item.capability),
+                risk_policy=TaskRiskPolicy(
+                    maximum_operation_class=operation,
+                    approval_required=operation in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
+                    authoritative_final_recheck_required=operation
+                    in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
+                ),
+                success=proposal.success,
+                required_outputs=outputs,
+                criterion_source_bindings=criterion_source_bindings,
+                constraint_criterion_ids=proposal.constraint_criterion_ids,
+                external_effect_criterion_ids=proposal.external_effect_criterion_ids,
+                final_recheck_criterion_ids=proposal.final_recheck_criterion_ids,
+                source_request_ref=request.request_id,
+                source_envelope_ref=envelope.identity,
+                source_binding_digest=self.material_binding_policy.binding_digest(envelope, proposal.material_bindings),
+            )
+        except (ValidationError, ValueError) as exc:
+            return _task_spec_validation_failure(request, proposal, exc)
         assert all(item.requirement_ref in requirement_ids for item in inputs)
         admitted_task = _issue_admitted_task(
             task_spec,
@@ -353,6 +365,25 @@ class TaskSpecAuthority:
 
 def _ordered_unique(values: object) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(item) for item in values if str(item)))
+
+
+def _task_spec_validation_failure(
+    request: UserRequest,
+    proposal: MinimalIntentProposal,
+    error: Exception,
+) -> TaskSpecAdmissionResult:
+    return TaskSpecAdmissionResult(
+        status=CompilationStatus.UNSUPPORTED,
+        request_id=request.request_id,
+        proposal=proposal,
+        issues=(
+            CompilationIssue(
+                code="task_spec_validation_failed",
+                field="task_spec",
+                detail=str(error),
+            ),
+        ),
+    )
 
 
 def _normalized(value: str) -> str:
@@ -457,7 +488,7 @@ def _criterion_source_bindings(
     rows: dict[str, list[str]] = {}
 
     def bind(criterion_id: str, refs: tuple[str, ...]) -> None:
-        if not criterion_id or not refs:
+        if not criterion_id or not refs or criterion_id in success_bindings:
             return
         bucket = rows.setdefault(criterion_id, [])
         bucket.extend(ref for ref in refs if ref not in bucket)
@@ -484,6 +515,7 @@ def _canonical_binding_issues(
     known = {item.requirement_id for item in requirements}
     effect_refs = {item.effect_id for item in effects}
     success_bindings = success_criterion_requirement_bindings(proposal.success)
+    success_policies = success_criterion_policies(proposal.success)
     issues: list[CompilationIssue] = []
     for criterion_id, refs in success_bindings.items():
         for ref in set(refs) - known:
@@ -494,15 +526,34 @@ def _canonical_binding_issues(
                     detail=ref,
                 )
             )
+    high_risk = any(
+        item.operation_class in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE} for item in effects
+    )
+    if high_risk and not proposal.external_effect_criterion_ids:
+        issues.append(CompilationIssue(code="high_risk_external_criterion_required", field="success"))
+    if high_risk and not proposal.final_recheck_criterion_ids:
+        issues.append(CompilationIssue(code="high_risk_final_recheck_required", field="success"))
+    if set(proposal.external_effect_criterion_ids) & set(proposal.final_recheck_criterion_ids):
+        issues.append(CompilationIssue(code="high_risk_criterion_roles_overlap", field="success"))
     for criterion_id in (*proposal.external_effect_criterion_ids, *proposal.final_recheck_criterion_ids):
         refs = success_bindings.get(criterion_id, ())
-        if not refs or (criterion_id in proposal.external_effect_criterion_ids and set(refs) - effect_refs):
+        if not refs or not set(refs).intersection(effect_refs):
             issues.append(
                 CompilationIssue(
                     code="criterion_requirement_binding_missing",
                     field=criterion_id,
                 )
             )
+    for criterion_id in proposal.external_effect_criterion_ids:
+        policy = success_policies.get(criterion_id)
+        if policy is not None and (policy.satisfaction.value != "action_caused" or not policy.causal_lineage_required):
+            issues.append(CompilationIssue(code="external_effect_policy_invalid", field=criterion_id))
+    for criterion_id in proposal.final_recheck_criterion_ids:
+        policy = success_policies.get(criterion_id)
+        if policy is not None and (
+            policy.validity.value != "final_recheck" or policy.minimum_assurance.value != "authoritative"
+        ):
+            issues.append(CompilationIssue(code="final_recheck_policy_invalid", field=criterion_id))
     if len(proposal.constraint_criterion_ids) > len(proposal.constraints):
         issues.append(
             CompilationIssue(

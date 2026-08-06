@@ -264,7 +264,7 @@ class ProgressStage:
             f"runtime-final-recheck:{canonical.snapshot_id}"
             if any(
                 item.source in {"external_evaluator", "independent_http_json", "api_state"}
-                and item.strength in {"strong", "authoritative"}
+                and item.strength == "authoritative"
                 for item in report.evidence
             )
             else ""

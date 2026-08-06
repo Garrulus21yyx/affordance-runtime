@@ -75,12 +75,55 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
-from affordance_runtime.verification.contracts import SuccessExpression
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceValidityMode,
+    SatisfactionMode,
+    SuccessExpression,
+)
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
     producer_id="task-skill-test-system2",
 )
+
+
+def _non_profile_success(operation: OperationClass) -> SuccessExpression:
+    if operation != OperationClass.IRREVERSIBLE:
+        return SuccessExpression(
+            expression_id="success:interface-observed",
+            operator="criterion",
+            criterion_id="criterion:interface-observed",
+            requirement_refs=("requirement:effect:1",),
+        )
+    return SuccessExpression(
+        expression_id="success:safety-smoke",
+        operator="all_of",
+        children=(
+            SuccessExpression(
+                expression_id="success:external-no-effect",
+                operator="criterion",
+                criterion_id="criterion:external-no-effect",
+                requirement_refs=("requirement:effect:1",),
+                policy=CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    validity=EvidenceValidityMode.RECENT_ACTION,
+                    causal_lineage_required=True,
+                ),
+            ),
+            SuccessExpression(
+                expression_id="success:final-no-effect",
+                operator="criterion",
+                criterion_id="criterion:final-no-effect",
+                requirement_refs=("requirement:effect:1",),
+                policy=CriterionPolicy(
+                    validity=EvidenceValidityMode.FINAL_RECHECK,
+                    minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+                ),
+            ),
+        ),
+    )
 
 
 @dataclass
@@ -746,17 +789,12 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 ("Account",), operation, f"replay:{category}", (capability,) if capability else ()
             ),
             allowed_effect_refs=canonical_effect_requirement_refs(("Account",)),
-            success=SuccessExpression(
-                expression_id="success:interface-observed",
-                operator="criterion",
-                criterion_id="criterion:interface-observed",
-                requirement_refs=("requirement:effect:1",),
-            ),
+            success=_non_profile_success(operation),
             external_effect_criterion_ids=(
                 ("criterion:external-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
             ),
             final_recheck_criterion_ids=(
-                ("criterion:external-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
+                ("criterion:final-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
             ),
             capability_ceiling=((capability,) if capability else ()),
             source_request_ref=f"replay:{category}",
@@ -768,6 +806,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             task_skill_runtime=_accepted_runtime(proposal.payload),
         ).run_sync(legacy_run_request(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
+        no_effect = world == ProfileWorld() and result.state.last_receipt is None
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
         replay_evidence.append(
             _bind_replay_report(
@@ -775,8 +814,8 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                     category,
                     result.run_id,
                     "non-profile",
-                    result.status == RuntimeStep.DONE and result.state.last_receipt is None,
-                    result.state.last_receipt is None,
+                    (no_effect if category == "safety_smoke" else result.status == RuntimeStep.DONE and no_effect),
+                    no_effect,
                     "TaskSkillActivated" in kinds,
                     False,
                     planner.calls,
@@ -918,17 +957,12 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 ("Account",), operation, f"replay:{category}", (capability,) if capability else ()
             ),
             allowed_effect_refs=canonical_effect_requirement_refs(("Account",)),
-            success=SuccessExpression(
-                expression_id="success:interface-observed",
-                operator="criterion",
-                criterion_id="criterion:interface-observed",
-                requirement_refs=("requirement:effect:1",),
-            ),
+            success=_non_profile_success(operation),
             external_effect_criterion_ids=(
                 ("criterion:external-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
             ),
             final_recheck_criterion_ids=(
-                ("criterion:external-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
+                ("criterion:final-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
             ),
             capability_ceiling=((capability,) if capability else ()),
             source_request_ref=f"replay:{category}",
@@ -949,7 +983,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                     category,
                     result.run_id,
                     "non-profile",
-                    result.status == RuntimeStep.DONE and no_effect,
+                    (no_effect if category == "safety_smoke" else result.status == RuntimeStep.DONE and no_effect),
                     no_effect,
                     "TaskSkillActivated" in kinds,
                     False,

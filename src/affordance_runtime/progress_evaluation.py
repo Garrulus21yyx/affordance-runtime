@@ -71,8 +71,7 @@ def _runtime_final_recheck_ref(
     if report is None:
         return ""
     authoritative = any(
-        item.source in {"external_evaluator", "independent_http_json", "api_state"}
-        and item.strength in {"strong", "authoritative"}
+        item.source in {"external_evaluator", "independent_http_json", "api_state"} and item.strength == "authoritative"
         for item in report.evidence
     )
     return f"runtime-final-recheck:{observation.snapshot_id}" if authoritative else ""

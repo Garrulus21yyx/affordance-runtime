@@ -37,7 +37,13 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.task_planner import PlanningRouter
 from affordance_runtime.task_spec_authority import AdmittedTaskSpec
-from affordance_runtime.verification.contracts import SuccessExpression
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceValidityMode,
+    SatisfactionMode,
+    SuccessExpression,
+)
 
 
 def _scenario_requirement(
@@ -59,6 +65,34 @@ def _scenario_requirement(
 
 
 def _scenario_success(requirement_id: str, scenario: str) -> SuccessExpression:
+    if scenario == "export":
+        return SuccessExpression(
+            expression_id="success:export",
+            operator="all_of",
+            children=(
+                SuccessExpression(
+                    expression_id="success:export-effect",
+                    operator="criterion",
+                    criterion_id="criterion:export-effect",
+                    requirement_refs=(requirement_id,),
+                    policy=CriterionPolicy(
+                        satisfaction=SatisfactionMode.ACTION_CAUSED,
+                        validity=EvidenceValidityMode.RECENT_ACTION,
+                        causal_lineage_required=True,
+                    ),
+                ),
+                SuccessExpression(
+                    expression_id="success:export-final",
+                    operator="criterion",
+                    criterion_id="criterion:export-final",
+                    requirement_refs=(requirement_id,),
+                    policy=CriterionPolicy(
+                        validity=EvidenceValidityMode.FINAL_RECHECK,
+                        minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+                    ),
+                ),
+            ),
+        )
     return SuccessExpression(
         expression_id=f"success:{scenario}",
         operator="criterion",
@@ -511,6 +545,8 @@ def run_scenario(
                 else _scenario_success(profile_requirement_id, scenario)
             ),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
+            external_effect_criterion_ids=(("criterion:export-effect",) if scenario == "export" else ()),
+            final_recheck_criterion_ids=(("criterion:export-final",) if scenario == "export" else ()),
             capability_ceiling=profile_capabilities,
             source_request_ref="reference-cli-accepted-profile",
         )
@@ -566,6 +602,8 @@ def run_scenario(
                 else _scenario_success(default_requirement_id, scenario)
             ),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
+            external_effect_criterion_ids=(("criterion:export-effect",) if scenario == "export" else ()),
+            final_recheck_criterion_ids=(("criterion:export-final",) if scenario == "export" else ()),
             capability_ceiling=default_capabilities,
             source_request_ref="reference-cli",
         )

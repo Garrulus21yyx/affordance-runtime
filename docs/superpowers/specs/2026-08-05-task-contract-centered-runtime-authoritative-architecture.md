@@ -773,6 +773,7 @@ SatisfactionMode:
 
 EvidenceValidityMode:
     CURRENT_OBSERVATION
+    RECENT_ACTION
     DURABLE
     FINAL_RECHECK
 
@@ -789,6 +790,7 @@ AssuranceLevel:
 | `STATE_HOLDS` | 当前状态为真即可；允许 initial observation 无动作完成 |
 | `ACTION_CAUSED` | 必须有 current task/ActionContract-bound ActionOutcome causality |
 | `CURRENT_OBSERVATION` | evidence 必须属于 current canonical observation epoch |
+| `RECENT_ACTION` | bounded Runtime-owned ActionOutcome 只证明过去动作确实造成过该效果；仅允许 `ACTION_CAUSED + causal_lineage_required`，不证明当前状态仍成立 |
 | `DURABLE` | artifact/resource/version/confirmation evidence 可跨 epoch，受明确 invalidation 约束 |
 | `FINAL_RECHECK` | terminal commit 前必须使用最新 authoritative external recheck |
 | `WEAK` | receipt、toast、model/heuristic；默认只做 diagnostic |
@@ -808,6 +810,8 @@ MODEL_SEMANTIC / HUMAN_CONFIRMATION
 WoT 三种 typed role 不可混用：`WOT_DESCRIPTION` 只提供 Thing identity、forms、operations 与 capability/grounding metadata；`WOT_PROPERTY_STATE` 提供带 freshness/resource identity 的 device-state evidence；`WOT_ACTION_RESULT` 是 contract-bound dispatch/causality outcome。Description 或 action receipt 都不能单独满足 state/task completion；high-risk external effect 仍需要 authoritative property/resource/transaction `FINAL_RECHECK` 或明确 human confirmation。
 
 Receipt 证明 executor 报告动作调用结果，不自动证明任何 criterion。Model evidence 默认不具备 AUTHORITATIVE assurance；purchase/send/delete/payment/account-change 等 high-risk external effect 必须 authoritative final recheck 或明确 human confirmation。
+
+需要同时证明“本次动作造成过效果”和“效果当前仍成立”时，TaskSpec 必须声明两个独立 leaf：`ACTION_CAUSED + RECENT_ACTION + causal_lineage_required` 与 `STATE_HOLDS + CURRENT_OBSERVATION`。禁止以旧 action fact 代替当前状态证据。`FINAL_RECHECK` policy 的 minimum assurance 必须为 `AUTHORITATIVE`，Runtime final-recheck identity 只接受 authoritative source/strength/assurance。
 
 ## 6. TaskPlan、StepSpec 与 TaskProgress
 
@@ -1378,6 +1382,7 @@ Runtime 可以在 initial `STATE_HOLDS` 已满足时无动作完成，不需要�
 
 ```text
 CURRENT_OBSERVATION → exact current epoch
+RECENT_ACTION       → bounded current-task ActionOutcome with exact contract/receipt/pre/post/effect lineage
 DURABLE            → durable record not invalidated
 FINAL_RECHECK       → latest authoritative external recheck
 ```

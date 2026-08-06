@@ -12,7 +12,14 @@ from typing import Iterable, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from affordance_runtime.material_contracts import MaterialBinding, MaterialEffectKind
-from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceValidityMode,
+    OutputSpec,
+    SatisfactionMode,
+    SuccessExpression,
+)
 
 
 class StrictModel(BaseModel):
@@ -354,6 +361,35 @@ class TaskSpec(StrictModel):
                 raise ValueError("TaskSpec approval policy cannot weaken canonical effect risk")
             if high_risk and not self.risk_policy.authoritative_final_recheck_required:
                 raise ValueError("TaskSpec final recheck policy cannot weaken canonical effect risk")
+        high_risk = self.operation_class in {
+            OperationClass.EXTERNAL_SIDE_EFFECT,
+            OperationClass.IRREVERSIBLE,
+        }
+        if high_risk:
+            if not self.external_effect_criterion_ids:
+                raise ValueError("high-risk TaskSpec requires external-effect criteria")
+            if not self.final_recheck_criterion_ids:
+                raise ValueError("high-risk TaskSpec requires final-recheck criteria")
+            if set(self.external_effect_criterion_ids) & set(self.final_recheck_criterion_ids):
+                raise ValueError("high-risk external-effect and final-recheck criteria must be distinct")
+            policies = success_criterion_policies(self.success)
+            for criterion_id in (*self.external_effect_criterion_ids, *self.final_recheck_criterion_ids):
+                refs = success_bindings.get(criterion_id, ())
+                if not refs or not set(refs).intersection(self.allowed_effect_refs):
+                    raise ValueError("high-risk criterion must be a success leaf bound to an allowed effect")
+            for criterion_id in self.external_effect_criterion_ids:
+                policy = policies.get(criterion_id)
+                if policy is None or (
+                    policy.satisfaction != SatisfactionMode.ACTION_CAUSED or not policy.causal_lineage_required
+                ):
+                    raise ValueError("external-effect criterion requires ACTION_CAUSED causal policy")
+            for criterion_id in self.final_recheck_criterion_ids:
+                policy = policies.get(criterion_id)
+                if policy is None or (
+                    policy.validity != EvidenceValidityMode.FINAL_RECHECK
+                    or policy.minimum_assurance != AssuranceLevel.AUTHORITATIVE
+                ):
+                    raise ValueError("final-recheck criterion requires FINAL_RECHECK and AUTHORITATIVE policy")
         return self
 
     @property
@@ -374,6 +410,22 @@ def success_criterion_requirement_bindings(expression: SuccessExpression) -> dic
             if previous is not None and previous != refs:
                 raise ValueError("success criterion identity cannot bind different requirements")
             rows[criterion_id] = refs
+    return rows
+
+
+def success_criterion_policies(expression: SuccessExpression) -> dict[str, CriterionPolicy]:
+    """Return the exact typed policy owned by every success leaf."""
+
+    if expression.operator == "criterion":
+        assert expression.policy is not None
+        return {expression.criterion_id: expression.policy}
+    rows: dict[str, CriterionPolicy] = {}
+    for child in expression.children:
+        for criterion_id, policy in success_criterion_policies(child).items():
+            previous = rows.get(criterion_id)
+            if previous is not None and previous != policy:
+                raise ValueError("success criterion identity cannot own different policies")
+            rows[criterion_id] = policy
     return rows
 
 

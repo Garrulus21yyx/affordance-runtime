@@ -1,13 +1,23 @@
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
+from affordance_runtime.contracts import Observation
 from affordance_runtime.material_contracts import (
     MaterialBinding,
     MaterialBindingKind,
     MaterialEffectKind,
     MaterialField,
 )
+from affordance_runtime.progress_evaluation import ProgressEvaluationService
 from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime_evidence import (
+    DurableEvidenceStore,
+    RecentActionFact,
+    RecentActionOutcomeEvidence,
+    RecentActionOutcomeEvidenceIndex,
+)
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder, SourceKind
 from affordance_runtime.task_intake import (
     CompilationStatus,
@@ -26,7 +36,20 @@ from affordance_runtime.task_spec_authority import (
     MinimalIntentProposal,
     TaskSpecAuthority,
 )
-from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceSourceKind,
+    EvidenceValidityMode,
+    OutputSpec,
+    SatisfactionMode,
+    SuccessExpression,
+)
+from affordance_runtime.verification.mechanical import (
+    VerificationEvidence,
+    VerificationReport,
+    VerificationStatus,
+)
 
 
 def _success(requirement_ref: str, criterion_id: str = "criterion:task-complete") -> SuccessExpression:
@@ -35,6 +58,36 @@ def _success(requirement_ref: str, criterion_id: str = "criterion:task-complete"
         operator="criterion",
         criterion_id=criterion_id,
         requirement_refs=(requirement_ref,),
+    )
+
+
+def _high_risk_success(requirement_ref: str) -> SuccessExpression:
+    return SuccessExpression(
+        expression_id="success:high-risk",
+        operator="all_of",
+        children=(
+            SuccessExpression(
+                expression_id="success:external-effect",
+                operator="criterion",
+                criterion_id="criterion:external-effect",
+                requirement_refs=(requirement_ref,),
+                policy=CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    validity=EvidenceValidityMode.RECENT_ACTION,
+                    causal_lineage_required=True,
+                ),
+            ),
+            SuccessExpression(
+                expression_id="success:final-recheck",
+                operator="criterion",
+                criterion_id="criterion:final-recheck",
+                requirement_refs=(requirement_ref,),
+                policy=CriterionPolicy(
+                    validity=EvidenceValidityMode.FINAL_RECHECK,
+                    minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+                ),
+            ),
+        ),
     )
 
 
@@ -68,6 +121,46 @@ def test_minimal_proposal_requires_typed_success_and_has_no_string_semantic_fall
         MinimalIntentProposal.model_validate(
             {**base, "success": _success("requirement:effect:1"), "evidence_requirements": ("DOM proof",)}
         )
+
+
+def test_authority_converts_invalid_success_policy_construction_to_typed_issue() -> None:
+    request, envelope = _request_and_envelope()
+    requirement_ref = "requirement:effect:1"
+    proposal = MinimalIntentProposal(
+        objective="Open account settings",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="account settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
+        success=SuccessExpression(
+            expression_id="success:conflicting-policy",
+            operator="all_of",
+            children=(
+                SuccessExpression(
+                    expression_id="success:conflicting-policy:weak",
+                    operator="criterion",
+                    criterion_id="criterion:duplicate",
+                    requirement_refs=(requirement_ref,),
+                    policy=CriterionPolicy(minimum_assurance=AssuranceLevel.WEAK),
+                ),
+                SuccessExpression(
+                    expression_id="success:conflicting-policy:structural",
+                    operator="criterion",
+                    criterion_id="criterion:duplicate",
+                    requirement_refs=(requirement_ref,),
+                    policy=CriterionPolicy(minimum_assurance=AssuranceLevel.STRUCTURAL),
+                ),
+            ),
+        ),
+    )
+
+    result = TaskSpecAuthority().admit(request=request, envelope=envelope, proposal=proposal)
+
+    assert result.status is CompilationStatus.UNSUPPORTED
+    assert tuple(issue.code for issue in result.issues) == ("task_spec_validation_failed",)
 
 
 def test_taskspec_rejects_semantic_role_mismatch_and_orphan_output_requirement() -> None:
@@ -348,7 +441,9 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
         objective=request.raw_text,
         requested_effects=(effect,),
         material_bindings=bindings,
-        success=_success("effect:send"),
+        success=_high_risk_success("effect:send"),
+        external_effect_criterion_ids=("criterion:external-effect",),
+        final_recheck_criterion_ids=("criterion:final-recheck",),
         required_outputs=(
             OutputSpec(
                 output_id="send-receipt",
@@ -357,6 +452,24 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
         ),
     )
 
+    incomplete = TaskSpecAuthority().admit(
+        request,
+        envelope,
+        proposal.model_copy(
+            update={
+                "success": _success("effect:send"),
+                "external_effect_criterion_ids": (),
+                "final_recheck_criterion_ids": (),
+            }
+        ),
+    )
+    assert incomplete.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert {item.code for item in incomplete.issues} >= {
+        "high_risk_external_criterion_required",
+        "high_risk_final_recheck_required",
+    }
+    assert incomplete.task_spec is None
+
     result = TaskSpecAuthority().admit(request, envelope, proposal)
 
     assert result.status == CompilationStatus.READY
@@ -364,6 +477,76 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
     assert not hasattr(result.task_spec, "material_bindings")
     assert tuple(item.binding_id for item in result.task_spec.inputs) == tuple(item.binding_id for item in bindings)
     assert all(item.material_binding_digest.startswith("sha256:") for item in result.task_spec.inputs)
+    assert result.task_spec.external_effect_criterion_ids == ("criterion:external-effect",)
+    assert result.task_spec.final_recheck_criterion_ids == ("criterion:final-recheck",)
+    assert not {
+        "criterion:external-effect",
+        "criterion:final-recheck",
+    }.intersection(item.criterion_id for item in result.task_spec.criterion_source_bindings)
+
+    recent = RecentActionOutcomeEvidenceIndex()
+    recent.append(
+        RecentActionOutcomeEvidence(
+            outcome_id="outcome:send",
+            contract_id="contract:send",
+            receipt_ref="receipt:send",
+            pre_observation_ref="snapshot:before-send",
+            post_observation_ref="snapshot:after-send",
+            effect_criterion_ids=("criterion:external-effect",),
+            evidence_refs=("evidence:send",),
+            effect_satisfied=True,
+            facts=(
+                RecentActionFact(
+                    subject_ref="effect:send",
+                    before_value=False,
+                    after_value=True,
+                    source_kind=EvidenceSourceKind.API_STATE,
+                    assurance=AssuranceLevel.AUTHORITATIVE,
+                    effect_criterion_ids=("criterion:external-effect",),
+                    evidence_refs=("evidence:send",),
+                    state_delta_id="delta:send",
+                ),
+            ),
+        )
+    )
+    observation = Observation(
+        "revision:after-send",
+        snapshot_id="snapshot:after-send",
+        metadata={"output_source_bindings": {"send-receipt": ["resource:send"]}},
+    )
+    report = VerificationReport(
+        VerificationStatus.PASSED,
+        [
+            VerificationEvidence(
+                verifier_kind="http_json",
+                target="effect:send",
+                passed=True,
+                source="api_state",
+                observed=True,
+                evidence_id="verification:send-final",
+                criterion_ids=("criterion:final-recheck", "criterion:send-receipt"),
+                environment_revision=observation.environment_revision,
+                snapshot_id=observation.snapshot_id,
+                strength="authoritative",
+            )
+        ],
+    )
+    completion = ProgressEvaluationService().evaluate_task_completion(
+        task_spec=result.task_spec,
+        state=SimpleNamespace(
+            current_contract=SimpleNamespace(id="contract:send"),
+            task_progress=SimpleNamespace(
+                recent_action_outcomes=recent,
+                durable_evidence=DurableEvidenceStore(),
+            ),
+            uncertain_external_effects=(),
+        ),
+        observation=observation,
+        report=report,
+        result={"send-receipt": {"id": "send:1"}},
+    )
+
+    assert completion is not None and completion.completed
     assert result.task_spec.required_outputs[0].requirement_ref == "requirement:output:1"
     output_requirement = next(
         item for item in result.task_spec.requirements if item.requirement_id == "requirement:output:1"

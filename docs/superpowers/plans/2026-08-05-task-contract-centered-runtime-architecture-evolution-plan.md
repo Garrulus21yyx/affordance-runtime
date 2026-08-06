@@ -401,11 +401,12 @@ Evidence validity 独立区分：
 
 ```text
 CURRENT_OBSERVATION
+RECENT_ACTION
 DURABLE
 FINAL_RECHECK
 ```
 
-assurance 只需 `WEAK / STRUCTURAL / AUTHORITATIVE`。旧证据只有在 `DURABLE` policy 允许且未失效时复用；`ACTION_CAUSED` 必须绑定 current task/ActionContract 的 ActionOutcome，`FINAL_RECHECK` 必须使用最新权威 recheck。
+assurance 只需 `WEAK / STRUCTURAL / AUTHORITATIVE`。旧证据只有在 `DURABLE` policy 允许且未失效时复用；`RECENT_ACTION` 只允许 `ACTION_CAUSED + causal_lineage_required`，并绑定 current task/ActionContract 的 bounded ActionOutcome。它只证明过去动作造成过效果，不证明当前状态仍成立；当前状态必须由独立的 `STATE_HOLDS + CURRENT_OBSERVATION` leaf 证明。`FINAL_RECHECK` 必须使用最新且 assurance 为 `AUTHORITATIVE` 的权威 recheck。
 
 ### 1.12 默认 SourceLedger 路径仍然过重
 
@@ -529,11 +530,11 @@ Task Planner 的 semantic authority 只能来自 TaskSpec；可选 SourceContext
 
 ```text
 SatisfactionMode     = STATE_HOLDS | ACTION_CAUSED
-EvidenceValidityMode = CURRENT_OBSERVATION | DURABLE | FINAL_RECHECK
+EvidenceValidityMode = CURRENT_OBSERVATION | RECENT_ACTION | DURABLE | FINAL_RECHECK
 AssuranceLevel       = WEAK | STRUCTURAL | AUTHORITATIVE
 ```
 
-并保存 allowed source kinds 与 `model_fallback_allowed`。source kind 属于 evidence policy，不扩张成 DOM/API/Visual × predicate 的 criterion 类型组合。Model evidence 默认不具备 AUTHORITATIVE assurance。
+并保存 allowed source kinds 与 `model_fallback_allowed`。`RECENT_ACTION` 仅与 `ACTION_CAUSED + causal_lineage_required` 配合，表达 bounded Runtime ActionOutcome 已造成过效果；若还要求当前状态，必须增加独立 `STATE_HOLDS + CURRENT_OBSERVATION` leaf。`FINAL_RECHECK` 的 minimum assurance 固定为 `AUTHORITATIVE`。source kind 属于 evidence policy，不扩张成 DOM/API/Visual × predicate 的 criterion 类型组合。Model evidence 默认不具备 AUTHORITATIVE assurance。
 
 ### 3.4 TaskPlan、StepSpec 与 TaskProgress
 

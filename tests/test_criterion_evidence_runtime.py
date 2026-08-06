@@ -311,6 +311,11 @@ def test_final_recheck_requires_latest_identity_current_epoch_and_resource_versi
     assert PredicateEvaluator().evaluate(predicate, stale_identity).status == CriterionStatus.UNKNOWN
 
 
+def test_recent_action_validity_cannot_claim_current_state() -> None:
+    with pytest.raises(ValueError, match="only valid for ACTION_CAUSED"):
+        CriterionPolicy(validity=EvidenceValidityMode.RECENT_ACTION)
+
+
 def test_observation_final_recheck_metadata_cannot_claim_runtime_authority() -> None:
     observation = UnifiedObservation(
         snapshot_id="observation:4",

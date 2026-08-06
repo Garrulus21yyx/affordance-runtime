@@ -74,6 +74,8 @@ class LocalScenarioTaskIntake:
                 else _scenario_success("requirement:effect:1", submission.scenario)
             ),
             required_outputs=(pricing_required_outputs() if submission.scenario == "pricing" else ()),
+            external_effect_criterion_ids=(("criterion:export-effect",) if submission.scenario == "export" else ()),
+            final_recheck_criterion_ids=(("criterion:export-final",) if submission.scenario == "export" else ()),
             material_bindings=(
                 (
                     MaterialBinding(

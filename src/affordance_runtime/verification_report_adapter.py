@@ -150,7 +150,7 @@ def admit_completion_evidence(
             reason_code="independent_typed_evidence",
             authoritative_final_recheck=any(
                 item.source in {"external_evaluator", "independent_http_json", "api_state"}
-                and item.strength in {"strong", "authoritative"}
+                and item.strength == "authoritative"
                 for item in strong
             ),
             policy_digest=policy_digest,
@@ -270,12 +270,16 @@ def _report_policy_evidence(
         source_kind=source_kind,
         assurance=assurance,
         observation_ref=observation.snapshot_id,
-        authoritative_final_recheck=source_kind == EvidenceSourceKind.API_STATE,
+        authoritative_final_recheck=(
+            source_kind == EvidenceSourceKind.API_STATE and assurance == AssuranceLevel.AUTHORITATIVE
+        ),
         final_recheck_ref=context.latest_final_recheck_ref,
         resource_version=dict(context.current_resource_versions).get(
             str(getattr(evidence, "target", "") or criterion_id), ""
         ),
-        runtime_final_recheck=source_kind == EvidenceSourceKind.API_STATE,
+        runtime_final_recheck=(
+            source_kind == EvidenceSourceKind.API_STATE and assurance == AssuranceLevel.AUTHORITATIVE
+        ),
     )
 
 

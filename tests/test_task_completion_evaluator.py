@@ -4,6 +4,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from affordance_runtime.contracts import Observation
 from affordance_runtime.progress_evaluation import ProgressEvaluationService
@@ -51,6 +52,33 @@ def _leaf(criterion_id: str) -> SuccessExpression:
         operator="criterion",
         criterion_id=criterion_id,
         requirement_refs=("requirement:effect:1",),
+    )
+
+
+def _external_effect_leaf(criterion_id: str = "criterion:external") -> SuccessExpression:
+    return SuccessExpression(
+        expression_id=f"expr:{criterion_id}",
+        operator="criterion",
+        criterion_id=criterion_id,
+        requirement_refs=("requirement:effect:1",),
+        policy=CriterionPolicy(
+            satisfaction=SatisfactionMode.ACTION_CAUSED,
+            validity=EvidenceValidityMode.RECENT_ACTION,
+            causal_lineage_required=True,
+        ),
+    )
+
+
+def _final_recheck_leaf(criterion_id: str = "criterion:recheck") -> SuccessExpression:
+    return SuccessExpression(
+        expression_id=f"expr:{criterion_id}",
+        operator="criterion",
+        criterion_id=criterion_id,
+        requirement_refs=("requirement:effect:1",),
+        policy=CriterionPolicy(
+            validity=EvidenceValidityMode.FINAL_RECHECK,
+            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+        ),
     )
 
 
@@ -258,7 +286,12 @@ def test_task_completion_requires_full_typed_closure(
         success=SuccessExpression(
             expression_id="success:root",
             operator="all_of",
-            children=(_leaf("criterion:saved"), _leaf("criterion:dialog-absent")),
+            children=(
+                _leaf("criterion:saved"),
+                _leaf("criterion:dialog-absent"),
+                _external_effect_leaf(),
+                _final_recheck_leaf(),
+            ),
         ),
         constraint_criterion_ids=("criterion:constraint",),
         external_effect_criterion_ids=("criterion:external",),
@@ -289,29 +322,20 @@ def test_task_completion_requires_full_typed_closure(
     "operation_class",
     (OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE),
 )
-def test_high_risk_completion_requires_declared_effect_and_authoritative_recheck(
+def test_high_risk_taskspec_requires_declared_effect_and_authoritative_recheck(
     operation_class: OperationClass,
 ) -> None:
-    task = TaskSpec(
-        task_id="task:high-risk",
-        revision=1,
-        objective="perform external effect",
-        operation_class=operation_class,
-        requirements=canonical_effect_requirements(("external-system",), operation_class, "request:high-risk", ()),
-        allowed_effect_refs=canonical_effect_requirement_refs(("external-system",)),
-        success=_leaf("criterion:effect-observed"),
-        source_request_ref="request:high-risk",
-    )
-
-    evaluation = TaskCompletionEvaluator().evaluate(
-        task_spec=task,
-        criterion_results=(CriterionEvaluation("criterion:effect-observed", CriterionStatus.SATISFIED),),
-        result_payload={"effect": "observed"},
-    )
-
-    assert evaluation.status == CriterionStatus.UNKNOWN
-    assert evaluation.uncertain_external_effects == ("task_spec:external_effect_evaluation_required",)
-    assert evaluation.missing_rechecks == ("task_spec:authoritative_final_recheck_required",)
+    with pytest.raises(ValidationError, match="requires external-effect criteria"):
+        TaskSpec(
+            task_id="task:high-risk",
+            revision=1,
+            objective="perform external effect",
+            operation_class=operation_class,
+            requirements=canonical_effect_requirements(("external-system",), operation_class, "request:high-risk", ()),
+            allowed_effect_refs=canonical_effect_requirement_refs(("external-system",)),
+            success=_leaf("criterion:effect-observed"),
+            source_request_ref="request:high-risk",
+        )
 
 
 @pytest.mark.parametrize(
@@ -321,7 +345,10 @@ def test_high_risk_completion_requires_declared_effect_and_authoritative_recheck
             satisfaction=SatisfactionMode.ACTION_CAUSED,
             causal_lineage_required=True,
         ),
-        CriterionPolicy(validity=EvidenceValidityMode.FINAL_RECHECK),
+        CriterionPolicy(
+            validity=EvidenceValidityMode.FINAL_RECHECK,
+            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+        ),
         CriterionPolicy(minimum_assurance=AssuranceLevel.AUTHORITATIVE),
     ),
 )
@@ -536,6 +563,20 @@ def test_final_recheck_uses_runtime_owned_canonical_resource_version() -> None:
     )
 
     assert evaluation is not None and evaluation.status == CriterionStatus.SATISFIED
+
+    strong_only = ProgressEvaluationService().evaluate_task_completion(
+        task_spec=task,
+        state=state,
+        observation=observation,
+        canonical_observation=canonical,
+        report=VerificationReport(
+            VerificationStatus.PASSED,
+            [replace(report.evidence[0], strength="strong")],
+        ),
+        result={},
+    )
+    assert strong_only is not None and strong_only.status == CriterionStatus.UNKNOWN
+    assert strong_only.missing_rechecks == (criterion_id,)
 
 
 @pytest.mark.parametrize("runtime_lineage", (False, True))
