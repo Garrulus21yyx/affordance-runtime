@@ -1,0 +1,19 @@
+{
+  "container_name": "ollama",
+  "errors": [],
+  "gpu_driver_version": "595.58.03",
+  "gpu_memory_total_mib": 10240,
+  "gpu_name": "NVIDIA GeForce RTX 3080",
+  "loaded_context_length": 4096,
+  "model": "qwen2.5:7b",
+  "model_context_length": 32768,
+  "model_digest": "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
+  "model_format": "gguf",
+  "model_size_bytes": 4748056984,
+  "ollama_version": "0.32.0",
+  "parameter_size": "7.6B",
+  "quantization": "Q4_K_M",
+  "ready": true,
+  "schema_version": "ollama-gpu-preflight-v1",
+  "size_vram_bytes": 4748056984
+}

@@ -1,0 +1,195 @@
+run: m8.2a-pr-breadth-d66760f
+revision: d66760f76bb4668f610d2ebfac2c8ba0bf83c71a
+source: /tmp/affordance-pr-breadth-d66760f-20260727-201632/artifacts/runs
+classification_scope: read_only_trace_attribution
+episodes_classified: 12
+unclassified: 0
+production_change_admitted: false
+official_score_claimed: false
+
+mechanism_summary:
+  invalid_coverage_audit_handling: 2
+  provider_graph_proposal_normalization: 4
+  typed_semantic_action_constraints: 5
+  structured_decoding_or_attribution_projection: 1
+
+episodes:
+  - episode: click-button:seed-1
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: json_invalid
+    provider_issue_codes:
+      - structured_response_json_invalid
+    deterministic_compilation_status: not_reached
+    deterministic_coverage_status: not_reached
+    audit_status: not_reached
+    planner_status: not_reached
+    reported_root_layer: CONTRACT / FIELD_BINDING
+    reported_failure_signature: schema_incompatible
+    reported_layer_correction: CONTRACT / FIELD_BINDING -> intent structured decoding
+    actual_owner: intent structured decoding
+    child_slice: V-PRB-4
+
+  - episode: click-dialog:seed-0
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: decoded
+    provider_issue_codes:
+      - coverage_review_invalid_quote
+    deterministic_compilation_status: canonical_draft_present
+    deterministic_coverage_status: model_audit_rejected
+    audit_status: unsupported_invalid_quote
+    planner_status: not_reached
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: intent_compilation_rejected
+    actual_owner: coverage audit validator
+    child_slice: V-PRB-1
+
+  - episode: enter-text:seed-0
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: decoded
+    provider_issue_codes:
+      - coverage_review_invalid_quote
+    deterministic_compilation_status: canonical_draft_present
+    deterministic_coverage_status: model_audit_rejected
+    audit_status: unsupported_invalid_quote
+    planner_status: not_reached
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: intent_compilation_rejected
+    actual_owner: coverage audit validator
+    child_slice: V-PRB-1
+
+  - episode: click-button-sequence:seed-0
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: decoded
+    provider_issue_codes:
+      - invalid_task_obligation_graph
+      - invalid_provider_obligation
+    deterministic_compilation_status: rejected_missing_candidate_obligations
+    deterministic_coverage_status: not_reached
+    audit_status: not_reached
+    planner_status: not_reached
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: intent_compilation_rejected
+    actual_owner: provider graph proposal normalization
+    child_slice: V-PRB-2
+
+  - episode: click-button-sequence:seed-1
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: decoded
+    provider_issue_codes:
+      - invalid_task_obligation_graph
+      - invalid_provider_obligation
+    deterministic_compilation_status: rejected_missing_candidate_obligations
+    deterministic_coverage_status: not_reached
+    audit_status: not_reached
+    planner_status: not_reached
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: intent_compilation_rejected
+    actual_owner: provider graph proposal normalization
+    child_slice: V-PRB-2
+
+  - episode: form-sequence:seed-0
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: decoded
+    provider_issue_codes:
+      - invalid_task_obligation_graph
+      - invalid_provider_obligation
+    deterministic_compilation_status: rejected_missing_candidate_obligations
+    deterministic_coverage_status: not_reached
+    audit_status: not_reached
+    planner_status: not_reached
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: intent_compilation_rejected
+    actual_owner: provider graph proposal normalization
+    child_slice: V-PRB-2
+
+  - episode: form-sequence:seed-1
+    task_spec_created: false
+    task_plan_created: false
+    draft_decode_status: decoded
+    provider_issue_codes:
+      - invalid_task_obligation_graph
+      - invalid_provider_obligation
+    deterministic_compilation_status: rejected_missing_candidate_obligations
+    deterministic_coverage_status: not_reached
+    audit_status: not_reached
+    planner_status: not_reached
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: intent_compilation_rejected
+    actual_owner: provider graph proposal normalization
+    child_slice: V-PRB-2
+
+  - episode: choose-list:seed-0
+    task_spec_created: true
+    task_plan_created: true
+    draft_decode_status: decoded
+    provider_issue_codes: []
+    deterministic_compilation_status: ready_after_repair
+    deterministic_coverage_status: needs_clarification_then_repaired
+    audit_status: ready
+    planner_status: waiting_clarification
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: planner_waiting_clarification
+    actual_owner: semantic action resolver
+    child_slice: V-PRB-3
+
+  - episode: choose-list:seed-1
+    task_spec_created: true
+    task_plan_created: true
+    draft_decode_status: decoded
+    provider_issue_codes: []
+    deterministic_compilation_status: ready_after_repair
+    deterministic_coverage_status: needs_clarification_then_repaired
+    audit_status: ready
+    planner_status: waiting_clarification
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: planner_waiting_clarification
+    actual_owner: semantic action resolver
+    child_slice: V-PRB-3
+
+  - episode: click-button:seed-0
+    task_spec_created: true
+    task_plan_created: true
+    draft_decode_status: decoded
+    provider_issue_codes: []
+    deterministic_compilation_status: ready
+    deterministic_coverage_status: complete
+    audit_status: complete
+    planner_status: waiting_clarification
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: planner_waiting_clarification
+    actual_owner: semantic action resolver
+    child_slice: V-PRB-3
+
+  - episode: click-dialog:seed-1
+    task_spec_created: true
+    task_plan_created: true
+    draft_decode_status: decoded
+    provider_issue_codes: []
+    deterministic_compilation_status: ready
+    deterministic_coverage_status: complete
+    audit_status: complete
+    planner_status: waiting_clarification
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: planner_waiting_clarification
+    actual_owner: semantic action resolver
+    child_slice: V-PRB-3
+
+  - episode: enter-text:seed-1
+    task_spec_created: true
+    task_plan_created: true
+    draft_decode_status: decoded
+    provider_issue_codes: []
+    deterministic_compilation_status: ready
+    deterministic_coverage_status: complete
+    audit_status: complete
+    planner_status: waiting_clarification
+    reported_root_layer: INTENT / PLANNING
+    reported_failure_signature: planner_waiting_clarification
+    actual_owner: semantic action resolver
+    child_slice: V-PRB-3

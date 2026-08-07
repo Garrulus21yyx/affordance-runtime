@@ -1,0 +1,345 @@
+slice_id: sar-8-single-recovery-protocol
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+base_revision: 659e817cdf4b8b96588106f5d9aca4ba4646e691
+implementation_revision: 09d43041283078d4031828d01d0b129df4271148
+change_type: recovery_protocol_unification
+production_behavior_change: bounded_recovery_strategy_selection
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+planner_behavior_changed: false
+planner_fallback_added: false
+coordinator_control_flow_changed: true
+statekernel_schema_changed: true
+promotion_status: held
+remote_ci: disabled
+
+preconditions:
+  planner_failure_preclassification: docs/change-admission/sar-8-pre-planner-failure-classification.yaml
+  already_satisfied_owner_repair: docs/change-admission/sar-7-6-already-satisfied-progress-precheck.yaml
+
+scope:
+  current_slice: sar-8c-legacy-recovery-protocol-physical-deletion
+  included:
+    - SAR-8 FailureKind taxonomy.
+    - Pure FailureEnvelope to typed FailureClassification classifier.
+    - RecoveryCoordinator strategy selection routed through FailureKind instead
+      of raw phase/class mapping.
+    - RecoveryCoordinator.decide() returns canonical RecoveryDecision.
+    - RunCoordinator phase-general recovery entry calls decide() before the
+      temporary legacy adapter.
+    - RecoveryPhase is the Coordinator-facing recovery application seam for
+      phase-general failures.
+    - RunCoordinator._recover_phase_failure() delegates decision, adapter,
+      trace projection, owner-dispatch, and immediate terminal recovery
+      completion to RecoveryPhase.
+    - RunCoordinator contract-backed execution and verification failures route
+      through RecoveryPhase instead of the legacy RecoveryHandler.
+    - StateKernel no longer stores recovery_incident or recovery_diagnostics.
+    - StateKernel stores canonical current_recovery_decision and
+      current_recovery_outcome without any legacy current_recovery_command
+      compatibility payload.
+    - Legacy RecoveryPlan / RecoveryCommand and RecoveryIncident / RecoveryAttempt
+      / RecoveryCascade default protocols are physically removed from source
+      and tests.
+    - RecoveryPhase returns RecoveryApplicationResult with classification,
+      RecoveryDecision, optional RecoveryOutcome, canonical recovery_kind, and
+      trace parent.
+    - Immediate terminal recovery records RecoveryOutcome and does not create
+      or clear any legacy recovery plan state.
+    - Default CLI/runtime construction no longer injects legacy recovery policy
+      objects into RunCoordinator.
+    - Task planning, planner context, local benchmark metrics, adaptive routing
+      metrics, and recovery evolution diagnostics read current FailureEnvelope /
+      FailureEnvelope / RecoveryHistory evidence instead of legacy incident
+      diagnostics.
+    - Coordinator line count, run_sync length, and RunCoordinator method count
+      decreased below the SAR-8C call-site migration ratchet.
+    - Legacy RecoveryDecision to RecoveryPlan/RecoveryCommand conversion has
+      been physically deleted from default source.
+    - RecoveryStrategySelected default RecoveryPhase trace payload now records
+      canonical RecoveryDecision instead of legacy RecoveryPlan.
+    - StateKernel no longer imports or stores RecoveryPlan/current_recovery_plan
+      or pending current_recovery_command compatibility state.
+    - RunCoordinator.run_sync no longer reads legacy current_recovery_plan for
+      pending recovery command checks; it uses canonical current_recovery_decision
+      through a migration helper.
+    - TaskPlanLifecycle recovery summaries no longer read legacy
+      current_recovery_plan; they use canonical current_recovery_decision kind
+      and re-entry phase.
+    - RecoveryPhase no longer constructs RecoveryPlan or RecoveryCommand
+      compatibility payloads.
+    - RecoveryCoordinator no longer exposes a legacy plan() API; decide() is
+      the only canonical recovery selection entrypoint.
+    - Task pipeline intake recovery uses RecoveryDecision plus the temporary
+      command adapter instead of RecoveryCoordinator.plan().
+    - Legacy RecoveryHandler / RecoveryEvaluation compatibility was deleted
+      from default source; evolution recovery now uses a bounded
+      EvolutionRecoveryPolicy over canonical RecoveryKind.
+    - RecoveryPhase owns pending recovery plan-change completion; Coordinator
+      no longer constructs recovery receipt/delta/history for replan-step or
+      replan-task success paths inline.
+    - RecoveryPhase owns pending recovery binding completion and failed pending
+      command completion; Coordinator no longer owns the reground/reroute
+      receipt/delta/history construction helper.
+    - RecoveryPhase owns pending idempotent retry execution completion;
+      Coordinator no longer constructs retry recovery receipt/delta/history
+      inline after execution.
+    - RecoveryPhase owns pending recovery observation completion, including
+      reobserve and post-state inspection receipt/delta/history/outcome
+      commits; Coordinator retains only the verifier call needed to produce an
+      inspection result.
+    - planner_waiting_clarification maps to internal model/context/provider
+      recovery only when typed action-space facts prove available actions.
+    - planner_waiting_clarification without typed action-space facts fails
+      closed to unknown/abort instead of default ask_user or replan.
+    - entry_outcome_already_satisfied is recognized only from typed
+      proposal_rejection code/reason_code, maps to current-step progress
+      precheck owner, and is not treated as replan/ask_user recovery.
+    - RecoveryPhase now passes its typed action-space facts into
+      classify_failure(), so phase recovery no longer drops
+      available_action_count/user_input_required before strategy selection.
+    - Request-only PlannerUnsupportedResponse reason_code can reach the
+      Coordinator recovery FailureEnvelope through the current PlannerDecision
+      compatibility seam.
+    - Legacy PlannerDecision without proposal/contract/result is assigned the
+      explicit legacy_decision_without_proposal failure code and fails closed to
+      unknown/abort instead of being treated as planner_failed or eligible for
+      default step replan.
+    - RunCoordinator pending recovery checks use canonical
+      current_recovery_decision.kind directly; the RecoveryKind to
+      RecoveryCommandKind pending helper mapping has been deleted.
+    - RunCoordinator recovery helper seams return canonical RecoveryKind for
+      branch decisions; RecoveryCommandKind has no default source owner.
+    - RunCoordinator idempotent retry safety checks read canonical
+      current_recovery_decision.idempotency_key and current_failure.effect_status
+      instead of the legacy current_recovery_command payload.
+    - StateKernel no longer stores current_recovery_command; RecoveryPhase
+      derives the temporary legacy command from current_recovery_decision and
+      current_failure only inside the compatibility adapter boundary.
+    - StateKernel no longer stores legacy RecoveryReceipt or RecoveryDelta
+      lists; RecoveryPhase writes command completion and delta evidence to trace
+      payloads and stores only canonical current_recovery_outcome plus bounded
+      recovery_history for strategy oscillation checks.
+    - RecoveryCoordinator no longer imports or uses legacy recovery_commands
+      vocabulary; RecoverySelectionContext normalizes available/preferred
+      commands to canonical RecoveryKind and RuntimePhase.
+    - RunCoordinator and ProposalRejectionRecoveryPolicy no longer use
+      RecoveryCommandKind or OWNER_DISPATCH_COMMANDS; Coordinator-facing
+      recovery availability is expressed as canonical RecoveryKind.
+    - "RecoveryApplicationResult exposes canonical recovery_kind: RecoveryKind
+      instead of legacy command_kind; RecoveryCommandKind is physically deleted
+      from default source."
+    - Default Runtime wiring uses RecoveryOwnerDispatcher keyed by canonical
+      RecoveryKind; Coordinator, model recovery owners, task pipeline, and
+      benchmark runtime construction no longer depend on
+      RecoveryCommandDispatcher or RecoveryCommandKind.
+    - Recovery protocol trace projection is decision-based and emits
+      RecoveryDecisionStarted instead of RecoveryCommandStarted; it no longer
+      imports or serializes RecoveryCommand.
+    - RecoveryPhase no longer imports or constructs RecoveryCommand,
+      RecoveryReceipt, RecoveryDelta, RecoveryReentryPhase, legacy command
+      compatibility projections, or RecoveryCommandCompleted /
+      RecoveryDeltaValidated events; pending recovery completion helpers commit
+      canonical RecoveryOutcomeRecorded evidence.
+    - recovery.py, recovery_commands.py, recovery_command_dispatcher.py,
+      recovery_completion.py, recovery_decision_compatibility.py, and
+      recovery_handler.py are physically deleted from default source.
+    - tests/test_recovery_command_dispatcher.py and tests/test_recovery_handler.py
+      are deleted with their legacy owner modules.
+  excluded:
+    - Planner ActionChoiceBuilder.
+    - new task-family regex or deterministic fallback.
+    - PR breadth, fresh diagnostic, or promotion claim.
+
+failure_kind_policy:
+  model_deferral_with_action_space:
+    default_strategy_order:
+      - compact_context
+      - repair_model_schema
+      - switch_provider
+      - abort
+    ask_user_default: false
+    replan_default: false
+    same_context_no_op_retry: false
+  current_step_already_satisfied:
+    owner: progress_precheck
+    recovery_strategy_order:
+      - abort
+    normal_runtime_path: complete_step_then_continue
+  missing_user_input:
+    default_strategy_order:
+      - ask_user
+      - abort
+
+  remaining_sar_8_work:
+  - Preserve the planner clarification distinction learned from SAR-7 fresh
+    diagnostic classification.
+
+validation:
+  focused:
+    - PYTHONPATH=src python -m pytest -q tests/test_recovery.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_proposal_recovery_policy.py tests/test_evolution.py tests/test_recovery_evolution.py --tb=short --maxfail=3
+  focused_result: 42_passed
+  legacy_protocol_physical_deletion_architecture:
+    - PYTHONPATH=src python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8c_legacy_recovery_protocol_files_are_deleted tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_no_longer_uses_legacy_command_payloads --tb=short
+  legacy_protocol_physical_deletion_architecture_result: 3_passed
+  canonical_outcome_focused_result: 100_passed
+  decision_trace_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py -q --tb=short --maxfail=20
+  decision_trace_focused_result: 28_passed
+  run_sync_no_legacy_plan_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_run_sync_does_not_read_legacy_recovery_plan_state -q --tb=short
+  run_sync_no_legacy_plan_gate_result: 1_passed
+  taskplan_lifecycle_no_legacy_plan_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_task_plan_lifecycle_does_not_read_legacy_recovery_plan_state -q --tb=short
+  taskplan_lifecycle_no_legacy_plan_gate_result: 1_passed
+  statekernel_no_legacy_recovery_plan_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short
+  statekernel_no_legacy_recovery_plan_gate_result: 1_passed
+  recovery_phase_command_adapter_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter -q --tb=short
+  recovery_phase_command_adapter_gate_result: 1_passed
+  recovery_coordinator_plan_api_removed_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_no_longer_exposes_plan_api -q --tb=short
+  recovery_coordinator_plan_api_removed_gate_result: 1_passed
+  task_pipeline_decision_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_task_pipeline_uses_recovery_decisions_not_plans -q --tb=short
+  task_pipeline_decision_gate_result: 1_passed
+  pending_command_cutover_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_obligation_progress_ledger.py tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short --maxfail=20
+  pending_command_cutover_focused_result: 63_passed
+  command_adapter_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_obligation_progress_ledger.py tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter -q --tb=short --maxfail=20
+  command_adapter_focused_result: 64_passed
+  plan_api_removal_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_handler.py tests/test_recovery_phase.py tests/test_full_phase_recovery.py -q --tb=short --maxfail=20
+  plan_api_removal_focused_result: 33_passed
+  plan_api_removal_architecture:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_task_pipeline_uses_recovery_decisions_not_plans tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_no_longer_exposes_plan_api tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short --maxfail=1
+  plan_api_removal_architecture_result: 4_passed
+  recovery_plan_change_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_plan_changes_inline -q --tb=short
+  recovery_plan_change_helper_migration_gate_result: 1_passed
+  recovery_plan_change_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py -q --tb=short --maxfail=10
+  recovery_plan_change_helper_focused_result: 37_passed
+  recovery_binding_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_binding_inline -q --tb=short
+  recovery_binding_helper_migration_gate_result: 1_passed
+  recovery_binding_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_active_perception_coordinator.py -q --tb=short --maxfail=10
+  recovery_binding_helper_focused_result: 42_passed
+  recovery_execution_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_execution_inline -q --tb=short
+  recovery_execution_helper_migration_gate_result: 1_passed
+  recovery_execution_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py -q --tb=short --maxfail=10
+  recovery_execution_helper_focused_result: 38_passed
+  recovery_observation_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_observation_inline -q --tb=short
+  recovery_observation_helper_migration_gate_result: 1_passed
+  recovery_observation_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py -q --tb=short --maxfail=15
+  recovery_observation_helper_focused_result: 46_passed
+  actionchoice_unsupported_reason_focused:
+    - python -m pytest tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py::test_no_feasible_action_choice_reason_classifies_as_no_feasible_action tests/test_recovery_phase.py::test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=10
+  actionchoice_unsupported_reason_focused_result: 10_passed
+  legacy_no_proposal_fail_closed_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_planner_response_contracts.py -q --tb=short --maxfail=20
+  legacy_no_proposal_fail_closed_focused_result: 27_passed
+  pending_recovery_kind_cutover:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=10
+  pending_recovery_kind_cutover_result: 16_passed
+  recovery_seam_kind_cutover:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=20
+  recovery_seam_kind_cutover_result: 17_passed
+  pending_retry_payload_cutover:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind tests/test_coordinator.py::test_coordinator_groups_repeated_failure_and_aborts_loop tests/test_full_phase_recovery.py --maxfail=1 --tb=short -q
+  pending_retry_payload_cutover_result: 14_passed
+  statekernel_recovery_command_removal:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_command tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py::test_coordinator_groups_repeated_failure_and_aborts_loop tests/test_active_perception_coordinator.py tests/test_task_skill_coordinator.py tests/test_obligation_progress_ledger.py::test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfaces --maxfail=1 --tb=short -q
+  statekernel_recovery_command_removal_result: 31_passed
+  statekernel_recovery_command_removal_static:
+    yaml_parse: passed
+    ruff: passed
+    mypy_core: passed_3_core_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  statekernel_recovery_receipt_delta_removal:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_receipts_or_deltas tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_command tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py::test_coordinator_reobserves_drift_before_execution tests/test_coordinator.py::test_coordinator_groups_repeated_failure_and_aborts_loop tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_obligation_progress_ledger.py::test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfaces --maxfail=1 --tb=short -q
+  statekernel_recovery_receipt_delta_removal_result: 32_passed
+  statekernel_recovery_receipt_delta_removal_static:
+    yaml_parse: passed
+    ruff: passed
+    mypy_core: passed_5_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  recovery_coordinator_canonical_vocabulary:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_recovery_command_dispatcher.py tests/test_model_recovery.py tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_uses_canonical_recovery_vocabulary --maxfail=1 --tb=short -q
+  recovery_coordinator_canonical_vocabulary_result: 39_passed
+  recovery_coordinator_canonical_vocabulary_static:
+    ruff: passed
+    mypy_core: passed_2_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  coordinator_canonical_recovery_kind_inputs:
+    - python -m pytest tests/test_proposal_recovery_policy.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_uses_canonical_recovery_vocabulary --maxfail=1 --tb=short -q
+  coordinator_canonical_recovery_kind_inputs_result: 73_passed
+  coordinator_canonical_recovery_kind_inputs_static:
+    ruff: passed
+    mypy_core: passed_4_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  recovery_phase_result_canonical_kind:
+    - PYTHONPATH=src python -m pytest -q tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_result_exposes_canonical_recovery_kind --maxfail=1 --tb=short
+  recovery_phase_result_canonical_kind_result: 55_passed
+  recovery_phase_result_canonical_kind_static:
+    ruff: passed
+    mypy_core: passed_2_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  default_runtime_owner_dispatcher_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_proposal_recovery_policy.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_task_pipeline_multistage.py tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_result_exposes_canonical_recovery_kind --maxfail=1 --tb=short
+  default_runtime_owner_dispatcher_cutover_result: 80_passed
+  default_runtime_owner_dispatcher_cutover_static:
+    ruff: passed
+    mypy_core: passed_7_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  recovery_trace_decision_projection_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_proposal_recovery_policy.py tests/test_recovery_coordinator.py tests/test_recovery_trace_projection.py tests/test_recovery_phase.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_task_pipeline_multistage.py tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_trace_projection_is_decision_based --maxfail=1 --tb=short
+  recovery_trace_decision_projection_cutover_result: 81_passed
+  recovery_trace_decision_projection_cutover_static:
+    ruff: passed
+    mypy_core: passed_8_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  recovery_phase_legacy_payload_deletion:
+    - PYTHONPATH=src python -m pytest -q tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_no_longer_uses_legacy_command_payloads tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_trace_projection_is_decision_based tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher --maxfail=1 --tb=short
+  recovery_phase_legacy_payload_deletion_result: 59_passed
+  recovery_phase_legacy_payload_deletion_static:
+    ruff: passed
+    mypy_core: passed_8_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  sar_8c_cutover_closure:
+    - PYTHONPATH=src python -m pytest -q
+    - ruff check src tests scripts
+    - mypy --ignore-missing-imports --exclude 'src/affordance_runtime/benchmarks|src/affordance_runtime/langgraph' src/affordance_runtime
+    - uv build
+    - git diff --check
+  sar_8c_cutover_closure_result:
+    pytest: 1326_passed
+    ruff: passed
+    mypy_core: passed_110_source_files_ignore_optional_missing_imports
+    uv_build: passed
+    diff_check: passed
+  full_pytest: PYTHONPATH=src python -m pytest -q
+  full_pytest_result: 1326_passed
+  coordinator_lines: 2971
+  run_sync_lines: 1993
+  runcoordinator_methods: 18
+  ruff: passed
+  mypy: passed_110_core_source_files_ignore_optional_missing_imports
+  mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
+  uv_build: passed
+  diff_check: passed
+  behavioral_gate:
+    pr_breadth: not_run_after_sar_8c
+    fresh_diagnostic: not_run_after_sar_8c
+    blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+
+status: sar_8c_default_recovery_protocol_cutover_local_candidate
+next_slice: planner-selection-simplification-actionchoice

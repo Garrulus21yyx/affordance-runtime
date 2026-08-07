@@ -1,0 +1,87 @@
+slice_id: s1-simplified-core-contracts
+decision_date: 2026-07-29
+base_revision: 6e590e9575b608ab3086033970ed1c5ce1f21bca
+change_type: neutral_contract_foundation
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+parent_decision:
+  freeze_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
+  target_architecture: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  execution_plan: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
+
+authority:
+  current_production_progress_authority: legacy_taskplan_subgoal_planprogress
+  target_progress_authority: runtime_owned_active_step
+  task_completion_authority_target: task_spec_completion_criterion_independent_verification
+  state_writer: unchanged
+  trace_writer: unchanged
+  standard_path_authority_change: none
+
+included:
+  - SourceReference
+  - CriterionEvidencePolicy
+  - ValueCriterion
+  - StateCriterion
+  - PresenceCriterion
+  - AbsenceCriterion
+  - NavigationCriterion
+  - ArtifactCriterion
+  - ApiCriterion
+  - CompositeCriterion
+  - StepSpec
+  - TaskPlanView
+  - StepProgressView
+  - ObservationIdentity
+  - ExecutionAttempt
+  - StateDelta
+  - VerificationResult
+  - ActionOutcome
+  - ActionOutcomeSummary
+  - architecture gate coverage for the neutral contract module
+
+excluded:
+  - Coordinator changes
+  - StateKernel changes
+  - Executor changes
+  - Verifier pass/fail behavior changes
+  - TraceDag changes
+  - PlannerContext changes
+  - TaskPlan projection from legacy state
+  - ActiveStepScope proposal gate
+  - ActionOutcome runtime shadow
+  - production authority cutover
+  - ODG-9 hookup
+  - ODG-10 obligation progress commit
+  - ODG-11 finish-authority migration
+  - PR breadth
+  - promotion claim
+
+contract_invariants:
+  frozen_contracts: required
+  mutable_dict_or_list_values: prohibited
+  source_refs_for_completion_criteria: required
+  precondition_as_completion_criterion: prohibited
+  composite_self_cycle: prohibited
+  unsupported_relation: fail_closed
+  action_outcome_requires_matching_attempt_and_verification_identity: required
+  receipt_success_completion: prohibited
+  external_reward_completion: prohibited
+  triple_progress_authority: prohibited
+
+validation:
+  red:
+    command: /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_simplified_runtime_contracts.py
+    result: failed_before_module_existed
+  focused:
+    command: /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_simplified_runtime_contracts.py
+    required_result: pass
+  full_local_gate:
+    required_before_commit: true
+
+architecture_admission: pass
+closure_status: contract_foundation_only
+next_slice: s2-legacy-step-compatibility-projection
+promotion_status: held

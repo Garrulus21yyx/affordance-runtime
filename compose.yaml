@@ -1,0 +1,94 @@
+name: affordance-runtime
+
+x-runtime-image: &runtime-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: affordance-runtime:local
+
+x-runtime-settings: &runtime-settings
+  init: true
+  ipc: host
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  fixture-web:
+    <<: [*runtime-image, *runtime-settings]
+    command: ["affordance-runtime", "serve-fixture", "--host", "0.0.0.0", "--port", "3000"]
+    environment:
+      AFFORDANCE_WOT_CONTROL_URL: http://wot-server:8081
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:3000/api/health', timeout=2).status == 200"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  runtime-test:
+    <<: [*runtime-image, *runtime-settings]
+    command: ["bash", "scripts/container_test.sh"]
+    depends_on:
+      fixture-web:
+        condition: service_healthy
+
+  benchmark:
+    <<: [*runtime-image, *runtime-settings]
+    command:
+      - affordance-runtime
+      - benchmark
+      - --output
+      - /evidence/benchmark
+      - --seeds
+      - "3"
+      - --base-url
+      - http://fixture-web:3000
+      - --allow-acceptance-fail
+    depends_on:
+      fixture-web:
+        condition: service_healthy
+    volumes:
+      - evidence-data:/evidence
+
+  wot-server:
+    profiles: ["wot-proof"]
+    build:
+      context: containers/wot-proof
+      dockerfile: Dockerfile
+    image: affordance-runtime-wot-proof:local
+    expose:
+      - "8080"
+      - "8081"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8081/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  wot-conformance:
+    <<: [*runtime-image, *runtime-settings]
+    profiles: ["wot-proof"]
+    command:
+      - python
+      - scripts/cross_surface_conformance.py
+      - --fixture-url
+      - http://fixture-web:3000
+      - --wot-td-url
+      - http://wot-server:8080/affordance-runtime-conformance
+      - --oracle-url
+      - http://wot-server:8081
+      - --output
+      - /evidence/conformance
+    depends_on:
+      fixture-web:
+        condition: service_healthy
+      wot-server:
+        condition: service_healthy
+    volumes:
+      - evidence-data:/evidence
+
+volumes:
+  evidence-data:

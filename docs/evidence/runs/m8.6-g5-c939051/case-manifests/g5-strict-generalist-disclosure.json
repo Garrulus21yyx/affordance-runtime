@@ -1,0 +1,38 @@
+{
+  "artifacts": [
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-strict-generalist-disclosure/observations/observation_0001.json",
+      "sha256": "fd32a53f679a70d8c67eb3a7a1dadada520d919e62a09612f3d7cb168639194c"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-strict-generalist-disclosure/run.json",
+      "sha256": "c39d172ae8cb61f3bdc1fbf76b565e88b755620d2eed58e1b57910e17b936191"
+    },
+    {
+      "media_type": "application/x-ndjson",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-strict-generalist-disclosure/events.jsonl",
+      "sha256": "baa7beda6ea490b7aa98a777a79cc6e6da09404b516ab65357cff59c4d90b1a0"
+    }
+  ],
+  "contract_hash": "",
+  "observation_epochs": [
+    "disclosure-0"
+  ],
+  "receipt_ids": [],
+  "revision": "c9390517624eaf28a84aee9e77d0ba83ff533106",
+  "run_id": "g5-strict-generalist-disclosure",
+  "schema_version": "m8.6-g5-runtime-case-v1",
+  "status": "waiting_clarification",
+  "trace_events": [
+    "TaskCreated",
+    "ObservationCaptured",
+    "PlannerContextBuilt",
+    "PlanProposed",
+    "PlannerProposalValidated",
+    "PlannerProposalProduced",
+    "ClarificationRequested"
+  ],
+  "verification_status": "none"
+}

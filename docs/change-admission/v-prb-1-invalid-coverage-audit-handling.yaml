@@ -1,0 +1,74 @@
+slice_id: v-prb-1-invalid-coverage-audit-handling
+packet_role: child_production_slice
+parent_packet: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
+base_revision: 9cb97866c66dfe75a1f74fab98cd3c0a8d8c2370
+change_type: vertical_generic_correctness_repair
+production_change_allowed: true
+
+single_responsibility: >
+  Preserve deterministic READY admission when an optional model coverage audit
+  returns an incoherent nonliteral quote. The invalid audit response is
+  recorded as review evidence but is not a valid veto.
+
+single_primary_owner: intent coverage audit admission
+
+owner_before:
+  - LLMIntentCompiler coverage admission treated coverage_review_invalid_quote
+    as an unsupported task-obligation-coverage issue.
+
+owner_after:
+  - LLMIntentCompiler records the invalid coverage audit, drops that invalid
+    veto, and preserves deterministic READY.
+  - TaskObligationCoverage validator still rejects the invalid review as an
+    incoherent audit response.
+  - Valid unsupported and needs_clarification coverage audit decisions still
+    veto deterministic READY.
+
+target_episodes:
+  - click-dialog:seed-0
+  - enter-text:seed-0
+
+non_goals:
+  - do not modify Coordinator
+  - do not modify StateKernel
+  - do not modify PlannerPort
+  - do not add PlannerStateView
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not adjust prompts, model-call budgets, retries, timeouts, or costs
+  - do not repair provider graph proposal normalization
+  - do not repair typed semantic action constraints
+  - do not repair structured response decoding
+  - do not claim PR breadth, nightly, release, or official benchmark score
+
+non_browsergym_red_test:
+  test: tests/test_intent_compiler.py::test_invalid_coverage_audit_quote_cannot_veto_deterministic_ready
+  initial_failure: >
+    The compiler returned CompilationStatus.UNSUPPORTED because
+    coverage_review_invalid_quote was admitted as a task-obligation-coverage
+    veto even though deterministic coverage had already produced READY.
+
+acceptance_tests:
+  - invalid coverage-audit quote cannot veto deterministic READY
+  - valid uncovered task clause still prevents TaskSpec creation
+  - low-level coverage validator still classifies nonliteral quote as coverage_review_invalid_quote
+  - horizontal architecture governance gates pass
+  - Ruff passes
+  - mypy passes
+  - git diff check passes
+
+architecture_admission:
+  state_writer_changed: false
+  trace_writer_changed: false
+  coordinator_touched: false
+  statekernel_touched: false
+  benchmark_dependency_added: false
+  planner_task_grammar_added: false
+  prompt_or_budget_changed: false
+  waiver: none
+
+result:
+  status: implemented_locally
+  production_change_admitted: true
+  promotion_status: held
+  rerun_required:
+    - PR breadth 6-task x 2-seed matrix on a clean committed revision

@@ -1,0 +1,1225 @@
+# Active Goal Execution Plan
+
+Goal: advance Affordance Runtime under the current implementation plan and all
+normative boundaries, with no benchmark-specialized behavior or unsupported
+delivery claims.
+
+## Constraints
+
+- `docs/current-implementation-plan.md` is authoritative for current scope.
+- Preserve Runtime-first, responsibility-containment, benchmark-governance, and
+  intent-schema authority boundaries.
+- Apply the horizontal architecture-governance track to every active milestone:
+  growth and dependency/authority gates are synchronous change-admission gates,
+  not a repository-wide rewrite prerequisite.
+- The normative track is `docs/architecture-governance-track.md`; this plan
+  records execution progress but does not redefine its admission semantics.
+- M8.2A SG1-SG7 targeted confirmation is locally complete within its declared
+  scope. Protected cross-family / PR breadth is the next vertical lane when
+  authorized; Coordinator containment proceeds as a parallel horizontal track
+  and is not a unified-refactor prerequisite.
+- Keep the three-call intake ceiling and fail closed on unsupported authority.
+
+## Steps
+
+1. `done` — Read authoritative plans, governance records, and repository state.
+2. `done` — SG3 completed for model and parent semantic proposals: proposal
+   graph IDs are untrusted, source bindings are validated, and Runtime derives
+   the IDs that cross into `TaskSpec`.
+3. `done` — Added regression coverage for normalized reviewer inputs and
+   Runtime-owned graph IDs through the single- and multi-stage pipeline.
+4. `done` — Dedicated Python 3.12 BrowserGym environment passes the full local
+   quality gate (921 tests, Ruff, mypy, and diff check).
+5. `done` — SG4 deterministic source-to-claim-to-terminal structural coverage
+   is enforced before optional review; a model reviewer has veto-only authority.
+6. `done` — SG5 canonical graph replacement: flat effects and bounded
+   multi-stage semantic proposals are reconstructed by Runtime-owned compiler
+   code; no proposal graph node or free-form evidence text crosses into
+   `TaskSpec` directly, and model COMPLETE is advisory-only.
+7. `done` — SG6 local gate: non-BrowserGym held-out intake traverses the
+   canonical multi-stage boundary, with clause-omission, unknown-source,
+   stale-lineage, ambiguity, and audit-veto negative controls.
+8. `done` — Normal entrypoints configure concrete context-compaction and
+   planner-schema repair owners with validated before/after evidence. Schema
+   recovery switches subsequent candidate decoding from the action-only
+   initial schema to the existing current-target/value-bound repair schema,
+   without changing TaskSpec authority or Prompt identity.
+9. `done` — Continued Coordinator responsibility reduction by moving
+   `PlannerDecision` and `PlannerPort` into a neutral planning-contract module;
+   preserved the public re-export and all existing behavior. Planner
+   implementations no longer import Coordinator, and its ratchet falls from
+   3520 to 3499 lines.
+10. `done` — Moved explicit approval-source protocol/implementation into a
+    neutral contract module. CLI and local benchmark entrypoints now consume
+    neutral approval and planning contracts directly; Coordinator preserves
+    compatibility re-exports while retaining task-execution commit authority.
+    The line ratchet falls from 3499 to 3473; known compatibility/skill/progress
+    mutation scopes remain explicit horizontal debt rather than precedent.
+11. `done` — Activated an independent horizontal architecture-governance
+    track in the authoritative plan/status/boundary documents and executable
+    tests. Freeze growth at measured control-module/method baselines; enforce
+    dependency direction and state/trace authority without blocking unrelated
+    milestone work on a unified rewrite.
+12. `done` — Calibrate governance against committed revision `627b5f7`:
+    remove duplicated live-status authority, separate milestone/evidence/
+    promotion/admission/CI axes, record the failed remote CI without treating
+    every failure as environmental, scope INV-11 to task-execution commit
+    sequencing, and make the vertical/horizontal WIP policy explicit.
+13. `done` — Run one vertical slice (SG7 targeted protected-family
+    confirmation) beside the already closed H1 active-subgoal horizontal slice.
+    The first clean `fa288af` SG7 diagnostic failed 0/4 in INTENT / PLANNING;
+    the generic repair was committed as `3d44a9d` and the clean rerun of the
+    same 2-task x 2-seed diagnostic passed 4/4. This is SG7 targeted evidence
+    only, not PR breadth, nightly/release, or a promoted score. Immutable
+    PlanningRequest / PlannerStateView remains the next horizontal boundary and
+    must not be mixed into the same evidence identity.
+14. `done` — Repair classified CI harness/environment failures without
+    hiding the remaining benchmark runtime failure: core pytest invocation and
+    BrowserGym provisioning are narrow CI fixes; coherent observation epoch
+    drift stays open as the next benchmark diagnostic.
+15. `done` — Close the benchmark epoch-drift crash and split diagnostic
+    benchmark execution from promotion acceptance: true semantic DOM drift must
+    still fail, transient affordance-state stabilization may be recaptured once,
+    and release acceptance failures remain visible.
+16. `done` — Remote CI was intentionally closed after the repaired workflow
+    reached GitHub billing/spending limits. The current validation channel is
+    local equivalent gates, not remote-green evidence; local diagnostic
+    benchmark success is not a release/promotion claim while benchmark
+    acceptance remains failed.
+17. `done` — Close the H1 active-subgoal hidden-mutation debt in project code:
+    make `StateKernel.active_subgoal()` read-only, add explicit
+    `activate_next_subgoal()`, keep production activation in Coordinator, and
+    remove the planner-context hidden-mutation exception from the architecture
+    gate.
+18. `done` — Freeze the SG7 generic repair in a clean revision and rerun the
+    exact targeted matrix (`enter-date`, `text-transform`, seeds 0 and 1)
+    before protected breadth, PR/nightly/release, score, or promotion claims.
+19. `in_progress` — Continue vertical protected cross-family / PR breadth on a
+    clean current revision with local equivalent gates, while keeping immutable
+    Planner input as the separate next horizontal lane. Clean `9b951ed` PR
+    breadth now stands at 12/12 observed, 8/12 official reward passed, 4/12
+    official reward failed, no provider failure, and no missing/unrun/
+    invalidated episodes; this is still negative diagnostic evidence, not
+    promotion. Next vertical step is V-PRB-2 provider graph proposal
+    normalization for the remaining official-failed INTENT / PLANNING cluster,
+    with the single runtime terminal-completion guard observation tracked
+    separately.
+20. `pending` — Execute the review-driven remediation sequence as separate
+    slices: P1 immutable Planner input, P2 semantic fallback owner extraction,
+    P3 intent semantic normalizer, and P4 protected breadth continuation. Do
+    not batch these into one mixed architecture/product patch.
+21. `done` — Record the follow-up review's constraint that the PR breadth
+    repair packet is an umbrella diagnostic, not a production patch. Completed
+    V-PRB-0 failure-attribution fidelity from local traces: 12/12 episodes now
+    have exact mechanism owners, `click-button:seed-1` is classified as
+    structured intent decoding / attribution projection because no TaskSpec was
+    created, coverage audit invalid quotes are separated from graph
+    normalization, and planner clarification cases are routed to typed semantic
+    action constraints.
+22. `done` — Select exactly one child production slice after non-BrowserGym
+    reproduction: V-PRB-1 invalid coverage audit handling first if deterministic
+    READY was blocked only by invalid optional audit; otherwise V-PRB-2 provider
+    graph proposal normalization. V-PRB-1 was selected and reproduced with
+    `tests/test_intent_compiler.py::test_invalid_coverage_audit_quote_cannot_veto_deterministic_ready`.
+    The repair drops invalid coverage-review quotes as invalid vetoes while
+    preserving valid coverage vetoes. Do not batch V-PRB-2 through V-PRB-4.
+23. `done` — After local gates and commit, rerun the same PR breadth
+    6-task x 2-seed matrix on the clean committed revision and classify impact;
+    no promotion or official score claim. Clean `d40f8f1` rerun observed 12/12
+    episodes, passed 0/12, and showed V-PRB-1 closed invalid coverage-audit
+    vetoes by advancing the two affected episodes to planner clarification.
+24. `done` — Select one next child slice only: V-PRB-3 typed semantic
+    action constraints first if prioritizing the largest 7-episode
+    `planner_waiting_clarification` cluster, otherwise V-PRB-2 provider graph
+    proposal normalization for the 4 invalid graph episodes. V-PRB-3 was
+    selected and implemented as a strict semantic action resolver with
+    non-BrowserGym red tests for unique activation, selected-option terminal
+    submit, and target-derived text entry. Do not batch.
+25. `done` — After local gates and commit, rerun the same PR breadth 6-task
+    x 2-seed matrix on the clean committed revision and classify impact; no
+    promotion or official score claim. Clean `9b951ed` rerun observed 12/12
+    episodes, passed 8/12 official reward, failed 4/12 official reward, and
+    showed V-PRB-3 closed the typed semantic action constraint cluster for this
+    matrix. One additional `enter-text:seed-1` runtime terminal-completion
+    guard observation has `official_reward=1.0` and is tracked separately from
+    official failed episodes.
+26. `done` — Select one next child production slice only: V-PRB-2 provider
+    graph proposal normalization for the four remaining official-failed
+    `click-button-sequence` and `form-sequence` episodes. First create a
+    non-BrowserGym reproduction for source-bound multi-effect provider graph
+    normalization; do not batch PlanningRequest migration, terminal-completion
+    guard handling, fresh diagnostic, or PR/nightly/release promotion. The
+    selected slice was implemented with
+    `tests/test_intent_compiler.py::test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_graph_is_incomplete`.
+27. `done` — Implement V-PRB-2 as a narrow canonical obligation compiler
+    boundary repair after a non-BrowserGym red test. Clean `c24b277` PR breadth
+    rerun observed 12/12 episodes, passed 8/12 official reward, failed 4/12
+    official reward, and showed invalid provider graph is closed. The four
+    remaining official failures advanced downstream: two
+    `click-button-sequence` planner clarification cases and two
+    `form-sequence` task-planning `entry_action_family_unavailable` cases.
+28. `done` — Select one next child slice only: V-PRB-5 downstream
+    task-planning/planner constraint follow-up. First classify exact owner and
+    create non-BrowserGym reproduction for either click-button-sequence
+    continuation planning or form-sequence entry action family availability; do
+    not batch them together and do not start immutable PlanningRequest unless
+    the evidence shows mutable planner input is the root cause. V-PRB-5 was
+    opened as diagnostic-only packet with two candidate mechanisms.
+29. `done` — Open V-PRB-5 as diagnostic-only classification packet. Split the
+    remaining official failures into V-PRB-5A button sequence progress /
+    next-subgoal gating and V-PRB-5B form sequence entry action family
+    availability. No production repair is admitted by the umbrella diagnostic.
+30. `done` — Incorporate the latest review into governance state before any
+    new production repair. Add executable manifest coverage for
+    `semantic_action_resolver.py`, split V-PRB-5 into child diagnostic records
+    for V-PRB-5A button-sequence effect semantics and V-PRB-5B entry
+    action-family resolution, and create V-PRB-6 terminal-completion guard
+    classification. Keep immutable Planner input separate unless RED evidence
+    directly implicates mutable `StateKernel` input.
+31. `done` — Start V-PRB-5A only: write non-BrowserGym RED tests for
+    activation effect relation, explicit dependency, verifier-backed progress,
+    and intermediate/final terminal flags. If the owner is compiler-local,
+    continue 5A; if it requires public semantic/schema expansion, pause for an
+    ADR and optionally select V-PRB-5B as the narrower next slice. Do not mix
+    V-PRB-5B, V-PRB-6, H2 immutable PlanningRequest, PR/nightly/release, or
+    promotion into the same patch. The RED test showed a compiler-local
+    requested-effect sequence gap and was repaired without touching
+    Coordinator, StateKernel, PlannerPort, Prompt, budget, task grammar, or
+    benchmark-specific logic.
+32. `done` — Commit V-PRB-5A after focused gates, then rerun the same
+    PR breadth 6-task x 2-seed matrix on the clean committed revision. Only
+    after that rerun classify whether the button-sequence mechanism closed and
+    whether the next slice is V-PRB-5B, V-PRB-6, or a different owner. Clean
+    `0565e2e` rerun is negative: 12/12 observed, 7/12 official passed, 5/12
+    official failed, 6 runtime failures, no missing/unrun/invalidated cases,
+    and `official_score_claimed=false`.
+33. `done` — Classify the failed `0565e2e` rerun before the next
+    production repair: inspect button-sequence traces to determine why
+    `planner_waiting_clarification` remains after the compiler-local sequence
+    repair, classify the then-new/remaining `click-button:seed-1`
+    `schema_incompatible` case separately, and keep V-PRB-5B and V-PRB-6 separate.
+    Button-sequence dependency/terminal boundaries are now present, but clicked
+    targets still compile as `predicate / is_available`; verifier progress
+    correctly rejects weak execution/state-delta evidence, so the next owner is
+    requested-effect relation/evidence semantics rather than Coordinator,
+    StateKernel, PlannerContext, or receipt-driven progress.
+34. `done` — Write the next V-PRB-5A non-BrowserGym RED for
+    clicked/activated relation and evidence semantics. The RED failed on
+    `predicate` versus expected `effect`, then passed after a compiler-local
+    canonical repair. Keep V-PRB-5B form action-family, V-PRB-6 terminal guard,
+    H2 immutable Planner input, and promotion separate.
+35. `done` — Commit and push the second V-PRB-5A repair, then rerun the
+    same PR breadth 6-task x 2-seed matrix on the clean committed revision
+    before judging button-sequence closure. Clean `e4795c1` PR breadth remains
+    negative: 12/12 observed, 8 official reward passes, 4 official reward
+    failures, 5 Runtime failures, no missing/unrun/invalidated/provider
+    failures, and `official_score_claimed=false`. The prior
+    `click-button:seed-1` schema incompatibility no longer reproduces.
+36. `done` — Write the next V-PRB-5A non-BrowserGym RED for
+    completed-click progress evidence / observer-verifier binding. The clean
+    traces show `effect / is_completed` obligations are now present, but after
+    the first click Runtime correctly rejects weak receipt/state-delta evidence,
+    leaves active subgoal `button ONE is completed`, and the strict planner
+    asks for clarification. The RED failed because BrowserGym only returned
+    terminal-only `state_delta_or_terminal`; it now passes with an
+    active-subgoal `observation_metadata(active_control == bid)` verifier for
+    completed click outcomes. Generic `state_delta_or_terminal` remains weak
+    and terminal-only. Do not accept receipt success alone as progress; keep
+    V-PRB-5B, V-PRB-6, immutable Planner input, and promotion separate.
+37. `done` — Commit and push the completed-click progress evidence
+    repair, then rerun the same PR breadth 6-task x 2-seed matrix on the clean
+    committed revision before judging button-sequence closure. Clean `c75fc3b`
+    rerun remained negative at 8/12 official reward: the new verifier did not
+    enter real button-sequence contracts because active action-family metadata
+    is empty in that path.
+38. `done` — Commit and push the refined completed-click progress
+    evidence repair, then rerun the same PR breadth matrix on the clean
+    committed revision. The refined RED/GREEN makes action-family an optional
+    guard: present action-family must match, but absent metadata does not block
+    typed `IS_COMPLETED` click progress evidence when target and concrete click
+    action match. Clean `151fbef` PR breadth is 12/12 observed, 10/12 official
+    reward passed, 3 Runtime failures, no provider/missing/unrun/invalidated
+    failures, and `click-button-sequence` seeds 0 and 1 now pass. V-PRB-5A is
+    closed for this matrix.
+39. `done` — Implement V-PRB-5B entry action-family resolution as a
+    non-BrowserGym RED/GREEN slice. The first repair made slider-like
+    reversible writes use current `press_key` affordance evidence and kept
+    ambiguous mappings unresolved. The clean `5c7a2ab` rerun proved the
+    original `entry_action_family_unavailable` form-sequence rejection no
+    longer reproduces, but exposed a textbox fallback regression. The
+    follow-up `2b67ffd` repair restores textbox value-entry inference.
+40. `done` — Rerun the same PR breadth matrix on the clean committed V-PRB-5B
+    follow-up repair lineage. Clean `3daf779` evidence is 12/12 observed,
+    10/12 official reward passed, 3 Runtime failures, no provider/missing/
+    unrun/invalidated cases. V-PRB-5B is closed for action-family resolution:
+    `form-sequence` no longer rejects with `entry_action_family_unavailable`
+    and `enter-text:seed-0` is restored.
+41. `done` — Start V-PRB-5C only: write a non-BrowserGym RED for the
+    remaining `form-sequence` strict-planner empty `ask_user` proposal after an
+    accepted TaskPlan with `press_key` permitted. Keep V-PRB-6
+    `enter-text:seed-1`, immutable Planner input, fresh diagnostic,
+    nightly/release, and promotion separate.
+42. `done` — Implemented the first V-PRB-5C bounded slider `press_key`
+    resolver as `a805f0d` and reran the same PR breadth 6-task x 2-seed matrix
+    on a clean committed revision. Evidence is 12/12 observed, 10/12 official
+    reward passed, 3 Runtime failures, and no provider/missing/unrun/
+    invalidated cases. The resolver enters the real form path and verifies
+    slider `press_key` actions, but V-PRB-5C remains open because both
+    `form-sequence` seeds later fail with empty `ask_user` after replan/
+    progress normalizes the active slider subgoal. Continue V-PRB-5C with a
+    new non-BrowserGym RED for that residual; keep V-PRB-6, immutable Planner
+    input, fresh diagnostic, nightly/release, and promotion separate.
+43. `done` — Implemented the second V-PRB-5C verified-form follow-up repair as
+    `9c1b58c` and reran the same PR breadth matrix on a clean committed
+    revision. Evidence remains 12/12 observed, 10/12 official reward passed,
+    3 Runtime failures, and no provider/missing/unrun/invalidated cases. Seed
+    0 now advances from the verified slider effect to the requested checkbox,
+    but still stops before terminal submit; seed 1 still repeats slider
+    keypresses through the negative target boundary. Continue V-PRB-5C with
+    narrower REDs for terminal submit after verified checkbox completion and
+    negative slider stop/direction. Keep V-PRB-6, immutable Planner input,
+    fresh diagnostic, nightly/release, and promotion separate.
+44. `done` — Implemented the third V-PRB-5C repair as `d50a631` and reran the
+    same PR breadth matrix on a clean committed revision. Evidence is 12/12
+    observed, 12/12 official reward passed, 3 Runtime failures, and no
+    provider/missing/unrun/invalidated cases. The prior form-sequence official
+    failures no longer reproduce, so V-PRB-5C is closed for this matrix. PR
+    breadth acceptance remains held because `enter-text:seed-1` and both
+    `form-sequence` seeds still abort after external reward succeeds with
+    `planner cannot finish before verifier-backed subgoal completion`.
+45. `done` — Continue V-PRB-6 diagnostics and the selected V-PRB-6B
+    child production slice only. Compact trace
+    projection is archived at `docs/evidence/runs/v-prb-6-compact-d50a631/`.
+    V-PRB-6A now has a strict-xfail executable RED for dependent checkbox
+    `HAS_CHANGED` evidence remaining `task_terminal` instead of
+    `active_subgoal`. The same projection reclassifies V-PRB-6B before RED:
+    `enter-text:seed-1` has two subgoals, not one; the completed unit is the
+    text-change subgoal and the incomplete unit is independent read-only
+    `submit_button is available`. V-PRB-6B now has child production packet
+    `docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml`;
+    TaskPlan current-state/cardinality handling is the selected owner, and the
+    former strict-xfail RED in `tests/test_task_planning.py` passes locally
+    without xfail after generic symbolic subject-to-affordance matching.
+    Focused gate is `147 passed, 1 xfailed`; the remaining xfail is V-PRB-6A.
+    The clean `17f2e50` PR breadth rerun is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-17f2e50/` and is negative: 12/12
+    observed, 11/12 official reward, 4 Runtime failures. V-PRB-6B changed
+    shape but is not closed: `enter-text:seed-1` now fails earlier with
+    `task_planning ... entry_outcome_already_satisfied`, then exhausts the
+    repair loop. Follow-up 6B child slice
+    `docs/change-admission/v-prb-6b-current-state-discard-replacement.yaml`
+    is implemented locally: TaskPlanFlow prepares an accepted replacement that
+    preserves verified prior subgoals and discards an already-current read-only
+    availability/visibility subgoal through the existing replacement-plan
+    commit path. Focused gate is `155 passed, 1 xfailed`; static gates pass.
+    Clean `9ad1288` PR breadth rerun is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-9ad1288/` and is still negative:
+    12/12 observed, 11/12 official reward, 4 Runtime failures. The local
+    6B discard replacement is safe but insufficient: `enter-text:seed-1` still
+    fails Runtime completion, both `form-sequence` seeds remain V-PRB-6A
+    terminal-guard failures, and `click-button:seed-1` remains a separate
+    JSON-invalid/schema robustness cluster. Runtime success, verifier success,
+    and BrowserGym reward remain separate; no breadth completion, fresh
+    diagnostic, nightly/release, promotion, immutable Planner input, or
+    official score claim is made.
+46. `in_progress` — Reclassify the post-`9ad1288` PR breadth residuals before
+    any new production repair. The next slice must start from compact trace /
+    root-owner evidence and choose exactly one owner: V-PRB-6A progress-scope
+    binding, V-PRB-6B residual Runtime completion for `enter-text:seed-1`, or
+    the separate click-button JSON-invalid schema/provider robustness cluster.
+    Compact classification now exists at
+    `docs/evidence/runs/v-prb-6-post-9ad1288-classification/` with diagnostic
+    packet
+    `docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml`.
+    Do not batch these and do not start immutable Planner input unless evidence
+    directly implicates mutable Planner state.
+47. `in_progress` — Selected the smallest next RED: V-PRB-6B HAS_CHANGED text
+    progress binding for `enter-text:seed-1`, recorded at
+    `docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml`.
+    The RED failed with task-terminal-only evidence and now passes after
+    BrowserGym exact typed text postconditions declare active-subgoal evidence
+    for `HAS_CHANGED` when the concrete value equals the Runtime-owned typed
+    outcome. Focused regression is `49 passed, 1 xfailed`. Clean `c382592`
+    PR breadth rerun is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-c382592/` and is still negative:
+    12/12 observed, 11/12 official reward, 4 Runtime failures. This repair is
+    safe but insufficient; TaskPlan/progress replacement accounting was then
+    narrowed to active-empty ready read-only convergence. Child production
+    packet
+    `docs/change-admission/v-prb-6b-ready-read-only-discard-after-progress.yaml`
+    adds a non-BrowserGym RED/GREEN for the trace shape where verified text
+    progress clears active projection and the ready `submit_button is available`
+    subgoal is already current-state satisfied. The local RED/GREEN and
+    adjacent replacement controls pass. Clean committed PR breadth rerun at
+    `66dae07` is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-66dae07/`: 12/12 observed,
+    12/12 official reward, 3 Runtime failures. This is partial positive
+    evidence, not PR breadth acceptance. Next slice must choose either the
+    `enter-text:seed-1` `obligation_subgoal_missing` accounting residual or the
+    separate V-PRB-6A form-sequence progress-scope cluster. Diagnostic packet
+    `docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml`
+    records the `enter-text` update: TaskPlanValidator correctly rejects a
+    replacement that removes a required `submit_button is available` obligation.
+    A future V-PRB-6B production slice must start from a new RED for required
+    read-only obligation completion/accounting. The later attempted
+    empty-value `HAS_CHANGED` fill-delta evidence-binding slice was clean-rerun
+    at `21f44b0` and rejected because it regressed external reward to 11/12
+    while retaining 3 Runtime failures; its production behavior is reverted and
+    must not be used as the next V-PRB-6B path.
+48. `done` — Implemented and clean-reran the approved Core current-state
+    progress reconciliation attempt at `95fe00b`; evidence is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-95fe00b/`. The comparable rerun was
+    12/12 observed, 11/12 external reward, and 2 Runtime failures. Because the
+    external reward baseline regressed from the better `66dae07` diagnostic
+    baseline, the child production slice is rejected and its production
+    behavior is reverted. Do not continue the rejected evaluator path without a
+    new root-cause classification. Next vertical work is residual
+    reclassification for form-sequence seed-0/seed-1 before any new production
+    slice. No PR breadth acceptance, fresh diagnostic, promotion, immutable
+    Planner input, or official score claim is made.
+49. `done` — Completed read-only post-`95fe00b` residual classification.
+    Evidence is archived at
+    `docs/evidence/runs/v-prb-6-post-95fe00b-classification/` and diagnostic
+    packet
+    `docs/change-admission/v-prb-6-post-95fe00b-residual-classification.yaml`.
+    `form-sequence:seed-0` is a V-PRB-6A explicit progress-target candidate,
+    but the latest review reorders execution: V-PRB-6B Core progress accounting
+    is primary because `enter-text:seed-1` shows a required ready read-only
+    obligation should be completed from current observation rather than deleted
+    from the authoritative TaskPlan. V-PRB-6A remains second lane after 6B clean
+    rerun evidence.
+50. `done` — Replaced the uncommitted V-PRB-6A RED direction with the accepted
+    V-PRB-6B RED/admission:
+    `tests/test_task_plan_progress.py::test_required_available_subgoal_is_completed_without_deleting_obligation`
+    and
+    `docs/change-admission/v-prb-6b-verifier-backed-progress-accounting.yaml`.
+    The forced RED failed on the missing `task_plan_progress` contract before
+    production implementation.
+51. `done` — Implemented the narrow GREEN for authority-free Core progress
+    accounting in `src/affordance_runtime/task_plan_progress.py`. The evaluator
+    prepares `SubgoalCompletionPreparation` for ready, dependency-unlocked
+    `IS_AVAILABLE` / `IS_VISIBLE` subgoals from current observation while
+    preserving the TaskPlan and obligation identities. Verification: progress
+    tests 6/6, related planning/flow/lifecycle/progress tests 58/58,
+    architecture gates 41/41, Ruff, mypy over 119 source files, and diff check
+    pass. Next step is a separate Coordinator integration slice that commits the
+    typed preparation through `StateKernel.complete_subgoal()` and disables the
+    required-obligation deletion path before any clean PR breadth rerun.
+52. `done` — Applied pre-integration V6B contract hardening from review. The
+    progress evaluator now covers the real residual target shape
+    `submit_button -> label=Submit, role=button`, uses shared
+    `criterion_id()` / `evidence_requirement_id()` helpers, separates
+    `plan_based_on_state_version` from `evaluated_at_state_version`, rejects
+    stale supplied observation identity, and returns typed `CurrentStateEvidence`
+    instead of evaluator-local evidence strings. Verification: progress tests
+    8/8, related planning/flow/lifecycle/progress tests 60/60, architecture
+    gates 41/41, Ruff, mypy over 119 source files, and diff check pass. Next
+    remains Coordinator integration, not PR breadth yet.
+
+## Change Record
+
+- Created this plan before implementation.
+- Modified `src/affordance_runtime/intent_compiler.py` and focused intake/
+  pipeline tests. `mypy --ignore-missing-imports src` passes for 112 source
+  files; focused tests pass 120/120; full suite passes 909/913 in this
+  environment, with the four non-code environment blockers described above.
+- Added `ParentSemanticProposalCompiler`; model and parent proposal IDs are
+  normalized through the same source-ledger boundary. Focused intake/pipeline
+  tests pass 69/69, Ruff, and mypy pass.
+- Added deterministic SourceLedger-to-claim-to-obligation-to-terminal coverage
+  and made the model coverage auditor veto-only. Focused tests pass 126/126;
+  full suite passes 913/917, with the same four environment prerequisite
+  failures.
+- Extended `CanonicalObligationCompiler` with a generic flat requested-effect
+  template that derives terminal relation, typed independent evidence, ids, and
+  provenance without proposal graph fields. Focused compiler tests pass 3/3;
+  Ruff and mypy pass.
+- Migrated the parent flat semantic-proposal entrypoint to that canonical path;
+  56 relevant tests, Ruff, and mypy pass.
+- Migrated the model flat semantic-proposal entrypoint to the same canonical
+  path. Model review COMPLETE cannot grant admission; focused migration,
+  coverage, BrowserGym, and pipeline tests pass 35/35, and Ruff/mypy pass.
+  The complete suite is 915 passed and four environment-only failures: two
+  Chromium tests need Playwright, and two subprocess architecture tests use an
+  interpreter without the editable project installed.
+- Migrated bounded multi-stage semantic proposals through
+  `CanonicalObligationCompiler`; focused compiler/intake/planning tests pass
+  116/116, static gates pass, and full suite is 916 passed with the same four
+  environment-only failures.
+- Added SG6 held-out non-BrowserGym value-flow conformance with adversarial
+  omission controls; 16 focused tests and static gates pass.
+- Re-ran the complete gate with
+  `/home/yang/.venvs/affordance-browsergym-py312/bin/python`: 921 tests,
+  Ruff, mypy over 112 source files, and diff check pass.
+- Added normal-entrypoint planner-context recovery ownership. Focused recovery
+  tests pass 89/89; dedicated full suite passes 922 tests, Ruff, mypy over 113
+  source files, and diff check.
+- Added normal-entrypoint planner-schema recovery ownership. Focused recovery/
+  planner tests pass 160/160; dedicated full suite passes 923 tests, Ruff,
+  mypy over 114 source files, and diff check.
+- Extracted neutral Planner contracts and added an executable import boundary;
+  106 focused tests and the 924-test dedicated full suite pass. Coordinator is
+  3499 lines and its line ceiling is lowered accordingly.
+- Extracted neutral approval-source contracts and direct entrypoint imports;
+  added token-binding/TTL/no-match/order behavior regressions and executable
+  neutral-ownership/import/compatibility boundaries. Twenty focused tests and
+  the 930-test dedicated full suite pass. Coordinator is 3473 lines and its
+  executable ceiling is lowered accordingly.
+- Activated the independent horizontal architecture-governance track. Added
+  control-module/method growth ratchets, full StateKernel read/mutation API
+  classification, extracted-collaborator dependency/authority gates, relative
+  import normalization, and legacy benchmark-edge freeze. Eighteen focused
+  architecture gates and the 938-test dedicated full suite pass; Ruff, mypy
+  over 116 source files, and diff check pass. Existing debt remains explicit
+  and does not make a unified rewrite a vertical milestone prerequisite.
+- Calibrated the committed governance baseline and removed duplicated live
+  status from the stable project plan. Added the double-track `1 + 1` WIP,
+  single-production-writer policy, separate status/evidence/promotion/
+  admission/CI axes, exact failed remote-run identities and classification,
+  scoped INV-11 exceptions, and an executable document-drift test. The new
+  test failed before the document changes and then passed; 19 focused gates,
+  the 939-test full suite, Ruff, mypy over 116 source files, `uv build`, and
+  diff check pass. Isolated `python -m build` remains unavailable in the
+  dedicated interpreter because host `ensurepip/python3.12-venv` is absent.
+- Repaired the two CI failure classes that were harness/environment problems:
+  core CI now runs `python -m pytest -q`, and BrowserGym bridge uses the
+  isolated BrowserGym constraints on `ubuntu-22.04`. Added a governance test
+  that failed before the workflow repair and passes after it. Kept the
+  Chromium/container coherent observation epoch drift classified as an open
+  benchmark/runtime diagnostic rather than marking the PR green by wording.
+  Verified with the focused CI workflow contract test, the generalization
+  evidence import-path test, the local Chromium smoke, focused epoch-drift
+  behavior tests, the full 940-test suite, Ruff, mypy, `uv build`, and diff
+  check. No new remote CI run has been triggered.
+- Added a bounded BrowserSession stabilization retry for transient
+  affordance-state drift during multi-source capture, with semantic DOM drift
+  still rejected. Added `--allow-acceptance-fail` so CI benchmark smoke can
+  complete and publish all run artifacts without pretending release acceptance
+  passed; default `benchmark` still returns non-zero on acceptance failures.
+  The local `--seeds 3 --allow-acceptance-fail` benchmark completes 63 runs and
+  exits 0 while reporting acceptance failed, preserving the settings/recovery
+  promotion gap for follow-up. Verified with the full 942-test dedicated
+  Python 3.12 suite, 13 focused CLI/browser/governance gates, Ruff, mypy over
+  116 source files, `uv build`, and diff check. No new remote CI run has been
+  triggered.
+- Split active-subgoal reading from activation: `active_subgoal()` is now
+  read-only, `activate_next_subgoal()` is explicit, Coordinator owns the
+  production activation call, and planner-context construction no longer
+  advances progress. The architecture gate now treats the old
+  planner-context hidden mutation as closed rather than allowlisted. Verified
+  with the RED-to-green planner-context no-mutation and debt-closure tests,
+  189 focused active-subgoal/planner/context/governance gates, the full
+  944-test dedicated Python 3.12 suite, Ruff, mypy over 116 source files,
+  `uv build`, and diff check. No benchmark/provider/remote CI/promotion claim.
+- Ran the selected SG7 strict-generalist targeted protected-family diagnostic
+  on clean committed `fa288af` after restarting the existing Ollama container
+  to restore NVML and 100% GPU model residency. Pre-run gates passed: 21
+  horizontal architecture/responsibility tests, 40 SG1-SG6 deterministic intake
+  tests, Ruff, mypy, and diff check. The 2-task x 2-seed matrix observed all
+  four episodes with no provider failures, no retries, no missing/unrun/
+  invalidated cases, and `official_score_claimed=false`; SG7 failed 0/4 in
+  INTENT / PLANNING. Three episodes failed before TaskSpec creation with
+  `unresolved_task_dependency`; `enter-date` seed 0 created a canonical
+  compiler TaskSpec and accepted TaskPlan, then strict planner returned
+  `ask_user` / `waiting_clarification`. No production code was changed. The
+  next vertical action is a generic non-BrowserGym intent/planning repair slice,
+  not a PlannerStateView migration unless new evidence ties mutable planner
+  state to the failure.
+- Implemented and diagnosed that generic SG7 repair candidate in the current
+  dirty tree without adding task-family dispatch, selector/URL branches, Prompt
+  changes, budget expansion, Coordinator changes, StateKernel changes, or
+  PlannerStateView migration. The repair covers bounded unresolved-dependency
+  draft repair, explicit value-entry canonicalization, non-literalized
+  page-sourced text, value-entry-only text-action inference, strict planner
+  exact/page-text/submit fallbacks, targeted perception request merging,
+  BrowserGym targeted observation, and executor-local opaque DOM spatial
+  binding. The dirty-tree SG7 run
+  `/tmp/affordance-sg7-fa288af-submit-fallback-dirty-20260727-182502` observed
+  all four requested episodes and passed 4/4 with no provider/runtime failure,
+  no missing/unrun/invalidated cases, `official_success_rate=1.0`, and
+  `official_score_claimed=false`. Because `working_tree_clean=false` and the
+  source tree digest is
+  `sha256:cb4dd50f8cf2376fce30673d813e1ca895f44b67a2c46860022902c163fa8403`,
+  this is only validated repair-candidate evidence. The next step is commit or
+  otherwise freeze the candidate, rerun the same matrix from a clean tree, then
+  continue vertical protected breadth. Immutable Planner input remains the next
+  horizontal lane, not this SG7 repair's prerequisite.
+- Committed the SG7 generic repair as
+  `3d44a9d222decd1de272d7a4d3eb14b025a8738a`, pushed it to
+  `origin/agent/migrate-runtime-components`, and reran the exact clean SG7
+  targeted matrix. The clean run
+  `/tmp/affordance-sg7-3d44a9d-20260727-184535` observed and passed all four
+  requested episodes with no provider/runtime failure, no missing/unrun/
+  invalidated cases, no rate-limit/transient retries, `official_success_rate=1.0`,
+  `mean_official_reward=1.0`, and `official_score_claimed=false`. Compact
+  evidence is archived under `docs/evidence/runs/m8.2a-sg7-3d44a9d/`. This
+  closes SG7 targeted confirmation only; protected breadth remains next and
+  promotion remains held.
+- Integrated V-PRB-6B verifier-backed current-state progress accounting into
+  the Coordinator path without changing BrowserGym adapter evidence, Prompt,
+  budgets, finish guard, V-PRB-6A progress targeting, or immutable Planner
+  input. The production repair is committed as
+  `d17a1f3cf9f3190e3188ad5a9f5bfbc2ef017e2c`. A ready required read-only
+  `IS_AVAILABLE` / `IS_VISIBLE` subgoal can
+  now be completed from typed current observation evidence through
+  `StateKernel.complete_subgoal()`, while required TaskPlan obligation subgoals
+  remain in the authoritative plan and the old current-state discard path is
+  stopped for TaskSpecs with obligations. Verified locally with the focused
+  Coordinator integration test, 52 related Coordinator/TaskPlan/progress tests,
+  41 architecture governance gates, Ruff, mypy over 121 source files, and diff
+  check. Clean PR breadth rerun remains the next evidence step before any
+  capability, fresh diagnostic, nightly/release, or promotion claim.
+- Reran the clean PR breadth 6-task x 2-seed matrix at
+  `407133d1a1c902436ae2576175f834a7a74b1367` after the V-PRB-6B integration.
+  The run observed all 12 scheduled episodes with no missing, unrun,
+  invalidated, or provider-failure cases. Result: 11/12 official reward
+  passed and 9/12 Runtime passed; PR breadth acceptance remains failed and
+  `official_score_claimed=false`. V-PRB-6B closed the prior
+  `enter-text:seed-1` required read-only availability failure. Remaining work
+  is split: V-PRB-6A covers `form-sequence` dependent-subgoal progress-scope /
+  finish-guard accounting, while `click-button:seed-1` is a separate
+  structured intent-draft `json_invalid` schema/provider robustness cluster.
+  Fresh diagnostic, nightly/release, remote-CI green, and promotion remain
+  held.
+- Reran a targeted clean `click-button` recheck at
+  `47932a2d84266983c632258afdfacae9b1cdcd94` to test whether the
+  `click-button:seed-1` JSON-invalid case was stable enough to admit a
+  production repair. Both seeds passed with no Runtime, provider, missing,
+  unrun, or invalidated failure. This does not change the failed PR breadth
+  result at `407133d`; it only means the click-button JSON-invalid cluster is
+  monitored rather than selected as the next production owner. The next
+  production lane is V-PRB-6A for the stable `form-sequence` dependent-subgoal
+  progress-scope / finish-guard cluster. A Core-only progress-target foundation
+  is recorded in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`;
+  it is not a closure because the dirty-tree form-sequence diagnostic remained
+  negative. The next RED should target post-verification progress attribution,
+  not BrowserGym adapter broadening, Coordinator growth, or immutable Planner
+  input migration.
+- Froze the post-`fa1037e` architecture decision as ODG-0: the Canonical
+  Obligation Graph becomes the only target progress authority, TaskPlan is
+  downgraded to optional execution strategy / compatibility view, and the
+  V-PRB-6A `TaskPlanProgressTarget` foundation is retained but no longer
+  expanded through Coordinator as the standard path. Created
+  `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`
+  and `docs/audits/obligation-execution-role-audit.md`. The immediate next
+  production work must start from ODG role/projection/attribution REDs rather
+  than BrowserGym adapter evidence broadening, TaskPlan subgoal deletion,
+  finish-guard weakening, receipt/reward completion, or pre-action final
+  subgoal ownership.
+- Started ODG-2 with TDD: added RED coverage for canonical dependency-based
+  ready obligations, explicit role-view fail-closed behavior, completion from
+  blocking progress obligations rather than TaskPlan state, and identity-bound
+  attribution ticket / satisfaction preparation contracts. Implemented
+  `src/affordance_runtime/obligation_progress.py` and
+  `src/affordance_runtime/obligation_attribution.py` as authority-free
+  foundation modules only. They do not mutate StateKernel, write trace, invoke
+  Planner, connect through Coordinator, replace finish authority, or change
+  BrowserGym behavior. Recorded
+  `docs/change-admission/odg-2-obligation-progress-contracts.yaml`.
+- Started ODG-3 after approval: harden ODG-2 identity/immutability contracts
+  first, then add StateKernel-local optional obligation ledger storage and
+  immutable projection only. This slice must not initialize the standard
+  run loop, commit obligation satisfaction through Coordinator, change finish,
+  alter PlannerContext, replace TaskPlan behavior, write trace, run benchmark,
+  or make a promotion claim.
+- Started ODG-4A/4B: add executable, fail-closed obligation role decisions and
+  a non-throwing ready-obligation projection result for future ODG-5 shadow
+  comparison. The role resolver may only use canonical obligation fields; it
+  must not read task names, URLs, selectors, benchmark families, Planner state,
+  TaskPlan state, or model-authored progress.
+- Started ODG-5 shadow comparison foundation: add an authority-free comparator
+  between legacy TaskPlan projection and canonical obligation ready projection.
+  This slice may produce stable trace payload data, but it must not write trace,
+  mutate StateKernel, change Coordinator control flow, alter PlannerContext,
+  change finish authority, or rerun/promise benchmark promotion.
+- Review-approved ODG-5.1/5.2 scope: harden the comparator by allowing multiple
+  strategy subgoals to map to one obligation and wrapping comparisons in a
+  versioned trace identity envelope; add read-only runtime projection from
+  legacy verified PlanProgress using exact-ID mapping only.
+- Implemented ODG-5.3 post-observation diagnostic trace hookup through
+  `commit_post_observation_progress()`. The old inline current-state completion
+  block is replaced rather than expanded, `coordinator.py` is now 3461 lines,
+  and `RunCoordinator.run_sync()` is now 2034 lines. Coordinator progress
+  commit, finish authority, PlannerContext, TaskPlan semantics, and benchmark
+  promotion remain unchanged.
+- Ran and archived focused ODG-5 shadow diagnostics at `04a2fcd` for
+  `enter-text` and `form-sequence`, seeds 0/1. Results: 4/4 observed, 4/4
+  external reward, 2/4 Runtime pass, 2/4 Runtime fail; no shadow failed events.
+  `form-sequence` shadow projection is aligned at failure, while
+  `enter-text:seed-1` remains `role_pending` for blocking availability. Next
+  slice is ODG-6 current-observation obligation satisfaction for role-resolved
+  `IS_AVAILABLE` / `IS_VISIBLE`, not form-sequence post-action attribution yet.
+- Started ODG-6 as a foundation/evaluator-only slice. The selected RED covers
+  current-observation satisfaction for explicitly role-resolved
+  `IS_AVAILABLE` / `IS_VISIBLE` canonical obligations without TaskPlan,
+  ExecutionReceipt, BrowserGym reward, task-name, URL, selector, or coordinate
+  authority. Coordinator commit, StateKernel / obligation-ledger mutation,
+  finish authority, PlannerContext, TaskPlan behavior, benchmark rerun, and
+  promotion remain unauthorized in this slice.
+- Started ODG-6.1 / ODG-2.1 shared attribution-contract hardening before
+  ODG-7. The REDs require TaskSpec identity on attribution tickets and
+  satisfaction preparations, typed satisfaction source objects instead of
+  synthetic current-observation contract IDs, evidence kind/strength/source
+  compatibility for current observation facts, and distinct result states for
+  multiple independent satisfactions versus ambiguous targets. ODG-7 ticket
+  resolution remains a separate next slice.
+- Started ODG-7 as a separate foundation-only slice. The REDs require an
+  authority-free `AttributionActionView`, a non-throwing ticket resolution
+  result, deterministic ticket identity, multiple candidate obligations per
+  action, stale identity handling, role-pending propagation, dependency and
+  progress-role filtering, and action/target compatibility checks. This slice
+  must not save tickets through Coordinator, change ActionContract / Executor /
+  Verifier interfaces, mutate the obligation ledger, change finish authority,
+  change PlannerContext, run PR breadth, or claim promotion.
+- Started ODG-7.1 / ODG-8 after approval. ODG-7.1 hardens ticket contracts:
+  stale/invalid ready-projection statuses stay distinct, ready views must match
+  the current canonical obligation, ticket IDs use canonical JSON hashing, and
+  target matching uses Runtime-supplied canonical subject IDs rather than
+  lexical matching. ODG-8 adds pure post-action evidence normalization with
+  immutable verifier evidence views and semantic evidence declarations. It
+  produces `PostActionEvidenceFact` values only; no obligation ID, Coordinator
+  commit, StateKernel mutation, finish authority, PlannerContext change,
+  BrowserGym rerun, or promotion claim is authorized.
+- Started ODG-8.1 / ODG-8B after review. ODG-8.1 adds
+  `PostVerificationContext`, stable `semantic_evidence_key` declaration
+  matching, ticket/context causality checks, and effective strength as the
+  minimum of source cap and verifier reported strength. ODG-8B adds verifier
+  `evaluate()` methods and `VerificationEvidence.semantic_evidence_key` while
+  preserving `verify() == evaluate().passed`; it improves evidence content
+  without changing verifier pass/fail behavior or runtime progress authority.
+- Started ODG-9 after ODG-8B approval. The slice adds a pure
+  `PostVerificationObligationAttributor` that consumes `TaskSpec`,
+  `ObligationProgressStateView`, `ProgressAttributionTicket`, and
+  `PostActionEvidenceFact` values. It may return
+  `ObligationSatisfactionPreparation` only when exactly one candidate is fully
+  covered by sufficiently strong, identity-consistent evidence and dependencies
+  remain satisfied. It does not persist tickets, mutate StateKernel or the
+  obligation ledger, write trace, change finish authority, change
+  PlannerContext, require TaskPlan, run PR breadth, or claim promotion. The
+  next authorized slice is a Runtime-only ticket carry boundary plus ODG-9
+  shadow diagnostics; Coordinator obligation commit remains ODG-10 and finish
+  authority remains ODG-11.
+- Started the Runtime-only ticket carry / ODG-9 shadow-projection foundation
+  after `ce7a329`. The slice adds `BoundActionExecution` and
+  `ContractExecutionLoop.bind_action_execution()` so a
+  `ProgressAttributionTicket` can travel beside an accepted `ActionContract`
+  without entering the `ActionContract` schema or Executor/Verifier inputs. It
+  also adds diagnostic-only ODG-9 shadow projection payloads. It does not mutate
+  StateKernel or the obligation ledger, write trace, change Coordinator
+  progress commit, change finish authority, change PlannerContext, require
+  TaskPlan, run PR breadth, or claim promotion. The next slice is the actual
+  diagnostic trace hookup; Coordinator obligation commit remains ODG-10.
+- Started S0 simplified architecture freeze after `21f49e7`. Archived the
+  approved target architecture at
+  `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+  and the granular execution plan at
+  `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md`.
+  This supersedes ODG-0 for the default production path: ODG-2 through ODG-9
+  stay foundation/diagnostic, ODG-9 hookup and ODG-10/ODG-11 are stopped for
+  default progress authority, and advanced attribution is experimental-only.
+  The next slice is S1 simplified core contracts, not ODG diagnostic hookup.
+- Started S1 simplified core contracts after `6e590e9`. Added neutral
+  `simplified_runtime_contracts.py` for source references, criterion policies,
+  step/task-plan views, execution attempts, verification results, and action
+  outcomes. RED first failed because the module was absent; GREEN passes the
+  focused contract tests. This remains foundation-only: no Coordinator,
+  StateKernel, Executor, Verifier behavior, TraceDag, PlannerContext, runtime
+  authority, PR breadth, or promotion change. The next slice is S2
+  legacy-to-step compatibility projection.
+- Started S2 legacy-step compatibility projection after `0288a8e`. Added a
+  read-only exact-ID projector from current TaskPlan/Subgoal/PlanProgress and
+  TaskSpec terminal obligations into the simplified Step contracts. RED first
+  failed because the projector API was absent; GREEN covers multi-step, flat
+  task, stale plan identity, no lexical mapping, task-level terminal criterion
+  projection, and StateKernel version read-only behavior. This remains
+  foundation-only: projected views have no completion authority, no trace
+  writes, no Coordinator changes, no PlannerContext migration, no PR breadth,
+  and no promotion. The next slice is S3 immutable PlanningRequest.
+- Started S2.1 step projection hardening after `7fe493e`. This preliminary
+  slice closes review-required projection edge cases before S3 immutable
+  PlanningRequest: completed plans no longer synthesize the last step as active,
+  ready-but-not-activated steps stay unactivated, source-unit IDs and claim IDs
+  remain distinct, criterion evidence policy comes from typed evidence
+  requirements, and unknown or unevidenced legacy progress IDs fail closed. It
+  remains behavior-neutral and does not change Coordinator, StateKernel
+  mutation, PlannerContext, production authority, PR breadth, or promotion.
+- Completed TPA-0 on top of the committed S2.1 baseline. Added the TaskPlan
+  authority amendment and granular TPA plan, with TaskPlanGeneratorPort as
+  candidate owner, TaskPlanAuthority as decision owner, RunCoordinator as sole
+  install/replace committer, StateKernel as storage owner, and request-only
+  StepPlannerPort as the target step-action boundary. The amendment does not
+  reopen S2.1: incomplete/no-ready legacy projection remains fail-closed as
+  `PROJECTION_INVALID`, not a new `BLOCKED` authority state.
+- Completed TPA-1 as a read-only inventory. Added TaskPlan authority call-site,
+  Step Planner standard-input read-set, and TaskSkill progress-authority audits.
+  Governance AST baselines now freeze two Coordinator-only plan commit calls,
+  four TaskPlan constructor owners, 15 production triple-signature Step Planner
+  implementations, and TaskSkill state mutation calls isolated to
+  `task_skills.py`. No production source, Planner behavior, StateKernel,
+  Coordinator control flow, progress authority, PR breadth, or promotion changed.
+  The next slice is TPA-2 immutable PlanningRequest contracts and sole builder.
+- Started TPA-2 after `7cf854b`. Added immutable PlanningRequest contracts and
+  a sole read-only PlanningRequestBuilder that projects validated TaskSpec,
+  legacy exact-ID Step projection, bounded observation affordances, runtime
+  summaries, and budgets without mutating StateKernel or activating a ready
+  step. PlannerPort, Coordinator call sites, PlannerContextBuilder, TaskPlan
+  admission, progress authority, finish authority, PR breadth, and promotion
+  remain unchanged. The next slice after this foundation is TPA-3
+  StepPlannerPort request-only cutover.
+- Started TPA-3.1 after `b70ed62`. Added a request-based
+  PlannerContextBuilder path and strengthened PlanningRequest summaries so
+  provider-facing context can be rebuilt from the immutable request. The golden
+  test proves the covered legacy context payload is identical, and
+  ready-not-activated steps are not exposed as active planner subgoals.
+  PlannerPort, Coordinator call sites, TaskPlan admission, progress authority,
+  finish authority, PR breadth, and promotion remain unchanged. The next slice
+  is TPA-3.2 DecisionConstraint request adapter.
+- Started TPA-3.2A/B after `b99160d`. Preserved non-projected Step projection
+  status/reason in PlanningRequest instead of folding stale/invalid plans into
+  ordinary no-plan, blocked effectful request actions for invalid projections,
+  added immutable PlannerAdmissionView / TargetAdmissionDecision /
+  PlannerAdmissionSummary contracts, and deep-froze DecisionConstraintSet
+  compatible-target mappings. PlannerPort, Coordinator call sites, terminal
+  admission hookup, TaskPlan admission, progress authority, finish authority,
+  PR breadth, and promotion remain unchanged. The next slice is TPA-3.2C
+  legacy terminal admission projector.
+- Started TPA-3.2C after `87b692b`. Added LegacyPlannerAdmissionProjector as
+  the sole migration owner for legacy terminal readiness projection, reusing
+  the existing terminal binding/compiler/evaluator chain and embedding the
+  resulting PlannerAdmissionView in PlanningRequestBuilder without consuming it
+  in PlannerPort or Coordinator. Ready terminal targets remain visible, while
+  blocked, unknown, ambiguous, and unresolved terminal targets are projected as
+  typed exclusions. PlannerPort, Coordinator call sites, TaskPlan admission,
+  progress authority, finish authority, PR breadth, and promotion remain
+  unchanged. The next slice is TPA-3.2D DecisionConstraint apply-admission
+  request path.
+- Started TPA-3.2D after `2b929ba`. Added
+  StrictDecisionConstraintBuilder.apply_admission(context, admission), returning
+  ConstraintApplicationResult with a typed PlannerAdmissionSummary while
+  filtering excluded targets from immutable PlannerAdmissionView. The method
+  does not read StateKernel or BrowserSnapshot and does not invoke terminal
+  readiness. The legacy narrow_terminal_candidates path remains compatibility
+  until Generalist request-only core migration. PlannerPort, Coordinator call
+  sites, TaskPlan admission, progress authority, finish authority, PR breadth,
+  and promotion remain unchanged. The next slice is TPA-3.3 Generalist
+  request-only core.
+- Started TPA-3.3 after `a7c3668`. GeneralistLMPlanner now builds a single
+  immutable PlanningRequest at propose entry, rebuilds provider PlannerContext
+  from that request, and applies terminal admission from PlannerAdmissionView
+  instead of rereading StateKernel/BrowserSnapshot through
+  narrow_terminal_candidates. Request affordance state preserves bounded
+  list-like values, and no-canonical-obligation legacy TaskSpecs carry active
+  step objective/action-family as immutable compatibility context without
+  creating fake Step authority. PlannerPort public signature, Coordinator call
+  sites, TaskPlan admission, progress authority, finish authority, PR breadth,
+  and promotion remain unchanged.
+- Started TPA-3.4 after `21f408c`. ParentAgentPlannerAdapter now builds the
+  same immutable PlanningRequest at propose entry and serializes parent-agent
+  context from the request path instead of calling the legacy
+  build_planner_context helper directly. Parent proposal validation,
+  provenance, public PlannerPort compatibility signature, Coordinator call
+  sites, TaskPlan admission, progress authority, finish authority, PR breadth,
+  and promotion remain unchanged.
+- Started TPA-3.5 after `9195ed3`. PricingPlanner, SettingsPlanner, and
+  ExportPlanner now build PlanningRequest when a validated TaskSpec is present,
+  use request-bounded affordance labels for deterministic reference selection,
+  and keep concrete ActionContract creation in the legacy snapshot-bound
+  compatibility path. Envelope-only fixture paths do not fabricate TaskSpec
+  identity. PlannerPort public signature, Coordinator call sites, TaskPlan
+  admission, progress authority, finish authority, PR breadth, and promotion
+  remain unchanged.
+- Started TPA-3.6 after `d7a3194`. ConformancePlanner and
+  RecoveryFixturePlanner now build PlanningRequest when a validated TaskSpec is
+  present, fail closed on stale injected request identity, and preserve their
+  fixture contract envelopes. BrowserGym and benchmark planner compatibility
+  remains isolated for the next slice. PlannerPort public signature,
+  Coordinator call sites, TaskPlan admission, progress authority, finish
+  authority, PR breadth, and promotion remain unchanged. The next slice is
+  TPA-3.7 BrowserGym and benchmark planner compatibility migration.
+- Started TPA-3.7 after `b08c7c4`. BrowserGymPlanner now builds
+  PlanningRequest when a validated TaskSpec is present, fail closes on stale
+  injected request identity, and keeps BrowserGymPolicyRequest as the
+  benchmark-policy compatibility boundary. AgentLabPlannerAdapter inherits that
+  projection. PlannerPort public signature, Coordinator call sites, TaskPlan
+  admission, progress authority, finish authority, PR breadth, and promotion
+  remain unchanged. The next slice is TPA-3.8 PlannerPort public request
+  cutover.
+- Started TPA-3.8 after `65dab6b`. PlannerPort now exposes request-only
+  `propose(PlanningRequest)` in the neutral contract module; Coordinator
+  builds PlanningRequest before the planner boundary and invokes legacy
+  three-argument planners only through `planner_compatibility.py`. This is a
+  compatibility cutover foundation: legacy ActionContract-returning fixtures
+  remain isolated rather than rewritten, and TaskPlan admission, progress
+  authority, finish authority, PR breadth, and promotion remain unchanged. The
+  next slice is TPA-4 TaskPlanAuthority contracts.
+- Started TPA-4 after `8ccabc1`. TaskPlanAuthority neutral draft/request/
+  issue/decision/binder/generator contracts are added as foundation-only; no
+  Coordinator plan commit, StateKernel mutation, TaskPlanLifecycle admission,
+  generator migration, progress authority, finish authority, PR breadth, or
+  promotion change is authorized. The next slice is TPA-5 TaskPlan generator
+  draft migration.
+- Started TPA-5 after `6816df5`. Added PlanCandidate generator compatibility
+  surfaces for rule, router, and reference pricing planning while keeping
+  legacy TaskPlannerPort production generation, LLM generator migration,
+  Coordinator plan commit, StateKernel mutation, progress authority, finish
+  authority, PR breadth, and promotion unchanged. The next slice is TPA-5B LLM
+  TaskPlan generator draft migration.
+- Started SAR-0 after `648c2da`. Added the authoritative optimized target
+  architecture and substitutive refactor execution plan as the default
+  long-term authority, superseding the additive TPA/ODG default sequence for
+  future work. TPA-5B foundation-only expansion is stopped; the next slice is
+  SAR-1 deep immutability and stale contract-hash repair.
+- Started SAR-0 archive synchronization after `e7acc8a`. Superseded
+  simplified and TaskPlanAuthority docs are moved under
+  `docs/archive/superseded-2026-07-29/`, README/status/governance references are
+  aligned to the SAR-0 authoritative docs, and the next slice remains SAR-1.
+- Started SAR-1 after `13409f8`. Added the stale ActionContract nested payload
+  RED and began the deep-immutability fix with explicit BrowserGym
+  adapter-boundary thaw; production progress/finish authority remains
+  unchanged.
+- Continued SAR-1 after `816443f`. Added REDs for mutable
+  `ExecutionReceipt.evidence` and `PlannerDecision.result/planner_context`,
+  froze those construction boundaries, and projected frozen payloads through
+  trace/artifact JSON writers without changing progress or finish authority.
+- Continued SAR-1 after `7530394`. Added REDs for mutable Observation and
+  Affordance source payloads, froze those construction boundaries, and repaired
+  legacy Mapping/Sequence read assumptions without changing Coordinator
+  authority, progress, or finish semantics.
+- Continued SAR-1 after `5709f75`. Added REDs for mutable
+  `VerificationEvidence.observed/expected` and `VerificationReport.evidence`,
+  froze verifier evaluation/report materialization boundaries, and kept
+  production progress/finish authority unchanged.
+- Continued SAR-1 after `f3d9592`. Added a RED for mutable `TraceNode.payload`
+  and `TraceNode.parents`, froze trace event append boundaries, and preserved
+  JSONL writer compatibility through canonical JSON projection.
+- Continued documentation governance after `9574a80`. Added `docs/README.md`
+  as the durable documentation index, kept SAR-0 authoritative architecture and
+  substitutive execution plan as the current authority, preserved superseded
+  simplified/TaskPlanAuthority documents in archive, and corrected lingering
+  TPA-5B/current-HEAD drift in durable status documents.
+- Continued SAR-1 after `0e04d53`. Added a RED for mutable
+  `BrowserSnapshot.accessibility_tree`, froze the snapshot accessibility-tree
+  payload at construction, and kept production progress/finish authority
+  unchanged.
+- Continued SAR-1 after `fd972db`. Added a RED for mutable
+  `PageAffordanceModel.affordances`, froze the DOM affordance sequence at model
+  construction, and kept replacement-based model updates explicit.
+- Continued SAR-1 after `d5f8249`. Added a RED for mutable
+  `ThingAffordanceModel.affordances/state_sources`, froze WoT parsed surface
+  model payloads, and kept device route planning on immutable TD projections.
+- Continued SAR-1 after `7c98863`. Added a RED for mutable
+  `ConfiguredApprovalProvider.allowed_capabilities`, froze approval provider
+  capability configuration, and prevented post-construction approval expansion.
+- Continued SAR-1 after `22fd2b2`. Added a RED for mutable
+  `RoutingDecision.candidate_backends/scores`, froze route-selection result
+  payloads, and kept routing outcomes stable after selection.
+- Continued documentation convergence after `7f3ffff`. Archived former root
+  `architecture.md`, `complete-architecture-blueprint.md`, and
+  `design-freeze.md` content under `docs/archive/superseded-2026-07-29/`,
+  replaced the root paths with SAR-0 redirect stubs, and synchronized README,
+  project plan, implementation status, current plan, archive index, and SAR-0
+  change-admission records. This is documentation authority cleanup only; no
+  production behavior, progress authority, finish authority, Coordinator
+  control flow, StateKernel schema, PlannerPort, PR breadth, or promotion
+  changed.
+- Continued SAR-1 after `8e9c300`. Added a RED for mutable
+  `TaskEnvelope.constraints/capabilities`, froze those runtime entry payloads
+  at construction, and kept task policy/capability semantics stable after
+  callers mutate their original collections.
+- Continued SAR-1 after `239ff76`. Added REDs for mutable task API
+  `TaskRequest.constraints/capabilities` and `TaskExecution.result/artifacts`,
+  froze those DTO payloads at construction, and kept API output compatibility
+  through explicit JSON projection.
+- Continued SAR-1 after `8b6c2f9`. Added REDs for mutable semantic resolver
+  and compiler payloads, froze `SemanticActionResolution.parameters`,
+  `SemanticCompilation.parameters`, and `SemanticConstraints.compatible_target_ids`,
+  and kept planner/compiler behavior unchanged.
+- Continued SAR-1 after `2782593`. Added REDs for mutable
+  `CanonicalProposalGraph.proposal_claim_ids` and
+  `IntentDraftRepairAttempt.proposal_claim_ids`, froze proposal-to-canonical
+  claim-id mappings at canonicalization/repair reporting boundaries, and kept
+  TaskSpec authority unchanged.
+- Synchronized SAR-0/SAR-1 durable documentation after `2ab7f4e`. Confirmed
+  the authoritative optimized architecture and substitutive execution plan are
+  present under `docs/superpowers/`, kept superseded simplified/TaskPlanAuthority
+  and former root architecture records in archive/redirect form, and aligned
+  README/status/current-plan references with the exact current HEAD identity.
+- Continued SAR-1 after `911c705`. Added a RED for mutable ordinal collection
+  snapshot affordance state and froze `_SnapshotAffordanceView.state` at
+  construction so pagination/ordinal planning constraints cannot observe later
+  caller-owned state mutations.
+- Continued the same SAR-1 pass by adding a RED for mutable
+  `GestureTargetBinding.locator` and freezing gesture endpoint locators at
+  construction, keeping gesture preflight/hash-sensitive contract payloads
+  stable.
+- Continued SAR-1 with REDs for mutable `RecoveryTraceProjection.payload`,
+  `TaskPlanTraceProjection.payload`, `RecoveryContext.tried_backends`, and
+  `TaskSkillReplayDecision.metrics`; froze those runtime diagnostic/recovery/
+  task-skill payloads without changing progress, finish, Coordinator, or
+  recovery authority.
+- Completed the SAR-1 mutable-boundary pass as a local completion candidate by
+  adding REDs for conformance result sequences, evolution payloads, recovery
+  evolution report payloads, and canonical trace rows, then freezing them while
+  preserving JSON projection at artifact boundaries. Scanner evidence now shows
+  no non-benchmark frozen dataclass with container fields missing constructor
+  normalization.
+- Started SAR-1.1 after `21d49cad`. Added a bounded change-admission record and
+  RED/GREEN tests for the remaining hash-reachable hidden-mutability checks:
+  `VerifierSpec.expected`, `SourceAssertion.value`, and supplied
+  `ActionContract.contract_hash` consistency. This slice remains authority-free:
+  no Coordinator, StateKernel, PlannerPort, TaskPlan, progress, finish,
+  provider, or benchmark behavior changes are in scope.
+- Started SAR-2 after `6ff0fb5`. Added `semantics.py` as the canonical semantic
+  vocabulary, converted `TaskObligationRelation`, `SubgoalOutcomeRelation`, and
+  `StateCriterionRelation` into aliases to `CriterionRelation`, converted
+  simplified/attribution evidence policy and strength names to canonical
+  aliases, made no-op criterion subclasses compatibility aliases to
+  `StateCriterion`, and removed the simplified step relation projector. The
+  active SAR-2 record is
+  `docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml`.
+
+- Started SAR-3A after `6efce23`. Added direct rule PlanCandidate generation: `PlanCandidate` is now the canonical unaccepted plan model, `PlanCandidate` is compatibility-only, and the rule generator no longer calls `RuleTaskPlanner` or `PlanCandidateProjector`. SAR-3B LLM candidate cutover, TaskPlanAuthority production admission, StateKernel plan/progress cutover, SAR-4, SAR-5, and SAR-6 remain open.
+- Started SAR-3B after `a59f24c`. Added `LLMTaskPlanner.generate_candidate()` so LLM provider candidates project to canonical `PlanCandidate`/`StepSpec` without exposing `_bind_candidate` or `_bind_subgoal_candidate`. Existing `plan()` remains a compatibility wrapper for current TaskPlannerPort production call sites. SAR-3C TaskPlanAuthority initial cutover, replacement cutover, legacy SubgoalSpec/PlanProgress deletion, SAR-4, SAR-5, and SAR-6 remain open.
+- Started SAR-3C after `4aa872c`. Routed candidate-capable initial TaskPlan planning through `PlanCandidate -> TaskPlanAuthority.admit_initial -> TaskPlan`, producing deterministic Runtime-owned accepted-plan lineage before the existing StateKernel install committer. Legacy/no-canonical-obligation planners without candidate support remain behind an explicit compatibility fallback. SAR-3D replacement admission cutover, legacy SubgoalSpec/PlanProgress deletion, SAR-4 and SAR-5 remain open for the current goal.
+- Started SAR-3D after `bea01f8`. Routed candidate-capable replacement TaskPlan planning through `PlanCandidate -> TaskPlanAuthority.admit_revision -> TaskPlan`, binding previous plan/progress identity and deterministic supersession lineage before the existing StateKernel replace committer. Legacy/no-canonical-obligation replacement planners remain behind an explicit compatibility fallback. Legacy SubgoalSpec/PlanProgress retirement, SAR-4 and SAR-5 remain open for the current goal.
+- Started SAR-3E after `0a53cc4`. Removed `TaskPlanDraft` compatibility naming from production source and generator tests; `PlanCandidate` is now the only unaccepted plan model name. Legacy TaskPlan/SubgoalSpec/PlanProgress model cutover remains open for a larger dedicated slice; SAR-4 and SAR-5 remain open for the current goal.
+- Closed SAR-4A in the planner response serialization foundation commit. Added closed semantic PlannerResponse contracts and a direct PlanningRequest-to-provider-message serializer as replacement foundations. Production still uses legacy PlannerDecision and PlannerContext provider payloads; Coordinator control flow, StateKernel schema, progress authority, finish authority, provider prompt/schema, and benchmark adapter remain unchanged. SAR-4 provider-path cutover and SAR-5 ActiveStepScope remain open for the current goal.
+- Closed SAR-5A in the UnifiedObservation and ActiveStepScope foundation commit. Added immutable target-centric UnifiedObservation contracts and a pure ActiveStepScope proposal scope evaluator. No Coordinator proposal gate, PlanningRequestBuilder observation replacement, StateKernel mutation, progress authority, finish authority, provider prompt/schema, or benchmark adapter change is included in this slice.
+- Started SAR-5B after `7231201`. Hooked ActiveStepScope into PlannerProposalValidator for exact legacy active-subgoal outcome subjects that match current target IDs. This intentionally changes proposal mutation semantics for cross-step target proposals, but does not change Coordinator/run_sync, StateKernel schema, progress authority, finish authority, provider prompt/schema, or benchmark adapter.
+- Recorded review closure for SAR-5B at `b9849e1a1941dc3e36abdf4c1e60475766085902`: SAR-5B exact active-step proposal scope gate is a local candidate, but SAR-5 overall remains `in_progress` because canonical scope resolution, action-family/destination scope, terminal-framework deletion, and behavioral exit evidence remain pending. Next selected slice is SAR-6 ActionContract / ActionOutcome canonicalization. SAR-7 must not start until SAR-4 production PlannerResponse/provider cutover plus legacy deletion and SAR-5 canonical observation/scope plus terminal-framework deletion are closed.
+- Started SAR-6A at `2338432`. Added canonical `ActionOutcomeRecorded` production trace after post-action verification, removed the default `ActionCompleted` final action event from RunCoordinator, removed `ContractExecutionLoop.bind_action_execution()` from the default execution seam, and kept ODG `BoundActionExecution` experimental-only. Coordinator is now 3456 lines, run_sync 2028 lines, 26 methods. Progress authority, finish authority, StateKernel schema, provider prompt/schema, PR breadth, and promotion remain unchanged. Next required prerequisite before SAR-7 is SAR-4 production PlannerResponse/provider cutover and legacy deletion.
+- Continued SAR-4/SAR-5/SAR-7 toward the SAR-7 cutover target. `ad226fe` added exact active-step action-family and drag-destination proposal scope checks. `a3f1bc0` migrated `GeneralistLMPlanner.propose()` to the closed request-only `PlannerResponse` contract with explicit `propose_legacy()` compatibility. `a5d93f7` migrated `ParentAgentPlannerAdapter.propose()` the same way. `1caf42b` removed legacy terminal-readiness admission from the default PlanningRequest path and replaced it with active-step admission while keeping unresolved exact mappings compatibility fail-open. `a35cd15` extracted verifier-backed subgoal progress commit from `RunCoordinator` into `commit_verified_task_progress()`, reducing `coordinator.py` to 3400 lines and `run_sync()` to 1971 lines with 26 methods. SAR-7 remains `in_progress`: planner-done finish and TaskSkill direct completion paths still need replacement before closure.
+- Closed SAR-7B/C locally. `ce485eb` routes Planner terminal requests through `runtime_terminal.commit_planner_terminal_decision()` so `RunCoordinator.run_sync()` no longer owns the inline `decision.done` finish branch. `7053727` centralizes final success commits in `runtime_terminal.commit_task_terminal_success()` and moves no-TaskPlan TaskSkill terminal progress into `task_plan_progress_flow.commit_task_skill_terminal_progress()`. `17ea270` records the SAR-7 closure documentation. Coordinator is now 3378 lines, `run_sync()` 1945 lines, 25 methods; `TaskCompleted` and planner-done finish authority are no longer inline in `run_sync()`. Full local equivalent gates passed with 1240 tests / 1 xfailed, Ruff, mypy over 141 source files, `uv build`, and `git diff --check`; PR breadth, promotion, and remote CI remain held/disabled.
+- Reclassified SAR-7 per review as `sar_7_authority_centralization_local_completion_candidate`, not full SAR-7 milestone closure. Closed bounded SAR-7.1 as a local candidate: added `TaskCompletionVerifier` / `TaskCompletionResult`, made `commit_task_terminal_success()` require a passed completion result, and changed `commit_task_skill_terminal_progress()` so TaskSkill progress records `TaskSkillCompleted` without requesting task completion. Legacy no-TaskSpec and no-effect/no-receipt completions remain explicit compatibility allowances. Full local gate passed with 1245 tests / 1 xfailed, Ruff, mypy, `uv build`, and `git diff --check`; next is SAR-7.2 default progress-state cleanup.
+- Continued bounded SAR-7 semantic closure after `d283e26`. SAR-7.2 removes legacy `pending_obligations` and ODG `obligation_progress` from the default `StateKernel` schema; ODG progress contracts remain external experimental/foundation modules, and `PlanningRequest.pending_evidence_obligations` is now an empty compatibility slot. SAR-7.3 replaces unbounded `action_progress: list[ActionProgressRecord(signature)]` with typed `ActionKey` and bounded `RecentActionOutcomeIndex`, while keeping the current `record_action_progress(signature=...)` call-site seam for canonical JSON signatures only. Full local gate passed with 1254 tests / 1 xfailed, Ruff, mypy, `uv build`, and `git diff --check`; PR breadth, promotion, and remote CI remain held/disabled.
+- Closed SAR-7.4 locally after `bd9f8c5`. Renamed the concrete progress class to `TaskProgress`, kept `PlanProgress` as a compatibility alias, and changed the default `StateKernel` field from `plan_progress` to `task_progress` with `plan_progress` preserved only as a compatibility property. Full local gate passed with 1255 tests / 1 xfailed, Ruff, mypy, `uv build`, and `git diff --check`; next is SAR-7.5 TaskSkill progress-state removal.
+- Closed SAR-7.5 locally after `7efc61d`. Removed `TaskSkillRunState`, `task_skill`, and TaskSkill progress mutation methods from default `StateKernel`; moved TaskSkill compatibility progress into `AcceptedTaskSkillRuntime`; updated Coordinator trace/recovery reads to query the runtime progress snapshot; and removed TaskSkill progress from semantic progress fingerprints. Full local gate passed with 1255 tests / 1 xfailed, Ruff, mypy over 142 source files, `uv build`, and `git diff --check`. Clean SAR-7 PR breadth at `b077c68` completed 12/12 observed but failed 6/12 with no provider failures, so full SAR-7 milestone closure remains incomplete; next is residual classification before any SAR-8 work.
+- Started SAR-4B after `3ccea65`. Changed the public `PlannerPort.propose(request)` return contract to closed `PlannerResponse` and added a compatibility bridge that converts request-only `PlannerResponse` values back to legacy `PlannerDecision` for the current Coordinator consumer. Legacy `PlannerDecision`, `PlannerContext`, and three-argument planners remain compatibility debt; progress authority and finish authority remain unchanged.
+- Closed SAR-8C default recovery protocol cutover locally at `09d43041283078d4031828d01d0b129df4271148`. Default runtime recovery now routes through `RecoveryPhase` and canonical `RecoveryDecision` / `RecoveryOutcome`; legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade source/test protocols were physically removed. Full cutover gate passed with 1326 tests, Ruff, core mypy over 110 source files, `uv build`, and `git diff --check`; remote CI and promotion remain held.
+- Closed the strict ActionChoice fallback-retirement slice locally at `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. Strict Generalist no longer enters free PlannerProposalCandidate generation when Runtime ActionChoice construction fails; strict model-owned `ask_user` and `finish` actions are filtered out, and historical compatibility keeps the old candidate path for replay only. Full local gate passed with 1337 tests, Ruff, core mypy over 116 source files, `uv build`, and `git diff --check`.
+- Local non-qwen Ollama `llama3.1:8b` is now available for targeted diagnostics.
+  A clean 3-case SAR-8C plus Planner Selection run at local
+  `7af5ec6960d89c9882b7cd28519c7559df08965a` observed 2/3 pass:
+  `enter-text` and `form-sequence` passed, while `choose-list` built the
+  correct `select_option` action but failed progress attribution after
+  verification. This is diagnostic evidence only, not PR breadth, remote CI, or
+  promotion evidence.
+- Started FOR-1 Failure Ownership Router vocabulary. `FailureClassification` and
+  `ActionChoiceFailure` now carry six-way `FailureOwner` instead of
+  `FailureDisposition`, while preserving the single `FailureEnvelope` model.
+  Focused recovery/actionchoice/governance tests passed 45/45, and adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-2
+  remains next: narrow `RecoveryPhase` to `RUNTIME_RECOVERY`, delete
+  semantic-owner RecoveryKind values, and remove duplicate owner mappings.
+- Closed FOR-2A locally. `RecoveryPhase` now classifies before state mutation
+  and accepts only `RUNTIME_RECOVERY` failures; non-runtime owners are routed
+  through a temporary owner handoff seam rather than Runtime recovery policy.
+  Focused recovery/actionchoice/governance tests passed 47/47, adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-2B
+  remains next: delete semantic-owner `RecoveryKind` values and duplicate owner
+  mappings, then move to structured non-runtime handoff and behavioral
+  classification.
+- Closed FOR-2B locally. `RecoveryCoordinator.decide()` now rejects
+  non-runtime owners, runtime strategy order no longer emits semantic-owner
+  `RecoveryKind` fallbacks (`REPLAN_*`, `ASK_USER`, `CLARIFY_INTENT`,
+  `REQUEST_APPROVAL`), `RecoveryPhase` removed its unreachable replan branch,
+  and intake/user owner failures use the temporary owner handoff decision path.
+  Focused FOR recovery/actionchoice/governance tests passed 48/48 and adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-3 is
+  next: replace the temporary handoff with structured owner handoff context.
+- Closed FOR-3 locally. Added `FailureOwnerHandoff` and
+  `FailureOwnerHandoffDecision`, routed non-runtime owner decision construction
+  through `build_failure_owner_handoff()`, and kept the handoff module free of
+  RecoveryPhase / RecoveryCoordinator imports. Focused handoff/governance tests
+  passed 5/5 and adjacent Generalist/full-phase-recovery/Coordinator tests
+  passed 130/130. FOR-4 remains next: delete duplicate mappings / temporary
+  handoff shape and run behavioral classification before SAR-9.
+- Closed the FOR-4 code deletion gate locally. `FailureOwnerHandoff` now carries
+  the compatibility `RecoveryKind` and `RecoveryBudgetCost`, deleting the
+  duplicate `_recovery_kind_for_handoff()` and `_budget_cost_for_handoff()`
+  helpers, and `FailureOwnerHandoffDecision` no longer exposes implicit
+  `__getattr__` compatibility. Focused FOR tests passed 55/55 and adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. The
+  remaining FOR-4 item is targeted behavioral classification on a clean
+  non-qwen Ollama `llama3.1:8b` revision before SAR-9.
+- Recorded FOR-4 targeted behavioral classification on clean revision
+  `ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154` using local non-qwen Ollama
+  `llama3.1:8b`. The 3-case targeted run observed 3/3 and passed 1/3:
+  `form-sequence` passed, `choose-list` clustered as execution owner, and
+  `enter-text` clustered as intent/planning owner. Evidence is recorded in
+  `docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md`.
+  This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence.
+  SAR-9 phase extraction is now the next selected work.
+- Started SAR-9A TaskPlan phase extraction after
+  `052edaaa84855984a00dc4eb1b1f74de9a3e6e44`. Added
+  `task_plan_phase.commit_task_plan_phase()` and moved TaskPlan prepare /
+  commit / trace-projection detail out of `RunCoordinator.run_sync` while
+  keeping TaskPlanFlow, StateKernel, RecoveryPhase, and progress-flow ownership
+  unchanged. Focused SAR-9A architecture gate passed 1/1; adjacent
+  TaskPlan/Coordinator/full-phase recovery tests passed 48/48; changed-file
+  Ruff and core mypy passed. Coordinator is now 2939 lines, `run_sync()` is
+  1940 lines, and RunCoordinator has 19 methods. SAR-9 full phase extraction
+  remains incomplete; next is another named phase extraction slice.
+- Started SAR-9B ProgressPhase extraction after
+  `008b48055a401743a3c5291869e3d66f2748c4ef`. Added
+  `progress_phase.ProgressPhase`, routed post-observation and post-TaskPlan
+  current-state progress through that seam, and removed direct low-level
+  progress-flow calls from `RunCoordinator.run_sync` and `task_plan_phase.py`.
+  Progress authority remains `task_plan_progress_flow` for this intermediate
+  extraction. Focused/adjacent SAR-9A/SAR-9B/Progress/TaskPlan/Coordinator
+  gates passed 62/62; changed-file Ruff, core mypy, and diff check passed.
+  Coordinator is now 2934 lines, `run_sync()` is 1936 lines, and RunCoordinator
+  remains at 19 methods. SAR-9 full phase extraction remains incomplete.
+- Started SAR-9C TaskSkillPhase extraction after
+  `3e6754801266abce546f747d15aaf179c75146af`. Added
+  `task_skill_phase.TaskSkillPhase`, moved TaskSkill exposure / activation /
+  accepted-skill provenance construction and planner-decision awaitable
+  resolution out of `RunCoordinator.run_sync`, and preserved Coordinator
+  ownership of TaskSkill activation failure recovery. Focused SAR-9C plus
+  TaskSkill/Coordinator/Generalist/full-phase recovery gates passed 139/139;
+  changed-file Ruff and core mypy passed. Coordinator is now 2859 lines,
+  `run_sync()` is 1869 lines, and RunCoordinator remains at 19 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9D PlanningDecisionPhase extraction after
+  `c5f1895315516f96bc6ed0cc6596e31693412c19`. Added
+  `planning_phase.PlanningDecisionPhase`, moved PlannerDecision trace,
+  semantic proposal validation, planner terminal decision handling,
+  clarification, and legacy empty-decision classification out of
+  `RunCoordinator.run_sync`, while preserving Coordinator ownership of recovery
+  branch response and leaving contract binding for a later extraction. Focused
+  PlanningDecision/Coordinator/Generalist/full-phase/TaskSkill gates passed
+  139/139; changed-file Ruff and core mypy passed. Coordinator is now 2694
+  lines, `run_sync()` is 1701 lines, and RunCoordinator remains at 19 methods.
+  SAR-9 full phase extraction remains incomplete.
+- Started SAR-9E ContractBindingPhase extraction after
+  `110b884e35c480aaf01e77233cc79062f9d4b6ae`. Added
+  `contract_binding_phase.ContractBindingPhase`, moved semantic / legacy
+  contract build-bind, PlannerProposalRejected handling, ContractBuilt /
+  RouteSelected trace projection, progress guard handling, TaskSkill
+  contract-requirement fallthrough, pending binding recovery completion, and
+  preflight visual/SVG rebound binding out of `RunCoordinator.run_sync`.
+  Coordinator still owns recovery branch response and preflight / approval /
+  execution / verification remain later extractions. Focused SAR-9A-E plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 162/162;
+  changed-file Ruff and core mypy passed. Coordinator is now 2351 lines,
+  `run_sync()` is 1363 lines, and RunCoordinator remains at 19 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9F PreflightPhase extraction after
+  `aa4aa03afe2eb350863daf59ab4a9ab96be0883b`. Added
+  `preflight_phase.PreflightPhase`, moved preflight, approval,
+  environment-drift recovery, authorization, pending retry-contract validation,
+  and Preflight/Approval trace projection out of `RunCoordinator.run_sync`.
+  Coordinator still owns terminal result formatting and execution /
+  post-action verification remain later extractions. Focused SAR-9A-F plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 163/163;
+  changed-file Ruff and core mypy passed. Coordinator is now 2104 lines,
+  `run_sync()` is 1136 lines, and RunCoordinator is down to 18 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9G ExecutionPhase extraction after
+  `35afa5a682bfaa30834c1ce4af57541c56933127`. Added
+  `execution_phase.ExecutionPhase`, moved action dispatch, receipt state and
+  artifact recording, pending execution recovery completion, disabled-recovery
+  receipt failure handling, and receipt-failure inspect-post-state recovery
+  out of `RunCoordinator.run_sync`. Coordinator still owns terminal result
+  formatting and post-action verification / progress remain later extractions.
+  Focused SAR-9A-G plus Coordinator/Generalist/full-phase/TaskSkill/contract
+  gates passed 164/164; changed-file Ruff and core mypy passed. Coordinator is
+  now 2013 lines, `run_sync()` is 1043 lines, and RunCoordinator remains at 18
+  methods. SAR-9 full phase extraction remains incomplete.
+- Started SAR-9H VerificationPhase extraction after
+  `26816106da9691629054f5154200b68d3f3fd378`. Added
+  `verification_phase.VerificationPhase`, moved post-action observation,
+  verification, inconclusive-evidence repair, ActionOutcomeRecorded,
+  action-progress recording, postcondition trace projection, and route outcome
+  recording out of `RunCoordinator.run_sync`. Coordinator still owns terminal
+  result formatting and TaskSkill / verified-progress / verification-failure
+  recovery handling remain later extractions. Focused SAR-9A-H plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 165/165;
+  changed-file Ruff and core mypy passed. Coordinator is now 1918 lines,
+  `run_sync()` is 949 lines, and RunCoordinator remains at 18 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9I TaskSkillProgressPhase extraction after
+  `c775b9b365bdb127368284b1db11bfad6ccd82ad`. Added
+  `task_skill_progress_phase.TaskSkillProgressPhase`, moved TaskSkill
+  active-step verification, evidence rejection, checkpointing, step completed /
+  failed traces, fallthrough trace, and no-TaskPlan TaskSkill terminal
+  compatibility out of `RunCoordinator.run_sync`, and deleted the unused
+  Coordinator TaskSkill fallthrough trace helper. Focused SAR-9A-I plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 166/166;
+  changed-file Ruff and core mypy passed. Coordinator is now 1804 lines,
+  `run_sync()` is 859 lines, and RunCoordinator is down to 17 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9J VerifiedProgressPhase extraction after
+  `07411cf5014c0f5e0f830d0f0f6ca4d5eb003c9c`. Added
+  `verified_progress_phase.VerifiedProgressPhase`, moved grounding recovery
+  completion, verifier-backed TaskPlan progress commit, task-completion
+  verification, and final success commit delegation out of
+  `RunCoordinator.run_sync`. Verification-failure recovery remains the next
+  named SAR-9 extraction. Focused SAR-9A-J plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 167/167;
+  changed-file Ruff and core mypy passed. Coordinator is now 1785 lines,
+  `run_sync()` is 845 lines, and RunCoordinator remains at 17 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9K VerificationFailurePhase extraction after
+  `82dd3876861f4ce2a0a59344154cf9dabe510a0b`. Added
+  `verification_failure_phase.VerificationFailurePhase`, moved
+  recovery-disabled failed verification terminal handling, TaskSkill failure
+  context construction, verification-failure recovery dispatch,
+  recovery-start trace projection, and terminal recovery status selection out
+  of `RunCoordinator.run_sync`. Generic recovery envelope construction remains
+  in `RunCoordinator._recover_execution_failure` for a later recovery-pure
+  slice. Focused SAR-9A-K plus Coordinator/Generalist/full-phase/TaskSkill /
+  contract gates passed 168/168; changed-file Ruff and core mypy passed.
+  Coordinator is now 1748 lines, `run_sync()` is 806 lines, and RunCoordinator
+  remains at 17 methods. SAR-9 full phase extraction remains incomplete.
+- Started SAR-9L PerceptionPhase extraction after
+  `e9d67730a8da44fd21e6b94a9c908bc10b22e8ef`. Added
+  `perception_phase.PerceptionPhase`, moved observation capture,
+  ObservationCaptured trace projection, observation artifact indexing, source
+  arbitration, targeted perception fulfillment, pending post-state recovery
+  inspection, pending observation recovery completion, and perception-block
+  terminal handling out of `RunCoordinator.run_sync`. Focused SAR-9A-L plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 169/169;
+  changed-file Ruff and core mypy passed. Coordinator is now 1594 lines,
+  `run_sync()` is 651 lines, and RunCoordinator remains at 17 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9M PlanningFailurePhase extraction after
+  `9fc34e7ebe43e51e810b9ed99f7aeca919b2eb88`. Added
+  `planning_failure_phase.PlanningFailurePhase`, moved TaskPlan failure
+  recovery, TaskSkill activation failure recovery, provider deferral handling,
+  unexpected planner exception recovery, and PlanningDecision failure recovery
+  out of `RunCoordinator.run_sync`. Focused SAR-9A-M plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 170/170;
+  changed-file Ruff and core mypy passed. Coordinator is now 1478 lines,
+  `run_sync()` is 534 lines, and RunCoordinator remains at 17 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9N ContractFailurePhase extraction after
+  `ab577b396a7dd344c3d7b3edb155c4b55ff15f3b`. Added
+  `contract_failure_phase.ContractFailurePhase`, moved contract-binding failure
+  recovery dispatch, continue/retry decision handling, and terminal abort
+  result selection out of `RunCoordinator.run_sync`. Focused SAR-9A-N plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 171/171;
+  changed-file Ruff and core mypy passed. Coordinator is now 1475 lines,
+  `run_sync()` is 529 lines, and RunCoordinator remains at 17 methods. SAR-9
+  full phase extraction remains incomplete.
+- Started SAR-9O RuntimeLoopPhase extraction after
+  `e87831de269091f4cd14435d09bf5b13f1d37251`. Added
+  `runtime_loop_phase.RuntimeLoopPhase`, moved loop-start `TaskCreated`, budget
+  exhaustion `TaskFailed`, PLANNING / VERIFYING phase-entry transitions, and
+  active subgoal activation out of `RunCoordinator.run_sync`. Focused SAR-9A-O
+  plus Coordinator/Generalist/full-phase/TaskSkill/contract gates passed
+  172/172; changed-file Ruff and core mypy passed. Coordinator is now 1471
+  lines, `run_sync()` is 523 lines, and RunCoordinator remains at 17 methods.
+  Generic recovery envelope helpers and pure PhaseResult cutover remain pending,
+  so SAR-9 full phase extraction remains incomplete.
+- Started SAR-9P RecoveryFailurePhase extraction after
+  `48cab04cc7d7fbd5674ddc37cb3b7e3b0da8b00f`. Added
+  `recovery_failure_phase.RecoveryFailurePhase`, moved execution/preflight /
+  verification failure envelope construction, phase-general failure envelope
+  construction, non-runtime owner handoff delegation, runtime recovery decision
+  delegation, and recovery-budget view construction out of RunCoordinator.
+  Focused SAR-9A-P plus Coordinator/Generalist/full-phase/TaskSkill/contract
+  gates passed 173/173; changed-file Ruff and core mypy passed. Coordinator is
+  now 1219 lines, `run_sync()` remains 523 lines, and RunCoordinator is down to
+  14 methods. Pure PhaseResult cutover remains pending, so SAR-9 full phase
+  extraction remains incomplete.

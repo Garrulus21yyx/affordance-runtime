@@ -1,0 +1,56 @@
+slice_id: tpa-1-authority-read-set-audit
+base_revision: 8445747f0d734b3998b88edb204e099edf58d259
+parent_decision: tpa-0-taskplan-authority-freeze
+change_type: read_only_architecture_inventory
+production_behavior_change: false
+production_writers: 1
+
+single_responsibility:
+  freeze all TaskPlan authority, Step Planner input, replan, TaskSkill progress,
+  compatibility, CLI, integration, and benchmark call sites before public port changes
+
+outputs:
+  - docs/audits/taskplan-authority-call-sites.md
+  - docs/audits/step-planner-standard-input-read-set.md
+  - docs/audits/taskskill-progress-authority.md
+  - executable AST inventories in tests/test_horizontal_architecture_governance.py
+
+inventory_baselines:
+  task_plan_commit_callers:
+    - coordinator.py:install_task_plan
+    - coordinator.py:replace_task_plan
+  task_plan_constructor_owners:
+    - planners.py:PricingTaskPlanner
+    - task_planning.py:TaskObligationOutcomeCompiler
+    - task_planning.py:LLMTaskPlanner
+    - task_planning.py:synthetic_task_plan
+  standard_triple_signature_step_planners: 15
+  taskskill_state_mutation_caller: task_skills.py
+
+authority_state:
+  plan_candidate_owner: legacy TaskPlannerPort implementations
+  plan_decision_owner: TaskPlanLifecycle plus TaskPlanValidator composition
+  plan_commit_owner: RunCoordinator
+  progress_authority: legacy PlanProgress plus a no-plan TaskSkill completion exception
+  state_writer: RunCoordinator and baselined TaskSkill runtime compatibility path
+  trace_writer: RunCoordinator
+
+forbidden_changes:
+  - no production source modification
+  - no PlannerPort signature change
+  - no TaskPlan schema change
+  - no StateKernel mutation change
+  - no Coordinator control-flow change
+  - no benchmark behavior change
+
+required_tests:
+  - TaskPlan install and replace production callers remain Coordinator-only
+  - TaskPlan constructor owner inventory remains exact
+  - triple-signature Step Planner inventory remains exact until TPA-3 removes it
+  - TaskSkill state mutation calls remain isolated to task_skills.py
+  - authority and read-set audit files are present and governed
+
+architecture_admission: pass
+closure_status: call_sites_and_read_sets_frozen
+next_slice: tpa-2-immutable-planning-request
+promotion_status: held

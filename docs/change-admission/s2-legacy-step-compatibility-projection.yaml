@@ -1,0 +1,76 @@
+slice_id: s2-legacy-step-compatibility-projection
+decision_date: 2026-07-29
+base_revision: 0288a8e4b68ddab61c79e8cc247e1fc331e2662f
+change_type: compatibility_projection_foundation
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+parent_decision:
+  freeze_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
+  core_contracts_record: docs/change-admission/s1-simplified-core-contracts.yaml
+  target_architecture: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  execution_plan: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
+
+authority:
+  current_production_progress_authority: legacy_taskplan_subgoal_planprogress
+  projected_view_authority: none
+  target_progress_authority: runtime_owned_active_step_after_authorized_cutover
+  state_writer: unchanged
+  trace_writer: unchanged
+  standard_path_authority_change: none
+
+included:
+  - read-only legacy TaskPlan and PlanProgress to TaskPlanView projection
+  - exact subgoal-id to canonical obligation-id mapping
+  - completed step and evidence projection
+  - active step projection without activation mutation
+  - task-level completion criterion projection from a single terminal TaskSpec obligation
+  - flat one-step projection coverage
+  - stale plan identity rejection
+  - no lexical mapping fallback
+  - architecture gate coverage for read-only projection behavior
+
+excluded:
+  - Coordinator changes
+  - StateKernel mutation changes
+  - TraceDag changes
+  - PlannerContext changes
+  - Planner input migration
+  - ActiveStepScope proposal gate
+  - ActionOutcome runtime shadow
+  - production authority cutover
+  - ODG-9 hookup
+  - ODG-10 obligation progress commit
+  - ODG-11 finish-authority migration
+  - BrowserGym rerun
+  - PR breadth
+  - promotion claim
+
+projection_rules:
+  exact_id_mapping_only: true
+  lexical_mapping: prohibited
+  task_name_url_selector_seed_mapping: prohibited
+  taskplan_missing_obligation_id: projection_invalid
+  stale_task_revision: stale_plan
+  unsupported_relation: projection_invalid
+  missing_source_refs: projection_invalid
+  no_state_mutation: required
+  no_trace_write: required
+
+validation:
+  red:
+    command: /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_simplified_step_projection.py
+    result: failed_before_projector_existed
+  focused:
+    command: /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_simplified_step_projection.py
+    required_result: pass
+  full_local_gate:
+    required_before_commit: true
+
+architecture_admission: pass
+closure_status: compatibility_projection_foundation_only
+hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml
+next_slice: s2-1-step-projection-hardening-before-s3
+promotion_status: held

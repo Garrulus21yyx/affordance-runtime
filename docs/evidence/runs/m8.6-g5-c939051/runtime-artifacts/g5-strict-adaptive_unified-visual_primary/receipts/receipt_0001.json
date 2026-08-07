@@ -1,0 +1,19 @@
+{
+  "backend": "visual",
+  "contract_id": "contract_candidate_visual_visual_save_adaptive_unified-visual_primary-snapshot-1",
+  "ended_revision": "saved:False",
+  "error_code": null,
+  "evidence": {
+    "action": "visual_click",
+    "center": [
+      120,
+      90
+    ],
+    "mark_id": "",
+    "screenshot_ref": "screen-1.png"
+  },
+  "latency_ms": 0.014,
+  "message": "",
+  "started_revision": "saved:False",
+  "success": true
+}

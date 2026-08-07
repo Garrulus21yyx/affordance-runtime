@@ -1,141 +1,112 @@
 # Integrations
 
-## 1. Integration Principle
+> **Lifecycle:** CURRENT NORMATIVE CONTRACT
+> **Scope:** parent-agent, CLI, service, adapter, and result boundaries
 
-Affordance Runtime should be callable by existing agents without requiring them
-to adopt its internal architecture.
+## 1. Integration principle
 
-The parent agent sends a bounded task. The runtime returns a structured result,
-evidence, trace id, and any required follow-up decision.
+The current MVP is single-process and single-session. Principal/tenant/account
+rules in this document apply only when an integration explicitly admits a
+multi-principal or multi-tenant deployment claim; they are not P4/P5 blockers.
 
-## 2. Interfaces
+A caller submits bounded user intent and legal source references. The caller
+does not need to adopt Runtime internals and cannot bypass Runtime authority by
+supplying accepted TaskSpec identity, concrete selector/coordinate, capability,
+approval, verification result, or TaskCompleted state.
 
-### 2.1 CLI
+## 2. Request boundary
 
-```bash
-affordance-runtime run \
-  --task "Open the pricing page and extract plan limits" \
-  --target "https://example.com" \
-  --read-only
-```
+An integration request may provide:
 
-### 2.2 REST
+- request/caller/conversation identity and revision;
+- request text or stable source ref;
+- attachment, target, and profile-context refs;
+- caller-asserted capability/delegation refs plus issuer/subject/audience metadata;
+- risk/approval policy refs;
+- run budgets and continuation/cancellation handles.
 
-```http
-POST /v1/tasks
-GET /v1/runs/{run_id}
-GET /v1/traces/{trace_id}
-POST /v1/evals
-```
+Runtime creates SourceEnvelope and interprets a MinimalIntentProposal. Material
+fields use SourceAnchor. Optional SemanticAudit may veto or request
+clarification. TaskSpecAuthority alone admits the TaskSpec.
 
-### 2.3 MCP Server
+`caller_identity` and every identity field supplied in request JSON are
+untrusted claims; the effective principal comes only from the authenticated
+transport/session. Before dereferencing any inbound source, attachment, target,
+profile-context, capability/delegation, policy, continuation, or cancellation
+ref, Runtime authorizes that exact ref against principal, tenant/account,
+audience, resource kind/identity/version, and run/task scope. Cross-tenant or
+cross-account substitution fails closed even when the opaque ref is syntactically
+valid. Risk/approval policy refs resolve only in a trusted, versioned
+Runtime/tenant policy namespace: a caller may request a stricter/narrower policy,
+but cannot replace, weaken, or shadow mandatory product/tenant policy.
 
-Tools:
+Caller capability material is untrusted context until an independent capability
+authority verifies a signed/opaque grant by exact issuer, subject, audience,
+tenant/account, resource scope, run/task binding, revision, expiry and
+revocation state. An unverified ref may only narrow the requested ceiling; it
+never enters `granted_capabilities`. A caller cannot self-issue a grant merely
+because it is authenticated to submit requests.
 
-```text
-gui_run_task
-gui_get_run
-gui_get_evidence
-gui_get_trace
-gui_replay_trace
-gui_run_eval
-```
+## 3. Runtime operations
 
-Production MCP should expose task-level APIs. Low-level primitives such as
-`gui_observe`, `gui_click`, and `gui_type` can exist as internal/debug tools,
-but they should not be the primary external contract because they bypass the
-State Kernel, Affordance Lease, Capability Gate, Action Contract, and Verifier
-Ladder.
-
-### 2.4 LangGraph Node
-
-The runtime can be wrapped as a node:
-
-```text
-Agent State
-  -> GUI Task Node
-  -> Result / Blocked / Needs Approval
-```
-
-### 2.5 Codex / Claude Tool Adapter
-
-The runtime should expose a simple tool call:
-
-```json
-{
-  "task": "Find the latest invoice and download it.",
-  "constraints": {
-    "read_only_until_download": true,
-    "no_payment": true
-  }
-}
-```
-
-Return:
-
-```json
-{
-  "status": "success",
-  "result": {},
-  "trace_id": "run_001",
-  "evidence": [],
-  "artifacts": []
-}
-```
-
-### 2.6 OpenHands / Coding Agent Adapter
-
-Coding agents often need a browser or GUI operator for:
-
-- local app verification
-- UI regression checks
-- documentation search
-- admin panel setup
-- browser reproduction
-
-Affordance Runtime can act as a browser/GUI subagent with strict trace and
-approval boundaries.
-
-## 3. Parent-Agent Contract
-
-Parent agents should receive only decision-relevant events:
+A service/tool surface may expose:
 
 ```text
-success
-failed
-blocked
-needs_approval
-needs_user_login
-needs_parent_context
-unsafe_action_blocked
+submit / execute / get_run
+approve / deny / cancel / clarify
+get_result / get_evidence / get_trace
 ```
 
-They should not receive raw low-level event streams unless explicitly requested.
+Every operation is authorized against an authenticated principal and the exact
+run owner/tenant/account/audience; possession or guessability of a run/ref ID is
+not authorization. `approve` additionally requires an authenticated approver
+whose role/scope is allowed by approval policy, and binds issuer/subject/run/
+session-generation/contract hash/nonce/expiry/revocation. Service-to-service
+delegation is verified by the same rules rather than trusted from request JSON.
 
-## 4. Safety Constraints
+Approval is requested only for an exact `SealedActionContract` built from a
+committed fresh observation. It binds run/session generation, contract hash,
+state/page/document revision, context/surface/coordinate/capability/proof
+digests, material parameters and expiry. It does not grant capability or amend
+TaskSpec. Parent agents cannot approve a Draft, action family, stale future
+action, or third-party page/tool instruction in advance; late grants are
+tombstoned after interrupt, cancel, restart or contract staleness.
 
-The interface should support constraints:
+## 4. Result boundary
 
-```json
-{
-  "read_only": true,
-  "no_purchase": true,
-  "no_delete": true,
-  "no_external_message": true,
-  "require_approval_for": ["payment", "delete", "submit_application"]
-}
-```
+The integration result distinguishes:
 
-## 5. Standalone vs Subagent
+- Runtime lifecycle/terminal status;
+- TaskCompletionEvaluation and actual typed `OutputMaterialization` refs;
+- pending approval/clarification/recheck;
+- typed failure and recovery state;
+- observation, artifact, durable-evidence, and trace refs;
+- external evaluator result when applicable.
 
-### Standalone
+Transport receipt success, plan exhaustion, model finish, or benchmark reward is never
+reported as Runtime task success by itself.
 
-The runtime owns the task loop and reports the final result.
+## 5. Adapter boundary
 
-### Subagent
+BrowserGym, Playwright, DOM, visual, AX, API, device, and future desktop/mobile
+adapters translate public Runtime contracts. They may capture source data and
+adapter-owned truthful SourceCoverage/context/coordinate/capability descriptors,
+route permit-authorized concrete actions, and collect external results. They may not
+own TaskSpec, full Catalog membership, ActionContract admission, recovery
+policy, or completion semantics.
 
-The parent agent owns the broader goal. The runtime owns bounded GUI execution.
+## 6. Streaming and cancellation
 
-This separation is important. Affordance Runtime should not pretend to be the
-entire agent stack when it is being used as an execution substrate.
+Streaming projects committed events. Cancellation and user takeover are typed
+Runtime transitions; they do not directly mutate provider/session state behind
+the committer or prove an in-flight effect did not occur. Restart uses a new
+session generation and fresh observation; `runtime_resume.py` only validates
+and routes. Sensitive source content and artifacts are returned by scoped
+refs rather than embedded in every event/result. Dereferencing result, evidence,
+artifact, approval, or trace refs repeats principal/run/tenant/account policy,
+revocation and retention checks and applies field redaction; opaque identifiers
+alone are not an anti-IDOR boundary. Cross-run listing and ref substitution fail
+closed and are audit events.
 
+The previous integration document is archived at
+[maintained-pre-consolidation/integrations.md](archive/superseded-2026-08-05/maintained-pre-consolidation/integrations.md).

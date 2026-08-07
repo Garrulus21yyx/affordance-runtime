@@ -1,0 +1,75 @@
+slice_id: v-prb-6-post-9ad1288-residual-classification
+packet_role: child_diagnostic
+
+base_revision: a0c0433
+source_revision: 9ad128848a070ba1026f3696e2ea5a9edc55a592
+change_type: evidence_and_diagnosis
+agent_mode: single_agent
+production_change_allowed: false
+
+source_evidence:
+  pr_breadth_rerun: docs/evidence/runs/m8.2a-pr-breadth-9ad1288/
+  compact_projection: docs/evidence/runs/v-prb-6-post-9ad1288-classification/
+
+problem_statement: >
+  The clean PR breadth rerun after the V-PRB-6B current-state discard
+  replacement remains negative. The residuals are not one bug: click-button
+  fails before TaskSpec creation with JSON-invalid structured drafting,
+  enter-text still fails Runtime completion after progress/replacement loops,
+  and form-sequence remains a dependent-subgoal progress-scope / finish-guard
+  failure.
+
+clusters:
+  click_button_json_invalid:
+    episodes:
+      - click-button:seed-1
+    phase: intent_compilation
+    owner_candidate: intent draft structured decoding / schema-provider robustness
+    next_requirement: create a separate non-BrowserGym malformed structured-draft RED before any production repair
+    not_part_of:
+      - V-PRB-6A
+      - V-PRB-6B
+
+  enter_text_progress_binding_residual:
+    episodes:
+      - enter-text:seed-1
+    phase: task_planning
+    owner_candidate: verifier-to-subgoal progress binding and task-plan replacement accounting
+    trace_facts:
+      - strong DOM text-change evidence passes but is rejected as not explicitly linked to the active mandatory criterion/requirement
+      - a later submit action is still proposed against the previous text-change subgoal
+      - terminal submit evidence then completes the text-change subgoal, after which replan reports entry_outcome_already_satisfied
+    next_requirement: write a non-BrowserGym RED that distinguishes missing active-subgoal evidence binding from replacement/discard accounting
+
+  form_sequence_progress_scope:
+    episodes:
+      - form-sequence:seed-0
+      - form-sequence:seed-1
+    phase: proposal_validation
+    owner_candidate: V-PRB-6A dependent-subgoal progress-scope binding
+    trace_facts:
+      - resolver chooses dependent checkbox/submit actions while proposal.subgoal remains the stale slider subgoal
+      - satisfied_effects include checkbox and submit actions
+      - Runtime correctly rejects external-terminal finish because TaskPlan progress is incomplete
+    next_requirement: continue from the existing V-PRB-6A strict-xfail diagnostic; do not weaken finish guard
+
+forbidden_changes:
+  - production code changes in this diagnostic packet
+  - Coordinator finish guard weakening
+  - BrowserGym official reward as Runtime completion authority
+  - ExecutionReceipt.success based subgoal completion
+  - external evaluator based subgoal completion
+  - Prompt, model-call budget, retry budget, timeout, or cost changes
+  - task-name, URL, selector, coordinate, or benchmark-family branches
+  - immutable Planner input / PlannerStateView migration unless separately justified
+  - batching click-button JSON-invalid repair with V-PRB-6 progress accounting
+
+architecture_admission: not_evaluated
+promotion_status: held
+remote_ci: disabled
+
+done_when:
+  - compact classification is recorded
+  - implementation status and active goal point to one next diagnostic/RED
+  - no production repair, PR breadth acceptance, fresh diagnostic, promotion,
+    or official score claim is made

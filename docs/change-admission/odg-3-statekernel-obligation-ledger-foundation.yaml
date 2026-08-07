@@ -1,0 +1,111 @@
+slice_id: odg-3-statekernel-obligation-ledger-foundation
+parent_decision: docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml
+decision_date: 2026-07-28
+base_revision: d6e2cb369490b54c13d2c4d260bbaef4822130c6
+change_type: architecture_state_foundation
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+single_primary_owner: StateKernel canonical obligation progress storage
+
+goal: >
+  Add StateKernel-local storage foundation for canonical obligation progress
+  after ODG-2 contracts. This slice creates mutable ledger storage, exact
+  TaskSpec identity binding, immutable read projection, and ledger-local
+  invariants only. It does not make the ledger the runtime progress authority.
+
+included:
+  - ODG-2.1 task_spec_identity and known_obligation_ids hardening
+  - validate_obligation_progress_state()
+  - deeply immutable ObligationProgressStateView ledger entries
+  - empty candidate rejection for ProgressAttributionTicket
+  - ObligationAttributionResult status/preparation invariant
+  - mutable ObligationProgressLedger
+  - ObligationProgressLedger.from_task_spec()
+  - record_attempt()
+  - record_satisfaction()
+  - record_failure()
+  - to_view()
+  - StateKernel.obligation_progress optional storage field
+  - StateKernel.initialize_obligation_progress()
+  - StateKernel.obligation_progress_view()
+
+excluded:
+  - Coordinator satisfaction commit
+  - StateKernel.satisfy_task_obligation()
+  - finish gate change
+  - PlannerContext ready-obligation projection
+  - TaskPlan replacement or deletion semantics
+  - TaskPlanLifecycle authority change
+  - runtime shadow divergence trace
+  - Recovery behavior
+  - BrowserGym adapter changes
+  - benchmark rerun
+  - fresh diagnostic
+  - promotion claim
+
+authority_rules:
+  task_spec_identity: required
+  task_revision: required
+  known_obligation_ids: exact canonical graph order
+  unknown_progress_ids: fail_closed
+  ledger_storage: StateKernel optional field only
+  ledger_view: immutable value projection
+  standard_path_authority: not_authorized
+  current_runtime_authority: legacy TaskPlan/PlanProgress compatibility path
+  dual_authority: false
+
+ledger_invariants:
+  known_ids_unique: true
+  known_ids_nonempty: true
+  satisfied_failed_overlap: rejected
+  unknown_satisfaction: rejected
+  unknown_failure: rejected
+  unknown_attempt: rejected
+  duplicate_satisfaction: idempotent
+  duplicate_evidence_refs: deduplicated
+  failed_to_satisfied_without_recovery: rejected
+  satisfied_to_failed_without_recovery: rejected
+  view_deep_immutable: true
+  view_shares_mutable_collections: false
+
+statekernel_scope:
+  optional_field: obligation_progress
+  initialize_method: initialize_obligation_progress
+  read_projection: obligation_progress_view
+  version_change_on_read: false
+  version_change_on_initialization: false
+  standard_run_sync_initialization: false
+
+forbidden:
+  - add Coordinator obligation commit
+  - add finish authority from obligation ledger
+  - alter PlannerContext
+  - alter TaskPlanFlow
+  - alter TaskPlanLifecycle
+  - alter BrowserGym evidence declarations
+  - call benchmarks or promote score
+  - import StateKernel from obligation_progress.py
+  - import Coordinator from obligation_progress.py
+  - import TaskPlan from obligation_progress.py
+
+tests:
+  focused:
+    - tests/test_obligation_progress.py
+    - tests/test_obligation_progress_ledger.py
+  architecture:
+    - tests/test_horizontal_architecture_governance.py
+    - tests/test_r8_architecture_boundaries.py
+    - tests/test_responsibility_containment.py
+
+architecture_admission: pass
+closure_status: foundation_storage_only
+promotion_status: held
+
+next_requirement: >
+  Continue with ODG-4A executable role decisions and ODG-4B ready projection,
+  or ODG-5 shadow comparison, only after this storage foundation has passed
+  local gates. Do not connect obligation satisfaction to Coordinator or finish
+  before the authorized ODG-10/ODG-11 slices.

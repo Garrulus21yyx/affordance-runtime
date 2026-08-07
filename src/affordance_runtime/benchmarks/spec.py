@@ -30,8 +30,23 @@ class BenchmarkRun:
     unsafe_side_effects: int = 0
     recovery_attempts: int = 0
     recovery_successes: int = 0
+    recovery_incidents: int = 0
+    recovery_cascade_depth: int = 0
+    repeated_recovery_failures: int = 0
+    recovery_loop_aborts: int = 0
+    effective_recovery_actions: int = 0
+    duplicate_effect_risks: int = 0
     semantic_replay_success: bool = False
     regression_delta: float = 0.0
     cost: float = 0.0
     failure_reason: str = ""
-
+    variant: str = "full_runtime"
+    seed: int = 0
+    evaluated_constraints: int = 0
+    constraint_violations: int = 0
+    stale_action_opportunities: int = 0
+    effectful_actions: int = 0
+    failed_outcomes: int = 0
+    side_effect_opportunities: int = 0
+    trace_path: str = ""
+    fixture_variant: str = ""

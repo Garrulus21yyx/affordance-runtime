@@ -1,0 +1,75 @@
+slice_id: for-2b-runtime-recovery-policy-cleanup
+parent_record: docs/change-admission/for-2-runtime-recovery-phase-narrowing.yaml
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+parent_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+base_revision: 9f135541c9e27da78acd02f35b45a24c6784f406
+change_type: recovery_policy_owner_cleanup
+production_behavior_change: true
+runtime_authority_changed: recovery_coordinator_rejects_non_runtime_failure_owners
+progress_authority_changed: false
+finish_authority_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_record: for_2b_runtime_recovery_policy_cleanup_local_candidate
+  included:
+    - RecoveryCoordinator.decide rejects classifications not owned by RUNTIME_RECOVERY.
+    - Runtime recovery strategy order no longer emits semantic-owner kinds.
+    - Runtime policy no longer uses ASK_USER / CLARIFY_INTENT as mechanical recovery fallbacks.
+    - Runtime policy no longer uses REPLAN_STEP / REPLAN_TASK as mechanical recovery fallbacks.
+    - Runtime policy no longer uses REQUEST_APPROVAL as a generic recovery fallback.
+    - GeneralistTaskPipeline intake failures use the non-runtime owner handoff decision path.
+    - Non-recoverable owner handoff failures remain terminal ABORT.
+    - RecoveryPhase unreachable REPLAN_STEP / REPLAN_TASK branch is removed.
+  excluded:
+    - Removing semantic-owner values from the RecoveryKind enum.
+    - Removing the temporary non-runtime owner handoff seam.
+    - Replacing non-runtime handoff with structured Planner/User/Progress ports.
+    - Planner ActionChoice interface changes.
+    - StateKernel schema changes.
+    - Progress or finish authority changes.
+    - SAR-9 phase extraction.
+    - PR breadth or promotion claims.
+
+runtime_policy_semantic_owner_kinds:
+  prohibited_in_strategy_order:
+    - REPLAN_TASK
+    - REPLAN_STEP
+    - ASK_USER
+    - CLARIFY_INTENT
+    - REQUEST_APPROVAL
+  retained_in_compatibility:
+    - failure_owner_flow temporary handoff
+    - external enum compatibility until FOR-4 deletion gate
+
+validation_policy:
+  test_gate_level: subsystem
+  focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_for_1_failure_classification_uses_owner_not_disposition tests/test_horizontal_architecture_governance.py::test_for_1_actionchoice_failures_carry_failure_owner tests/test_horizontal_architecture_governance.py::test_for_2b_recovery_coordinator_runtime_policy_excludes_semantic_owner_kinds -q --tb=short --maxfail=20
+    - python -m pytest tests/test_generalist_planner.py tests/test_full_phase_recovery.py tests/test_coordinator.py -q --tb=short --maxfail=20
+  static:
+    - ruff check src/affordance_runtime/recovery_protocol.py src/affordance_runtime/recovery_coordinator.py src/affordance_runtime/recovery_phase.py src/affordance_runtime/failure_owner_flow.py src/affordance_runtime/task_pipeline.py src/affordance_runtime/coordinator.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_horizontal_architecture_governance.py
+    - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/recovery_protocol.py src/affordance_runtime/recovery_coordinator.py src/affordance_runtime/recovery_phase.py src/affordance_runtime/failure_owner_flow.py src/affordance_runtime/task_pipeline.py src/affordance_runtime/coordinator.py
+    - |
+      python - <<'PY'
+      import yaml
+      from pathlib import Path
+      for path in Path('docs/change-admission').glob('*.yaml'):
+          yaml.safe_load(path.read_text())
+      PY
+    - git diff --check
+  full_pytest:
+    required: false
+    trigger: FOR-4 closure or production behavioral cutover
+  behavioral:
+    pr_breadth: false
+    fresh_diagnostic: false
+
+status:
+  for_2a_runtime_recovery_phase_narrowing: local_candidate
+  for_2b_runtime_recovery_policy_cleanup: local_candidate
+  for_3_structured_owner_handoff: local_candidate
+  for_4_routing_deletion_gate: selected_next
+  full_for_closure: incomplete

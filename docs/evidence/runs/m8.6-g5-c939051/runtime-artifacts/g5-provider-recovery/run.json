@@ -1,0 +1,134 @@
+{
+  "error_code": null,
+  "goal": "Recover provider capacity without dispatching an effect",
+  "result": {
+    "provider_recovered": true
+  },
+  "run_id": "g5-provider-recovery",
+  "state": {
+    "action_progress": [],
+    "active_perception_count": 0,
+    "active_probe_plan": null,
+    "attempted_probe_fingerprints": "set()",
+    "attempted_recovery_strategy_ids": "{'strategy:switch_provider:c39bb906eb040cca'}",
+    "constraints": {},
+    "current_contract": null,
+    "current_failure": "failure_id='failure-70edf04b6749453387d136f9a98ec09a' run_id='g5-provider-recovery' task_revision=1 plan_version=0 active_subgoal_id='' phase=<FailurePhase.PROVIDER_CONTEXT: 'provider_context'> failure_class=<FailureClass.PROVIDER: 'provider'> semantic_family_key='sha256:c39bb906eb040cca1050df55680cf73acea6955f1bb7b78135b5fbf7b92b27de' exact_debug_key='sha256:156e830665783c96131f15991635f9ad8c750bf302018fafb4f5cb3bd0257ced' state_version=3 observation_epoch_id='disclosure-0' snapshot_id='disclosure-0' proposal_id='' contract_id='' expected_effect='Recover provider capacity without dispatching an effect' error_code='quota_exhausted' message='provider failure: quota_exhausted' evidence_refs=() receipt_ref='' verification_ref='' effect_status=<EffectStatus.NOT_DISPATCHED: 'not_dispatched'> attempted_strategy_ids=() rejected_assumptions=() remaining_budgets=RemainingRecoveryBudgets(recoveries=3, observations=29, replans=10, provider_switches=1, user_escalations=1, timeout_ms=120000, model_calls=10, estimated_cost=10.0) recoverable=True progress_fingerprint='{\"completed_skill_steps\":[],\"completed_subgoals\":[],\"pending_obligations\":[],\"satisfied_effects\":[]}'",
+    "current_recovery_plan": null,
+    "current_snapshot_id": "disclosure-0",
+    "disproved_assumptions": [
+      "provider_context:quota_exhausted:provider failure: quota_exhausted"
+    ],
+    "effectful_action_count": 0,
+    "evidence": [],
+    "evidence_gaps": [],
+    "excluded_grounding_candidates": {},
+    "final_result": {
+      "provider_recovered": true
+    },
+    "goal": "Recover provider capacity without dispatching an effect",
+    "grounding_fallback_lineage": {},
+    "hidden_state_hypotheses": [],
+    "latest_verification": null,
+    "observation_count": 2,
+    "observations": [
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [],
+        "dom_hash": "",
+        "environment_revision": "expanded:False:submitted:False",
+        "metadata": {
+          "expanded": false,
+          "submitted": false
+        },
+        "observed_at_s": 1784901351.740236,
+        "page_revision": "disclosure-v1",
+        "screenshot_ref": "",
+        "snapshot_id": "disclosure-0",
+        "target_fingerprints": {
+          "dom_button_1": "sha256:fbbe9db95789ba218d35113512a542747326f75b5fcc8656905500509229ff4b",
+          "dom_h3_1": "sha256:1f1559aa21b5f920735df0b904d30c718bb2b775225f4afa1cf2dbca99694fa7"
+        },
+        "url": ""
+      },
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [],
+        "dom_hash": "",
+        "environment_revision": "expanded:False:submitted:False",
+        "metadata": {
+          "expanded": false,
+          "submitted": false
+        },
+        "observed_at_s": 1784901351.7408452,
+        "page_revision": "disclosure-v1",
+        "screenshot_ref": "",
+        "snapshot_id": "disclosure-0",
+        "target_fingerprints": {
+          "dom_button_1": "sha256:fbbe9db95789ba218d35113512a542747326f75b5fcc8656905500509229ff4b",
+          "dom_h3_1": "sha256:1f1559aa21b5f920735df0b904d30c718bb2b775225f4afa1cf2dbca99694fa7"
+        },
+        "url": ""
+      }
+    ],
+    "pending_obligations": [],
+    "perception_resolution": null,
+    "phase": "done",
+    "plan_progress": null,
+    "planner_history": [],
+    "probe_receipts": [],
+    "progress_guard_events": [],
+    "receipts": [],
+    "recovery_count": 1,
+    "recovery_deltas": [
+      "previous_attempt_fingerprint='{\"completed_skill_steps\":[],\"completed_subgoals\":[],\"pending_obligations\":[],\"satisfied_effects\":[]}' next_attempt_fingerprint='sha256:0be06c7b174505543385e5ea08d60b95deebcf7f4286b11a7c96508b091601f0' changed_dimensions=(<RecoveryChangeDimension.PROVIDER: 'provider'>,) new_evidence_refs=('fixture:provider-switch',) retired_assumptions=() new_plan_or_route_ref='provider:fixture-b' explanation='apply switch_provider and change provider'"
+    ],
+    "recovery_diagnostics": {},
+    "recovery_history": [
+      {
+        "next_attempt_fingerprint": "sha256:0be06c7b174505543385e5ea08d60b95deebcf7f4286b11a7c96508b091601f0",
+        "previous_attempt_fingerprint": "{\"completed_skill_steps\":[],\"completed_subgoals\":[],\"pending_obligations\":[],\"satisfied_effects\":[]}",
+        "semantic_family_key": "sha256:c39bb906eb040cca1050df55680cf73acea6955f1bb7b78135b5fbf7b92b27de",
+        "strategy_id": "strategy:switch_provider:c39bb906eb040cca"
+      }
+    ],
+    "recovery_incident": null,
+    "recovery_receipts": [
+      "command_id='recovery-command-68f47267f66648c19eec944b21257e10' success=True state_before='provider:fixture-a' state_after='provider:fixture-b' changed_dimensions=(<RecoveryChangeDimension.PROVIDER: 'provider'>,) artifact_refs=('fixture:provider-switch',) observation_refs=() plan_refs=('provider:fixture-b',) route_refs=() verification_refs=() error_code='' latency_ms=0.0 estimated_cost=0.0 delta=RecoveryDelta(previous_attempt_fingerprint='{\"completed_skill_steps\":[],\"completed_subgoals\":[],\"pending_obligations\":[],\"satisfied_effects\":[]}', next_attempt_fingerprint='sha256:0be06c7b174505543385e5ea08d60b95deebcf7f4286b11a7c96508b091601f0', changed_dimensions=(<RecoveryChangeDimension.PROVIDER: 'provider'>,), new_evidence_refs=('fixture:provider-switch',), retired_assumptions=(), new_plan_or_route_ref='provider:fixture-b', explanation='apply switch_provider and change provider')"
+    ],
+    "replan_count": 1,
+    "step_count": 0,
+    "subgoals": [],
+    "task_id": "g5-provider-recovery",
+    "task_plan": null,
+    "task_skill": null,
+    "transitions": [
+      [
+        "created",
+        "observing"
+      ],
+      [
+        "observing",
+        "planning"
+      ],
+      [
+        "planning",
+        "recovering"
+      ],
+      [
+        "recovering",
+        "observing"
+      ],
+      [
+        "observing",
+        "planning"
+      ],
+      [
+        "planning",
+        "done"
+      ]
+    ],
+    "version": 9
+  },
+  "status": "done"
+}

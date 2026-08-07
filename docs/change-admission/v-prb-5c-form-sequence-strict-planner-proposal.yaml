@@ -1,0 +1,163 @@
+slice_id: v-prb-5c-form-sequence-strict-planner-proposal
+parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
+packet_role: child_production_slice
+
+base_revision: 3daf779bb8d1b6fb6c4e8a73c31fd00c514668fd
+implementation_revisions:
+  - a805f0dfd1b58b76951003b9d12b9561b19d40e1
+  - 9c1b58c33f20e2690221516a953ce96f910ef2d3
+  - d50a631a2e67b294db4b6273106df85fd941b3b7
+latest_rerun_revision: d50a631a2e67b294db4b6273106df85fd941b3b7
+change_type: vertical_failure_classification
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: semantic_action_resolver
+mechanism: strict planner proposal generation for press_key value-change entries
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-3daf779/
+  affected_episodes:
+    - form-sequence:seed-0
+    - form-sequence:seed-1
+  observed_path:
+    - TaskSpec is created
+    - TaskPlan is accepted
+    - active subgoal is the slider value has_changed obligation
+    - planner context permits press_key
+    - strict planner returns an empty ask_user proposal
+    - runtime records planner_waiting_clarification
+
+review_refinement:
+  current_hypothesis: >
+    V-PRB-5B closed the action-family availability failure. The remaining
+    form-sequence failure is a strict planner proposal-generation issue for a
+    typed has_changed subgoal whose currently bindable action family is
+    press_key.
+  primary_risks:
+    - repairing by task name, URL, selector, coordinate, or benchmark-family branch
+    - expanding Prompt or model-call budget instead of adding a generic typed behavior
+    - weakening verifier or accepting ask_user as progress
+    - mixing with immutable Planner input or enter-text terminal guard work
+
+non_goals:
+  - do not modify Coordinator
+  - do not modify StateKernel
+  - do not modify PlannerPort or introduce PlanningRequest
+  - do not modify Prompt, model-call budget, retry budget, timeout, or cost
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not combine with V-PRB-6 terminal-completion guard
+  - do not run fresh diagnostic, nightly, release, or promotion
+
+required_non_browsergym_red_tests:
+  - accepted TaskPlan with active has_changed subgoal and press_key permitted must not yield empty ask_user
+  - proposed action must remain semantic and handle-free
+  - ambiguous press_key/drag family remains unresolved or asks for clarification with a non-empty reason
+  - no verifier progress is claimed before independent evidence
+
+candidate_owner:
+  module: not_selected
+  allowed_inputs:
+    - PlannerContext
+    - active TaskPlan subgoal summary
+    - typed current affordance summary
+  forbidden_inputs:
+    - task name
+    - URL
+    - selector
+    - coordinate
+    - StateKernel
+    - Coordinator
+
+done_when:
+  - non-BrowserGym RED turns GREEN
+  - form-sequence no longer returns empty ask_user for the active slider has_changed subgoal
+  - ambiguity remains fail-closed
+  - no task grammar, Prompt, budget, adapter-specific, Coordinator, or StateKernel change is added
+  - clean PR breadth matrix is rerun after any production repair commit
+
+implementation:
+  first_repair:
+    revision: a805f0dfd1b58b76951003b9d12b9561b19d40e1
+    summary: >
+      Added a bounded strict semantic action resolver path for empty
+      clarification proposals when the active subgoal action family is
+      press_key, exactly one enabled visible slider press target is current,
+      and both requested and current numeric values can be inferred. The repair
+      emits only semantic press_key proposals and does not use task name, URL,
+      selector, coordinate, Coordinator, StateKernel, Prompt, or budget changes.
+  first_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
+    result: >
+      Negative PR breadth evidence: 12/12 observed, 10/12 official reward
+      passed, 2/12 official reward failed, 3 Runtime failures, no
+      provider/missing/unrun/invalidated cases. The resolver entered the real
+      form-sequence path and produced verified press_key slider actions, but
+      both form-sequence seeds still later failed with empty ask_user proposals
+      after replan/progress normalized the active slider subgoal to a generic
+      slider_value has changed form. V-PRB-5C therefore remains open, narrowed
+      to post-replan slider value/progress semantics.
+  second_repair:
+    revision: 9c1b58c33f20e2690221516a953ce96f910ef2d3
+    summary: >
+      Added verifier-backed follow-up resolution for the post-slider form
+      sequence: after the active subgoal is present in verified_effects, the
+      resolver may activate the uniquely requested checkbox, and after that
+      checkbox is current-state satisfied it may activate a unique terminal
+      submit control. The repair remains bounded to current PlannerContext and
+      typed affordance summaries.
+  second_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
+    result: >
+      Negative PR breadth evidence: 12/12 observed, 10/12 official reward
+      passed, 2/12 official reward failed, 3 Runtime failures, no
+      provider/missing/unrun/invalidated cases. The seed-0 form trace now
+      reaches the requested checkbox after verified slider progress, but still
+      stops before terminal submit. The seed-1 form trace still repeats
+      press_key through the negative target boundary and stops at
+      clarification. V-PRB-5C remains open, now split into terminal-submit
+      follow-up and negative slider stop/direction residuals.
+  third_repair:
+    revision: d50a631a2e67b294db4b6273106df85fd941b3b7
+    summary: >
+      Stopped requested numeric extraction from reading checkbox ordinal text
+      as a slider target, and allowed the semantic resolver to choose terminal
+      submit after the requested checkbox is current-state satisfied even when
+      the projected active subgoal remains stale. The repair keeps the same
+      bounded PlannerContext / typed-affordance input boundary and does not add
+      task-name, URL, selector, coordinate, Coordinator, StateKernel, Prompt,
+      or budget changes.
+  third_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+    result: >
+      PR breadth evidence: 12/12 observed, 12/12 official reward passed, 3
+      Runtime failures, no provider/missing/unrun/invalidated cases. The prior
+      form-sequence official failures no longer reproduce. Runtime still
+      aborts both form-sequence seeds after external reward succeeds because
+      a terminal `finish` proposal is rejected by the Runtime
+      terminal-completion guard. That residual belongs to V-PRB-6, not further
+      form-specific planner proposal generation.
+
+verification:
+  focused_tests:
+    - tests/test_generalist_planner.py::test_strict_planner_resolves_empty_clarification_to_slider_press_key
+  local_gates:
+    - full pytest: 984 passed
+    - ruff: passed
+    - mypy: passed over 118 source files
+    - diff check: passed
+    - architecture gates: passed
+  clean_rerun:
+    - docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
+    - docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
+    - docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+closure_status: closed_for_current_pr_breadth_matrix
+next_requirement: >
+  Stop V-PRB-5C unless a new form-sequence official reward failure appears.
+  Route the remaining PR breadth acceptance blocker to V-PRB-6 terminal
+  completion guard classification. Do not mix immutable PlanningRequest, fresh
+  diagnostic, nightly, release, or promotion into this slice.

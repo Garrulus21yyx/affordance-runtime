@@ -1,0 +1,61 @@
+slice_id: s0-simplified-architecture-freeze
+decision_date: 2026-07-29
+base_revision: 21f49e730a24640b00ef42fd3a3e98e1813f6656
+change_type: architecture_decision
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+target_architecture:
+  document: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  status: approved_with_guardrails
+  default_production_progress_authority: runtime_owned_active_step
+  task_completion_authority: task_spec_completion_criterion_independent_verification
+
+execution_plan:
+  document: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
+  status: proposed_for_execution
+  next_slice: s1-simplified-core-contracts
+
+odg_status:
+  odg_2_to_odg_9: foundation_or_diagnostic_only
+  odg_9_hookup: stopped_for_default_path
+  odg_10_progress_commit: not_authorized
+  odg_11_finish_authority_migration: not_authorized
+  advanced_attribution: experimental_only
+
+authority_rules:
+  legacy_taskplan_progress_authority: current_until_cutover
+  active_step_progress_authority: target_after_cutover
+  obligation_ledger_completion_authority: prohibited_for_default_path
+  triple_progress_authority: prohibited
+  coordinator_ceiling_increase: prohibited
+  run_sync_ceiling_increase: prohibited
+  action_contract_safety_weakening: prohibited
+  verifier_weakening: prohibited
+  receipt_success_completion: prohibited
+  external_reward_completion: prohibited
+  benchmark_specific_logic: prohibited
+
+included:
+  - archive target architecture document
+  - archive granular execution plan
+  - mark ODG advanced attribution as experimental-only for default production path
+  - redirect active queue from ODG-9 hookup to S1 simplified core contracts
+  - preserve current production behavior
+
+excluded:
+  - production code changes
+  - Coordinator changes
+  - StateKernel changes
+  - PlannerPort changes
+  - finish gate change
+  - ODG-10 commit
+  - ODG-11 finish authority migration
+  - benchmark rerun
+  - promotion claim
+
+architecture_admission: pass
+closure_status: architecture_freeze_only
+promotion_status: held

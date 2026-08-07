@@ -1,225 +1,160 @@
 # Affordance Runtime
 
-Affordance Runtime is a planner-neutral GUI agent execution runtime. It binds
-GUI actions to versioned environment state, scoped capabilities, expected
-effects, verifier evidence, trace, benchmark scoring, and regression-gated
-harness evolution.
+Affordance Runtime is a planner-neutral GUI execution Runtime. It turns bounded
+user tasks and current environment observations into versioned, authorized,
+observable action transactions with explicit approval, verification, recovery,
+trace, and evaluation boundaries.
 
-The repository is currently an executable skeleton plus implementation plan, not
-yet a complete Web GUI runtime. The immediate goal is to turn the skeleton into
-a reproducible Web/SaaS gold path with trace, verification, baseline, and
-benchmark evidence.
+Its strategy is **complete vertical loop, limited horizontal breadth**. The MVP
+is a GUI-agent research Runtime: one process, one run, one coordinator, one
+browser session, and one active ActionContract, with trusted in-process
+components and serialized effectful execution. It does not claim
+production-grade, multi-tenant, distributed-worker, or global exactly-once
+security.
 
-Planning follows two horizons: the current implementation plan is authoritative
-for code and release scope, while the complete architecture blueprint preserves
-future service-grade options without making them current requirements.
+The trusted computing base (TCB) includes Runtime-selected in-process adapter
+and provider implementation code plus its configuration. The page, email, PDF,
+DOM/AX/OCR/screenshot, tool, or provider-returned content that this code
+observes remains untrusted data and cannot create local authority.
 
-It is not another in-page web copilot or a thin browser automation wrapper. Its
-core is:
+## Current architecture
 
-- a unified affordance envelope for DOM, visual, accessibility, API, and device
-  surfaces
-- a state kernel that preserves goals, constraints, evidence, hidden-state
-  hypotheses, and pending obligations across long tasks
-- action contracts with environment revision, preconditions, expected effects,
-  verifier plans, risk levels, capabilities, idempotency, and compensation
-- preflight gates that reject stale observations before an action is executed
-- trace events for debugging, replay, evaluation, and skill mining
-- a harness evolution registry that quarantines proposed skills, policies,
-  postconditions, and benchmark fixtures until regression replay passes
-- integration surfaces for standalone reference use and subagent use by Codex,
-  Claude, OpenHands, LangGraph, AutoGen, or any agent framework that can call
-  tools
+The long-term target is defined only by:
 
-## Current Status
+- [Task Contract-Centered Authoritative Runtime Architecture](docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Task Contract-Centered Runtime Architecture Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
-Implemented skeleton:
+```text
+SourceEnvelope
+→ MinimalIntentProposal
+→ optional SemanticAudit
+→ immutable TaskSpec
+→ canonical observation
+→ replaceable TaskPlan<StepSpec>
+→ Runtime-owned full ActionChoiceCatalog
+→ materialize and freeze final immutable ActionContract H
+→ Authority/Capability/Approval evaluate H
+→ stale snapshot/page/target preflight
+→ serial Execute of H with approved_hash == executed_hash
+→ post-action observation
+→ inline LoopEvaluator
+→ RuntimeCommitter
+```
 
-- typed affordance, action, receipt, risk, trace, and benchmark models
-- migrated DOM, Set-of-Mark, and WoT adapter code
-- single-contract execution path for debug and unit testing
-- initial capability, preflight, verifier, state, trace, and evolution modules
+`TaskSpec` owns user authorization and completion semantics. `TaskPlan` is a
+replaceable execution hypothesis. `ActionContract` is one grounded, gated,
+expiring transaction. `TaskCompletionEvaluator` evaluates full TaskSpec success;
+all required structured outputs must also be materialized and source-bound when
+required; only RuntimeCommitter writes authoritative completion.
 
-Partial:
+TaskSpecAuthority is the only accepted-meaning writer. Task Planner and
+OpenSemanticResolver may receive bounded, source-bound, explicitly
+non-authoritative context when needed; action construction, gates, execution,
+evaluation, completion, and commit do not use raw request text. In short:
+single semantic admission, bounded contextual rereading, no downstream
+authority expansion.
 
-- long-task State Kernel lifecycle
-- lease/preflight semantics beyond revision equality
-- task constraints and approval token binding
-- benchmark metric protocol
+The target keeps logical boundaries strict while defaulting to a lightweight
+modular-monolith realization: full Catalog membership may be lazy/indexed,
+canonical observations are ref/index-backed, and optional audit/model machinery
+is enabled by task risk rather than for every run.
 
-Planned before claiming a complete runtime:
+DOM, AX, Visual, SVG, WoT, API, and Device are composable observation,
+grounding, execution, and evidence surfaces under this one chain. Planner
+selects a backend-neutral semantic action; ActionContractBuilder selects the
+current backend/binding from the canonical target's retained candidates and
+conflicts.
 
-- Playwright observer and executor
-- task-level run context and explicit state machine
-- post-action observation and verification reports
-- artifact-backed trace writer
-- local SaaS fixture and benchmark runner
-- CLI gold path
-- bounded recovery policy
-- baseline and ablation reports
-- assisted harness evolution after benchmark freeze
-- optional task-level MCP and framework integrations after the evolution loop
+The target is not implemented as a whole. See
+[Implementation Status](docs/implementation-status.md) for current code truth.
 
-## Documents
+P4 is intentionally small and is **CLOSED (MVP scope)**. Its five invariants
+are:
+
+1. Executor accepts only a finalized immutable ActionContract.
+2. Policy/approval evaluates that exact contract, so the approved and executed hashes match.
+3. Stale snapshot/page/target rejection makes zero Executor calls.
+4. Completion requires verifier evidence; a receipt alone cannot produce DONE.
+5. An uncertain effectful execution is never blindly retried.
+
+Focused tests, the full test/static suite, and the core benchmark are closure
+evidence for these five invariants and the default-route cutover; the benchmark
+is not a sixth invariant. The test/static suite and fresh core benchmark pass,
+so P5 admission is unblocked but P5 has not started. Tenant/profile live proof,
+revocation linearizability, global permit registries, worker fencing,
+attempt-bound collateral, and immutable multi-suite release attestation are
+future hardening, not P5 blockers.
+
+## Product boundary
+
+Affordance Runtime—not BrowserGym or another benchmark—is the product.
+Benchmarks are external evaluators. Production logic may not depend on task ID,
+seed, family, expected answer, selector, coordinate, or authored benchmark
+semantics.
+
+The Runtime owns:
+
+- multi-source DOM/AX/Visual/SVG/WoT/API/Device perception and canonical observation;
+- complete legal action construction before model presentation;
+- versioned ActionContracts and exact target/binding identity;
+- Task authority, capability, approval, freshness, and preflight gates;
+- backend-neutral execution and typed receipts;
+- loop-native typed effect/step/task evaluation;
+- bounded, side-effect-aware recovery;
+- authoritative state/trace commit and offline evaluation evidence.
+
+## Documentation
+
+Start with [docs/README.md](docs/README.md). The
+[documentation manifest](docs/documentation-manifest.yaml) is the machine-readable
+authority/lifecycle index.
+
+Key current documents:
 
 - [Project Plan](docs/project-plan.md)
 - [Current Implementation Plan](docs/current-implementation-plan.md)
-- [Complete Architecture Blueprint](docs/complete-architecture-blueprint.md)
-- [Design Freeze and Implementation Gates](docs/design-freeze.md)
-- [Architecture](docs/architecture.md)
-- [Agent Orchestration and Live Feedback](docs/orchestration-and-feedback.md)
-- [Harness Evolution](docs/harness-evolution.md)
-- [Trace and Evaluation](docs/trace-and-evaluation.md)
-- [Benchmark Plan](docs/benchmark-plan.md)
-- [Integrations](docs/integrations.md)
-- [Open Source Landscape](docs/open-source-landscape.md)
-- [Migration From A Modular Action System](docs/migration-from-modular-action-system.md)
+- [Implementation Status](docs/implementation-status.md)
+- [Architecture Governance](docs/architecture-governance-track.md)
+- [Documentation Governance](docs/documentation-governance.md)
+- [Task Intake and Planner Contract](docs/task-intake-and-planner.md)
+- [Active Perception and Recovery Contract](docs/active-perception-and-online-recovery.md)
+- [Trace and Evaluation Contract](docs/trace-and-evaluation.md)
 
-Scenario specs:
+Historical audits, completed plans, and superseded designs are indexed under
+[docs/archive](docs/archive/superseded-2026-08-05/README.md). Evidence and
+change-admission records remain in their dedicated immutable directories.
 
-- [Pricing Extraction](docs/scenarios/pricing-extraction.md)
-- [Reversible Settings Update](docs/scenarios/settings-update.md)
-- [Approval-Gated Report Export](docs/scenarios/approval-gated-report-export.md)
-
-## One Sentence
-
-Affordance Runtime turns GUI environments into versioned, typed, verifiable
-action spaces so agents can execute, observe, recover, replay, evaluate, and
-evolve from their own interaction traces.
-
-## What This Project Demonstrates
-
-Affordance Runtime is designed as a GUI agent harness, not just a browser agent
-demo:
-
-- cross-surface perception: DOM, visual Set-of-Marks, accessibility tree,
-  Playwright state, and WoT-style device descriptions
-- unified affordance layer: Page Affordance Model, Visual Affordance Model,
-  Thing Affordance Model, Accessibility Affordance Model, and shared action
-  contracts
-- bounded orchestration: task envelope -> state kernel -> budgeted observation
-  -> versioned affordance snapshot -> planner port -> action contract ->
-  capability gate -> preflight -> execute -> receipt -> post-action observation
-  -> verifier ladder -> recovery or report
-- live environment feedback through post-action observation first, with
-  continuous watcher/event bus deferred until the gold path proves it needs one
-- trace-first execution: every observation, decision, action, verification, and
-  recovery step is recorded for replay and diagnosis
-- evaluation loop: benchmark tasks, postcondition oracles, failure taxonomy,
-  metrics aggregation, regression replay, and versioned reports
-- assisted harness evolution: failed traces can propose reusable skills, policy
-  patches, postcondition improvements, and regression fixtures after benchmark
-  readiness gates pass
-- subagent interfaces: CLI first, then MCP task API; REST and many framework
-  adapters are optional later work
-
-## Flagship Scenario
-
-The first full-chain scenario is a Web GUI runtime that can run standalone with
-a reference planner or be called as a subagent.
-
-Example:
+## Repository layout
 
 ```text
-Parent agent:
-  Find the pricing page, extract plan limits, and return evidence.
-
-Affordance Runtime:
-  observe page
-  build affordance model
-  plan or script bounded navigation
-  execute actions through Playwright
-  verify page state from structural evidence
-  extract structured result
-  return trace, screenshots, evidence, and failure/recovery summary
+src/affordance_runtime/   Runtime implementation
+tests/                    unit, integration, architecture, governance tests
+docs/                     current documentation and immutable records
+docs/archive/             superseded prose, plans, audits, and snapshots
+scripts/                  reproduction, benchmark, and maintenance entrypoints
 ```
 
-The benchmark story should be led by realistic Web/SaaS workflows, not the
-smart-room demo. The runtime should prove generalization through controlled web
-environments first, then keep non-web adapters as secondary evidence:
+Important implementation surfaces include TaskSpec/intake contracts, planning
+requests and planners, canonical observation, ActionChoice/ActionContract,
+safety/preflight, execution, verification/evaluation, recovery, StateKernel,
+trace/artifacts, integrations, and benchmark adapters.
 
-- custom SaaS workflows for form filling, invoice download, pricing extraction,
-  reversible admin settings, report export, and support-case creation
-- WebArena-style mock environments for realistic multi-step tasks, state drift,
-  modals, multi-tab state, and failure injection
-- MiniWoB++ for atomic web actions such as click, type, select, and form fill
-- VisualWebArena-style and Set-of-Mark fixtures for visual fallback and
-  mark-level grounding checks
-- local smart-room / WoT demo only as a non-web adapter proof, not the project
-  main story
+## Validation and reproduction
 
-OSWorld, desktop-native apps, and mobile apps are future expansion targets after
-the web harness, verifier ladder, trace replay, and evolution loop are stable.
+Repository-governed tests and reproduction commands are recorded in
+[Implementation Status](docs/implementation-status.md) and immutable
+[evidence](docs/evidence/README.md). Historical results apply only to their exact
+revision/profile and do not imply current promotion.
 
-## Positioning
+Container entrypoints:
 
-PageAgent lives inside a webpage.
-
-Browser-use and Stagehand help agents control browsers.
-
-Affordance Runtime lives outside environments and gives agents a reliable action
-layer: action contracts, postcondition checks, recovery, trace, evaluation, and
-harness evolution.
-
-## Recommended MVP
-
-The first implementation should be intentionally narrow:
-
-```text
-v0.1 Web GUI Core
-  local SaaS pricing fixture
-  DOM observer
-  Playwright executor
-  Page Affordance Model
-  State Kernel
-  Affordance Lease
-  ActionContract schema_version=1.0
-  Capability Gate
-  post-action Verifier Ladder
-  Trace events and artifact writer
-  CLI gold path
-  direct Playwright baseline
+```bash
+./scripts/reproduce_container.sh
+AFFORDANCE_WOT_PROOF=1 ./scripts/reproduce_container.sh
 ```
 
-Then add reliability:
+## One sentence
 
-```text
-v0.2 Reliability
-  reversible settings fixture
-  approval-gated export fixture
-  stale target injection
-  selector drift injection
-  modal recovery
-  approval gate
-  benchmark report
-  ablations: no lease, no verifier, no capability gate, no recovery
-```
-
-Do not start with every desktop, mobile, and device surface. The architecture
-should be cross-surface, but the first runnable gold path should prove the
-runtime on web GUI tasks.
-
-## Resume Summary
-
-Designed and prototyped a planner-neutral GUI execution runtime skeleton that
-abstracts DOM, visual screenshots, accessibility state, and device descriptions
-into a unified affordance model. The planned system uses versioned action
-contracts, stale-state preflight rejection, capability gating, verifier ladders,
-live environment feedback, failure recovery, trace evaluation, and assisted
-harness evolution from failed interaction traces.
-
-## Code Skeleton
-
-The initial skeleton is in `src/affordance_runtime`:
-
-- `contracts.py`: affordances, leases, action contracts, receipts, risk.
-- `state_kernel.py`: long-horizon task state and evidence obligations.
-- `runtime.py`: bounded contract execution loop.
-- `verification.py`: preflight checks and verifier ladder.
-- `safety.py`: scoped capability and approval gate.
-- `trace.py`: causal trace events.
-- `evolution.py`: regression-gated evolution registry.
-- `adapters/dom.py`: migrated DOM transduction.
-- `adapters/som.py`: migrated Set-of-Marks grounding.
-- `adapters/wot.py`: migrated Thing Description parsing.
-- `benchmarks/`: benchmark tasks, suites, and runtime-specific metrics.
+Affordance Runtime gives agents a versioned and policy-bound GUI action layer in
+which model proposals remain subordinate to Runtime-owned observation, action,
+approval, verification, recovery, and commit authority.

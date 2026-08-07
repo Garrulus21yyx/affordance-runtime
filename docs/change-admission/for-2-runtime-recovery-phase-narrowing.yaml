@@ -1,0 +1,81 @@
+slice_id: for-2-runtime-recovery-phase-narrowing
+parent_record: docs/change-admission/for-1-failure-owner-router.yaml
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+parent_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+base_revision: ed7b1bcbab13ff6b0c13a635f9f07d8ff3f1a05f
+change_type: recovery_owner_boundary_narrowing
+production_behavior_change: true
+runtime_authority_changed: recovery_phase_accepts_only_runtime_owned_failures
+progress_authority_changed: false
+finish_authority_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_record: for_2a_runtime_recovery_phase_narrowing_local_candidate
+  included:
+    - RecoveryPhase classifies incoming failures before mutating state.
+    - RecoveryPhase rejects non-RUNTIME_RECOVERY owners fail-closed.
+    - Coordinator classifies phase-general failures before RecoveryPhase handoff.
+    - Non-runtime owners are committed through a temporary owner handoff seam.
+    - STEP_PLANNER and TASK_PLANNER failures remain replan requests, outside Runtime recovery policy.
+    - USER failures move to user-waiting decisions, outside Runtime recovery policy.
+    - PROGRESS and TERMINAL failures do not enter Runtime recovery policy.
+    - Skill activation failures are owned by STEP_PLANNER unless the phase is task planning.
+  excluded:
+    - Deleting semantic-owner RecoveryKind values.
+    - Deleting duplicate owner mappings.
+    - Removing the temporary non-runtime owner handoff seam.
+    - StateKernel recovery schema changes.
+    - Planner ActionChoice redesign.
+    - Progress or finish authority changes.
+    - SAR-9 phase extraction.
+    - PR breadth or promotion claims.
+
+owner_boundary:
+  runtime_recovery_phase:
+    accepts_only: RUNTIME_RECOVERY
+    rejects:
+      - PROGRESS
+      - STEP_PLANNER
+      - TASK_PLANNER
+      - USER
+      - TERMINAL
+    mutates_state_before_owner_check: false
+  temporary_handoff_seam:
+    module: src/affordance_runtime/failure_owner_flow.py
+    purpose: bridge non-runtime owner failures until FOR-3/FOR-4 structured handoff
+    retirement_target: FOR-4 routing deletion gate
+    new_failure_model: false
+    new_recovery_state_machine: false
+
+validation_policy:
+  test_gate_level: subsystem
+  focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_for_1_failure_classification_uses_owner_not_disposition tests/test_horizontal_architecture_governance.py::test_for_1_actionchoice_failures_carry_failure_owner -q --tb=short --maxfail=20
+    - python -m pytest tests/test_generalist_planner.py tests/test_full_phase_recovery.py tests/test_coordinator.py -q --tb=short --maxfail=20
+  static:
+    - ruff check src/affordance_runtime/recovery_protocol.py src/affordance_runtime/action_choice.py src/affordance_runtime/generalist_planner.py src/affordance_runtime/recovery_coordinator.py src/affordance_runtime/recovery_phase.py src/affordance_runtime/failure_owner_flow.py src/affordance_runtime/coordinator.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py
+    - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/recovery_protocol.py src/affordance_runtime/action_choice.py src/affordance_runtime/generalist_planner.py src/affordance_runtime/recovery_coordinator.py src/affordance_runtime/recovery_phase.py src/affordance_runtime/failure_owner_flow.py src/affordance_runtime/coordinator.py
+    - |
+      python - <<'PY'
+      import yaml
+      from pathlib import Path
+      for path in Path('docs/change-admission').glob('*.yaml'):
+          yaml.safe_load(path.read_text())
+      PY
+    - git diff --check
+  full_pytest:
+    required: false
+    trigger: FOR-4 closure or production behavioral cutover
+  behavioral:
+    pr_breadth: false
+    fresh_diagnostic: false
+
+status:
+  for_2a: local_candidate
+  for_2b_runtime_recovery_policy_cleanup: local_candidate
+  for_3_structured_owner_handoff: selected_next
+  for_4_routing_deletion_gate: pending
+  full_for_closure: incomplete

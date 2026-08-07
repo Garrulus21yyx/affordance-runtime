@@ -1,0 +1,114 @@
+slice_id: v-prb-6b-has-changed-text-progress-binding
+parent_packet: docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml
+packet_role: child_production_slice
+
+base_revision: f9644fa
+change_type: vertical_repair
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: BrowserGym typed text progress evidence declaration
+owner_before:
+  - BrowserGym exact typed value progress declaration covered EQUALS/MATCHES
+  - HAS_CHANGED text value postconditions remained task-terminal-only
+owner_after:
+  - BrowserGym exact typed value progress declaration also covers HAS_CHANGED when the concrete postcondition value equals the Runtime-owned typed outcome value
+
+source_evidence:
+  pr_breadth_rerun: docs/evidence/runs/m8.2a-pr-breadth-9ad1288/
+  residual_classification: docs/evidence/runs/v-prb-6-post-9ad1288-classification/
+  trace_fact: enter-text:seed-1 strong DOM text value evidence passed but lacked active mandatory criterion/requirement links
+  executable_red: tests/test_browsergym_encoder.py::test_browsergym_has_changed_text_value_declares_active_subgoal_evidence
+
+problem_statement: >
+  The BrowserGym adapter already declares exact typed value postconditions as
+  active-subgoal evidence for EQUALS/MATCHES outcomes. The enter-text residual
+  uses a Runtime-owned HAS_CHANGED text outcome with an exact concrete value.
+  Its DOM postcondition passed, but remained task-terminal-only, so verifier
+  evidence lost active subgoal criterion/requirement links before progress
+  matching.
+
+allowed_writes:
+  - src/affordance_runtime/benchmarks/browsergym_encoder.py
+  - tests/test_browsergym_encoder.py
+  - docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml
+  - docs/current-implementation-plan.md
+  - docs/implementation-status.md
+  - .codex/goal-plan.md
+
+forbidden_changes:
+  - Coordinator finish guard weakening
+  - BrowserGym official reward as Runtime completion authority
+  - ExecutionReceipt.success based subgoal completion
+  - external evaluator based subgoal completion
+  - Prompt, model-call budget, retry budget, timeout, or cost changes
+  - task-name, URL, selector, coordinate, or benchmark-family branches
+  - immutable Planner input / PlannerStateView migration
+  - StateKernel mutation ownership changes
+  - V-PRB-6A dependent checkbox/submit progress-scope changes
+  - click-button JSON-invalid/schema-provider robustness changes
+
+typed_boundary:
+  input:
+    - Runtime-owned active subgoal outcome relation/value
+    - concrete BrowserGym fill/type_text verifier postcondition
+  output:
+    - active-subgoal progress evidence declaration for exact HAS_CHANGED typed text values
+
+verification:
+  red:
+    command: >
+      python -m pytest -q
+      tests/test_browsergym_encoder.py::test_browsergym_has_changed_text_value_declares_active_subgoal_evidence
+    result: failed with task_terminal instead of active_subgoal
+  green:
+    command: >
+      python -m pytest -q
+      tests/test_browsergym_encoder.py::test_browsergym_has_changed_text_value_declares_active_subgoal_evidence
+      tests/test_browsergym_encoder.py::test_browsergym_exact_typed_value_declares_active_subgoal_evidence
+      tests/test_browsergym_encoder.py::test_browsergym_typed_match_requires_exact_normalized_value
+      tests/test_browsergym_encoder.py::test_generalist_builder_wires_exact_typed_value_scope
+    result: 6 passed
+  focused_regression:
+    command: >
+      python -m pytest -q tests/test_browsergym_encoder.py
+      tests/test_horizontal_architecture_governance.py
+      tests/test_responsibility_containment.py
+    result: 49 passed, 1 xfailed
+  remaining_xfail: V-PRB-6A dependent checkbox/submit progress-scope binding
+
+implementation_result:
+  status: matrix_negative_insufficient
+  production_change: >
+    BrowserGym exact typed text postconditions now declare active-subgoal
+    progress evidence for HAS_CHANGED when the concrete postcondition value
+    equals the Runtime-owned typed outcome value.
+  unchanged_boundaries:
+    - RunCoordinator finish guard
+    - StateKernel mutation ownership
+    - PlannerPort / PlannerStateView
+    - Prompt, budget, retry, timeout, and provider settings
+    - BrowserGym official reward remains separate from Runtime completion authority
+  clean_pr_breadth_rerun:
+    revision: c382592d6d614e5784730fa2ff0347a9a1b09548
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-c382592/
+    result: negative; 12 expected, 12 observed, 11 official reward passed, 1 official reward failed, 4 Runtime failures
+    impact: >
+      The HAS_CHANGED text progress binding repair did not change the PR
+      breadth matrix result. `enter-text:seed-1` still fails in task planning
+      with entry_outcome_already_satisfied. Next V-PRB-6B work should classify
+      TaskPlan/progress replacement accounting before another production
+      repair.
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+
+done_when:
+  - RED turns green
+  - existing BrowserGym encoder evidence-scope tests remain green
+  - architecture gates remain green
+  - static gates pass
+  - clean PR breadth rerun classifies matrix impact before any closure claim
+  - negative rerun is recorded without PR breadth, fresh diagnostic, promotion,
+    or official score claims

@@ -1,0 +1,1491 @@
+program_id: sar-9-phase-architecture-closure
+title: SAR-9 phase architecture consolidation and purification
+document_role: sole_active_sar_9_closure_record
+base_revision: 4d5d5aa4824361afd8f3f423ed07d0aba83b7d51
+base_revision_subject: "refactor: centralize phase terminal result finalization"
+review_date: 2026-07-30
+current_head_recalibration:
+  revision: 0d8a4287975b5ac44ac7695c7fa6ece63041fd20
+  date: 2026-07-31
+  coordinator_loc: 272
+  interpretation: historical inventories below describe the closure baseline; deleted modules must not be recreated
+  normative_reviews:
+    - docs/reviews/2026-07-31-coordinator-slimming-and-behavior-priority.md
+    - docs/reviews/2026-07-31-optimized-agent-loop-target-review.md
+  controlling_plan: docs/superpowers/plans/2026-07-31-agent-loop-semantic-closure-master-plan.md
+  anti_specialization:
+    core_benchmark_task_ids: forbidden
+    seed_specific_production_branches: forbidden
+    generic_invariant_evidence: required
+    targeted_benchmark_only_evidence: insufficient
+behavioral_closure_evidence_2026_07_31:
+  revision: e9d741460b2832e0c8f6c9b734a43efcd5af35bd
+  working_tree_clean: true
+  focused_residuals:
+    click_button_seed_1:
+      repeated_runs: 3
+      passed: 3
+      model_stage: action_choice_build
+      action_choice_count: 1
+      selection_source: runtime_unique_choice
+    form_sequence_seed_1:
+      passed: true
+      action_count: 8
+      timeline_preserved: true
+    click_dialog_seeds_0_1:
+      passed: 2
+      total: 2
+      former_failure: terminal_evidence_scope_was_removed_before_progress_binding
+      repair: preserve_task_terminal_scope_and_criterion_links
+  clean_pr_6x2:
+    passed: 12
+    total: 12
+    runtime_failures: 0
+    provider_failures: 0
+    identity_digest: sha256:873e0eb0b6197719e8bd56021a964422f97463fd4a87dea66dc1b9683345ff49
+    report_sha256: fcd227ebc0a6ea6bd4ae495573e7495f8999ba053774186d54673027b9510f9c
+  fresh_diagnostic_30x2:
+    passed: 16
+    total: 60
+    runtime_failures: 44
+    provider_failures: 0
+    unclustered_failures: 0
+    unrun_episodes: 0
+    identity_digest: sha256:d9de5e65cce8e823372215a975462a07ce577c0377478c9422b29a1487ac6839
+    report_sha256: 8a12ee10d22e62a9fc91fa5ab9f9c8ce6dbdfcd8fe5679ce63e8c7a4ec2a1b23
+    failure_clusters:
+      schema_incompatible: 2
+      intent_compilation_rejected: 1
+      interaction_target_absent: 23
+      interaction_target_ambiguous: 4
+      no_active_step_action_choice: 2
+      no_feasible_action_choice: 9
+      terminal_without_root_cause: 1
+      verification_failed: 2
+  interpretation:
+    - The protected clean corridor is closed on this revision.
+    - Fresh breadth improved from 12/60 to 16/60 but remains far below semantic closure.
+    - Forty-one of forty-four failures are still at or before typed planning/choice production, including schema and intent admission.
+    - Promotion remains held; task-specific repairs and fallback masking remain prohibited.
+  m3_element_semantics:
+    revision: 97d92b931a7c6a6786b9f97542de57e6888a52af
+    status: complete
+    generic_invariants:
+      - composite_editable_roles_normalize_to_typed_textbox
+      - exact_identity_plus_compatible_command_capability_resolves_role_taxonomy_variance
+      - capability_without_identity_match_remains_absent
+    targeted_replay:
+      enter_date: 2/2
+      click_link: 2/2
+    full_pytest: 1399_passed
+    ruff: passed
+    core_mypy: passed_122_source_files
+    build: passed
+    clean_pr_6x2: 12/12
+    clean_identity_digest: sha256:9239b1ba308e0e62b1f05ef49ebb2bdbe281553e7265cd53452df4d1e0e88d45
+  m4_collection_dynamic_enabling_semantics:
+    first_capability_revision: e9200a508b2f3c8fecb8207d71e05d2289673a6c
+    latest_capability_revision: 3eee41c0ab8ffc9da34662ca9b236cf2aed3d766
+    status: partial_not_promotable
+    completed_units:
+      - scoped_compound_role_ordinal_grounding
+      - explicit_typed_enabler_resolution
+      - direct_target_precedence_over_enabler
+      - satisfied_enabler_liveness_block
+      - canonical_action_choice_role_direct_enabling_information
+      - exact_collection_scope_and_cardinality_grounding
+      - collection_position_ordering
+      - direct_tree_expansion
+      - bounded_forward_and_backward_scroll_enablers
+    authority_invariants:
+      - no_objective_text_inference_for_enabling
+      - no_arbitrary_button_scan
+      - enabling_choice_has_no_completion_criterion_credit
+      - missing_enabler_state_fails_closed
+      - no_task_id_or_seed_branch_in_core
+    targeted_replay:
+      form_sequence_2:
+        result: first_radio_action_resolved_2_of_2_then_failed_at_second_step
+        remaining_owner: M8_taskplan_and_intent_admission
+        seed_0_second_step: interaction_target_absent
+        seed_1_second_step: no_feasible_action_choice
+      navigate_tree:
+        result: 0/2_before_action_dispatch
+        seed_0: intent_compilation_rejected_deterministic_uncovered_source_unit
+        seed_1: interaction_target_absent
+        remaining_owner: M8_taskplan_and_intent_admission
+      scroll_text:
+        result: 0/2_before_action_dispatch
+        failure: interaction_target_absent
+        remaining_owner: M8_taskplan_and_intent_admission
+    verification:
+      focused_tests: 140_passed
+      full_pytest: 1404_passed
+      ruff: passed
+      core_mypy: passed_122_source_files
+      build: passed
+      clean_pr_6x2: 12/12
+      clean_identity_digest: sha256:18c9c8e3f62a5f7b8b0928848e4a1c83b6425f0512024e1e83c103d93eb90d65
+      clean_report_sha256: c2c964da0aa78eb044a0eada4c3a75b80a8042034228bd63f7707668ff98e6ea
+    incomplete_requirements:
+      - pagination_scroll_and_tree_producer_cutover
+      - M4_fresh_30x2
+    architecture_gate_interpretation: >-
+      This semantic capability increment adds canonical contracts and tests, so it
+      is not counted as SAR-9 architecture slimming and cannot satisfy the negative
+      orchestration LOC gate. M4 and promotion remain open.
+  m5_observed_value_transfer:
+    revision: 732cae00edb9c490147878059c134483b3229054
+    status: generic_unit_complete_not_promotion
+    failure_chain:
+      - textarea_current_state_was_ambiguous_with_its_scroll_region_proxy
+      - textarea_element_kind_was_flattened_into_the_shared_textbox_role
+      - bounded_planner_state_could_drop_semantic_keys_by_alphabetic_truncation
+      - relation_destination_was_outside_the_single_target_active_step_scope
+      - dynamic_obligation_output_was_rejected_by_literal_value_scope_authorization
+    canonical_replacement:
+      - observation_value_source_to_obligation_output_dependency
+      - typed_RelationIntent_value_transfer
+      - element_kind_and_role_remain_distinct
+      - exact_safe_control_value_only
+      - destination_is_the_effect_target_for_value_transfer
+      - observed_value_transfer_authorization_binds_source_and_destination_candidates
+      - proposal_rejection_context_preserved_through_grounding_binding
+    fail_closed_guards:
+      - no_observed_text_fallback
+      - no_password_value
+      - no_truncated_prefix_or_suffix_value
+      - no_empty_or_over_240_character_value
+      - no_same_source_and_destination
+      - no_stale_candidate
+      - no_parameter_source_value_mismatch
+      - no_task_id_seed_or_benchmark_branch
+    targeted_copy_paste:
+      seeds: [0, 1]
+      passed: 2/2
+      official_reward: 1.0
+      runtime_verification: 2/2
+      runtime_failures: 0
+      action_families: [fill, click]
+      report_sha256: a7cd6a3540837efc190f09f2b1ee2141a7ab46ca0bea64b98618b6bd5fb5ab04
+    verification:
+      focused_tests: 231_passed
+      full_pytest: 1422_passed
+      ruff: passed
+      core_mypy: passed_117_source_files
+      build: passed
+      architecture_ratchet: task_planning_1641_below_1642_ceiling
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_missing_or_unrun: 0
+      clean_identity_digest: sha256:73020dcf8092b04a89b2bf5ddbd5964a6d1c0272d34872782092ec609e19c649
+      clean_report_sha256: 2d2de3ae3dc9b54f2703e44a9aac0d32efe2843d277ee879ae175741dd904f1d
+    architecture_gate_interpretation: >-
+      This is a typed semantic capability unit, not an SAR-9 LOC-closure claim.
+      It adds no stage, compatibility adapter, task-specific branch, benchmark
+      dependency, State/Trace writer, or ratchet increase. Promotion remains held.
+  m6_relation_semantics:
+    revision: a2f8aab35b8edc0cfc18a517e3a0583c0440759a
+    status: generic_unit_complete_not_promotion
+    canonical_replacement:
+      - TaskInteractionRelationSpec_is_the_source_owned_relation_contract
+      - exactly_one_of_explicit_destination_relative_offset_or_absolute_ordinal
+      - relation_identity_is_part_of_obligation_identity
+      - RelationIntent_preserves_the_same_typed_destination_form
+      - both_drag_endpoints_are_resolved_through_GroundingResult
+      - ActionChoice_emits_only_the_canonical_drag_action
+      - collection_position_cardinality_relative_size_and_containment_are_observed_facts
+      - relation_progress_is_verified_from_post_action_observation
+    fail_closed_guards:
+      - unresolved_or_ambiguous_source_or_destination_produces_no_choice
+      - same_resolved_endpoint_is_rejected
+      - missing_drag_capability_is_distinct_from_absent_target
+      - missing_collection_position_is_capability_missing
+      - no_label_fallback_for_relative_size_or_position
+      - no_connector_action_token_in_core
+      - no_task_id_seed_title_or_benchmark_import_in_core
+      - no_hidden_submit_action_synthesized_from_environment_convention
+    targeted_relation_replay:
+      drag_items:
+        seeds: [0, 1]
+        passed: 2/2
+        official_reward: 1.0
+        runtime_verification: 2/2
+      drag_box:
+        seeds: [0, 1]
+        authorized_relation_actions_dispatched: 2/2
+        authorized_relation_steps_completed: 2/2
+        external_reward: 0/2
+        terminal_runtime_failure: no_active_step_action_choice
+        remaining_owner: M8_taskplan_and_terminal_admission
+        authority_reason: >-
+          The source authorizes moving the small box inside the large box. The
+          environment additionally requires Submit, but that control is absent
+          from source authority. Runtime must not manufacture a third action
+          merely to satisfy this benchmark convention.
+      relation_report_v3_sha256: 4beacdb4c725500ce2d21a75582cd2ce166b25de9c1accb2ade8e807c8d8223e
+      relation_report_v5_sha256: e146fb66a8f0ec461ab9f87fbdd894e949ffbc712c8078ab75cc676064500da0
+    breadth_failure_and_handling:
+      accidental_default_pr_run:
+        revision: 4b8b8ba
+        configured_shape: 6x3
+        result: 16/18
+        failures:
+          - choose-list_seed_1_verification_failed_control_state
+          - form-sequence_seed_2_interaction_target_absent
+        handling: >-
+          This was not represented as the requested 6x2 gate. The exact seed
+          count was supplied on the next run; form-sequence seed 2 remains
+          outside the protected 6x2 corridor and is not called closed.
+      interim_exact_6x2:
+        revision: 4b8b8ba
+        result: 11/12
+        failure: choose-list_seed_1_verification_failed_control_state
+        root_cause: >-
+          The observer reliably emitted selected_options while the verifier
+          required a scalar value key for a scalar select action argument.
+        generic_repair_revision: d621a48e124750dc79f54fa411b89d9cfc80f974
+        generic_repair: normalize_scalar_or_list_expected_selection_then_compare_selected_options
+        targeted_choose_list_after_repair: 2/2
+        no_task_or_seed_specialization: true
+      validation_environment:
+        failures:
+          - bare_python_resolved_to_agent_reach_venv_without_project_PYTHONPATH
+          - uv_run_dependency_resolution_found_existing_Playwright_1_44_vs_1_61_extra_conflict
+          - miniconda_pytest_had_incompatible_async_plugin_and_browser_binary_versions
+          - mypy_found_and_repaired_real_optional_relative_offset_narrowing
+        handling: >-
+          Product validation was rerun with the known BrowserGym Python 3.12
+          runtime and explicit project PYTHONPATH. Environment failures are not
+          counted as product passes, and the dependency conflict remains visible.
+    verification:
+      focused_tests: 230_passed_after_final_type_narrowing
+      full_pytest: 1438_passed
+      ruff: passed
+      core_mypy: passed_117_source_files
+      build: passed
+      diff_check: passed
+      architecture_ratchet: task_planning_1642_at_1642_ceiling
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_missing_or_unrun: 0
+      clean_identity_digest: sha256:fe0e1d1f61888d439b606348d43c5907f6cde6ad0712a44403f18a8fc4f76445
+      clean_report_sha256: 01dca141d739abdfa3039f9b1627bfabba392197706f28b28975270d114dcbe4
+    incomplete_requirements:
+      - drag_box_hidden_terminal_action_authority_mismatch_owned_by_M8
+      - fresh_30x2_deferred_to_declared_M8_or_M9_gate
+    architecture_gate_interpretation: >-
+      M6 is a typed semantic capability unit. It adds no stage, compatibility
+      adapter, mutable writer, stage edge, benchmark dependency, or ratchet
+      increase. It does not satisfy M9 purification, negative LOC, compatibility
+      deletion, StateKernel slimming, or final promotion.
+  m7_spatial_semantics:
+    revision: 250b44aea2d030e12b04efade706519327e4cad1
+    status: generic_unit_complete_not_promotion
+    former_placeholder:
+      RegionIntent_always_returned: region_grounding_unavailable
+      canonical_obligation_spatial_capability: absent
+      action_choice_region_branch: absent
+    canonical_replacement:
+      - explicit_source_spatial_language_binds_spatial_point_capability
+      - provider_obligation_schema_cannot_grant_nonempty_capability
+      - canonical_obligation_preserves_runtime_owned_interaction_capability
+      - RegionIntent_is_projected_before_action_choice
+      - only_current_SVG_or_visual_targets_with_calibrated_geometry_are_eligible
+      - Runtime_emits_POINT_ACTIVATE_without_model_or_coordinate_authorship
+      - post_action_progress_requires_a_new_geometry_marker_near_the_bound_point
+    fail_closed_guards:
+      - missing_granted_capability_is_capability_missing
+      - same_label_DOM_target_is_not_spatial_grounding
+      - absent_confidence_source_ref_or_calibrated_geometry_is_capability_missing
+      - coordinate_signs_are_part_of_semantic_identity
+      - multiple_calibrated_region_matches_are_ambiguous
+      - default_nonspatial_intent_does_not_create_region_choices
+      - no_task_id_seed_title_or_BrowserGym_import_in_core_spatial_logic
+    external_confirmation:
+      grid_coordinate:
+        seeds: [0, 1]
+        passed: 2/2
+        route_source: svg
+        runtime_verification: 2/2
+        report_sha256: 8a84886ff56ab0be9e98bc3203c3721264eb781f16255ddd063bc1834c2a6cf7
+      circle_center:
+        seed_1: passed_full_point_and_explicit_submit_sequence
+        seed_0: intent_compilation_rejected
+        seed_0_reason: provider_referenced_unknown_source_clause_id
+        remaining_owner: M8_taskplan_and_intent_admission
+        interpretation: >-
+          M7 must not weaken source lineage to make seed 0 pass. The source-id
+          repair needs a deterministic source-unit binding rule in M8.
+        report_sha256: e6f69177c9f50608aab29f0c3bea71c645c5f43aada04237eeb2b167f109bf00
+    verification:
+      full_pytest: 1447_passed
+      ruff: passed
+      core_mypy: passed_117_source_files
+      build: passed
+      diff_check: passed
+      architecture_ratchet: task_planning_1642_at_1642_ceiling
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_missing_or_unrun: 0
+      clean_identity_digest: sha256:f584609914237d1b6f29fd1b9f662105649dee257d8b7ca28e3d2e6e2c9ecfd5
+      clean_report_sha256: 74981ac659d3406f05b615e8daa0c9bc26b11b164e66577f915a65f29fbd704d
+    incomplete_requirements:
+      - source_clause_lineage_repair_owned_by_M8
+      - fresh_30x2_deferred_to_declared_M8_or_M9_gate
+    architecture_gate_interpretation: >-
+      M7 is a semantic capability cutover, not M9 architecture closure. It
+      adds no stage, compatibility adapter, writer, stage edge, or core
+      benchmark dependency. Its added semantic LOC must still be offset by
+      the required M9 orchestration deletion before promotion.
+  typed_model_output_boundary:
+    revision: 3a041e34b6cf17c807299c373365f7b3a1c7e850
+    trigger:
+      clean_revision: 3eee41c0ab8ffc9da34662ca9b236cf2aed3d766
+      result: 11/12
+      failing_episode: click-button:seed-1
+      failure: LLMIntentDraft_json_invalid_before_TaskPlan_or_ActionChoice
+    repair:
+      typed_error: StructuredOutputError
+      bounded_schema_retries: 1
+      retries_provider_or_budget_failures: false
+      raw_model_payload_persisted: false
+      task_or_seed_specialization: false
+      compile_method_ratchet_expanded: false
+    targeted_click_button_seed_1:
+      repeated_runs: 3
+      passed: 3
+      model_stage: action_choice_build
+      action_choice_count: 1
+      grounded_target_count: 1
+      selection_source: runtime_unique_choice
+      official_reward: 1.0
+    verification:
+      full_pytest: 1411_passed
+      ruff: passed
+      core_mypy: passed_122_source_files
+      build: passed
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_identity_digest: sha256:947c93545d2db1933a6d636ce9a767cbf0919089193e45208ca09fecb9cd6394
+      clean_report_sha256: e040f5591afd41a6af027e3f49a37494ed1a25ebc7c814b741e91738929a6769
+  m8_taskplan_intent_admission:
+    status: partial_not_promotable
+    sequenced_source_and_runtime_semantics_unit:
+      revision: 29ca32ac52a85b3a66e7309525414763ccb40b31
+      status: partial_m8_checkpoint_not_promotion
+      canonical_replacement:
+        - SourceLedger_v2_splits_explicit_then_sequences_into_real_source_units
+        - sequence_effects_narrow_only_to_a_unique_real_clause_target_match
+        - Runtime_owned_capability_or_relation_forces_canonical_graph_reconstruction
+        - provider_complete_graph_cannot_erase_runtime_capability_or_visual_evidence
+        - explicit_control_identity_and_literal_value_are_separate_typed_fields
+        - prompt_and_ledger_versions_changed_with_their_protocols
+      fail_closed_guards:
+        - unknown_source_unit_is_still_rejected
+        - ambiguous_clause_target_match_is_not_rebound
+        - unresolved_slider_effect_does_not_default_value_to_first_effect
+        - provider_cannot_grant_nonempty_interaction_capability
+      external_diagnostics:
+        first_circle_replay:
+          result: 1/2
+          repaired_boundary: unknown_source_clause_removed
+          remaining_failure: provider_graph_erased_runtime_spatial_capability
+        second_circle_replay:
+          result: 2/2
+          runtime_and_external_verification: 2/2
+          identity_digest: sha256:d8656dff01d43e32bb720509a8c393100a5d7136bcbd520d132df89a4b681dc8
+        first_clean_attempt:
+          status: stopped_not_evidence
+          completed_before_failure: 5
+          failing_episode: form-sequence:seed-0
+          failure: fused_slider_colon_value_used_as_element_identity
+          treatment: generic_control_identity_literal_value_separation
+        targeted_form_sequence_seed_0_after_repair:
+          result: passed
+          action_dispatch_and_verification: complete
+      verification:
+        full_pytest: 1451_passed
+        ruff: passed
+        core_mypy: passed_122_source_files
+        build: passed
+        diff_check: passed
+        clean_pr_6x2: 12/12
+        clean_runtime_failures: 0
+        clean_provider_failures: 0
+        clean_missing_or_unrun: 0
+        clean_identity_digest: sha256:94f8d63519dea92078176f81f2338f12b6e38f7e6ca7b9479183d8772e517970
+        clean_report_sha256: cd985ee6b17ef9b6251210897db83285fac22b7bce4af71229804a5c72ee7a08
+      fresh_30x2:
+        observed: 60/60
+        external_passed: 28/60
+        prior_external_passed: 16/60
+        runtime_failures: 29
+        provider_failures: 0
+        missing_or_unrun: 0
+        unclustered_failures: 0
+        identity_digest: sha256:400b9b6b4d0164087913153063abdc5d74e83fc45dbe73fa096c54ab4db6bbd2
+        report_sha256: fb0b3d193cb769e74434015cf084714123cbb99911753274d077d191cf6920d5
+        remaining_clusters:
+          - focus_outcome_compiled_as_availability_or_absent_element
+          - option_value_fused_into_element_identity
+          - autocomplete_raw_text_used_as_interaction_target
+          - transformation_or_read_outcome_has_no_typed_information_action
+          - scroll_outcome_or_enabler_missing
+          - relation_collection_target_missing
+          - submit_terminal_verification_or_source_authority_mismatch
+          - navigate_tree_source_coverage_or_target_admission
+        interpretation: >-
+          This is a materially improved but incomplete M8 breadth checkpoint.
+          Clean protection is closed; fresh behavioral promotion remains held.
+    typed_focus_semantics_unit:
+      revision: 2886aef92e934714c0ed4c0edd8b94b678ade4b2
+      status: closed_generic_unit_not_m8_or_promotion_closure
+      failure_progression:
+        - boundary: task_planning
+          failure: precondition_only_outcome
+          cause: explicit_focus_was_still_compiled_as_is_available
+          treatment: typed_focus_operation_compiles_to_post_action_is_completed
+        - boundary: action_choice_grounding
+          failure: interaction_target_absent
+          cause: qualified_namespace_role_was_treated_as_a_literal_label
+          treatment: bounded_namespace_role_identity_with_ambiguous_multi_match_fail_closed
+        - boundary: planning_request_projection
+          failure: interaction_target_absent
+          cause: unified_targets_with_more_than_one_semantic_action_were_dropped
+          treatment: preserve_one_target_with_its_complete_typed_action_set
+        - boundary: verification
+          failure: control_state_focused_false_after_terminal_success
+          cause: focus_handlers_may_blur_synchronously_before_the_post_action_snapshot
+          treatment: verify_focus_state_delta_or_positive_terminal_oracle_from_the_execution_receipt
+      canonical_replacement:
+        - TaskInteractionOperationKind_focus_is_Runtime_owned
+        - TaskPlanActionFamily_focus_accepts_only_completed_or_changed_outcomes
+        - ElementOperationKind_and_PlannerActionKind_focus_are_typed_end_to_end
+        - provider_cannot_grant_focus_for_a_non_focus_request
+        - multi_action_unified_targets_are_preserved_without_target_duplication
+        - focus_verification_requires_state_delta_or_positive_terminal_success
+      fail_closed_guards:
+        - no_task_id_or_seed_dispatch_in_core
+        - qualified_role_with_multiple_matches_remains_ambiguous
+        - nonterminal_unchanged_focus_state_fails
+        - one_choice_is_selected_by_Runtime_without_model_selection
+      targeted_focus_text_clean:
+        result: 2/2
+        runtime_verification: 2/2
+        external_evaluator: 2/2
+        model_stage: action_choice_build
+        grounded_target_count: 1_each
+        action_choice_count: 1_each
+        selection_source: runtime_unique_choice
+        runtime_failures: 0
+        provider_failures: 0
+        identity_digest: sha256:ceeb2c7fb9ec86e758b797bb5d27b08530181fb0f2e1c7b346af9b2bb68fd23a
+        report_sha256: 6eac9360742b0fa6ee8d64fd1e3b0236f3a4d8fd0397c3103340f78918104029
+      verification:
+        full_pytest: 1458_passed
+        ruff: passed
+        core_mypy: passed_153_source_files
+        build: passed
+        diff_check: passed
+        architecture_control_module_gate: passed_task_planning_1639_below_1642
+        clean_pr_6x2: 12/12
+        clean_runtime_verification: 12/12
+        clean_external_evaluator: 12/12
+        clean_runtime_failures: 0
+        clean_provider_failures: 0
+        clean_missing_or_unrun: 0
+        clean_identity_digest: sha256:e58a1cc9d6251adcfbb40559d550e780d60f569f96472f42c91073e5a414ae5a
+        clean_report_sha256: 47814faaf443d807747ccc2994f773d4f493801a7b0087060cac0d717933f469
+      fresh_30x2: not_rerun_until_remaining_M8_residuals_close
+    collection_value_identity_unit:
+      revision: 679f077ae6b7fc941f3a515acce80580aad5827b
+      status: closed_generic_unit_not_m8_or_promotion_closure
+      root_failure:
+        boundary: intent_to_action_choice
+        symptom: dropdown_option_value_was_used_as_element_identity
+        first_missing_product: exact_collection_value_constraint
+      canonical_replacement:
+        - choose_and_select_are_bounded_literal_selection_verbs
+        - collection_identity_and_selected_literal_values_are_separate_fields
+        - source_separated_later_effects_are_preserved
+        - same_source_same_collection_selection_alias_is_deduplicated
+      fail_closed_guards:
+        - ambiguous_collection_target_is_not_defaulted
+        - multiple_selected_values_remain_typed_members
+        - later_non_selection_effect_is_not_filtered_by_control_name
+        - no_task_id_seed_or_benchmark_branch_in_core
+      failed_gate_and_treatment:
+        full_pytest_first_attempt: 1458_passed_1_failed
+        failure: duplicate_same_source_collection_selection_obligation
+        treatment: semantic_same_source_selection_alias_deduplication
+        final_full_pytest: 1459_passed
+      targeted_form_sequence_3_clean:
+        result: 2/2
+        runtime_verification: 2/2
+        external_evaluator: 2/2
+        typed_actions_per_seed:
+          - select_option
+          - click
+        model_stage: action_choice_build
+        grounded_target_count: 1_each_turn
+        action_choice_count: 1_each_turn
+        selection_source: runtime_unique_choice
+        identity_digest: sha256:b194efa4e8eb848fcdd438a12cc6b41bd000e0482aeeba34cc5c9f03a707c520
+        report_sha256: f3680e3abc7d29b4bbaf069117a66cf491f4a170b3a47d6b66301a4f271b5211
+      verification:
+        full_pytest: 1459_passed
+        ruff: passed
+        core_mypy: passed_153_source_files
+        build: passed
+        diff_check: passed
+        clean_pr_6x2: 12/12
+        clean_runtime_verification: 12/12
+        clean_external_evaluator: 12/12
+        clean_runtime_failures: 0
+        clean_provider_failures: 0
+        clean_missing_or_unrun: 0
+        clean_identity_digest: sha256:895f5f82a65bdda2857373876ff0ebd38c9b5d03be9ee23edb6b7fa24cad895a
+        clean_report_sha256: 029a12b3503d31354ab6ba70f3cdc172dcb002ad8c84f6fb0f86362c790ba2b0
+      fresh_30x2: not_rerun_until_remaining_M8_residuals_close
+    ordinal_value_binding_unit:
+      revision: d6096ec
+      generic_invariants:
+        - source_ordinal_role_overrides_incoherent_provider_index
+        - literal_entry_value_binds_only_to_unique_compatible_effect
+        - multi_effect_value_never_defaults_to_first_effect
+        - ambiguous_compatible_effects_are_not_repaired
+        - source_dependency_order_is_preserved
+      targeted_form_sequence_2:
+        typed_actions_completed: 2/2_per_seed
+        action_outcomes_verified: 2/2_per_seed
+        runtime_failures: 0
+        external_reward: 0/2
+        remaining_failure: terminal_evidence_missing
+        authority_reason: >-
+          The source request authorizes checking and text entry but does not
+          authorize or require the page Submit control. The runtime therefore
+          may not synthesize a hidden third action from a benchmark convention.
+      verification:
+        full_pytest: 1412_passed
+        ruff: passed
+        core_mypy: passed_122_source_files
+        clean_pr_6x2: 12/12
+        clean_identity_digest: sha256:88b1d1d082db4b1bb052ace49dd133bf5385429776495e7344cf02f7eb857319
+        clean_report_sha256: d961e8af7691ee9aa30732c1a98ee830b01bf03e9529a7dd61a622b423caf06c
+    incomplete_requirements:
+      - every_source_unit_has_typed_criterion_interaction_or_failure
+      - action_instruction_repair_or_rejection
+      - collection_tree_scroll_enabler_production
+      - deterministic_admission_breadth
+promotion_status: held
+closure_status: decomposition_complete_but_purification_incomplete
+sar_9_full_closure: not_approved
+
+authority:
+  migration_style: replace_delete_only
+  next_program: consolidation_purification_and_deletion
+  new_phase_expansion: prohibited
+  structural_relocation: prohibited
+  stopped_slices:
+    - SAR-9AD
+    - SAR-9AE
+  stopped_activity:
+    - moving_another_run_sync_block_into_a_new_file
+  allowed_change_kinds:
+    - merge
+    - replace
+    - purify
+    - delete
+  historical_records:
+    range: SAR-9A_through_SAR-9AC
+    status: archive_and_evidence_only
+    active_governance_effect: none_when_conflicting_with_this_record
+  micro_slice_admission_files: prohibited
+
+review_conclusion:
+  current_architecture:
+    control_flow_decomposition: substantially_improved
+    top_level_readability: substantially_improved
+    authority_boundaries: substantially_improved
+    genuine_simplification:
+      recovery_protocol: true
+      planner_action_authority: true
+      progress_finish_authority: true
+      execution_provenance: true
+    mostly_structural_relocation:
+      phase_control_flow: true
+      state_mutation: true
+      trace_writing: true
+      phase_specific_failure_handling: true
+      dependency_wiring: true
+    not_yet_slim:
+      total_orchestration_code: true
+      top_level_phase_count: true
+      statekernel_history: true
+      compatibility_boundaries: true
+      public_api: true
+      governance_surface: true
+  interpretation:
+    - The giant Coordinator has been decomposed and several parallel authorities have been physically removed.
+    - Most extracted phases remain mutable control-flow blocks rather than immutable-input typed-result stages.
+    - Topology is clearer, but default orchestration LOC and dependency complexity have not yet fallen.
+
+approved_simplifications:
+  recovery_protocol:
+    deleted_types:
+      - RecoveryPlan
+      - RecoveryCommand
+      - RecoveryIncident
+      - RecoveryAttempt
+      - RecoveryCascade
+      - RecoveryHandler
+      - RecoveryCommandDispatcher
+      - RecoveryReceipt
+      - RecoveryDelta
+    canonical_chain:
+      - FailureEnvelope
+      - FailureClassification
+      - RecoveryDecision
+      - RecoveryOutcome
+  strict_planner_authority:
+    canonical_choice_owner: Runtime
+    zero_choices: typed_failure_without_model_call
+    one_choice: runtime_auto_selection_without_model_call
+    many_choices: model_selects_choice_id_only
+    action_choice_forbidden_authorities:
+      - invoke_executor
+      - construct_action_contract
+      - mutate_statekernel
+      - write_trace
+    compatibility_profile_only:
+      - free_action_generation
+      - expected_effect_generation
+      - evidence_requirement_generation
+      - finish_authority
+      - ask_user_authority
+  failure_owner_direction:
+    owners:
+      - PROGRESS
+      - RUNTIME_RECOVERY
+      - STEP_PLANNER
+      - TASK_PLANNER
+      - USER
+      - TERMINAL
+  coordinator_topology:
+    readable_sequence:
+      - loop_and_budget
+      - perception
+      - current_state_progress
+      - task_plan
+      - planner
+      - contract
+      - preflight
+      - execution
+      - verification
+      - progress_or_recovery
+
+remaining_structural_relocation:
+  mutable_phase_authority:
+    examples:
+      - state.transition
+      - state.remember_observation
+      - state.record_receipt
+      - state.complete_subgoal
+      - state.record_planner_proposal
+      - trace.add
+    diagnosis: extracted_mutable_control_flow_blocks
+    required_replacement: immutable_input_to_typed_result_to_single_committer
+  horizontal_stage_calls:
+    observed_edges:
+      - PerceptionPhase_to_RecoveryPhase
+      - PreflightPhase_to_ContractBindingPhase
+      - PreflightPhase_to_RecoveryPhase
+      - ContractBindingPhase_to_PlanningPhase_helper
+      - ContractBindingPhase_to_RecoveryPhase
+  private_result_protocols_known_by_coordinator:
+    - completion_committed
+    - current_state_completion_committed
+    - continue_observing
+    - terminal
+    - failure
+    - contract_missing
+    - skill_step_id
+    - latest_verification
+    - verification_ref
+    - skill_complete
+  repeated_coordinator_protocol:
+    - assign_parent_from_phase_result
+    - continue_when_continue_observing
+    - finish_when_terminal_present
+  current_top_level_phase_surface:
+    - TaskPlanPhase
+    - TaskSkillPhase
+    - PlanningDecisionPhase
+    - PlanningFailurePhase
+    - ContractBindingPhase
+    - ContractFailurePhase
+    - PreflightPhase
+    - ExecutionPhase
+    - VerificationPhase
+    - VerificationFailurePhase
+    - TaskSkillProgressPhase
+    - VerifiedProgressPhase
+    - ProgressPhase
+    - PerceptionPhase
+    - RecoveryFailurePhase
+    - RecoveryPhase
+    - RuntimeLoopPhase
+    - ArtifactPhase
+    - RuntimeResultPhase
+
+canonicalization_gaps:
+  failure_owner_encoded_as_recovery:
+    non_runtime_recovery_kinds_to_delete:
+      - CLARIFY_INTENT
+      - REPLAN_TASK
+      - REPLAN_STEP
+      - REQUEST_APPROVAL
+      - ASK_USER
+      - ABORT
+    incorrect_default_side_effects:
+      - current_recovery_decision
+      - recovery_count
+      - RecoveryStrategySelected
+      - RecoveryOutcomeRecorded
+    target_boundary:
+      FailureOwner: selects_the_next_authority
+      RuntimeRecoveryKind: describes_runtime_mechanical_repair_only
+  planner_compatibility_in_default_path:
+    current_types:
+      - PlannerCompatibilityPort
+      - PlannerDecision
+    reflective_dispatch: inspect.signature_planner_propose
+    current_conversion: PlanningRequest_to_PlannerResponse_to_PlannerDecision
+    target: PlanningRequest_to_PlannerResponse_to_PlanningStage
+  experimental_odg_in_default_progress:
+    current_call: prepare_obligation_progress_shadow_trace
+    current_events:
+      - ObligationProgressShadowCompared
+      - ObligationProgressShadowFailed
+    target: explicit_experimental_runner_only
+  statekernel_history_duplication:
+    target_history_source_of_truth:
+      - Trace
+      - ArtifactStore
+  legacy_public_api:
+    default_exports_to_remove:
+      - StateKernel
+      - PlannerDecision
+      - TaskEnvelope
+      - RouteCalibrator
+      - RoutingDecision
+      - BrowserSnapshot
+    stable_exports:
+      - Runtime
+      - RuntimeClient
+      - RunRequest
+      - RunResult
+      - PlannerPort
+      - PlanningRequest
+      - PlannerResponse
+      - UnifiedObservation
+      - UnifiedAffordance
+      - ActionContract
+      - ActionOutcome
+
+target_architecture:
+  coordinator: AgentLoop_or_RunCoordinator
+  top_level_stages:
+    - PerceptionStage
+    - PlanningStage
+    - ActionStage
+    - ProgressStage
+    - RecoveryStage
+  infrastructure:
+    - RuntimeCommitter
+    - RuntimeResultBuilder
+    - ArtifactStore
+    - TraceSink
+  internal_services_visibility: hidden_from_coordinator
+  stages:
+    PerceptionStage:
+      owns:
+        - observe
+        - multi_source_fusion
+        - target_alignment
+        - active_perception
+      forbids:
+        - recovery_decision
+        - state_mutation
+        - trace_commit
+        - progress
+    PlanningStage:
+      owns:
+        - task_plan_prepare_and_admit
+        - active_step_scope
+        - ActionChoiceBuilder
+        - zero_one_many_dispatch
+        - PlannerResponse
+        - proposal_and_selection_validation
+      forbids:
+        - ActionContract
+        - preflight
+        - execution
+        - state_commit
+        - trace_commit
+    ActionStage:
+      owns:
+        - ActionContract_binding
+        - preflight
+        - approval
+        - backend_route
+        - execution
+        - ActionReceipt
+      forbids:
+        - post_action_completion
+        - progress
+        - recovery_policy
+        - state_commit
+        - trace_commit
+    ProgressStage:
+      owns:
+        - post_action_observation
+        - effect_verification
+        - active_step_progress
+        - task_completion_verification
+        - ActionOutcome
+      forbids:
+        - task_plan_revision
+        - runtime_recovery
+        - state_commit
+        - trace_commit
+    RecoveryStage:
+      accepted_owner: FailureOwner.RUNTIME_RECOVERY
+      owns:
+        - reobserve
+        - active_perception
+        - reground
+        - rebind
+        - verify_before_retry
+        - idempotent_retry
+        - switch_backend_or_provider
+        - schema_repair
+        - checkpoint_or_session_recovery
+      forbids:
+        - step_planner_handoff
+        - task_planner_handoff
+        - user_request
+        - progress_commit
+        - terminal_commit
+
+unified_stage_protocol:
+  generic_result: StageResult[T]
+  immutable: true
+  fields:
+    output: T_or_none
+    transition: RuntimeTransition_or_none
+    events: tuple_of_RuntimeEvent
+    failure: FailureEnvelope_or_none
+    terminal: TerminalResult_or_none
+    directive: LoopDirective
+  directives:
+    - CONTINUE
+    - REPEAT_OBSERVATION
+    - NEXT_STAGE
+    - WAIT_USER
+    - TERMINAL
+  invocation: stage.run(StageInput)
+  maximum_run_parameters: one_input_object
+  coordinator_private_control_fields_forbidden:
+    - parent
+    - continue_observing
+    - contract_missing
+    - completion_committed
+    - current_state_completion_committed
+    - skill_complete
+    - recovery_kind
+
+single_writer:
+  owner: RuntimeCommitter
+  exclusive_authorities:
+    - mutate_StateKernel
+    - advance_state_version
+    - append_Runtime_transition
+    - commit_Trace_event
+  stage_allowed_ports:
+    - Observer
+    - Executor
+    - Verifier
+    - ArtifactStore
+    - ModelPort
+  stage_forbidden_calls:
+    - state.transition
+    - state.remember_observation
+    - state.record_receipt
+    - state.complete_subgoal
+    - state.record_planner_proposal
+    - trace.add
+
+baseline_metrics:
+  measurement_revision: 4d5d5aa4824361afd8f3f423ed07d0aba83b7d51
+  measurement_scope:
+    orchestration_cluster: coordinator.py_plus_the_19_listed_top_level_phase_modules
+    import_edges: direct_static_from_imports_between_listed_phase_modules
+    mutable_writer_files: files_with_direct_state_mutator_or_trace_add_calls
+  coordinator:
+    loc: 647
+    run_sync_loc: 437
+    RunCoordinator_methods: 2
+    affordance_runtime_import_modules: 43
+    direct_phase_import_modules: 19
+  stages:
+    top_level_phase_modules: 19
+    phase_to_phase_import_edges: 19
+    phase_modules_importing_StateKernel: 18
+    phase_modules_importing_Trace_types: 19
+    direct_mutable_writer_phase_modules: 14
+  orchestration_cluster_loc: 5716
+  default_planner_compatibility_adapters:
+    count: 1
+    included:
+      - PlannerCompatibilityPort
+  statekernel_targeted_history_collections:
+    count: 12
+    included:
+      - observations
+      - receipts
+      - evidence
+      - hidden_state_hypotheses
+      - disproved_assumptions
+      - probe_receipts
+      - recovery_history
+      - transitions
+      - planner_history
+      - progress_guard_events
+      - grounding_fallback_lineage
+      - excluded_grounding_candidates
+  baseline_note: Metrics use the definitions above and must be updated in this file as each closure unit lands.
+
+admission_rules:
+  replacement_rule:
+    new_canonical_owner: required
+    old_default_owner_deleted_same_unit: required
+  loc_rule:
+    affected_orchestration_cluster_net_loc: must_decrease
+  dependency_rule:
+    default_dependency_edges: must_decrease
+  writer_rule:
+    mutable_writer_count: must_not_increase
+  compatibility_rule:
+    new_compatibility_adapter: prohibited
+  module_rule:
+    new_stage_module:
+      allowed_only_if:
+        - at_least_two_old_stage_modules_deleted
+        - net_loc_negative
+        - coordinator_direct_dependency_count_decreases
+  facade_rule:
+    new_facade_delegating_to_old_phases: prohibited
+  result_rule:
+    new_result_contract:
+      allowed_only_if: old_phase_result_contracts_are_deleted_same_unit
+  governance_rule:
+    new_micro_slice_yaml_per_code_move: prohibited
+  rejected_patterns:
+    - coordinator_minus_100_loc_new_phase_plus_150_loc_old_phase_retained
+    - planning_stage_wrapper_over_existing_planning_phases
+    - moving_old_code_to_compatibility_while_default_path_still_imports_it
+    - governance_tests_instead_of_physical_deletion
+
+closure_units:
+  C0:
+    name: freeze_phase_expansion_and_record_closure_baseline
+    status: documented
+    changes:
+      - Maintain only this SAR-9 closure record.
+      - Do not create SAR-9AD, SAR-9AE, or later micro-admission files.
+      - Track Coordinator LOC, run_sync LOC, top-level phase count, orchestration-cluster LOC, imports, writer count, adapters, and StateKernel history fields here.
+    acceptance:
+      new_top_level_phase_files: 0
+      new_micro_admission_files: 0
+      baseline_metrics_recorded: true
+  C1:
+    name: purify_failure_owner_and_recovery
+    status: completed
+    completion_evidence:
+      full_pytest: 1385_passed
+      ruff: passed
+      core_mypy: passed_14_source_files
+      forbidden_default_recovery_members: 0
+      non_runtime_recovery_count_increments: 0
+      completion_revision: working_tree_candidate
+    delete:
+      - RecoveryKind.CLARIFY_INTENT
+      - RecoveryKind.REPLAN_TASK
+      - RecoveryKind.REPLAN_STEP
+      - RecoveryKind.REQUEST_APPROVAL
+      - RecoveryKind.ASK_USER
+      - RecoveryKind.ABORT
+      - FailureOwnerHandoff.compatibility_recovery_kind
+      - non_runtime_failure_owner_decision
+      - non_runtime_owner_to_RecoveryDecision_conversion
+      - non_runtime_owner_recovery_count_increment
+      - failure_owner_flow_RecoveryDecision_compatibility_path
+      - RecoveryPhase_non_runtime_owner_branches
+    replacement:
+      OwnerHandoff:
+        - ProgressHandoff
+        - StepPlannerHandoff
+        - TaskPlannerHandoff
+        - UserInputRequest
+        - TerminalResult
+      RecoveryDecision_source: FailureOwner.RUNTIME_RECOVERY_only
+    acceptance:
+      non_runtime_recovery_decisions: 0
+      recovery_count_increment_for_non_runtime_owner: 0
+      RecoveryPhase_accepts_runtime_owner_only: true
+      FailureOwner_router_count: 1
+  C2:
+    name: shared_stage_result_and_first_vertical_perception_cutover
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      ruff: passed
+      core_mypy: passed_11_source_files
+      orchestration_cluster_loc: 5711
+      orchestration_cluster_delta_from_baseline: -5
+      perception_stage_run_parameters: 1
+      perception_old_result_types: 0
+      perception_stage_statekernel_imports: 0
+      perception_stage_tracedag_imports: 0
+      perception_stage_recovery_stage_calls: 0
+      completion_revision: working_tree_candidate
+    hard_gate: do_not_continue_to_other_stage_merges_if_this_cutover_fails
+    replace:
+      input: immutable_PerceptionStageInput
+      output: StageResult[ObservationOutput]
+    delete_same_unit:
+      - PerceptionPhaseResult
+      - PerceptionTerminal
+      - PerceptionPhase_TraceDag_and_TraceNode_parameters
+      - PerceptionPhase_StateKernel_mutation
+      - per_call_artifact_and_recovery_callbacks
+    retain_as_constructor_dependencies:
+      - PerceptionSession
+      - ActivePerceptionFlow
+      - ArtifactStore
+      - Observer_ports
+    acceptance:
+      perception_stage_imports_statekernel: false
+      perception_stage_imports_tracedag: false
+      perception_stage_calls_recovery_stage: false
+      perception_stage_run_parameters: 1
+      perception_old_result_types: 0
+      affected_cluster_net_loc: negative
+  C3:
+    name: consolidate_planning_and_delete_compatibility
+    status: completed
+    completion_evidence:
+      full_pytest: 1387_passed
+      ruff: passed
+      core_mypy: passed_161_source_files
+      coordinator_loc: 605
+      orchestration_cluster_loc: 5123
+      orchestration_cluster_delta_from_baseline: -593
+      planning_cluster_baseline_loc: 1136
+      planning_cluster_exit_loc: 539
+      planning_cluster_loc_reduction_percent: 52.55
+      coordinator_planning_dependencies: 1
+      default_PlannerDecision_imports: 0
+      default_reflective_planner_dispatch: 0
+      three_parameter_default_planners: 0
+      deleted_top_level_phase_modules: 3
+      planning_stage_run_parameters: 1
+      planning_stage_statekernel_imports: 0
+      planning_stage_tracedag_imports: 0
+      completion_revision: working_tree_candidate
+    canonical_module: planning_phase.py
+    new_facade: prohibited
+    absorb:
+      - TaskPlan_prepare_and_admit
+      - TaskSkill_selection_compatibility
+      - ActionChoiceBuilder
+      - PlannerResponse
+      - proposal_and_selection_validation
+      - planning_failure_production
+    delete_modules:
+      - task_plan_phase.py
+      - task_skill_phase.py
+      - planning_failure_phase.py
+    retain_as_services:
+      - TaskPlanFlow
+      - TaskPlanAuthority
+      - ActionChoiceBuilder
+      - TaskSkillRuntime_if_still_in_compatibility_window
+    delete_default_planner_compatibility:
+      - PlannerDecision
+      - PlannerCompatibilityPort
+      - inspect.signature_dispatch
+      - three_parameter_Planner
+      - PlannerResponse_to_PlannerDecision_conversion
+    historical_replay_location: tests_or_explicit_compatibility_profile_only
+    acceptance:
+      coordinator_planning_dependencies: 1
+      default_PlannerDecision_imports: 0
+      default_planner_compatibility_reflection: 0
+      deleted_top_level_phase_modules: 3
+      planning_stage_imports_statekernel: false
+      planning_stage_imports_tracedag: false
+      planning_cluster_net_loc_reduction: at_least_25_percent
+  C4:
+    name: consolidate_action
+    status: completed
+    completion_evidence:
+      full_pytest: 1387_passed
+      ruff: passed
+      core_mypy: passed_158_source_files
+      git_diff_check: passed
+      coordinator_loc: 640
+      run_sync_loc: 379
+      orchestration_cluster_loc: 4817
+      orchestration_cluster_delta_from_baseline: -899
+      action_cluster_baseline_loc: 1266
+      action_cluster_exit_loc: 919
+      action_cluster_loc_reduction_percent: 27.41
+      coordinator_action_dependencies: 1
+      deleted_top_level_phase_modules: 3
+      action_stage_run_parameters: 1
+      action_stage_other_stage_imports: 0
+      action_stage_statekernel_imports: 0
+      action_stage_tracedag_imports: 0
+      completion_revision: working_tree_candidate
+    canonical_module: execution_phase.py
+    absorb:
+      - contract_binding
+      - preflight
+      - approval
+      - route_selection
+      - execution
+      - receipt
+    delete_modules:
+      - contract_binding_phase.py
+      - contract_failure_phase.py
+      - preflight_phase.py
+    retain_as_services_or_ports:
+      - ContractBuilder
+      - ContractExecutionLoop
+      - CapabilityGate
+      - ApprovalProvider
+      - BackendRouter
+      - Executor
+    failure_output: FailureEnvelope_only
+    acceptance:
+      coordinator_action_dependencies: 1
+      deleted_top_level_phase_modules: 3
+      action_stage_run_parameters: 1
+      action_stage_imports_other_stage: false
+      action_stage_imports_statekernel: false
+      action_stage_imports_tracedag: false
+      action_cluster_net_loc_reduction: at_least_25_percent
+  C5:
+    name: consolidate_progress_and_remove_default_odg_shadow
+    status: completed
+    completion_evidence:
+      full_pytest: 1387_passed
+      ruff: passed
+      core_mypy: passed_154_source_files
+      git_diff_check: passed
+      coordinator_loc: 610
+      orchestration_cluster_loc: 4416
+      orchestration_cluster_delta_from_baseline: -1300
+      progress_cluster_baseline_loc: 818
+      progress_cluster_exit_loc: 446
+      progress_cluster_loc_reduction_percent: 45.48
+      coordinator_progress_dependencies: 1
+      deleted_top_level_phase_modules: 4
+      progress_stage_run_parameters: 1
+      progress_stage_statekernel_imports: 0
+      progress_stage_tracedag_imports: 0
+      default_odg_shadow_imports: 0
+      default_odg_shadow_events: 0
+      completion_revision: working_tree_candidate
+    canonical_module: progress_phase.py
+    absorb:
+      - current_step_precheck
+      - post_action_observation
+      - effect_verification
+      - ActionOutcome_construction
+      - active_step_progress
+      - TaskCompletionVerifier
+      - verification_failure_production
+    delete_modules:
+      - verification_phase.py
+      - verification_failure_phase.py
+      - task_skill_progress_phase.py
+      - verified_progress_phase.py
+    delete_from_default_path:
+      - prepare_obligation_progress_shadow_trace
+      - ObligationProgressShadowCompared
+      - ObligationProgressShadowFailed
+    experimental_retention: explicit_experimental_runner_only
+    acceptance:
+      coordinator_progress_dependencies: 1
+      deleted_top_level_phase_modules: 4
+      default_odg_shadow_imports: 0
+      taskskill_parallel_progress: 0
+      progress_stage_imports_statekernel: false
+      progress_stage_imports_tracedag: false
+      progress_cluster_net_loc_reduction: at_least_25_percent
+  C6:
+    name: narrow_recovery_to_runtime_mechanical_repair
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      ruff: passed
+      core_mypy: passed_152_source_files
+      git_diff_check: passed
+      coordinator_loc: 665
+      run_sync_loc: 373
+      orchestration_cluster_loc: 3686
+      orchestration_cluster_delta_from_baseline: -2030
+      recovery_cluster_baseline_loc: 1195
+      recovery_cluster_exit_loc: 312
+      recovery_cluster_loc_reduction_percent: 73.89
+      coordinator_recovery_dependencies: 1
+      deleted_top_level_phase_modules: 2
+      recovery_stage_run_parameters: 1
+      recovery_stage_statekernel_imports: 0
+      recovery_stage_tracedag_imports: 0
+      non_runtime_recovery_decisions: 0
+      completion_revision: working_tree_candidate
+    canonical_module: recovery_phase.py
+    delete_modules:
+      - recovery_failure_phase.py
+      - failure_owner_flow.py
+    retain_as_internal_collaborators:
+      - FailureOwnershipRouter
+      - RuntimeRecoveryDispatcher
+      - RecoveryCoordinator_or_Policy_if_strategy_ordering_remains
+    input_fields:
+      - failure
+      - classification
+      - state_view
+      - capabilities
+    output: StageResult[RecoveryOutcome]
+    acceptance:
+      coordinator_recovery_dependencies: 1
+      failure_owner_flow_module: deleted
+      recovery_failure_phase_module: deleted
+      RecoveryDecision_for_non_runtime_owner: 0
+      recovery_stage_imports_statekernel: false
+      recovery_stage_imports_tracedag: false
+      recovery_cluster_net_loc_reduction: at_least_30_percent
+  C7:
+    name: slim_statekernel
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      ruff: passed
+      core_mypy: passed_152_source_files
+      git_diff_check: passed
+      statekernel_baseline_loc: 403
+      statekernel_exit_loc: 269
+      statekernel_loc_reduction_percent: 33.25
+      targeted_history_fields_remaining: 0
+      plan_progress_alias: false
+      subgoal_compatibility_methods: 0
+      benchmark_history_reads_from_trace: true
+      completion_revision: working_tree_candidate
+    delete_history_fields:
+      - observations
+      - receipts
+      - planner_history
+      - recovery_history
+      - transitions
+      - progress_guard_events
+      - probe_receipts_history
+      - grounding_fallback_lineage
+      - excluded_grounding_candidates_history
+      - generic_evidence_list
+    retain_current_state:
+      - latest_observation_ref
+      - last_action_outcome
+      - current_contract
+      - current_failure
+      - current_recovery_decision
+      - current_recovery_outcome
+      - bounded_recent_action_index
+      - bounded_attempted_strategy_keys
+      - task_plan
+      - task_progress
+      - budget_counters
+      - phase
+      - final_result
+      - version
+    delete_compatibility:
+      - plan_progress_alias
+      - complete_subgoal
+      - activate_next_subgoal
+    replacement_api:
+      - complete_step
+      - activate_next_step
+    history_source_of_truth:
+      - Trace
+      - ArtifactStore
+    acceptance:
+      StateKernel_full_history_collections: 0
+      plan_progress_alias: false
+      subgoal_mutation_api: false
+      statekernel_loc_reduction: at_least_30_percent
+  C8:
+    name: close_composition_root_and_public_api
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      architecture_tests: 128_passed
+      ruff: passed
+      core_mypy: passed_155_source_files
+      coordinator_constructor_fields: 7
+      coordinator_direct_stage_dependencies: 5
+      coordinator_post_init: absent
+      composition_root: src/affordance_runtime/composition.py
+      canonical_request_type: RunRequest
+      canonical_result_type: RunResult
+      legacy_public_exports: 0
+      completion_revision: working_tree_candidate
+    target_constructor_dependencies:
+      - perception_stage
+      - planning_stage
+      - action_stage
+      - progress_stage
+      - recovery_stage
+      - committer
+      - result_builder
+    construction_owner: cli_or_service_composition_root
+    coordinator_post_init_service_wiring: prohibited
+    acceptance:
+      coordinator_direct_stage_dependencies: 5
+      coordinator_total_direct_collaborators: at_most_7
+      coordinator_builds_internal_services: false
+      legacy_public_exports: 0
+      default_compatibility_imports: 0
+  C9:
+    name: contract_governance_and_run_final_closure
+    status: pending
+    active_governance_files:
+      - docs/change-admission/sar-9-phase-architecture-closure.yaml
+    blocking_architecture_gates:
+      - Coordinator_imports_exactly_five_stages
+      - RuntimeCommitter_is_the_only_State_and_Trace_writer
+      - stages_do_not_import_each_other
+      - stages_do_not_import_mutable_StateKernel_or_TraceDag
+      - default_path_has_no_PlannerDecision
+      - default_progress_has_no_ODG_shadow
+      - core_does_not_import_benchmark
+      - strict_Planner_only_selects_ActionChoice
+    non_blocking_reports:
+      - markdown_exact_phrases
+      - historical_slice_names
+      - helper_location_in_old_files
+      - historical_line_count_thresholds
+
+final_exit_gates:
+  coordinator:
+    coordinator_loc_max: 350
+    run_sync_loc_max: 180
+    RunCoordinator_methods_max: 2
+  stage:
+    top_level_stage_count: 5
+    stage_to_stage_import_edges: 0
+    stage_run_call_parameters_max: one_input_object
+    stage_direct_state_mutations: 0
+    stage_direct_trace_writes: 0
+    mutable_runtime_writers: 1
+  complexity:
+    orchestration_cluster_loc_reduction_from_baseline: at_least_25_percent
+    orchestration_cluster_loc_max_from_5716_baseline: 4287
+    coordinator_direct_dependency_count_max: 7
+    new_stage_modules_after_freeze: 0
+    compatibility_adapter_count_default_path: 0
+  canonical_model:
+    default_planner_output: PlannerResponse
+    PlannerDecision_default_imports: 0
+    reflective_planner_dispatch: 0
+    default_progress_shadow: 0
+    non_runtime_RecoveryDecision: 0
+  state:
+    StateKernel_full_history_collections: 0
+    StateKernel_compatibility_aliases: 0
+    history_source_of_truth:
+      - Trace
+      - ArtifactStore
+  behavioral_gate: required
+
+validation_strategy:
+  development_commit:
+    - focused_tests
+    - relevant_architecture_gates
+    - ruff_changed_files
+    - git_diff_check
+  completed_replacement_unit_C1_through_C8:
+    - subsystem_tests
+    - adjacent_integration_tests
+    - core_mypy
+    - ruff
+    - deletion_gates
+    - full_pytest_after_real_production_cutover_and_physical_old_module_deletion
+  documentation_only_commit:
+    full_suite_repeat: not_required
+  C9_final_closure:
+    - full_pytest
+    - full_ruff
+    - core_mypy
+    - uv_build
+    - dependency_and_import_graph_gate
+    - orchestration_loc_gate
+    - clean_6_by_2_pr_breadth
+    - fresh_diagnostic
+  promotion_rule: promotion_remains_held_until_every_final_exit_gate_passes
+
+prohibitions:
+  - add_more_top_level_phases
+  - add_stage_facade_while_retaining_old_phases
+  - add_a_second_StageResult
+  - add_compatibility_adapter
+  - allow_phase_to_write_State_or_Trace
+  - reduce_Coordinator_LOC_without_reducing_orchestration_cluster_LOC
+  - move_old_code_to_compatibility_while_default_path_calls_it
+  - substitute_yaml_or_forbidden_token_tests_for_physical_deletion
+
+final_decision:
+  approved:
+    - recovery_protocol_simplification
+    - ActionChoice_planner_authority_reduction
+    - FailureOwner_direction
+    - ActionOutcome_boundary
+    - Coordinator_topology_decomposition
+  not_yet_approved_as_complete:
+    - SAR_9_full_architecture_closure
+    - phase_purity
+    - StateKernel_slimming
+    - compatibility_retirement
+    - public_API_stabilization
+    - total_core_slimming
+  final_exit:
+    top_level_stages: 5
+    mutable_writers: 1
+    default_compatibility_adapters: 0
+    statekernel_history_collections: 0
+    orchestration_cluster_loc_reduction: at_least_25_percent
+    behavioral_gate: required
+  one_sentence_closure: >-
+    The giant Coordinator is decomposed and several parallel authorities are gone,
+    but SAR-9 closes only after five stable stages share one result protocol, a
+    single RuntimeCommitter owns State and Trace writes, old phases and default
+    compatibility are physically deleted in the same replacement units, and both
+    StateKernel and total orchestration code materially shrink.

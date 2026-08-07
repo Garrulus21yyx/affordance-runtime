@@ -1,0 +1,65 @@
+slice_id: sar-3a-direct-rule-plan-candidate-generation
+parent_decision: sar-0-authoritative-architecture-freeze
+base_revision: 6efce23e2e8eba76cc726d57adf39362747c9a76
+change_type: substitutive_plan_generation_refactor
+task_execution_semantics_changed: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+planner_contract_changed: false
+provider_prompt_or_schema_changed: false
+benchmark_adapter_changed: false
+pr_breadth: not_required
+
+single_primary_owner:
+  direct rule PlanCandidate generation
+
+included:
+  - PlanCandidate becomes the canonical unaccepted plan model
+  - PlanCandidate remains only as a compatibility alias
+  - RulePlanCandidateGenerator generates candidate StepSpec entries directly from TaskSpec obligations
+  - Rule generator no longer calls RuleTaskPlanner
+  - Rule generator no longer uses PlanCandidateProjector
+  - Flat no-obligation tasks receive an explicit implicit candidate step
+  - Forbidden implementation detail checks remain on generated step objectives
+
+excluded:
+  - LLMTaskPlanner PlanCandidate cutover
+  - TaskPlanAuthority production admission
+  - Coordinator plan install or replace changes
+  - StateKernel TaskPlan/PlanProgress schema changes
+  - SubgoalSpec production deletion
+  - TaskPlanLifecycle replacement
+  - progress authority changes
+  - finish authority changes
+  - provider prompt/schema changes
+  - benchmark adapter changes
+  - PR breadth or promotion claim
+
+substitutive_deletions:
+  rule_path_legacy_taskplanner_call: removed
+  rule_path_taskplan_to_candidate_projection: removed
+  task_plan_draft_projector_class: removed_from_generator_module
+
+remaining_sar_3_work:
+  - LLMTaskPlanner must generate PlanCandidate without legacy TaskPlan/SubgoalSpec binding
+  - TaskPlanAuthority must admit initial and revision plans in production path
+  - legacy TaskPlanLifecycle initial and replacement admission paths must be removed
+  - StateKernel must cut over to canonical TaskPlan/TaskProgress naming
+  - SubgoalSpec and PlanProgress production imports must reach zero
+
+validation:
+  focused_generator_tests: pass
+  focused_contract_tests: pass
+  full_pytest: pass
+  ruff: pass
+  mypy: pass
+  uv_build: pass
+  diff_check: pass
+
+closure_status: local_partial_candidate
+remote_ci_evidence: absent
+promotion_status: held
+next_slice_after_closure: sar-3b-llm-plan-candidate-generation

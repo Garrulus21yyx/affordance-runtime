@@ -1,0 +1,88 @@
+slice_id: odg-9-post-verification-obligation-attribution
+parent_decision: docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml
+depends_on:
+  - docs/change-admission/odg-8b-verifier-evidence-fidelity.yaml
+decision_date: 2026-07-29
+base_revision: 02e71b43f1f6b9ccc8364b6487c82d1f4463d5fa
+change_type: attribution_foundation
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+single_primary_owner: Post-verification obligation attribution
+
+goal: >
+  Add a pure attributor that consumes a ProgressAttributionTicket,
+  PostActionEvidenceFact values, the canonical TaskSpec, and an immutable
+  ObligationProgressStateView. It may prepare satisfaction only when exactly
+  one candidate obligation is fully proven by sufficiently strong,
+  identity-consistent evidence. It does not write progress.
+
+included:
+  - PostVerificationObligationAttributor
+  - ticket / task / progress identity validation
+  - candidate obligation ID validation
+  - fact contract identity validation
+  - fact pre/post snapshot consistency validation
+  - dependency-ready eligibility check
+  - satisfied/failed candidate exclusion
+  - relation/value proof checks
+  - typed evidence requirement coverage
+  - weak evidence classification
+  - ambiguous multi-candidate classification
+  - ObligationSatisfactionPreparation creation
+  - TaskPlan-free attribution path
+
+excluded:
+  - Coordinator integration
+  - ticket persistence
+  - BoundActionExecution ticket carry
+  - StateKernel obligation ledger mutation
+  - StateKernel.satisfy_task_obligation()
+  - finish gate change
+  - PlannerContext changes
+  - PlannerPort changes
+  - TaskPlan changes
+  - Verifier pass/fail behavior changes
+  - BrowserGym adapter changes
+  - benchmark rerun
+  - fresh diagnostic
+  - promotion claim
+
+authority_rules:
+  writes_state: false
+  writes_trace: false
+  mutates_obligation_ledger: false
+  changes_finish_gate: false
+  changes_planner_input: false
+  completion_authority: preparation_only
+  coordinator_commit: not_authorized
+  weak_evidence_completion: prohibited
+  receipt_success_completion: prohibited
+  external_reward_completion: prohibited
+  taskplan_required: false
+  standard_path_authority: not_authorized
+  dual_authority: false
+
+tests:
+  red_green:
+    - tests/test_post_verification_obligation_attribution.py
+  focused:
+    - tests/test_post_verification_obligation_attribution.py
+    - tests/test_post_action_evidence_normalization.py
+    - tests/test_progress_attribution_ticket_resolver.py
+    - tests/test_obligation_progress.py
+  architecture:
+    - tests/test_horizontal_architecture_governance.py
+    - tests/test_r8_architecture_boundaries.py
+    - tests/test_responsibility_containment.py
+
+architecture_admission: pass
+closure_status: attribution_foundation_only
+promotion_status: held
+
+next_requirement: >
+  Add a Runtime-only ticket carry boundary such as BoundActionExecution, then
+  add ODG-9 shadow diagnostics. Coordinator obligation commit remains ODG-10
+  and finish authority remains ODG-11.

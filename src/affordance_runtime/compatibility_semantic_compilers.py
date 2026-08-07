@@ -1,0 +1,286 @@
+"""Quarantined declarative assembly for historical task-grammar compatibility."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.semantic_compilers import (
+    SemanticCompileFn,
+    SemanticCompilerContext,
+    SemanticCompilerEvidence,
+    SemanticCompilerRegistry,
+    SemanticCompilerRule,
+    SemanticConstraintFn,
+    SemanticConstraintRule,
+)
+
+_OPERATION_CLASSES = (
+    "read_only",
+    "navigation",
+    "reversible_write",
+    "external_side_effect",
+    "irreversible",
+)
+_POSTCONDITION = ("fresh independent postcondition evidence bound by ContractBuilder",)
+
+
+@dataclass(frozen=True)
+class CompatibilitySemanticCompilerCallbacks:
+    """Historical semantic algorithms injected only by compatibility mode."""
+
+    calendar_event: SemanticCompileFn
+    disclosure_control: SemanticCompileFn
+    suggestion_selection: SemanticCompileFn
+    form_field: SemanticCompileFn
+    copy_operation: SemanticCompileFn
+    incremental_control: SemanticCompileFn
+    semantic_operation: SemanticCompileFn
+    planner_constraints: SemanticConstraintFn
+
+
+def build_historical_compatibility_registry(
+    callbacks: CompatibilitySemanticCompilerCallbacks,
+) -> SemanticCompilerRegistry:
+    """Build the ordered compatibility profile excluded from strict mode."""
+
+    return SemanticCompilerRegistry(
+        rules=(
+            SemanticCompilerRule(
+                compiler_id="typed-disclosure-control-v1",
+                supported_intents=(
+                    "expand one disclosure before a terminal action",
+                    "search ordered disclosures for an explicitly named descendant",
+                ),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective explicitly requests expansion and the current inventory exposes typed disclosure state"
+                ),
+                applicability=_has_disclosure_affordance,
+                compile=callbacks.disclosure_control,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("disclosure", "expanded"),
+                    output_action_kinds=("activate",),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "ordinary buttons without typed expanded state",
+                        "multiple unnamed disclosures without a bounded descendant search",
+                        "a requested descendant already visible in the current inventory",
+                        "backend handles, focus-navigation keys, or surface-specific widget markup",
+                    ),
+                    source="runtime-generic-disclosure-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="authored-calendar-range-v1",
+                supported_intents=("create bounded calendar event",),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective describes an event range and current affordances expose typed range_selectable state"
+                ),
+                applicability=_has_range_selectable_affordance,
+                compile=callbacks.calendar_event,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("range_selectable",),
+                    output_action_kinds=("drag", "type_text", "activate"),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "ordinary lists with time-like text but no range_selectable state",
+                        "ambiguous or non-half-hour event windows",
+                    ),
+                    source="runtime-generic-calendar-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="typed-suggestion-selection-v1",
+                supported_intents=(
+                    "enter a value satisfying an explicit prefix and optional suffix through a suggestion control",
+                ),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective declares a prefix constraint and the current inventory exposes a uniquely bindable "
+                    "typed autocomplete control"
+                ),
+                applicability=_has_autocomplete_affordance,
+                compile=callbacks.suggestion_selection,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("autocomplete",),
+                    output_action_kinds=("type_text", "activate"),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "quoted exact field values without starts-with grammar",
+                        "multiple autocomplete fields without one objective-bound label",
+                        "multiple observed suggestions satisfying the same underconstrained relation",
+                        "a current matching value treated as a request to refill the prefix",
+                    ),
+                    source="runtime-generic-suggestion-selection-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="explicit-form-field-binding-v1",
+                supported_intents=("fill explicitly labelled form fields with explicit values",),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective and current writable inventory expose unambiguous labelled values or explicit field cardinality"
+                ),
+                applicability=_has_writable_affordance,
+                compile=callbacks.form_field,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("label_source",),
+                    output_action_kinds=("type_text",),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "unquoted or ambiguous values without a unique labelled target",
+                        "multiple writable fields without explicit label/value or cardinality evidence",
+                        "terminal submission while any requested field remains unverified",
+                    ),
+                    source="runtime-generic-form-field-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="bounded-text-transform-v1",
+                supported_intents=("copy or transform explicitly observed text",),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective requests a bounded text copy/transform and the current inventory has a writable target"
+                ),
+                applicability=_has_writable_affordance,
+                compile=callbacks.copy_operation,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=(),
+                    output_action_kinds=("type_text", "activate"),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "page text not explicitly named by the task",
+                        "password or truncated content without an exact observed boundary",
+                    ),
+                    source="runtime-generic-text-transform-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="typed-incremental-control-v1",
+                supported_intents=("move a typed incremental control toward an explicit value",),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective names one slider value and one current typed slider exposes its observed value"
+                ),
+                applicability=_has_one_incremental_control,
+                compile=callbacks.incremental_control,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("context_text",),
+                    output_action_kinds=("press_key",),
+                    verifier_requirements=(
+                        "fresh control-state evidence must show one value transition",
+                    ),
+                    negative_examples=(
+                        "multiple sliders without a uniquely named target",
+                        "missing, nonnumeric, or already-satisfied target value",
+                    ),
+                    source="runtime-generic-incremental-control-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="typed-affordance-semantics-v1",
+                supported_intents=(
+                    "owner-scoped collection action",
+                    "typed quantity adjustment",
+                    "observed visual or SVG target",
+                    "selection, hierarchy, relation, discovery, or semantic drag",
+                ),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "current typed affordance state and objective jointly identify one bounded semantic operation"
+                ),
+                applicability=_has_affordances,
+                compile=callbacks.semantic_operation,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=(),
+                    output_action_kinds=(
+                        "activate",
+                        "point_activate",
+                        "select_option",
+                        "drag",
+                        "finish",
+                    ),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "same labels without owner/container/geometry evidence",
+                        "objective values absent from the current typed inventory",
+                        "ambiguous source or destination candidates",
+                    ),
+                    source="runtime-generic-affordance-conformance",
+                    version="1",
+                ),
+            ),
+        ),
+        constraint_rules=(
+            SemanticConstraintRule(
+                compiler_id="typed-planner-constraints-v1",
+                applicability_description=(
+                    "current semantic inventory can safely narrow targets, exact observed values, "
+                    "or one-step keyboard transitions without creating backend authority"
+                ),
+                applicability=_has_affordances,
+                constrain=callbacks.planner_constraints,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=(),
+                    output_action_kinds=tuple(item.value for item in PlannerActionKind),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "ambiguous labels without a unique typed target",
+                        "unobserved source values or backend-derived execution fields",
+                        "already satisfied or progress-blocked action signatures",
+                    ),
+                    source="runtime-generic-planner-constraint-conformance",
+                    version="1",
+                ),
+            ),
+        ),
+    )
+
+
+def _has_range_selectable_affordance(context: SemanticCompilerContext) -> bool:
+    return any(item.state.get("range_selectable") is True for item in context.affordances)
+
+
+def _has_disclosure_affordance(context: SemanticCompilerContext) -> bool:
+    return any(
+        item.action in {"activate", "click"}
+        and item.state.get("disclosure") is True
+        and isinstance(item.state.get("expanded"), bool)
+        for item in context.affordances
+    )
+
+
+def _has_writable_affordance(context: SemanticCompilerContext) -> bool:
+    return any(item.action in {"fill", "type", "type_text"} for item in context.affordances)
+
+
+def _has_autocomplete_affordance(context: SemanticCompilerContext) -> bool:
+    return any(
+        item.action in {"fill", "type", "type_text"} and item.state.get("autocomplete") is True
+        for item in context.affordances
+    )
+
+
+def _has_one_incremental_control(context: SemanticCompilerContext) -> bool:
+    return (
+        len(
+            [
+                item
+                for item in context.affordances
+                if item.role == "slider" and item.action in {"press", "press_key"}
+            ]
+        )
+        == 1
+    )
+
+
+def _has_affordances(context: SemanticCompilerContext) -> bool:
+    return bool(context.affordances)

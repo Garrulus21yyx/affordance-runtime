@@ -1,0 +1,73 @@
+slice_id: tpa-3-4-parent-agent-planner-request-migration
+parent_decision: tpa-0-taskplan-authority-freeze
+base_revision: 21f408ca6a486657c959e07528a0b5843cb76e02
+change_type: planner_input_boundary_migration
+production_behavior_change: false
+production_writers: 1
+
+single_primary_owner:
+  ParentAgentPlannerAdapter: internal immutable PlanningRequest context path
+
+included:
+  - ParentAgentPlannerAdapter builds PlanningRequest once at propose entry
+  - ParentAgentPlannerAdapter builds parent-agent provider context from PlanningRequest
+  - parent-agent proposal provenance and proposal validation remain unchanged
+  - request and context builders may be injected for boundary tests
+  - PlannerPort public three-argument compatibility signature remains unchanged
+
+excluded:
+  - PlannerPort public signature cutover
+  - Coordinator call site change
+  - ActionContract schema change
+  - TaskPlanAuthority production cutover
+  - active-step progress authority cutover
+  - finish-authority change
+  - ODG-9 / ODG-10 / ODG-11
+  - PR breadth claim
+  - promotion
+
+authority:
+  plan_generation: unchanged
+  plan_decision: unchanged
+  plan_commit: RunCoordinator
+  plan_storage: StateKernel
+  progress_authority: legacy_taskplan_subgoal_planprogress
+  planner_input_authority: PlanningRequest projection
+  context_serialization_owner: PlannerContextBuilder
+  parent_proposal_source: ParentProposalSource
+  state_writer: unchanged
+  trace_writer: unchanged
+
+required_invariants:
+  - ParentAgentPlannerAdapter.propose must construct PlanningRequest before provider context serialization
+  - ParentAgentPlannerAdapter.propose must not call legacy build_planner_context directly
+  - request-based provider context must preserve existing parent-agent payload semantics
+  - parent agent continues to receive bounded semantic context only
+  - parent agent proposal payload remains subject to PlannerProposal validation
+  - PlannerPort, Coordinator, StateKernel, TaskPlan admission, progress authority, and finish authority remain unchanged
+
+tests:
+  focused:
+    - tests/test_planner_adapters.py
+    - tests/test_planner_context.py
+    - tests/test_planning_request_builder.py
+  architecture:
+    - tests/test_horizontal_architecture_governance.py
+  full_local_gate:
+    - python -m pytest -q
+    - python -m ruff check src tests scripts
+    - python -m mypy --ignore-missing-imports src
+    - uv build
+    - git diff --check
+
+runtime_effect:
+  planner_behavior_changed: false
+  standard_planner_signature_changed: false
+  coordinator_changed: false
+  statekernel_changed: false
+  taskplan_authority_changed: false
+  browsergym_changed: false
+
+closure_status: parent_agent_request_migration_foundation
+next_slice: tpa-3-5-reference-scripted-planners-request-migration
+promotion_status: held

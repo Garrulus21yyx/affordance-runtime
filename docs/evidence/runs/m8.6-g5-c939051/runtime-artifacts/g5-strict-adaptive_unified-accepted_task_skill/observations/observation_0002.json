@@ -1,0 +1,21 @@
+{
+  "accessibility_hash": "",
+  "artifact_refs": [],
+  "dom_hash": "",
+  "environment_revision": "saved:False",
+  "metadata": {
+    "saved": false,
+    "viewport_size": [
+      640,
+      480
+    ]
+  },
+  "observed_at_s": 1784901351.6945393,
+  "page_revision": "ablation-page-v1",
+  "screenshot_ref": "screen-2.png",
+  "snapshot_id": "adaptive_unified-accepted_task_skill-snapshot-2",
+  "target_fingerprints": {
+    "candidate:dom:dom_button_1": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163"
+  },
+  "url": ""
+}

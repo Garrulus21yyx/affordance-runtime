@@ -1,0 +1,100 @@
+slice_id: v-prb-6b-single-subgoal-terminal-completion
+parent_packet: docs/change-admission/v-prb-6-terminal-completion-guard.yaml
+packet_role: child_diagnostic
+
+base_revision: fa82c635d1ed3218ea7eb4d224e29138610f452f
+change_type: vertical_failure_classification
+agent_mode: single_agent
+production_change_allowed: false
+
+single_primary_owner: not_selected
+candidate_owner: terminal completion guard / single-subgoal TaskPlan accounting
+mechanism: single-subgoal finish rejection after external success
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+  compact_projection: docs/evidence/runs/v-prb-6-compact-d50a631/
+  affected_episodes:
+    - enter-text:seed-1
+  observed_path:
+    - BrowserGym official_reward is 1.0
+    - Runtime records verifier-backed text action evidence
+    - compact projection shows the TaskPlan has two subgoals, not one
+    - text-change subgoal is completed
+    - independent read-only submit_button availability subgoal remains incomplete
+    - strict planner proposes finish
+    - Runtime rejects finish with planner cannot finish before verifier-backed subgoal completion
+
+classification_update:
+  status: reclassified_before_red
+  previous_label: single-subgoal terminal completion
+  current_evidence_label: read-only terminal-availability progress binding / TaskPlan cardinality
+  reason: >
+    The d50a631 trace shows `enter-text:seed-1` has a completed text-change
+    subgoal plus an incomplete independent `submit_button is available`
+    subgoal. It is therefore not evidence for a single-subgoal completion bug.
+
+non_goals:
+  - do not modify production code in this diagnostic packet
+  - do not mark Runtime done only because BrowserGym official_reward is 1.0
+  - do not weaken independent verifier authority
+  - do not accept finish while TaskPlan progress is incomplete
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not modify Prompt, model-call budget, retry budget, timeout, or cost
+  - do not combine with V-PRB-6A unless the RED proves an identical root cause
+
+required_non_browsergym_red_tests:
+  - tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+  - read-only availability subgoal must be resolved before finish or excluded from serial action progress
+  - text action verification passes with criterion and requirement IDs bound to the unique subgoal
+  - completed_subgoal_ids contains the unique subgoal before finish
+  - TaskPlanLifecycle.completed(state) is true before finish
+  - the next finish proposal is accepted only after verifier-backed subgoal completion
+  - DOM value change without required independent evidence still rejects finish
+  - plan replacement cannot lose verified single-subgoal completion
+  - stale plan id or plan version rejects inherited completion
+
+classification_questions:
+  - did the unique subgoal fail to complete despite verifier-backed evidence?
+  - did plan replacement or progress projection lose completion state?
+  - is the single-subgoal PlanningRouter completion special case too narrow?
+  - is task-level terminal evidence stricter than subgoal evidence in this path?
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+
+child_production_slice:
+  record: docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml
+  selected_owner: TaskPlan current-state/cardinality handling
+  status: implemented_locally_red_green
+  result: >
+    The strict-xfail diagnostic RED was moved into a child production slice and
+    turned green by generic symbolic subject-to-affordance matching. This
+    diagnostic packet remains the parent classification record and does not
+    claim PR breadth completion, fresh diagnostic readiness, or promotion.
+
+diagnostic_status:
+  compact_trace_projection: archived
+  executable_red: strict_xfail
+  forced_red_command: >
+    python -m pytest -q
+    tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+    --runxfail
+  forced_red_result: >
+    fails because TaskPlanValidator currently accepts a plan where the active
+    read-only `submit_button is available` subgoal is already visible/enabled
+    in the current observation, leaving it to block Runtime finish later.
+  owner_narrowing: >
+    The RED implicates TaskPlan current-state/cardinality handling rather than
+    Coordinator finish admission, BrowserGym official reward, Prompt, budget,
+    StateKernel mutation, or immutable Planner input.
+  normal_gate_behavior: >
+    the V-PRB-6B xfail marker has been removed by the child production slice;
+    the remaining strict xfail in the focused gate is V-PRB-6A.
+
+done_when:
+  - compact trace projection is archived for the affected episode
+  - a non-BrowserGym RED reproduces the reclassified read-only availability / cardinality failure
+  - one primary owner is selected
+  - any production repair is moved to a separate child_production_slice packet

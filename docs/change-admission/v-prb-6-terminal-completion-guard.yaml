@@ -1,0 +1,91 @@
+slice_id: v-prb-6-terminal-completion-guard
+parent_packet: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
+packet_role: child_diagnostic
+
+base_revision: d50a631a2e67b294db4b6273106df85fd941b3b7
+change_type: vertical_failure_classification
+agent_mode: single_agent
+production_change_allowed: false
+
+single_primary_owner: not_selected
+candidate_owner: subgoal evidence binding / TaskPlan progress accounting
+mechanism: runtime terminal completion guard classification after stale progress binding
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+  affected_observation:
+    - enter-text:seed-1
+    - form-sequence:seed-0
+    - form-sequence:seed-1
+  observed_path:
+    - BrowserGym official_reward is 1.0
+    - Runtime has verified the final effectful action
+    - TaskPlan progress still has unfinished dependent subgoals
+    - trace/state evidence shows later action evidence was attributed to a stale active subgoal rather than the intended dependent subgoal
+    - strict planner proposes finish
+    - Runtime rejects finish with planner cannot finish before verifier-backed subgoal completion
+    - the observation is not an official failed episode but blocks Runtime acceptance and promotion-quality accounting
+  trace_classification:
+    enter-text:seed-1: >
+      single-subgoal path completes the active subgoal and then rejects finish;
+      classify whether task-level terminal evidence is missing or whether
+      single-subgoal PlanningRouter completion is special-cased too narrowly.
+    form-sequence:seed-0: >
+      external reward succeeds, but final state records only the first slider
+      subgoal completed while checkbox/submit follow-up evidence does not
+      advance their dependent TaskPlan subgoals.
+    form-sequence:seed-1: >
+      same pattern as seed 0: external reward succeeds, but Runtime accounting
+      remains incomplete because dependent subgoal progress is not bound before
+      finish.
+  latest_matrix:
+    expected: 12
+    observed: 12
+    official_reward_passed: 12
+    official_reward_failed: 0
+    runtime_failure_count: 3
+    provider_failures: 0
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    evaluation_run_identity: sha256:6855a4359c435386f7abfbfbbabe2b5b63d5661ee8da199d2e4658fa9c1b562d
+
+classification_questions:
+  - does Runtime lack verifier-backed terminal evidence?
+  - is TaskPlan complete while task-level terminal criterion remains unsatisfied?
+  - is the external evaluator broader than the Runtime verifier authority?
+  - is a single-subgoal PlanningRouter completion special case involved?
+  - is the Runtime terminal guard checking a stale active-subgoal projection after subgoal completion?
+  - should finish admission depend on completed TaskPlan obligations, task-level terminal verifier evidence, or both?
+  - should verifier-backed evidence be matched against the intended proposal/contract subgoal rather than only the current active_subgoal_id?
+  - should semantic follow-up proposals that intentionally skip to a dependent target carry a typed TaskPlan subgoal target before contract binding?
+
+non_goals:
+  - do not mark Runtime done only because official_reward is 1.0
+  - do not weaken independent verifier authority
+  - do not modify Coordinator, StateKernel, Prompt, budget, task grammar, or benchmark-specific logic in this diagnostic packet
+  - do not combine with V-PRB-5A or V-PRB-5B
+  - do not repair by accepting finish while TaskPlan progress remains incomplete
+  - do not mark dependent subgoals complete from receipt success or external reward alone
+  - do not claim PR breadth, nightly, release, promotion, or official score
+
+done_when:
+  - the guard and progress-binding failure are classified with a non-BrowserGym reproduction or clear trace evidence
+  - Runtime success, verification success, and BrowserGym reward remain separately accounted
+  - any production repair has its own child production slice and clean rerun
+  - clean PR breadth rerun has 12/12 observed, 12/12 official reward, and zero Runtime terminal-completion guard aborts
+
+classification_status: in_progress
+architecture_admission: not_evaluated
+promotion_status: held
+remote_ci: disabled
+
+child_diagnostics:
+  - docs/change-admission/v-prb-6a-dependent-subgoal-evidence-binding.yaml
+  - docs/change-admission/v-prb-6b-single-subgoal-terminal-completion.yaml
+
+production_slice_rule: >
+  This diagnostic packet may not be used directly as a production repair task.
+  After a non-BrowserGym RED identifies one primary owner, create a separate
+  child production admission record for that owner and rerun clean PR breadth
+  on the committed repair revision.

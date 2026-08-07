@@ -1,5 +1,8 @@
 # Scenario: Pricing Extraction
 
+> **Lifecycle:** CURRENT REFERENCE SCENARIO
+> **Architecture:** read-only TaskSpec → canonical observation → Runtime choices/contracts → evidence-backed result
+
 ## Scenario ID
 
 `saas.pricing.read_only.v1`
@@ -14,6 +17,8 @@ Find the pricing page, extract plan limits, and return evidence.
 - The home page links to pricing.
 - Pricing content may load asynchronously.
 - Some plan details may be hidden behind expandable UI.
+- Fixture v2.1.0 may insert held-out distractors that change DOM ordering and
+  ephemeral element IDs.
 
 ## Task Constraints
 
@@ -49,7 +54,7 @@ references.
 - final URL
 - screenshot of pricing section
 - DOM or accessibility evidence for extracted text
-- trace links from task -> observation -> snapshot -> contracts -> verifier
+- trace links from TaskSpec → canonical observation → contracts → typed evaluation
 
 ## Permitted Actions
 
@@ -76,6 +81,7 @@ references.
 | duplicate labels across plans | tests target disambiguation |
 | modal banner | tests bounded modal recovery |
 | hidden details accordions | tests multi-step read-only navigation |
+| held-out distractor insertion/reordering | tests semantic target identity rather than DOM-order IDs |
 
 ## Ground Truth Oracle
 
@@ -96,13 +102,13 @@ max_effectful_actions: 0
 
 ## Expected Trace Nodes
 
-- task envelope
+- SourceEnvelope and admitted read-only TaskSpec
 - initial observation
-- affordance snapshot for home page
+- canonical home-page observation epoch and SourceCoverage
 - navigation contract to pricing page
 - post-navigation observation
 - extraction evidence nodes
-- verification report against oracle
+- CriterionEvaluation/TaskCompletionEvaluation against the oracle
 - final result
 
 ## Pass Criteria
@@ -112,6 +118,7 @@ max_effectful_actions: 0
 - no effectful action executes
 - trace required fields are complete
 - stale snapshot perturbations are either blocked or re-observed before action
+- held-out layout changes preserve the intended pricing target through its semantic ID
 
 ## Failure Conditions
 

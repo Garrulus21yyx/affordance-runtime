@@ -1,0 +1,243 @@
+import json
+
+import pytest
+
+from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
+from affordance_runtime.verification.mechanical import (
+    ControlStateVerifier,
+    DomAttributeVerifier,
+    EvidenceVerifier,
+    HttpJsonVerifier,
+    ObservationMetadataVerifier,
+    SpatialMarkerDeltaVerifier,
+    StateDeltaOrTerminalVerifier,
+    VerificationEvidence,
+    VerificationReport,
+    VerificationStatus,
+    VerifierLadder,
+)
+
+
+def _receipt(**evidence: object) -> ExecutionReceipt:
+    return ExecutionReceipt(
+        "contract",
+        "portable-web",
+        True,
+        "rev-1",
+        "rev-2",
+        1.0,
+        evidence=dict(evidence),
+    )
+
+
+def test_verifier_evaluate_preserves_observed_value() -> None:
+    evidence_spec = VerifierSpec("evidence", "saved", True)
+    metadata_spec = VerifierSpec("observation_metadata", "saved", True)
+    dom_spec = VerifierSpec(
+        "dom_attribute",
+        "field",
+        {"target_attribute": "data-runtime-handle", "attribute": "value", "value": "Alice"},
+    )
+    control_spec = VerifierSpec(
+        "control_state",
+        "checkbox",
+        {"field": "checked", "value": True},
+    )
+    delta_spec = VerifierSpec(
+        "state_delta_or_terminal",
+        "slider",
+        {"field": "value", "changed_from": "5"},
+    )
+    observation = Observation(
+        "rev-2",
+        snapshot_id="snapshot-post",
+        metadata={
+            "saved": True,
+            "html": '<input data-runtime-handle="field" value="Alice">',
+            "control_states": {
+                "checkbox": {"checked": True},
+                "slider": {"value": "7"},
+            },
+        },
+    )
+
+    cases = (
+        (EvidenceVerifier(), evidence_spec, _receipt(saved=True), observation, True),
+        (ObservationMetadataVerifier(), metadata_spec, _receipt(), observation, True),
+        (DomAttributeVerifier(), dom_spec, _receipt(), observation, "Alice"),
+        (ControlStateVerifier(), control_spec, _receipt(), observation, True),
+        (StateDeltaOrTerminalVerifier(), delta_spec, _receipt(), observation, True),
+    )
+
+    for verifier, spec, receipt, obs, expected_observed in cases:
+        evaluation = verifier.evaluate(spec, receipt, obs)
+
+        assert evaluation.passed
+        assert evaluation.observed == expected_observed
+
+
+def test_http_json_verifier_reports_actual_projected_value(monkeypatch) -> None:
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"form": {"status": "submitted"}}).encode()
+
+    def _fake_urlopen(url: str, timeout: float):  # noqa: ARG001
+        return _Response()
+
+    monkeypatch.setattr(
+        "affordance_runtime.verification.mechanical.urlopen", _fake_urlopen
+    )
+    spec = VerifierSpec(
+        "http_json",
+        "https://example.invalid/state",
+        {"path": "form.status", "value": "submitted"},
+    )
+
+    evaluation = HttpJsonVerifier().evaluate(spec, _receipt(), Observation("rev-2"))
+
+    assert evaluation.passed
+    assert evaluation.observed == "submitted"
+
+
+def test_spatial_marker_delta_requires_new_current_geometry_near_bound_point() -> None:
+    spec = VerifierSpec(
+        "spatial_marker_delta",
+        "",
+        {
+            "point": [48.0, 78.0],
+            "excluded_target_ids": ["semantic:original-region"],
+            "tolerance": 8.0,
+        },
+    )
+    observation = Observation(
+        "rev-2",
+        metadata={
+            "spatial_geometry": [
+                {
+                    "target_id": "semantic:original-region",
+                    "bbox": [10.0, 40.0, 76.0, 76.0],
+                },
+                {
+                    "target_id": "semantic:fresh-marker",
+                    "bbox": [44.5, 74.5, 7.0, 7.0],
+                },
+            ]
+        },
+    )
+
+    evaluation = SpatialMarkerDeltaVerifier().evaluate(spec, _receipt(), observation)
+
+    assert evaluation.passed
+    assert evaluation.observed == "semantic:fresh-marker"
+
+    stale_only = Observation(
+        "rev-2",
+        metadata={"spatial_geometry": [observation.metadata["spatial_geometry"][0]]},
+    )
+    assert not SpatialMarkerDeltaVerifier().evaluate(spec, _receipt(), stale_only).passed
+
+
+def test_verifier_ladder_report_uses_real_observed_values_and_semantic_key() -> None:
+    spec = VerifierSpec(
+        "control_state",
+        "slider",
+        {"field": "value", "value": "7"},
+        evidence_key="spec:slider-value",
+        criterion_ids=("criterion:slider",),
+        requirement_ids=("requirement:slider",),
+    )
+    report = VerifierLadder().verify_report(
+        [spec],
+        _receipt(),
+        Observation(
+            "rev-2",
+            snapshot_id="snapshot-post",
+            metadata={"control_states": {"slider": {"value": "7"}}},
+        ),
+    )
+
+    assert report.passed
+    assert report.evidence[0].observed == "7"
+    assert report.evidence[0].expected == {"field": "value", "value": "7"}
+    assert report.evidence[0].semantic_evidence_key == "spec:slider-value"
+    assert report.evidence[0].evidence_id == "verification:snapshot-post:0:spec:slider-value"
+
+
+def test_state_delta_or_terminal_remains_weak_generic_evidence() -> None:
+    spec = VerifierSpec(
+        "state_delta_or_terminal",
+        "slider",
+        {"field": "value", "changed_from": "5"},
+        evidence_key="spec:slider-delta",
+    )
+    report = VerifierLadder().verify_report(
+        [spec],
+        _receipt(),
+        Observation(
+            "rev-2",
+            snapshot_id="snapshot-post",
+            metadata={"control_states": {"slider": {"value": "7"}}},
+        ),
+    )
+
+    assert report.passed
+    assert report.evidence[0].observed is True
+    assert report.evidence[0].strength == "weak"
+    assert report.evidence[0].semantic_evidence_key == "spec:slider-delta"
+
+
+def test_verification_evidence_values_are_deeply_immutable_from_source_payload() -> None:
+    raw_observed = {"field": "value", "history": ["5"]}
+    raw_expected = {"field": "value", "value": "7"}
+
+    evidence = VerificationEvidence(
+        "control_state",
+        "slider",
+        True,
+        "post_action_observation",
+        observed=raw_observed,
+        expected=raw_expected,
+    )
+
+    raw_observed["history"].append("7")
+    raw_expected["value"] = "9"
+
+    assert evidence.observed["history"] == ("5",)
+    assert evidence.expected["value"] == "7"
+    with pytest.raises(TypeError):
+        evidence.observed["field"] = "other"
+    with pytest.raises(TypeError):
+        evidence.expected["value"] = "other"
+
+
+def test_verification_report_evidence_list_is_deeply_immutable_from_source_payload() -> None:
+    raw_evidence = [
+        VerificationEvidence(
+            "control_state",
+            "slider",
+            True,
+            "post_action_observation",
+            observed={"value": "7"},
+        )
+    ]
+
+    report = VerificationReport(VerificationStatus.PASSED, evidence=raw_evidence)
+    raw_evidence.append(
+        VerificationEvidence(
+            "control_state",
+            "checkbox",
+            True,
+            "post_action_observation",
+            observed=True,
+        )
+    )
+
+    assert len(report.evidence) == 1
+    with pytest.raises(TypeError):
+        report.evidence[0] = raw_evidence[0]

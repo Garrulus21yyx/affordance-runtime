@@ -1,0 +1,48 @@
+slice_id: sar-7-4-taskprogress-default-cutover
+parent_slice: sar-7-single-progress-finish-authority
+base_revision: bd9f8c59d6dc5c77545315c6d1fd87d5ae8cbba6
+change_type: default_progress_model_cutover
+production_behavior_change: compatibility_preserving_progress_field_rename
+task_execution_semantics_changed: false
+progress_authority_changed: StateKernel_default_progress_field_is_task_progress
+finish_authority_changed: false
+promotion_status: held
+pr_breadth: not_run
+remote_ci: disabled
+
+included:
+  - rename PlanProgress implementation class to TaskProgress
+  - keep PlanProgress as a compatibility alias
+  - replace StateKernel.plan_progress dataclass field with StateKernel.task_progress
+  - keep StateKernel.plan_progress as a compatibility property
+  - initialize and replace runtime progress through TaskProgress
+  - add architecture gate preventing plan_progress from returning as a default field
+
+excluded:
+  - full legacy PlanProgress alias deletion
+  - TaskPlan/SubgoalSpec physical deletion
+  - TaskSkillRunState removal
+  - recovery protocol unification
+  - PR breadth
+  - fresh diagnostic
+  - promotion
+
+authority_invariants:
+  StateKernel_default_progress_field: task_progress
+  PlanProgress_class: removed
+  PlanProgress_name: compatibility_alias
+  canonical_taskprogress_cutover: partial_default_field_cutover
+  coordinator_control_flow_change: false
+
+validation:
+  red_green:
+    - /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_statekernel_default_progress_field_is_taskprogress_not_planprogress
+  focused: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_statekernel_default_progress_field_is_taskprogress_not_planprogress tests/test_task_planning.py tests/test_planning_request_builder.py tests/test_simplified_step_projection.py tests/test_task_plan_lifecycle.py tests/test_task_plan_progress.py => 128 passed"
+  full_local_gate: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q => 1255 passed, 1 xfailed"
+  ruff: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m ruff check src tests scripts => passed"
+  mypy: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m mypy --ignore-missing-imports src => success over 141 source files"
+  uv_build: "uv build => passed"
+  diff_check: "git diff --check => passed"
+
+status: local_completion_candidate
+next_slice: sar-7-5-taskskill-progress-state-removal

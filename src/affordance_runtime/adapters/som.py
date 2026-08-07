@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,12 +31,9 @@ class SomAdapter:
         screenshot_ref: str = "",
         ttl_ms: int = 2_000,
         min_confidence: float = 0.0,
+        snapshot_id: str = "",
+        page_revision: str = "",
     ) -> list[Affordance]:
-        lease = AffordanceLease.issue(
-            environment_revision=environment_revision,
-            ttl_ms=ttl_ms,
-            provenance=["screenshot", "som"],
-        )
         affordances: list[Affordance] = []
         mark_index = 0
         for region in regions:
@@ -47,6 +46,17 @@ class SomAdapter:
             x, y, w, h = bbox
             mark_id = f"M{mark_index}"
             action = str(region.get("action", "click"))
+            target_fingerprint = "sha256:" + hashlib.sha256(
+                json.dumps({"mark_id": mark_id, "bbox": bbox, "label": region.get("label", ""), "action": action}, sort_keys=True).encode()
+            ).hexdigest()
+            lease = AffordanceLease.issue(
+                environment_revision=environment_revision,
+                ttl_ms=ttl_ms,
+                provenance=["screenshot", "som"],
+                snapshot_id=snapshot_id,
+                page_revision=page_revision or environment_revision,
+                target_fingerprint=target_fingerprint,
+            )
             affordances.append(
                 Affordance(
                     id=f"vis_{mark_id}",
@@ -61,6 +71,7 @@ class SomAdapter:
                         "screenshot_ref": screenshot_ref,
                     },
                     lease=lease,
+                    backend_candidates=["visual"],
                     confidence=confidence,
                     state={"ocr": region.get("ocr", "")},
                     risk=RiskLevel.LOW,
@@ -75,4 +86,3 @@ class SomAdapter:
             if affordance.locator.get("mark_id") == mark_id:
                 return affordance
         raise KeyError(f"mark_id {mark_id!r} not present")
-

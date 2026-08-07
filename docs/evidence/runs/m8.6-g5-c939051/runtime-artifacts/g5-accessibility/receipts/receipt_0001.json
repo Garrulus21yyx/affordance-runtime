@@ -1,0 +1,14 @@
+{
+  "backend": "accessibility",
+  "contract_id": "contract_candidate_accessibility_accessibility_save_accessibility-snapshot-2",
+  "ended_revision": "accessibility:saved:True",
+  "error_code": null,
+  "evidence": {
+    "dispatched": true,
+    "saved": true
+  },
+  "latency_ms": 0.0,
+  "message": "",
+  "started_revision": "accessibility:saved:False",
+  "success": true
+}

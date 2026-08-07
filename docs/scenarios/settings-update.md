@@ -1,5 +1,8 @@
 # Scenario: Reversible Settings Update
 
+> **Lifecycle:** CURRENT REFERENCE SCENARIO
+> **Architecture:** effect-authorized TaskSpec → ActionContract/gates → contract-bound ACTION_CAUSED evidence → final persisted-state recheck
+
 ## Scenario ID
 
 `saas.settings.reversible_write.v1`
@@ -53,8 +56,9 @@ when requested.
 - action contract with capability decision
 - execution receipt
 - post-action observation
-- server-side persisted value or fixture API receipt
-- optional cleanup receipt
+- server-side persisted value read independently through the fixture API; its
+  request/transport receipt alone is insufficient
+- optional cleanup transaction receipt plus independently settled restore effect
 
 ## Permitted Actions
 
@@ -100,21 +104,25 @@ max_effectful_actions: 2
 
 ## Expected Trace Nodes
 
-- task envelope with granted capability
+- SourceEnvelope and admitted TaskSpec with capability ceiling
 - pre-action observation and setting value
-- action contract bound to snapshot, page revision, and target fingerprint
+- fresh O1 and final immutable ActionContract bound to the Catalog choice, final parameters, page/document revision, and target fingerprint
 - capability gate decision
-- execution receipt
+- approval/policy/preflight decision over the final contract hash and typed transport receipt
+- independently settled setting effect
 - post-action observation
-- verification report against fixture oracle
-- optional compensation/restore action
+- LoopEvaluation and final authoritative recheck against the fixture oracle
+- optional restore action with its own fresh O1, Draft/Sealed contract,
+  capability/approval/preflight, typed receipt and effect settlement;
+  it never shares the original action's contract/grant/receipt
 
 ## Pass Criteria
 
 - no write occurs without `settings.write.reversible`
 - stale action is blocked when perturbation invalidates the target
 - final persisted value matches requested value
-- cleanup restores initial state when requested
+- cleanup restores initial state when requested, proved by an independent
+  post-restore read rather than the cleanup receipt
 - verification uses fixture/API/DOM evidence, not click receipt alone
 
 ## Failure Conditions

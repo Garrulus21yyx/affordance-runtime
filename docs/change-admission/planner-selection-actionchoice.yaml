@@ -1,0 +1,213 @@
+slice_id: planner-selection-actionchoice
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+base_revision: d0515c9
+implementation_revision: f7eded4f690fdb820272dfbe5d3a147794f6a4c0
+change_type: planner_selection_simplification
+production_behavior_change: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+planner_behavior_changed: true
+provider_schema_changed: true
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_slice: ps_strict_free_action_model_fallback_retirement
+  included:
+    - Runtime-owned ActionChoice contract.
+    - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
+    - Runtime-owned ActionSelection and ActionSelectionValidator.
+    - ChoicePlanningRequest for the future multi-choice Step Planner selector.
+    - ActionChoiceBuilder support for exact text-entry EQUALS criteria.
+    - ActionChoiceBuilder support for slider numeric EQUALS via bounded
+      press-key direction choice.
+    - Zero/one/many dispatch semantics as a pure boundary.
+    - Strict architecture gate registration for action_choice.py.
+    - Strict Generalist request-only path auto-selects a unique Runtime-built
+      ActionChoice before model invocation.
+    - Exact text EQUALS and slider numeric EQUALS unique-choice cases return
+      deterministic PlannerProposal compatibility output with
+      runtime-action-choice provenance.
+    - Strict page-observed text fallback is deleted from default Generalist
+      Planner behavior.
+    - Strict exact-value text fallback function and call site are deleted; tests
+      now assert that strict Planner clarification paths do not synthesize
+      action, target, or parameters without Runtime-built ActionChoice input.
+    - Strict Generalist implements select(ChoicePlanningRequest) and exposes a
+      choice-id-only model schema.
+    - Multiple Runtime-built ActionChoices call the Step Planner selector only
+      for choice_id and reject unknown selected choices.
+    - Multiple-choice selections are converted back to PlannerProposal only as
+      a temporary compatibility output for the current Coordinator consumer.
+    - ActionChoiceBuilder now covers bounded checkbox IS_CHECKED activation,
+      select IS_SELECTED option choice, and terminal IS_COMPLETED activation.
+    - strict semantic_action_resolver.py is physically deleted from production
+      source and removed from executable collaborator manifests.
+    - Strict terminal-submit-after-text fallback is deleted from Generalist
+      Planner; terminal submit actions must now come from Runtime-built
+      ActionChoice terminal criteria rather than historical verified-text
+      context synthesis.
+    - ActionChoiceDispatcher validates async Step Planner selections after
+      awaiting them; sync and async selector paths now share the same
+      choice_id membership and identity validator.
+    - Strict Generalist Runtime ActionChoice path uses ActionChoiceDispatcher
+      for zero/one/many dispatch instead of maintaining a second local
+      one-choice and multi-choice selection branch.
+    - Strict public PlanningRequest path returns PlannerUnsupportedResponse for
+      Runtime ActionChoiceFailure without calling the model or falling back to
+      free PlannerProposal generation.
+    - Invalid ActionChoice selection from the Step Planner is converted to a
+      typed ActionChoiceFailure / PlannerUnsupportedResponse instead of raising
+      through the dispatcher or falling back to free PlannerProposal generation.
+    - PlannerUnsupportedResponse compatibility conversion preserves the typed
+      unsupported reason_code in PlannerDecision.planner_context so the current
+      Coordinator consumer can route ActionChoice failures into recovery
+      without collapsing them to generic planner_failed.
+    - ActionChoiceBuilder resolves narrow legacy submission subjects to a
+      unique submit target through the active-step target resolver.
+    - ActionChoiceBuilder distinguishes unresolved legacy target binding from
+      matched targets with no feasible action; strict public PlanningRequest
+      path now returns typed PlannerUnsupportedResponse for
+      action_choice_target_unresolved instead of falling back to free
+      PlannerProposal generation.
+    - ActionChoiceBuilder resolves a unique exact-label legacy subject to the
+      current semantic target id without fuzzy label or task-family matching.
+    - ActionChoiceBuilder derives bounded HAS_CHANGED activation choices for
+      activatable non-text, non-slider targets, covering BrowserGym click
+      button without restoring free PlannerProposal fallback.
+    - BrowserGym click-button strict generalist path now completes through a
+      Runtime-built unique ActionChoice with zero Step Planner model calls.
+    - Strict Generalist free-action model fallback is retired; strict default
+      planning no longer exposes PlannerProposalCandidate or a replacement
+      action-kind/target/parameter schema to the provider outside bounded
+      ChoicePlanningRequest selection.
+    - Historical compatibility profile still uses PlannerProposalCandidate and
+      accepts singular expected_effect / evidence_need aliases for replay.
+    - Strict Generalist no longer enters the free action model candidate path
+      when no active step exists; it returns typed
+      no_active_step_action_choice without calling the model.
+    - Strict Generalist filters finish and ask_user out of model-owned action
+      authority; user clarification and task completion remain Runtime-owned
+      typed outcomes rather than Step Planner choices.
+    - Strict no-action-choice legacy grammar tests now assert typed
+      unsupported/no proposal instead of ask_user PlannerProposal synthesis.
+    - Historical compatibility profile retains old free PlannerProposalCandidate
+      generation and repair tests for replay-only behavior.
+  excluded:
+    - Coordinator call-site integration.
+    - Public PlannerPort replacement with select(choice_id).
+    - Physical deletion of PlannerProposalCandidate from historical
+      compatibility tests and replay profile.
+    - ActionContract builder changes.
+    - Executor, verifier, preflight, approval, or capability changes.
+    - Task Planner action-family retirement.
+    - TargetIntent migration.
+    - PR breadth, fresh diagnostic, or promotion claim.
+
+authority_rules:
+  planner_generates_action_kind: historical_compatibility_only
+  planner_generates_target: historical_compatibility_only
+  planner_generates_parameters: historical_compatibility_only
+  planner_generates_expected_effects: prohibited_in_strict_provider_schema
+  planner_generates_evidence_requirements: prohibited_in_strict_provider_schema
+  actionchoice_backend_authority: prohibited
+  actionchoice_verifier_authority: prohibited
+  actionchoice_completion_authority: prohibited
+  actionchoice_trace_writer: prohibited
+  actionchoice_state_mutation: prohibited
+
+dispatch_rules:
+  zero_choices:
+    result: typed_failure
+    planner_called: false
+  one_choice:
+    result: runtime_action_selection
+    planner_called: false
+  multiple_choices:
+    result: StepPlannerPort_selects_choice_id_future_boundary
+    planner_called: true
+    validator: choice_id_membership_and_identity_only
+
+validation:
+  focused:
+    - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py tests/test_semantic_compilers.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=20
+  focused_result: 183_passed
+  ps_5_focused:
+    - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py -q --tb=short --maxfail=20
+  ps_5_focused_result: 100_passed
+  architecture:
+    - python -m pytest tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks -q --tb=short --maxfail=5
+  architecture_result: 9_passed
+  ruff:
+    - ruff check src/affordance_runtime/action_choice.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py
+  ruff_result: passed
+  mypy:
+    - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/action_choice.py
+  mypy_result: passed
+  dispatcher_async_validation:
+    - python -m pytest tests/test_action_choice.py -q --tb=short --maxfail=10
+  dispatcher_async_validation_result: 13_passed
+  generalist_dispatcher_cutover:
+    - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_auto_selects_unique_exact_text_actionchoice tests/test_generalist_planner.py::test_strict_planner_auto_selects_unique_slider_actionchoice tests/test_generalist_planner.py::test_strict_planner_selects_choice_id_for_multiple_actionchoices tests/test_generalist_planner.py::test_generalist_choice_selector_rejects_unknown_choice_id -q --tb=short --maxfail=10
+  generalist_dispatcher_cutover_result: 17_passed
+  invalid_selection_typed_failure:
+    - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_selects_choice_id_for_multiple_actionchoices tests/test_generalist_planner.py::test_generalist_choice_selector_rejects_unknown_choice_id tests/test_generalist_planner.py::test_strict_planner_returns_typed_failure_for_unknown_actionchoice_selection tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call -q --tb=short --maxfail=10
+  invalid_selection_typed_failure_result: 17_passed
+  generalist_dispatcher_architecture:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_generalist_uses_dispatcher_not_local_selection_branching -q --tb=short
+  generalist_dispatcher_architecture_result: 1_passed
+  no_choice_no_model_call:
+    - python -m pytest tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call -q --tb=short
+  no_choice_no_model_call_result: 1_passed
+  unsupported_reason_compatibility:
+    - python -m pytest tests/test_planner_response_contracts.py::test_planner_unsupported_response_preserves_typed_reason_in_compatibility_decision -q --tb=short
+  unsupported_reason_compatibility_result: 1_passed
+  unresolved_target_compatibility_fallback:
+    - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_falls_back_to_legacy_model_when_choice_target_unresolved tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call tests/test_browsergym_adapter.py::test_generalist_planner_port_runs_browsergym_without_external_action_policy tests/test_browsergym_adapter.py::test_browsergym_episode_report_counts_successful_intent_repair tests/test_generalist_planner.py::test_strict_planner_uses_active_step_admission_without_terminal_readiness --maxfail=1 --tb=short -q
+  unresolved_target_compatibility_fallback_result: 20_passed
+  unresolved_target_typed_failure_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_action_choice.py tests/test_generalist_planner.py tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_target_unresolved_does_not_fallback_to_free_planner --maxfail=1 --tb=short
+  unresolved_target_typed_failure_cutover_result: 130_passed
+  unresolved_target_typed_failure_cutover_static:
+    ruff: passed
+    mypy_core: passed_3_source_files_ignore_optional_missing_imports
+    diff_check: passed
+  browsergym_click_actionchoice_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_action_choice.py tests/test_generalist_planner.py tests/test_browsergym_adapter.py tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_target_unresolved_does_not_fallback_to_free_planner --maxfail=1 --tb=short
+  browsergym_click_actionchoice_cutover_result: 204_passed
+  strict_model_authority_schema_quarantine:
+    red:
+      - PYTHONPATH=src python -m pytest -q tests/test_generalist_planner.py::test_strict_planner_model_schema_excludes_effect_evidence_and_completion_authority --tb=short
+    red_result: failed_before_strict_schema_split
+    green:
+      - PYTHONPATH=src python -m pytest -q tests/test_generalist_planner.py::test_strict_planner_model_schema_excludes_effect_evidence_and_completion_authority --tb=short
+    green_result: 1_passed
+    focused:
+      - PYTHONPATH=src python -m pytest -q tests/test_generalist_planner.py tests/test_planner_model_orchestrator.py tests/test_action_choice.py tests/test_planner_response_contracts.py --maxfail=1 --tb=short
+    focused_result: 138_passed
+  strict_free_action_model_fallback_retirement:
+    red:
+      - PYTHONPATH=src python -m pytest -q tests/test_generalist_planner.py::test_strict_planner_model_schema_excludes_ask_user_and_finish_actions --tb=short
+    red_result: failed_before_strict_action_authority_filter
+    focused:
+      - PYTHONPATH=src python -m pytest -q tests/test_semantic_compilers.py tests/test_generalist_planner.py tests/test_planner_model_orchestrator.py tests/test_action_choice.py tests/test_planner_response_contracts.py --maxfail=1 --tb=short
+    focused_result: 164_passed
+  cutover_closure:
+    full_pytest: PYTHONPATH=src python -m pytest -q
+    full_pytest_result: 1337_passed
+    full_ruff: ruff check src tests scripts
+    full_ruff_result: passed
+    core_mypy: mypy --ignore-missing-imports --exclude 'src/affordance_runtime/benchmarks|src/affordance_runtime/langgraph' src/affordance_runtime
+    core_mypy_result: passed_116_source_files
+    uv_build: passed
+    diff_check: passed
+  pr_breadth: not_run
+  fresh_diagnostic: not_run
+  behavioral_gate_blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+  required_model_boundary: non_qwen_ollama_model_for_behavioral_rerun
+
+status: ps_strict_free_action_model_fallback_retirement_local_candidate
+next_slice: ps_6_behavioral_gate_and_residual_classification

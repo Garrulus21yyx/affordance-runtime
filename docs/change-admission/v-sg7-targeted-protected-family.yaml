@@ -1,0 +1,146 @@
+slice_id: v-sg7-targeted-protected-family
+base_revision: fa288afa7ba047dd3d0ae186f74e948058928436
+repair_revision: 3d44a9d222decd1de272d7a4d3eb14b025a8738a
+latest_implementation_bearing_baseline: 66747420c4d319d26a10a7c6fb6006871cf3310a
+later_documentation_sync_commits: allowed_without_new_runtime_evidence
+change_type: vertical_evidence_and_generic_repair
+production_change_initially_allowed: false
+
+goal: >
+  Confirm whether the SG1-SG6 canonical intake repair chain closes the
+  protected-family failures for enter-date and text-transform, seeds 0 and 1,
+  under strict-generalist planning and existing budgets.
+
+single_responsibility: >
+  Account for the original INTENT / PLANNING protected-family failures and
+  admit only generic, source-bound repairs required to make the same targeted
+  matrix executable without benchmark-specific branches.
+
+non_goals:
+  - do not migrate PlannerPort to immutable PlanningRequest
+  - do not add PlannerStateView
+  - do not modify StateKernel
+  - do not split Coordinator
+  - do not adjust Prompt identity
+  - do not increase model-call, retry, timeout, or cost budgets
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not run or claim PR breadth, nightly, release, or official benchmark score
+
+target_tasks:
+  - enter-date
+  - text-transform
+target_seeds:
+  - 0
+  - 1
+
+owner_before:
+  evidence:
+    - local SG7 diagnostic at fa288af
+  failure_layers:
+    - intent
+    - planning
+  repair_surfaces:
+    - LLMIntentCompiler
+    - CanonicalObligationCompiler
+    - task_planning
+    - GeneralistLMPlanner
+    - ActivePerceptionFlow
+    - BrowserGymObserver
+    - unified_grounding
+
+owner_after:
+  canonical_graph_authority:
+    - SourceLedgerBuilder
+    - CanonicalObligationCompiler
+    - deterministic coverage validator
+  proposal_admission:
+    - PlannerProposalValidator
+    - DecisionConstraintSet
+  execution_authority:
+    - RunCoordinator
+  semantic_ownership_review:
+    status: pending_review
+    reason: >
+      The repair preserved hard authority and benchmark boundaries, but
+      introduced deterministic value-entry, observed-text, and submit fallback
+      logic in planner/intake surfaces. These paths are baselined for later
+      owner extraction instead of being declared architecturally clean.
+
+typed_input:
+  - SourceLedger
+  - semantic provider proposal
+  - Runtime-owned TaskSpec graph
+  - BrowserSnapshot
+  - bounded planner context
+
+typed_output:
+  - TaskSpec
+  - TaskPlan
+  - PlannerProposal
+  - ActionContract
+  - ExecutionReceipt
+  - VerificationReport
+  - BrowserGym diagnostic report
+
+state_writer: RunCoordinator
+trace_writer: RunCoordinator
+authority_source:
+  - user request source ledger
+  - Runtime-owned canonical graph
+  - existing capability and approval gates
+budget_source:
+  - existing episode timeout
+  - existing model-call ceiling
+  - existing execution reserve
+
+dependency_changes:
+  added:
+    - none outside the targeted generic repair surfaces
+  removed:
+    - none
+  forbidden:
+    - core import of benchmark-family task rules
+    - planner import of Coordinator
+    - new StateKernel writer
+
+old_path_removed:
+  - direct provider graph authority into TaskSpec remains rejected
+  - model COMPLETE remains advisory only
+  - page-sourced text below is not literalized as user-provided value
+
+tests_required:
+  - focused planner/intake/perception/grounding/governance tests
+  - SG1-SG6 deterministic intake tests
+  - horizontal architecture governance gates
+  - exact enter-date/text-transform seeds 0 and 1 targeted matrix
+
+evidence:
+  clean_targeted_confirmation:
+    revision: 3d44a9d222decd1de272d7a4d3eb14b025a8738a
+    archive: docs/evidence/runs/m8.2a-sg7-3d44a9d/
+    expected: 4
+    observed: 4
+    passed: 4
+    failed: 0
+    provider_failures: 0
+    runtime_failures: 0
+    official_score_claimed: false
+  implementation_bearing_local_equivalent_gate:
+    revision: 66747420c4d319d26a10a7c6fb6006871cf3310a
+    tests: 957
+    ruff: pass
+    mypy_source_files: 116
+    build: pass
+    chromium_smoke: pass
+    browsergym_bridge_smoke: pass
+    diagnostic_benchmark_smoke: pass
+    docker_runtime_test: pass
+    docker_benchmark_diagnostic: pass
+    docker_wot_conformance: pass
+    diff_check: pass
+
+architecture_admission: pass
+mechanical_architecture_gates: pass
+promotion_status: held
+remote_ci: disabled
+official_score_claimed: false

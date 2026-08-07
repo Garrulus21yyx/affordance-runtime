@@ -1,0 +1,27 @@
+{
+  "evidence": [
+    {
+      "criterion_ids": [
+        "skill-step:profile.save@1.0.0:step-1:criterion:0",
+        "subgoal:subgoal-1:criterion:0"
+      ],
+      "environment_revision": "saved:True",
+      "evidence_id": "verification:adaptive_plus_task_skill-accepted_task_skill-snapshot-3:0:observation_metadata:saved",
+      "expected": true,
+      "observed": true,
+      "observed_at_s": 1784901351.7011023,
+      "passed": true,
+      "requirement_ids": [
+        "skill-step:profile.save@1.0.0:step-1:evidence-requirement:0",
+        "subgoal:subgoal-1:evidence-requirement:0"
+      ],
+      "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-3",
+      "source": "post_action_observation",
+      "strength": "strong",
+      "target": "saved",
+      "verifier_kind": "observation_metadata"
+    }
+  ],
+  "reason": "",
+  "status": "passed"
+}
