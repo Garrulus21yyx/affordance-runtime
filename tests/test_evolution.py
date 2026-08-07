@@ -234,9 +234,9 @@ def test_executable_payload_loads_into_fresh_runtime_and_rolls_back(tmp_path) ->
     profile.load(persisted.artifacts[artifact.id])
 
     assert profile.features_for("reversible_settings_update").structural_verification
-    assert not profile.features_for("read_only_evidence_chain").structural_verification
+    assert profile.features_for("read_only_evidence_chain").structural_verification
     profile.rollback(artifact.id)
-    assert not profile.features_for("reversible_settings_update").structural_verification
+    assert profile.features_for("reversible_settings_update").structural_verification
     assert json.loads(store.path.read_text())["schema_version"] == "1.0"
 
 

@@ -1,6 +1,5 @@
 from dataclasses import dataclass, replace
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
@@ -36,6 +35,7 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     canonical_effect_requirement_refs,
 )
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -151,6 +151,8 @@ class DeviceObserver:
                     snapshot_id,
                     environment_revision,
                     page_revision,
+                    acquisition_exhaustive=True,
+                    source_scope="controlled-device-surface",
                 ),
                 SourceObservation(
                     GroundingSource.WOT,
@@ -158,6 +160,8 @@ class DeviceObserver:
                     snapshot_id,
                     environment_revision,
                     page_revision,
+                    acquisition_exhaustive=True,
+                    source_scope="controlled-device-surface",
                 ),
             ),
             grounding_candidates=target.grounding_candidates,

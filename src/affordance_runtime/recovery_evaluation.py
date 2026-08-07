@@ -83,18 +83,22 @@ class RecoveryObservationEvaluator:
                 )
             )
             current_attempt = state.current_execution_attempt
-            unresolved_attempt_ids = {item.attempt.attempt_id for item in state.uncertain_external_effects}
             settlement = (
-                effect_settlement_status(verification, contract, current_attempt)
-                if current_attempt is not None and current_attempt.attempt_id in unresolved_attempt_ids
+                effect_settlement_status(
+                    verification,
+                    contract,
+                    current_attempt,
+                    uncertain_transport=(failure.effect_status == EffectStatus.MAY_HAVE_OCCURRED),
+                )
+                if current_attempt is not None
                 else EffectSettlementStatus.STILL_UNCERTAIN
             )
-            absence_confirmed = settlement == EffectSettlementStatus.CONFIRMED_NOT_OCCURRED
+            absence_confirmed = settlement == EffectSettlementStatus.NOT_OCCURRED
             effect_settled = bool(
                 settlement
                 in {
-                    EffectSettlementStatus.CONFIRMED_OCCURRED,
-                    EffectSettlementStatus.CONFIRMED_NOT_OCCURRED,
+                    EffectSettlementStatus.OCCURRED,
+                    EffectSettlementStatus.NOT_OCCURRED,
                 }
             )
             skill_fallthrough = bool(
@@ -102,7 +106,28 @@ class RecoveryObservationEvaluator:
                 and task_skill_progress is not None
                 and not getattr(task_skill_progress, "active", True)
             )
-            failed = not verification.passed and not absence_confirmed and not skill_fallthrough
+            validated_idempotent_retry = bool(
+                absence_confirmed
+                and contract.idempotency_key
+                and current_attempt is not None
+                and current_attempt.idempotency_identity
+                and (
+                    snapshot.observation.environment_revision
+                    != current_attempt.pre_observation.environment_revision
+                    or snapshot.observation.page_revision
+                    != current_attempt.pre_observation.page_revision
+                )
+            )
+            # A passed verifier report is not itself effect settlement.  If the
+            # risk-specific O2 evidence cannot prove occurred/not-occurred, stop
+            # at uncertainty and never re-enter the action path for a blind retry.
+            failed = bool(
+                not skill_fallthrough
+                and (
+                    settlement == EffectSettlementStatus.STILL_UNCERTAIN
+                    or (absence_confirmed and not validated_idempotent_retry)
+                )
+            )
             if effect_settled:
                 updates["uncertain_external_effects"] = tuple(
                     item

@@ -20,6 +20,7 @@ class HighRiskEffectPolicy:
     preflight_required: bool = True
     causal_evidence_required: bool = True
     authoritative_final_recheck: bool = True
+    required_collateral_verifiers: tuple[str, ...] = ("collateral_unintended_effects",)
     retry_policy: str = "authoritative_recheck_then_block_or_handoff"
 
 

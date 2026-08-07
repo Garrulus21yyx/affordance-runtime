@@ -20,6 +20,15 @@ from affordance_runtime.immutable import thaw_json_at_external_boundary
 class ContractExecutor(Protocol):
     backend: str
 
+    @property
+    def supported_actions(self) -> tuple[str, ...]: ...
+
+    @property
+    def provider_capabilities(self) -> tuple[str, ...]: ...
+
+    @property
+    def adapter_capabilities(self) -> tuple[str, ...]: ...
+
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         ...
 
@@ -137,6 +146,14 @@ def _receipt(
 
 @dataclass
 class DomExecutor:
+    supported_actions = ("activate", "click", "download", "drag", "fill", "navigate", "press", "select", "type")
+    provider_capabilities = (
+        "settings.write",
+        "settings.write.reversible",
+        "report.export",
+        "conformance.shared-state.write",
+    )
+    adapter_capabilities = provider_capabilities
     page: DomPage
     backend: str = "dom"
     gesture_encoder: PlaywrightGestureEncoder = field(default_factory=PlaywrightGestureEncoder)
@@ -244,6 +261,13 @@ class DomExecutor:
 
 @dataclass
 class VisualExecutor:
+    supported_actions = ("drag", "point_activate", "type_text")
+    provider_capabilities = (
+        "settings.write",
+        "spatial.point.current_geometry",
+        "conformance.shared-state.write",
+    )
+    adapter_capabilities = provider_capabilities
     pointer: VisualPointer
     backend: str = "visual"
     gesture_encoder: VisualGestureEncoder = field(default_factory=VisualGestureEncoder)
@@ -354,6 +378,13 @@ def _stdlib_send(method: str, url: str, **kwargs: Any) -> tuple[int, Any]:
 
 @dataclass
 class WotExecutor:
+    supported_actions = ("invoke", "write_property")
+    provider_capabilities = (
+        "device.actuate",
+        "device.write",
+        "conformance.shared-state.write",
+    )
+    adapter_capabilities = provider_capabilities
     send: SendFn = _stdlib_send
     gate: MinIntervalGate = field(default_factory=MinIntervalGate)
     backend: str = "wot"
@@ -422,6 +453,22 @@ class ExecutorRouter:
 
     executors: dict[str, ContractExecutor] = field(default_factory=dict)
     backend: str = "executor_router"
+
+    @property
+    def supported_actions(self) -> tuple[str, ...]:
+        return tuple(sorted({action for executor in self.executors.values() for action in executor.supported_actions}))
+
+    @property
+    def provider_capabilities(self) -> tuple[str, ...]:
+        return tuple(
+            sorted({capability for executor in self.executors.values() for capability in executor.provider_capabilities})
+        )
+
+    @property
+    def adapter_capabilities(self) -> tuple[str, ...]:
+        return tuple(
+            sorted({capability for executor in self.executors.values() for capability in executor.adapter_capabilities})
+        )
 
     def register(self, executor: ContractExecutor, *aliases: str) -> None:
         self.executors[executor.backend] = executor

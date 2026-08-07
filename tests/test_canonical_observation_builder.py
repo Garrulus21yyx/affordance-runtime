@@ -117,8 +117,16 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
             ),
         ),
         source_coverage=(
-            SourceCoverage.complete(GroundingSource.DOM, captured_item_count=1),
-            SourceCoverage.complete(GroundingSource.WOT, captured_item_count=1),
+            SourceCoverage.complete(
+                GroundingSource.DOM,
+                captured_item_count=1,
+                acquisition_epoch_ref="capture-1",
+            ),
+            SourceCoverage.complete(
+                GroundingSource.WOT,
+                captured_item_count=1,
+                acquisition_epoch_ref="capture-1",
+            ),
             SourceCoverage(
                 source=GroundingSource.VISUAL,
                 capture_policy_id="visual-bounded",
@@ -127,6 +135,7 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
                 omitted_item_count_estimate=3,
                 completeness=CoverageCompleteness.BOUNDED,
                 status=CoverageStatus.ACQUISITION_TRUNCATED,
+                acquisition_epoch_ref="capture-1",
             ),
         ),
     )

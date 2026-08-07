@@ -1,15 +1,26 @@
 schema_version: 1
-updated: 2026-08-05
+updated: 2026-08-07
 repository: affordance-runtime
 
 authority_precedence:
   - authoritative_architecture
   - authoritative_evolution_plan
-  - current_implementation_truth
+  - implementation_truth
+  - active_execution_queue
+  - product_roadmap
   - normative_policy_or_contract
   - maintained_reference
   - immutable_record
   - archived_history
+
+authority_scope_rule: named_scope_owner_overrides_global_precedence_for_that_scope
+authority_precedence_rule: precedence_applies_only_when_no_more_specific_named_scope_owner_answers_the_question
+authority_scopes:
+  target_semantics: docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md
+  migration_order_and_exit_gates: docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md
+  current_code_truth: docs/implementation-status.md
+  current_execution_queue: docs/current-implementation-plan.md
+  durable_product_roadmap: docs/project-plan.md
 
 discovery:
   - role: human_and_ai_documentation_index

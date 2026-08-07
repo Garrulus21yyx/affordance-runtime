@@ -37,7 +37,7 @@ def test_generic_dom_attribute_verifier_uses_declared_identity_attribute() -> No
     assert VerifierLadder().verify_report([spec], _receipt(), observation).passed
 
 
-def test_generic_terminal_verifier_accepts_only_adapter_declared_terminal_success() -> None:
+def test_generic_terminal_verifier_keeps_adapter_terminal_success_as_weak_receipt_evidence() -> None:
     spec = VerifierSpec("state_delta_or_terminal", "target", True)
     unchanged = Observation("rev-1")
 
@@ -52,8 +52,8 @@ def test_generic_terminal_verifier_accepts_only_adapter_declared_terminal_succes
         unchanged,
     )
     assert terminal_report.passed
-    assert terminal_report.evidence[0].source == "external_evaluator"
-    assert terminal_report.evidence[0].strength == "strong"
+    assert terminal_report.evidence[0].source == "execution_receipt"
+    assert terminal_report.evidence[0].strength == "weak"
     changed = Observation(
         "rev-1",
         metadata={"control_states": {"target": {"checked": True}}},

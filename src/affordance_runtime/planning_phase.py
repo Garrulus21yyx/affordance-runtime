@@ -177,6 +177,24 @@ class PlanningStage:
                     "ActionChoiceCatalogRejected",
                     stage_input.state_view.phase,
                     reason_code=failure_reason,
+                    authority_rejections=(
+                        [
+                            {
+                                "target_id": item.target_id,
+                                "action_kind": (
+                                    item.action_kind.value
+                                    if item.action_kind is not None
+                                    else ""
+                                ),
+                                "status": item.status.value,
+                                "reason_codes": list(item.reason_codes),
+                            }
+                            for item in catalog_or_failure.build_report.rejections
+                        ]
+                        if isinstance(catalog_or_failure, ActionChoiceFailure)
+                        and catalog_or_failure.build_report is not None
+                        else []
+                    ),
                 ),
             )
             return self._failure(
@@ -237,24 +255,24 @@ class PlanningStage:
                 RuntimeErrorCode.PLANNER_FAILED,
                 choice.response.kind,
             )
-        catalog = choice.catalog
-        selection = choice.selection
-        if catalog is None or selection is None:
+        selected_catalog = choice.catalog
+        selected_selection = choice.selection
+        if selected_catalog is None or selected_selection is None:
             raise RuntimeError("selected choice flow result is incomplete")
         events = (
             *skill_events,
             _event(
                 "ActionChoiceCatalogBuilt",
                 stage_input.state_view.phase,
-                catalog_id=catalog.catalog_id,
-                catalog_digest=catalog.catalog_digest,
-                total_choice_count=catalog.count,
-                admitted_choice_count=catalog.build_report.admitted_choice_count,
+                catalog_id=selected_catalog.catalog_id,
+                catalog_digest=selected_catalog.catalog_digest,
+                total_choice_count=selected_catalog.count,
+                admitted_choice_count=selected_catalog.build_report.admitted_choice_count,
             ),
             _event(
                 "ActionChoiceSelected",
                 stage_input.state_view.phase,
-                choice_id=selection.choice_id,
+                choice_id=selected_selection.choice_id,
                 selection_source=choice.selection_source,
                 presented_choice_count=(len(choice.page.choices) if choice.page is not None else 0),
             ),
@@ -262,8 +280,8 @@ class PlanningStage:
         return StageResult(
             output=PlanningOutput(
                 skill_step_id=skill_step_id,
-                catalog=catalog,
-                selection=selection,
+                catalog=selected_catalog,
+                selection=selected_selection,
             ),
             events=events,
         )
@@ -287,6 +305,7 @@ class PlanningStage:
         proposal = exposure.proposal if exposure is not None else None
         if not isinstance(proposal, PlannerProposal):
             return None, "", events
+        assert exposure is not None
         matches = tuple(
             choice
             for choice in catalog.page(None, catalog.count).choices

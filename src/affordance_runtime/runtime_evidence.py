@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING, Any
@@ -94,11 +93,31 @@ def effect_settlement_status(
     report: VerificationReport,
     contract: ActionContract,
     attempt: ExecutionAttempt,
+    *,
+    uncertain_transport: bool = False,
 ) -> EffectSettlementStatus:
-    if report.passed:
-        return EffectSettlementStatus.CONFIRMED_OCCURRED
+    effect_evidence = tuple(
+        item
+        for item in report.evidence
+        if item.passed and item.source != "execution_receipt"
+    )
+    signature = contract.runtime_effect_signature
+    external_effect = bool(
+        signature is not None
+        and getattr(getattr(signature, "externality", None), "value", "local") != "local"
+    )
+    high_risk = contract.risk in {RiskLevel.HIGH, RiskLevel.IRREVERSIBLE}
+    occurred_is_proven = bool(effect_evidence) and (
+        not (high_risk or external_effect or uncertain_transport)
+        or any(
+            item.strength == "authoritative" and _evidence_binds_attempt(item, attempt)
+            for item in effect_evidence
+        )
+    )
+    if report.passed and occurred_is_proven:
+        return EffectSettlementStatus.OCCURRED
     if verification_confirms_effect_absent(report, contract, attempt):
-        return EffectSettlementStatus.CONFIRMED_NOT_OCCURRED
+        return EffectSettlementStatus.NOT_OCCURRED
     return EffectSettlementStatus.STILL_UNCERTAIN
 
 
@@ -300,36 +319,9 @@ class DurableEvidenceStore:
 def observation_predicate_evidence(
     observation: UnifiedObservation,
 ) -> tuple[PredicateEvidence, ...]:
-    """Project explicitly typed current facts from a canonical epoch."""
-    declared = observation.metadata.get("predicate_evidence")
-    if not isinstance(declared, Mapping):
-        return ()
-    evidence_items: list[PredicateEvidence] = []
-    for subject_ref, raw in declared.items():
-        if not isinstance(raw, Mapping):
-            continue
-        try:
-            evidence = PredicateEvidence(
-                evidence_ref=str(raw["evidence_ref"]),
-                subject_ref=str(subject_ref),
-                observed_value=raw.get("observed_value"),
-                source_kind=EvidenceSourceKind(str(raw["source_kind"])),
-                assurance=AssuranceLevel(str(raw["assurance"])),
-                observation_ref=observation.snapshot_id,
-                contract_id=str(raw.get("contract_id") or ""),
-                receipt_ref=str(raw.get("receipt_ref") or ""),
-                pre_observation_ref=str(raw.get("pre_observation_ref") or ""),
-                post_observation_ref=str(raw.get("post_observation_ref") or ""),
-                effect_criterion_ids=tuple(raw.get("effect_criterion_ids") or ()),
-                durable=bool(raw.get("durable")),
-                authoritative_final_recheck=bool(raw.get("authoritative_final_recheck")),
-                final_recheck_ref=str(raw.get("final_recheck_ref") or ""),
-                resource_version=str(raw.get("resource_version") or ""),
-            )
-        except (KeyError, ValueError):
-            continue
-        evidence_items.append(evidence)
-    return tuple(evidence_items)
+    """Return evidence admitted through the explicit typed capture channel."""
+
+    return observation.predicate_evidence
 
 
 def canonical_resource_versions(

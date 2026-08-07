@@ -15,9 +15,16 @@ from enum import StrEnum
 from time import time
 from typing import TYPE_CHECKING, Any
 
+from affordance_runtime.execution_context import ensure_secret_free
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 
 if TYPE_CHECKING:
+    from affordance_runtime.execution_context import (
+        CoordinateBinding,
+        LiveSurfaceBinding,
+        RouteBinding,
+        RunProvenanceManifest,
+    )
     from affordance_runtime.grounding import GroundingCandidate, RoutePlan
 
 
@@ -487,6 +494,11 @@ class ActionContract:
     action_authority_proof: Any | None = None
     runtime_effect_signature: Any | None = None
     route_reason: str = ""
+    route_binding: RouteBinding | None = None
+    live_surface_binding: LiveSurfaceBinding | None = None
+    coordinate_binding: CoordinateBinding | None = None
+    provenance_manifest: RunProvenanceManifest | None = None
+    transaction_seal: str = ""
     grounding_candidate: GroundingCandidate | None = None
     scope_authorization: ScopeAuthorization | None = None
     route_plan: RoutePlan | None = None
@@ -500,7 +512,6 @@ class ActionContract:
     idempotency_key: str = ""
     compensation: str | None = None
     timeout_ms: int = 5_000
-    fallback_backends: list[str] = field(default_factory=list)
     schema_version: str = ACTION_CONTRACT_SCHEMA_VERSION
     run_id: str = ""
     snapshot_id: str = ""
@@ -532,16 +543,20 @@ class ActionContract:
         object.__setattr__(self, "expected_effects", FrozenSequence(self.expected_effects))
         object.__setattr__(self, "verifier_plan", FrozenSequence(self.verifier_plan))
         object.__setattr__(self, "required_capabilities", freeze_json(self.required_capabilities))
-        object.__setattr__(self, "fallback_backends", freeze_json(self.fallback_backends))
+        ensure_secret_free(
+            {
+                "locator": self.locator,
+                "parameters": self.parameters,
+                "preconditions": self.preconditions,
+                "expected_effects": self.expected_effects,
+                "gesture_binding": self.gesture_binding,
+            }
+        )
         proof_risk = getattr(self.action_authority_proof, "risk", None)
         if isinstance(proof_risk, RiskLevel) and risk_level_rank(self.risk) < risk_level_rank(proof_risk):
             raise ValueError("ActionContract risk cannot be lower than sealed route authority risk")
         if not self.page_revision:
             object.__setattr__(self, "page_revision", self.environment_revision)
-        computed_hash = self.compute_hash()
-        if self.contract_hash and self.contract_hash != computed_hash:
-            raise ValueError("ActionContract contract_hash does not match canonical payload")
-        object.__setattr__(self, "contract_hash", computed_hash)
         if self.scope_authorization is not None:
             candidate = self.grounding_candidate
             authorization = self.scope_authorization
@@ -553,6 +568,68 @@ class ActionContract:
                 or authorization.target_fingerprint != candidate.target_fingerprint
             ):
                 raise ValueError("scope authorization does not match the grounded contract target")
+        if self.route_binding is not None:
+            from affordance_runtime.execution_context import (
+                deterministic_application_payload,
+                digest_payload,
+            )
+
+            if self.route_binding.backend != self.backend:
+                raise ValueError("RouteBinding backend differs from ActionContract")
+            if self.route_binding.action != self.action:
+                raise ValueError("RouteBinding action differs from ActionContract")
+            if self.route_binding.target_locator_ref != digest_payload(self.locator):
+                raise ValueError("RouteBinding target locator differs from ActionContract")
+            if dict(self.route_binding.named_parameters) != dict(self.parameters):
+                raise ValueError("RouteBinding parameters differ from ActionContract")
+            expected_payload = deterministic_application_payload(
+                action=self.action,
+                target_id=self.route_binding.target_id,
+                destination_id=self.route_binding.destination_id,
+                named_parameters=self.parameters,
+            )
+            if self.route_binding.application_payload != expected_payload:
+                raise ValueError("RouteBinding application payload differs from executable contract")
+            if self.route_binding.payload_digest != digest_payload(expected_payload):
+                raise ValueError("RouteBinding payload digest mismatch")
+            ensure_secret_free(
+                {
+                    "locator": self.locator,
+                    "parameters": self.parameters,
+                    "route_binding": self.route_binding,
+                }
+            )
+            if self.live_surface_binding is None or self.coordinate_binding is None or self.provenance_manifest is None:
+                raise ValueError("sealed RouteBinding requires surface, coordinate, and provenance bindings")
+            if self.route_binding.surface_binding_digest != self.live_surface_binding.digest:
+                raise ValueError("RouteBinding surface digest mismatch")
+            if self.route_binding.coordinate_transform_digest != self.coordinate_binding.transform_digest:
+                raise ValueError("RouteBinding coordinate digest mismatch")
+            if self.route_binding.provenance_digest != self.provenance_manifest.digest:
+                raise ValueError("RouteBinding provenance digest mismatch")
+            candidate = self.grounding_candidate
+            destination_endpoint = self.gesture_binding.destination if self.gesture_binding is not None else None
+            self.route_binding.assert_executor_projection(
+                action=self.action,
+                target_id=(candidate.candidate_id if candidate is not None else self.route_binding.target_id),
+                destination_id=(
+                    destination_endpoint.candidate_id
+                    if destination_endpoint is not None
+                    else self.route_binding.destination_id
+                ),
+                target_locator=self.locator,
+                destination_locator=(destination_endpoint.locator if destination_endpoint is not None else None),
+                parameters=self.parameters,
+            )
+            expected_seal = self.compute_transaction_seal()
+            if self.transaction_seal and self.transaction_seal != expected_seal:
+                raise ValueError("transaction seal mismatch")
+            object.__setattr__(self, "transaction_seal", expected_seal)
+        computed_hash = self.compute_hash()
+        ensure_secret_free(self)
+        if self.contract_hash and self.contract_hash != computed_hash:
+            raise ValueError("ActionContract contract_hash does not match canonical payload")
+        object.__setattr__(self, "contract_hash", computed_hash)
 
     @property
     def effectful(self) -> bool:
@@ -574,6 +651,17 @@ class ActionContract:
         encoded = json.dumps(self.canonical_payload(), sort_keys=True, separators=(",", ":"), default=str).encode(
             "utf-8"
         )
+        return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+    def compute_transaction_seal(self) -> str:
+        payload = {
+            "route_binding": to_json_compatible(self.route_binding),
+            "authority": to_json_compatible(self.action_authority_proof),
+            "runtime_signature": to_json_compatible(self.runtime_effect_signature),
+            "required_capabilities": to_json_compatible(self.required_capabilities),
+            "verifier_plan": to_json_compatible(self.verifier_plan),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
     @classmethod
@@ -647,6 +735,19 @@ class ApprovalToken:
         self.consumed_at_s = time() if now_s is None else now_s
 
 
+class TransportState(StrEnum):
+    NOT_SENT = "not_sent"
+    SENT = "sent"
+    SENT_UNKNOWN = "sent_unknown"
+
+
+class ProviderAck(StrEnum):
+    NOT_APPLICABLE = "not_applicable"
+    ACKNOWLEDGED = "acknowledged"
+    REJECTED = "rejected"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class ExecutionReceipt:
     contract_id: str
@@ -658,6 +759,18 @@ class ExecutionReceipt:
     evidence: dict[str, Any] = field(default_factory=dict)
     error_code: RuntimeErrorCode | None = None
     message: str = ""
+    transport_state: TransportState = TransportState.SENT_UNKNOWN
+    provider_ack: ProviderAck = ProviderAck.UNKNOWN
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evidence", freeze_json(self.evidence))
+        # Compatibility constructors that predate typed transport truth omitted
+        # this field. A positive adapter result unambiguously means SENT; a
+        # negative/exceptional result remains SENT_UNKNOWN unless the adapter
+        # explicitly proves NOT_SENT.
+        if self.success and self.transport_state == TransportState.SENT_UNKNOWN:
+            object.__setattr__(self, "transport_state", TransportState.SENT)
+        if self.success and self.transport_state != TransportState.SENT:
+            raise ValueError("successful receipt requires known SENT transport")
+        if self.transport_state == TransportState.NOT_SENT and self.provider_ack != ProviderAck.NOT_APPLICABLE:
+            raise ValueError("NOT_SENT receipt cannot carry a provider acknowledgement")

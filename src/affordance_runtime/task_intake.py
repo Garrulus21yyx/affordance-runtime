@@ -119,6 +119,7 @@ class RequestedEffect(StrictModel):
     operation_class: OperationClass
     material_effect_kind: MaterialEffectKind = MaterialEffectKind.NONE
     target: str = Field(min_length=1)
+    resource_ref: str = Field(default="", max_length=480)
     capability: str = ""
     description: str = ""
     source_ref: str = Field(min_length=1)
@@ -456,6 +457,10 @@ class CompilationPolicy:
     allowed_requested_capabilities: frozenset[str] | None = None
     denied_capabilities: frozenset[str] = frozenset()
     forbidden_effects: frozenset[str] = frozenset()
+    # Narrow, composition-owned exception for operations whose final effect is
+    # independently rechecked by an authoritative source.  Raw task proposals
+    # cannot lower assurance themselves.
+    structural_high_risk_operation_refs: frozenset[str] = frozenset()
 
 
 def operation_class_rank(operation: OperationClass) -> int:

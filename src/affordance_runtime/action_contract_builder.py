@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.action_contract_authority import rebuild_contract_authority
@@ -48,6 +48,12 @@ from affordance_runtime.scope_authorization import (
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec, task_semantic_scope_terms
+from affordance_runtime.transaction_materialization import (
+    ActionContractDraft as ActionContractDraft,
+)
+from affordance_runtime.transaction_materialization import (
+    ActionTransactionMaterializer as ActionTransactionMaterializer,
+)
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.visual_contracts import VisualContractBinder
 
@@ -295,7 +301,7 @@ class CanonicalRouteMaterializer:
             ordinal_constraint = resolve_global_ordinal_constraint(
                 objective="",
                 targets=scope_terms,
-                affordances=snapshot_collection_affordances(snapshot),
+                affordances=snapshot_collection_affordances(cast(BrowserSnapshot, snapshot)),
             )
             scope_decision = self._value_transfer_scope_decision(
                 proposal,
@@ -546,7 +552,7 @@ class ActionContractBuilder:
             choice_role=choice.role.value,
         )
         contract = self.materializer.build(
-            semantic_action,
+            cast(PlannerProposal, semantic_action),
             task_spec,
             state,
             capture,

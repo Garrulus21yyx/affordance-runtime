@@ -14,6 +14,7 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
+from affordance_runtime.output_materialization import OutputMaterializer
 from affordance_runtime.runtime_evidence import (
     canonical_resource_versions,
     observation_predicate_evidence,
@@ -102,7 +103,11 @@ class ProgressEvaluationService:
             recent_action_outcomes=(
                 tuple(task_progress.recent_action_outcomes.records) if task_progress is not None else ()
             ),
-            current_evidence=observation_predicate_evidence(cast(Any, observation)),
+            current_evidence=(
+                observation_predicate_evidence(canonical_observation)
+                if canonical_observation is not None
+                else ()
+            ),
             durable_evidence=(tuple(task_progress.durable_evidence.records) if task_progress is not None else ()),
             latest_final_recheck_ref=latest_final_recheck_ref,
             current_resource_versions=(
@@ -115,11 +120,44 @@ class ProgressEvaluationService:
             evidence_context=evidence_context,
             report=report,
         )
+        by_criterion = {item.criterion_id: item for item in admitted}
+        materializer = OutputMaterializer()
+        output_materializations = []
+        step_id = getattr(task_progress, "active_step_id", "") if task_progress is not None else ""
+        contract_id = (
+            str(state.current_contract.id) if getattr(state, "current_contract", None) is not None else ""
+        )
+        receipt = getattr(state, "last_receipt", None)
+        for output in typed_task_spec.required_outputs:
+            criterion = by_criterion.get(output.materialization_criterion_id)
+            if criterion is None:
+                continue
+            materialization = materializer.from_evaluation(
+                task_spec=typed_task_spec,
+                output_spec=output,
+                evaluation=criterion,
+                observation_ref=observation.snapshot_id,
+                step_id=step_id,
+                contract_id=contract_id,
+            )
+            if materialization is None and receipt is not None:
+                materialization = materializer.from_artifact_receipt(
+                    task_spec=typed_task_spec,
+                    output_spec=output,
+                    evaluation=criterion,
+                    receipt=receipt,
+                    observation_ref=observation.snapshot_id,
+                    step_id=step_id,
+                    contract_id=contract_id,
+                )
+            if materialization is not None:
+                output_materializations.append(materialization)
         return TaskCompletionEvaluator().evaluate(
             task_spec=typed_task_spec,
             criterion_results=admitted,
             result_payload=result,
             output_source_bindings=output_source_bindings(observation),
+            output_materializations=tuple(output_materializations),
             uncertain_external_effects=tuple(
                 str(item) for item in getattr(state, "uncertain_external_effects", ()) if str(item)
             ),

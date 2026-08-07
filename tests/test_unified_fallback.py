@@ -1,6 +1,5 @@
 from dataclasses import dataclass, replace
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -10,8 +9,10 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     ProgressEvidenceScope,
+    ProviderAck,
     RuntimeErrorCode,
     Surface,
+    TransportState,
     VerifierSpec,
 )
 from affordance_runtime.effect_authority_contracts import (
@@ -41,11 +42,15 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     canonical_effect_requirement_refs,
 )
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
     candidate_fingerprints,
     candidate_from_affordance,
+)
+from affordance_runtime.unified_observation import (
+    SourceCoverage,
 )
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -76,6 +81,9 @@ class FallbackPointer:
 
 @dataclass
 class FailBeforeDispatchDomExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities = ("settings.write",)
+    adapter_capabilities = provider_capabilities
     calls: int = 0
     backend: str = "dom"
 
@@ -92,6 +100,8 @@ class FailBeforeDispatchDomExecutor:
             evidence={"dispatched": False},
             error_code=RuntimeErrorCode.EXECUTION_FAILED,
             message="deterministic DOM locator dispatch failure",
+            transport_state=TransportState.NOT_SENT,
+            provider_ack=ProviderAck.NOT_APPLICABLE,
         )
 
 
@@ -105,6 +115,10 @@ class CrossSurfaceObserver:
     def capture(self) -> BrowserSnapshot:
         self.sequence += 1
         return self._snapshot(self.sequence)
+
+    @staticmethod
+    def coordinate_transform_is_current(expected: object) -> bool:
+        return bool(getattr(expected, "transform_digest", ""))
 
     def _snapshot(self, sequence: int) -> BrowserSnapshot:
         snapshot_id = f"snapshot-{sequence}"
@@ -201,6 +215,17 @@ class CrossSurfaceObserver:
             ),
             grounding_candidates=target.grounding_candidates,
             unified_affordances=(target,),
+            source_coverage=tuple(
+                SourceCoverage.complete(
+                    source,
+                    captured_item_count=1,
+                    capture_policy_id="cross-surface-exhaustive@v1",
+                    acquisition_epoch_ref=snapshot_id,
+                    source_scope="test-fixture",
+                    adapter_version="cross-surface@v1",
+                )
+                for source in (GroundingSource.DOM, GroundingSource.VISUAL)
+            ),
         )
 
 
@@ -335,6 +360,10 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
             self.sequence += 1
             return self._snapshot(self.sequence)
 
+        @staticmethod
+        def coordinate_transform_is_current(expected: object) -> bool:
+            return bool(getattr(expected, "transform_digest", ""))
+
         def _snapshot(self, sequence: int) -> BrowserSnapshot:
             snapshot_id = f"moving-{sequence}"
             left = 100 if sequence <= 1 else 200
@@ -397,6 +426,8 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
                         snapshot_id,
                         "rev-1",
                         "page-1",
+                        acquisition_exhaustive=True,
+                        source_scope="controlled-moving-point-surface",
                     ),
                 ),
                 grounding_candidates=target.grounding_candidates,

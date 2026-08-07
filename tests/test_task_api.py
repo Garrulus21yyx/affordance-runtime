@@ -1,13 +1,16 @@
 import asyncio
 import json
+import threading
 from dataclasses import replace
 from pathlib import Path
 from time import time
+from urllib.request import Request, urlopen
 
 import pytest
 
 from affordance_runtime.approval_contracts import ApprovalPresentation
 from affordance_runtime.contracts import ActionContract, RiskLevel
+from affordance_runtime.fixtures import create_fixture_server
 from affordance_runtime.immutable import FrozenDict
 from affordance_runtime.integrations import local as local_integration
 from affordance_runtime.integrations import task_api as task_api_module
@@ -23,6 +26,7 @@ from affordance_runtime.integrations.task_api import (
     TaskToolAdapter,
     UserTaskSubmission,
 )
+from affordance_runtime.reference_scenarios import reference_task_spec
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -233,6 +237,106 @@ def test_task_request_payloads_are_immutable_from_source_collections() -> None:
         request.capabilities.append("admin.override")
     assert request.to_dict()["constraints"] == {"require_approval_for": ["settings.write"]}
     assert request.to_dict()["capabilities"] == ["settings.write.reversible"]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "capabilities"),
+    (
+        ("pricing", ()),
+        ("settings", ("settings.write.reversible",)),
+        ("export", ("report.export",)),
+    ),
+)
+def test_local_task_intake_matches_the_executable_reference_authority_scope(
+    scenario: str,
+    capabilities: tuple[str, ...],
+) -> None:
+    request = LocalScenarioTaskIntake()(
+        UserTaskSubmission(
+            run_id=f"scope-{scenario}",
+            scenario=scenario,
+            goal=f"run {scenario}",
+            target=f"http://fixture/{scenario}",
+            capabilities=list(capabilities),
+        )
+    )
+    expected = reference_task_spec(
+        scenario,  # type: ignore[arg-type]
+        f"scope-{scenario}",
+        capabilities=capabilities,
+    )
+
+    def scopes(task_spec):
+        return tuple(
+            (
+                scope.requirement_ref,
+                scope.effect_class,
+                scope.resource_scope.resource_ref,
+                scope.operation_constraint,
+                scope.externality,
+                scope.reversibility,
+                scope.required_capabilities,
+                scope.minimum_source_assurance,
+            )
+            for item in task_spec.requirements
+            if (scope := item.payload.effect_authorization_scope) is not None
+        )
+
+    assert scopes(request.task_spec) == scopes(expected)
+
+
+def test_stable_task_api_executes_all_reference_scenarios(tmp_path: Path) -> None:
+    server = create_fixture_server(port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://{server.server_name}:{server.server_port}"
+    service = TaskRuntimeService(
+        LocalScenarioTaskRunner(tmp_path / "artifacts"),
+        intake=LocalScenarioTaskIntake(),
+    )
+    scenarios = (
+        ("pricing", "pricing", "Extract plan limits", ()),
+        ("settings", "settings", "Enable notifications", ("settings.write.reversible",)),
+        ("export", "reports", "Export report and return the file receipt", ("report.export",)),
+    )
+    try:
+        for scenario, path, goal, capabilities in scenarios:
+            reset = Request(
+                f"{base_url}/api/reset",
+                data=json.dumps({"seed": 0, "profile": "train"}).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urlopen(reset, timeout=2.0) as response:  # noqa: S310 - local fixture
+                response.read()
+            run_id = f"stable-api-{scenario}"
+            service.submit_user(
+                UserTaskSubmission(
+                    run_id,
+                    scenario,
+                    goal,
+                    f"{base_url}/{path}",
+                    capabilities=list(capabilities),
+                )
+            )
+            view = service.execute(run_id)
+            if scenario == "export":
+                assert view.status == ServiceRunStatus.WAITING_APPROVAL
+                assert view.execution is not None and view.execution.pending_approval is not None
+                pending = view.execution.pending_approval
+                view = service.approve(
+                    run_id,
+                    approval_request_id=pending.approval_request_id,
+                    contract_hash=pending.contract_hash,
+                    approver="test-user",
+                )
+            assert view.status == ServiceRunStatus.SUCCESS
+        report = service.get_result("stable-api-export")["report"]
+        assert Path(report["artifact_ref"]).is_file()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_task_execution_payloads_are_immutable_from_source_collections() -> None:

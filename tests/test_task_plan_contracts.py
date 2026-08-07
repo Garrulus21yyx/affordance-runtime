@@ -30,6 +30,7 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanRepairDirective,
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
+    TaskRequirementProjection,
 )
 from runtime_test_support import legacy_step_spec
 
@@ -39,6 +40,14 @@ def _source() -> SourceReference:
         source_id="source:req",
         source_unit_id="source:req:unit:1",
         claim_id="claim:1",
+    )
+
+
+def _projection() -> TaskRequirementProjection:
+    return TaskRequirementProjection(
+        requirement_id="requirement:test",
+        kind="state",
+        subject="semantic:setting",
     )
 
 
@@ -113,6 +122,7 @@ def test_task_plan_authority_preserves_composite_criteria_and_typed_values() -> 
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
         allowed_requirement_ids=("requirement:test",),
+        requirement_projections=(_projection(),),
     )
     first = _state_criterion(
         criterion_id="criterion:first",
@@ -162,6 +172,21 @@ def test_task_plan_authority_enforces_requirement_and_effect_traceability() -> N
         remaining_budget_steps=5,
         allowed_requirement_ids=("requirement:test", "effect:apply"),
         allowed_effect_ids=("effect:apply",),
+        requirement_projections=(
+            TaskRequirementProjection(
+                "requirement:test",
+                "constraint",
+                "semantic:setting",
+                target_identity="semantic:setting",
+            ),
+            TaskRequirementProjection(
+                "effect:apply",
+                "effect",
+                "semantic:setting",
+                target_identity="semantic:setting",
+                operation_class="reversible_write",
+            ),
+        ),
     )
     read_only = _step("step:discover")
     assert TaskPlanAuthority().admit_initial(request, _candidate(read_only)).status == TaskPlanDecisionStatus.ACCEPTED
@@ -177,7 +202,10 @@ def test_task_plan_authority_enforces_requirement_and_effect_traceability() -> N
     )
     decision = TaskPlanAuthority().admit_initial(request, _candidate(unauthorized))
     assert decision.status == TaskPlanDecisionStatus.REJECTED
-    assert {item.code for item in decision.issues} == {"effect_authorization_invalid"}
+    assert {item.code for item in decision.issues} == {
+        "effect_authorization_invalid",
+        "semantic_effect_laundering",
+    }
 
     authorized = legacy_step_spec(
         step_id="step:apply",
@@ -265,6 +293,7 @@ def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
         allowed_requirement_ids=("requirement:test",),
+        requirement_projections=(_projection(),),
     )
     assert initial.observation_refs == ("snapshot:1",)
 
@@ -284,8 +313,20 @@ def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None
         observation_refs=("snapshot:2",),
         remaining_budget_steps=4,
         allowed_requirement_ids=("requirement:test",),
+        requirement_projections=(_projection(),),
     )
     assert revision.previous_plan.plan_id == "plan:1"
+
+    with pytest.raises(ValueError, match="typed requirement projections"):
+        InitialTaskPlanRequest(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=3,
+            objective="Do the task",
+            observation_refs=("snapshot:1",),
+            remaining_budget_steps=5,
+            allowed_requirement_ids=("requirement:test",),
+        )
 
     with pytest.raises(ValueError, match="previous progress plan identity mismatch"):
         TaskPlanRevisionRequest(
@@ -298,6 +339,7 @@ def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None
             observation_refs=("snapshot:2",),
             remaining_budget_steps=4,
             allowed_requirement_ids=("requirement:test",),
+            requirement_projections=(_projection(),),
         )
 
 
@@ -326,6 +368,7 @@ def test_task_plan_decision_status_invariants() -> None:
             observation_refs=("snapshot:1",),
             remaining_budget_steps=5,
             allowed_requirement_ids=("requirement:test",),
+            requirement_projections=(_projection(),),
         ),
         _candidate(),
     )
@@ -362,6 +405,7 @@ def test_task_plan_authority_owns_plan_identity_versions_and_freshness() -> None
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
         allowed_requirement_ids=("requirement:test",),
+        requirement_projections=(_projection(),),
     )
     authority = TaskPlanAuthority()
     first_decision = authority.admit_initial(request, _candidate())
@@ -405,6 +449,7 @@ def test_task_plan_authority_owns_plan_identity_versions_and_freshness() -> None
             observation_refs=("snapshot:2",),
             remaining_budget_steps=4,
             allowed_requirement_ids=("requirement:test",),
+            requirement_projections=(_projection(),),
         ),
         _candidate(
             _step("step:1"),

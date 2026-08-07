@@ -10,6 +10,7 @@ from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.action_choice_generation import (
     _SemanticChoiceGenerator,
 )
+from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.choice_contracts import (
     ActionChoice,
     ActionChoiceFailure,
@@ -48,9 +49,9 @@ class ActionChoiceCatalogBuilder:
         task_spec: TaskSpec,
         plan_revision: int,
         state_version: int,
-        step: object,
-        scope: object,
-        observation: object,
+        step: StepSpec,
+        scope: ActiveStepScope,
+        observation: UnifiedObservation,
         capabilities: frozenset[str] = frozenset(),
         realization: str = "eager",
     ) -> ActionChoiceCatalog | ActionChoiceFailure:
@@ -114,7 +115,16 @@ class ActionChoiceCatalogBuilder:
                 target_role=getattr(target, "role", "") or "semantic_target",
                 relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
                 destination_id=choice.destination_id,
-                parameters=choice.parameters,
+                # Material inputs are admitted by TaskSpecAuthority and carried
+                # by the active StepSpec.  Add them before authority evaluation
+                # so approval and execution see the same finalized parameters.
+                parameters=_choice_parameters(
+                    choice.parameters,
+                    step.material_bindings,
+                    task_spec,
+                    choice.target_id,
+                    step.requirement_refs,
+                ),
                 criterion_ids=choice.criterion_ids,
                 requirement_refs=step.requirement_refs,
                 effect_refs=(),
@@ -253,3 +263,26 @@ def _semantic_presentation_state(state: object) -> dict[str, object]:
     if not isinstance(state, Mapping):
         return {}
     return {key: value for key, value in state.items() if key in _PRESENTABLE_STATE_KEYS}
+
+
+def _choice_parameters(
+    generated: Mapping[str, object],
+    material_bindings: tuple[tuple[str, str], ...],
+    task_spec: TaskSpec,
+    target_id: str,
+    requirement_refs: tuple[str, ...],
+) -> dict[str, object]:
+    parameters = dict(generated)
+    requirements = {item.requirement_id: item for item in task_spec.requirements}
+    allowed = {
+        (parameter.slot, parameter.value)
+        for requirement_ref in requirement_refs
+        if (requirement := requirements.get(requirement_ref)) is not None
+        if (scope := requirement.payload.effect_authorization_scope) is not None
+        if scope.resource_scope.resource_ref == target_id
+        for parameter in scope.parameters
+    }
+    for field_name, value in material_bindings:
+        if (field_name, value) in allowed:
+            parameters.setdefault(field_name, value)
+    return parameters

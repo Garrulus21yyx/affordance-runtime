@@ -36,11 +36,18 @@ from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import (
     admit_observation_durable_evidence,
     canonical_resource_versions,
+    effect_settlement_status,
     observation_predicate_evidence,
     verification_satisfies_effect,
 )
 from affordance_runtime.runtime_state_projection import project_working_phase
-from affordance_runtime.simplified_runtime_contracts import ActionOutcome, ExecutionAttempt
+from affordance_runtime.simplified_runtime_contracts import (
+    ActionOutcome,
+    CollateralSettlementStatus,
+    EffectSettlement,
+    EffectSettlementStatus,
+    ExecutionAttempt,
+)
 from affordance_runtime.source_context import TaskSpecGap
 from affordance_runtime.stage_protocol import (
     LoopDirective,
@@ -103,6 +110,7 @@ class ProgressOutput:
     task_completion: TaskCompletionEvaluation | None = None
     loop_evaluation: LoopEvaluation | None = None
     task_spec_gaps: tuple[TaskSpecGap, ...] = ()
+    effect_settlement: EffectSettlement | None = None
 
 
 @dataclass(frozen=True)
@@ -244,6 +252,54 @@ class ProgressStage:
                 *repaired.observation_commits,
             )
         state.latest_verification = report
+        effect_evidence_refs = tuple(
+            item.evidence_id or item.semantic_evidence_key
+            for item in report.evidence
+            if item.evidence_id or item.semantic_evidence_key
+        )
+        collateral_evidence = tuple(
+            item.evidence_id or item.semantic_evidence_key
+            for item in report.evidence
+            if item.verifier_kind.startswith("collateral_")
+            and (item.evidence_id or item.semantic_evidence_key)
+        )
+        collateral_required = any(
+            spec.kind.startswith("collateral_") for spec in action.contract.verifier_plan
+        )
+        settlement = EffectSettlement(
+            attempt_id=action.execution_attempt.attempt_id,
+            status=(
+                effect_settlement_status(report, action.contract, action.execution_attempt)
+                if effect_evidence_refs
+                else EffectSettlementStatus.STILL_UNCERTAIN
+            ),
+            evidence_refs=effect_evidence_refs,
+            collateral_status=(
+                CollateralSettlementStatus.DETECTED
+                if any(item.verifier_kind.startswith("collateral_") and not item.passed for item in report.evidence)
+                else CollateralSettlementStatus.CLEAR
+                if collateral_evidence
+                else CollateralSettlementStatus.UNRESOLVED
+            ),
+            collateral_evidence_refs=collateral_evidence,
+        )
+        state.latest_effect_settlement = settlement
+        events.add(
+            "EffectSettled",
+            {
+                "attempt_id": settlement.attempt_id,
+                "status": settlement.status.value,
+                "collateral_status": settlement.collateral_status.value,
+                "post_observation_ref": canonical.epoch_id,
+            },
+        )
+        if collateral_required and settlement.collateral_status == CollateralSettlementStatus.UNRESOLVED:
+            report = VerificationReport(
+                VerificationStatus.INCONCLUSIVE,
+                report.evidence,
+                reason="required collateral probes are unresolved",
+            )
+            state.latest_verification = report
         outcome_commit = record_action_outcome_trace(
             execution_loop=self.execution_loop,
             trace=cast(Any, events),
@@ -334,11 +390,11 @@ class ProgressStage:
             outcome_commit.outcome,
             task_completion=task_completion,
             loop_evaluation=loop_evaluation,
+            effect_settlement=settlement,
         )
+        active_step = TaskPlanLifecycle.active_step_spec(state)
         gaps = unresolved_open_semantic_gaps(
-            TaskPlanLifecycle.active_step_spec(state).completion_criteria
-            if TaskPlanLifecycle.active_step_spec(state) is not None
-            else (),
+            active_step.completion_criteria if active_step is not None else (),
             loop_evaluation.step_completion,
         )
         if gaps:

@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, RLock, Thread
+from typing import cast
 
-from affordance_runtime.cli import _scenario_success, run_scenario
+from affordance_runtime.cli import run_scenario
 from affordance_runtime.contracts import ActionContract, ApprovalToken
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
@@ -18,12 +19,20 @@ from affordance_runtime.integrations.task_api import (
 from affordance_runtime.material_contracts import (
     MaterialBinding,
     MaterialBindingKind,
-    MaterialEffectKind,
     MaterialField,
 )
-from affordance_runtime.planners import pricing_required_outputs, pricing_success_expression
+from affordance_runtime.planners import (
+    export_required_outputs,
+    pricing_required_outputs,
+    pricing_success_expression,
+)
+from affordance_runtime.reference_scenarios import (
+    ReferenceScenario,
+    reference_requested_effects,
+    reference_success_expression,
+)
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
-from affordance_runtime.task_intake import CompilationStatus, OperationClass, RequestedEffect, UserRequest
+from affordance_runtime.task_intake import CompilationPolicy, CompilationStatus, UserRequest
 from affordance_runtime.task_spec_authority import MinimalIntentProposal, TaskSpecAuthority
 
 
@@ -32,6 +41,9 @@ class LocalScenarioTaskIntake:
     """Canonical deterministic intake for the local reference scenarios."""
 
     def __call__(self, submission: UserTaskSubmission) -> TaskRequest:
+        if submission.scenario not in {"pricing", "settings", "export"}:
+            raise ValueError(f"unsupported local reference scenario: {submission.scenario}")
+        scenario = cast(ReferenceScenario, submission.scenario)
         request = UserRequest(
             request_id=submission.run_id,
             raw_text=f"{submission.goal}\nTarget: {submission.target}",
@@ -40,47 +52,24 @@ class LocalScenarioTaskIntake:
         )
         envelope = SourceEnvelopeBuilder().build(request)
         source_ref = envelope.whole_request_anchor.anchor_id
-        operation = {
-            "pricing": OperationClass.READ_ONLY,
-            "settings": OperationClass.REVERSIBLE_WRITE,
-            "export": OperationClass.EXTERNAL_SIDE_EFFECT,
-        }[submission.scenario]
-        capability = {
-            "pricing": "",
-            "settings": "settings.write.reversible",
-            "export": "report.export",
-        }[submission.scenario]
-        targets = {
-            "pricing": ("Show Pro limits", "Show Enterprise limits"),
-            "settings": ("Enable notifications",),
-            "export": ("Export report",),
-        }[submission.scenario]
-        effect_id = "requirement:effect:1" if submission.scenario == "export" else ""
+        effect_id = "requirement:effect:1" if scenario == "export" else ""
         proposal = MinimalIntentProposal(
             objective=submission.goal,
-            requested_effects=tuple(
-                RequestedEffect(
-                    operation_class=operation,
-                    effect_id=effect_id,
-                    material_effect_kind=(
-                        MaterialEffectKind.EXTERNAL_ACTION
-                        if submission.scenario == "export"
-                        else MaterialEffectKind.NONE
-                    ),
-                    target=target,
-                    capability=capability,
-                    source_ref=source_ref,
-                )
-                for target in targets
-            ),
+            requested_effects=reference_requested_effects(scenario, source_ref),
             success=(
                 pricing_success_expression()
-                if submission.scenario == "pricing"
-                else _scenario_success("requirement:effect:1", submission.scenario)
+                if scenario == "pricing"
+                else reference_success_expression("requirement:effect:1", scenario)
             ),
-            required_outputs=(pricing_required_outputs() if submission.scenario == "pricing" else ()),
-            external_effect_criterion_ids=(("criterion:export-effect",) if submission.scenario == "export" else ()),
-            final_recheck_criterion_ids=(("criterion:export-final",) if submission.scenario == "export" else ()),
+            required_outputs=(
+                pricing_required_outputs()
+                if scenario == "pricing"
+                else export_required_outputs()
+                if scenario == "export"
+                else ()
+            ),
+            external_effect_criterion_ids=(("criterion:export-effect",) if scenario == "export" else ()),
+            final_recheck_criterion_ids=(("criterion:export-final",) if scenario == "export" else ()),
             material_bindings=(
                 (
                     MaterialBinding(
@@ -92,17 +81,21 @@ class LocalScenarioTaskIntake:
                         binding_kind=MaterialBindingKind.DIRECT_USER_EXPLICIT,
                     ),
                 )
-                if submission.scenario == "export"
+                if scenario == "export"
                 else ()
             ),
         )
-        admission = TaskSpecAuthority().admit(request, envelope, proposal)
+        admission = TaskSpecAuthority(
+            policy=CompilationPolicy(
+                structural_high_risk_operation_refs=frozenset({"external.commit@v1"})
+            )
+        ).admit(request, envelope, proposal)
         if admission.status != CompilationStatus.READY or admission.admitted_task is None:
             codes = ",".join(item.code for item in admission.issues)
             raise ValueError(f"task intake {admission.status.value}: {codes}")
         return TaskRequest(
             run_id=submission.run_id,
-            scenario=submission.scenario,
+            scenario=scenario,
             target=submission.target,
             admitted_task=admission.admitted_task,
             constraints=dict(submission.constraints),
@@ -144,8 +137,9 @@ class LocalScenarioTaskRunner:
             session.cancel()
 
     def _run_once(self, request: TaskRequest, approval: ApprovalGrant | None) -> TaskExecution:
+        scenario = _reference_scenario(request.scenario)
         value = run_scenario(
-            request.scenario,
+            scenario,
             request.target,
             self.artifact_root,
             headless=self.headless,
@@ -212,8 +206,9 @@ class _PendingLocalRun:
 
     def _run(self) -> None:
         try:
+            scenario = _reference_scenario(self.request.scenario)
             self.value = run_scenario(
-                self.request.scenario,
+                scenario,
                 self.request.target,
                 self.owner.artifact_root,
                 headless=self.owner.headless,
@@ -227,6 +222,12 @@ class _PendingLocalRun:
             self.error = exc
         finally:
             self.completed.set()
+
+
+def _reference_scenario(value: str) -> ReferenceScenario:
+    if value not in {"pricing", "settings", "export"}:
+        raise ValueError(f"unsupported local reference scenario: {value}")
+    return cast(ReferenceScenario, value)
 
 
 def _task_execution(request: TaskRequest, value: dict[str, object]) -> TaskExecution:

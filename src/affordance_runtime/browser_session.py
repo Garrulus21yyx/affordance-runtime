@@ -12,11 +12,13 @@ import time
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Protocol, cast
+from threading import RLock
+from typing import Any, Mapping, Protocol, cast
 from urllib.parse import urlsplit
 
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface
+from affordance_runtime.execution_context import CoordinateBinding, LiveSurfaceBinding
 from affordance_runtime.grounding import (
     ActivePerceptionRequest,
     AssertionDecision,
@@ -42,6 +44,13 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.unified_observation import (
+    CoverageCompleteness,
+    CoverageStatus,
+    CoverageTermination,
+    SourceCoverage,
+)
+from affordance_runtime.verification.contracts import PredicateEvidence
 
 
 class PageDriver(Protocol):
@@ -73,6 +82,8 @@ class BrowserSnapshot:
     active_perception_requests: tuple[ActivePerceptionRequest, ...] = ()
     accessibility_tree: dict[str, Any] | None = None
     perception_requirements: PerceptionRequirements | None = None
+    source_coverage: tuple[SourceCoverage, ...] = ()
+    predicate_evidence: tuple[PredicateEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         if self.accessibility_tree is not None:
@@ -98,6 +109,117 @@ def _bounded_control_value(value: str, limit: int = 480) -> str:
     prefix_length = (limit - len(marker)) // 2
     suffix_length = limit - len(marker) - prefix_length
     return value[:prefix_length] + marker + value[-suffix_length:]
+
+
+def _browser_source_coverage(
+    *,
+    snapshot_id: str,
+    source_observations: tuple[SourceObservation, ...],
+    model: PageAffordanceModel,
+    accessibility_tree: dict[str, Any] | None,
+    svg_geometry: SvgGeometryObservation | None,
+    screenshot_ref: str,
+    perception_requirements: PerceptionRequirements | None,
+    exhaustive_sources: frozenset[GroundingSource] = frozenset(),
+) -> tuple[SourceCoverage, ...]:
+    """Describe what each browser adapter actually acquired in this epoch."""
+
+    observed = {item.source for item in source_observations}
+    counts = {source: 0 for source in GroundingSource}
+    for affordance in model.affordances:
+        source = GroundingSource(affordance.surface.value)
+        counts[source] += 1
+    if accessibility_tree is not None:
+        counts[GroundingSource.ACCESSIBILITY] = _bounded_node_count(accessibility_tree)
+    if svg_geometry is not None:
+        counts[GroundingSource.SVG] = len(svg_geometry.elements)
+    if screenshot_ref:
+        counts[GroundingSource.VISUAL] = 1
+    budget = perception_requirements.observation_budget if perception_requirements is not None else 1
+    result: list[SourceCoverage] = []
+    for source in GroundingSource:
+        if source == GroundingSource.DOM and source in observed:
+            result.append(
+                SourceCoverage.complete(
+                    source,
+                    captured_item_count=counts[source],
+                    capture_policy_id="dom-document-exhaustive@v1",
+                    acquisition_epoch_ref=snapshot_id,
+                    source_scope="current-document-controls",
+                    adapter_version="dom-adapter@v1",
+                )
+            )
+            continue
+        if source in observed:
+            if source in exhaustive_sources:
+                result.append(
+                    SourceCoverage.complete(
+                        source,
+                        captured_item_count=counts[source],
+                        capture_policy_id=f"browser-{source.value}-adapter-declared-exhaustive@v1",
+                        observed_properties=(
+                            tuple(
+                                item.value
+                                for item in perception_requirements.required_properties
+                            )
+                            if perception_requirements is not None
+                            else ()
+                        ),
+                        acquisition_epoch_ref=snapshot_id,
+                        source_scope="current-viewport",
+                        adapter_version=f"{source.value}-adapter@v1",
+                    )
+                )
+                continue
+            limits = {
+                GroundingSource.ACCESSIBILITY: 256,
+                GroundingSource.VISUAL: 1,
+                GroundingSource.SVG: 1,
+                GroundingSource.SOM: 1,
+            }
+            result.append(
+                SourceCoverage(
+                    source=source,
+                    capture_policy_id=f"browser-{source.value}-bounded@v1",
+                    captured_item_count=counts[source],
+                    truncated=True,
+                    omitted_item_count_estimate=None,
+                    completeness=CoverageCompleteness.BOUNDED,
+                    status=CoverageStatus.ACQUISITION_TRUNCATED,
+                    acquisition_epoch_ref=snapshot_id,
+                    source_scope="current-viewport" if source in {GroundingSource.VISUAL, GroundingSource.SOM} else "bounded-current-document",
+                    item_limit=limits.get(source),
+                    acquisition_budget=budget,
+                    adapter_version=f"{source.value}-adapter@v1",
+                    termination_reason=CoverageTermination.LIMIT_REACHED,
+                )
+            )
+            continue
+        result.append(
+            SourceCoverage(
+                source=source,
+                capture_policy_id=f"browser-{source.value}-not-acquired@v1",
+                captured_item_count=0,
+                truncated=False,
+                omitted_item_count_estimate=None,
+                completeness=CoverageCompleteness.UNKNOWN,
+                status=CoverageStatus.SOURCE_NOT_ACQUIRED,
+                acquisition_epoch_ref=snapshot_id,
+                source_scope="not-acquired",
+                acquisition_budget=budget,
+                adapter_version=f"{source.value}-adapter@v1",
+                termination_reason=CoverageTermination.SOURCE_UNAVAILABLE,
+            )
+        )
+    return tuple(result)
+
+
+def _bounded_node_count(value: object) -> int:
+    if isinstance(value, dict):
+        return 1 + sum(_bounded_node_count(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return sum(_bounded_node_count(item) for item in value)
+    return 0
 
 
 def _image_size(
@@ -323,6 +445,17 @@ class BrowserSession:
         self._visual_executor = visual_executor
         self._last_capture_profile: _CaptureProfile | None = None
         self._targeted_capture_sequence = 0
+        self._navigation_lock = RLock()
+        self._navigation_generation = 0
+        self._navigation_tracker_id = uuid.uuid4().hex
+        self._navigation_tracking_available = False
+        subscribe = getattr(self._page, "on", None)
+        if callable(subscribe):
+            try:
+                subscribe("framenavigated", self._on_frame_navigated)
+                self._navigation_tracking_available = True
+            except Exception:
+                self._navigation_tracking_available = False
 
     @classmethod
     def launch(
@@ -378,6 +511,122 @@ class BrowserSession:
     def reset(self) -> None:
         if self._initial_url:
             self._page.goto(self._initial_url)
+
+    def provenance_descriptor(self) -> Mapping[str, Any]:
+        """Expose stable acquisition configuration without page or owner state."""
+
+        orchestrator = self._perception_orchestrator
+        return {
+            "initial_url": self._initial_url,
+            "lease_ttl_ms": self._lease_ttl_ms,
+            "dom_adapter": type(self._dom).__module__ + "." + type(self._dom).__name__,
+            "svg_observer": type(self._svg_observer).__module__ + "." + type(self._svg_observer).__name__,
+            "perception_orchestrator": (
+                type(orchestrator).__module__ + "." + type(orchestrator).__name__
+                if orchestrator is not None
+                else ""
+            ),
+            "dom_executor": self._dom_executor,
+            "svg_executor": self._svg_executor,
+            "visual_executor": self._visual_executor,
+        }
+
+    def coordinate_transform_is_current(self, expected: CoordinateBinding) -> bool:
+        """Probe live viewport geometry immediately before coordinate dispatch."""
+
+        evaluate = getattr(self._page, "evaluate", None)
+        if not callable(evaluate):
+            return False
+        facts = evaluate(
+            """() => ({
+              runtimeCoordinateProbe: true,
+              viewport: [window.innerWidth, window.innerHeight],
+              scroll: [window.scrollX, window.scrollY],
+              devicePixelRatio: window.devicePixelRatio || 1,
+              zoom: window.visualViewport ? window.visualViewport.scale : 1,
+              orientation: screen.orientation ? screen.orientation.type : 'landscape'
+            })"""
+        )
+        if not isinstance(facts, Mapping):
+            return False
+        viewport = facts.get("viewport")
+        scroll = facts.get("scroll")
+        if not isinstance(viewport, (list, tuple)) or len(viewport) != 2:
+            return False
+        if not isinstance(scroll, (list, tuple)) or len(scroll) != 2:
+            return False
+        return (
+            (int(viewport[0]), int(viewport[1])) == (expected.viewport_width, expected.viewport_height)
+            and (float(scroll[0]), float(scroll[1])) == expected.scroll_xy
+            and float(facts.get("devicePixelRatio") or 1.0) == expected.device_pixel_ratio
+            and float(facts.get("zoom") or 1.0) == expected.zoom
+            and str(facts.get("orientation") or "landscape") == expected.orientation
+        )
+
+    def surface_binding_is_current(self, expected: LiveSurfaceBinding) -> bool:
+        """Recompute live document identity instead of trusting the last capture."""
+
+        if not self._navigation_tracking_available:
+            return False
+        html = self._page.content()
+        url = self.url
+        dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
+        environment_revision = hashlib.sha256(f"{url}\0{dom_hash}".encode()).hexdigest()
+        model = self._dom.transduce(
+            html,
+            environment_revision=environment_revision,
+            url=url,
+            snapshot_id="surface-live-probe",
+            allow_offscreen=True,
+        )
+        live_document_generation = self._document_generation(model.page_revision)
+        if live_document_generation != expected.document_generation:
+            return False
+        evaluate = getattr(self._page, "evaluate", None)
+        if not callable(evaluate):
+            return False
+        live_bindings = [
+            {
+                "key": str(
+                    affordance.locator.get("backend_handle")
+                    or affordance.locator.get("selector")
+                    or ""
+                ),
+                "selector": str(affordance.locator.get("selector") or ""),
+            }
+            for affordance in model.affordances
+            if affordance.locator.get("selector")
+        ]
+        serialized_bindings = json.dumps(live_bindings, separators=(",", ":"))
+        try:
+            active = evaluate(
+                "() => { const active = document.activeElement; const match = "
+                + serialized_bindings
+                + ".find(({selector}) => document.querySelector(selector) === active); "
+                "if (match?.key) return match.key; "
+                "return active === document.body || active === document.documentElement "
+                "? '' : 'focus:unbound'; }"
+            )
+        except Exception:
+            return False
+        normalized_active = "focus:default" if active == "" else active
+        return isinstance(normalized_active, str) and normalized_active == expected.focus_generation
+
+    def _on_frame_navigated(self, frame: object) -> None:
+        main_frame = getattr(self._page, "main_frame", None)
+        if main_frame is not None and frame is not main_frame:
+            return
+        with self._navigation_lock:
+            self._navigation_generation += 1
+
+    def _document_generation(self, page_revision: str) -> str:
+        if not self._navigation_tracking_available:
+            return f"unprobeable:{self._navigation_tracker_id}"
+        with self._navigation_lock:
+            generation = self._navigation_generation
+        return hashlib.sha256(
+            f"{self._navigation_tracker_id}\0{generation}\0{page_revision}".encode()
+        ).hexdigest()
 
     def locator(self, selector: str) -> Any:
         """Expose the session-owned locator boundary for DOM gesture encoding."""
@@ -764,6 +1013,7 @@ class BrowserSession:
             affordances=enriched_affordances,
             kept_node_count=len(enriched_affordances),
         )
+        document_generation = self._document_generation(model.page_revision)
         spatial_geometry = [
             {
                 "target_id": item.id,
@@ -783,6 +1033,7 @@ class BrowserSession:
                 "html": html,
                 "control_states": control_states,
                 "active_control": active_control,
+                "document_generation": document_generation,
                 "visible_text": visible_text,
                 "environment_family": _environment_family(url),
                 "observation_epoch_id": snapshot_id,
@@ -913,6 +1164,27 @@ class BrowserSession:
             accessibility_tree=accessibility_tree,
             perception_requirements=perception_requirements,
             active_perception_requests=missing_evidence_requests,
+            source_coverage=_browser_source_coverage(
+                snapshot_id=snapshot_id,
+                source_observations=tuple(source_observations),
+                model=model,
+                accessibility_tree=accessibility_tree,
+                svg_geometry=svg_geometry,
+                screenshot_ref=screenshot_ref,
+                perception_requirements=perception_requirements,
+                exhaustive_sources=(
+                    frozenset({GroundingSource.VISUAL, GroundingSource.SOM})
+                    if self._perception_orchestrator is not None
+                    and bool(
+                        getattr(
+                            getattr(self._perception_orchestrator, "region_proposer", None),
+                            "acquisition_exhaustive",
+                            False,
+                        )
+                    )
+                    else frozenset()
+                ),
+            ),
         )
         assertions = _source_assertions(snapshot, effective_ttl_ms)
         if not assertions:

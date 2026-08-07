@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from affordance_runtime.benchmarks.local import LocalSaasRunCase
+from affordance_runtime.benchmarks.metrics import aggregate
 from affordance_runtime.benchmarks.miniwob import run_official_miniwob_suite
 from affordance_runtime.benchmarks.runner import BenchmarkReport, BenchmarkReportWriter
 from affordance_runtime.benchmarks.suites import mvp_benchmark_tasks
@@ -33,7 +34,14 @@ def run_heldout_local_suite(
             for task in mvp_benchmark_tasks()
             for seed in seeds
         ]
-        report = BenchmarkReport.build("local-saas-heldout-v2", runs)
+        # This suite has one explicit held-out profile and its own all-runs
+        # success gate below; the seven-variant core release gate is not its
+        # schema and must not be silently reused here.
+        report = BenchmarkReport(
+            "local-saas-heldout-v2",
+            runs,
+            {"heldout_full_runtime": aggregate(runs)},
+        )
         report.environment = environment_manifest(
             browser_version=run_case.observed_browser_version,
             fixture_version=LOCAL_SAAS_FIXTURE_VERSION,

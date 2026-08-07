@@ -7,15 +7,9 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
-from affordance_runtime.action_choice_authority import authorize_runtime_signature
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
-from affordance_runtime.action_contract_builder import ActionContractBuilder, ActionContractMaterializer
-from affordance_runtime.action_effect_classifier import classify_action
 from affordance_runtime.active_perception import PerceptionResolution, ProbeReceipt
-from affordance_runtime.active_perception_flow import (
-    ActivePerceptionFlow,
-    ActivePerceptionFlowContext,
-)
+from affordance_runtime.active_perception_flow import ActivePerceptionFlow
 from affordance_runtime.approval_contracts import ApprovalProvider, present_approval
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
@@ -23,17 +17,20 @@ from affordance_runtime.choice_contracts import ActionSelection
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import (
     ActionContract,
-    AffordanceLease,
     ExecutionReceipt,
     RiskLevel,
     RuntimeErrorCode,
+    TransportState,
 )
-from affordance_runtime.effect_authority_contracts import AuthorityStatus
+from affordance_runtime.dispatch_lifecycle import (
+    DispatchAdmissionRejected,
+    DispatchCommitter,
+    FinalDispatchAdmission,
+)
 from affordance_runtime.failure_envelope import (
     EffectStatus,
     FailureClass,
     FailurePhase,
-    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
@@ -48,19 +45,9 @@ from affordance_runtime.perception_session import (
     PerceptionCaptureRequest,
     PerceptionSession,
 )
-from affordance_runtime.planning import (
-    PlannerActionKind,
-    ProposalRejected,
-    bind_active_step_verifiers,
-    proposal_error_code,
-    proposal_record,
-    resolve_task_plan_progress_target,
-)
-from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import (
-    action_progress_signature,
     semantic_progress_fingerprint,
     semantic_target_descriptor,
 )
@@ -77,16 +64,15 @@ from affordance_runtime.stage_protocol import (
     StageResult,
     TerminalResult,
 )
-from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer
 from affordance_runtime.unified_observation import UnifiedObservation
 
 
 @dataclass(frozen=True)
 class ActionStageInput:
     envelope: RunRequest
-    decision: PlannerProposalResponse | None
     capture: PerceptionCapture
     observation: UnifiedObservation
     state_view: RuntimeStateSnapshot
@@ -94,6 +80,7 @@ class ActionStageInput:
     skill_step_id: str = ""
     catalog: ActionChoiceCatalog | None = None
     selection: ActionSelection | None = None
+    dispatch_committer: DispatchCommitter | None = None
 
 
 @dataclass(frozen=True)
@@ -120,7 +107,7 @@ class _PerceptionDelta:
 
 @dataclass(frozen=True)
 class ActionStage:
-    contract_builder: ActionContractBuilder | ActionContractMaterializer | None
+    contract_builder: ActionTransactionMaterializer | None
     contract_execution_loop: ContractExecutionLoop
     perception_session: PerceptionSession
     observation_builder: CanonicalObservationBuilder = CanonicalObservationBuilder()
@@ -145,7 +132,7 @@ class ActionStage:
         checked = self._preflight(stage_input, contract, events)
         if isinstance(checked, StageResult):
             return checked
-        contract, execution_snapshot, events, artifact_refs, perception_delta = checked
+        contract, execution_snapshot, events, artifact_refs, perception_delta, gate = checked
 
         attempt = self.contract_execution_loop.build_execution_attempt(
             contract,
@@ -165,42 +152,68 @@ class ActionStage:
             )
         )
         events.append(_event("ActionStarted", RuntimeStep.ACTING, contract_id=contract.id))
-        try:
-            receipt = self.contract_execution_loop.execute(contract, execution_snapshot.observation)
-        except Exception as exc:
-            uncertain_updates = _uncertain_effect_updates(stage_input, contract, attempt)
-            if uncertain_updates is not None:
-                events.append(
-                    _event(
-                        "UncertainExternalEffectRecorded",
-                        RuntimeStep.ACTING,
-                        attempt_id=attempt.attempt_id,
-                        contract_hash=attempt.contract_hash,
-                    )
-                )
+        if stage_input.dispatch_committer is None:
             return self._failure(
                 stage_input,
-                FailurePhase.EXECUTION_UNCERTAIN if contract.effectful else FailurePhase.EXECUTION_NOT_DISPATCHED,
-                FailureClass.EXECUTION,
-                RuntimeErrorCode.EXECUTION_FAILED,
-                f"{type(exc).__name__}: {exc}"[:500],
+                FailurePhase.PREFLIGHT,
+                FailureClass.AUTHORITY,
+                RuntimeErrorCode.CAPABILITY_DENIED,
+                "canonical dispatch requires the RuntimeCommitter linearization boundary",
                 contract=contract,
                 events=tuple(events),
-                transition=RuntimeTransition(
-                    phase=RuntimeStep.ACTING,
-                    current_contract=contract,
-                    execution_attempt=attempt,
-                    state_updates=uncertain_updates,
-                ),
-                effect_status=(EffectStatus.MAY_HAVE_OCCURRED if contract.effectful else EffectStatus.NOT_DISPATCHED),
+                recoverable=False,
             )
+        try:
+            admission = FinalDispatchAdmission.issue(
+                contract=contract,
+                observation=execution_snapshot.observation,
+                expected_state_version=stage_input.state_view.version,
+                gate=gate,
+                policy_check=lambda: self.contract_execution_loop.task_policy.check(
+                    contract,
+                    stage_input.envelope.constraints,
+                    stage_input.envelope.task_spec,
+                    stage_input.observation,
+                ),
+                surface_check=lambda: self.perception_session.surface_is_current(
+                    contract.live_surface_binding
+                ) if contract.live_surface_binding is not None else False,
+                coordinate_check=lambda binding: self.perception_session.coordinate_is_current(
+                    binding,
+                    require_live_probe=contract.backend == "visual",
+                ),
+                fence_lock=self.perception_session.surface_lock,
+            )
+            permit = stage_input.dispatch_committer(admission, attempt)
+        except DispatchAdmissionRejected as exc:
+            drift = exc.code in _DRIFT_ERRORS
+            events.append(
+                _event(
+                    "EnvironmentDriftDetected" if drift else "PreflightBlocked",
+                    stage_input.state_view.phase,
+                    error_code=exc.code.value,
+                )
+            )
+            return self._failure(
+                stage_input,
+                FailurePhase.PREFLIGHT,
+                FailureClass.STALE_STATE if drift else FailureClass.AUTHORITY,
+                exc.code,
+                f"final dispatch admission rejected: {exc.code.value}",
+                contract=contract,
+                events=tuple(events),
+                recoverable=self.recovery_enabled if drift else False,
+            )
+        receipt = self.contract_execution_loop.dispatch(permit)
 
         receipt_ref = self._write_receipt(stage_input, receipt)
         if receipt_ref:
             artifact_refs.append(receipt_ref)
         uncertain_updates = (
             _uncertain_effect_updates(stage_input, contract, attempt)
-            if not receipt.success and receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT
+            if not receipt.success
+            and receipt.transport_state == TransportState.SENT_UNKNOWN
+            and contract.effectful
             else None
         )
         if uncertain_updates is not None:
@@ -224,16 +237,17 @@ class ActionStage:
             current_contract=contract,
             execution_attempt=attempt,
             receipt=receipt,
-            step_count_delta=1,
+            step_count_delta=0,
             subgoal_action_count_delta=1,
-            effectful_action_count_delta=1 if contract.required_capabilities else 0,
+            effectful_action_count_delta=0,
             state_updates=uncertain_updates,
         )
         if not receipt.success:
+            execution_uncertain = receipt.transport_state == TransportState.SENT_UNKNOWN and contract.effectful
             failure = self._failure(
                 stage_input,
                 FailurePhase.EXECUTION_UNCERTAIN
-                if receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT
+                if execution_uncertain
                 else FailurePhase.EXECUTION_NOT_DISPATCHED,
                 FailureClass.EXECUTION,
                 receipt.error_code or RuntimeErrorCode.EXECUTION_FAILED,
@@ -243,6 +257,7 @@ class ActionStage:
                 events=tuple(events),
                 transition=transition,
                 recoverable=self.recovery_enabled,
+                effect_status=(EffectStatus.MAY_HAVE_OCCURRED if execution_uncertain else EffectStatus.NOT_DISPATCHED),
             )
             return replace(
                 failure,
@@ -264,115 +279,64 @@ class ActionStage:
                 FailurePhase.GROUNDING_BINDING,
                 FailureClass.GROUNDING,
                 RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                "semantic proposal requires TaskSpec and ActionContractMaterializer",
+                "semantic selection requires TaskSpec and the canonical transaction materializer",
                 recoverable=False,
             )
-        canonical = (
-            stage_input.catalog is not None
-            and stage_input.selection is not None
-            and isinstance(self.contract_builder, ActionContractBuilder)
-        )
-        if canonical:
-            choice = stage_input.catalog.get(stage_input.selection.choice_id)
-            if choice is None:
-                return self._failure(
-                    stage_input,
-                    FailurePhase.GROUNDING_BINDING,
-                    FailureClass.GROUNDING,
-                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                    "selected choice is not in the current Catalog",
-                    recoverable=True,
-                )
-            try:
-                contract = self.contract_builder.build(
-                    stage_input.selection,
-                    stage_input.catalog,
-                    task_spec,
-                    cast(Any, stage_input.state_view),
-                    stage_input.capture,
-                    stage_input.observation,
-                )
-            except (ProposalRejected, ValueError) as exc:
-                return self._failure(
-                    stage_input,
-                    FailurePhase.GROUNDING_BINDING,
-                    FailureClass.GROUNDING,
-                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                    str(exc),
-                    recoverable=True,
-                )
-            proposal_payload = {
-                "selection_id": stage_input.selection.choice_id,
-                "catalog_id": stage_input.catalog.catalog_id,
-                "catalog_digest": stage_input.catalog.catalog_digest,
-                "observation_ref": stage_input.selection.observation_ref,
-            }
-            signature = json.dumps(
-                {
-                    "action_kind": choice.action_kind.value,
-                    "target": choice.target_id,
-                    "destination": choice.destination_id,
-                    "parameters": dict(choice.parameters),
-                    "subgoal": stage_input.selection.active_step_id,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
+        if stage_input.catalog is None or stage_input.selection is None:
+            return self._failure(
+                stage_input,
+                FailurePhase.GROUNDING_BINDING,
+                FailureClass.GROUNDING,
+                RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                "action stage requires a canonical selection",
+                recoverable=False,
             )
-            proposal = None
-        else:
-            if stage_input.decision is None:
-                return self._failure(
-                    stage_input,
-                    FailurePhase.GROUNDING_BINDING,
-                    FailureClass.GROUNDING,
-                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                    "action stage requires a canonical selection",
-                    recoverable=False,
-                )
-            proposal = stage_input.decision.proposal
-            try:
-                legacy_builder = (
-                    self.contract_builder.materializer
-                    if isinstance(self.contract_builder, ActionContractBuilder)
-                    else self.contract_builder
-                )
-                contract = legacy_builder.build(
-                    proposal,
-                    task_spec,
-                    cast(Any, stage_input.state_view),
-                    stage_input.capture,
-                    stage_input.observation,
-                )
-            except ProposalRejected as exc:
-                return self._contract_rejected(stage_input, exc)
-            if stage_input.decision.proposal_provenance is None:
-                raise RuntimeError("validated proposal is missing provenance")
-            proposal_payload = proposal_record(proposal, stage_input.decision.proposal_provenance)
-            signature = action_progress_signature(proposal, contract)
-
-        contract = self.contract_execution_loop.bind_contract(
-            contract, stage_input.envelope, stage_input.capture.observation
-        )
-        progress_target = (
-            None
-            if proposal is None
-            else resolve_task_plan_progress_target(
-                proposal,
+        choice = stage_input.catalog.get(stage_input.selection.choice_id)
+        if choice is None:
+            return self._failure(
+                stage_input,
+                FailurePhase.GROUNDING_BINDING,
+                FailureClass.GROUNDING,
+                RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                "selected choice is not in the current Catalog",
+                recoverable=True,
+            )
+        try:
+            contract = self.contract_builder.build(
+                stage_input.selection,
+                stage_input.catalog,
+                task_spec,
                 cast(Any, stage_input.state_view),
                 stage_input.capture,
+                stage_input.observation,
             )
+        except ValueError as exc:
+            return self._failure(
+                stage_input,
+                FailurePhase.GROUNDING_BINDING,
+                FailureClass.GROUNDING,
+                RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                str(exc),
+                recoverable=True,
+            )
+        proposal_payload = {
+            "selection_id": stage_input.selection.choice_id,
+            "catalog_id": stage_input.catalog.catalog_id,
+            "catalog_digest": stage_input.catalog.catalog_digest,
+            "observation_ref": stage_input.selection.observation_ref,
+        }
+        signature = json.dumps(
+            {
+                "action_kind": choice.action_kind.value,
+                "target": choice.target_id,
+                "destination": choice.destination_id,
+                "parameters": dict(choice.parameters),
+                "subgoal": stage_input.selection.active_step_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
         )
-        contract = replace(
-            contract,
-            verifier_plan=list(
-                bind_active_step_verifiers(
-                    tuple(contract.verifier_plan),
-                    cast(Any, stage_input.state_view),
-                    progress_target=progress_target,
-                )
-            ),
-            contract_hash="",
-        )
+        progress_target = None
         if stage_input.skill_step_id and self.task_skill_runtime is not None:
             requirement_error = self.task_skill_runtime.contract_requirement_error(
                 cast(Any, stage_input.state_view),
@@ -450,6 +414,7 @@ class ActionStage:
             list[RuntimeEvent],
             list[str],
             _PerceptionDelta,
+            CapabilityGate,
         ]
         | StageResult[ActionOutput]
     ):
@@ -464,80 +429,56 @@ class ActionStage:
         gate = checked.gate
         error = checked.error
         current = stage_input.capture
+        admission_observation = stage_input.observation
         artifact_refs: list[str] = []
         perception_delta = _PerceptionDelta()
-        policy_preflight_required = _policy_preflight_required(contract)
-        if error is None and (self.preflight_enabled or policy_preflight_required):
-            current = self.perception_session.capture(_capture_request(stage_input))
-            ref = self._write_observation(stage_input, current)
-            if ref:
-                artifact_refs.append(ref)
-            artifact_refs.extend(current.observation.artifact_refs)
+        if error is None:
+            surface = contract.live_surface_binding
+            coordinate = contract.coordinate_binding
+            if (
+                surface is None
+                or coordinate is None
+                or not surface.lease.current(surface)
+                or not coordinate.current_for(surface)
+                or contract.snapshot_id != stage_input.observation.epoch_id
+                or contract.route_binding is None
+                or contract.route_binding.observation_digest != stage_input.observation.digest
+            ):
+                error = RuntimeErrorCode.STALE_OBSERVATION
             events.append(
                 _event(
-                    "PreflightObservationCaptured",
+                    "CommittedObservationPreflightChecked",
                     stage_input.state_view.phase,
-                    snapshot_id=current.observation.snapshot_id,
-                    page_revision=current.observation.page_revision,
-                    artifact_refs=artifact_refs,
+                    snapshot_id=stage_input.observation.epoch_id,
+                    contract_hash=contract.contract_hash,
                 )
             )
-            current, perception_delta = self._probe_preflight(stage_input, current, events, artifact_refs)
-            perception_error = (
-                RuntimeErrorCode.PRECONDITION_FAILED
-                if perception_delta.resolution is not None and perception_delta.resolution.blocks_effectful_action
-                else None
-            )
-            fresh_canonical = self.observation_builder.build(current)
-            rebuilt, rebuild_error = self._rebuild_preflight_contract(
-                stage_input,
-                contract,
-                current,
-                fresh_canonical,
-            )
-            if rebuilt is not None:
-                events.append(
-                    _event(
-                        "ContractRebuiltAtPreflight",
-                        stage_input.state_view.phase,
-                        source_contract_hash=contract.contract_hash,
-                        contract_hash=rebuilt.contract_hash,
-                        source_snapshot_id=contract.snapshot_id,
-                        snapshot_id=rebuilt.snapshot_id,
-                        source_environment_revision=contract.environment_revision,
-                        environment_revision=rebuilt.environment_revision,
-                    )
-                )
-                contract = rebuilt
-            error = self.contract_execution_loop.revalidate(
-                contract,
-                stage_input.envelope,
-                current.observation,
-                gate,
-                capability_gate_enabled=False,
-                include_policy=True,
-                canonical_observation=fresh_canonical,
-            )
-            error = perception_error or rebuild_error or error
-            source_contract = contract
-            rebound = self._rebind_point_target(stage_input, contract, current, gate, error)
-            if rebound is not None:
-                contract, error = rebound
-                events.append(
-                    _event(
-                        "ContractReboundAtPreflight",
-                        stage_input.state_view.phase,
-                        source_contract_id=source_contract.id,
-                        source_contract_hash=source_contract.contract_hash,
-                        contract_id=contract.id,
-                        contract_hash=contract.contract_hash,
-                        snapshot_id=contract.snapshot_id,
-                    )
-                )
-        elif not self.preflight_enabled and not policy_preflight_required:
-            events.append(_event("AblationApplied", stage_input.state_view.phase, disabled_layer="preflight"))
 
         if error == RuntimeErrorCode.APPROVAL_REQUIRED:
+            committed_ref = getattr(stage_input.state_view, "current_observation_ref", None)
+            if (
+                committed_ref is None
+                or committed_ref.epoch_id != contract.snapshot_id
+                or committed_ref.digest != admission_observation.digest
+            ):
+                return self._failure(
+                    stage_input,
+                    FailurePhase.PREFLIGHT,
+                    FailureClass.AUTHORITY,
+                    RuntimeErrorCode.APPROVAL_INVALID,
+                    "approval requires an exact sealed contract over a committed fresh observation",
+                    contract=contract,
+                    events=tuple(events),
+                    transition=RuntimeTransition(
+                        observation_commits=perception_delta.observation_commits,
+                        perception_update=perception_delta.resolution is not None,
+                        probe_receipts=perception_delta.probe_receipts,
+                        perception_resolution=perception_delta.resolution,
+                        active_perception_count_delta=perception_delta.active_count_delta,
+                        artifact_refs=tuple(artifact_refs),
+                    ),
+                    recoverable=self.recovery_enabled,
+                )
             approval_presentation = present_approval(contract)
             events.append(
                 _event(
@@ -624,7 +565,7 @@ class ActionStage:
                 ),
                 recoverable=error in _DRIFT_ERRORS and self.recovery_enabled,
             )
-        authorization_error = gate.authorize(contract) if self.capability_gate_enabled else None
+        authorization_error = gate.check(contract) if self.capability_gate_enabled else None
         if authorization_error is not None:
             return self._failure(
                 stage_input,
@@ -649,359 +590,7 @@ class ActionStage:
                 recoverable=False,
             )
         events.append(_event("PreflightPassed", stage_input.state_view.phase))
-        return contract, current, events, artifact_refs, perception_delta
-
-    def _rebuild_preflight_contract(
-        self,
-        stage_input: ActionStageInput,
-        contract: ActionContract,
-        capture: PerceptionCapture,
-        observation: UnifiedObservation,
-    ) -> tuple[ActionContract | None, RuntimeErrorCode | None]:
-        if stage_input.catalog is None or stage_input.selection is None:
-            return None, RuntimeErrorCode.SNAPSHOT_MISMATCH
-        choice = stage_input.catalog.get(stage_input.selection.choice_id)
-        task_spec = stage_input.envelope.task_spec
-        if choice is None or task_spec is None:
-            return None, RuntimeErrorCode.POLICY_DENIED
-        source = _fresh_route_candidate(
-            observation,
-            choice.target_id,
-            choice.action_kind.value,
-            contract.grounding_candidate,
-        )
-        if contract.grounding_candidate is not None and source is None:
-            return None, RuntimeErrorCode.POLICY_DENIED
-        destination = None
-        if choice.destination_id:
-            old_destination_id = (
-                contract.gesture_binding.destination.candidate_id if contract.gesture_binding is not None else ""
-            )
-            old_destination = next(
-                (item for item in stage_input.observation.bindings if item.candidate_id == old_destination_id),
-                None,
-            )
-            destination = _fresh_route_candidate(
-                observation,
-                choice.destination_id,
-                choice.action_kind.value,
-                old_destination,
-            )
-            if destination is None:
-                return None, RuntimeErrorCode.POLICY_DENIED
-        try:
-            signature = classify_action(
-                observation,
-                target_id=choice.target_id,
-                destination_id=choice.destination_id,
-                action_kind=choice.action_kind.value,
-                parameters=choice.parameters,
-                candidate=source,
-                destination_candidate=destination,
-            )
-        except ValueError:
-            return None, RuntimeErrorCode.POLICY_DENIED
-        proof = authorize_runtime_signature(
-            task_spec=task_spec,
-            step=None,
-            signature=signature,
-            requirement_refs=choice.requirement_refs,
-            choice_role=choice.role,
-        )
-        if proof.status != AuthorityStatus.ALLOW:
-            return None, RuntimeErrorCode.POLICY_DENIED
-        gesture = contract.gesture_binding
-        if gesture is not None and source is not None and destination is not None:
-            lease = AffordanceLease.issue(
-                environment_revision=capture.observation.environment_revision,
-                snapshot_id=capture.observation.snapshot_id,
-                page_revision=capture.observation.page_revision,
-            )
-            gesture = replace(
-                gesture,
-                source=replace(
-                    gesture.source,
-                    semantic_target_id=source.semantic_target_id,
-                    candidate_id=source.candidate_id,
-                    snapshot_id=source.observation_epoch_id,
-                    page_revision=source.page_revision,
-                    target_fingerprint=source.target_fingerprint,
-                    target_fingerprint_key=source.fingerprint_key or source.candidate_id,
-                    lease=lease,
-                ),
-                destination=replace(
-                    gesture.destination,
-                    semantic_target_id=destination.semantic_target_id,
-                    candidate_id=destination.candidate_id,
-                    snapshot_id=destination.observation_epoch_id,
-                    page_revision=destination.page_revision,
-                    target_fingerprint=destination.target_fingerprint,
-                    target_fingerprint_key=(destination.fingerprint_key or destination.candidate_id),
-                    lease=lease,
-                ),
-            )
-        return (
-            replace(
-                contract,
-                environment_revision=capture.observation.environment_revision,
-                snapshot_id=capture.observation.snapshot_id,
-                page_revision=capture.observation.page_revision,
-                observed_at_s=capture.observation.observed_at_s,
-                grounding_candidate=source,
-                gesture_binding=gesture,
-                target_fingerprint=(source.target_fingerprint if source else ""),
-                target_fingerprint_key=(source.fingerprint_key or source.candidate_id if source else ""),
-                observation_ref=observation.epoch_id,
-                runtime_effect_signature=signature,
-                action_authority_proof=proof,
-                risk=proof.risk,
-                contract_hash="",
-            ),
-            None,
-        )
-
-    def _probe_preflight(
-        self,
-        stage_input: ActionStageInput,
-        snapshot: PerceptionCapture,
-        events: list[RuntimeEvent],
-        artifact_refs: list[str],
-    ) -> tuple[PerceptionCapture, _PerceptionDelta]:
-        flow = self.active_perception_flow
-        if flow is None:
-            return snapshot, self._perception_delta((snapshot,))
-        task_spec = stage_input.envelope.task_spec
-        effectful = bool(
-            task_spec is not None
-            and task_spec.operation_class not in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
-        )
-        plan = stage_input.state_view.task_plan
-        progress = stage_input.state_view.task_progress
-        preparation = flow.prepare(
-            ActivePerceptionFlowContext(
-                snapshot=snapshot,
-                run_id=stage_input.envelope.task_id,
-                task_revision=(
-                    plan.task_revision if plan is not None else task_spec.revision if task_spec is not None else 1
-                ),
-                plan_version=plan.plan_version if plan is not None else 0,
-                active_step_id=(progress.active_step_id if progress is not None else ""),
-                state_version=stage_input.state_view.version,
-                remaining_observations=stage_input.remaining_budgets.observations,
-                attempted_probe_fingerprints=frozenset(stage_input.state_view.attempted_probe_fingerprints),
-                effectful_action=effectful,
-            )
-        )
-        if not preparation.gaps or preparation.decision is None:
-            return snapshot, self._perception_delta((snapshot,))
-        events.append(
-            _event(
-                "EvidenceGapDetected",
-                stage_input.state_view.phase,
-                gap_ids=[item.gap_id for item in preparation.gaps],
-            )
-        )
-        decision = preparation.decision
-        if decision.plan is None:
-            resolution = decision.resolution
-            if resolution is not None:
-                events.append(
-                    _event(
-                        "EvidenceGapUnresolved",
-                        stage_input.state_view.phase,
-                        reason=resolution.reason,
-                    )
-                )
-            return snapshot, self._perception_delta((snapshot,), resolution=resolution)
-        command = decision.plan.commands[0]
-        events.extend(
-            (
-                _event(
-                    "ActivePerceptionPlanned",
-                    stage_input.state_view.phase,
-                    plan_id=decision.plan.plan_id,
-                ),
-                _event(
-                    "ProbeStarted",
-                    stage_input.state_view.phase,
-                    command_id=command.command_id,
-                ),
-            )
-        )
-        result = flow.execute(preparation)
-        events.append(
-            _event(
-                "ProbeCompleted",
-                stage_input.state_view.phase,
-                command_id=result.receipt.command_id,
-                success=result.receipt.success,
-            )
-        )
-        current = result.targeted_snapshot or snapshot
-        if result.targeted_snapshot is not None:
-            ref = self._write_observation(stage_input, result.targeted_snapshot)
-            if ref:
-                artifact_refs.append(ref)
-            artifact_refs.extend(result.targeted_snapshot.observation.artifact_refs)
-        events.append(
-            _event(
-                "EvidenceGapResolved" if not result.resolution.blocks_effectful_action else "EvidenceGapUnresolved",
-                stage_input.state_view.phase,
-                reason=result.resolution.reason,
-            )
-        )
-        snapshots = (snapshot, result.targeted_snapshot) if result.targeted_snapshot is not None else (snapshot,)
-        return current, self._perception_delta(
-            cast(tuple[PerceptionCapture, ...], snapshots),
-            probe_receipts=(result.receipt,),
-            resolution=result.resolution,
-            active_count_delta=1,
-        )
-
-    def _perception_delta(
-        self,
-        captures: tuple[PerceptionCapture, ...],
-        *,
-        probe_receipts: tuple[ProbeReceipt, ...] = (),
-        resolution: PerceptionResolution | None = None,
-        active_count_delta: int = 0,
-    ) -> _PerceptionDelta:
-        commits: list[ObservationCommit] = []
-        for capture in captures:
-            canonical = self.observation_builder.build(capture)
-            ref = self.observation_store.put(canonical)
-            commits.append(
-                ObservationCommit(
-                    ref,
-                    canonical.environment_revision,
-                    canonical.page_revision,
-                )
-            )
-        return _PerceptionDelta(
-            captures,
-            tuple(commits),
-            probe_receipts,
-            resolution,
-            active_count_delta,
-        )
-
-    def _rebind_point_target(
-        self,
-        stage_input: ActionStageInput,
-        contract: ActionContract,
-        snapshot: PerceptionCapture,
-        gate: CapabilityGate,
-        error: RuntimeErrorCode | None,
-    ) -> tuple[ActionContract, RuntimeErrorCode | None] | None:
-        if stage_input.decision is None:
-            # A new route requires a fresh Catalog/selection/contract epoch.
-            return None
-        proposal = stage_input.decision.proposal
-        candidate = contract.grounding_candidate
-        if (
-            error != RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
-            or proposal.action_kind != PlannerActionKind.POINT_ACTIVATE
-            or candidate is None
-            or candidate.source not in {GroundingSource.SVG, GroundingSource.VISUAL}
-            or self.contract_builder is None
-            or stage_input.envelope.task_spec is None
-        ):
-            return None
-        rebound_proposal = proposal.model_copy(
-            update={
-                "proposal_id": f"{proposal.proposal_id}-preflight-{stage_input.state_view.version}",
-                "based_on_state_version": stage_input.state_view.version,
-                "snapshot_id": snapshot.observation.snapshot_id,
-            }
-        )
-        try:
-            legacy_builder = (
-                self.contract_builder.materializer
-                if isinstance(self.contract_builder, ActionContractBuilder)
-                else self.contract_builder
-            )
-            rebound = legacy_builder.build(
-                rebound_proposal,
-                stage_input.envelope.task_spec,
-                cast(Any, stage_input.state_view),
-                snapshot,
-                self.observation_builder.build(snapshot),
-            )
-        except ProposalRejected:
-            return None
-        rebound = self.contract_execution_loop.bind_contract(rebound, stage_input.envelope, snapshot.observation)
-        progress_target = resolve_task_plan_progress_target(
-            rebound_proposal,
-            cast(Any, stage_input.state_view),
-            snapshot,
-        )
-        rebound = replace(
-            rebound,
-            verifier_plan=list(
-                bind_active_step_verifiers(
-                    tuple(rebound.verifier_plan),
-                    cast(Any, stage_input.state_view),
-                    progress_target=progress_target,
-                )
-            ),
-            contract_hash="",
-        )
-        rebound_error = self.contract_execution_loop.revalidate(
-            rebound,
-            stage_input.envelope,
-            snapshot.observation,
-            gate,
-            capability_gate_enabled=self.capability_gate_enabled,
-            include_policy=True,
-            canonical_observation=self.observation_builder.build(snapshot),
-        )
-        return (rebound, None) if rebound_error is None else None
-
-    def _contract_rejected(
-        self,
-        stage_input: ActionStageInput,
-        rejection: ProposalRejected,
-    ) -> StageResult[ActionOutput]:
-        if stage_input.decision is None:
-            return self._failure(
-                stage_input,
-                FailurePhase.GROUNDING_BINDING,
-                FailureClass.GROUNDING,
-                RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                rejection.detail or rejection.code.value,
-                recoverable=True,
-            )
-        error_code = proposal_error_code(rejection.code)
-        message = rejection.detail or rejection.code.value
-        if stage_input.skill_step_id and self.task_skill_runtime is not None:
-            reason = f"TaskSkill contract binding rejected: {message}"
-            self.task_skill_runtime.fallthrough(cast(Any, stage_input.state_view), reason)
-            return StageResult(
-                transition=RuntimeTransition(phase=RuntimeStep.OBSERVING, replan_count_delta=1),
-                events=(
-                    _event(
-                        "TaskSkillFellThrough",
-                        stage_input.state_view.phase,
-                        step_id=stage_input.skill_step_id,
-                        reason=reason,
-                        fallback="system_2",
-                    ),
-                ),
-                directive=LoopDirective.REPEAT_OBSERVATION,
-            )
-        return self._failure(
-            stage_input,
-            FailurePhase.GROUNDING_BINDING,
-            FailureClass.GROUNDING,
-            error_code,
-            message,
-            recoverable=True,
-            proposal_rejection=ProposalRejectionContext(
-                code=rejection.code.value,
-                reason_code=rejection.reason_code,
-                semantic_target_id=stage_input.decision.proposal.target_affordance_id,
-            ),
-        )
+        return contract, current, events, artifact_refs, perception_delta, gate
 
     def _failure(
         self,
@@ -1017,7 +606,6 @@ class ActionStage:
         transition: RuntimeTransition | None = None,
         recoverable: bool = True,
         effect_status: EffectStatus | None = None,
-        proposal_rejection: ProposalRejectionContext | None = None,
     ) -> StageResult[ActionOutput]:
         view = stage_input.state_view
         plan = view.task_plan
@@ -1037,26 +625,16 @@ class ActionStage:
             active_step_id=view.task_progress.active_step_id if view.task_progress is not None else "",
             observation_epoch_id=stage_input.capture.observation.snapshot_id,
             snapshot_id=stage_input.capture.observation.snapshot_id,
-            proposal_id=(
-                stage_input.decision.proposal.proposal_id
-                if stage_input.decision is not None
-                else stage_input.selection.choice_id
-                if stage_input.selection is not None
-                else ""
-            ),
-            proposal_rejection=proposal_rejection,
+            proposal_id=(stage_input.selection.choice_id if stage_input.selection is not None else ""),
+            proposal_rejection=None,
             contract=contract,
-            expected_effect=(
-                "; ".join(stage_input.decision.proposal.expected_effects)
-                if stage_input.decision is not None
-                else "; ".join(
-                    (
-                        stage_input.catalog.get(stage_input.selection.choice_id).effect_refs
-                        if stage_input.catalog is not None
-                        and stage_input.selection is not None
-                        and stage_input.catalog.get(stage_input.selection.choice_id) is not None
-                        else ()
-                    )
+            expected_effect="; ".join(
+                (
+                    cast(Any, stage_input.catalog.get(stage_input.selection.choice_id)).effect_refs
+                    if stage_input.catalog is not None
+                    and stage_input.selection is not None
+                    and stage_input.catalog.get(stage_input.selection.choice_id) is not None
+                    else ()
                 )
             ),
             receipt=receipt,
@@ -1081,8 +659,8 @@ class ActionStage:
                     "PlannerProposalRejected" if phase == FailurePhase.GROUNDING_BINDING else "FailureDetected",
                     view.phase,
                     error_code=error_code.value,
-                    rejection_code=(proposal_rejection.code if proposal_rejection is not None else ""),
-                    rejection_reason_code=(proposal_rejection.reason_code if proposal_rejection is not None else ""),
+                    rejection_code="",
+                    rejection_reason_code="",
                     reason=message,
                 ),
             ),
@@ -1208,16 +786,18 @@ def _fresh_route_candidate(
 
 
 def _contract_built_event(stage_input: ActionStageInput, contract: ActionContract) -> RuntimeEvent:
-    proposal = stage_input.decision.proposal if stage_input.decision is not None else None
     choice = (
         stage_input.catalog.get(stage_input.selection.choice_id)
         if stage_input.catalog is not None and stage_input.selection is not None
         else None
     )
-    action_kind = proposal.action_kind.value if proposal is not None else choice.action_kind.value
-    target_id = proposal.target_affordance_id if proposal is not None else choice.target_id
-    destination_id = proposal.destination_affordance_id if proposal is not None else choice.destination_id
-    parameters = dict(proposal.parameters if proposal is not None else choice.parameters)
+    if choice is None:
+        raise RuntimeError("contract event requires a canonical choice")
+    resolved_choice = cast(Any, choice)
+    action_kind = resolved_choice.action_kind.value
+    target_id = resolved_choice.target_id
+    destination_id = resolved_choice.destination_id
+    parameters = dict(resolved_choice.parameters)
     return _event(
         "ContractBuilt",
         RuntimeStep.PREFLIGHT,
@@ -1228,12 +808,8 @@ def _contract_built_event(stage_input: ActionStageInput, contract: ActionContrac
         page_revision=contract.page_revision,
         target_fingerprint=contract.target_fingerprint,
         backend=contract.backend,
-        proposal_id=proposal.proposal_id if proposal is not None else "",
         choice_id=stage_input.selection.choice_id if stage_input.selection is not None else "",
         catalog_id=stage_input.catalog.catalog_id if stage_input.catalog is not None else "",
-        supersedes_contract_id=contract.supersedes_contract_id,
-        source_contract_id=contract.source_contract_id,
-        fallback_reason=contract.fallback_reason,
         semantic_action={
             "action_kind": action_kind,
             "target": semantic_target_descriptor(stage_input.observation, target_id),

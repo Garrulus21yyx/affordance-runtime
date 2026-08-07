@@ -81,6 +81,7 @@ class PricingPlanProposalGenerator:
                 completion_criteria=(_target_revealed("criterion:reveal-pro", "pricing.pro"),),
                 source_refs=task_source_refs(request.task_spec),
                 requirement_refs=requirement_refs,
+                operation_class=request.task_spec.operation_class.value,
             ),
             StepSpec(
                 step_id="reveal-enterprise",
@@ -90,6 +91,7 @@ class PricingPlanProposalGenerator:
                 source_refs=task_source_refs(request.task_spec),
                 requirement_refs=requirement_refs,
                 depends_on=("reveal-pro",),
+                operation_class=request.task_spec.operation_class.value,
             ),
         )
         return PlanProposal(
@@ -185,6 +187,12 @@ def _steps_from_task_spec(
             requirement_refs=requirement_refs,
             effect_authorization_refs=(() if state_holds else task_spec.allowed_effect_refs),
             effectful=not state_holds,
+            operation_class=task_spec.operation_class.value,
+            material_bindings=tuple(
+                (item.field, item.value)
+                for item in task_spec.inputs
+                if item.requirement_ref in requirement_refs
+            ),
         ),
     )
 

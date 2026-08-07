@@ -22,7 +22,7 @@ from affordance_runtime.grounding import (
     GroundingSource,
     WoTGroundingPayload,
 )
-from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
 from affordance_runtime.unified_observation import ConflictStatus, UnifiedObservation
 from affordance_runtime.verification.contracts import AssuranceLevel
 
@@ -57,6 +57,9 @@ def classify_action(
     candidate: GroundingCandidate | None = None,
     destination_candidate: GroundingCandidate | None = None,
 ) -> RuntimeEffectSignature:
+    frozen_parameters = freeze_json(parameters)
+    if not isinstance(frozen_parameters, FrozenDict):
+        raise ValueError("action parameters must be a named mapping")
     _validate_candidate_identity(candidate, target_id, "source")
     _validate_candidate_identity(destination_candidate, destination_id, "destination")
     target = next((item for item in observation.targets if item.target_id == target_id), None)
@@ -109,12 +112,15 @@ def classify_action(
         reversibility = reversibility or _optional_enum(Reversibility, selected.reversibility)
         resource_sensitivity = _optional_enum(RuntimeRiskTier, selected.resource_sensitivity) or resource_sensitivity
         asserted_assurance = _optional_enum(AssuranceLevel, selected.authority_source_assurance)
-        if asserted_assurance is not None:
+        if selected.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.SVG}:
+            # These surfaces contain environment-authored data. The adapter may
+            # prove that the structure was observed, but the content cannot mint
+            # API/device-grade authority by declaring an assurance attribute.
+            assurance = AssuranceLevel.STRUCTURAL
+        elif asserted_assurance is not None:
             assurance = asserted_assurance
         elif selected.source in {GroundingSource.API, GroundingSource.WOT, GroundingSource.DEVICE}:
             assurance = AssuranceLevel.STRUCTURAL
-        elif selected.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.SVG}:
-            assurance = max(assurance, AssuranceLevel.STRUCTURAL, key=_assurance_rank)
         if isinstance(selected.payload, WoTGroundingPayload):
             typed = _WOT_OPERATION_POLICY.get(selected.payload.operation.casefold())
             if typed:
@@ -230,7 +236,7 @@ def classify_action(
         reversibility=reversibility,
         resource_sensitivity=resource_sensitivity,
         asserted_source=asserted_risk,
-        parameters=parameters,
+        parameters=frozen_parameters,
         assurance=assurance,
         conflict_status=conflict,
         capability_asserted=bool(getattr(selected, "operation_ref", "")) if selected else False,
@@ -243,7 +249,7 @@ def classify_action(
         resource_ref=resource_ref,
         destination_ref=destination_id if destination is not None else None,
         operation_ref=operation_ref,
-        parameter_values=parameters,
+        parameter_values=frozen_parameters,
         externality=externality,
         reversibility=reversibility,
         assurance=assurance,
@@ -482,7 +488,7 @@ def _coverage_complete(
     if target is None or (destination_required and destination is None):
         return False
     if not observation.source_coverage:
-        return True
+        return False
     sources: set[GroundingSource] = set()
     for endpoint_candidate in (candidate, destination_candidate):
         if endpoint_candidate is not None:
@@ -500,6 +506,10 @@ def _coverage_complete(
         if support_sources:
             sources.update(support_sources)
             continue
+        bound_candidate = candidate if endpoint_index == 0 else destination_candidate
+        if bound_candidate is not None:
+            sources.add(bound_candidate.source)
+            continue
         surfaces = getattr(endpoint, "surfaces", ())
         if not surfaces:
             surface = getattr(endpoint, "surface", "")
@@ -509,13 +519,18 @@ def _coverage_complete(
                 surfaces = ()
         sources.update(item for item in surfaces if isinstance(item, GroundingSource))
     coverage = {item.source: item for item in observation.source_coverage}
-    return bool(sources) and all(
-        source in coverage
-        and coverage[source].completeness.value == "complete"
-        and not coverage[source].truncated
-        and coverage[source].status.value == "observed"
-        for source in sources
-    )
+    def complete_authority_coverage(source: GroundingSource) -> bool:
+        item = coverage.get(source)
+        return bool(
+            item is not None
+            and item.completeness.value == "complete"
+            and item.status.value == "observed"
+            and not item.truncated
+            and not item.error_code
+            and set(item.required_properties).issubset(item.observed_properties)
+        )
+
+    return bool(sources) and all(complete_authority_coverage(source) for source in sources)
 
 
 def _binding_digest(candidate, destination_candidate, target_id: str, destination_id: str) -> str:

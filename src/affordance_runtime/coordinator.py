@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 
 from affordance_runtime.contracts import RuntimeErrorCode
+from affordance_runtime.execution_context import RunProvenanceManifest
 from affordance_runtime.execution_phase import ActionStage, ActionStageInput
 from affordance_runtime.perception_phase import PerceptionStage, PerceptionStageInput
 from affordance_runtime.planning_phase import (
@@ -62,6 +63,7 @@ class RunCoordinator:
     recovery_stage: RecoveryStage
     committer: RuntimeCommitter
     result_builder: RuntimeResultPhase
+    provenance_manifest: RunProvenanceManifest
 
     async def run(self, envelope: RunRequest, upstream_trace: TraceDag | None = None) -> RunResult:
         """Async-compatible entry point for framework and service adapters."""
@@ -80,6 +82,7 @@ class RunCoordinator:
             envelope,
             budget,
             upstream_trace,
+            self.provenance_manifest,
         )
         reusable_capture = None
         while True:
@@ -184,7 +187,6 @@ class RunCoordinator:
             action = self.action_stage.run(
                 ActionStageInput(
                     envelope=envelope,
-                    decision=None,
                     capture=capture,
                     observation=observation,
                     state_view=runtime_state_snapshot(loop.state),
@@ -192,6 +194,7 @@ class RunCoordinator:
                     skill_step_id=skill_step_id,
                     catalog=planning.output.catalog,
                     selection=planning.output.selection,
+                    dispatch_committer=loop.admit_dispatch,
                 )
             )
             action_recovery = self.recovery_stage.evaluate_action(
@@ -259,4 +262,5 @@ class RunCoordinator:
                 ObservationDisposition.REUSE,
                 ObservationDisposition.AUGMENT_TARGETED,
             }:
+                assert progress.output is not None
                 reusable_capture = progress.output.capture

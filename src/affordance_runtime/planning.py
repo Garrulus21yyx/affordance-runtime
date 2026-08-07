@@ -862,7 +862,14 @@ def _action_compatible(kind: PlannerActionKind, affordance_action: str) -> bool:
     return (
         affordance_action
         in {
-            PlannerActionKind.ACTIVATE: {"activate", "click", "download", "invoke", "write_property"},
+            PlannerActionKind.ACTIVATE: {
+                "activate",
+                "click",
+                "download",
+                "invoke",
+                "point_activate",
+                "write_property",
+            },
             PlannerActionKind.FOCUS: {"focus", "fill", "type"},
             PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
             PlannerActionKind.TYPE_TEXT: {"fill", "type"},

@@ -19,7 +19,7 @@ from affordance_runtime.benchmarks.browsergym_action_schema import (
 )
 from affordance_runtime.benchmarks.browsergym_dom import browsergym_dom_adapter, browsergym_svg_observer
 from affordance_runtime.benchmarks.browsergym_encoder import (
-    GeneralistBrowserGymContractBuilder,
+    GeneralistBrowserGymRouteEncoder,
 )
 from affordance_runtime.benchmarks.browsergym_observer import BrowserGymObserver
 from affordance_runtime.benchmarks.browsergym_types import (
@@ -29,8 +29,8 @@ from affordance_runtime.benchmarks.browsergym_types import (
     BrowserGymEpisodeState,
     BrowserGymRuntimeFailure,
 )
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator as compose_run_coordinator
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -71,6 +71,7 @@ from affordance_runtime.task_intake import (
 from affordance_runtime.task_planner import TASK_PLANNER_PROMPT_VERSION, PlanningRouter, StrictTaskPlanner
 from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -116,6 +117,23 @@ def _browser_snapshot_evidence(snapshot: BrowserSnapshot) -> frozenset[EvidenceK
 
 @dataclass
 class BrowserGymExecutor:
+    supported_actions = (
+        "click",
+        "click_no_navigation",
+        "fill",
+        "focus",
+        "mouse_click",
+        "mouse_drag_and_drop",
+        "activate",
+        "drag",
+        "point_activate",
+        "press",
+        "select_option",
+        "type_text_with_events",
+        "type_text",
+    )
+    provider_capabilities = (SPATIAL_POINT_CAPABILITY,)
+    adapter_capabilities = provider_capabilities
     environment: BrowserGymEnvironment
     episode: BrowserGymEpisodeState
     backend: str = BROWSERGYM_BACKEND
@@ -489,7 +507,7 @@ def run_browsergym_generalist_episode(
                 max_recoveries=3,
                 max_effectful_actions=max_steps + 1,
             ),
-            contract_builder=GeneralistBrowserGymContractBuilder(),
+            contract_builder=ActionTransactionMaterializer(route_encoder=GeneralistBrowserGymRouteEncoder()),
             task_planner=PlanningRouter(complex_planner=task_planner),
             step_choice_planner=choice_planner,
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model),

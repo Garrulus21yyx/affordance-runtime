@@ -35,3 +35,8 @@ def test_benchmark_metrics_cover_runtime_specific_rates() -> None:
     assert report.values["stale_detection_recall"] == 0.25
     assert report.values["recovery_success_rate"] == 1.0
     assert report.values["cost_per_success"] == 0.5
+    assert report.values["run_count"] == 2.0
+    assert report.values["stale_detection_opportunity_count"] == 4.0
+    assert report.values["effect_receipt_opportunity_count"] == 2.0
+    assert report.values["recovery_attempt_count"] == 1.0
+    assert report.values["unsafe_side_effect_opportunity_count"] == 1.0

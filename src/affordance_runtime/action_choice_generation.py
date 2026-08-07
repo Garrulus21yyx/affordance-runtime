@@ -50,10 +50,9 @@ from affordance_runtime.simplified_runtime_contracts import (
 from affordance_runtime.unified_observation import (
     CanonicalTarget,
     UnifiedObservation,
-    UnifiedObservationTarget,
 )
 
-CanonicalChoiceTarget: TypeAlias = CanonicalTarget | UnifiedObservationTarget
+CanonicalChoiceTarget: TypeAlias = CanonicalTarget
 
 
 @dataclass(frozen=True)
@@ -386,7 +385,7 @@ def _element_operation_choice(
     snapshot_id: str,
     step_id: str,
     intent: ElementIntent,
-    target: UnifiedObservationTarget,
+    target: CanonicalTarget,
     role: ChoiceRole,
     criterion_ids: tuple[str, ...] = (),
 ) -> ActionChoice | None:
@@ -420,7 +419,7 @@ def _expanded_choice(
     snapshot_id: str,
     step_id: str,
     criterion: _ActionCriterion,
-    target: UnifiedObservationTarget,
+    target: CanonicalTarget,
 ) -> ActionChoice | None:
     if target.state.get("expanded") is not False:
         return None
@@ -441,7 +440,7 @@ def _checked_choice(
     snapshot_id: str,
     step_id: str,
     criterion: _ActionCriterion,
-    target: UnifiedObservationTarget,
+    target: CanonicalTarget,
 ) -> ActionChoice | None:
     if not _supports(target, PlannerActionKind.ACTIVATE):
         return None
@@ -464,7 +463,7 @@ def _selected_choice(
     snapshot_id: str,
     step_id: str,
     criterion: _ActionCriterion,
-    target: UnifiedObservationTarget,
+    target: CanonicalTarget,
 ) -> ActionChoice | None:
     if not isinstance(criterion.expected_value, str):
         return None
@@ -485,7 +484,7 @@ def _selected_choice(
     )
 
 
-def _selected_value(target: UnifiedObservationTarget) -> str | None:
+def _selected_value(target: CanonicalTarget) -> str | None:
     for key in ("selected_value", "value", "current_value", "control_value"):
         value = target.state.get(key)
         if isinstance(value, str) and value.strip():
@@ -503,7 +502,7 @@ def _activation_choice(
     snapshot_id: str,
     step_id: str,
     criterion: _ActionCriterion,
-    target: UnifiedObservationTarget,
+    target: CanonicalTarget,
 ) -> ActionChoice | None:
     if not _supports(target, PlannerActionKind.ACTIVATE):
         return None
@@ -526,7 +525,7 @@ def _changed_activation_choice(
     snapshot_id: str,
     step_id: str,
     criterion: _ActionCriterion,
-    target: UnifiedObservationTarget,
+    target: CanonicalTarget,
 ) -> ActionChoice | None:
     if _target_looks_text_entry(target) or _target_looks_slider(target):
         return None

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.contracts import Observation
+from affordance_runtime.contracts import ExecutionReceipt, Observation
+from affordance_runtime.execution_context import digest_payload
+from affordance_runtime.output_materialization import OutputMaterializer
 from affordance_runtime.progress_evaluation import ProgressEvaluationService
 from affordance_runtime.runtime_evidence import (
     DurableEvidenceStore,
@@ -30,6 +33,7 @@ from affordance_runtime.verification.contracts import (
     CriterionStatus,
     EvidenceSourceKind,
     EvidenceValidityMode,
+    OutputMaterialization,
     OutputSpec,
     PredicateEvidenceContext,
     SatisfactionMode,
@@ -52,6 +56,45 @@ def _leaf(criterion_id: str) -> SuccessExpression:
         operator="criterion",
         criterion_id=criterion_id,
         requirement_refs=("requirement:effect:1",),
+    )
+
+
+def _output_task() -> TaskSpec:
+    return TaskSpec(
+        task_id="task:output",
+        revision=1,
+        objective="return observed output",
+        operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:output",
+                payload=TaskSemanticPayload(kind="output", subject="record"),
+                source_anchor_refs=("request:output",),
+            ),
+        ),
+        success=SuccessExpression(
+            expression_id="success:output",
+            operator="criterion",
+            criterion_id="criterion:output",
+            requirement_refs=("requirement:output",),
+        ),
+        required_outputs=(
+            OutputSpec(
+                output_id="record",
+                requirement_ref="requirement:output",
+                materialization_criterion_id="criterion:output",
+            ),
+        ),
+        source_request_ref="request:output",
+    )
+
+
+def _output_criterion() -> CriterionEvaluation:
+    return CriterionEvaluation(
+        "criterion:output",
+        CriterionStatus.SATISFIED,
+        evidence_refs=("resource:record:1",),
+        source_binding_refs=("resource:record:1",),
     )
 
 
@@ -145,6 +188,115 @@ def test_typed_completion_contracts_are_immutable_and_task_bound() -> None:
 
 
 @pytest.mark.parametrize(
+    "value",
+    (
+        "Bearer TOPSECRET",
+        "https://example.test/export?X-Amz-Signature=secret",
+    ),
+)
+def test_output_materializer_rejects_secret_bearing_values(value: str) -> None:
+    task = _output_task()
+    materialized = OutputMaterializer().from_evaluation(
+        task_spec=task,
+        output_spec=task.required_outputs[0],
+        evaluation=CriterionEvaluation(
+            "criterion:output",
+            CriterionStatus.SATISFIED,
+            observed_value=value,
+            evidence_refs=("evidence:observed",),
+            source_binding_refs=("source:record",),
+        ),
+        observation_ref="observation:1",
+    )
+    assert materialized is None
+
+
+def test_artifact_materializer_binds_download_receipt_to_authoritative_final_evidence(
+    tmp_path,
+) -> None:
+    artifact = tmp_path / "report.csv"
+    artifact.write_bytes(b"name,value\nalpha,1\n")
+    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    task = _output_task()
+    output = task.required_outputs[0].model_copy(update={"schema_id": "artifact:file@v1"})
+    criterion = CriterionEvaluation(
+        "criterion:output",
+        CriterionStatus.SATISFIED,
+        observed_value={"effect": "report.export", "sha256": digest},
+        evidence_refs=("evidence:api-final",),
+        source_binding_refs=("api:report-export",),
+        authoritative_final_recheck=True,
+    )
+    receipt = ExecutionReceipt(
+        contract_id="contract:export",
+        backend="dom",
+        success=True,
+        started_revision="revision:1",
+        ended_revision="revision:2",
+        latency_ms=1.0,
+        evidence={"path": str(artifact), "sha256": digest},
+    )
+
+    materialized = OutputMaterializer().from_artifact_receipt(
+        task_spec=task,
+        output_spec=output,
+        evaluation=criterion,
+        receipt=receipt,
+        observation_ref="observation:final",
+        contract_id="contract:export",
+    )
+
+    assert materialized is not None
+    assert materialized.artifact_ref == str(artifact)
+    assert materialized.content_digest == f"sha256:{digest}"
+
+    artifact.write_bytes(b"tampered")
+    assert (
+        OutputMaterializer().from_artifact_receipt(
+            task_spec=task,
+            output_spec=output,
+            evaluation=criterion,
+            receipt=receipt,
+            observation_ref="observation:final",
+            contract_id="contract:export",
+        )
+        is None
+    )
+
+
+def test_output_materialization_cannot_forge_criterion_or_owner_lineage() -> None:
+    task = _output_task()
+    criterion = CriterionEvaluation(
+        "criterion:output",
+        CriterionStatus.SATISFIED,
+        observed_value={"id": "record:1"},
+        evidence_refs=("evidence:real",),
+        source_binding_refs=("source:real",),
+    )
+    honest = OutputMaterializer().from_evaluation(
+        task_spec=task,
+        output_spec=task.required_outputs[0],
+        evaluation=criterion,
+        observation_ref="observation:1",
+    )
+    assert honest is not None
+    forged = replace(
+        honest,
+        source_refs=("evidence:forged",),
+        source_binding_refs=("source:forged",),
+    )
+    result = TaskCompletionEvaluator().evaluate(
+        task_spec=task,
+        criterion_results=_bind_success_evaluations(task, (criterion,)),
+        result_payload={"record": {"id": "record:1"}},
+        output_source_bindings={"record": ("source:real",)},
+        output_materializations=(forged,),
+    )
+    assert result.status == CriterionStatus.UNSATISFIED
+    assert result.required_output_results[0].reason_code == "output_materialization_source_lineage_mismatch"
+
+
+@pytest.mark.parametrize(
     ("build", "message"),
     [
         (lambda: SuccessExpression(expression_id="root", operator="criterion"), "criterion_id"),
@@ -178,7 +330,7 @@ def test_success_expression_rejects_incomplete_shapes(build: object, message: st
                     CriterionStatus.SATISFIED,
                     authoritative_final_recheck=True,
                 ),
-                CriterionEvaluation("criterion:output", CriterionStatus.SATISFIED),
+                _output_criterion(),
             ),
             {"saved_record": {"id": "record:1"}},
             {"saved_record": ("resource:record:1",)},
@@ -197,7 +349,7 @@ def test_success_expression_rejects_incomplete_shapes(build: object, message: st
             },
             {"saved_record": ("resource:record:1",)},
             (),
-            CriterionStatus.UNKNOWN,
+            CriterionStatus.UNSATISFIED,
         ),
         (
             "constraint violation",
@@ -217,7 +369,7 @@ def test_success_expression_rejects_incomplete_shapes(build: object, message: st
                 CriterionEvaluation("criterion:saved", CriterionStatus.SATISFIED),
                 CriterionEvaluation("criterion:dialog-absent", CriterionStatus.SATISFIED),
                 CriterionEvaluation("criterion:constraint", CriterionStatus.SATISFIED),
-                CriterionEvaluation("criterion:output", CriterionStatus.SATISFIED),
+                _output_criterion(),
             ),
             {"saved_record": {"id": "record:1"}},
             {"saved_record": ("resource:record:1",)},
@@ -232,7 +384,7 @@ def test_success_expression_rejects_incomplete_shapes(build: object, message: st
                 CriterionEvaluation("criterion:constraint", CriterionStatus.SATISFIED),
                 CriterionEvaluation("criterion:external", CriterionStatus.SATISFIED),
                 CriterionEvaluation("criterion:recheck", CriterionStatus.SATISFIED),
-                CriterionEvaluation("criterion:output", CriterionStatus.SATISFIED),
+                _output_criterion(),
             ),
             {"saved_record": {"id": "record:1"}},
             {"saved_record": ("resource:record:1",)},
@@ -251,7 +403,7 @@ def test_success_expression_rejects_incomplete_shapes(build: object, message: st
                     CriterionStatus.SATISFIED,
                     authoritative_final_recheck=True,
                 ),
-                CriterionEvaluation("criterion:output", CriterionStatus.SATISFIED),
+                _output_criterion(),
             ),
             {"saved_record": {"id": "record:1"}},
             {},
@@ -311,6 +463,29 @@ def test_task_completion_requires_full_typed_closure(
         criterion_results=_bind_success_evaluations(task, criterion_results),
         result_payload=result_payload,
         output_source_bindings=source_bindings,
+        output_materializations=(
+            (
+                OutputMaterialization(
+                    output_id="saved_record",
+                    materialization_criterion_id="criterion:output",
+                    schema_digest="sha256:a2b4b10733fb28fb92a7b5b79abdf4de51559597143c2f24dd217558201505e6",
+                    content_digest=digest_payload(result_payload["saved_record"]),
+                    task_id=task.task_id,
+                    task_revision=task.revision,
+                    observation_ref="observation:test",
+                    source_refs=source_bindings["saved_record"],
+                    source_binding_refs=source_bindings["saved_record"],
+                    value=result_payload["saved_record"],
+                )
+            ,)
+            if result_payload.get("saved_record") is not None
+            and source_bindings.get("saved_record")
+            and any(
+                item.criterion_id == "criterion:output" and item.status == CriterionStatus.SATISFIED
+                for item in criterion_results
+            )
+            else ()
+        ),
         uncertain_external_effects=uncertain,
     )
 
@@ -423,7 +598,7 @@ def test_same_id_satisfied_result_without_policy_binding_is_unknown() -> None:
     assert evaluation.status == CriterionStatus.UNKNOWN
 
 
-def test_current_observation_success_does_not_survive_a_new_epoch_without_evidence() -> None:
+def test_untrusted_observation_metadata_cannot_create_or_carry_completion_evidence() -> None:
     criterion_id = "criterion:current-only"
     task = TaskSpec(
         task_id="task:current-only",
@@ -480,7 +655,7 @@ def test_current_observation_success_does_not_survive_a_new_epoch_without_eviden
         result={},
     )
 
-    assert epoch1 is not None and epoch1.status == CriterionStatus.SATISFIED
+    assert epoch1 is not None and epoch1.status == CriterionStatus.UNKNOWN
     assert epoch2 is not None and epoch2.status == CriterionStatus.UNKNOWN
     assert epoch2.criterion_results == ()
 

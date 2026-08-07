@@ -10,13 +10,16 @@ from enum import StrEnum
 from typing import Any, Awaitable, Protocol
 
 from affordance_runtime.simplified_runtime_contracts import (
+    RelationIntent,
     SourceReference,
+    StateCriterionRelation,
     StepActivityStatus,
     StepProgressView,
     StepSpec,
     TaskPlanView,
+    interaction_for_state,
 )
-from affordance_runtime.task_intake import OperationClass, StrictModel
+from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec
 
 _FORBIDDEN_IMPLEMENTATION_DETAIL = re.compile(
     r"(?:\bselector\b|\bxpath\b|\bbackend\b|\bcoordinate\b|\blocator\b|#[-_\w]+|approval_token)",
@@ -29,6 +32,53 @@ class TaskPlanGeneratorSource(StrEnum):
     LLM = "llm"
     PARENT = "parent"
     SKILL = "skill"
+
+
+@dataclass(frozen=True)
+class TaskRequirementProjection:
+    requirement_id: str
+    kind: str
+    subject: str
+    target_identity: str = ""
+    destination_identity: str = ""
+    relation: str = ""
+    value: str = ""
+    operation_class: str = ""
+    material_effect_kind: str = "none"
+    capability: str = ""
+    input_bindings: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_nonblank("requirement_id", self.requirement_id)
+        _require_nonblank("kind", self.kind)
+        _require_nonblank("subject", self.subject)
+
+
+def project_task_requirements(task_spec: TaskSpec) -> tuple[TaskRequirementProjection, ...]:
+    return tuple(
+        TaskRequirementProjection(
+            requirement_id=requirement.requirement_id,
+            kind=requirement.payload.kind,
+            subject=requirement.payload.subject,
+            target_identity=requirement.payload.target_identity,
+            destination_identity=requirement.payload.destination_identity,
+            relation=requirement.payload.relation,
+            value=requirement.payload.value,
+            operation_class=(
+                requirement.payload.operation_class.value
+                if requirement.payload.operation_class is not None
+                else ""
+            ),
+            material_effect_kind=requirement.payload.material_effect_kind.value,
+            capability=requirement.payload.capability,
+            input_bindings=tuple(
+                (binding.field, binding.value)
+                for binding in task_spec.inputs
+                if binding.requirement_ref == requirement.requirement_id
+            ),
+        )
+        for requirement in task_spec.requirements
+    )
 
 
 class TaskPlan(StrictModel):
@@ -157,6 +207,7 @@ class InitialTaskPlanRequest:
     allowed_effect_ids: tuple[str, ...] = ()
     operation_class: OperationClass = OperationClass.READ_ONLY
     task_id: str = ""
+    requirement_projections: tuple[TaskRequirementProjection, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_request_identity(
@@ -173,6 +224,9 @@ class InitialTaskPlanRequest:
         _require_unique_nonblank("allowed requirement ids", self.allowed_requirement_ids)
         if not self.allowed_requirement_ids:
             raise ValueError("task planning request requires admitted requirements")
+        if not self.requirement_projections:
+            raise ValueError("task planning request requires typed requirement projections")
+        _validate_requirement_projections(self.allowed_requirement_ids, self.requirement_projections)
         _require_unique_nonblank("allowed effect ids", self.allowed_effect_ids)
         if self.remaining_budget_steps < 0:
             raise ValueError("remaining budget cannot be negative")
@@ -210,6 +264,7 @@ class TaskPlanRevisionRequest:
     allowed_effect_ids: tuple[str, ...] = ()
     operation_class: OperationClass = OperationClass.READ_ONLY
     task_id: str = ""
+    requirement_projections: tuple[TaskRequirementProjection, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_request_identity(
@@ -225,6 +280,9 @@ class TaskPlanRevisionRequest:
             raise ValueError("previous progress plan identity mismatch")
         if self.previous_progress.plan_version != self.previous_plan.plan_version:
             raise ValueError("previous progress plan version mismatch")
+        if not self.requirement_projections:
+            raise ValueError("task plan revision requires typed requirement projections")
+        _validate_requirement_projections(self.allowed_requirement_ids, self.requirement_projections)
         if self.trigger.affected_step_id and self.trigger.affected_step_id not in self.previous_plan.step_ids:
             raise ValueError("affected step must exist in previous plan")
         if not isinstance(self.operation_class, OperationClass):
@@ -443,7 +501,139 @@ class TaskPlanAuthority:
                         f"step {step.step_id} effect authorization is not part of its requirement trace",
                     )
                 )
+            semantic_issue = _semantic_step_issue(step, request)
+            if semantic_issue is not None:
+                issues.append(semantic_issue)
         return tuple(issues)
+
+
+def _semantic_step_issue(
+    step: StepSpec,
+    request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
+) -> TaskPlanIssue | None:
+    if not request.requirement_projections:
+        return (
+            TaskPlanIssue(
+                "requirement_projection_missing",
+                f"effectful step {step.step_id} lacks typed requirement semantics",
+            )
+            if step.effectful
+            else None
+        )
+    projections = {
+        item.requirement_id: item
+        for item in request.requirement_projections
+        if item.requirement_id in step.requirement_refs
+    }
+    if set(step.requirement_refs) - set(projections):
+        return TaskPlanIssue("requirement_projection_missing", f"step {step.step_id} lacks typed requirement semantics")
+    if not projections:
+        return (
+            TaskPlanIssue("requirement_projection_missing", f"step {step.step_id} lacks typed requirement semantics")
+            if step.effectful
+            else None
+        )
+    effect_requirements = tuple(item for item in projections.values() if item.kind == "effect")
+    if step.effectful and not effect_requirements:
+        return TaskPlanIssue("semantic_effect_laundering", f"step {step.step_id} wraps non-effect authority")
+    if step.effectful and all(
+        item.operation_class in {"", OperationClass.READ_ONLY.value, OperationClass.NAVIGATION.value}
+        for item in effect_requirements
+    ):
+        return TaskPlanIssue("semantic_operation_exceeds_requirement", f"step {step.step_id} exceeds read authority")
+    if step.operation_class:
+        allowed_operations = {item.operation_class for item in effect_requirements if item.operation_class}
+        if allowed_operations and step.operation_class not in allowed_operations:
+            return TaskPlanIssue("semantic_operation_mismatch", f"step {step.step_id} operation is not subsumed")
+    targets, destinations, roles = _interaction_semantics(step)
+    allowed_targets = {
+        value.casefold()
+        for item in projections.values()
+        for value in _authorized_target_names(item)
+        if value.strip()
+    }
+    if targets and allowed_targets and not all(value.casefold() in allowed_targets for value in targets):
+        return TaskPlanIssue(
+            "semantic_resource_mismatch",
+            f"step {step.step_id} targets {targets!r}, outside authorized {tuple(sorted(allowed_targets))!r}",
+        )
+    allowed_destinations = {
+        item.destination_identity.casefold()
+        for item in projections.values()
+        if item.destination_identity.strip()
+    }
+    if step.effectful and step.task_usage == "execute" and allowed_destinations and not destinations:
+        return TaskPlanIssue(
+            "semantic_destination_missing",
+            f"step {step.step_id} omits the destination required by its relational effect",
+        )
+    if destinations and allowed_destinations and not all(
+        value.casefold() in allowed_destinations for value in destinations
+    ):
+        return TaskPlanIssue("semantic_destination_mismatch", f"step {step.step_id} changes destination")
+    allowed_bindings = {
+        (field.casefold(), value.casefold())
+        for item in projections.values()
+        for field, value in item.input_bindings
+    }
+    proposed_bindings = {(field.casefold(), value.casefold()) for field, value in step.material_bindings}
+    if allowed_bindings and proposed_bindings != allowed_bindings:
+        return TaskPlanIssue("semantic_material_binding_incomplete", f"step {step.step_id} omits named material values")
+    if proposed_bindings - allowed_bindings:
+        return TaskPlanIssue("semantic_material_value_mismatch", f"step {step.step_id} changes named material values")
+    allowed_capabilities = {item.capability for item in projections.values() if item.capability}
+    if roles and allowed_capabilities and any(role not in allowed_capabilities for role in roles):
+        return TaskPlanIssue("semantic_element_function_mismatch", f"step {step.step_id} changes element function")
+    if step.task_usage not in {"execute", "observe", "verify"}:
+        return TaskPlanIssue("semantic_task_usage_invalid", f"step {step.step_id} has unauthorized task usage")
+    return None
+
+
+def _authorized_target_names(projection: TaskRequirementProjection) -> tuple[str, ...]:
+    """Return exact and canonically projected names for one admitted target.
+
+    Task requirements may carry an opaque source identity such as
+    ``dom_button_1``.  The typed interaction projection deliberately separates
+    the embedded role and exposes that same identity as ``dom 1`` plus role
+    ``button``.  Admission must compare like with like, while retaining the
+    original identity as an independently authorized spelling.
+    """
+
+    names = tuple(value for value in (projection.target_identity, projection.subject) if value.strip())
+    relation = (
+        StateCriterionRelation(projection.relation)
+        if projection.relation in {item.value for item in StateCriterionRelation}
+        else StateCriterionRelation.IS_AVAILABLE
+    )
+    source_refs = (SourceReference("task-requirement", projection.requirement_id),)
+    projected: list[str] = []
+    for name in names:
+        interaction = interaction_for_state(name, relation, projection.value or None, source_refs)
+        if hasattr(interaction, "target"):
+            projected.append(str(interaction.target))
+        elif hasattr(interaction, "collection"):
+            projected.append(str(interaction.collection.target))
+        elif hasattr(interaction, "source"):
+            projected.append(str(interaction.source.target))
+        else:
+            projected.append(str(interaction.region))
+    return tuple(dict.fromkeys((*names, *projected)))
+
+
+def _interaction_semantics(step: StepSpec) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    interaction = step.interaction
+    if hasattr(interaction, "target"):
+        return (str(interaction.target),), (), ()
+    if hasattr(interaction, "collection"):
+        return (str(interaction.collection.target),), (), ()
+    if isinstance(interaction, RelationIntent):
+        destination = interaction.destination
+        return (
+            (str(interaction.source.target),),
+            ((str(destination.target),) if destination is not None else ()),
+            (),
+        )
+    return (str(interaction.region),), (), (str(interaction.capability),)
 
 
 class TaskPlanGeneratorPort(Protocol):
@@ -521,6 +711,16 @@ def _validate_request_identity(task_spec_identity: str, task_revision: int, stat
         raise ValueError("task revision must be positive")
     if state_version < 0:
         raise ValueError("state version cannot be negative")
+
+
+def _validate_requirement_projections(
+    allowed_requirement_ids: tuple[str, ...],
+    projections: tuple[TaskRequirementProjection, ...],
+) -> None:
+    projection_ids = tuple(item.requirement_id for item in projections)
+    _require_unique_nonblank("requirement projection ids", projection_ids)
+    if set(projection_ids) != set(allowed_requirement_ids):
+        raise ValueError("typed requirement projections must exactly cover admitted requirements")
 
 
 def _validate_draft_step_graph(steps: tuple[StepSpec, ...]) -> None:

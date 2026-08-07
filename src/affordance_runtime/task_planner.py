@@ -181,6 +181,8 @@ class TaskPlanStepProposal(StrictModel):
     depends_on: tuple[str, ...] = ()
     max_actions: int = Field(default=10, ge=1, le=50)
     max_recoveries: int = Field(default=2, ge=0, le=10)
+    operation_class: str = ""
+    material_bindings: tuple[tuple[str, str], ...] = ()
 
     @model_validator(mode="after")
     def validate_shape(self) -> "TaskPlanStepProposal":
@@ -290,6 +292,8 @@ def _canonical_provider_step(
         depends_on=proposal.depends_on,
         max_actions=proposal.max_actions,
         max_recoveries=proposal.max_recoveries,
+        operation_class=proposal.operation_class,
+        material_bindings=proposal.material_bindings,
     )
 
 

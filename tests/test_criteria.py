@@ -237,7 +237,7 @@ def test_state_delta_or_terminal_is_weak_progress_evidence() -> None:
     assert report.evidence[0].strength == "weak"
 
 
-def test_task_terminal_scope_releases_links_only_for_external_terminal_success() -> None:
+def test_task_terminal_scope_releases_links_only_with_independent_terminal_evidence() -> None:
     observation = Observation("revision-2", snapshot_id="snapshot-2", metadata={"saved": True})
     criterion = criterion_id("subgoal", "profile", 0)
     requirement = evidence_requirement_id("subgoal", "profile", 0)
@@ -287,13 +287,14 @@ def test_task_terminal_scope_releases_links_only_for_external_terminal_success()
     assert terminal.passed
     assert terminal.evidence[0].criterion_ids == (criterion,)
     assert terminal.evidence[0].requirement_ids == (requirement,)
-    assert terminal.evidence[0].source == "external_evaluator"
+    assert terminal.evidence[0].source == "post_action_observation"
+    assert terminal.evidence[0].strength == "strong"
     assert failed_terminal.passed
     assert failed_terminal.evidence[0].criterion_ids == ()
     assert failed_terminal.evidence[0].requirement_ids == ()
 
 
-def test_external_terminal_success_outranks_receipt_verifier_provenance() -> None:
+def test_terminal_success_does_not_outrank_receipt_verifier_provenance() -> None:
     criterion = criterion_id("subgoal", "profile", 0)
     requirement = evidence_requirement_id("subgoal", "profile", 0)
     report = VerifierLadder().verify_report(
@@ -320,7 +321,7 @@ def test_external_terminal_success_outranks_receipt_verifier_provenance() -> Non
     )
 
     assert report.passed
-    assert report.evidence[0].source == "external_evaluator"
-    assert report.evidence[0].strength == "strong"
+    assert report.evidence[0].source == "execution_receipt"
+    assert report.evidence[0].strength == "weak"
     assert report.evidence[0].criterion_ids == (criterion,)
     assert report.evidence[0].requirement_ids == (requirement,)

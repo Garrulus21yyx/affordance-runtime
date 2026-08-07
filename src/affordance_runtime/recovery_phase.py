@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureEnvelope
@@ -131,14 +131,14 @@ class RecoveryStage:
         if classification.owner == FailureOwner.RUNTIME_RECOVERY:
             result = self.run(stage_input)
             if result.terminal is None or preserve_terminal:
-                return result
-            return replace(
+                return cast(StageResult[RecoveryOutput | FailureResolutionOutput], result)
+            return cast(StageResult[RecoveryOutput | FailureResolutionOutput], replace(
                 result,
                 terminal=replace(
                     result.terminal,
                     error_code=_failure_runtime_error(failure),
                 ),
-            )
+            ))
         state = stage_input.state_view
         handoff = build_failure_owner_handoff(
             failure,
@@ -233,6 +233,8 @@ class RecoveryStage:
             available.add(RecoveryKind.REGROUND)
         if phase == "preflight":
             available.add(RecoveryKind.REOBSERVE)
+        if phase == "execution_not_dispatched":
+            available.update({RecoveryKind.REOBSERVE, RecoveryKind.REGROUND})
         if phase in {"observation", "fusion"}:
             available.add(RecoveryKind.REOBSERVE)
         if phase in {"execution_uncertain", "verification"}:
@@ -240,7 +242,7 @@ class RecoveryStage:
         contract = state.current_contract
         if contract is None:
             return frozenset(available)
-        if contract.idempotency_key:
+        if contract.idempotency_key and phase != "execution_uncertain":
             available.add(RecoveryKind.RETRY_IDEMPOTENT)
         if contract.compensation:
             available.add(RecoveryKind.COMPENSATE)
@@ -249,11 +251,6 @@ class RecoveryStage:
             item.candidate_id != route_plan.selected_candidate.candidate_id
             for item in route_plan.viable_alternatives
         ):
-            available.add(RecoveryKind.REROUTE)
-        tried_backends = (
-            {state.last_receipt.backend} if state.last_receipt is not None else set()
-        )
-        if any(item not in tried_backends for item in contract.fallback_backends):
             available.add(RecoveryKind.REROUTE)
         return frozenset(available)
 
@@ -527,8 +524,7 @@ def _fresh_route(state: Any) -> tuple[str, str]:
         for candidate in contract.route_plan.viable_alternatives:
             if candidate.candidate_id != selected:
                 return candidate.candidate_id, ""
-    tried = {state.last_receipt.backend} if state.last_receipt is not None else set()
-    return "", next((item for item in contract.fallback_backends if item not in tried), "")
+    return "", ""
 
 
 def _grounding_updates(
@@ -538,6 +534,7 @@ def _grounding_updates(
 ) -> tuple[dict[str, Any], int]:
     if contract is None or kind not in {
         RecoveryKind.REROUTE,
+        RecoveryKind.REGROUND,
         RecoveryKind.REOBSERVE,
         RecoveryKind.RETRY_IDEMPOTENT,
     }:
@@ -548,7 +545,7 @@ def _grounding_updates(
     excluded = {
         key: set(values) for key, values in state.current_excluded_candidates.items()
     }
-    if kind == RecoveryKind.REROUTE:
+    if kind in {RecoveryKind.REROUTE, RecoveryKind.REGROUND}:
         excluded.setdefault(candidate.semantic_target_id, set()).add(
             candidate.candidate_id
         )
@@ -558,7 +555,11 @@ def _grounding_updates(
     fallback[candidate.semantic_target_id] = {
         "supersedes_contract_id": contract.id,
         "source_contract_id": contract.source_contract_id or contract.id,
-        "fallback_reason": "recovery reroute" if kind == RecoveryKind.REROUTE else "recovery requires fresh observation",
+        "fallback_reason": (
+            "recovery reroute"
+            if kind in {RecoveryKind.REROUTE, RecoveryKind.REGROUND}
+            else "recovery requires fresh observation"
+        ),
         "failed_source": candidate.source.value,
     }
     return {

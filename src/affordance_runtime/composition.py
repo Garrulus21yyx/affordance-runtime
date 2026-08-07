@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
-from affordance_runtime.action_contract_builder import (
-    ActionContractBuilder,
-    ActionContractMaterializer,
-    CanonicalRouteMaterializer,
-)
 from affordance_runtime.active_perception_flow import ActivePerceptionFlow
 from affordance_runtime.approval_contracts import ApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.coordinator import RunBudget, RunCoordinator, RuntimeFeatures
+from affordance_runtime.execution_context import (
+    RunProvenanceManifest,
+    describe_component,
+    describe_executor,
+    digest_payload,
+)
 from affordance_runtime.execution_phase import ActionStage
 from affordance_runtime.observation_store import InMemoryObservationStore
 from affordance_runtime.perception_phase import PerceptionStage
@@ -36,9 +39,26 @@ from affordance_runtime.task_plan_flow import TaskPlanFlow
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer
 from affordance_runtime.verification.mechanical import VerifierLadder
 
 _DEFAULT_TASK_PLANNER = object()
+
+
+class UnsafeProductRuntimeConfiguration(ValueError):
+    """A product composition attempted to disable a mandatory safety owner."""
+
+
+def _require_product_safety(features: RuntimeFeatures) -> None:
+    disabled = tuple(
+        name
+        for name in ("preflight", "structural_verification", "capability_gate")
+        if not getattr(features, name)
+    )
+    if disabled:
+        raise UnsafeProductRuntimeConfiguration(
+            "product runtime cannot disable mandatory safety gates: " + ", ".join(disabled)
+        )
 
 
 def compose_run_coordinator(
@@ -52,7 +72,7 @@ def compose_run_coordinator(
     artifacts: ArtifactStore | None = None,
     budget: RunBudget | None = None,
     features: RuntimeFeatures | None = None,
-    contract_builder: ActionContractBuilder | ActionContractMaterializer | None = None,
+    contract_builder: ActionTransactionMaterializer | None = None,
     task_planner: TaskPlannerPort | None | object = _DEFAULT_TASK_PLANNER,
     step_choice_planner: StepChoicePlanner | None = None,
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None,
@@ -66,11 +86,87 @@ def compose_run_coordinator(
 
     resolved_budget = budget or RunBudget()
     resolved_features = features or RuntimeFeatures()
+    _require_product_safety(resolved_features)
+    return _compose_run_coordinator(
+        observer,
+        executor,
+        verifier=verifier,
+        gate=gate,
+        task_policy=task_policy,
+        approval_provider=approval_provider,
+        artifacts=artifacts,
+        budget=resolved_budget,
+        features=resolved_features,
+        contract_builder=contract_builder,
+        task_planner=task_planner,
+        step_choice_planner=step_choice_planner,
+        task_skill_runtime=task_skill_runtime,
+        runtime_profile_digest=runtime_profile_digest,
+        loaded_profile_artifact_ids=loaded_profile_artifact_ids,
+        route_calibrator=route_calibrator,
+        recovery_coordinator=recovery_coordinator,
+        recovery_owner_dispatcher=recovery_owner_dispatcher,
+    )
+
+
+def _compose_run_coordinator(
+    observer: ObservationSource,
+    executor: Executor,
+    *,
+    verifier: VerifierLadder | None = None,
+    gate: CapabilityGate | None = None,
+    task_policy: TaskConstraintPolicy | None = None,
+    approval_provider: ApprovalProvider | None = None,
+    artifacts: ArtifactStore | None = None,
+    budget: RunBudget,
+    features: RuntimeFeatures,
+    contract_builder: ActionTransactionMaterializer | None = None,
+    task_planner: TaskPlannerPort | None | object = _DEFAULT_TASK_PLANNER,
+    step_choice_planner: StepChoicePlanner | None = None,
+    task_skill_runtime: AcceptedTaskSkillRuntime | None = None,
+    runtime_profile_digest: str = "",
+    loaded_profile_artifact_ids: tuple[str, ...] = (),
+    route_calibrator: RouteCalibrator | None = None,
+    recovery_coordinator: RecoveryCoordinator | None = None,
+    recovery_owner_dispatcher: RecoveryOwnerDispatcher | None = None,
+) -> RunCoordinator:
+    """Product constructor; mandatory safety remains enforced for private callers."""
+
+    resolved_budget = budget
+    resolved_features = features
+    _require_product_safety(resolved_features)
     resolved_verifier = verifier or VerifierLadder()
     resolved_gate = gate or CapabilityGate()
     resolved_task_policy = task_policy or TaskConstraintPolicy()
+    descriptor = describe_executor(executor)
+    observer_descriptor = describe_component(observer)
+    resolved_gate.executor_descriptor = descriptor
+    if not resolved_gate.product_allowed_actions:
+        resolved_gate.product_allowed_actions = descriptor.supported_actions
     resolved_calibrator = route_calibrator or RouteCalibrator()
-    session = PerceptionSession(observer, artifacts)
+    provenance_manifest = RunProvenanceManifest(
+        code_digest=_runtime_code_digest(),
+        product_profile_digest=runtime_profile_digest
+        or digest_payload({"features": resolved_features, "artifacts": loaded_profile_artifact_ids}),
+        policy_digest=digest_payload(
+            {
+                "task_policy": type(resolved_task_policy).__name__,
+                "approval_risks": sorted(item.value for item in resolved_gate.approval_required_risks),
+                "approval_capabilities": sorted(resolved_gate.approval_required_capabilities),
+            }
+        ),
+        provider_digest=digest_payload(descriptor),
+        schema_digest=descriptor.tool_schema_digest,
+        transform_digest=digest_payload(resolved_calibrator),
+        acquisition_digest=digest_payload(
+            {"observer": observer_descriptor, "executor": descriptor}
+        ),
+        verifier_digest=digest_payload(resolved_verifier),
+        environment_digest=digest_payload(
+            {"executor": descriptor, "observer": observer_descriptor}
+        ),
+    )
+    session = PerceptionSession(observer, artifacts, descriptor)
     observation_builder = CanonicalObservationBuilder()
     observation_store = InMemoryObservationStore()
     active_flow = ActivePerceptionFlow(session)
@@ -107,18 +203,25 @@ def compose_run_coordinator(
         task_skill_runtime=task_skill_runtime,
     )
     if contract_builder is None:
-        resolved_contract_builder = ActionContractBuilder(CanonicalRouteMaterializer())
-    elif isinstance(contract_builder, ActionContractMaterializer):
-        resolved_contract_builder = ActionContractBuilder(contract_builder)
-    else:
-        # Explicit external/benchmark adapters remain edge-only inputs. They
-        # are never wrapped as canonical builders or used by the default path.
+        resolved_contract_builder = ActionTransactionMaterializer(
+            provenance_manifest=provenance_manifest,
+            artifacts=artifacts,
+        )
+    elif isinstance(contract_builder, ActionTransactionMaterializer):
+        if contract_builder.route_encoder is not None:
+            raise UnsafeProductRuntimeConfiguration(
+                "product composition does not accept benchmark or external route encoders"
+            )
         resolved_contract_builder = contract_builder
-    route_owner = (
-        resolved_contract_builder.materializer
-        if isinstance(resolved_contract_builder, ActionContractBuilder)
-        else resolved_contract_builder
-    )
+        if resolved_contract_builder.provenance_manifest is None:
+            resolved_contract_builder.provenance_manifest = provenance_manifest
+        if resolved_contract_builder.artifacts is None:
+            resolved_contract_builder.artifacts = artifacts
+    else:
+        raise UnsafeProductRuntimeConfiguration(
+            "product composition accepts only canonical transaction or route-materializer configuration"
+        )
+    route_owner = resolved_contract_builder
     if hasattr(route_owner, "unified_resolver"):
         route_owner.unified_resolver.router = replace(
             route_owner.unified_resolver.router,
@@ -167,4 +270,14 @@ def compose_run_coordinator(
         recovery,
         RuntimeCommitter(),
         RuntimeResultPhase(artifacts),
+        provenance_manifest,
     )
+
+
+def _runtime_code_digest() -> str:
+    root = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        digest.update(str(path.relative_to(root)).encode())
+        digest.update(path.read_bytes())
+    return "sha256:" + digest.hexdigest()

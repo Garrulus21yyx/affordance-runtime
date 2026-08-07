@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.verification.contracts import (
     CriterionEvaluation,
     CriterionStatus,
+    OutputMaterialization,
     OutputMaterializationEvaluation,
     SuccessExpression,
     TaskCompletionEvaluation,
@@ -55,6 +59,7 @@ class TaskCompletionEvaluator:
         criterion_results: tuple[CriterionEvaluation, ...],
         result_payload: Mapping[str, Any],
         output_source_bindings: Mapping[str, tuple[str, ...]] | None = None,
+        output_materializations: tuple[OutputMaterialization, ...] = (),
         uncertain_external_effects: tuple[str, ...] = (),
     ) -> TaskCompletionEvaluation:
         results = _result_index(criterion_results)
@@ -112,6 +117,7 @@ class TaskCompletionEvaluator:
             results,
             result_payload,
             output_source_bindings or {},
+            output_materializations,
         )
         missing_outputs = tuple(item.output_id for item in output_results if item.status != CriterionStatus.SATISFIED)
 
@@ -136,7 +142,12 @@ class TaskCompletionEvaluator:
             missing_rechecks=missing_rechecks,
             constraint_violations=constraint_violations,
             uncertain_external_effects=unresolved_effects,
-            result_payload=result_payload,
+            result_payload=_materialized_result_payload(
+                task_spec,
+                result_payload,
+                output_materializations,
+                output_results,
+            ),
         )
 
 
@@ -225,26 +236,63 @@ def _evaluate_outputs(
     results: Mapping[str, CriterionEvaluation],
     result_payload: Mapping[str, Any],
     source_bindings: Mapping[str, tuple[str, ...]],
+    materializations: tuple[OutputMaterialization, ...],
 ) -> tuple[OutputMaterializationEvaluation, ...]:
     evaluations: list[OutputMaterializationEvaluation] = []
+    by_output = {item.output_id: item for item in materializations}
+    if len(by_output) != len(materializations):
+        raise ValueError("duplicate output materialization identity")
     for output in task_spec.required_outputs:
-        result_key = output.result_key or output.output_id
         criterion = results.get(output.materialization_criterion_id)
         criterion_status = criterion.status if criterion is not None else CriterionStatus.UNKNOWN
-        materialized = result_key in result_payload and result_payload[result_key] is not None
-        binding_refs = tuple(
-            source_bindings.get(
-                output.output_id,
-                criterion.evidence_refs if criterion is not None else (),
-            )
-        )
-        if not materialized:
+        materialization = by_output.get(output.output_id)
+        binding_refs = materialization.source_binding_refs if materialization is not None else ()
+        evidence_refs = materialization.source_refs if materialization is not None else ()
+        criterion_binding_refs = criterion.source_binding_refs if criterion is not None else ()
+        criterion_evidence_refs = criterion.evidence_refs if criterion is not None else ()
+        owner_binding_refs = source_bindings.get(output.output_id, ())
+        if materialization is None:
             status = CriterionStatus.UNSATISFIED
             reason = "required_output_not_materialized"
+        elif (
+            materialization.task_id != task_spec.task_id
+            or materialization.task_revision != task_spec.revision
+            or materialization.materialization_criterion_id != output.materialization_criterion_id
+        ):
+            status = CriterionStatus.UNSATISFIED
+            reason = "output_materialization_lineage_mismatch"
+        elif materialization.schema_digest != _output_schema_digest(output.schema_id):
+            status = CriterionStatus.UNSATISFIED
+            reason = "output_materialization_schema_mismatch"
+        elif (
+            materialization.redaction_policy_ref != output.redaction_policy_ref
+            or materialization.access_policy_ref != output.access_policy_ref
+            or materialization.retention_policy_ref != output.retention_policy_ref
+        ):
+            status = CriterionStatus.UNSATISFIED
+            reason = "output_materialization_policy_mismatch"
+        elif materialization.artifact_ref and (
+            artifact_error := _artifact_integrity_error(materialization)
+        ):
+            status = CriterionStatus.UNSATISFIED
+            reason = artifact_error
         elif criterion_status != CriterionStatus.SATISFIED:
             status = criterion_status
             reason = "output_materialization_criterion_not_satisfied"
-        elif output.source_binding_required and not binding_refs:
+        elif (
+            set(evidence_refs) != set(criterion_evidence_refs)
+            or set(binding_refs) != set(criterion_binding_refs)
+            or (owner_binding_refs and set(binding_refs) != set(owner_binding_refs))
+        ):
+            status = CriterionStatus.UNSATISFIED
+            reason = "output_materialization_source_lineage_mismatch"
+        elif output.source_binding_required and (
+            not binding_refs
+            or (
+                "source:any" not in output.source_binding_requirement
+                and not set(output.source_binding_requirement).issubset(binding_refs)
+            )
+        ):
             status = CriterionStatus.UNSATISFIED
             reason = "required_output_not_source_bound"
         else:
@@ -261,3 +309,52 @@ def _evaluate_outputs(
             )
         )
     return tuple(evaluations)
+
+
+def _output_schema_digest(schema_id: str) -> str:
+    encoded = json.dumps({"schema_id": schema_id}, sort_keys=True, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _artifact_integrity_error(materialization: OutputMaterialization) -> str:
+    """Recheck a local required artifact at the completion boundary."""
+
+    path = Path(materialization.artifact_ref)
+    if not path.is_file():
+        return "required_output_artifact_missing"
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as artifact:
+            for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return "required_output_artifact_missing"
+    actual_digest = digest.hexdigest()
+    claimed_digest = materialization.content_digest.removeprefix("sha256:")
+    if claimed_digest != actual_digest:
+        return "output_artifact_content_mismatch"
+    return ""
+
+
+def _materialized_result_payload(
+    task_spec: TaskSpec,
+    result_payload: Mapping[str, Any],
+    materializations: tuple[OutputMaterialization, ...],
+    evaluations: tuple[OutputMaterializationEvaluation, ...],
+) -> Mapping[str, Any]:
+    required_keys = {output.result_key or output.output_id for output in task_spec.required_outputs}
+    payload = {key: value for key, value in result_payload.items() if key not in required_keys}
+    specs = {output.output_id: output for output in task_spec.required_outputs}
+    satisfied_outputs = {
+        evaluation.output_id
+        for evaluation in evaluations
+        if evaluation.status == CriterionStatus.SATISFIED
+    }
+    for materialization in materializations:
+        spec = specs.get(materialization.output_id)
+        if spec is None or materialization.output_id not in satisfied_outputs:
+            continue
+        payload[spec.result_key or spec.output_id] = (
+            materialization.value if materialization.value is not None else {"artifact_ref": materialization.artifact_ref}
+        )
+    return payload

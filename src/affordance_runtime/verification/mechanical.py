@@ -153,6 +153,70 @@ class DomAbsentVerifier:
         return VerifierEvaluation(passed=observed, observed=observed)
 
 
+class _DomDataRecordParser(HTMLParser):
+    def __init__(self, identity_attribute: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.identity_attribute = identity_attribute
+        self.records: dict[str, dict[str, str]] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del tag
+        values = {key: (value or "") for key, value in attrs}
+        identity = values.get(self.identity_attribute, "")
+        if identity:
+            self.records[identity] = values
+
+
+@dataclass
+class DomDataRecordsVerifier:
+    """Project typed records from current DOM attributes as structural evidence."""
+
+    kind: str = "dom_data_records"
+
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
+        del receipt
+        if not isinstance(spec.expected, Mapping):
+            return VerifierEvaluation(False)
+        identity_attribute = str(spec.expected.get("identity_attribute") or "")
+        record_ids = tuple(str(item) for item in spec.expected.get("record_ids", ()) if str(item))
+        raw_fields = spec.expected.get("fields")
+        raw_required = spec.expected.get("required_attributes", {})
+        integer_fields = frozenset(str(item) for item in spec.expected.get("integer_fields", ()))
+        if (
+            not identity_attribute
+            or not record_ids
+            or not isinstance(raw_fields, Mapping)
+            or not raw_fields
+            or not isinstance(raw_required, Mapping)
+        ):
+            return VerifierEvaluation(False)
+        fields = {str(name): str(attribute) for name, attribute in raw_fields.items() if str(name) and str(attribute)}
+        required = {str(attribute): str(value) for attribute, value in raw_required.items() if str(attribute)}
+        if len(fields) != len(raw_fields):
+            return VerifierEvaluation(False)
+        parser = _DomDataRecordParser(identity_attribute)
+        parser.feed(str(observation.metadata.get(spec.target) or ""))
+        parser.close()
+        projected: dict[str, dict[str, Any]] = {}
+        for record_id in record_ids:
+            attributes = parser.records.get(record_id)
+            if attributes is None or any(attributes.get(key) != value for key, value in required.items()):
+                return VerifierEvaluation(False, projected)
+            record: dict[str, Any] = {}
+            for field_name, attribute in fields.items():
+                value = attributes.get(attribute)
+                if value is None or value == "":
+                    return VerifierEvaluation(False, projected)
+                record[field_name] = int(value) if field_name in integer_fields and value.isdigit() else value
+            projected[record_id] = record
+        return VerifierEvaluation(True, projected)
+
+
 class _DomAttributeParser(HTMLParser):
     def __init__(self, target_attribute: str, target_value: str, observed_attribute: str) -> None:
         super().__init__(convert_charrefs=True)
@@ -386,6 +450,7 @@ class VerifierLadder:
             ObservationMetadataVerifier(),
             DomContainsVerifier(),
             DomAbsentVerifier(),
+            DomDataRecordsVerifier(),
             DomAttributeVerifier(),
             ControlStateVerifier(),
             SpatialMarkerDeltaVerifier(),
@@ -436,10 +501,8 @@ class VerifierLadder:
                     source=(
                         "api_state"
                         if authoritative_final_recheck
-                        else "external_evaluator"
-                        if adapter_terminal_success or terminal_progress
                         else "execution_receipt"
-                        if spec.kind == "evidence"
+                        if spec.kind == "evidence" or adapter_terminal_success
                         else "independent_http_json"
                         if spec.kind == "http_json"
                         else "post_action_observation"
@@ -468,7 +531,6 @@ class VerifierLadder:
                         if authoritative_final_recheck
                         else "weak"
                         if spec.kind in {"evidence", "state_delta_or_terminal"}
-                        and not (adapter_terminal_success or terminal_progress)
                         else "strong"
                     ),
                     semantic_evidence_key=semantic_evidence_key,

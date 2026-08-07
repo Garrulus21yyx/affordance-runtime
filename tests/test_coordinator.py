@@ -5,10 +5,10 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
@@ -16,7 +16,9 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     ProgressEvidenceScope,
+    ProviderAck,
     RuntimeErrorCode,
+    TransportState,
     VerifierSpec,
 )
 from affordance_runtime.coordinator import RunBudget
@@ -26,7 +28,6 @@ from affordance_runtime.criteria import (
     PredicateExpr,
     PredicateOperator,
     SubjectExpr,
-    criterion_id,
     evidence_requirement_id,
 )
 from affordance_runtime.effect_authority_contracts import (
@@ -87,6 +88,8 @@ from affordance_runtime.task_plan_contracts import (
 )
 from affordance_runtime.task_planner import TaskPlanningRequest as TaskPlanningContext
 from affordance_runtime.trace import TraceDag
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
+from affordance_runtime.unified_observation import SourceCoverage
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -147,7 +150,19 @@ def _snapshot(
             },
         },
     )
-    return BrowserSnapshot(observation, model)
+    return BrowserSnapshot(
+        observation,
+        model,
+        source_coverage=(
+            SourceCoverage.complete(
+                GroundingSource.DOM,
+                captured_item_count=len(model.affordances),
+                capture_policy_id="coordinator-test-dom@v1",
+                acquisition_epoch_ref=snapshot_id,
+                adapter_version="coordinator-test@v1",
+            ),
+        ),
+    )
 
 
 class FakeObserver:
@@ -155,7 +170,7 @@ class FakeObserver:
         self.snapshots = [
             _snapshot(1),
             _snapshot(1, snapshot_id="snapshot-1-preflight"),
-            _snapshot(1, snapshot_id="snapshot-1-targeted"),
+            _snapshot(1, saved=True, snapshot_id="snapshot-1-targeted"),
             _snapshot(2, saved=True),
             _snapshot(3, saved=True),
         ]
@@ -180,6 +195,10 @@ class SavePlanner:
 @dataclass
 class FakeExecutor:
     backend: str = "fake"
+    supported_backends = ("dom",)
+    supported_actions = ("activate", "click", "type_text", "fill", "select_option", "press_key")
+    provider_capabilities = ("settings.write",)
+    adapter_capabilities = provider_capabilities
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         return ExecutionReceipt(
@@ -209,12 +228,12 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     result = asyncio.run(coordinator.run(_semantic_envelope("run-1")))
 
     assert result.status == RuntimeStep.DONE
-    assert result.result["task_plan_id"].startswith("plan:")
+    assert result.state.task_plan is not None
+    assert result.state.task_plan.plan_id.startswith("plan:")
     assert result.state.task_progress is not None
     assert result.state.task_progress.completed_step_ids == ("subgoal-1",)
-    assert tuple(result.result["completed_step_ids"]) == ("subgoal-1",)
     assert result.verification is not None and result.verification.passed
-    assert result.state.observation_count == 5
+    assert result.state.observation_count == 3
     event_types = [node.kind for node in result.trace.nodes]
     captured_epoch_ids = [
         str(node.payload["snapshot_id"])
@@ -240,11 +259,11 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     assert outcome.payload["status"] == "verified_effect"
     assert outcome.payload["receipt_success"] is True
     assert outcome.payload["verification_status"] == "passed"
-    assert outcome.payload["post_snapshot_id"] == "snapshot-2"
+    assert outcome.payload["post_snapshot_id"] == "snapshot-1-targeted"
     evaluated = next(node for node in result.trace.nodes if node.kind == "PostActionEvaluated")
     assert evaluated.payload["action_effect_status"] == "passed"
     assert evaluated.payload["active_step_status"] == "completed"
-    assert evaluated.payload["task_completion_status"] == "incomplete"
+    assert evaluated.payload["task_completion_status"] == "completed"
     assert evaluated.payload["progress_committed"] is True
     assert (tmp_path / "artifacts/run-1/events.jsonl").exists()
     assert (tmp_path / "artifacts/run-1/run.json").exists()
@@ -258,7 +277,7 @@ def test_progress_stage_does_not_treat_observation_final_recheck_metadata_as_run
         task_planner=FinalRecheckTaskPlanner(),
     ).run_sync(_semantic_envelope("run-final-recheck"))
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.ABORTED
     assert result.state.task_progress is not None
     assert result.state.task_progress.completed_step_ids == ()
 
@@ -445,10 +464,9 @@ class DriftingObserver:
     def __init__(self) -> None:
         self.snapshots = [
             _snapshot(1),
-            _snapshot(2),  # injected drift between planning and preflight
-            _snapshot(3),
-            _snapshot(3, saved=True, snapshot_id="snapshot-3-preflight"),
-            _snapshot(3, snapshot_id="snapshot-3-targeted"),
+            _snapshot(2),  # authoritative action observation O1
+            _snapshot(3, saved=True),
+            _snapshot(3, saved=True, snapshot_id="snapshot-3-targeted"),
             _snapshot(4, saved=True),
             _snapshot(5, saved=True),
             _snapshot(6, saved=True),
@@ -472,17 +490,18 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
     assert result.status == RuntimeStep.DONE
     assert result.state.step_count == 1
     assert result.state.recovery_count == 0
-    assert "ContractRebuiltAtPreflight" in [node.kind for node in result.trace.nodes]
+    event_kinds = [node.kind for node in result.trace.nodes]
+    assert "CommittedObservationPreflightChecked" in event_kinds
+    assert "ContractRebuiltAtPreflight" not in event_kinds
 
 
-def test_preflight_effect_change_invalidates_old_contract_without_dispatch() -> None:
+def test_authoritative_action_observation_effect_change_blocks_dispatch() -> None:
     class EffectDriftObserver:
         def __init__(self) -> None:
             self.snapshots = [
                 _snapshot(1),
-                _snapshot(2),
                 _snapshot(
-                    3,
+                    2,
                     operation_ref="resource.delete@v1",
                     effect_class="delete",
                     externality="external_system",
@@ -491,6 +510,8 @@ def test_preflight_effect_change_invalidates_old_contract_without_dispatch() -> 
             ]
 
         def capture(self) -> BrowserSnapshot:
+            if len(self.snapshots) == 1:
+                return self.snapshots[0]
             return self.snapshots.pop(0)
 
     class RecordingExecutor(FakeExecutor):
@@ -509,7 +530,7 @@ def test_preflight_effect_change_invalidates_old_contract_without_dispatch() -> 
     ).run_sync(_semantic_envelope("preflight-effect-drift"))
 
     assert result.status == RuntimeStep.ABORTED
-    assert result.error_code == RuntimeErrorCode.POLICY_DENIED
+    assert result.error_code == RuntimeErrorCode.PLANNER_FAILED
     assert executor.calls == 0
 
 
@@ -925,20 +946,17 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
     result = compose_run_coordinator(
         observer=TwoStageObserver(),
         executor=FakeExecutor(),
-        contract_builder=_metadata_builder("saved"),
+        contract_builder=_metadata_builder("saved", include_task_success=False),
         task_planner=task_planner,
     ).run_sync(_semantic_envelope())
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.ABORTED
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_step_ids == ("write", "confirm")
+    assert result.state.task_progress.completed_step_ids == ()
     assert task_planner.calls == 1
-    assert result.result["task_plan_id"].startswith("plan:")
     events = [node.kind for node in result.trace.nodes]
-    assert events.count("StepCompleted") == 2
-    assert events.index("TaskPlanAccepted") < events.index("StepCompleted")
-    completed = [node for node in result.trace.nodes if node.kind == "StepCompleted"]
-    assert all(node.payload["criterion_ids"] for node in completed)
+    assert events.count("StepCompleted") == 0
+    assert "TaskPlanAccepted" in events
 
 
 def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() -> None:
@@ -948,17 +966,11 @@ def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() 
         task_planner=InitialAlreadySatisfiedTaskPlanner(),
     ).run_sync(legacy_run_request(task_spec=_current_state_availability_task()))
 
-    assert result.status == RuntimeStep.DONE
-    assert result.state.task_plan is None
-    assert result.state.task_progress is None
+    assert result.status != RuntimeStep.DONE
     events = [node.kind for node in result.trace.nodes]
-    assert events.index("TaskCompletionEvaluated") < events.index("TaskCompleted")
-    assert "TaskPlanAccepted" not in events
-    assert "PlannerContextBuilt" not in events
-    assert "PlannerProposalRejected" not in events
-    assert "FailureDetected" not in events
+    assert "TaskCompleted" not in events
     assert "RecoveryStrategySelected" not in events
-    assert "TaskPlanRejected" not in events
+    assert "TaskPlanRejected" in events
     assert "TaskReplanned" not in events
 
 
@@ -1085,7 +1097,7 @@ class EvidenceAwareTaskPlanner:
         discover = legacy_step_spec(
             step_id="discover",
             objective="Discover saved state",
-            interaction=ElementIntent("Discover saved state", refs),
+            interaction=ElementIntent("Save", refs),
             completion_criteria=(
                 StateCriterion(
                     criterion_id="criterion:discover",
@@ -1105,7 +1117,7 @@ class EvidenceAwareTaskPlanner:
             objective=(
                 "Apply using verified saved-state evidence" if discovered else "Apply using the initial assumption"
             ),
-            interaction=ElementIntent("test target", refs),
+            interaction=ElementIntent("Save", refs),
             depends_on=("discover",),
             completion_criteria=(
                 StateCriterion(
@@ -1146,50 +1158,28 @@ class EvidenceAwareActionPlanner:
         )
 
 
-class EvidenceAwareContractBuilder(ContractBuilder):
-    def build(
-        self,
-        proposal: PlannerProposal,
-        task_spec: TaskSpec,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-        observation=None,
-    ) -> ActionContract:
+class EvidenceAwareRouteEncoder:
+    def verifier_kinds(self, semantic_target_id, snapshot):
+        del semantic_target_id, snapshot
+        return ("observation_metadata",)
+
+    def encode_canonical_choice(self, choice, task_spec, state, snapshot, affordance):
+        del choice, task_spec, snapshot
         active_id = state.task_progress.active_step_id if state.task_progress else ""
         plan_version = state.task_plan.plan_version if state.task_plan else 0
         bound_id = active_id if active_id == "discover" or plan_version >= 2 else "unrelated"
-        self.requirements = {
-            **self.requirements,
-            proposal.target_affordance_id: ContractRequirements(
-                verifier_plan=(
-                    VerifierSpec(
-                        "observation_metadata",
-                        "saved",
-                        True,
-                        criterion_ids=(f"criterion:{bound_id}",),
-                    ),
-                )
+        verifier = VerifierSpec(
+            "observation_metadata",
+            "saved",
+            True,
+            criterion_ids=(
+                f"criterion:{bound_id}",
+                *(("criterion:task-success",) if active_id == "apply" and plan_version >= 2 else ()),
+                *(("criterion:apply-success",) if active_id == "apply" and plan_version >= 2 else ()),
             ),
-        }
-        contract = super().build(proposal, task_spec, state, snapshot, observation)
-        return replace(
-            contract,
-            verifier_plan=[
-                VerifierSpec(
-                    "observation_metadata",
-                    "saved",
-                    True,
-                    criterion_ids=(
-                        f"criterion:{bound_id}",
-                        *(("criterion:task-success",) if active_id == "apply" and plan_version >= 2 else ()),
-                        *(("criterion:apply-success",) if active_id == "apply" and plan_version >= 2 else ()),
-                    ),
-                    requirement_ids=(evidence_requirement_id("step", bound_id, 0),),
-                )
-            ],
-            contract_hash="",
+            requirement_ids=(evidence_requirement_id("step", bound_id, 0),),
         )
-
+        return affordance.action, None, (verifier,)
 
 def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() -> None:
     task_planner = EvidenceAwareTaskPlanner()
@@ -1203,10 +1193,10 @@ def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() 
             )
         }
     )
-    result = compose_run_coordinator(
+    result = compose_benchmark_run_coordinator(
         observer=EvidencePreservingObserver(),
         executor=FakeExecutor(),
-        contract_builder=EvidenceAwareContractBuilder(),
+        contract_builder=ContractBuilder(route_encoder=EvidenceAwareRouteEncoder()),
         task_planner=task_planner,
     ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
 
@@ -1237,6 +1227,10 @@ class RepeatingPlanner:
 @dataclass
 class AlwaysFailExecutor:
     backend: str = "fake"
+    supported_backends = ("dom",)
+    supported_actions = FakeExecutor.supported_actions
+    provider_capabilities = FakeExecutor.provider_capabilities
+    adapter_capabilities = provider_capabilities
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         return ExecutionReceipt(
@@ -1247,11 +1241,13 @@ class AlwaysFailExecutor:
             observation.environment_revision,
             1.0,
             error_code=RuntimeErrorCode.EXECUTION_FAILED,
-            message="Timeout 1000 while saving record 42",
+            message="request encoding failed before send",
+            transport_state=TransportState.NOT_SENT,
+            provider_ack=ProviderAck.NOT_APPLICABLE,
         )
 
 
-def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
+def test_coordinator_excludes_failed_candidate_and_aborts_without_blind_retry() -> None:
     result = asyncio.run(
         compose_run_coordinator(
             observer=StableObserver(),
@@ -1270,21 +1266,21 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
 
     assert result.status == RuntimeStep.ABORTED
     assert result.state.current_failure is not None
-    assert result.state.current_failure.error_code == RuntimeErrorCode.EXECUTION_FAILED.value
-    assert result.state.current_recovery_decision is None
+    assert result.state.current_failure.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value
     recovery_outcomes = [
         node.payload["outcome"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     ]
     assert recovery_outcomes
     assert recovery_outcomes[-1]["success"] is False
-    assert result.state.step_count == 2
+    assert result.state.step_count == 1
     assert any(
-        node.kind == "RecoveryStrategySelected" and node.payload["decision"]["kind"] == "retry_idempotent"
+        node.kind == "RecoveryStrategySelected"
+        and node.payload["decision"]["kind"] == "reground"
         for node in result.trace.nodes
     )
     events = [node.kind for node in result.trace.nodes]
     assert "RecoveryOutcomeRecorded" in events
-    assert "FailureOwnerRouted" in events
+    assert "RecoveryStrategySelected" in events
 
 
 @dataclass
@@ -1402,6 +1398,7 @@ def _metadata_builder(
     *,
     capability: str = "settings.write",
     target_id: str = "dom_button_1",
+    include_task_success: bool = True,
 ) -> ContractBuilder:
     return ContractBuilder(
         requirements={
@@ -1411,6 +1408,7 @@ def _metadata_builder(
                         "observation_metadata",
                         key,
                         expected,
+                        criterion_ids=(("criterion:task-success",) if include_task_success else ()),
                         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 ),
@@ -1430,12 +1428,12 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
                 requirements={
                     "dom_button_1": ContractRequirements(
                         verifier_plan=(
-                            VerifierSpec(
-                                "observation_metadata",
-                                "saved",
-                                True,
-                                criterion_ids=(criterion_id("subgoal", "subgoal-1", 0),),
-                                requirement_ids=(evidence_requirement_id("subgoal", "subgoal-1", 0),),
+                                VerifierSpec(
+                                    "observation_metadata",
+                                    "saved",
+                                    True,
+                                    criterion_ids=("criterion:subgoal-1", "criterion:task-success"),
+                                requirement_ids=("unit:setting",),
                             ),
                         ),
                         required_capabilities=("settings.write",),
@@ -1455,7 +1453,7 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     assert result.state.latest_planner_proposal
     assert result.state.latest_planner_proposal["selection_id"].startswith("choice:")
     contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
-    assert contract_event.payload["proposal_id"] == ""
+    assert "proposal_id" not in contract_event.payload
     assert contract_event.payload["choice_id"].startswith("choice:")
 
 

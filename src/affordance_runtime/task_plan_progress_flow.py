@@ -93,15 +93,7 @@ def commit_verified_task_progress(
                 parents=[parent.id],
             )
         else:
-            output_payload = {
-                output.result_key or output.output_id: {
-                    "output_id": output.output_id,
-                    "requirement_ref": output.requirement_ref,
-                    "materialization_criterion_id": output.materialization_criterion_id,
-                }
-                for output in (task_spec.required_outputs if task_spec is not None else ())
-            }
-            state.final_result = output_payload or {
+            state.final_result = {
                 "task_plan_id": state.task_plan.plan_id,
                 "completed_step_ids": list(state.task_progress.completed_step_ids),
             }

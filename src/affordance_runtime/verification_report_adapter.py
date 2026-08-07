@@ -29,65 +29,20 @@ def admit_completion_evidence(
     evidence_context: PredicateEvidenceContext,
     report: VerificationReport | None = None,
 ) -> tuple[CriterionEvaluation, ...]:
+    # Observation metadata is untrusted acquisition data and cannot directly
+    # create typed completion authority. Only registered context/report evidence
+    # below may produce criterion evaluations.
     admitted: dict[str, CriterionEvaluation] = {}
     policies = _success_policies(task_spec.success)
     if evidence_context.current_observation_ref != observation.snapshot_id:
         raise ValueError("completion evidence context must match the current observation")
     context = evidence_context
-    declared = observation.metadata.get("criterion_evaluations")
-    if isinstance(declared, Mapping):
-        for criterion_id, raw_status in declared.items():
-            criterion_id = str(criterion_id)
-            provider = "current_observation_provider"
-            evidence_refs: tuple[str, ...] = ()
-            authoritative_final_recheck = False
-            if isinstance(raw_status, Mapping):
-                provider = str(raw_status.get("provider") or provider)
-                evidence_refs = tuple(str(item) for item in raw_status.get("evidence_refs", ()) if str(item))
-                authoritative_final_recheck = provider in {
-                    "external_evaluator",
-                    "independent_http_json",
-                    "api_state",
-                }
-                status_value = raw_status.get("status", CriterionStatus.ERROR.value)
-            else:
-                status_value = raw_status
-            try:
-                status = CriterionStatus(str(status_value))
-            except ValueError:
-                status = CriterionStatus.ERROR
-            policy = policies.get(criterion_id)
-            policy_digest = ""
-            if policy is not None:
-                evidence = _declared_policy_evidence(criterion_id, raw_status, observation)
-                candidates = (
-                    *((evidence,) if evidence is not None else ()),
-                    *(item for item in context.evidence if criterion_id in item.effect_criterion_ids),
-                )
-                if not any(
-                    evidence_admitted_by_policy(item, policy, context, criterion_id=criterion_id) for item in candidates
-                ):
-                    status = CriterionStatus.UNKNOWN
-                    provider = "success_evidence_rejected_by_policy"
-                    evidence_refs = ()
-                    authoritative_final_recheck = False
-                policy_digest = criterion_policy_digest(criterion_id, policy)
-            admitted[criterion_id] = CriterionEvaluation(
-                criterion_id,
-                status,
-                evidence_refs=evidence_refs,
-                evaluated_at_observation_ref=observation.snapshot_id,
-                reason_code=provider,
-                authoritative_final_recheck=authoritative_final_recheck,
-                policy_digest=policy_digest,
-            )
-
     if report is None:
         return _admit_context_only_success(policies, context, admitted)
     by_criterion: dict[str, list[Any]] = {}
-    for evidence in report.evidence:
-        for criterion_id in evidence.criterion_ids:
-            by_criterion.setdefault(criterion_id, []).append(evidence)
+    for report_evidence in report.evidence:
+        for criterion_id in report_evidence.criterion_ids:
+            by_criterion.setdefault(criterion_id, []).append(report_evidence)
     for criterion_id, evidence_items in by_criterion.items():
         current = tuple(
             item
@@ -144,8 +99,15 @@ def admit_completion_evidence(
         admitted[criterion_id] = CriterionEvaluation(
             criterion_id,
             status,
-            observed_value=tuple(item.observed for item in strong),
+            observed_value=(
+                strong[0].observed
+                if len(strong) == 1
+                else tuple(item.observed for item in strong)
+            ),
             evidence_refs=tuple(item.evidence_id for item in strong if item.evidence_id),
+            source_binding_refs=tuple(
+                dict.fromkeys(item.semantic_evidence_key or item.target for item in strong if item.semantic_evidence_key or item.target)
+            ),
             evaluated_at_observation_ref=observation.snapshot_id,
             reason_code="independent_typed_evidence",
             authoritative_final_recheck=any(
@@ -183,6 +145,7 @@ def _admit_context_only_success(
             criterion_id,
             status,
             evidence_refs=tuple(item.evidence_ref for item in accepted),
+            source_binding_refs=tuple(dict.fromkeys(item.subject_ref for item in accepted)),
             evaluated_at_observation_ref=context.current_observation_ref,
             reason_code="runtime_evidence_context",
             authoritative_final_recheck=policy.validity.value == "final_recheck",

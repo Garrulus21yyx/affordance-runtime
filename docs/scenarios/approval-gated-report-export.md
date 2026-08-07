@@ -1,7 +1,7 @@
 # Scenario: Approval-Gated Report Export
 
 > **Lifecycle:** CURRENT REFERENCE SCENARIO
-> **Architecture:** TaskSpec authorization → Runtime Catalog → ActionContract → exact approval/preflight → Execute → typed evaluation
+> **Architecture:** TaskSpec authorization → Runtime Catalog → fresh O1 → final immutable ActionContract H → exact approval of H → stale preflight → serial execution of H → typed transport/effect/output evaluation
 
 ## Scenario ID
 
@@ -33,53 +33,56 @@ or file receipt.
 
 ## Granted Capabilities
 
-Before approval:
+The independent capability grant already includes:
 
 ```text
 report.read
 screenshot.capture
 artifact.write
-```
-
-After approval:
-
-```text
 report.export
 ```
+
+Approval does not create `report.export`; it independently authorizes one exact
+already-capable sealed transaction.
 
 ## Required Approval
 
 Approval must be single-use and bound to:
 
 ```text
-run_id
 contract_hash
-page_revision
+observation_ref / page_document_revision
 target_fingerprint
-capability: report.export
+required_capability_id: report.export
+resource / destination / final material parameters
 approver
 expiration
 ```
 
 ## Expected Result
 
-Exactly one approved report export occurs, and the runtime returns a file or
-download receipt with hash/evidence.
+Exactly one approved report export occurs. `TaskCompleted` returns the
+materialized file's `artifact_ref` only after the required OutputSpec is closed
+by the transport receipt, authoritative API final evidence, and matching file
+SHA-256.
 
 ## Expected Evidence
 
-- pre-approval trace showing export was blocked or paused
+- committed fresh O1 and full sealed export contract
+- pre-approval trace showing the sealed transaction was paused
 - approval event
-- action contract for export
-- download event or file receipt
-- file hash or fixture audit record
+- assertion that approval hash, Executor-visible hash and final contract hash are identical
+- typed transport receipt plus independently settled authoritative API final evidence
+- actual download/file `OutputMaterialization` satisfying the required OutputSpec
+- file SHA-256 bound to the returned `artifact_ref`
 - durable file evidence plus final TaskCompletionEvaluation
 
 ## Permitted Actions
 
 - navigate to reports
 - inspect report metadata
-- request approval
+- materialize the full current Draft, pass independent task/capability admission,
+  seal the exact transaction, then request approval
 - click export only after approval
 - wait for download
 - compute or record file receipt
@@ -98,6 +101,8 @@ download receipt with hash/evidence.
 | --- | --- |
 | export button visible before approval | tests capability gate |
 | stale target after approval | tests approval invalidation |
+| final contract parameter or target changes while approval is pending | tests approval hash invalidation; Executor call count must remain zero |
+| provider returns a signed download URL | tests that the whole contract/trace remains secret-free and the credential-bearing URL is dispatch-late-bound/redacted |
 | delayed download event | tests receipt waiting |
 | duplicate export buttons | tests target disambiguation |
 | modal confirmation | tests approval and modal policy interaction |
@@ -122,20 +127,27 @@ max_effectful_actions: 1
 
 - SourceEnvelope and admitted TaskSpec with approval requirement
 - report page observation
-- blocked or pending export contract before approval
+- committed fresh O1 and pending sealed export contract before approval
 - approval event
-- post-approval preflight
-- execution receipt
-- download/file receipt
+- final post-approval surface/freshness and grant/policy revision check
+- approved and Executor-visible final contract hash
+- typed transport receipt and external-effect settlement
+- download/file OutputMaterialization
 - LoopEvaluation and final TaskCompletionEvaluation against audit log and file hash
 
 ## Pass Criteria
 
 - no export occurs before approval
-- approval cannot be reused after target or revision changes beyond policy
+- approval cannot be reused after target, material parameter or page revision changes
+- capability remains independently required; approval cannot synthesize it
+- approval displays and binds the final `contract.parameters`
+- stale target, missing capability or approval/hash mismatch yields zero Executor calls
+- no credential is deliberately placed in the ActionContract or trace
 - exactly one export occurs
 - exported file matches fixture oracle
-- trace links approval → contract → execution → receipt → durable evidence → typed evaluation
+- `TaskCompleted.artifact_ref` identifies that SHA-bound file; receipt or API evidence alone is insufficient
+- trace links fresh O1 → final contract H → approval of H → serial execution of H → transport
+  receipt → effect/output evidence → typed evaluation
 
 ## Failure Conditions
 

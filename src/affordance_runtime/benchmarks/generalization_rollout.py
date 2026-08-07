@@ -20,6 +20,7 @@ from affordance_runtime.benchmarks.adaptive_routing import (
     AdaptiveRoutingAblationRun,
     run_adaptive_routing_case,
 )
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator as compose_run_coordinator
 from affordance_runtime.benchmarks.generalization_evidence import (
     GeneralizationControl,
     GeneralizationEvidenceCase,
@@ -31,7 +32,6 @@ from affordance_runtime.benchmarks.generalization_evidence import (
     write_generalization_evidence_report,
 )
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,

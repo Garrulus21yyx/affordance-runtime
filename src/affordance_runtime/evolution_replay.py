@@ -7,7 +7,7 @@ import threading
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from affordance_runtime.benchmarks.local import LocalSaasRunCase
 from affordance_runtime.benchmarks.metrics import aggregate
@@ -71,11 +71,59 @@ MANDATORY_REPLAY_CATEGORIES = {"original", "task_family", "global_smoke", "safet
 CANDIDATE_RUNTIME_ID = "fresh-runtime-no-structural-verifier"
 
 
+@dataclass(frozen=True)
+class StrictOfflineReplayResult:
+    report: EvolutionReplayReport
+    live_call_count: int = 0
+
+
+@dataclass
+class StrictOfflineReplayRunner:
+    """Replay only pre-recorded results; a cache miss has no live fallback."""
+
+    recorded: Mapping[tuple[str, str, int], BenchmarkRun]
+    live_call_count: int = 0
+
+    def __call__(
+        self,
+        requests: list[ReplayRequest],
+        artifact: EvolutionArtifact,
+        output_dir: Path,
+    ) -> list[ExecutedReplay]:
+        del artifact, output_dir
+        executed: list[ExecutedReplay] = []
+        for request in requests:
+            key = (request.category, request.task_id, request.seed)
+            run = self.recorded.get(key)
+            if run is None:
+                raise ValueError(f"strict offline replay miss: {key}")
+            executed.append(ExecutedReplay(request.category, run))
+        return executed
+
+
+def build_strict_offline_evolution_report(
+    benchmark_report_path: Path,
+    output_dir: Path,
+    *,
+    replay_runner: StrictOfflineReplayRunner,
+) -> StrictOfflineReplayResult:
+    """Run replay only through a caller-supplied offline runner; live fallback is impossible."""
+
+    if not isinstance(replay_runner, StrictOfflineReplayRunner):
+        raise TypeError("strict replay requires a recorded-only runner")
+    report = build_evolution_report(
+        benchmark_report_path,
+        output_dir,
+        replay_runner=replay_runner,
+    )
+    return StrictOfflineReplayResult(report, replay_runner.live_call_count)
+
+
 def build_evolution_report(
     benchmark_report_path: Path,
     output_dir: Path,
     *,
-    replay_runner: ReplayRunner | None = None,
+    replay_runner: StrictOfflineReplayRunner,
 ) -> EvolutionReplayReport:
     benchmark = json.loads(benchmark_report_path.read_text(encoding="utf-8"))
     runs = [BenchmarkRun(**row) for row in benchmark["runs"]]
@@ -109,7 +157,9 @@ def build_evolution_report(
     )
 
     requests = _replay_requests(source)
-    executed = (replay_runner or run_fresh_candidate_replays)(requests, artifact, output_dir / "candidate-runs")
+    if not isinstance(replay_runner, StrictOfflineReplayRunner):
+        raise TypeError("evolution replay requires a recorded-only runner")
+    executed = replay_runner(requests, artifact, output_dir / "candidate-runs")
     evidence = [_evidence(item.category, item.run) for item in executed]
     family_runs = [item.run for item in executed if item.category == "task_family"]
     metrics = aggregate(family_runs).values
@@ -190,6 +240,23 @@ def run_fresh_candidate_replays(
         thread.join(timeout=2)
 
 
+def recorded_replay_runner_from_report(benchmark_report_path: Path) -> StrictOfflineReplayRunner:
+    """Build a no-live replay index from full-runtime rows in one immutable report."""
+
+    benchmark = json.loads(benchmark_report_path.read_text(encoding="utf-8"))
+    runs = [BenchmarkRun(**row) for row in benchmark["runs"]]
+    source = next((run for run in runs if not run.success and run.verifier_false_accepts), None)
+    if source is None:
+        raise ValueError("benchmark report contains no executable verifier failure")
+    full = {(run.task_id, run.seed): run for run in runs if run.variant == "full_runtime"}
+    recorded: dict[tuple[str, str, int], BenchmarkRun] = {}
+    for request in _replay_requests(source):
+        run = full.get((request.task_id, request.seed))
+        if run is not None:
+            recorded[(request.category, request.task_id, request.seed)] = run
+    return StrictOfflineReplayRunner(recorded)
+
+
 def _replay_requests(source: BenchmarkRun) -> list[ReplayRequest]:
     task_ids = [task.task_id for task in mvp_benchmark_tasks()]
     pricing = next(task_id for task_id in task_ids if "read_only" in task_id)
@@ -229,7 +296,7 @@ def _prove_persisted_load_and_rollback(
     profile.load(persisted.artifacts[artifact_id])
     enabled = profile.features_for("reversible_settings_update").structural_verification
     profile.rollback(artifact_id)
-    disabled_after_runtime_rollback = not profile.features_for("reversible_settings_update").structural_verification
+    restored_safe_default = profile.features_for("reversible_settings_update").structural_verification
 
     rolled_back = deepcopy(persisted)
     rolled_back.rollback(artifact_id, reason="M6 rollback proof", reviewer="automated-regression-gate")
@@ -240,7 +307,7 @@ def _prove_persisted_load_and_rollback(
         CandidateRuntimeProfile().load(reloaded.artifacts[artifact_id])
     except ValueError:
         rejected_after_registry_rollback = True
-    return enabled and disabled_after_runtime_rollback and rejected_after_registry_rollback
+    return enabled and restored_safe_default and rejected_after_registry_rollback
 
 
 def _write_report(report: EvolutionReplayReport, output_dir: Path, suite_version: str) -> None:

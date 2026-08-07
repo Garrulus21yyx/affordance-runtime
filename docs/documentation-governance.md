@@ -23,6 +23,23 @@ authoritative target architecture
 → archived history
 ```
 
+Precedence applies only when two documents answer the same scoped question. It
+is not a license for target or historical migration prose to override a newer
+current-code observation. The scope owners are:
+
+| Question | Sole maintained owner |
+|---|---|
+| What semantics and invariants must the target satisfy? | authoritative target architecture |
+| In what order, with which exit/deletion gates, does migration occur? | authoritative evolution plan |
+| What does code at the reviewed revision actually do now? | implementation status |
+| Which bounded slice is scheduled now? | current implementation plan |
+| What is the durable P0–P5 product direction? | project plan |
+
+Thus “unique authority” is scope-qualified: there is one target-semantics
+owner and one migration-ledger owner, while implementation truth has its own
+single factual owner. Historical problem statements retained inside the
+evolution plan are rationale, not current-code facts.
+
 Target design and implementation truth are deliberately separate. A target
 contract is not implemented merely because it is authoritative. A current code
 fact does not redefine the target merely because compatibility still exists.

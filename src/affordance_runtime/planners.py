@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.choice_contracts import ChoicePlanningRequest, SelectChoice
 from affordance_runtime.contracts import (
     ProgressEvidenceScope,
@@ -29,6 +28,7 @@ from affordance_runtime.planning_contracts import (
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.task_intake import TaskRequirement, TaskSemanticPayload
 from affordance_runtime.task_planner import TaskPlanningNoPlan, TaskPlanningRequest
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer
 from affordance_runtime.verification.contracts import (
     CriterionPolicy,
     EvidenceValidityMode,
@@ -77,8 +77,35 @@ def pricing_required_outputs() -> tuple[OutputSpec, ...]:
         OutputSpec(
             output_id="plans",
             requirement_ref="requirement:output:1",
-            materialization_criterion_id="criterion:pricing-enterprise-visible",
+            materialization_criterion_id="criterion:pricing-output",
+            schema_id="json:object@v1",
         ),
+    )
+
+
+def export_required_outputs() -> tuple[OutputSpec, ...]:
+    """The flagship export returns the exact downloaded artifact."""
+
+    return (
+        OutputSpec(
+            output_id="report",
+            requirement_ref="requirement:output:1",
+            materialization_criterion_id="criterion:export-final",
+            schema_id="artifact:file@v1",
+        ),
+    )
+
+
+def export_output_requirement(source_anchor_ref: str) -> TaskRequirement:
+    return TaskRequirement(
+        requirement_id="requirement:output:1",
+        payload=TaskSemanticPayload(
+            kind="output",
+            subject="report",
+            relation="materialized_by",
+            value="criterion:export-final",
+        ),
+        source_anchor_refs=(source_anchor_ref,),
     )
 
 
@@ -212,60 +239,93 @@ class ExportPlanner:
         )
 
 
-def pricing_contract_builder() -> ActionContractMaterializer:
-    return ActionContractMaterializer(
+def pricing_contract_builder() -> ActionTransactionMaterializer:
+    pro_requirements = ContractRequirements(
+        verifier_plan=(
+            VerifierSpec(
+                "dom_contains",
+                "html",
+                'data-plan="pro" data-visible="true"',
+                criterion_ids=("criterion:pricing-pro-visible",),
+                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+            ),
+        )
+    )
+    enterprise_requirements = ContractRequirements(
+        verifier_plan=(
+            VerifierSpec(
+                "dom_contains",
+                "html",
+                'data-plan="enterprise" data-visible="true"',
+                criterion_ids=("criterion:pricing-enterprise-visible",),
+                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+            ),
+            VerifierSpec(
+                "dom_data_records",
+                "html",
+                {
+                    "identity_attribute": "data-plan",
+                    "record_ids": ("pro", "enterprise"),
+                    "fields": {
+                        "users": "data-users",
+                        "projects": "data-projects",
+                        "support": "data-support",
+                    },
+                    "required_attributes": {"data-visible": "true"},
+                    "integer_fields": ("users", "projects"),
+                },
+                criterion_ids=("criterion:pricing-output",),
+                requirement_ids=("requirement:output:1",),
+                evidence_key="pricing-plan-limits",
+            ),
+        )
+    )
+    return ActionTransactionMaterializer(
         requirements={
-            "dom_button_1": ContractRequirements(
-                verifier_plan=(
-                    VerifierSpec(
-                        "dom_contains",
-                        "html",
-                        'data-plan="pro" data-visible="true"',
-                        criterion_ids=("criterion:pricing-pro-visible",),
-                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
-                    ),
-                )
-            ),
-            "dom_button_2": ContractRequirements(
-                verifier_plan=(
-                    VerifierSpec(
-                        "dom_contains",
-                        "html",
-                        'data-plan="enterprise" data-visible="true"',
-                        criterion_ids=("criterion:pricing-enterprise-visible",),
-                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
-                    ),
-                )
-            ),
+            "semantic:show-pro-limits:d560036f53a2": pro_requirements,
+            "semantic:show-enterprise-limits:7ac4b4b12278": enterprise_requirements,
+            # Compatibility for old proposal-bound fixture callers. Runtime
+            # binding uses the semantic keys above, which remain stable when a
+            # held-out fixture inserts or reorders unrelated DOM controls.
+            "dom_button_1": pro_requirements,
+            "dom_button_2": enterprise_requirements,
         }
     )
 
 
-def settings_contract_builder(api_url: str) -> ActionContractMaterializer:
-    return ActionContractMaterializer(
+def settings_contract_builder(api_url: str) -> ActionTransactionMaterializer:
+    dismiss_requirements = ContractRequirements(
+        verifier_plan=(VerifierSpec("dom_absent", "html", 'id="blocking-modal"'),)
+    )
+    setting_requirements = ContractRequirements(
+        verifier_plan=(
+            VerifierSpec(
+                "http_json",
+                api_url,
+                {"path": "settings.notifications", "value": "enabled"},
+                criterion_ids=("criterion:settings",),
+                requirement_ids=("requirement:effect:1",),
+                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+            ),
+        ),
+        required_capabilities=("settings.write.reversible",),
+        risk=RiskLevel.MEDIUM,
+        idempotency_key="notifications:enabled",
+        compensation="restore notifications=disabled",
+    )
+    return ActionTransactionMaterializer(
         requirements={
-            "dom_button_1": ContractRequirements(
-                verifier_plan=(VerifierSpec("dom_absent", "html", 'id="blocking-modal"'),)
-            ),
-            "dom_button_2": ContractRequirements(
-                verifier_plan=(
-                    VerifierSpec(
-                        "http_json",
-                        api_url,
-                        {"path": "settings.notifications", "value": "enabled"},
-                    ),
-                ),
-                required_capabilities=("settings.write.reversible",),
-                risk=RiskLevel.MEDIUM,
-                idempotency_key="notifications:enabled",
-                compensation="restore notifications=disabled",
-            ),
+            "semantic:dismiss:4c17285e9237": dismiss_requirements,
+            "semantic:enable-notifications:3f140815c7e9": setting_requirements,
+            # Compatibility for old proposal-bound fixture callers.
+            "dom_button_1": dismiss_requirements,
+            "dom_button_2": setting_requirements,
         }
     )
 
 
-def export_contract_builder(api_url: str) -> ActionContractMaterializer:
-    return ActionContractMaterializer(
+def export_contract_builder(api_url: str) -> ActionTransactionMaterializer:
+    return ActionTransactionMaterializer(
         requirements={
             "*": ContractRequirements(
                 verifier_plan=(
@@ -279,6 +339,7 @@ def export_contract_builder(api_url: str) -> ActionContractMaterializer:
                         },
                         criterion_ids=("criterion:export-effect", "criterion:export-final"),
                         requirement_ids=("requirement:effect:1",),
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 ),
                 required_capabilities=("report.export",),

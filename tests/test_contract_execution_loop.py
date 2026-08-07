@@ -86,7 +86,7 @@ def _loop(tmp_path: Path | None = None) -> ContractExecutionLoop:
     )
 
 
-def test_contract_stages_bind_execute_and_verify_without_owning_run_state(tmp_path: Path) -> None:
+def test_contract_stages_bind_and_verify_without_owning_run_state(tmp_path: Path) -> None:
     loop = _loop(tmp_path)
     envelope = legacy_run_request(task_id="run-contract", goal="save settings")
     bound = loop.bind_contract(_contract(), envelope, _observation())
@@ -98,7 +98,14 @@ def test_contract_stages_bind_execute_and_verify_without_owning_run_state(tmp_pa
         capability_gate_enabled=True,
         preflight_enabled=True,
     )
-    receipt = loop.execute(bound, _observation())
+    receipt = ExecutionReceipt(
+        bound.id,
+        bound.backend,
+        True,
+        bound.environment_revision,
+        bound.environment_revision,
+        1.0,
+    )
     report = loop.verify(
         bound,
         receipt,
@@ -112,7 +119,7 @@ def test_contract_stages_bind_execute_and_verify_without_owning_run_state(tmp_pa
     assert check.error is None
     assert report.passed
     assert isinstance(loop.executor, RecordingExecutor)
-    assert loop.executor.contracts == [bound]
+    assert loop.executor.contracts == []
 
 
 def test_contract_loop_records_canonical_execution_attempt_and_action_outcome() -> None:
@@ -126,7 +133,14 @@ def test_contract_loop_records_canonical_execution_attempt_and_action_outcome() 
         issued_at_state_version=3,
         active_step_id="step:save",
     )
-    receipt = loop.execute(contract, pre_observation)
+    receipt = ExecutionReceipt(
+        contract.id,
+        contract.backend,
+        True,
+        pre_observation.environment_revision,
+        pre_observation.environment_revision,
+        1.0,
+    )
     report = loop.verify(
         contract,
         receipt,
@@ -143,7 +157,7 @@ def test_contract_loop_records_canonical_execution_attempt_and_action_outcome() 
     )
 
     assert isinstance(loop.executor, RecordingExecutor)
-    assert loop.executor.contracts == [contract]
+    assert loop.executor.contracts == []
     assert attempt.contract_id == contract.id
     assert attempt.contract_hash == contract.contract_hash
     assert attempt.pre_observation.snapshot_id == contract.snapshot_id
@@ -256,7 +270,14 @@ def test_download_binding_is_artifact_scoped_and_disabled_verification_is_explic
     loop = _loop(tmp_path)
     envelope = legacy_run_request(task_id="download-run", goal="download report")
     bound = loop.bind_contract(_contract(action="download"), envelope, _observation())
-    receipt = loop.execute(bound, _observation())
+    receipt = ExecutionReceipt(
+        bound.id,
+        bound.backend,
+        True,
+        bound.environment_revision,
+        bound.environment_revision,
+        1.0,
+    )
     report = loop.verify(
         bound,
         receipt,

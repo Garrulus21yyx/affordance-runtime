@@ -574,7 +574,8 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
         result={"send-receipt": {"id": "send:1"}},
     )
 
-    assert completion is not None and completion.completed
+    assert completion is not None and not completion.completed
+    assert completion.required_output_results[0].reason_code == "output_materialization_source_lineage_mismatch"
     assert result.task_spec.required_outputs[0].requirement_ref == "requirement:output:1"
     output_requirement = next(
         item for item in result.task_spec.requirements if item.requirement_id == "requirement:output:1"

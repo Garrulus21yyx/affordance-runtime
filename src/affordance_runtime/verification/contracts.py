@@ -11,7 +11,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from affordance_runtime.immutable import freeze_json
+from affordance_runtime.execution_context import ensure_secret_free
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 
 class _FrozenModel(BaseModel):
@@ -194,6 +195,10 @@ class OutputSpec(_FrozenModel):
     materialization_criterion_id: str = Field(min_length=1)
     result_key: str = ""
     source_binding_requirement: tuple[str, ...] = ("source:any",)
+    schema_id: str = "json:any@v1"
+    redaction_policy_ref: Literal["redact-secrets@v1"] = "redact-secrets@v1"
+    access_policy_ref: Literal["task-owner@v1"] = "task-owner@v1"
+    retention_policy_ref: Literal["run-scoped@v1"] = "run-scoped@v1"
 
     @property
     def source_binding_required(self) -> bool:
@@ -220,6 +225,7 @@ class CriterionEvaluation:
     status: CriterionStatus
     observed_value: Any = None
     evidence_refs: tuple[str, ...] = ()
+    source_binding_refs: tuple[str, ...] = ()
     missing_source_kinds: tuple[str, ...] = ()
     evaluated_at_observation_ref: str = ""
     reason_code: str = ""
@@ -231,6 +237,7 @@ class CriterionEvaluation:
             raise ValueError("criterion evaluation requires criterion_id")
         object.__setattr__(self, "observed_value", freeze_json(self.observed_value))
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+        object.__setattr__(self, "source_binding_refs", tuple(self.source_binding_refs))
         object.__setattr__(self, "missing_source_kinds", tuple(self.missing_source_kinds))
 
 
@@ -246,6 +253,73 @@ class OutputMaterializationEvaluation:
     def __post_init__(self) -> None:
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
         object.__setattr__(self, "source_binding_refs", tuple(self.source_binding_refs))
+
+
+@dataclass(frozen=True)
+class OutputMaterialization:
+    """An actual output value/artifact with closed lineage and privacy policy."""
+
+    output_id: str
+    materialization_criterion_id: str
+    schema_digest: str
+    content_digest: str
+    task_id: str
+    task_revision: int
+    observation_ref: str
+    source_refs: tuple[str, ...]
+    source_binding_refs: tuple[str, ...] = ()
+    value: Any | None = None
+    artifact_ref: str = ""
+    step_id: str = ""
+    contract_id: str = ""
+    redaction_policy_ref: str = "redact-secrets@v1"
+    access_policy_ref: str = "task-owner@v1"
+    retention_policy_ref: str = "run-scoped@v1"
+    redacted: bool = False
+
+    def __post_init__(self) -> None:
+        if not all(
+            item.strip()
+            for item in (
+                self.output_id,
+                self.materialization_criterion_id,
+                self.schema_digest,
+                self.content_digest,
+                self.task_id,
+                self.observation_ref,
+                self.redaction_policy_ref,
+                self.access_policy_ref,
+                self.retention_policy_ref,
+            )
+        ):
+            raise ValueError("output materialization requires complete identity, lineage, and policy")
+        if self.task_revision < 1:
+            raise ValueError("output materialization task revision must be positive")
+        if (
+            self.redaction_policy_ref != "redact-secrets@v1"
+            or self.access_policy_ref != "task-owner@v1"
+            or self.retention_policy_ref != "run-scoped@v1"
+        ):
+            raise ValueError("output materialization policy is not registered")
+        if bool(self.artifact_ref) == (self.value is not None):
+            raise ValueError("output materialization requires exactly one value or artifact ref")
+        if not self.source_refs or any(not item.strip() for item in self.source_refs):
+            raise ValueError("output materialization requires source lineage")
+        if self.value is not None:
+            ensure_secret_free(self.value)
+            encoded = json.dumps(
+                to_json_compatible(self.value),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            expected_digest = "sha256:" + hashlib.sha256(encoded).hexdigest()
+            if self.content_digest != expected_digest:
+                raise ValueError("output materialization content digest mismatch")
+        else:
+            ensure_secret_free(self.artifact_ref)
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+        object.__setattr__(self, "value", freeze_json(self.value))
 
 
 @dataclass(frozen=True)

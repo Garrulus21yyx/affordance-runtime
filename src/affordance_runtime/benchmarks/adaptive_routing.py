@@ -12,13 +12,13 @@ import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, ClassVar
 
 from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator as compose_run_coordinator
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -157,6 +157,10 @@ class _AblationObserver:
             self.visual_model_calls += 1
         return self._snapshot(self.sequence)
 
+    @staticmethod
+    def coordinate_transform_is_current(expected: object) -> bool:
+        return bool(getattr(expected, "transform_digest", ""))
+
     def _snapshot(self, sequence: int) -> BrowserSnapshot:
         snapshot_id = f"{self.profile}-{self.case_id}-snapshot-{sequence}"
         environment_revision = f"saved:{self.world.saved}"
@@ -248,6 +252,8 @@ class _AblationObserver:
                 environment_revision,
                 page_revision,
                 artifact_refs=((f"screen-{sequence}.png",) if source == "visual" else ()),
+                acquisition_exhaustive=True,
+                source_scope="controlled-ablation-surface",
             )
             for source in sources
         )
@@ -280,6 +286,9 @@ class _AblationObserver:
 
 @dataclass
 class _AblationDomExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities: ClassVar[tuple[str, ...]] = ("settings.write",)
+    adapter_capabilities: ClassVar[tuple[str, ...]] = provider_capabilities
     world: _AblationWorld
     fail_before_dispatch: bool = False
     backend: str = "dom"

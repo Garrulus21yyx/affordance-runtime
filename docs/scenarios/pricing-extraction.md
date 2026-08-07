@@ -17,6 +17,8 @@ Find the pricing page, extract plan limits, and return evidence.
 - The home page links to pricing.
 - Pricing content may load asynchronously.
 - Some plan details may be hidden behind expandable UI.
+- Fixture v2.1.0 may insert held-out distractors that change DOM ordering and
+  ephemeral element IDs.
 
 ## Task Constraints
 
@@ -79,6 +81,7 @@ references.
 | duplicate labels across plans | tests target disambiguation |
 | modal banner | tests bounded modal recovery |
 | hidden details accordions | tests multi-step read-only navigation |
+| held-out distractor insertion/reordering | tests semantic target identity rather than DOM-order IDs |
 
 ## Ground Truth Oracle
 
@@ -115,6 +118,7 @@ max_effectful_actions: 0
 - no effectful action executes
 - trace required fields are complete
 - stale snapshot perturbations are either blocked or re-observed before action
+- held-out layout changes preserve the intended pricing target through its semantic ID
 
 ## Failure Conditions
 

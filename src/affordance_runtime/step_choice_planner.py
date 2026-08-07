@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Awaitable, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -25,7 +25,7 @@ class DisplayedChoiceCandidate(BaseModel):
 
 
 class StepChoicePlanner(Protocol):
-    def select(self, request: ChoicePlanningRequest) -> ChoicePlannerResponse: ...
+    def select(self, request: ChoicePlanningRequest) -> ChoicePlannerResponse | Awaitable[ChoicePlannerResponse]: ...
 
 
 @dataclass

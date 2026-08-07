@@ -4,7 +4,6 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.choice_contracts import ChoicePlanningRequest, SelectChoice
@@ -32,6 +31,12 @@ from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.task_intake import UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    EvidenceSourceKind,
+    PredicateEvidence,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -83,11 +88,28 @@ class MultiStageObserver:
                 },
             },
         )
-        return BrowserSnapshot(observation, model)
+        return BrowserSnapshot(
+            observation,
+            model,
+            predicate_evidence=(
+                PredicateEvidence(
+                    evidence_ref=f"observation:{snapshot_id}:confirmed",
+                    subject_ref="dom_button_2",
+                    observed_value="satisfied" if self.world.confirmed else "unsatisfied",
+                    source_kind=EvidenceSourceKind.DOM_STATE,
+                    assurance=AssuranceLevel.STRUCTURAL,
+                    observation_ref=snapshot_id,
+                    effect_criterion_ids=("criterion:confirmed",),
+                ),
+            ),
+        )
 
 
 @dataclass
 class MultiStageExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities = ()
+    adapter_capabilities = ()
     world: MultiStageWorld
     backend: str = "dom"
 
@@ -199,20 +221,22 @@ class MultiStageIntentAndPlanModel:
                         {
                             "step_id": "discover",
                             "objective": "Discover current state",
-                            "subject": "current state",
+                            "subject": "dom_button_1",
                             "relation": "is_visible",
                             "requirement_refs": ["requirement:effect:1"],
                             "effect_authorization_refs": ["requirement:effect:1"],
                             "effectful": True,
+                            "operation_class": "reversible_write",
                         },
                         {
                             "step_id": "confirm",
                             "objective": "Confirm discovered state",
-                            "subject": "discovered state",
+                            "subject": "dom_button_2",
                             "relation": "is_completed",
                             "requirement_refs": ["requirement:effect:2"],
                             "effect_authorization_refs": ["requirement:effect:2"],
                             "effectful": True,
+                            "operation_class": "reversible_write",
                             "depends_on": ["discover"],
                         },
                     ],

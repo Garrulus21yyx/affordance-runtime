@@ -183,8 +183,8 @@ class SourceEnvelopeBuilder:
             source_index = int(source.source_id.rsplit(":", maxsplit=1)[-1])
             source_by_kind_index[source.kind, source_index] = source
         for index, descriptor in enumerate(external_exact_anchors):
-            source = source_by_kind_index.get((descriptor.source_kind, descriptor.source_index))
-            if source is None:
+            external_source = source_by_kind_index.get((descriptor.source_kind, descriptor.source_index))
+            if external_source is None:
                 raise ValueError("external exact anchor references an absent source")
             anchors.append(
                 SourceAnchor(
@@ -192,7 +192,7 @@ class SourceEnvelopeBuilder:
                         f"{request.request_id}:anchor:{descriptor.source_kind.value}:"
                         f"{descriptor.material_field.value}:{index}"
                     ),
-                    source_id=source.source_id,
+                    source_id=external_source.source_id,
                     material_field=descriptor.material_field,
                     span_start=descriptor.span_start,
                     span_end=descriptor.span_end,

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from threading import RLock
+from typing import Any, Iterator
 from urllib.parse import urlsplit
 
 from affordance_runtime.action_choice_authority import contract_matches_task_authority
@@ -16,8 +18,109 @@ from affordance_runtime.contracts import (
     risk_level_rank,
 )
 from affordance_runtime.effect_authority_contracts import ActionAuthorityProof, EffectClass
+from affordance_runtime.execution_context import EffectiveCapabilities, ExecutorCapabilityDescriptor
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.unified_observation import UnifiedObservation
+
+
+class _LinearizedSet(set[Any]):
+    def __init__(self, values: Any, lock: RLock):
+        super().__init__(values)
+        self._lock = lock
+
+    def clear(self) -> None:
+        with self._lock:
+            super().clear()
+
+    def add(self, element: Any) -> None:
+        with self._lock:
+            super().add(element)
+
+    def discard(self, element: Any) -> None:
+        with self._lock:
+            super().discard(element)
+
+    def remove(self, element: Any) -> None:
+        with self._lock:
+            super().remove(element)
+
+    def update(self, *others: Any) -> None:
+        with self._lock:
+            super().update(*others)
+
+    def pop(self) -> Any:
+        with self._lock:
+            return super().pop()
+
+    def difference_update(self, *others: Any) -> None:
+        with self._lock:
+            super().difference_update(*others)
+
+    def intersection_update(self, *others: Any) -> None:
+        with self._lock:
+            super().intersection_update(*others)
+
+    def symmetric_difference_update(self, other: Any) -> None:
+        with self._lock:
+            super().symmetric_difference_update(other)
+
+    def __ior__(self, other: Any) -> _LinearizedSet:  # type: ignore[override,misc]
+        with self._lock:
+            super().__ior__(other)
+            return self
+
+    def __iand__(self, other: Any) -> _LinearizedSet:  # type: ignore[override,misc]
+        with self._lock:
+            super().__iand__(other)
+            return self
+
+    def __isub__(self, other: Any) -> _LinearizedSet:  # type: ignore[override,misc]
+        with self._lock:
+            super().__isub__(other)
+            return self
+
+    def __ixor__(self, other: Any) -> _LinearizedSet:  # type: ignore[override,misc]
+        with self._lock:
+            super().__ixor__(other)
+            return self
+
+class _LinearizedDict(dict[str, ApprovalToken]):
+    def __init__(self, values: dict[str, ApprovalToken], lock: RLock):
+        super().__init__(values)
+        self._lock = lock
+
+    def clear(self) -> None:
+        with self._lock:
+            super().clear()
+
+    def __setitem__(self, key: str, value: ApprovalToken) -> None:
+        with self._lock:
+            super().__setitem__(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        with self._lock:
+            super().__delitem__(key)
+
+    def pop(self, key: str, default: Any = None) -> ApprovalToken | Any:
+        with self._lock:
+            return super().pop(key, default)
+
+    def popitem(self) -> tuple[str, ApprovalToken]:
+        with self._lock:
+            return super().popitem()
+
+    def setdefault(self, key: str, default: ApprovalToken | None = None) -> ApprovalToken:
+        with self._lock:
+            return super().setdefault(key, default)  # type: ignore[arg-type]
+
+    def update(self, *args: Any, **kwargs: ApprovalToken) -> None:
+        with self._lock:
+            super().update(*args, **kwargs)
+
+    def __ior__(self, other: Any) -> _LinearizedDict:  # type: ignore[override,misc]
+        with self._lock:
+            super().__ior__(other)
+            return self
 
 
 @dataclass
@@ -26,14 +129,89 @@ class CapabilityGate:
     approval_required_risks: set[RiskLevel] = field(default_factory=lambda: {RiskLevel.HIGH, RiskLevel.IRREVERSIBLE})
     approval_required_capabilities: set[str] = field(default_factory=set)
     approval_tokens: dict[str, ApprovalToken] = field(default_factory=dict)
-    # Compatibility-only debug approvals. Task-level coordination should use
-    # bound, expiring ApprovalTokens.
-    approved_contract_ids: set[str] = field(default_factory=set)
+    executor_descriptor: ExecutorCapabilityDescriptor | None = None
+    product_allowed_actions: frozenset[str] = frozenset()
+    product_allowed_capabilities: frozenset[str] | None = None
+    grant_source: "CapabilityGate | None" = field(default=None, repr=False)
+    _linearization_lock: RLock = field(default_factory=RLock, repr=False)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        lock = self.__dict__.get("_linearization_lock")
+        if lock is not None and name in {
+            "granted_capabilities",
+            "approval_required_risks",
+            "approval_required_capabilities",
+            "approval_tokens",
+        }:
+            with lock:
+                if name == "approval_tokens" and not isinstance(value, _LinearizedDict):
+                    value = _LinearizedDict(dict(value), lock)
+                elif name != "approval_tokens" and not isinstance(value, _LinearizedSet):
+                    value = _LinearizedSet(value, lock)
+                object.__setattr__(self, name, value)
+            return
+        object.__setattr__(self, name, value)
+
+    def __post_init__(self) -> None:
+        self.granted_capabilities = _LinearizedSet(self.granted_capabilities, self._linearization_lock)
+        self.approval_required_risks = _LinearizedSet(
+            self.approval_required_risks, self._linearization_lock
+        )
+        self.approval_required_capabilities = _LinearizedSet(
+            self.approval_required_capabilities, self._linearization_lock
+        )
+        self.approval_tokens = _LinearizedDict(self.approval_tokens, self._linearization_lock)
+
+    @contextmanager
+    def linearized_authority(self) -> Iterator[None]:
+        """Hold every mutable grant owner through admission and intent commit."""
+
+        owners: list[CapabilityGate] = []
+        current: CapabilityGate | None = self
+        while current is not None:
+            if any(current is owner for owner in owners):
+                raise ValueError("CapabilityGate grant_source cycle")
+            owners.append(current)
+            current = current.grant_source
+        ordered = sorted(owners, key=id)
+        for owner in ordered:
+            owner._linearization_lock.acquire()
+        try:
+            yield
+        finally:
+            for owner in reversed(ordered):
+                owner._linearization_lock.release()
 
     def check(self, contract: ActionContract) -> RuntimeErrorCode | None:
-        missing = [
-            capability for capability in contract.required_capabilities if capability not in self.granted_capabilities
-        ]
+        with self._linearization_lock:
+            return self._check_locked(contract)
+
+    def _check_locked(self, contract: ActionContract) -> RuntimeErrorCode | None:
+        inherited = self.grant_source.granted_capabilities if self.grant_source is not None else set()
+        current_grants = frozenset(self.granted_capabilities | inherited)
+        missing = [capability for capability in contract.required_capabilities if capability not in current_grants]
+        descriptor = self.executor_descriptor
+        if descriptor is not None:
+            if contract.backend not in descriptor.supported_backends or contract.action not in descriptor.actions_for(contract.backend):
+                return RuntimeErrorCode.BACKEND_UNAVAILABLE
+            if self.product_allowed_actions and contract.action not in self.product_allowed_actions:
+                return RuntimeErrorCode.CAPABILITY_DENIED
+            policy_caps = (
+                self.product_allowed_capabilities
+                if self.product_allowed_capabilities is not None
+                else current_grants
+            )
+            effective = EffectiveCapabilities.intersect(
+                provider=descriptor.provider_capabilities_for(contract.backend),
+                adapter=descriptor.adapter_capabilities_for(contract.backend),
+                product_policy=policy_caps,
+                user_grants=current_grants,
+            )
+            missing.extend(
+                capability
+                for capability in contract.required_capabilities
+                if capability not in effective.capabilities
+            )
         if missing:
             return RuntimeErrorCode.CAPABILITY_DENIED
         effective_risk = _effective_contract_risk(contract)
@@ -41,8 +219,6 @@ class CapabilityGate:
             set(contract.required_capabilities) & self.approval_required_capabilities
         )
         if requires_approval:
-            if contract.id in self.approved_contract_ids:
-                return None
             if not any(token.matches(contract) for token in self.approval_tokens.values()):
                 return RuntimeErrorCode.APPROVAL_REQUIRED
         return None
@@ -50,17 +226,18 @@ class CapabilityGate:
     def authorize(self, contract: ActionContract) -> RuntimeErrorCode | None:
         """Check policy and atomically consume a matching approval token."""
 
-        error = self.check(contract)
-        if error is not None:
-            return error
-        effective_risk = _effective_contract_risk(contract)
-        requires_approval = effective_risk in self.approval_required_risks or bool(
-            set(contract.required_capabilities) & self.approval_required_capabilities
-        )
-        if requires_approval and contract.id not in self.approved_contract_ids:
-            token = next(item for item in self.approval_tokens.values() if item.matches(contract))
-            token.consume()
-        return None
+        with self._linearization_lock:
+            error = self._check_locked(contract)
+            if error is not None:
+                return error
+            effective_risk = _effective_contract_risk(contract)
+            requires_approval = effective_risk in self.approval_required_risks or bool(
+                set(contract.required_capabilities) & self.approval_required_capabilities
+            )
+            if requires_approval:
+                token = next(item for item in self.approval_tokens.values() if item.matches(contract))
+                token.consume()
+            return None
 
 
 def _effective_contract_risk(contract: ActionContract) -> RiskLevel:

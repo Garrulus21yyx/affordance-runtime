@@ -12,7 +12,7 @@ from typing import Any, Sequence
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.browsergym_action_schema import BrowserGymAction
 from affordance_runtime.benchmarks.browsergym_dom import browsergym_dom_adapter, browsergym_svg_observer
-from affordance_runtime.benchmarks.browsergym_encoder import BrowserGymContractBuilder
+from affordance_runtime.benchmarks.browsergym_encoder import GeneralistBrowserGymRouteEncoder
 from affordance_runtime.benchmarks.browsergym_episode_runner import (
     BROWSERGYM_TERMINAL_COMPLETION_POLICY,
     BrowserGymExecutor,
@@ -32,8 +32,8 @@ from affordance_runtime.benchmarks.browsergym_types import (
     BrowserGymPolicy,
     BrowserGymPolicyRequest,
 )
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator as compose_run_coordinator
 from affordance_runtime.browser_session import BrowserSession
-from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.coordinator import RunBudget
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
@@ -53,6 +53,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -253,7 +254,6 @@ def run_browsergym_episode(
     )
     run_id = f"browsergym-{task_id}-seed-{seed}"
     unsupported: list[str] = []
-    bindings: dict[str, BrowserGymAction] = {}
     task_spec = TaskSpec(
         task_id=run_id,
         revision=1,
@@ -283,7 +283,9 @@ def run_browsergym_episode(
                 max_recoveries=3,
                 max_effectful_actions=max_steps + 1,
             ),
-            contract_builder=BrowserGymContractBuilder(bindings=bindings),
+            contract_builder=ActionTransactionMaterializer(
+                route_encoder=GeneralistBrowserGymRouteEncoder()
+            ),
         ).run_sync(legacy_run_request(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]))
         planner_error = next(
             (

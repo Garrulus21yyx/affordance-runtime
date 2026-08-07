@@ -18,12 +18,18 @@ from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 
 
 class RuntimeBudgetView(Protocol):
-    max_steps: int
-    max_observations: int
-    max_recoveries: int
-    max_replans: int
-    max_effectful_actions: int
-    max_active_perception_observations: int
+    @property
+    def max_steps(self) -> int: ...
+    @property
+    def max_observations(self) -> int: ...
+    @property
+    def max_recoveries(self) -> int: ...
+    @property
+    def max_replans(self) -> int: ...
+    @property
+    def max_effectful_actions(self) -> int: ...
+    @property
+    def max_active_perception_observations(self) -> int: ...
 
 
 def perception_state_view(

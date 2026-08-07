@@ -21,10 +21,9 @@ from affordance_runtime.simplified_runtime_contracts import StepSpec
 from affordance_runtime.unified_observation import (
     CanonicalTarget,
     UnifiedObservation,
-    UnifiedObservationTarget,
 )
 
-CanonicalChoiceTarget: TypeAlias = CanonicalTarget | UnifiedObservationTarget
+CanonicalChoiceTarget: TypeAlias = CanonicalTarget
 
 
 @dataclass(frozen=True)
@@ -117,7 +116,7 @@ def _validate_scope_identity(
     return ""
 
 
-def _supports(target: UnifiedObservationTarget, kind: PlannerActionKind) -> bool:
+def _supports(target: CanonicalTarget, kind: PlannerActionKind) -> bool:
     compatible = {
         PlannerActionKind.ACTIVATE: {"activate", "click"},
         PlannerActionKind.FOCUS: {"focus", "fill", "type", "type_text"},
@@ -130,7 +129,7 @@ def _supports(target: UnifiedObservationTarget, kind: PlannerActionKind) -> bool
     return bool(compatible.intersection(target.supported_actions))
 
 
-def _numeric_state_value(target: UnifiedObservationTarget) -> int | float | None:
+def _numeric_state_value(target: CanonicalTarget) -> int | float | None:
     for key in ("value", "current_value", "aria-valuenow"):
         value = target.state.get(key)
         if isinstance(value, bool):
@@ -161,7 +160,7 @@ def _numeric_expected_value(value: object) -> int | float | None:
     return None
 
 
-def _target_looks_text_entry(target: UnifiedObservationTarget) -> bool:
+def _target_looks_text_entry(target: CanonicalTarget) -> bool:
     role = target.role.casefold()
     input_type = str(target.state.get("input_type", "")).casefold()
     return role in {"textbox", "searchbox", "textarea"} or input_type in {
@@ -176,7 +175,7 @@ def _target_looks_text_entry(target: UnifiedObservationTarget) -> bool:
     }
 
 
-def _target_looks_slider(target: UnifiedObservationTarget) -> bool:
+def _target_looks_slider(target: CanonicalTarget) -> bool:
     role = target.role.casefold()
     input_type = str(target.state.get("input_type", "")).casefold()
     return role in {"slider", "range"} or input_type == "range"

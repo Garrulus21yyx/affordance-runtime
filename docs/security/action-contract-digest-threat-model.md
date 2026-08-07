@@ -4,12 +4,22 @@
 > **Implementation scope:** existing ActionContract digest identity and approval-token binding
 > **Target alignment:** canonical observation/Catalog identity and typed evaluation requirements remain hash-critical under the current authoritative architecture
 
+> **MVP scope:** trusted single-process, single-coordinator, serial execution. This
+> model protects final-contract immutability and approval/execution hash equality;
+> it does not claim malicious-insider, multi-worker, multi-tenant or hard-crash
+> dispatch security.
+
 ## Boundary
 
 `ActionContract.contract_hash` is the stable digest used to bind an accepted
 Runtime action to approval, preflight, execution, typed evaluation, trace, and
 recovery evidence. The digest is meaningful only if every hash-critical field is
 deeply immutable before the hash is computed.
+
+For the MVP final transaction, digest equality is paired with fresh
+snapshot/page/target preflight. Extended execution-context, live-surface,
+coordinate, capability-manifest and provenance fields are hash-critical only
+when an admitted scenario actually uses them.
 
 ## Failure model
 
@@ -31,9 +41,18 @@ compute_hash() now identified payload B
 This is a correctness and security issue because approval tokens match
 `contract_hash`.
 
+The same class of failure occurs when code uses `replace()` or a partial
+preflight patch to refresh proof/candidate identity while retaining an old
+locator, route, payload, verifier, live surface, coordinate transform, provider
+schema, or capability envelope. A hash over that newly mixed object only proves
+that the inconsistent mixture was not subsequently modified; it does not prove
+same-epoch or semantic consistency.
+
 ## Hash-critical fields
 
-SAR-1 treats at least these `ActionContract` fields as hash-critical:
+SAR-1 treats every present executable field as hash-critical. The MVP always
+includes operation, target, final parameters/payload and freshness identity;
+the extended fields below are conditional on the adapter/scenario:
 
 - `locator`
 - `parameters`
@@ -44,6 +63,19 @@ SAR-1 treats at least these `ActionContract` fields as hash-critical:
 - `fallback_backends`
 - route, grounding, gesture, scope, snapshot/page/target identity fields
 - idempotency, compensation, timeout, risk, backend, action, schema version
+- execution-context requirement and live-surface generation/owner identity
+- document/frame and source/destination coordinate spaces, screenshot/viewport,
+  crop/scroll, DPR, zoom, scale, orientation, display/window origin, and
+  transform digest
+- provider/model/tool/action-schema descriptor identity/version/digest,
+  adapter support, effective capability intersection, and current grant refs
+- source provenance and trusted-control bindings for values that enter
+  effectful fields, plus exact-contract approval requirements; the approval
+  grant itself binds the completed contract hash externally
+- the deterministic, secret-free RouteBinding: canonical unsigned
+  target/destination resource encoding, schema/encoder/route-policy and
+  application-payload digests, opaque credential scope, principal/audience, and
+  closed late-binding policy digest
 
 Analytics-only data must not be added to `ActionContract`. It belongs in trace
 or artifact records.
@@ -51,6 +83,53 @@ or artifact records.
 `verifier_plan` is the current implementation-era field name recorded by this
 threat model. The target contract replaces provider planning with typed
 `evaluation_requirements`; the immutability and stale-hash rule is unchanged.
+
+## Sealed transaction closure
+
+The target construction path is:
+
+```text
+ActionContractDraft
+→ full materialization from current committed observation and state view
+→ task-authority proof and capability intersection
+→ SealedActionContract
+→ exact approval of final contract hash H
+→ snapshot/page/target/expiry preflight for H
+→ serial Executor consumes the same immutable H
+```
+
+A sealed contract is non-replaceable and non-patchable. Any observation,
+session/surface generation, route, target, parameter, coordinate transform,
+provider schema, capability, provenance, verifier, risk, or effect change
+requires a new draft, a complete materialization, a new digest, and renewed
+admission. Old approval does not migrate when a hash-critical or authority
+field changes.
+
+Digest equality does not prove cross-thread revocation ordering. The current MVP
+does not claim it: policy/approval/preflight and execution are serialized by one
+trusted coordinator. Linearizable policy/schema revocation, state-version CAS,
+clone-resistant/global permits and worker fencing are future hardening for a
+broader threat model, not P4/P5 blockers.
+
+The full RouteBinding—not only `request_payload`—is secret-free by schema.
+Credential-bearing URI userinfo/query, cookie/token/private key/session handle,
+signed-URL signature/expiry, and request signing material are forbidden from
+the contract and every trace/checkpoint projection. The contract binds the
+unsigned canonical resource plus opaque credential scope/principal/audience;
+the Executor injects closed-allowlist auth/transport material only at the send
+boundary, and it cannot change operation, resource, destination, body, or named
+application parameters.
+
+The effective capability envelope is the intersection of the frozen
+provider/model/tool-schema descriptor, environment adapter support, product
+policy, and current user grant. Unknown actions, absent required safety
+features, schema/version drift, and capability-service failure are typed denial
+or unavailable outcomes. They never synthesize grants or downgrade validation.
+
+Web, email, PDF, DOM, AX, OCR, screenshot, notification, memory/skill, and tool
+output are untrusted observation. Their content may supply a TaskSpec-authorized
+value through a typed source-to-field binding, but cannot create user authority,
+capability, approval, policy, TaskSpec revision, or control flow.
 
 ## Canonical algorithm
 
@@ -97,7 +176,9 @@ SAR-1.1 closes the remaining hash-reachable verifier-plan gap by freezing
 sequences at construction. `ActionContract` now validates any supplied
 `contract_hash` against the canonical frozen payload and rejects stale hashes;
 callers that intentionally derive a replacement contract must pass an empty
-hash so the digest is recomputed from the new payload. The same closure freezes
+hash so the digest is recomputed from the new payload. That is current-era
+compatibility behavior only; the target `SealedActionContract` prohibits derived
+replacement and requires full rematerialization. The same closure freezes
 `SourceAssertion.value`, preventing source-local perception assertions from
 retaining caller-owned mutable JSON values after arbitration or grounding has
 accepted them.
@@ -154,3 +235,24 @@ dictionaries after the route is selected.
 
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.
+
+## Replay and trace threats
+
+Replay is an offline simulation boundary. A missing event, receipt, or artifact
+must fail explicitly; it cannot call a live executor, driver, browser, device,
+API, network, credential, or account. Simulated receipts and real receipts are
+different typed records. Re-execution requires a new live run identity and a
+new observation/admission/approval/dispatch lifecycle.
+
+Hashing does not make trace data safe to retain. Contract payloads, screenshots,
+outputs, evidence, and artifact references remain subject to minimization,
+redaction, encryption, access, and retention policy. Secret-bearing values must
+not be duplicated into general trace payloads merely to improve audit detail.
+
+## Complexity boundary
+
+This threat-model closure requires deeply immutable value objects, one
+transaction materializer, deterministic capability/source-to-field checks, and
+negative tests. It does not require a general dynamic-taint engine, a new
+microservice or discovery service, a universal provenance graph, or a
+whole-program theorem prover.

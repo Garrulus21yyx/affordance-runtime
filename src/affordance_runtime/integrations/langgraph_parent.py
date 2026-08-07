@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib import import_module
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, TypedDict
@@ -89,7 +90,10 @@ class ExternalTaskClient:
 def run_langgraph_parent(output_dir: Path) -> dict[str, Any]:
     """Complete pricing and approval export through a compiled LangGraph."""
 
-    from langgraph.graph import END, START, StateGraph
+    graph_module = import_module("langgraph.graph")
+    END = graph_module.END
+    START = graph_module.START
+    StateGraph = graph_module.StateGraph
 
     output_dir.mkdir(parents=True, exist_ok=True)
     client = ExternalTaskClient(output_dir / "runtime-artifacts")

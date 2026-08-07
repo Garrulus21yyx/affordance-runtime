@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from affordance_runtime.action_effect_classifier import classify_action
 from affordance_runtime.choice_contracts import ActionChoice, ChoiceRole
 from affordance_runtime.effect_authority_contracts import (
@@ -67,7 +69,7 @@ def authorize_runtime_signature(
         return _authorize_enabling(task_spec, signature, requirement_refs)
 
     scopes = tuple(
-        known[ref].payload.effect_authorization_scope
+        cast(EffectAuthorizationScope, known[ref].payload.effect_authorization_scope)
         for ref in requirement_refs
         if ref in task_spec.allowed_effect_refs and known[ref].payload.effect_authorization_scope is not None
     )

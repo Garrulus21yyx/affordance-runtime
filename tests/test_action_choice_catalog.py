@@ -38,7 +38,14 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
-from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
+from affordance_runtime.unified_observation import (
+    CoverageCompleteness,
+    CoverageStatus,
+    CoverageTermination,
+    SourceCoverage,
+    UnifiedObservation,
+    UnifiedObservationTarget,
+)
 from affordance_runtime.verification.contracts import AssuranceLevel, CriterionPolicy, SuccessExpression
 
 
@@ -284,6 +291,21 @@ def _delete_observation(target: str) -> UnifiedObservation:
                 source_assurance=AssuranceLevel.STRUCTURAL,
                 externality="local",
                 reversibility="reversible",
+            ),
+        ),
+        source_coverage=(
+            SourceCoverage(
+                GroundingSource.DOM,
+                "test-complete@v1",
+                1,
+                False,
+                0,
+                CoverageCompleteness.COMPLETE,
+                CoverageStatus.OBSERVED,
+                acquisition_epoch_ref="snapshot:delete",
+                source_scope="document",
+                exhaustive=True,
+                termination_reason=CoverageTermination.EXHAUSTED,
             ),
         ),
     )
@@ -766,6 +788,21 @@ def test_actual_binding_risk_escalation_requires_approval() -> None:
             ),
         ),
         bindings=(candidate,),
+        source_coverage=(
+            SourceCoverage(
+                GroundingSource.DOM,
+                "test-complete@v1",
+                1,
+                False,
+                0,
+                CoverageCompleteness.COMPLETE,
+                CoverageStatus.OBSERVED,
+                acquisition_epoch_ref="snapshot:route-risk",
+                source_scope="document",
+                exhaustive=True,
+                termination_reason=CoverageTermination.EXHAUSTED,
+            ),
+        ),
     )
     choice = ActionChoice(
         choice_id="choice:route-risk",

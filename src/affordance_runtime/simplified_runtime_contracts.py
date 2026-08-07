@@ -485,6 +485,9 @@ class StepSpec:
     enabling_need: str = ""
     max_actions: int = 10
     max_recoveries: int = 2
+    operation_class: str = ""
+    material_bindings: tuple[tuple[str, str], ...] = ()
+    task_usage: str = "execute"
 
     def __post_init__(self) -> None:
         _require_nonblank("step_id", self.step_id)
@@ -519,6 +522,24 @@ class StepSpec:
             raise ValueError("step action budget must be positive")
         if self.max_recoveries < 0:
             raise ValueError("step recovery budget cannot be negative")
+        if self.operation_class and self.operation_class not in {
+            "read_only",
+            "navigation",
+            "reversible_write",
+            "external_side_effect",
+            "irreversible",
+        }:
+            raise ValueError("unsupported typed step operation class")
+        _require_tuple("step material bindings", self.material_bindings)
+        material_fields: set[str] = set()
+        for field_name, field_value in self.material_bindings:
+            _require_nonblank("step material binding field", field_name)
+            _require_nonblank("step material binding value", field_value)
+            if field_name in material_fields:
+                raise ValueError("step material binding fields must be unique")
+            material_fields.add(field_name)
+        if not self.task_usage.strip():
+            raise ValueError("step task usage cannot be blank")
         from affordance_runtime.criteria import AllOf, AnyOf, Not, OpenSemanticCriterion, PredicateExpr
 
         canonical_types = (PredicateExpr, AllOf, AnyOf, Not, OpenSemanticCriterion)
@@ -646,9 +667,33 @@ class ExecutionAttempt:
 
 
 class EffectSettlementStatus(StrEnum):
-    CONFIRMED_OCCURRED = "confirmed_occurred"
-    CONFIRMED_NOT_OCCURRED = "confirmed_not_occurred"
+    OCCURRED = "occurred"
+    NOT_OCCURRED = "not_occurred"
     STILL_UNCERTAIN = "still_uncertain"
+
+
+class CollateralSettlementStatus(StrEnum):
+    CLEAR = "clear"
+    DETECTED = "detected"
+    UNRESOLVED = "unresolved"
+
+
+@dataclass(frozen=True)
+class EffectSettlement:
+    attempt_id: str
+    status: EffectSettlementStatus
+    evidence_refs: tuple[str, ...]
+    collateral_status: CollateralSettlementStatus
+    collateral_evidence_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_nonblank("attempt_id", self.attempt_id)
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+        object.__setattr__(self, "collateral_evidence_refs", tuple(self.collateral_evidence_refs))
+        if self.status != EffectSettlementStatus.STILL_UNCERTAIN and not self.evidence_refs:
+            raise ValueError("settled effect requires post-action evidence")
+        if self.collateral_status != CollateralSettlementStatus.UNRESOLVED and not self.collateral_evidence_refs:
+            raise ValueError("settled collateral status requires scoped probe evidence")
 
 
 @dataclass(frozen=True)

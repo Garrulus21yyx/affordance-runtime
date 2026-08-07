@@ -56,6 +56,10 @@ class InteractivePricingPage:
 
     def __init__(self) -> None:
         self.html = pricing_html()
+        self.main_frame = object()
+
+    def on(self, event: str, handler: object) -> None:
+        del event, handler
 
     def content(self) -> str:
         return self.html
@@ -76,6 +80,13 @@ class InteractivePricingPage:
     def screenshot(self, **kwargs: Any) -> bytes:
         del kwargs
         return b"fixture"
+
+    def evaluate(self, expression: str, argument: object = None) -> object:
+        if "document.activeElement" in expression:
+            return ""
+        if "innerText" in expression:
+            return ""
+        return {}
 
 
 def _requirement(
@@ -141,14 +152,40 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     )
 
     assert result.status == RuntimeStep.DONE
-    assert result.result["plans"]["output_id"] == "plans"
-    assert result.result["plans"]["materialization_criterion_id"] == ("criterion:pricing-enterprise-visible")
-    assert result.state.step_count == 2
+    assert result.result["plans"] == PRICING_DATA
     assert result.state.step_count == 2
     assert result.state.last_receipt is not None
     assert result.state.last_receipt.evidence["selector"] == "#show-enterprise"
     observation_artifacts = list((tmp_path / "artifacts/pricing-test/observations").glob("*.json"))
     assert len(observation_artifacts) >= result.state.step_count + 1
+
+
+def test_pricing_verifiers_bind_semantic_targets_when_heldout_dom_order_shifts() -> None:
+    page = InteractivePricingPage()
+    page.html = pricing_html(101, "heldout")
+    session = BrowserSession(page)
+    snapshot = session.capture(task_instruction="Reveal Pro and Enterprise plan limits")
+    sources_by_target = {
+        target.semantic_target_id: tuple(
+            candidate.source_affordance_id for candidate in target.grounding_candidates
+        )
+        for target in snapshot.unified_affordances
+    }
+    pro_target = "semantic:show-pro-limits:d560036f53a2"
+    enterprise_target = "semantic:show-enterprise-limits:7ac4b4b12278"
+
+    assert sources_by_target[pro_target] == ("dom_button_2",)
+    assert sources_by_target[enterprise_target] == ("dom_button_3",)
+
+    requirements = pricing_contract_builder().requirements
+    assert requirements[pro_target] is requirements["dom_button_1"]
+    assert requirements[enterprise_target] is requirements["dom_button_2"]
+    assert requirements[pro_target].verifier_plan[0].expected == (
+        'data-plan="pro" data-visible="true"'
+    )
+    assert requirements[enterprise_target].verifier_plan[0].expected == (
+        'data-plan="enterprise" data-visible="true"'
+    )
 
 
 def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> None:
@@ -423,7 +460,7 @@ def test_normal_cli_entrypoint_loads_digest_bound_accepted_recovery_profile(tmp_
 
     trace_path = next(Path(item) for item in result["artifacts"] if str(item).endswith("events.jsonl"))
     first = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[0])
-    assert result["status"] == RuntimeStep.FAILED.value
+    assert result["status"] == RuntimeStep.DONE.value
     assert result["runtime_profile_digest"].startswith("sha256:")
     assert result["loaded_profile_artifact_ids"] == [artifact.id]
     assert first["payload"]["runtime_profile_digest"] == result["runtime_profile_digest"]

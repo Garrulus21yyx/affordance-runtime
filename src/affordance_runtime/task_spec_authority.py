@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Iterable
 from uuid import uuid4
 
 from pydantic import ConfigDict, Field, ValidationError
@@ -206,7 +207,7 @@ class TaskSpecAuthority:
             effect.model_copy(update={"effect_id": effect.effect_id or f"requirement:effect:{index}"})
             for index, effect in enumerate(proposal.requested_effects, start=1)
         )
-        requirements = _canonical_requirements(proposal, effects, envelope)
+        requirements = _canonical_requirements(proposal, effects, envelope, self.policy)
         requirement_ids = {item.requirement_id for item in requirements}
         try:
             canonical_issues = _canonical_binding_issues(proposal, requirements, effects)
@@ -374,7 +375,7 @@ class TaskSpecAuthority:
         return issues
 
 
-def _ordered_unique(values: object) -> tuple[str, ...]:
+def _ordered_unique(values: Iterable[object]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(item) for item in values if str(item)))
 
 
@@ -405,6 +406,7 @@ def _canonical_requirements(
     proposal: MinimalIntentProposal,
     effects: tuple[RequestedEffect, ...],
     envelope: SourceEnvelope,
+    policy: CompilationPolicy,
 ) -> tuple[TaskRequirement, ...]:
     whole = envelope.whole_request_anchor.anchor_id
     bindings_by_effect = {
@@ -434,7 +436,11 @@ def _canonical_requirements(
                 material_effect_kind=effect.material_effect_kind,
                 capability=effect.capability,
                 effect_authorization_scope=_effect_authorization_scope(
-                    effect, bindings_by_effect[effect.effect_id]
+                    effect,
+                    bindings_by_effect[effect.effect_id],
+                    allow_structural_high_risk=(
+                        effect.operation_ref in policy.structural_high_risk_operation_refs
+                    ),
                 ),
             ),
             source_anchor_refs=(effect.source_ref,),
@@ -510,6 +516,8 @@ def _canonical_requirements(
 def _effect_authorization_scope(
     effect: RequestedEffect,
     parameters: tuple[ParameterAuthorization, ...],
+    *,
+    allow_structural_high_risk: bool = False,
 ) -> EffectAuthorizationScope:
     effect_class = {
         OperationClass.READ_ONLY: EffectClass.READ,
@@ -555,7 +563,7 @@ def _effect_authorization_scope(
     return EffectAuthorizationScope(
         requirement_ref=effect.effect_id,
         operation_constraint=operation_ref,
-        resource_scope=ResourceScopeRef(effect.target, (effect.source_ref,)),
+        resource_scope=ResourceScopeRef(effect.resource_ref or effect.target, (effect.source_ref,)),
         destination_scope=destination,
         parameters=parameters,
         effect_class=effect_class,
@@ -563,7 +571,9 @@ def _effect_authorization_scope(
         reversibility=reversibility,
         risk_policy_ref=(high_risk_policy.policy_ref if high_risk_policy else "runtime-standard@v1"),
         minimum_source_assurance=(
-            high_risk_policy.minimum_assurance
+            AssuranceLevel.STRUCTURAL
+            if allow_structural_high_risk
+            else high_risk_policy.minimum_assurance
             if high_risk_policy is not None
             else AssuranceLevel.AUTHORITATIVE
             if high_risk
@@ -695,17 +705,18 @@ def _canonical_binding_issues(
                 )
             )
     for criterion_id in proposal.external_effect_criterion_ids:
-        policy = success_policies.get(criterion_id)
-        if policy is not None and (
-            policy.satisfaction.value != "action_caused"
-            or policy.validity.value != "recent_action"
-            or not policy.causal_lineage_required
+        criterion_policy = success_policies.get(criterion_id)
+        if criterion_policy is not None and (
+            criterion_policy.satisfaction.value != "action_caused"
+            or criterion_policy.validity.value != "recent_action"
+            or not criterion_policy.causal_lineage_required
         ):
             issues.append(CompilationIssue(code="external_effect_policy_invalid", field=criterion_id))
     for criterion_id in proposal.final_recheck_criterion_ids:
-        policy = success_policies.get(criterion_id)
-        if policy is not None and (
-            policy.validity.value != "final_recheck" or policy.minimum_assurance.value != "authoritative"
+        criterion_policy = success_policies.get(criterion_id)
+        if criterion_policy is not None and (
+            criterion_policy.validity.value != "final_recheck"
+            or criterion_policy.minimum_assurance.value != "authoritative"
         ):
             issues.append(CompilationIssue(code="final_recheck_policy_invalid", field=criterion_id))
     if len(proposal.constraint_criterion_ids) > len(proposal.constraints):

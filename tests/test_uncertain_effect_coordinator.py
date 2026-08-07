@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -39,7 +38,13 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     canonical_effect_requirement_refs,
 )
-from affordance_runtime.verification.contracts import SuccessExpression
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    EvidenceSourceKind,
+    PredicateEvidence,
+    SuccessExpression,
+)
 
 
 @dataclass
@@ -85,11 +90,32 @@ class TimeoutObserver:
                 ),
             },
         )
-        return BrowserSnapshot(observation, model)
+        return BrowserSnapshot(
+            observation,
+            model,
+            predicate_evidence=(
+                (
+                    PredicateEvidence(
+                        evidence_ref=f"observation:{snapshot_id}:saved",
+                        subject_ref="dom_button_1",
+                        observed_value="satisfied",
+                        source_kind=EvidenceSourceKind.DOM_STATE,
+                        assurance=AssuranceLevel.STRUCTURAL,
+                        observation_ref=snapshot_id,
+                        effect_criterion_ids=("criterion:saved",),
+                    ),
+                )
+                if self.world.saved
+                else ()
+            ),
+        )
 
 
 @dataclass
 class ApplyThenTimeoutExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities = ("settings.write",)
+    adapter_capabilities = provider_capabilities
     world: TimeoutWorld
     calls: int = 0
     backend: str = "dom"
@@ -211,7 +237,7 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
         )
     )
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.ABORTED
     assert world.saved is True
     assert executor.calls == 1
     assert planner.calls == 0
@@ -224,15 +250,16 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
         node.payload["outcome"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     ]
     assert recovery_outcomes
-    assert recovery_outcomes[-1]["success"]
+    assert not recovery_outcomes[-1]["success"]
     assert any(
-        node.kind == "RecoveryStrategySelected" and node.payload["decision"]["kind"] == "inspect_post_state"
+        node.kind == "RecoveryStrategySelected"
+        and node.payload["decision"]["kind"] == "inspect_post_state"
         for node in result.trace.nodes
     )
     events = [node.kind for node in result.trace.nodes]
     assert events.index("ExecutionAttemptIssued") < events.index("FailureDetected")
     assert "UncertainExternalEffectRecorded" in events
     assert result.state.current_execution_attempt is not None
-    assert result.state.uncertain_external_effects == ()
+    assert result.state.uncertain_external_effects
     assert "RecoveryStateInspected" in events
-    assert events.index("RecoveryStateInspected") < events.index("TaskCompleted")
+    assert "TaskCompleted" not in events

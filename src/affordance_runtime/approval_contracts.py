@@ -38,7 +38,10 @@ def present_approval(contract: ActionContract) -> ApprovalPresentation:
         operation_ref=signature.operation_ref or "unproven",
         resource_ref=signature.resource_ref or "unproven",
         destination_ref=signature.destination_ref or "",
-        material_parameters=FrozenDict(signature.parameter_values),
+        # The exact contract hash already seals the provider-ready route.  Show
+        # that same finalized parameter object so approval never describes a
+        # narrower payload than the executor will receive.
+        material_parameters=FrozenDict(contract.parameters),
         effect_class=signature.effect_class.value if signature.effect_class else "unknown",
         externality=signature.externality.value if signature.externality else "unknown",
         reversibility=signature.reversibility.value if signature.reversibility else "unknown",

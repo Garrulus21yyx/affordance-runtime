@@ -2,7 +2,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -10,8 +9,10 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     ProgressEvidenceScope,
+    ProviderAck,
     RiskLevel,
     RuntimeErrorCode,
+    TransportState,
     VerifierSpec,
 )
 from affordance_runtime.coordinator import RunBudget
@@ -43,6 +44,10 @@ from affordance_runtime.task_intake import (
     TaskRequirement,
     TaskSemanticPayload,
     TaskSpec,
+)
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
+from affordance_runtime.unified_observation import (
+    SourceCoverage,
 )
 from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.visual_grounding import VisualRegion
@@ -90,6 +95,10 @@ class CanvasPage:
 
     def __init__(self) -> None:
         self.activated = False
+        self.main_frame = object()
+
+    def on(self, event: str, handler: object) -> None:
+        del event, handler
 
     def content(self) -> str:
         status = "activated" if self.activated else "pending"
@@ -97,6 +106,14 @@ class CanvasPage:
 
     def evaluate(self, expression: str, arg: Any = None) -> object:
         del arg
+        if "runtimeCoordinateProbe" in expression:
+            return {
+                "viewport": [800, 600],
+                "scroll": [0, 0],
+                "devicePixelRatio": 1,
+                "zoom": 1,
+                "orientation": "landscape",
+            }
         if "querySelectorAll('[bid]')" in expression:
             return {}
         if "document.activeElement" in expression:
@@ -121,6 +138,7 @@ class RecordingRegionProposer:
     provider = "fixture"
     model = "deterministic-regions"
     prompt_version = "test-v1"
+    acquisition_exhaustive = True
 
     def __init__(self) -> None:
         self.requests: list[object] = []
@@ -183,6 +201,17 @@ class RecordingBrowserSession(BrowserSession):
             unified_affordances=tuple(
                 replace(target, grounding_candidates=candidates_by_target[target.semantic_target_id])
                 for target in snapshot.unified_affordances
+            ),
+            source_coverage=tuple(
+                SourceCoverage.complete(
+                    item.source,
+                    captured_item_count=1,
+                    capture_policy_id="recording-browser-exhaustive@v1",
+                    acquisition_epoch_ref=snapshot.observation.snapshot_id,
+                    source_scope="test-fixture",
+                    adapter_version="recording-browser@v1",
+                )
+                for item in snapshot.source_observations
             ),
         )
         self.snapshots.append(snapshot)
@@ -347,6 +376,14 @@ class DomFallbackPage(CanvasPage):
 
     def evaluate(self, expression: str, arg: Any = None) -> object:
         del arg
+        if "runtimeCoordinateProbe" in expression:
+            return {
+                "viewport": [800, 600],
+                "scroll": [0, 0],
+                "devicePixelRatio": 1,
+                "zoom": 1,
+                "orientation": "landscape",
+            }
         if "querySelectorAll('[bid]')" in expression:
             return {
                 "save": {
@@ -396,6 +433,9 @@ class ActivateSemanticPlanner:
 
 class FailBeforeDispatchDomExecutor:
     backend = "dom"
+    supported_actions = ("activate",)
+    provider_capabilities = ("settings.write",)
+    adapter_capabilities = ("settings.write",)
 
     def __init__(self) -> None:
         self.calls = 0
@@ -412,6 +452,8 @@ class FailBeforeDispatchDomExecutor:
             evidence={"dispatched": False},
             error_code=RuntimeErrorCode.EXECUTION_FAILED,
             message="structured grounding failed before dispatch",
+            transport_state=TransportState.NOT_SENT,
+            provider_ack=ProviderAck.NOT_APPLICABLE,
         )
 
 

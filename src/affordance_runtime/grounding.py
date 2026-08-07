@@ -9,10 +9,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from time import time
-from typing import Any, TypeAlias
+from typing import Any, Mapping, Protocol, TypeAlias
 
-from affordance_runtime.contracts import Observation, RiskLevel
+from affordance_runtime.contracts import RiskLevel
 from affordance_runtime.immutable import freeze_json
+
+
+class CurrentObservation(Protocol):
+    @property
+    def environment_revision(self) -> str: ...
+    @property
+    def page_revision(self) -> str: ...
+    @property
+    def snapshot_id(self) -> str: ...
+    @property
+    def target_fingerprints(self) -> Mapping[str, str]: ...
 
 
 class EvidenceKind(StrEnum):
@@ -76,7 +87,7 @@ class SourceAssertion:
         if self.confidence_semantics != "source_local":
             raise ValueError("cross-source confidence semantics are not calibrated")
 
-    def is_current(self, observation: Observation, *, now_s: float | None = None) -> bool:
+    def is_current(self, observation: CurrentObservation, *, now_s: float | None = None) -> bool:
         current_time = time() if now_s is None else now_s
         return (
             (not self.environment_revision or self.environment_revision == observation.environment_revision)
@@ -159,6 +170,8 @@ class SourceObservation:
     latency_ms: float = 0.0
     model_cost: float = 0.0
     confidence: float = 1.0
+    acquisition_exhaustive: bool = False
+    source_scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -289,7 +302,7 @@ class GroundingCandidate:
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("grounding candidate confidence must be within [0, 1]")
 
-    def is_current(self, observation: Observation) -> bool:
+    def is_current(self, observation: CurrentObservation) -> bool:
         if self.environment_revision != observation.environment_revision:
             return False
         if self.page_revision and self.page_revision != observation.page_revision:

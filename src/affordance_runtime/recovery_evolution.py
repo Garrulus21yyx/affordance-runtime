@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -12,14 +13,16 @@ from typing import Any
 from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator as compose_run_coordinator
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
     Observation,
     ProgressEvidenceScope,
+    ProviderAck,
     RuntimeErrorCode,
+    TransportState,
     VerifierSpec,
 )
 from affordance_runtime.effect_authority_contracts import (
@@ -40,6 +43,7 @@ from affordance_runtime.evolution import (
     RecoveryPolicyPatchPayload,
     RegressionRule,
 )
+from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.planning import (
     ContractRequirements,
@@ -145,6 +149,9 @@ class RecoveryFixturePlanner:
 
 @dataclass
 class RecoveryFixtureExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities = ()
+    adapter_capabilities = ()
     mode: str
     world: RecoveryFixtureWorld = field(default_factory=RecoveryFixtureWorld)
     backend: str = "dom"
@@ -176,6 +183,10 @@ class RecoveryFixtureExecutor:
                 if self.mode == "uncertain"
                 else "Transient backend failure 503 on attempt 42"
             ),
+            transport_state=(
+                TransportState.SENT_UNKNOWN if self.mode == "uncertain" else TransportState.NOT_SENT
+            ),
+            provider_ack=(ProviderAck.UNKNOWN if self.mode == "uncertain" else ProviderAck.NOT_APPLICABLE),
         )
 
 
@@ -222,8 +233,19 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         idempotent=True,
         artifact_root=output_dir / "baseline",
     )
-    failure = baseline.state.current_failure
-    if failure is None or baseline.status != RuntimeStep.ABORTED:
+    terminal_failure = baseline.state.current_failure
+    source_payload = next(
+        (
+            node.payload.get("failure")
+            for node in baseline.trace.nodes
+            if node.kind == "FailureDetected"
+            and isinstance(node.payload.get("failure"), Mapping)
+            and node.payload["failure"].get("phase") == "execution_not_dispatched"
+        ),
+        None,
+    )
+    failure = FailureEnvelope.model_validate(source_payload) if source_payload is not None else None
+    if failure is None or terminal_failure is None or baseline.status != RuntimeStep.ABORTED:
         raise RuntimeError("source run did not produce a real repeated recovery failure")
     signature = SimpleNamespace(
         error_code=failure.error_code,
@@ -286,7 +308,7 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
     passed_categories = {item.category for item in replays if item.passed}
     artifact.regression_results = {
         "candidate_cascade_depth": float(
-            max(item.cascade_depth for item in replays if item.category != "global_smoke")
+            max(item.cascade_depth for item in replays if item.category in {"original", "task_family"})
         ),
         "unsafe_side_effect_rate": float(sum(item.unsafe_side_effects for item in replays)),
         "blind_retry_rate": float(

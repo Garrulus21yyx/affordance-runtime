@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from threading import RLock
+from time import time
 from typing import Any, TypeVar
 
+from affordance_runtime.contracts import RuntimeErrorCode
+from affordance_runtime.dispatch_lifecycle import (
+    DispatchAdmissionRejected,
+    DispatchPermit,
+    FinalDispatchAdmission,
+)
+from affordance_runtime.execution_context import digest_payload
 from affordance_runtime.runtime import RuntimeStep
+from affordance_runtime.simplified_runtime_contracts import ExecutionAttempt
 from affordance_runtime.stage_protocol import (
     RuntimeEvent,
     StageResult,
@@ -16,10 +26,88 @@ from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification.contracts import TaskCompletionEvaluation
 
 T = TypeVar("T")
+_DISPATCH_LINEARIZATION_LOCK = RLock()
 
 
 @dataclass(frozen=True)
 class RuntimeCommitter:
+    def admit_dispatch(
+        self,
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        admission: FinalDispatchAdmission,
+        attempt: ExecutionAttempt,
+    ) -> tuple[DispatchPermit, TraceNode]:
+        """Consume owner-issued admission and commit intent at one linearization point."""
+
+        with _DISPATCH_LINEARIZATION_LOCK, admission.gate.linearized_authority():
+            if (
+                state.task_id != admission.run_id
+                or attempt.contract_id != admission.contract.id
+                or attempt.contract_hash != admission.contract_hash
+                or attempt.issued_at_state_version != admission.expected_state_version
+                or attempt.pre_observation.snapshot_id != admission.observation.snapshot_id
+                or attempt.pre_observation.page_revision != admission.observation.page_revision
+                or attempt.pre_observation.environment_revision != admission.observation.environment_revision
+            ):
+                raise DispatchAdmissionRejected(
+                    RuntimeErrorCode.STALE_OBSERVATION
+                )
+            error = admission.consume_if_current(state_version=state.version)
+            if error is not None:
+                raise DispatchAdmissionRejected(error)
+            state.current_contract = admission.contract
+            state.current_execution_attempt = attempt
+            state.step_count += 1
+            if admission.contract.effectful:
+                state.effectful_action_count += 1
+            state.version += 1
+            committed_version = state.version
+            attempt_node = trace.add(
+                "ExecutionAttemptCommitted",
+                {
+                    "admission_id": admission.admission_id,
+                    "attempt_id": attempt.attempt_id,
+                    "contract_hash": admission.contract.contract_hash,
+                    "state_version": committed_version,
+                },
+                parents=[parent.id],
+            )
+            node = trace.add(
+                "DispatchIntentCommitted",
+                {
+                    "admission_id": admission.admission_id,
+                    "attempt_id": attempt.attempt_id,
+                    "contract_hash": admission.contract.contract_hash,
+                    "state_version": committed_version,
+                },
+                parents=[attempt_node.id],
+            )
+            issued = time()
+            surface = admission.contract.live_surface_binding
+            if surface is None:
+                raise DispatchAdmissionRejected(RuntimeErrorCode.STALE_OBSERVATION)
+            permit = DispatchPermit(
+                permit_id="dispatch-permit:"
+                + digest_payload((admission.admission_id, attempt.attempt_id, committed_version, issued)).split(":", 1)[1],
+                admission_id=admission.admission_id,
+                contract=admission.contract,
+                observation=admission.observation,
+                attempt=attempt,
+                committed_state_version=committed_version,
+                issued_at_s=issued,
+                expires_at_s=min(admission.expires_at_s, surface.lease.expires_at_s),
+                contract_hash=admission.contract_hash,
+                run_id=admission.run_id,
+                session_generation=admission.session_generation,
+                surface_id=admission.surface_id,
+                surface_check=admission.surface_check,
+                coordinate_check=admission.coordinate_check,
+                fence_lock=admission.fence_lock,
+            )
+            return permit, node
+
     def commit_loop_transition(self, state: StateKernel, transition: Any) -> None:
         state.transition(transition.phase.value)
         if transition.activate_next_step:
@@ -129,7 +217,16 @@ class RuntimeCommitter:
             state.transition(RuntimeStep.DONE.value)
         return trace.add(
             "TaskCompleted",
-            {"state": state.phase, "result": state.final_result},
+            {
+                "state": state.phase,
+                "result": {
+                    "content_digest": digest_payload(state.final_result),
+                    "keys": tuple(sorted(state.final_result)),
+                    "redacted": True,
+                    "access_policy_ref": "task-owner@v1",
+                    "retention_policy_ref": "run-scoped@v1",
+                },
+            },
             parents=[parent.id],
         )
 

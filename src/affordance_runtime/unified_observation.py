@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from affordance_runtime.contracts import RiskLevel
+from affordance_runtime.execution_context import CoordinateBinding, ExecutorCapabilityDescriptor, LiveSurfaceBinding
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource
 from affordance_runtime.immutable import FrozenDict, freeze_json
-from affordance_runtime.verification.contracts import AssuranceLevel
+from affordance_runtime.verification.contracts import AssuranceLevel, PredicateEvidence
 
 
 class CoverageCompleteness(StrEnum):
@@ -30,6 +31,16 @@ class CoverageStatus(StrEnum):
     REQUIRED_PROPERTY_UNOBSERVED = "required_property_unobserved"
     TARGET_ABSENT_COMPLETE = "target_absent_complete"
     MODEL_PRESENTATION_OMISSION = "model_presentation_omission"
+    ACQUISITION_ERROR = "acquisition_error"
+
+
+class CoverageTermination(StrEnum):
+    EXHAUSTED = "exhausted"
+    LIMIT_REACHED = "limit_reached"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    SOURCE_UNAVAILABLE = "source_unavailable"
+    ERROR = "error"
+    UNKNOWN = "unknown"
 
 
 class ConflictStatus(StrEnum):
@@ -58,6 +69,15 @@ class SourceCoverage:
     required_properties: tuple[str, ...] = ()
     observed_properties: tuple[str, ...] = ()
     error_code: str = ""
+    acquisition_epoch_ref: str = ""
+    source_scope: str = ""
+    item_limit: int | None = None
+    acquisition_budget: int | None = None
+    model_id: str = ""
+    adapter_version: str = ""
+    threshold: float | None = None
+    exhaustive: bool = False
+    termination_reason: CoverageTermination = CoverageTermination.UNKNOWN
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, GroundingSource):
@@ -68,6 +88,12 @@ class SourceCoverage:
             raise ValueError("captured item count cannot be negative")
         if self.omitted_item_count_estimate is not None and self.omitted_item_count_estimate < 0:
             raise ValueError("omitted item estimate cannot be negative")
+        if self.item_limit is not None and self.item_limit < 0:
+            raise ValueError("coverage item limit cannot be negative")
+        if self.acquisition_budget is not None and self.acquisition_budget < 0:
+            raise ValueError("coverage acquisition budget cannot be negative")
+        if self.threshold is not None and not 0 <= self.threshold <= 1:
+            raise ValueError("coverage threshold must be within [0, 1]")
         if self.truncated and self.completeness == CoverageCompleteness.COMPLETE:
             raise ValueError("truncated acquisition cannot claim complete coverage")
         if self.status == CoverageStatus.ACQUISITION_TRUNCATED and not self.truncated:
@@ -76,6 +102,12 @@ class SourceCoverage:
             self.truncated or self.completeness != CoverageCompleteness.COMPLETE
         ):
             raise ValueError("target absence requires complete untruncated coverage")
+        if self.completeness == CoverageCompleteness.COMPLETE and (
+            not self.exhaustive or self.termination_reason != CoverageTermination.EXHAUSTED
+        ):
+            raise ValueError("complete coverage requires explicit exhaustive acquisition")
+        if self.error_code and self.completeness != CoverageCompleteness.UNKNOWN:
+            raise ValueError("acquisition errors cannot claim bounded or complete coverage")
         object.__setattr__(self, "required_properties", tuple(self.required_properties))
         object.__setattr__(self, "observed_properties", tuple(self.observed_properties))
 
@@ -87,6 +119,9 @@ class SourceCoverage:
         captured_item_count: int,
         capture_policy_id: str = "complete",
         observed_properties: tuple[str, ...] = (),
+        acquisition_epoch_ref: str = "test-epoch",
+        source_scope: str = "full-source",
+        adapter_version: str = "test-adapter@v1",
     ) -> SourceCoverage:
         return cls(
             source=source,
@@ -97,6 +132,11 @@ class SourceCoverage:
             completeness=CoverageCompleteness.COMPLETE,
             status=CoverageStatus.OBSERVED,
             observed_properties=observed_properties,
+            acquisition_epoch_ref=acquisition_epoch_ref,
+            source_scope=source_scope,
+            adapter_version=adapter_version,
+            exhaustive=True,
+            termination_reason=CoverageTermination.EXHAUSTED,
         )
 
 
@@ -273,7 +313,7 @@ class UnifiedObservation:
     page_revision: str
     environment_revision: str
     observed_text: str
-    targets: tuple[CanonicalTarget | UnifiedObservationTarget, ...]
+    targets: tuple[CanonicalTarget, ...]
     bindings: tuple[GroundingCandidate, ...]
     source_coverage: tuple[SourceCoverage, ...]
     artifact_refs: tuple[str, ...]
@@ -281,6 +321,10 @@ class UnifiedObservation:
     digest: str
     acquisition_policy_id: str = "default"
     metadata: FrozenDict = field(default_factory=lambda: FrozenDict({}))
+    live_surface_binding: LiveSurfaceBinding | None = None
+    coordinate_binding: CoordinateBinding | None = None
+    capability_descriptor: ExecutorCapabilityDescriptor | None = None
+    predicate_evidence: tuple[PredicateEvidence, ...] = ()
 
     def __init__(
         self,
@@ -298,13 +342,17 @@ class UnifiedObservation:
         digest: str = "test-direct-canonical",
         acquisition_policy_id: str = "default",
         metadata: Mapping[str, Any] | FrozenDict | None = None,
+        live_surface_binding: LiveSurfaceBinding | None = None,
+        coordinate_binding: CoordinateBinding | None = None,
+        capability_descriptor: ExecutorCapabilityDescriptor | None = None,
+        predicate_evidence: tuple[PredicateEvidence, ...] = (),
     ) -> None:
         resolved_epoch_id = epoch_id or snapshot_id
         object.__setattr__(self, "epoch_id", resolved_epoch_id)
         object.__setattr__(self, "page_revision", page_revision)
         object.__setattr__(self, "environment_revision", environment_revision)
         object.__setattr__(self, "observed_text", observed_text)
-        object.__setattr__(self, "targets", tuple(targets))
+        object.__setattr__(self, "targets", cast(tuple[CanonicalTarget, ...], tuple(targets)))
         object.__setattr__(self, "bindings", tuple(bindings))
         object.__setattr__(self, "source_coverage", tuple(source_coverage))
         object.__setattr__(self, "artifact_refs", tuple(artifact_refs))
@@ -316,6 +364,10 @@ class UnifiedObservation:
             "metadata",
             metadata if isinstance(metadata, FrozenDict) else FrozenDict(metadata or {}),
         )
+        object.__setattr__(self, "live_surface_binding", live_surface_binding)
+        object.__setattr__(self, "coordinate_binding", coordinate_binding)
+        object.__setattr__(self, "capability_descriptor", capability_descriptor)
+        object.__setattr__(self, "predicate_evidence", tuple(predicate_evidence))
         self.__post_init__()
 
     def __post_init__(self) -> None:

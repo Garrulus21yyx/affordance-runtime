@@ -6,6 +6,7 @@ import pytest
 from affordance_runtime.adapters.dom import PageAffordanceModel
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import Observation
+from affordance_runtime.execution_context import ExecutionContextRequirementRef, issue_surface_binding
 from affordance_runtime.grounding import (
     ActivePerceptionRequest,
     EvidenceKind,
@@ -22,6 +23,12 @@ class FakePage:
 
     def __init__(self) -> None:
         self.visits: list[str] = []
+        self.main_frame = object()
+        self._frame_handlers: list[object] = []
+
+    def on(self, event: str, handler: object) -> None:
+        if event == "framenavigated":
+            self._frame_handlers.append(handler)
 
     def goto(self, url: str, **kwargs: Any) -> None:
         self.url = url
@@ -142,6 +149,73 @@ def test_browser_session_uses_configured_default_affordance_lease() -> None:
     snapshot = BrowserSession(FakePage(), lease_ttl_ms=120_000).capture(page_id="settings")
 
     assert snapshot.affordance_model.affordances[0].lease.ttl_ms == 120_000
+
+
+def test_live_surface_probe_rejects_dom_drift_after_capture() -> None:
+    class MutablePage(FakePage):
+        html = "<main><button id='save'>Save</button></main>"
+
+        def __init__(self) -> None:
+            super().__init__()
+
+        def content(self) -> str:
+            return self.html
+
+        def evaluate(self, expression: str, argument: object = None) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Save"
+            return {}
+
+    page = MutablePage()
+    session = BrowserSession(page)
+    snapshot = session.capture(page_id="settings")
+    expected = issue_surface_binding(
+        ExecutionContextRequirementRef.local_public(),
+        run_id="run:1",
+        session_generation="session:1",
+        window_id="window:1",
+        tab_id="tab:1",
+        frame_id="frame:top",
+        document_generation=str(snapshot.observation.metadata["document_generation"]),
+        focus_generation="focus:default",
+    )
+    assert session.surface_binding_is_current(expected)
+    page.html = "<main><button id='save'>Save changed</button></main>"
+    assert not session.surface_binding_is_current(expected)
+
+
+def test_live_surface_probe_rejects_same_content_document_realm_reload() -> None:
+    class ReloadablePage(FakePage):
+        def evaluate(self, expression: str, argument: object = None) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Save"
+            return {}
+
+        def reload_same_content(self) -> None:
+            for handler in self._frame_handlers:
+                handler(self.main_frame)  # type: ignore[operator]
+
+    page = ReloadablePage()
+    session = BrowserSession(page)
+    snapshot = session.capture(page_id="settings")
+    expected = issue_surface_binding(
+        ExecutionContextRequirementRef.local_public(),
+        run_id="run:1",
+        session_generation="session:1",
+        window_id="window:1",
+        tab_id="tab:1",
+        frame_id="frame:top",
+        document_generation=str(snapshot.observation.metadata["document_generation"]),
+        focus_generation="focus:default",
+    )
+
+    assert session.surface_binding_is_current(expected)
+    page.reload_same_content()
+    assert not session.surface_binding_is_current(expected)
 
 
 def test_browser_session_reset_uses_initial_url() -> None:

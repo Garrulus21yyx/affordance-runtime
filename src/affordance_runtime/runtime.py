@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
+from affordance_runtime.execution_context import ExecutionContextRequirementRef
 from affordance_runtime.immutable import FrozenSequence, freeze_json
 from affordance_runtime.task_intake import TaskSpec, task_effect_targets
 from affordance_runtime.task_spec_authority import AdmittedTaskSpec
@@ -34,6 +35,9 @@ class RunRequest:
     target: str = ""
     constraints: dict[str, Any] = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
+    execution_context_requirement: ExecutionContextRequirementRef = field(
+        default_factory=ExecutionContextRequirementRef.local_public
+    )
 
     @property
     def task_spec(self) -> TaskSpec:

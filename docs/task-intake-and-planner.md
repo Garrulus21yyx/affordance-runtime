@@ -42,9 +42,13 @@ four typed forms:
 - `TYPED_EXTERNAL`: a structured ingress value binds a versioned source and typed field path;
 - `USER_CONFIRMED`: a later explicit user confirmation binds a versioned conversation confirmation record.
 
-Page observations cannot become user authority sources. Exact anchors prove
-lineage only; they do not prove field completeness and do not grant capability,
-approval, grounding, an ActionContract, or completion.
+Page observations cannot become user authority sources. The same rule applies
+to email, PDF, DOM, AX, OCR, screenshot, notification, memory/skill, and tool
+output. Exact anchors prove lineage only; they do not prove field completeness
+and do not grant capability, approval, policy, TaskSpec revision, control flow,
+grounding, an ActionContract, or completion. An observation-derived value may
+enter an effectful field only when the admitted TaskSpec explicitly permits that
+typed source-to-field flow.
 
 `MaterialBindingPolicy`, composed inside `TaskSpecAuthority`, checks each
 external/irreversible effect independently: SEND requires recipient +
@@ -133,6 +137,16 @@ Input/Binding/Value refs; execution ordering uses only `StepSpec.depends_on`.
 The accepted TaskPlan stores `StepSpec` directly and can be replaced without changing
 TaskSpec. It is a Milestone Graph, never an intake obligation graph.
 
+Requirement-ID membership is necessary but not sufficient. TaskPlanAuthority
+applies deterministic typed semantic subsumption (`StepSpec ⊑
+CanonicalRequirement`) over operation, effect class, subject/target,
+destination, material parameter values, externality/reversibility, element
+function and task usage, completion criterion, and required-output relation.
+The result is ALLOW, DENY, or UNPROVEN; a plan cannot use a valid read
+requirement ID to authorize delete, send, payment, or another broader action.
+This evaluator reuses the existing canonical requirement table and is not a
+second obligation graph or a whole-program theorem prover.
+
 Replaceable does not mean replan every loop. Runtime reuses a still-feasible
 active plan and may install a direct deterministic milestone without a model
 call. Task Planner is called only for a typed `NO_CURRENT_PLAN`,
@@ -146,6 +160,14 @@ For the active step, Runtime first builds the complete legal
 `ActionChoiceCatalog` from TaskSpec/TaskPlan/progress/current canonical
 observation/effective capability/policy. Model presentation limits are not
 Catalog inputs.
+
+Effective capability is the intersection of the frozen
+provider/model/tool-schema descriptor, environment adapter support, product
+policy, and current user grant. Unknown actions, missing required safety
+features, or provider-schema version/digest drift fail closed. Provider safety
+or schema acceptance cannot create local Runtime authority. Product profiles
+retain all safety gates; benchmark-only ablations use a separate composition and
+cannot be selected by the production planner.
 
 Complete means logically complete, not necessarily eagerly materialized. Small
 Catalogs may hold every ActionChoice directly; large Catalogs may use immutable
@@ -171,9 +193,20 @@ backend handle, approval token, hidden IDs, and unrestricted source text.
 ## 8. Selection and ActionContract
 
 ActionSelectionValidator checks current Catalog/page membership and identity.
-ActionContractBuilder routes canonical bindings and produces one immutable,
-expiring transaction. Task authority, capability, approval, and freshness/
-preflight gates run after binding and before execution.
+`ActionTransactionMaterializer` routes canonical bindings and produces one
+complete executable contract, including the final payload. It freezes that
+contract before task/policy/capability and approval evaluate it. Final preflight
+checks snapshot/page/target/expiry; Executor then consumes the same immutable
+hash. Any reject or stale result makes zero Executor calls. Extended context,
+coordinate, descriptor, permit/CAS/fencing and credential late-binding contracts
+are scenario-triggered future hardening, not P4/P5 blockers.
+
+`replace()` and partial preflight patching of a sealed contract are forbidden.
+Any observation, surface generation, route, target, parameter, coordinate,
+provider schema, capability, provenance, verifier, or risk change requires full
+rematerialization, a new digest, and renewed admission/approval. Current
+production dispatches primitive transactions only; batch/macro remains
+plan-level and deferred.
 
 ## 9. Planner finish and required outputs
 
@@ -195,6 +228,20 @@ requires lineage; Planner prose cannot substitute for structured output.
 - final evidence insufficient.
 
 Generic error strings are diagnostics, not control ownership.
+
+## 11. Selective SOTA and complexity boundary
+
+Planning adopts typed actions, partial-observation semantics, and
+trusted-control versus untrusted-data separation; capability/coordinate identity
+is added when an adapter needs it. AgentDojo/WASP utility and attack metrics and
+OSWorld-V2 collateral probes are future release profiles only; they do not
+enter planner context or confer execution authority.
+
+The planner rejects prompt-only authorization, provider safety as local
+authority, model-generated selectors/coordinates, generic success as effect
+truth, and benchmark reward as completion. Enforcement remains narrow and
+typed inside the modular monolith; it does not introduce a general taint
+platform, planner microservices, another semantic registry, or theorem proving.
 
 The previous extraction-era document is archived at
 [maintained-pre-consolidation/task-intake-and-planner.md](archive/superseded-2026-08-05/maintained-pre-consolidation/task-intake-and-planner.md).

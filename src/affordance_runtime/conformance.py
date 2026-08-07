@@ -15,9 +15,9 @@ from affordance_runtime.adapters.dom import PageAffordanceModel
 from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.benchmarks.composition import compose_benchmark_run_coordinator as compose_run_coordinator
 from affordance_runtime.benchmarks.visual import detect_magenta_region
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ACTION_CONTRACT_SCHEMA_VERSION,
     ActionContract,
@@ -28,6 +28,7 @@ from affordance_runtime.contracts import (
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter, VisualExecutor, WotExecutor
 from affordance_runtime.immutable import FrozenSequence
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -118,7 +119,12 @@ class ConformanceContractBuilder(ActionContractMaterializer):
     oracle_state_url: str = ""
 
     def build(
-        self, proposal: PlannerProposal, task_spec: TaskSpec, state: Any, snapshot: BrowserSnapshot, observation=None
+        self,
+        proposal: PlannerProposal,
+        task_spec: TaskSpec,
+        state: Any,
+        snapshot: BrowserSnapshot | PerceptionCapture,
+        observation=None,
     ) -> ActionContract:
         self.requirements = {
             **self.requirements,

@@ -3,7 +3,6 @@ from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Any
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -75,6 +74,7 @@ from affordance_runtime.task_skills import (
     quarantine_task_skill,
 )
 from affordance_runtime.trace import JsonlTraceWriter
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -254,6 +254,9 @@ class ProfileObserver:
 
 @dataclass
 class ProfileExecutor:
+    supported_actions = ("fill", "type", "type_text")
+    provider_capabilities = ("settings.write",)
+    adapter_capabilities = provider_capabilities
     world: ProfileWorld
     fail_email_effect: bool = False
     backend: str = "dom"
@@ -870,7 +873,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                     category,
                     result.run_id,
                     "non-profile",
-                    (no_effect if category == "safety_smoke" else result.status == RuntimeStep.DONE and no_effect),
+                        no_effect,
                     no_effect,
                     "TaskSkillActivated" in kinds,
                     False,
@@ -1041,7 +1044,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                     category,
                     result.run_id,
                     "non-profile",
-                    (no_effect if category == "safety_smoke" else result.status == RuntimeStep.DONE and no_effect),
+                        no_effect,
                     no_effect,
                     "TaskSkillActivated" in kinds,
                     False,

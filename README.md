@@ -5,6 +5,18 @@ user tasks and current environment observations into versioned, authorized,
 observable action transactions with explicit approval, verification, recovery,
 trace, and evaluation boundaries.
 
+Its strategy is **complete vertical loop, limited horizontal breadth**. The MVP
+is a GUI-agent research Runtime: one process, one run, one coordinator, one
+browser session, and one active ActionContract, with trusted in-process
+components and serialized effectful execution. It does not claim
+production-grade, multi-tenant, distributed-worker, or global exactly-once
+security.
+
+The trusted computing base (TCB) includes Runtime-selected in-process adapter
+and provider implementation code plus its configuration. The page, email, PDF,
+DOM/AX/OCR/screenshot, tool, or provider-returned content that this code
+observes remains untrusted data and cannot create local authority.
+
 ## Current architecture
 
 The long-term target is defined only by:
@@ -20,8 +32,10 @@ SourceEnvelope
 → canonical observation
 → replaceable TaskPlan<StepSpec>
 → Runtime-owned full ActionChoiceCatalog
-→ ActionContract + Authority/Capability/Approval/Preflight gates
-→ Execute
+→ materialize and freeze final immutable ActionContract H
+→ Authority/Capability/Approval evaluate H
+→ stale snapshot/page/target preflight
+→ serial Execute of H with approved_hash == executed_hash
 → post-action observation
 → inline LoopEvaluator
 → RuntimeCommitter
@@ -53,6 +67,23 @@ conflicts.
 
 The target is not implemented as a whole. See
 [Implementation Status](docs/implementation-status.md) for current code truth.
+
+P4 is intentionally small and is **CLOSED (MVP scope)**. Its five invariants
+are:
+
+1. Executor accepts only a finalized immutable ActionContract.
+2. Policy/approval evaluates that exact contract, so the approved and executed hashes match.
+3. Stale snapshot/page/target rejection makes zero Executor calls.
+4. Completion requires verifier evidence; a receipt alone cannot produce DONE.
+5. An uncertain effectful execution is never blindly retried.
+
+Focused tests, the full test/static suite, and the core benchmark are closure
+evidence for these five invariants and the default-route cutover; the benchmark
+is not a sixth invariant. The test/static suite and fresh core benchmark pass,
+so P5 admission is unblocked but P5 has not started. Tenant/profile live proof,
+revocation linearizability, global permit registries, worker fencing,
+attempt-bound collateral, and immutable multi-suite release attestation are
+future hardening, not P5 blockers.
 
 ## Product boundary
 

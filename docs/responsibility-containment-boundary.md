@@ -4,6 +4,16 @@
 > **Scope:** module ownership, dependency direction, state mutation, and authority containment
 > **Architecture authority:** [Task Contract-centered architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
+Rows covering live surfaces, dispatch permits, checkpointing, and resume are
+target containment contracts spanning future hardening and not-yet-started P5-R
+recovery. They constrain future implementation and do not claim those planned
+modules are already cut over.
+
+They are also non-blocking future hardening under the current trusted
+single-process/single-coordinator MVP. The MVP dispatch boundary is one
+final immutable contract checked by policy/approval/preflight and then consumed
+unchanged by the serial Executor; that P4 MVP boundary is now closed.
+
 ## 1. Core decision
 
 Affordance Runtime is a modular monolith with one authoritative state/trace
@@ -40,18 +50,29 @@ database, queue, or model call.
 | bounded source context | SourceContextProjector | semantic admission or unrestricted conversation projection |
 | current plan admission | TaskPlanAuthority | modifying TaskSpec or granting capability |
 | current observed semantics | CanonicalObservationBuilder | reading model presentation policy |
+| source acquisition truth/coverage | each environment acquisition adapter | builder-inferred `COMPLETE` or absence from missing coverage |
 | full current legal choices | ActionChoiceBuilder | model call, execution, approval |
 | model-facing bounded choices | ChoicePresentationProjector | Catalog membership changes |
-| concrete action transaction | ActionContractBuilder | self-authorization or execution |
+| full Draft/Sealed action transaction | ActionTransactionMaterializer, composing pure route/binder/evaluator collaborators | partial old-contract patching, self-authorization, execution, session acquisition, or state writes |
+| durable execution-context requirement | TaskSpecAuthority | credentials, live handles, or claiming a current session match |
+| live session/surface generation | environment session owner | semantic authorization, approval, or checkpoint resurrection |
+| route-specific coordinate transform | grounding/adapter owner | policy admission, execution, or reuse after surface change |
+| mutable GUI surface exclusivity | logical SurfaceLease owner in the session lifecycle | target freshness, task claim, capability, or approval |
 | task/effect/capability/approval/freshness gates | dedicated gate owners | silent widening or relocation |
-| backend action dispatch | Executor | effect/step/task judgment |
+| final contract admission | Task/Capability/Approval/Preflight owners checking the complete immutable ActionContract | approving a choice/Draft then allowing payload mutation; state writes |
+| optional dispatch-token hardening | existing owners/RuntimeCommitter only when a broader concurrency fault model is admitted | a fifth permission system, P4/P5 blocker, or production-grade claim without evidence |
+| backend action dispatch | serial Executor consuming the admitted ActionContract unchanged | effect/step/task judgment or changing approved parameters |
 | evidence extraction | internal EvidenceProvider | root completion or state writes |
 | typed loop evaluation | LoopEvaluator | execution or progress mutation |
 | task closure semantics | TaskCompletionEvaluator | state commit |
-| required output closure | TaskCompletionEvaluator | Planner prose as structured output |
+| actual required output production | typed OutputMaterialization provider | declaring requirements or committing task completion |
+| required output admission/closure | TaskCompletionEvaluator | Planner prose, OutputSpec metadata, or trace projection as an actual result |
 | failure classification | FailureOwnerRouter | recovery execution |
 | recovery decision | typed owner | arbitrary StateKernel mutation |
 | state and trace commit | RuntimeCommitter | semantic reinterpretation |
+| checkpoint snapshot projection | RuntimeCommitter over committed state | object-graph serialization or physical-store policy |
+| checkpoint encoding/storage | focused codec/store port | semantic validation, live authority, or state reconstruction |
+| resume validation/routing | planned pure runtime-resume boundary | session opening, perception, effect adjudication, approval, dispatch, completion, or persistence |
 | benchmark/evolution | offline pipeline | synchronous Runtime authority |
 
 ## 3. Dependency direction
@@ -86,7 +107,7 @@ shown in a bounded ChoicePage and normally receives no source text. Neither may:
 - write TaskProgress or terminal state.
 
 The raw-text-free execution authority boundary covers ActionChoiceBuilder,
-grounding/predicate resolution, selection validation, ActionContractBuilder,
+grounding/predicate resolution, selection validation, ActionTransactionMaterializer,
 all gates, Executor, LoopEvaluator, TaskCompletionEvaluator, and
 RuntimeCommitter. These modules do not receive raw request, conversation text,
 legacy claims, or SourceContextView. OpenSemanticResolver and
@@ -105,7 +126,60 @@ Current observation facts stay in canonical observation. Recent action
 causality stays in a bounded ActionOutcome index. Only durable artifact,
 resource, transaction, or human evidence crosses observation epochs.
 
-## 6. Change rule
+When a scenario needs multi-account/profile or coordinate identity, execution
+context is split across three owners and lifetimes:
+
+- durable `ExecutionContextRequirementRef` is an opaque authorized scope with no
+  secret or live handle;
+- ephemeral `LiveSurfaceBinding` binds the current account/profile, session
+  generation, run owner, backend/display, app/process, window/tab/frame/document,
+  focus/modal state, and surface revision;
+- ephemeral `CoordinateBinding` binds route-specific source/destination spaces,
+  screenshot/viewport/crop/scroll/scale/origin inputs, document/frame identity,
+  and transform digest.
+
+No equality over URL, DOM or screenshot may substitute for a live identity
+claim once that optional scenario is enabled. `SurfaceLease`, task/run claim
+and multi-worker fencing are future hardening; MVP freshness uses snapshot,
+page/document revision, target fingerprint and expiry.
+
+A checkpoint is a versioned projection of committed identities and lifecycle
+facts. It stores refs/digests, including `last_committed_observation_ref`, rather
+than StateKernel, canonical observation, executable contract, or live adapter
+objects. After restart that observation ref is historical. Fresh session,
+surface lease, canonical observation, Catalog, contract, approval, and dispatch
+admission are reconstructed through their normal owners, never deserialized as
+current authority.
+
+## 6. Anti-God-object composition rules
+
+- Do not introduce a universal `Context`/`ExecutionContext` object containing
+  TaskSpec, observation, session, approval, coordinates, credentials, and
+  recovery state. Phase APIs receive the smallest typed refs/views they need.
+- `ActionTransactionMaterializer` consumes an accepted selection and committed
+  observation/context/coordinate/capability refs. It cannot open a browser/app,
+  capture perception, acquire a surface lease, approve, commit, or dispatch.
+- The planned `runtime_resume.py` boundary validates checkpoint
+  identity/version/dependencies and returns a typed `ResumeDirective` or
+  rejection. It does not reconstruct StateKernel, open sessions, capture,
+  perform effect-specific status lookup, settle effects, plan, authorize,
+  approve, dispatch, materialize outputs, complete, persist, or commit. Those
+  operations remain with existing owners selected by the route.
+- The planned checkpoint schema/codec/store remains a bounded projection and
+  persistence port. `RuntimeCommitter` is the snapshot producer, but does not
+  absorb serialization, filesystem/database policy, or restore orchestration.
+- `OutputMaterialization` producers construct actual typed values/artifacts and
+  lineage; they do not own TaskSpec success. Trace projectors redact and record
+  committed facts; they do not become evidence admission or completion owners.
+- A logical row in the ownership matrix may be an immutable value, pure
+  function, validator, or in-process protocol. It does not justify a new
+  service, queue, database, manager class, or distributed lease system.
+- The current closure has no `ActionBatch`, `BatchApproval`, batch cursor,
+  rollback coordinator, or batch owner. Same-surface actions stay serial, and a
+  future batch must preserve per-child observation, contract, attempt, receipt,
+  effect settlement, and approval boundaries.
+
+## 7. Change rule
 
 A change touching an authority boundary must identify:
 

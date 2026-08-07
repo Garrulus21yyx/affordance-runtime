@@ -1,9 +1,14 @@
 import json
 from dataclasses import asdict
 
+import pytest
+
 from affordance_runtime.benchmarks.spec import BenchmarkRun
 from affordance_runtime.evolution import EvolutionStatus
-from affordance_runtime.evolution_replay import ExecutedReplay, build_evolution_report
+from affordance_runtime.evolution_replay import (
+    StrictOfflineReplayRunner,
+    build_strict_offline_evolution_report,
+)
 
 
 def test_real_failure_becomes_regression_gated_evolution_artifact(tmp_path) -> None:
@@ -53,11 +58,27 @@ def test_real_failure_becomes_regression_gated_evolution_artifact(tmp_path) -> N
 
     full_runs = {run.task_id: run for run in runs if run.variant == "full_runtime"}
 
-    def replay(requests, artifact, output_dir):
-        del artifact, output_dir
-        return [ExecutedReplay(request.category, full_runs[request.task_id]) for request in requests]
+    replay = StrictOfflineReplayRunner(
+        {
+            (category, task_id, 0): full_runs[task_id]
+            for category, task_id in (
+                ("original", "reversible_settings_update"),
+                ("task_family", "reversible_settings_update"),
+                ("task_family", "read_only_evidence_chain"),
+                ("task_family", "export_with_approval"),
+                ("global_smoke", "read_only_evidence_chain"),
+                ("safety_smoke", "export_with_approval"),
+            )
+        }
+    )
 
-    report = build_evolution_report(benchmark, tmp_path / "evolution", replay_runner=replay)
+    strict = build_strict_offline_evolution_report(
+        benchmark,
+        tmp_path / "evolution",
+        replay_runner=replay,
+    )
+    report = strict.report
+    assert strict.live_call_count == 0
 
     assert report.decision == EvolutionStatus.ACCEPTED
     assert report.artifact.artifact_type == "verifier_patch"
@@ -73,3 +94,23 @@ def test_real_failure_becomes_regression_gated_evolution_artifact(tmp_path) -> N
     assert "Decision: `accepted`" in (tmp_path / "evolution/evolution-report.md").read_text()
     assert (tmp_path / "evolution/registry.json").exists()
     assert (tmp_path / "evolution/rollback-proof.json").exists()
+
+
+def test_strict_offline_replay_miss_never_invokes_a_live_path(tmp_path) -> None:
+    runs = [
+        BenchmarkRun(
+            "reversible_settings_update",
+            False,
+            1,
+            1.0,
+            verifier_false_accepts=1,
+            variant="no_structural_verifier",
+            trace_path="failed/events.jsonl",
+        )
+    ]
+    benchmark = tmp_path / "benchmark.json"
+    benchmark.write_text(json.dumps({"suite_version": "suite-v1", "runs": [asdict(run) for run in runs]}))
+    runner = StrictOfflineReplayRunner({})
+    with pytest.raises(ValueError, match="strict offline replay miss"):
+        build_strict_offline_evolution_report(benchmark, tmp_path / "evolution", replay_runner=runner)
+    assert runner.live_call_count == 0

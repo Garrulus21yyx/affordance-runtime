@@ -449,6 +449,8 @@ class PageAffordanceModel:
     affordances: list[Affordance]
     raw_node_count: int
     kept_node_count: int
+    acquisition_adapter_id: str = ""
+    acquisition_exhaustive: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "affordances", FrozenSequence(self.affordances))
@@ -1022,7 +1024,10 @@ class DomAdapter:
                     externality=attr.get("data-runtime-externality", "").strip(),
                     reversibility=attr.get("data-runtime-reversibility", "").strip(),
                     resource_sensitivity=attr.get("data-runtime-resource-sensitivity", "").strip(),
-                    authority_source_assurance=attr.get("data-runtime-source-assurance", "").strip(),
+                    # Page-authored metadata is observed DOM structure, never
+                    # an authority source. A document may request a lower-risk
+                    # interpretation but cannot promote itself to authoritative.
+                    authority_source_assurance="structural",
                     evidence=[url] if url else [],
                 )
             )
@@ -1058,4 +1063,6 @@ class DomAdapter:
             affordances=affordances,
             raw_node_count=parser.total_nodes,
             kept_node_count=len(affordances),
+            acquisition_adapter_id="dom-transducer@v1",
+            acquisition_exhaustive=True,
         )

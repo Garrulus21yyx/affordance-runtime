@@ -420,16 +420,6 @@ class EvolutionRecoveryPolicy:
                 idempotency_key=contract.idempotency_key,
             )
 
-        tried = set(context.tried_backends)
-        fallbacks = [backend for backend in contract.fallback_backends if backend not in tried]
-        if fallbacks and context.backend_fallback_count < self.max_backend_fallbacks:
-            return _evolution_recovery_decision(
-                EvolutionRecoveryAction.REROUTE,
-                context,
-                "use next untried contract fallback",
-                route_ref=fallbacks[0],
-            )
-
         if contract.compensation:
             return _evolution_recovery_decision(
                 EvolutionRecoveryAction.COMPENSATE,
@@ -682,7 +672,7 @@ class CandidateRuntimeProfile:
     """Fresh runtime profile that applies only validated declarative patches."""
 
     base_features: RuntimeFeatures = field(
-        default_factory=lambda: RuntimeFeatures(structural_verification=False)
+        default_factory=RuntimeFeatures
     )
     loaded: dict[
         str,

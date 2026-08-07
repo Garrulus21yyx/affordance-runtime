@@ -29,6 +29,7 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanDecisionStatus,
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
+    project_task_requirements,
 )
 from affordance_runtime.task_planner import (
     CriteriaEvidenceLedgerEntry,
@@ -143,11 +144,15 @@ class TaskPlanLifecycle:
                 allowed_requirement_ids=tuple(item.requirement_id for item in task_spec.requirements),
                 allowed_effect_ids=task_spec.allowed_effect_refs,
                 task_id=task_spec.task_id,
+                requirement_projections=project_task_requirements(task_spec),
             ),
             candidate,
         )
         if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
-            raise ValueError("initial TaskPlan candidate was not accepted")
+            raise ValueError(
+                "initial TaskPlan candidate was not accepted: "
+                + ", ".join(f"{item.code}:{item.message}" for item in decision.issues)
+            )
         plan = decision.plan
         return TaskPlanTransition(request=context, plan=plan, decision=decision)
 
@@ -186,6 +191,7 @@ class TaskPlanLifecycle:
                 allowed_requirement_ids=tuple(item.requirement_id for item in task_spec.requirements),
                 allowed_effect_ids=task_spec.allowed_effect_refs,
                 task_id=task_spec.task_id,
+                requirement_projections=project_task_requirements(task_spec),
             ),
             candidate,
         )

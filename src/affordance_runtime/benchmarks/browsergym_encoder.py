@@ -26,6 +26,7 @@ from affordance_runtime.criteria import (
     criterion_nodes,
 )
 from affordance_runtime.immutable import thaw_json_at_external_boundary
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import (
@@ -39,6 +40,13 @@ from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.unified_grounding import source_affordance_for_candidate
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.visual_contracts import VisualContractBinder
+
+
+@dataclass(frozen=True)
+class _CanonicalChoiceVerifierContext:
+    subgoal: str
+    expected_effects: tuple[str, ...] = ()
+    evidence_requirements: tuple[str, ...] = ()
 
 
 @dataclass
@@ -66,7 +74,7 @@ class BrowserGymContractBuilder(ActionContractMaterializer):
         proposal: PlannerProposal,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: BrowserSnapshot | PerceptionCapture,
         observation: UnifiedObservation | None = None,
     ) -> ActionContract:
         contract = super().build(proposal, task_spec, state, snapshot, observation)
@@ -167,20 +175,149 @@ class BrowserGymPointEncoder:
         return BrowserGymAction("mouse_click", {"x": float(point[0]), "y": float(point[1])})
 
 
+@dataclass(frozen=True)
+class GeneralistBrowserGymRouteEncoder:
+    """Canonical benchmark edge encoder with no proposal-materializer inheritance."""
+
+    def verifier_kinds(self, target_id: str, observation: UnifiedObservation) -> tuple[str, ...]:
+        del self, target_id, observation
+        return ("state_delta_or_terminal",)
+
+    def encode_canonical_choice(
+        self,
+        choice: Any,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot | PerceptionCapture,
+        affordance: Affordance,
+    ) -> tuple[str, dict[str, Any], tuple[VerifierSpec, ...]]:
+        del self
+        bid = str(affordance.locator.get("backend_handle") or "")
+        if not bid:
+            raise ValueError("Generalist BrowserGym binding requires an affordance bid")
+        parameters = dict(choice.parameters)
+        if choice.action_kind == PlannerActionKind.ACTIVATE:
+            select_owner_bid = str(affordance.locator.get("select_owner_backend_handle") or "")
+            select_option = str(affordance.locator.get("select_option") or "")
+            if select_owner_bid and select_option:
+                action = BrowserGymAction("select_option", {"bid": select_owner_bid, "options": select_option})
+            else:
+                direct_dom_control = bool(affordance.state.get("collection_action"))
+                action = BrowserGymAction(
+                    "click_no_navigation" if affordance.state.get("href") == "#" or direct_dom_control else "click",
+                    {"bid": bid},
+                )
+        elif choice.action_kind == PlannerActionKind.FOCUS:
+            action = BrowserGymAction("focus", {"bid": bid})
+        elif choice.action_kind == PlannerActionKind.TYPE_TEXT:
+            if "text" not in parameters:
+                raise ValueError("BrowserGym type_text requires text")
+            value = browsergym_fill_value(affordance.state, str(parameters["text"]))
+            action = (
+                BrowserGymAction("type_text_with_events", {"bid": bid, "text": value})
+                if browsergym_requires_keyboard_events(affordance)
+                else BrowserGymAction("fill", {"bid": bid, "value": value})
+            )
+        elif choice.action_kind == PlannerActionKind.SELECT_OPTION:
+            action = BrowserGymAction("select_option", {"bid": bid, "options": parameters["option"]})
+        elif choice.action_kind == PlannerActionKind.PRESS_KEY:
+            action = BrowserGymAction("press", {"bid": bid, "key_comb": str(parameters["key"])})
+        else:
+            raise ValueError(f"canonical BrowserGym encoder does not support {choice.action_kind.value}")
+        action.render()
+        verifier_plan = declare_browsergym_active_subgoal_evidence(
+            browsergym_action_verifiers(action, snapshot),
+            proposal=_CanonicalChoiceVerifierContext(choice.active_step_id),
+            state=state,
+            action=action,
+            affordance=affordance,
+            snapshot=snapshot,
+        )
+        return action.name, {"action": asdict(action)}, tuple(verifier_plan)
+
+
+
+
 @dataclass
 class GeneralistBrowserGymContractBuilder(ActionContractMaterializer):
-    """Bind the common semantic vocabulary to typed BrowserGym actions."""
+    """Legacy proposal contract builder isolated to compatibility tests."""
 
     gesture_encoder: BrowserGymGestureEncoder = field(default_factory=BrowserGymGestureEncoder)
     point_encoder: BrowserGymPointEncoder = field(default_factory=BrowserGymPointEncoder)
     visual_contract_binder: VisualContractBinder = field(default_factory=VisualContractBinder)
+
+    def encode_canonical_choice(
+        self,
+        choice: Any,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot | PerceptionCapture,
+        affordance: Affordance,
+    ) -> tuple[str, dict[str, Any], tuple[VerifierSpec, ...]]:
+        """Benchmark-edge encoder used by the canonical transaction owner."""
+
+        bid = str(affordance.locator.get("backend_handle") or "")
+        if not bid:
+            raise ValueError("Generalist BrowserGym binding requires an affordance bid")
+        parameters = dict(choice.parameters)
+        if choice.action_kind == PlannerActionKind.ACTIVATE:
+            select_owner_bid = str(affordance.locator.get("select_owner_backend_handle") or "")
+            select_option = str(affordance.locator.get("select_option") or "")
+            if select_owner_bid and select_option:
+                action = BrowserGymAction("select_option", {"bid": select_owner_bid, "options": select_option})
+            else:
+                direct_dom_control = bool(affordance.state.get("collection_action"))
+                action = BrowserGymAction(
+                    "click_no_navigation"
+                    if affordance.state.get("href") == "#" or direct_dom_control
+                    else "click",
+                    {"bid": bid},
+                )
+        elif choice.action_kind == PlannerActionKind.FOCUS:
+            action = BrowserGymAction("focus", {"bid": bid})
+        elif choice.action_kind == PlannerActionKind.TYPE_TEXT:
+            if "text" not in parameters:
+                raise ValueError("BrowserGym type_text requires text")
+            value = browsergym_fill_value(affordance.state, str(parameters["text"]))
+            action = (
+                BrowserGymAction("type_text_with_events", {"bid": bid, "text": value})
+                if browsergym_requires_keyboard_events(affordance)
+                else BrowserGymAction("fill", {"bid": bid, "value": value})
+            )
+        elif choice.action_kind == PlannerActionKind.SELECT_OPTION:
+            action = BrowserGymAction("select_option", {"bid": bid, "options": parameters["option"]})
+        elif choice.action_kind == PlannerActionKind.PRESS_KEY:
+            action = BrowserGymAction("press", {"bid": bid, "key_comb": str(parameters["key"])})
+        else:
+            raise ValueError(f"canonical BrowserGym encoder does not support {choice.action_kind.value}")
+        action.render()
+        proposal = PlannerProposal(
+            proposal_id=choice.choice_id,
+            based_on_task_revision=choice.task_revision,
+            based_on_state_version=choice.state_version,
+            snapshot_id=choice.snapshot_id,
+            subgoal=choice.active_step_id,
+            action_kind=choice.action_kind,
+            target_affordance_id=choice.target_id,
+            destination_affordance_id=choice.destination_id,
+            parameters=parameters,
+        )
+        verifier_plan = declare_browsergym_active_subgoal_evidence(
+            browsergym_action_verifiers(action, snapshot),
+            proposal=proposal,
+            state=state,
+            action=action,
+            affordance=affordance,
+            snapshot=snapshot,
+        )
+        return action.name, {"action": asdict(action)}, tuple(verifier_plan)
 
     def build(
         self,
         proposal: PlannerProposal,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: BrowserSnapshot | PerceptionCapture,
         observation: UnifiedObservation | None = None,
     ) -> ActionContract:
         contract = super().build(proposal, task_spec, state, snapshot, observation)
@@ -380,7 +517,7 @@ def browsergym_requires_keyboard_events(affordance: Affordance) -> bool:
 
 def browsergym_action_verifiers(
     action: BrowserGymAction,
-    snapshot: BrowserSnapshot,
+    snapshot: BrowserSnapshot | PerceptionCapture,
 ) -> list[VerifierSpec]:
     """Encode action-specific postconditions from the pre-action snapshot."""
 
@@ -484,11 +621,11 @@ def browsergym_action_verifiers(
 def declare_browsergym_active_subgoal_evidence(
     verifier_plan: list[VerifierSpec],
     *,
-    proposal: PlannerProposal,
+    proposal: PlannerProposal | _CanonicalChoiceVerifierContext,
     state: StateKernel,
     action: BrowserGymAction,
     affordance: Affordance,
-    snapshot: BrowserSnapshot | None = None,
+    snapshot: BrowserSnapshot | PerceptionCapture | None = None,
 ) -> list[VerifierSpec]:
     """Declare exact adapter postconditions as active-subgoal evidence.
 
@@ -646,7 +783,7 @@ def _browsergym_spatial_point_progress_spec(
     action: BrowserGymAction,
     *,
     active: StepSpec,
-    snapshot: BrowserSnapshot | None,
+    snapshot: BrowserSnapshot | PerceptionCapture | None,
 ) -> VerifierSpec | None:
     criterion = _primary_state_completion_criterion(active)
     if (
@@ -728,7 +865,7 @@ def _browsergym_slider_exact_progress_spec(
     verifier: VerifierSpec,
     *,
     active: StepSpec,
-    proposal: PlannerProposal,
+    proposal: PlannerProposal | _CanonicalChoiceVerifierContext,
     state: StateKernel,
 ) -> VerifierSpec | None:
     if action.name != "press" or verifier.kind != "control_state":
@@ -753,7 +890,7 @@ def _browsergym_slider_exact_progress_spec(
 def _requested_slider_progress_value(
     *,
     active: StepSpec,
-    proposal: PlannerProposal,
+    proposal: PlannerProposal | _CanonicalChoiceVerifierContext,
     state: StateKernel,
 ) -> str | None:
     criterion = _primary_state_completion_criterion(active)
@@ -762,7 +899,7 @@ def _requested_slider_progress_value(
         if value:
             return value
     candidates = (
-        criterion.subject if criterion is not None else "",
+        criterion.subject if criterion is not None and criterion.subject is not None else "",
         active.objective,
         " ".join(
             item.subject.reference
@@ -776,9 +913,9 @@ def _requested_slider_progress_value(
         state.goal,
     )
     for text in candidates:
-        value = _single_slider_numeric_value(text)
-        if value is not None:
-            return value
+        numeric_value = _single_slider_numeric_value(text)
+        if numeric_value is not None:
+            return numeric_value
     return None
 
 

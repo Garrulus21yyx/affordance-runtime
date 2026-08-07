@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Mapping
 
 from pydantic import Field
 
@@ -151,7 +152,7 @@ def _require_subset(label: str, values: tuple[str, ...], allowed: set[str]) -> N
 
 def _semantic_anchor_ids(
     task_spec: TaskSpec,
-    anchors: dict[str, object],
+    anchors: Mapping[str, object],
     *,
     requirement_ids: tuple[str, ...],
     criterion_ids: tuple[str, ...],

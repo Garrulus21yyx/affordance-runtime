@@ -9,7 +9,19 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.action_admission import ActionAdmissionService
 from affordance_runtime.artifacts import ArtifactStore
-from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
+from affordance_runtime.contracts import (
+    ActionContract,
+    ExecutionReceipt,
+    Observation,
+    ProviderAck,
+    RuntimeErrorCode,
+    TransportState,
+)
+from affordance_runtime.dispatch_lifecycle import (
+    DispatchPermit,
+    DispatchPermitRejected,
+    ProviderDispatchError,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.runtime import Executor, RunRequest
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
@@ -83,21 +95,15 @@ class ContractExecutionLoop:
         result = ActionAdmissionService(self.task_policy).evaluate(
             contract,
             constraints=envelope.constraints,
-            capability_gate=(
-                gate
-                if capability_gate_enabled
-                else CapabilityGate(
-                    granted_capabilities=set(contract.required_capabilities),
-                    approval_required_risks=set(),
-                    approval_required_capabilities=set(),
-                )
-            ),
+            capability_gate=gate,
             observation=observation,
             task_spec=envelope.task_spec,
             canonical_observation=canonical_observation,
             check_freshness=preflight_enabled,
         )
         error = result.error
+        if not capability_gate_enabled:
+            error = RuntimeErrorCode.CAPABILITY_DENIED
         return ContractCheck(gate=gate, error=error)
 
     def revalidate(
@@ -129,8 +135,65 @@ class ContractExecutionLoop:
             )
         return error
 
-    def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
-        return self.executor.execute(contract, observation)
+    def dispatch(self, permit: DispatchPermit) -> ExecutionReceipt:
+        """Canonical fenced boundary; provider adapters never receive reusable authority."""
+
+        contract = permit.contract
+        observation = permit.observation
+        try:
+            receipt = permit.execute(lambda: self.executor.execute(contract, observation))
+        except DispatchPermitRejected as exc:
+            return ExecutionReceipt(
+                contract.id,
+                contract.backend,
+                False,
+                observation.environment_revision,
+                observation.environment_revision,
+                0.0,
+                error_code=RuntimeErrorCode.EXECUTION_FAILED,
+                message=f"dispatch permit rejected: {type(exc).__name__}: {exc}"[:500],
+                transport_state=TransportState.NOT_SENT,
+                provider_ack=ProviderAck.NOT_APPLICABLE,
+            )
+        except ProviderDispatchError as exc:
+            cause = exc.cause
+            return ExecutionReceipt(
+                contract.id,
+                contract.backend,
+                False,
+                observation.environment_revision,
+                observation.environment_revision,
+                0.0,
+                error_code=(
+                    RuntimeErrorCode.EXECUTION_TIMEOUT
+                    if isinstance(cause, TimeoutError)
+                    else RuntimeErrorCode.EXECUTION_FAILED
+                ),
+                message=f"{type(cause).__name__}: {cause}"[:500],
+                transport_state=TransportState.SENT_UNKNOWN,
+                provider_ack=ProviderAck.UNKNOWN,
+            )
+        try:
+            if not isinstance(receipt, ExecutionReceipt):
+                raise TypeError("executor returned a non-ExecutionReceipt value")
+            return receipt
+        except Exception as exc:
+            return ExecutionReceipt(
+                contract.id,
+                contract.backend,
+                False,
+                observation.environment_revision,
+                observation.environment_revision,
+                0.0,
+                error_code=(
+                    RuntimeErrorCode.EXECUTION_TIMEOUT
+                    if isinstance(exc, TimeoutError)
+                    else RuntimeErrorCode.EXECUTION_FAILED
+                ),
+                message=f"{type(exc).__name__}: {exc}"[:500],
+                transport_state=TransportState.SENT_UNKNOWN,
+                provider_ack=ProviderAck.UNKNOWN,
+            )
 
     def build_execution_attempt(
         self,
@@ -228,12 +291,18 @@ class ContractExecutionLoop:
 
     def effective_gate(self, envelope: RunRequest) -> CapabilityGate:
         return CapabilityGate(
-            granted_capabilities=self.gate.granted_capabilities | set(envelope.capabilities),
+            # RunRequest.capabilities are caller/user grants admitted at the edge;
+            # contract.required_capabilities remain declarations only.
+            granted_capabilities=set(envelope.capabilities),
             approval_required_risks=set(self.gate.approval_required_risks),
             approval_required_capabilities=self.gate.approval_required_capabilities
             | set(str(item) for item in envelope.constraints.get("require_approval_for", [])),
             approval_tokens=self.gate.approval_tokens,
-            approved_contract_ids=set(self.gate.approved_contract_ids),
+            executor_descriptor=self.gate.executor_descriptor,
+            product_allowed_actions=self.gate.product_allowed_actions,
+            product_allowed_capabilities=self.gate.product_allowed_capabilities,
+            grant_source=self.gate,
+            _linearization_lock=self.gate._linearization_lock,
         )
 
 

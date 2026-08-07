@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-LOCAL_SAAS_FIXTURE_VERSION = "2.0.0"
+LOCAL_SAAS_FIXTURE_VERSION = "2.1.0"
 PRICING_DATA: dict[str, dict[str, Any]] = {
     "pro": {"users": 25, "projects": 100, "support": "business-hours"},
     "enterprise": {"users": "unlimited", "projects": "unlimited", "support": "24/7"},
@@ -97,7 +97,7 @@ def settings_html(current: str, perturbations: set[str], seed: int = 0, profile:
   <p id="current-setting">Notifications: {current}</p>
   {heldout_notice}
   {modal}
-  <button id="{button_id}" onclick="saveSetting()"{disabled}>Enable notifications</button>
+  <button id="{button_id}" onclick="saveSetting()" data-runtime-operation="resource.update@v1" data-runtime-effect-class="update" data-runtime-externality="local" data-runtime-reversibility="reversible" data-runtime-source-assurance="structural" data-runtime-risk="medium"{disabled}>Enable notifications</button>
   <p id="save-status"></p>
 </main><script>
 {enable_script}
@@ -120,7 +120,7 @@ def reports_html(seed: int = 0, profile: str = "train") -> str:
 <body><main>
   <h1>Reports</h1>
   {distractor}
-  <a id="{export_id}" href="/api/export" download="report.csv">Export report</a>
+  <a id="{export_id}" href="/api/export" download="report.csv" data-runtime-operation="external.commit@v1" data-runtime-effect-class="invoke" data-runtime-externality="external_system" data-runtime-reversibility="reversible" data-runtime-source-assurance="structural" data-runtime-risk="high">Export report</a>
 </main></body></html>"""
 
 

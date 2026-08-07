@@ -1,10 +1,10 @@
 # Affordance Runtime：Task Contract 中心化唯一权威目标架构
 
 > **文档类型：** Authoritative Target Architecture / Architecture Decision
-> **状态：** AUTHORITATIVE TARGET — NOT IMPLEMENTED AS A WHOLE
+> **状态：** AUTHORITATIVE TARGET — MVP SCOPE RESET IN EFFECT
 > **生效日期：** 2026-08-05
-> **事实基线：** `agent/migrate-runtime-components @ 55bad91e56126269af7453913cf550cb5938108f`
-> **最新实现复核：** 2026-08-06 P4-G concrete action authority/high-risk governance 已完成；精确不可变 revision 由 Git 记录。
+> **事实基线：** `agent/migrate-runtime-components @ 26cc5bb804faa1a06e2aec4aa645ad84d3ecc73c`
+> **最新范围决议：** 2026-08-07 将 P4 恢复为 GUI Runtime MVP 边界。P4/P5 语义准入只由 §0.0 的五项 invariant 决定；focused checks、full/static suite 与 core benchmark 只是这五项在默认主线上的 closure evidence，不构成第六项 invariant。tenant/profile live proof、跨 worker 撤销线性化、clone-resistant/global permit registry、attempt-bound collateral、完整多维 fencing 与 immutable multi-suite release attestation 均为 future hardening，不再阻塞主线。实现事实只以 `docs/implementation-status.md` 为准。
 > **演进来源：** [Task Contract 中心化 Runtime 架构演进规划](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 > **冲突优先级：** 本文取代 2026-07-29 权威架构中与 TaskSpec、TaskPlan、TaskProgress、observation/choice authority、criterion/evidence 和 task completion authority 冲突的目标设计；未冲突的 ActionContract、capability、approval、verification、recovery、single-writer、trace 和 benchmark governance 设计继续有效。
 > **2026-08-05 Active-step 修正：** `ActionChoiceCatalog` 必须从 canonical observation 完整建立后，才允许生成任何 model-facing `ChoicePlanningRequest`；旧的 `PlanningRequest → ActionChoiceSet` 顺序无效。
@@ -14,8 +14,63 @@
 > **2026-08-05 Cross-Surface Visibility 补充：** DOM、AX、Visual、SVG、WoT、API 与 Device 是共享 TaskSpec/TaskPlan/Catalog/ActionContract/LoopEvaluator 的 acquisition、grounding、execution 与 evidence surfaces；WoT 显式进入图与 vocabulary，但不形成独立 Agent/Planner/TaskSpec。
 > **2026-08-05 Material Binding 纠偏：** material authority 采用 effect-specific typed binding coverage，而不是字符级 span 配额。直接、明确的用户值可用 `DIRECT_USER_EXPLICIT` 准入；间接非结构化来源才要求 exact excerpt，结构化外部来源使用 versioned field identity。`SourceAnchor` 只证明 provenance，不能替代字段完整性、capability、approval、grounding 或 ActionContract。
 > **2026-08-06 Concrete Effect Authority / High-risk Governance 收口：** TaskSpec 只保存 parameterized typed `EffectAuthorizationScope`；Runtime 必须从 current canonical target/backend/binding 派生 concrete `RuntimeEffectSignature`，两者经 typed subsumption 得到 `ALLOW | DENY | UNPROVEN` 的 `ActionAuthorityProof`。目标 label、值集合、Planner 声明、source 自报 risk、approval 或 capability 都不能填补 proof 缺口；高风险动作只有在 proof、capability、exact contract approval、fresh preflight 与 effect-specific causal/final verification policy 全部闭合后才可执行。该收口不枚举页面/任务类型，只冻结小型 effect vocabulary、可扩展 operation refs 与字段化参数绑定。
+> **2026-08-07 Transaction / Surface / Provenance 纠偏：** executable contract 必须从 fresh observation 完整 materialize，approval/policy 必须检查最终 immutable contract，且执行 hash 必须等于批准 hash。网页、邮件、PDF、DOM/AX/OCR/截图和 tool output 均为 non-authoritative observation。更强的 account/tenant、lease/fencing、revocation transaction 与 release-attestation 设计保留在本文作为 future-hardening catalogue，不属于当前 MVP 的完成门。
 
 ## 0. 权威决议
+
+### 0.0 当前产品范围与 P4-minimum
+
+当前产品 threat model 固定为：
+
+```text
+one process
+one run
+one coordinator
+one browser session
+one active finalized ActionContract
+trusted in-process Runtime components
+serialized state mutation, approval consumption, and effectful execution
+```
+
+这不是生产级、多租户或对抗内部组件的安全内核声明。当前不假设多个
+coordinator/worker/agent 同时控制同一页面，也不承诺跨进程撤销、hard-crash
+dispatch recovery、global exactly-once 或恶意内部调用者隔离。
+
+这里的 trusted in-process component 属于 trusted computing base（TCB），包括由
+Runtime 选择、配置的 adapter/provider 实现代码；该代码采集或返回的网页、邮件、PDF、
+DOM/AX/OCR/截图、tool/provider output 等外部内容不属于 TCB，仍是 untrusted data，不能
+产生 TaskSpec、capability、approval、policy、completion 或 control-flow authority。
+
+P4/P5 语义准入只保留下列五项 MVP invariant：
+
+| ID | 阻塞 invariant | 最小验收 |
+|---|---|---|
+| `P4-MVP-1` | Executor 只执行已经 final materialize 且不可变的 `ActionContract` | Draft、choice 或后续 patch 不能进入 Executor |
+| `P4-MVP-2` | policy/approval 检查的正是最终 executable contract | `approved_contract_hash == executed_contract_hash`；materialization/encoding 后不得追加未审批参数 |
+| `P4-MVP-3` | stale snapshot/page revision/target fingerprint/expiry 在 preflight 被拒绝 | 任一拒绝路径 `executor_calls == 0` |
+| `P4-MVP-4` | 完成来自独立 verifier evidence | receipt、ACK、Planner prose、plan exhausted 或不存在的 artifact 不能单独产生 `DONE` |
+| `P4-MVP-5` | effectful uncertain execution 不盲重试 | 先检查 post-state、block 或 handoff；不得直接重复副作用 |
+
+五项是唯一的产品语义门。focused negative checks、full `pytest`、Ruff、mypy 与
+core benchmark 是它们及 default-route cutover 的验收证据，不是第六项产品 invariant。
+因此 benchmark 失败表示默认主线 closure 尚未被证明，不能把 P4 标为 closed；它并未
+引入新的安全子系统要求。
+
+五项闭合也不等于 exhaustive TaskPlan destination/function/usage policy、所有 adapter
+coverage、tenant/profile proof、clone-resistant permit、跨 worker fencing 或 immutable
+multi-suite release attestation 已闭合；这些能力只有在对应场景/claim 被准入时单独验收。
+
+本架构中的 **core fallback** 是 default product composition 可达、能绕开 final-contract
+主线完成 construct/authorize/approve/execute/commit 的旧或平行动作路径，必须删除。
+**Edge-only compatibility** 仅指 external ingress、benchmark 或 conformance 的单向
+old-input→canonical-input adapter；产品与 canonical transaction/execution/commit 模块不
+import/call 它，它也不能授予 authority/capability、approve、seal、dispatch 或 commit，并
+在 `P5-3` 到期删除。后者的临时存在不等于 core fallback。
+
+这些 invariant 是 correctness/safety baseline，而不是“无漏洞”或
+production-grade security 证明。字段仅在 action semantics 需要时 mandatory；例如 click
+不为满足 schema 人工制造 destination/usage。更强安全机制只有在 benchmark、部署 fault
+model 或产品能力声明给出证据后才逐项提升为 blocker。
 
 系统的四个长期权威对象固定为：
 
@@ -82,19 +137,25 @@ requested output declared ≠ required output materialized
 3. **角色由容器定义。** precondition、step completion、task success 与 evidence policy 不能靠漂移 enum 猜测。
 4. **计划服从当前事实。** TaskPlan 必须基于 fresh canonical observation 生成并允许被整体替换。
 5. **Runtime candidate space 先于 model presentation space。** Runtime 从 canonical observation 生成完整 `ActionChoiceCatalog`；模型只可在当前 `ChoicePage` 选择已展示 choice ID，或返回封闭的翻页、typed refinement、ask/defer 决策。
-6. **审批靠近动作。** ApprovalToken 绑定具体 ActionContract 和当前页面状态，不提前批准计划或动作族。
-7. **执行与求值分离。** Executor 只返回 receipt；loop-native `LoopEvaluator` 返回 effect、step、task 与 observation continuation 的 typed evaluation，不执行动作、不写状态。
+6. **审批靠近且晚于完整动作。** ApprovalRequest/Grant 只能绑定由同一已提交 fresh observation 完整 materialize 并 seal 的具体 ActionContract；不得提前批准计划、动作族、旧页面或可被后续 patch 的半成品合同。
+7. **执行与求值分离。** Executor 只消费最终 immutable `ActionContract` 并返回 typed transport receipt；loop-native `LoopEvaluator` 分别结算 external effect、step、task 与 observation continuation，不执行动作、不写状态。进程内 permit 可以作为实现细节，但不是 MVP 的独立 authority 或完成门。
 8. **只有 durable evidence 跨 epoch。** current facts 留在 canonical observation，动作因果留在 bounded recent ActionOutcome，artifact/resource/transaction/human confirmation 才进入 DurableEvidenceStore。
 9. **只有 RuntimeCommitter 写权威状态。** Planner、LoopEvaluator、EvidenceProvider、RecoveryPolicy 和 Executor 都返回 typed result，不直接修改 StateKernel。
 10. **迁移必须替代旧 owner。** 新 canonical owner 上线时必须有 legacy deletion gate，不维持无限 projector 链。
 11. **逻辑完整不等于全量物化。** full Catalog 与 canonical observation 可以使用 immutable index、lazy/query-backed membership 和 ref-based epoch；逻辑 membership、digest、coverage、conflict 与 rejection semantics 必须稳定。
 12. **逻辑 authority 不等于部署边界。** Authority 可以由 pure function、immutable validator 或同进程 policy composition 实现；只有真实的隔离、并发、规模或法规需求才允许拆成独立 service/store/model call。
-13. **Surface 只提供事实、binding、dispatch 与 evidence。** DOM/AX/Visual/SVG/WoT/API/Device 共享一套任务与动作权威；Planner 选择 semantic action，Runtime 在 ActionContractBuilder 中选择 current backend/binding。
+13. **Surface 只提供事实、binding、dispatch 与 evidence。** DOM/AX/Visual/SVG/WoT/API/Device 共享一套任务与动作权威；Planner 选择 semantic action，Runtime 在 `ActionTransactionMaterializer` 编排的 route owner 中选择 current backend/binding。
 14. **授权 scope 与 concrete effect 分权。** TaskSpec 的 `EffectAuthorizationScope` 只表达用户允许的 effect ceiling；Runtime 的 `RuntimeEffectSignature` 只表达 current target/backend/binding 的实际动作事实。二者不得共用一个对象、从对方反向恢复，或由 Planner 创建。
 15. **授权匹配结构，不匹配字符串集合。** typed subsumption 必须同时约束 effect class、operation constraint、canonical resource scope、destination、named parameter slots、externality、reversibility、capability 与 policy；target label、subject/objective 文本、关键词和无字段名的 value set 只能用于展示或 clarification，不能证明权限。
 16. **Runtime 拥有 concrete effect/risk/assurance classification。** Adapter/source 可以提供 typed assertions，但最终 `RuntimeEffectSignature` 与 Runtime risk 由 Harness policy 合并 operation/backend facts、externality、reversibility、resource sensitivity、amount/recipient、capability、conflict、freshness 与 assurance。缺失或相互矛盾的 material classification 是 `UNPROVEN`，不是 LOW。Text/VLM 只能提高风险或触发更强观察/澄清，不能产生 ALLOW、降低风险或创建 authorization。
 17. **Action authority 是可验证 proof，不是 Boolean hint。** Catalog 只接纳 `ALLOW` proof；`DENY` 表示已证明越界，`UNPROVEN` 表示证据不足并走 perceive/clarify/block。Proof 必须绑定 evaluator policy version。Approval 与 capability 只能在 ALLOW 后继续收窄，不能把 UNPROVEN 升级为 ALLOW。
-18. **Gate 复核 actual bound transaction。** Task Authority Gate 必须使用 TaskSpec、current observation 与 ActionContract 的实际 target/destination candidate、operation、named parameters、binding/source assurance 重建 proof；不得只复算从 choice 复制到 contract 的 label/digest。
+18. **Gate 复核最终 executable transaction。** materialization/encoding 先完成，随后 Task/Policy/Approval 检查同一个 immutable contract；执行前验证 `approved_contract_hash == executed_contract_hash`。不得批准 choice/半成品后再向 payload 追加 destination、recipient 或其他 material parameter。pinned schema/encoder 的独立重编码可作为高风险或 release hardening，不能替代该最小等值 invariant。
+19. **Executable contract 一次性完整 materialize。** observation-derived target、route、payload、precondition、verifier、context、coordinate 与 capability 字段必须全部来自同一已提交 epoch；freshness 变化后重建全部字段，禁止 `replace(old_contract, observation_ref=...)` 或局部 patch。
+20. **环境 identity 按证据渐进增强。** MVP 必须复核 snapshot/page revision/target fingerprint/expiry。只有任务、benchmark 或部署环境实际包含 multi-account、cross-profile、frame/coordinate drift 时，才增加相应 live binding；tenant/profile 全维证明不是通用 P4 blocker。
+21. **有效能力保持本地显式。** 产品 policy、当前用户 grant 与实际 adapter 支持共同收窄 executable action；当前 MVP 不要求 provider/schema/adapter/user 四方 manifest 或跨租户 authority protocol。未知的实际 action 支持仍 fail closed。
+22. **Dispatch truth 与 effect truth 分型。** 本地 commit-before-dispatch 不等于外部 exactly-once；`NOT_SENT / SENT / SENT_UNKNOWN` 与 `NOT_OCCURRED / OCCURRED / STILL_UNCERTAIN` 分别结算，任何异常均不得产生 COMPLETE。
+23. **Observation 不是用户授权。** 页面、邮件、PDF、DOM/AX/OCR/截图、memory/skill、notification 与 tool output 只能提供不可信数据或 evidence；进入 effectful sink 的值必须有 TaskSpec 准许的 typed source→field flow。
+24. **Replay 不产生真实副作用。** replay miss 绝不调用 live driver、network 或 credential。完整 immutable run/release manifest 仅在发布、可复现实验或 resume claim 需要时启用，不阻塞 P4/P5 的 MVP 主线。
 
 ### 0.2 Active-step 核心不变量
 
@@ -205,6 +266,149 @@ optional capability     != enabled on every task
 
 Profile 只能决定 optional machinery 是否激活，不能关闭 Task authority、capability、必要 approval、freshness/preflight、required-output closure、uncertain-effect protection 或 RuntimeCommitter single-writer。
 
+### 0.6 Transaction hardening catalogue（非 MVP blocker）
+
+§0.0 的 `P4-MVP-1`–`P4-MVP-5` 是 P4/P5 唯一阻塞 baseline。下列
+`INV-01`–`INV-16` 保留此前审核中有价值的 transaction/surface/provenance 设计，
+但只作为按 threat model 触发的 hardening catalogue。表中比五项 MVP invariant 更强的
+account/profile/tenant proof、schema/policy revocation linearizability、global permit
+consumption、worker fencing、attempt-bound collateral、完整 coordinate identity 与 immutable
+manifest 要求，默认均为 `FUTURE HARDENING`，不得据此阻塞 GUI harness、benchmark、
+evolution loop 或 P5。
+
+其中仍直接支撑 MVP 的部分只有：`INV-01` 的 final-contract/payload 一致性、`INV-02`
+的 mandatory gate、`INV-04` 的 transport/effect 分离、`INV-08` 的实际输出、`INV-10`
+的 canonical cutover，以及 uncertain effect 不盲重试。其他条目只有在对应场景被正式
+纳入产品能力声明后才转为 release gate。
+
+| ID | 不变量 | 明确禁止 |
+|---|---|---|
+| `INV-01` | 一个 executable transaction 的所有 observation-derived 字段来自同一已提交 epoch；TaskSpec/InputBinding 保留其可信 lineage，不能伪装成 observation fact；backend application payload 只能是 actual target/destination 与已授权 named parameters 经 pinned schema/encoder/route policy 的确定性编码 | fresh proof + old locator/route/payload/verifier；跨 epoch 局部 patch；proof/parameters 指向 Alice 而 payload 指向 Bob |
+| `INV-02` | 产品 composition 不能关闭 task authority、capability、必要 approval、freshness、uncertain-effect 或 completion gate；安全依赖不可用时 fail closed | product safety ablation；从 contract.required_capabilities 反推 grant |
+| `INV-03` | `FUTURE-HARDENING`：并发/恢复 claim 可要求 pre-executor attempt/intent commit、state-version CAS、run/surface lease、fencing 与 clone-resistant permit | 把该扩展误作当前 MVP/P5 blocker，或在未实现时声称 stale-worker/replay safety |
+| `INV-04` | transport dispatch 与 external effect 使用不同状态机 | 用一个 success Boolean 同时表示发送和业务效果 |
+| `INV-05` | Executor/provider/schema 的所有退出路径返回 typed receipt，或由已提交 lifecycle 恢复为 typed missing-receipt outcome；任何异常都不能变成 COMPLETE | exception 无 receipt；unknown 自动归为 NOT_SENT 或 success |
+| `INV-06` | effect occurred 与 not occurred 都要求满足 risk-specific assurance，并绑定 attempt、contract、resource/version、backend request/idempotency identity；适用时还要结算 collateral-safety verdict | report.passed 直接等于 effect occurred；UI toast 结算支付/发送/删除 |
+| `INV-07` | SourceCoverage 由 acquisition adapter 对确切 epoch/scope 产生，携带 budget/limit、model/version/threshold、truncation/error；missing coverage 是 UNKNOWN | 根据存在 candidate 推导 COMPLETE；未采集等于不存在 |
+| `INV-08` | required output 只能由实际 `OutputMaterialization` 满足；结果携带 schema/content digest、source refs 与 task/step/observation lineage，并遵守 redaction/encryption/access/retention policy | OutputSpec 元数据或 Planner prose 充当结果；默认把秘密复制进 trace |
+| `INV-09` | TaskPlanAuthority 对 StepSpec 与 requirement 执行 typed semantic subsumption；operation、subject、destination、material value、element function 与 task usage 必须被允许，ID membership 只是必要条件 | 合法 read requirement ID 包装任意 effectful step；planner plan 充当 execution grant |
+| `INV-10` | canonical transaction core 不 import legacy proposal/fallback；compatibility 只允许 edge-only、single-direction、consumer-inventoried、expiry-bound adapter | canonical owner 内 old→new→old projector、legacy affordance fallback |
+| `INV-11` | execution context 分为 durable `ExecutionContextRequirementRef` 与 ephemeral `LiveSurfaceBinding`；后者绑定 account/profile/session generation、run owner、app/process、backend/display、window/tab/frame/document/focus 与 SurfaceLease；整个 `RouteBinding`/contract projection 必须 secret-free，认证材料只允许在 dispatch boundary late-bind | 仅以 URL/DOM/截图证明账号或 session；checkpoint/route/href 保存 credential、signed-URL secret 或 live handle |
+| `INV-12` | point/bbox/selector/node 绑定 `CoordinateBinding` 或 document/frame identity；坐标合同覆盖 source/destination space、screenshot hash/size、logical/physical viewport、crop/scroll、DPR、browser zoom、OS scale、orientation、window/display origin 与 transform digest | 只存 normalized x/y；多层重复 normalize；旧截图坐标用于新 viewport |
+| `INV-13` | trusted user/policy control 与 untrusted observation data 分离；网页、邮件、PDF、DOM、AX、OCR、截图、notification、memory/skill 与 tool output 不能产生 capability、approval、policy、TaskSpec revision 或控制流。进入 effectful sink 的 observation value 必须由 TaskSpec 显式准许其 source→field flow | 用 prompt 提醒代替 enforcement；页面文字“已授权”扩大权限 |
+| `INV-14` | effective action/capability envelope 是 provider/model/tool-schema descriptor、environment adapter、product policy 与 current user grant 的交集；descriptor/version/digest 进入 sealed transaction/run manifest | 根据 model name 硬编码；未知 action/schema 自动降级；把 provider safety 当本地 authority |
+| `INV-15` | 当前生产只 dispatch primitive transaction。batch/macro 保持 plan-level/deferred；未来每个 child 都必须独立 observation、contract、admission、attempt、receipt 与 effect settlement，任一 child uncertain 时阻断其后动作 | 一个 approval/receipt/success 覆盖无反馈 effectful batch；P5 顺手创建 batch resume/rollback 平台 |
+| `INV-16` | run provenance 固定 code、product/benchmark profile、policy、provider/model、tool/action schema、transform、acquisition、verifier、environment/asset digest；replay 是离线模拟且永不在 miss 时调用 live driver/network/credential，simulated receipt 与 real receipt 分型 | 未记录实际 profile/ablation；manifest 漂移后 resume；replay fallback 到真实副作用 |
+
+INV-03 在 MVP 中只解释可信进程内串行顺序和未知状态的诚实表达；其中
+state-version CAS、run/surface lease、fencing、clone-resistant permit 等并发/重放防护
+属于 future hardening。若后端不能证明请求未越过发送边界，结果合法停在
+`SENT_UNKNOWN` / `STILL_UNCERTAIN`，不得用可用性压力换成盲重试。
+
+### 0.7 最小物理合同与防过重边界
+
+下面是可按需求采用的 value-object catalogue，不是首期必须一次实现的类型清单：
+
+```text
+ExecutionContextRequirementRef     durable opaque scope; no credentials
+LiveSurfaceBinding                 ephemeral session/surface generation + owner
+CoordinateBinding                  ephemeral source/destination transform
+ExecutorCapabilityDescriptor       frozen native action/receipt/schema capability
+ActionContractDraft                non-executable materialization intermediate
+SealedActionContract               exact current executable transaction payload
+FinalDispatchAdmission             optional in-process final-gate attestation
+DispatchPermit                     optional internal dispatch token; not an MVP authority
+TypedExecutionReceipt              transport truth, not effect truth
+OutputMaterialization              actual result identity/value-or-artifact ref
+RunProvenanceManifest              optional release/replay version envelope
+```
+
+`ActionTransactionMaterializer` 是唯一 Draft/Sealed 构造入口，但不是 God
+Object。它只编排 route resolver、effect classifier、verifier requirement binder
+与 pure authority evaluator；它不打开 session、不采集、不审批、不 dispatch、不写
+StateKernel。Task Authority、Capability、Approval、Freshness、Executor、Effect
+Evaluator 与 RuntimeCommitter 继续是独立 owner。
+
+需要 multi-account、cross-profile 或 coordinate-heavy 场景时，Context 也不得退化为巨型快照：
+
+```text
+ExecutionContextRequirementRef
+    durable account/profile/tenant/app/resource scope ref + digest
+
+LiveSurfaceBinding
+    ephemeral backend/display/session_generation/run_owner/window/tab/frame/document/focus
+
+CoordinateBinding
+    ephemeral screenshot/viewport/screen transform + digest
+```
+
+未来 checkpoint 只保存第一层及后两层的历史 ref/digest；process restart 永不复活
+LiveSurfaceBinding、CoordinateBinding、AffordanceLease、SurfaceLease、selector、
+coordinate、DOM/page/backend handle 或 credential。恢复后旧合同只可用于审计和
+effect reconciliation，不能执行。
+
+为避免过度设计，以下限制同样是规范：
+
+- 首期保持 modular monolith；不建设新微服务、通用知识/证据图、每 namespace 数据库、分布式 lease service 或全程序 theorem prover；
+- provenance enforcement 只覆盖 authority/capability/approval 与 effectful data sink 的确定性 typed flow，不建设通用动态污点平台；
+- capability descriptor 是 adapter-owned frozen value，不建设 discovery service；
+- collateral probes 属于 risk/release hardening，由 effect/risk class 触发，不对每个 read/click 运行全套磁盘、权限、进程和网络扫描，也不阻塞 P4/P5；
+- GUI grounding model/verifier 只是 adapter evidence source，不是 Runtime authority；
+- action batch、跨设备 workflow、长期 affair memory、多 Agent orchestration 与自动 skill evolution 继续 deferred；
+- hard-crash claim 才允许引入窄化 durable dispatch journal、global permit registry 或 worker fencing；它们不是 P4/P5 的默认前置；
+- replay 只能离线；需要再次真实执行时必须创建新的 live run identity，并重新 observation、admission、approval 与 dispatch。
+
+#### 0.7.1 Closure evidence 不是单一 `completed` Boolean
+
+任何 phase/slice 的状态必须按证据维度记录，不能因“类型已定义”“代码已存在”或
+“全量测试为绿”直接升级为闭合：
+
+| 维度 | 精确定义 |
+|---|---|
+| `DESIGNED` | canonical types、owner、failure semantics 与 acceptance boundary 已在权威文档定义 |
+| `IMPLEMENTED` | 对应代码路径存在，focused checks 证明本地行为；不表示产品默认使用 |
+| `DEFAULT_ROUTED` | 默认 product composition 的真实调用图只走该 owner；benchmark/fixture 路径不算 |
+| `ADVERSARIALLY_VERIFIED` | 与当前 threat model 对应的最小负向/失败 probe 通过；并发、攻击与 immutable-revision attestation 仅在相应 hardening/release claim 适用 |
+| `LEGACY_ISOLATED` | 被替代 owner 已从 canonical core 删除，或只剩有到期门的单向 edge adapter；无 fallback/dual read/write |
+| `CLOSED` | 上述所有适用维度均有可复现证据，implementation status 与默认 composition 证据同步；不是独立可手工设置的状态 |
+
+每个 `CLOSED` 记录必须链接 focused acceptance、negative probe、默认
+composition/call evidence 与适用的 legacy deletion/isolation evidence。Git revision 与完整
+multi-suite attestation 是发布/论文复现证据，不是日常 P4/P5 调度门。`N passed` 只表示
+regression health，不能单独证明边界行为。`RETAINED FOUNDATION`、`CORE COMPLETE`、
+`DESIGN DONE` 等局部措辞也不得被读取为 `CLOSED`。
+
+### 0.8 SOTA 选择性吸收记录
+
+本架构吸收的是公开系统与已核验本地先例中有用的 Runtime boundary，而不是复制模型或
+benchmark scaffolding：
+
+| 来源 | 吸收 | 拒绝或限制 |
+|---|---|---|
+| [Qwen-UI-Agent technical report](https://tongyi-mai.github.io/Qwen-UI-Agent/Qwen-UI-Agent-Technical-Report.pdf) 与 [MAI-UI repository snapshot](https://github.com/Tongyi-MAI/MAI-UI/tree/30de90be4f83a0d11539adf2839da14a5755e0d3) | 每个 Web episode 的 fresh isolated Playwright `BrowserContext`、环境提供的 action-space subset、GUI/CLI/API 多通道 observation、`ask_user`/user takeover、state-based intermediate verification | 将 isolated context 直接等同于本地 `SurfaceLease`；无中间反馈的 effectful batch、裸 Bash 作为普通 GUI action、仅 normalized coordinate、以 benchmark 分数或未公开完整 Runtime 作为安全证明 |
+| [UI-TARS Desktop](https://github.com/bytedance/UI-TARS-desktop/commit/c2ad42e3eb9b27830db41a3e6f51ca7179d9b168) 与 [AndroidWorld](https://github.com/google-research/android_world/commit/3e50888527ef9f29b9157ecd537e408008bb1c85) | typed action/capability、coordinate reference system、logical/physical frame、orientation 与 stable-state polling | generic success/error、schema unavailable 时关闭校验、polling 替代 effect evidence |
+| [GUI-Actor @ `d98d1bb`](https://github.com/microsoft/GUI-Actor/tree/d98d1bbd01862f9112114b83b032f492c365a173) | candidate regions 与 grounding verifier 作为 optional perception adapter | 模型候选直接成为 locator/absence/authority truth |
+| [CaMeL paper v2](https://arxiv.org/abs/2503.18813v2) / [code @ `f083b6b`](https://github.com/google-research/camel-prompt-injection/tree/f083b6b396399d3b3c7f2ddaf613a5945eaf32d8) | trusted control / untrusted data separation 与 capability-governed source→sink flow | 仅靠 prompt injection detector 或 system prompt |
+| [AgentDojo @ `089ed46`](https://github.com/ethz-spylab/agentdojo/tree/089ed468cf3ed0322acc66b0211f26d9d90dbf60) 与 [WASP @ `ffee6f4`](https://github.com/facebookresearch/wasp/tree/ffee6f41fde76acd14bd792db442479c506260c2) | future release/adversarial profile，分别报告 benign utility、utility-under-attack 与 targeted ASR | 成为 P4/P5 blocker、线上依赖或单一安全证明 |
+| [OSWorld-V2 @ `d3f8e93`](https://github.com/xlang-ai/OSWorld-V2/tree/d3f8e93f741a5b55ee0a1c56f4efdf1a09df1b63) | future breadth/release profile：functional checkpoint、partial progress 与 risk-scoped collateral probes | 成为 P4/P5 blocker；reward/judge 进入 production completion authority |
+| [A Modular Action System Architecture @ `5d5847e`](https://github.com/Garrulus21yyx/A-Modular-Action-System-Architecture/tree/5d5847e28cd385f7aaf02bab51d020fd46bb7f89)（私有本机相邻仓库先例） | task-scoped isolated `BrowserSession`、mark-ID 而非模型自由生成坐标、Executor 返回 total `ExecutionResult`、benchmark adapter 复用 perceive→act→verify surface | 不把该先例误写成公开 SOTA 或充分 transaction safety；本架构补强 account/session/window/frame generation、coordinate-transform digest、typed transport/effect/collateral，并保持 benchmark adapter 非权威 |
+
+Qwen 的 isolated context、environment action subset 与 state verifier 是来源事实；把它们
+落实为本地 `ExecutionContextRequirementRef`、`SurfaceLease`、capability intersection 与 independent
+completion authority 是本文的安全推导，不是 Qwen 的原生安全声明。公开 SOTA 分数只在其
+固定 benchmark/version/harness 下成立，不构成本文 transaction、authority、receipt 或
+effect semantics 已实现的证据。以上源码/报告快照在 2026-08-07 复核；后续升级必须重新做
+source diff，而不能按项目名自动继承结论。
+
+相邻仓库证据来自本机 checkout 的 `origin/main @ 5d5847e`（完整 commit：
+`5d5847e28cd385f7aaf02bab51d020fd46bb7f89`），核验文件为
+[`browser_session.py`](https://github.com/Garrulus21yyx/A-Modular-Action-System-Architecture/blob/5d5847e28cd385f7aaf02bab51d020fd46bb7f89/src/perception/browser_session.py)、
+[`som_parser.py`](https://github.com/Garrulus21yyx/A-Modular-Action-System-Architecture/blob/5d5847e28cd385f7aaf02bab51d020fd46bb7f89/src/perception/som_parser.py)、
+[`executor_base.py`](https://github.com/Garrulus21yyx/A-Modular-Action-System-Architecture/blob/5d5847e28cd385f7aaf02bab51d020fd46bb7f89/src/effectors/executor_base.py) 与
+[`web_benchmark_adapter.py`](https://github.com/Garrulus21yyx/A-Modular-Action-System-Architecture/blob/5d5847e28cd385f7aaf02bab51d020fd46bb7f89/src/benchmarks/web_benchmark_adapter.py)。
+该 remote 为 private；链接需要仓库权限，匿名 404 不得误报为来源不存在，也不得把这组
+本地证据列入公开可复现 benchmark 声明。
+
 ## 1. 唯一权威总图
 
 ```mermaid
@@ -217,11 +421,12 @@ flowchart TB
     TSA -->|"admit"| TS["Immutable TaskSpec<br/>authorization + constraints + forbidden effects + success"]
     TSA -->|"clarify / reject"| STOP1["User or typed failure"]
 
-    ENV["DOM / AX / Visual / SVG / WoT / API / Device"] --> CAP["PerceptionSession.capture<br/>PerceptionCapture + SourceCoverage"]
+    ENV["DOM / AX / Visual / SVG / WoT / API / Device"] --> CAP["Adapter capture<br/>PerceptionCapture + truthful SourceCoverage<br/>+ LiveSurfaceBinding + CoordinateBinding<br/>+ ExecutorCapabilityDescriptor"]
     CAP --> COB["CanonicalObservationBuilder"]
     COB --> UO["Canonical UnifiedObservation<br/>sole Runtime observation authority"]
+    UO --> O1C["RuntimeCommitter<br/>commit fresh O1"]
     TS --> PRE["Pre-plan Task Completion Check"]
-    UO --> PRE
+    O1C --> PRE
     PRE -->|"already satisfied"| TCE["TaskCompletionEvaluator"]
     PRE -->|"not satisfied"| TPOP["TaskPlanningObservationProjector"]
     UO --> TPOP
@@ -257,18 +462,20 @@ flowchart TB
     PAGE --> ASV
     SEL --> ASV
 
-    ASV --> ACC["ActionContractBuilder<br/>route canonical binding"]
-    ACC --> CONTRACT["Immutable ActionContract<br/>actual binding + ActionAuthorityProof"]
-    CONTRACT --> GATES["Task Authority rebuilds actual proof<br/>∩ Capability ∩ Approval ∩ Freshness / Preflight"]
-    GATES -->|"allow"| EX["Executor"]
+    ASV --> ATM["ActionTransactionMaterializer<br/>full O1 Draft; no old-contract patch"]
+    O1C --> ATM
+    ATM --> AUTH["Independent Task Authority<br/>+ capability intersection"]
+    AUTH --> CONTRACT["Final immutable ActionContract<br/>complete executable payload + hash"]
+    CONTRACT --> GATES["Policy / exact Approval of final hash<br/>+ snapshot/page/target/expiry preflight"]
     GATES -->|"deny / stale"| FAIL
-    EX --> RCPT["ExecutionReceipt"]
+    GATES -->|"allow + same hash"| EX["Serial Executor<br/>same final ActionContract"]
+    EX --> RCPT["TypedExecutionReceipt<br/>transport truth only"]
     RCPT --> POSTCAP["Fresh post-action PerceptionCapture"]
     POSTCAP --> POST["Fresh canonical post-action UnifiedObservation"]
     POST --> LOOP["Inline LoopEvaluationPhase"]
     RCPT --> LOOP
     CONTRACT --> LOOP
-    LOOP --> LEV["Effect + Step + triggered Task evaluation<br/>+ ObservationContinuation"]
+    LOOP --> LEV["Transport + Effect + Collateral + Step<br/>+ triggered Task evaluation + ObservationContinuation"]
     LED --> LEV
     TCE --> COMMIT["RuntimeCommitter"]
     LEV --> COMMIT
@@ -277,7 +484,7 @@ flowchart TB
     COMMIT -->|"complete"| DONE["TaskCompleted"]
     COMMIT -->|"perceive / recover / ask / block / fail"| NEXT["Typed loop outcome"]
 
-    LEV --> LED
+    COMMIT --> LED
     DONE --> TRACE
     COMMIT --> TRACE["Trace / Artifact / Benchmark / Evolution<br/>offline consumers only"]
 ```
@@ -363,11 +570,14 @@ ActionChoiceBuilder 根据 task/plan revision、active Step、TaskProgress、can
 
 ### 板块 G：ActionContract 与 Gates
 
-ActionContractBuilder 把 accepted semantic choice 与 current grounding 绑定成单动作合同。合同依次通过 Task Authority、Capability、Approval 与 Freshness/Preflight gate，任何一项失败都禁止执行。
+`ActionTransactionMaterializer` 从 fresh O1 一次性把 accepted semantic choice 与实际
+executable parameters 绑定成 final immutable contract。policy/capability 与 exact approval
+随后检查该 final hash；snapshot/page/target/expiry preflight 通过后，Executor 在同一可信
+串行链消费同一个 contract。扩展 context/coordinate/permit/fencing 只按场景启用。
 
 ### 板块 H：Execute 与 Verify
 
-Executor 返回 receipt；PostActionObserver 捕获 fresh canonical state；inline LoopEvaluationPhase 对 action effect、active-step completion、triggered task completion 与 observation continuation 一次求值。四层结果不同，不得互相替代。LoopEvaluator 是 pure collaborator，不是独立服务。
+Executor 返回 typed transport receipt；PostActionObserver 捕获 fresh canonical state；inline LoopEvaluationPhase 分别结算 external effect、collateral safety、active-step completion、triggered task completion 与 observation continuation。各层结果不得互相替代。LoopEvaluator 是 pure collaborator，不是独立服务。
 
 ### 板块 I：Commit、Recovery 与 Evidence
 
@@ -683,7 +893,7 @@ class TaskSpecGap:
 
 ```text
 ActionChoiceBuilder → InteractionGrounder → ValuePredicateResolver
-→ ActionSelectionValidator → ActionContractBuilder
+→ ActionSelectionValidator → ActionTransactionMaterializer
 → TaskAuthorityGate / CapabilityGate / ApprovalGate / PreflightService
 → Executor → LoopEvaluator → TaskCompletionEvaluator → RuntimeCommitter
 ```
@@ -957,8 +1167,8 @@ Authority 必须验证：
 3. step IDs 唯一、dependency DAG 无环；
 4. entry steps 可解释且 completion 可验证；
 5. 每个 Step 都引用其服务的 canonical TaskSpec requirement IDs；read-only/data-discovery Step 即使没有 effect，也必须具备 `requirement_refs`；
-6. 所有效果动作有 TaskSpec effect authorization refs；
-7. objective/completion/effect 不能引入 TaskSpec 未准入的新 requirement；只允许 current observation-grounded enabling condition；
+6. 所有效果动作有 TaskSpec effect authorization refs，并通过 typed semantic subsumption 证明 operation、subject/resource、destination、material named values、element function 与 task usage 均未超出对应 requirement；ID membership 只是必要条件；
+7. objective、interaction scope、completion、effect 与 data flow 不能引入 TaskSpec 未准入的新 requirement 或把 read requirement 包装成 mutation；只允许 current observation-grounded enabling condition；
 8. 不含 selector、coordinate、backend、approval 或 capability grant；
 9. budgets 在 Runtime policy 内；
 10. replan 没有重定义已提交事实；
@@ -1336,15 +1546,39 @@ Grounding 只读取 accepted typed `InteractionIntent` 与 canonical current tar
 N matches → full Catalog; StepChoicePlanner only after ChoicePage projection
 ```
 
-Resolver 不读 raw user text。未注册 semantic operator 走 bounded open resolution 或 clarification，不能临时添加 regex task special case。多 source binding 可以形成一个 semantic choice，具体 backend/binding 由 ActionContractBuilder 在 canonical candidates 上 route。
+Resolver 不读 raw user text。未注册 semantic operator 走 bounded open resolution 或 clarification，不能临时添加 regex task special case。多 source binding 可以形成一个 semantic choice，具体 backend/binding 由 `ActionTransactionMaterializer` 编排的 route owner 在 canonical candidates 上选择。
 
-## 8. ActionContract、四重 Gate 与动作附近审批
+## 8. Action transaction、四重 Gate 与动作附近审批
 
-### 8.1 ActionContract
+本节分为两层：MVP 必须实现 `materialize final contract → policy/approval(final
+contract) → preflight(final contract) → execute(same contract)`；扩展 context、coordinate、
+descriptor、admission/permit 与 revocation 字段是兼容的 hardening vocabulary，只有对应场景
+正式启用时才 mandatory。下面的扩展 dataclass 不得被理解为每个 GUI action 的最小 schema。
+
+### 8.1 Draft / Sealed ActionContract
 
 ```python
 @dataclass(frozen=True)
-class ActionContract:
+class RouteBinding:
+    backend_id: str
+    executor_ref: str
+    operation_ref: str
+    target_encoding: FrozenObject
+    destination_encoding: FrozenObject | None
+    request_schema_ref: str
+    request_schema_digest: str
+    request_encoder_ref: str
+    request_encoder_digest: str
+    request_payload: FrozenObject
+    request_payload_digest: str
+    credential_scope_ref: str | None
+    transport_principal_ref: str
+    transport_audience: str
+    late_bound_field_policy_digest: str
+    route_policy_digest: str
+
+@dataclass(frozen=True)
+class ActionContractDraft:
     contract_ref: ContractRef
     task_ref: TaskRef
     plan_ref: PlanRef
@@ -1352,9 +1586,19 @@ class ActionContract:
     choice_catalog_ref: ChoiceCatalogRef
     selected_choice_id: str
     observation_ref: ObservationRef
+    observation_epoch_digest: str
+    execution_context_requirement_ref: ExecutionContextRequirementRef
+    live_surface_binding_ref: LiveSurfaceBindingRef
+    live_surface_binding_digest: str
+    coordinate_binding_ref: CoordinateBindingRef | None
+    coordinate_binding_digest: str | None
+    executor_capability_descriptor_ref: ExecutorCapabilityDescriptorRef
+    executor_capability_descriptor_digest: str
     semantic_action: SemanticAction
     target_binding: TargetBinding
     destination_binding: TargetBinding | None
+    route_binding: RouteBinding
+    route_binding_digest: str
     parameters: FrozenObject
     preconditions: tuple[CriterionExpr, ...]
     expected_effects: tuple[CriterionExpr, ...]
@@ -1363,27 +1607,97 @@ class ActionContract:
     action_authority_proof: ActionAuthorityProof
     runtime_effect_signature: RuntimeEffectSignature
     required_capabilities: frozenset[CapabilityId]
+    effective_capabilities: frozenset[CapabilityId]
     risk: RiskLevel
     validity: ContractValidity
     idempotency_key: str
-    compensation: CompensationSpec | None
+
+@dataclass(frozen=True)
+class SealedActionContract:
+    draft: ActionContractDraft
+    authority_proof_digest: str
+    capability_intersection_digest: str
+    materializer_policy_digest: str
     contract_hash: str
+
+@dataclass(frozen=True)
+class FinalDispatchAdmission:
+    admission_ref: str
+    run_id: str
+    session_generation: int
+    contract_hash: str
+    expected_state_version: int
+    approval_grant_ref: str | None
+    approval_grant_revision: str | None
+    capability_grant_set_digest: str
+    capability_grant_revision: str
+    capability_descriptor_digest: str
+    request_schema_digest: str
+    mandatory_policy_digest: str
+    preflight_digest: str
+    nonce: str
+    issued_at_ms: int
+    expires_at_ms: int
 ```
 
-`ContractValidity` 至少绑定 snapshot、page/environment revision、target fingerprint、issued time 与 expiry。所有 hash-critical payload 必须先递归 normalize/freeze，再计算 digest。
+规范正文中的 `ActionContract` 均指最终 immutable executable contract；Draft 不是 executable authority，不能进入 approval 或 Executor。MVP 的 `ContractValidity` 至少绑定 snapshot、page/document revision、target fingerprint、issued time 与 expiry；state version、SurfaceLease/fencing 只有在并发或恢复 threat model 纳入范围时才 mandatory。所有实际执行字段必须先递归 normalize/freeze，再计算 digest。
 
-`ActionContractBuilder` 必须接收 selected `ActionChoice`、current `ChoiceCatalogRef` 与同一 canonical `ObservationRef`，再从 canonical target 的全部 `GroundingCandidate` 中为具体 action route/bind execution surface。它不得从 `ChoicePresentation`、label summary 或 representative source 生成 locator。Builder 必须以最终实际 target/destination candidate、backend operation 与 named parameters 重建 route-specific `RuntimeEffectSignature`；同一 semantic choice 的 DOM click、WoT invoke 与 API call 可以具有不同 operation、capability、assurance、externality/reversibility 和 risk。若 route 后 signature digest 或 binding digest 与 Catalog proof 不一致，必须重跑 typed evaluator；结果非 ALLOW 时 contract construction 立即失败，不能把 choice 的 authorized label/digest 原样复制后视为复核完成。若 fresh preflight 产生新 observation epoch，则旧 Catalog、selection、contract 与 approval 全部 stale，必须重建，不能把旧 choice 静默绑定到新页面。
+`RouteBinding` 是 executable encoding 的闭包：`target_encoding` /
+`destination_encoding` 保存当前 selector、canonical **secret-free** URI/resource identity、
+method、logical/physical coordinate 或 device/API resource encoding（按 backend schema 取其
+适用子集），`request_payload` 只保存
+无 secret 的 canonical backend **application payload**。payload 必须在 final materialization
+阶段生成并成为 contract hash 的组成部分，不得在 policy/approval 后再成为第三份独立可写的
+参数事实。MVP 只要求 policy/approval 与 Executor 消费同一个 hash；pinned schema/encoder/
+route-policy 的双重重编码是高风险 adapter hardening，而不是通用阻塞门。
+仅有
+`TargetBinding` 或 `RuntimeEffectSignature` 不足以证明 route 同 epoch。Draft 不携带可调用的
+`CompensationSpec`/rollback callback；任何补偿或 restore 都是新的 primitive action，必须
+fresh O1、独立 Draft/Sealed contract、authority/capability/approval、attempt/permit、receipt 与
+effect settlement。
+
+整个 `RouteBinding` 都是 secret-free schema，不只是 `request_payload`：URI userinfo、cookie、
+bearer token、private key、session handle、signed URL 的 signature/credential/expiry query、
+request signature/timestamp 等 credential/volatile transport material 不得进入 target/
+destination encoding、payload、任一可读 ref、contract projection、trace 或 checkpoint。
+非认证的 application query fields 必须规范化为 named parameters；signed URL 在合同中只保留
+unsigned canonical resource identity 与 opaque credential scope，真实签名 URL 只能 late-bind。
+允许 late-bind 的字段由 executor capability descriptor 中的 closed
+allowlist 与 `late_bound_field_policy_digest` 固定，只能实现认证、连接与 anti-replay，不能改变
+operation、resource/target、destination、application body 或 material parameter。Executor 在
+dispatch boundary 根据 opaque `credential_scope_ref`、authenticated principal 与 exact audience
+取用并注入；tenant/account/resource scope、expiry/revocation 的独立 live proof 只在启用相应
+multi-account/remote-credential 场景时要求。
+Contract/trace serializer 必须按 schema 拒绝完整 `RouteBinding` 任一字段中的 secret，而不是依赖
+事后字符串 scrub；receipt 只保留 redacted provider projection。
+late binding 复用现有 provider/environment edge 的 credential resolver；adapter 未声明该能力
+时返回 `UNSUPPORTED`/fail closed，不要求也不得顺手建设通用 credential broker 或 secret store。
+
+`ActionTransactionMaterializer` 必须接收 accepted `ActionSelection`、current `ChoiceCatalogRef` 与一个已经由 `RuntimeCommitter` 提交的 fresh canonical `ObservationRef`，再从该 epoch 的完整 target/candidate/context/coordinate/capability indexes 一次性建立 Draft。它不得从 `ChoicePresentation`、label summary、representative source 或旧合同产生 locator、payload、precondition 或 verifier；也不得用 dataclass `replace` 局部修补旧合同。
+
+Materializer 以最终实际 target/destination、backend operation 与 named parameters 构造
+完整 immutable contract，再调用 Task/Policy/Capability owners。字段仅在该 action semantics
+需要时 mandatory。任何 snapshot/page/target/expiry 变化都使 selection、Draft、contract 与
+approval stale 并要求重新 materialize；session/account/coordinate/schema 等额外维度只有在
+对应 adapter 或 benchmark 声明它们属于 validity boundary 时才加入。
 
 ### 8.2 四重 gate
 
 | Gate | 判定 | 禁止 |
 |---|---|---|
 | Task Authority | 以 TaskSpec `EffectAuthorizationScope`、current observation 与 contract 的 route-specific `RuntimeEffectSignature` 独立重建 `ActionAuthorityProof`；必须为 ALLOW，且 proof/policy/binding/epoch digests 一致、不违反 constraints/forbidden effects | 用关键词、label、无字段 value set、Planner risk/effectful 或从 choice 复制的 digest 猜核心权限 |
-| Capability | 当前实际 grants 是否覆盖 contract requirements | 把 capability ceiling 当 grant |
+| Capability | product policy、current user grant 与实际 adapter support 是否覆盖 contract requirements | 把 capability ceiling/required list 当 grant；未知实际 action support 时降级放行 |
 | Approval | 是否存在匹配 concrete contract 的有效 one-shot token | 提前批准 plan/action family |
-| Freshness/Preflight | snapshot/page/target/TTL/preconditions 是否仍成立 | 自动重定位后继续执行旧 contract |
+| Freshness/Preflight | snapshot/page revision/target fingerprint/TTL/preconditions 是否仍成立 | 自动重定位后继续执行旧 contract；stale 拒绝后仍调用 Executor |
 
 四重 gate 是交集关系，任何一项 deny 都不能被其他 gate 抵消。
+
+在当前可信进程内串行模型中，四重 gate 可以直接返回对同一 final contract 的 typed
+allow/deny；allow 后立即由 Executor 消费该 contract。任何 deny/stale 路径都必须保证
+`executor_calls == 0`。`FinalDispatchAdmission`、state-version CAS、global one-shot permit
+registry，以及 schema/policy revocation 与 dispatch 的线性化排序，是并发 worker、恶意内部
+调用者或 hard-crash fault model 的 future hardening，不是第五种 MVP authority，也不是
+P4/P5 blocker。
 
 ### 8.3 审批绑定时序
 
@@ -1391,35 +1705,56 @@ class ActionContract:
 sequenceDiagram
     participant SP as StepChoicePlanner
     participant SV as ActionSelectionValidator
-    participant CB as ActionContractBuilder
+    participant TM as ActionTransactionMaterializer
+    participant TA as Task/Policy + Capability
     participant AG as ApprovalGate
     participant PF as Preflight
     participant EX as Executor
 
     SP->>SV: Select currently presented choice_id
     SV->>SV: Validate page + catalog + epoch identities
-    SV->>CB: Accepted ActionSelection
-    CB->>CB: Route canonical binding and build contract
-    CB->>AG: Request approval for contract hash + page revision
-    AG-->>CB: One-shot ApprovalToken
-    CB->>PF: Revalidate contract and current observation
-    alt state unchanged
-        PF-->>CB: executable
-        CB->>AG: consume matching token
-        CB->>EX: execute exact ActionContract
-    else stale or target changed
-        PF-->>CB: stale / deny
-        CB->>CB: discard catalog selection, contract and token
+    SV->>TM: Accepted selection + fresh observation
+    TM->>TM: Materialize and freeze complete executable contract H
+    TM->>TA: Evaluate final contract H
+    TA-->>TM: typed allow / deny
+    TM->>AG: Approve final contract H when required
+    AG-->>TM: Approval bound to H
+    TM->>PF: Recheck snapshot/page/target/expiry for H
+    alt current and approved_hash == H
+        PF-->>EX: Execute the same immutable contract H
+        EX-->>PF: Typed transport receipt
+    else stale, denied, or hash mismatch
+        PF-->>TM: typed reject; executor call count remains zero
     end
 ```
 
-审批发生在具体 operation、resource identity、destination、named parameters、effect class、externality/reversibility、risk、backend binding 和页面状态已知之后，执行之前。ApprovalToken 必须通过 typed fields 或 `contract_hash` 绑定 TaskSpec revision、Catalog digest、observation epoch、RuntimeEffectSignature digest、proof/policy version、target/resource、destination/recipient、amount/value、backend operation、risk、expiry 与 one-shot use；Re-ground、参数变更、risk/operation classification 变化、snapshot 变化或 contract rebuild 必须重新审批。
+审批发生在完整 executable contract 冻结之后、执行之前。ApprovalRequest/Grant 至少绑定
+`contract_hash`、operation、实际 target/destination、named parameters、risk 与 expiry；
+Re-ground、参数、snapshot/page/target 或 contract rebuild 变化必须重新审批。执行路径必须
+断言 `approved_contract_hash == executed_contract_hash`。跨线程 policy/schema revocation 排序、
+grant tombstone registry 与 permit issuance 是 future hardening；当前 MVP 依赖 one coordinator
+的串行调用，不宣称并发线性化保证。
 
 用户面对的 approval presentation 至少显示：将执行什么、作用于谁/什么资源、发送到哪里、金额/关键参数、是否可逆、当前 backend operation、证据来源与 material uncertainty。展示文本不是 approval authority；token 只绑定上述 typed contract payload。
 
-Approval 的法律含义是“用户同意执行这个已经被 Task Authority 证明在授权范围内的 concrete transaction”，不是补充 TaskSpec。`DENY`/`UNPROVEN` 不能弹出 approval 后继续；需要扩大 target、destination、amount、recipient、operation 或 destructive scope 时，必须先由用户澄清形成新 TaskSpec revision，再重建 Catalog、contract 与 approval。
+Approval 的法律含义是“用户同意执行这个已经被 Task Authority 证明在授权范围内的 concrete transaction”，不是补充 TaskSpec。`DENY`/`UNPROVEN` 不能弹出 approval 后继续；需要扩大 target、destination、amount、recipient、operation 或 destructive scope 时，必须先由用户澄清形成新 TaskSpec revision，再重建 Catalog、contract 与 approval。interrupt、cancel、restart、contract stale 或 session generation 变化后到达的 grant 必须 tombstone/reject；当前 closure 不引入更宽的 semantic approval envelope。
 
-### 8.4 高风险动作 policy closure
+### 8.4 Context、coordinate、lease 与 dispatch boundary
+
+当前 MVP 的 validity boundary 是 snapshot、page/document revision、target fingerprint 与
+expiry。`ExecutionContextRequirementRef`、`LiveSurfaceBinding` 和 `CoordinateBinding` 是可选
+扩展：只有任务/adapter/benchmark 确实包含 multi-account、profile、frame 或 coordinate drift
+时才启用对应字段。multi-tenant authorization、通用 account/profile live proof 不属于 P4/P5
+默认门禁，且任何页面值都不得被复制后伪装成 live identity proof。
+
+`CoordinateBinding` 仅在 route 需要 point/bbox/selector/node 时存在；它声明 source/destination coordinate space，并绑定 screenshot ref/hash/size、logical/physical viewport、crop/scroll、DPR、browser zoom、OS scale、orientation、window/display origin 与 transform version/digest。selector/node 同样绑定 document/frame identity。resize、scroll、zoom、window/display、tab/frame/document、focus/modal/occlusion 变化按 route policy 使 binding stale；高风险 GUI 动作必须在真实输入事件前最后复核可见性、遮挡、surface revision、transform digest 与 lease。
+
+`AffordanceLease` 可继续表达 target freshness。task claim、SurfaceLease、worker fencing 与
+single-use permit registry 只在多个 run/worker 可能竞争同一 mutable surface 时需要。当前
+Executor 接受同一串行链已经 final materialize、policy/approval、preflight 的 immutable
+`ActionContract`；内部 permit 若保留只是实现细节，不能改变或替代 contract hash。
+
+### 8.5 高风险动作 policy closure
 
 高风险治理使用小型 effect-policy matrix，不为每个网站/任务枚举 workflow：
 
@@ -1454,8 +1789,8 @@ Approval 的法律含义是“用户同意执行这个已经被 Task Authority �
 
 | 层 | 问题 | 输出 | 无权做什么 |
 |---|---|---|---|
-| Receipt | Executor 是否报告动作调用结果 | `ExecutionReceipt` | 证明 criterion、step 或 task |
-| Action effect | 当前 ActionContract 的局部预期效果是否发生 | `CriterionEvaluation` | 提交 task completion |
+| Transport | Executor/provider 是否越过发送边界、是否确认接收 | `TypedExecutionReceipt` / `DispatchState` | 推断 external effect、criterion、step 或 task |
+| Action effect | 当前 ActionContract 的局部预期效果是否发生，以及适用的 collateral 是否安全 | `EffectSettlement` + `CriterionEvaluation` | 用 transport success、toast 或 model claim 提交 task completion |
 | Step | StepSpec.completion 是否满足 | `CriterionEvaluation` | 修改 TaskSpec 或直接写 progress |
 | Task | TaskSpec.success root 是否满足 | `TaskCompletionEvaluation` | 直接写 StateKernel |
 | Commit | typed evaluation 应产生何种权威 transition | `RuntimeCommitter` transition | 重解 criterion 或伪造 evidence |
@@ -1465,6 +1800,35 @@ Approval 的法律含义是“用户同意执行这个已经被 Task Authority �
 ### 9.2 LoopEvaluation 合同与非布尔状态
 
 ```python
+class DispatchState(StrEnum):
+    NOT_SENT = "not_sent"
+    SENT = "sent"
+    SENT_UNKNOWN = "sent_unknown"
+
+class ProviderAckState(StrEnum):
+    NONE = "none"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    UNKNOWN = "unknown"
+
+class EffectState(StrEnum):
+    NOT_OCCURRED = "not_occurred"
+    OCCURRED = "occurred"
+    STILL_UNCERTAIN = "still_uncertain"
+
+@dataclass(frozen=True)
+class TypedExecutionReceipt:
+    attempt_ref: AttemptRef
+    contract_ref: ContractRef
+    dispatch_intent_ref: DispatchIntentRef
+    dispatch_permit_ref: DispatchPermitRef
+    dispatch_state: DispatchState
+    backend_request_ref: str | None
+    idempotency_key: str | None
+    provider_ack_state: ProviderAckState
+    provider_receipt: FrozenObject | None
+    failure: FailureEnvelope | None
+
 class CriterionStatus(StrEnum):
     SATISFIED = "satisfied"
     UNSATISFIED = "unsatisfied"
@@ -1486,7 +1850,10 @@ class CriterionEvaluation:
 
 @dataclass(frozen=True)
 class LoopEvaluation:
+    transport: TypedExecutionReceipt
+    effect_state: EffectState
     action_effect: CriterionEvaluation | None
+    collateral_safety: tuple[CriterionEvaluation, ...]
     step_completion: CriterionEvaluation | None
     task_completion: TaskCompletionEvaluation | None
     durable_evidence_updates: tuple[DurableEvidenceRecord, ...]
@@ -1494,7 +1861,15 @@ class LoopEvaluation:
     failure: FailureEnvelope | None
 ```
 
+`NOT_SENT` 要求 adapter-specific evidence 证明 send boundary 未越过；`SENT` 要求证明
+boundary 已越过，但不要求对端接受，更不证明业务效果。对端是否明确接受/拒绝单独写入
+`provider_ack_state`/`provider_receipt`；无法证明是否越界时只能是 `SENT_UNKNOWN`。因此原
+`ACKNOWLEDGED` 概念被拆成 transport `SENT` 与 provider ack detail，而不是被 Boolean
+`success` 替代。
+
 `SATISFIED` 需要充分有效 evidence；`UNSATISFIED` 需要充分反证；无 evidence 是 `UNKNOWN`；失效为 `STALE`；material disagreement 为 `CONFLICT`；缺 provider/operator 为 `UNSUPPORTED`；provider exception 为 `ERROR`。不得把这些状态压成 Boolean。
+
+每个 Executor/provider/schema/exception 退出路径必须产生 `TypedExecutionReceipt`；硬崩溃无法现场返回时，由已提交 attempt/dispatch intent 与 journal（若该 fault model 已启用）恢复为 typed missing-receipt outcome。未知绝不能自动归为 `NOT_SENT`，provider/model/schema exception 绝不能转换为 COMPLETE。`SENT` 也只证明 transport，`OCCURRED` 与 `NOT_OCCURRED` 均需满足 effect/risk-specific evidence；无法证明时停在 `STILL_UNCERTAIN`。
 
 authoritative provider 必须保留真实 `observed_value`、resource/transaction identity、source、freshness 与 assurance，而不是只写 `True`。Boolean pass 可作为派生显示，不能替代可重新校验的 observed state。
 
@@ -1515,7 +1890,7 @@ class CausalEffectEvidence:
     transaction_ref: str = ""
 ```
 
-`STATE_HOLDS` 可由 current state 满足；`ACTION_CAUSED` 必须有 current task/contract-bound CausalEffectEvidence。无需构建通用 causal graph。
+`STATE_HOLDS` 可由 current state 满足；`ACTION_CAUSED` 必须有 current task/contract-bound CausalEffectEvidence。对 file/process/permission/network/credential/device 等 collateral probes，只按 effect/risk policy 选择必要的 negative assertions；不为每次读取、滚动或普通 click 建设全量安全扫描，也无需构建通用 causal graph。
 
 ### 9.4 TaskCompletionEvaluator
 
@@ -1530,7 +1905,23 @@ class TaskCompletionEvaluation:
     missing_rechecks: tuple[str, ...]
     constraint_violations: tuple[str, ...]
     uncertain_external_effects: tuple[str, ...]
-    result_payload: FrozenObject
+    output_materialization_refs: tuple[OutputMaterializationRef, ...]
+```
+
+```python
+@dataclass(frozen=True)
+class OutputMaterialization:
+    output_ref: OutputMaterializationRef
+    output_spec_ref: OutputSpecRef
+    schema_id: str
+    value_or_artifact_ref: FrozenObject | ArtifactRef
+    content_digest: str
+    source_refs: tuple[str, ...]
+    task_ref: TaskRef
+    step_ref: StepRef | None
+    observation_ref: ObservationRef | None
+    redaction_policy_ref: str
+    retention_policy_ref: str
 ```
 
 纯 evaluator 输入为 TaskSpec、current observation、TaskProgress、latest ActionOutcome 与 durable evidence。唯一允许 RuntimeCommitter 提交 TaskCompleted 的条件是：
@@ -1539,12 +1930,13 @@ class TaskCompletionEvaluation:
 TaskSpec.success root == SATISFIED
 AND no required constraint violation
 AND no unresolved external effect
+AND all risk-required collateral-safety assertions satisfied
 AND all required FINAL_RECHECK completed
 AND all required outputs materialized
 AND every required output that requires lineage is source-bound
 ```
 
-Output materialization 是 typed closure，不是 Planner prose。`OutputSpec.materialization` 必须证明 structured result 已构造；`source_binding_required=True` 时还必须具有合法 source/artifact/resource refs。Planner `FinishProposal` 只转换为 `FinalVerificationRequested`；plan exhausted、latest passed report、reward、receipt、自然语言总结或 terminal_readiness 都不能替代 root/output evaluation。
+Output materialization 是实际 typed value/artifact closure，不是 `OutputSpec` 元数据或 Planner prose。`OutputMaterialization` 必须通过 schema/content digest 证明结果已构造，并保留 task/step/observation lineage；`source_binding_required=True` 时还必须具有合法 source/artifact/resource refs。secret、credential、raw sensitive content 默认不得复制进 trace；value/artifact 与 trace projection 受 redaction、encryption、access 和 retention policy 约束。Planner `FinishProposal` 只转换为 `FinalVerificationRequested`；plan exhausted、latest passed report、reward、receipt、自然语言总结或 terminal_readiness 都不能替代 root/output evaluation。
 
 ### 9.5 Task completion evaluation 触发器
 
@@ -1591,6 +1983,14 @@ class ObservationContinuation:
 
 post-action capture 经 CanonicalObservationBuilder 后默认成为下一轮 epoch。页面稳定、无 material conflict、evaluation conclusive、next-step source requirements 已满足、无 approval wait 且 lease fresh 时 `REUSE`；只缺 targeted source 时 `AUGMENT_TARGETED`；stale/conflict/inconclusive/new-source requirement 时 `RECAPTURE`；异步 loading/pending mutation 时 `WAIT_AND_RECAPTURE`。决定 owner 是 Perception，Coordinator 只执行 typed continuation。
 
+`AUGMENT_TARGETED` 不是对已经 committed observation 的原地 append，也不允许把旧 capture
+items/coverage 冒充同一次采集。它以当前 `observation_ref` 作为触发/历史 lineage，开启新的
+`AcquisitionEpochRef`，在该 epoch 中重新采集下一决策所需的最小**联合充分** source scopes，
+再由 Builder 产生新的 `ObservationRef`。若旧 source fact 仍是新决策的 material input，就必须
+在新 epoch 重新采集或由该 adapter 明确 revalidate；无需使用的 source 不要求全量 recapture。
+因此 targeted acquisition 保持物理最小，同时 executable canonical observation 始终只含一个
+acquisition epoch。`REUSE` 才表示继续使用未经变更且 coverage 足够的原 observation。
+
 ### 9.8 ModelVerifier
 
 ModelVerifier 只用于 OpenSemanticCriterion、visual/language open semantics、low/medium-risk subjective state 或 mechanical provider 无法归一化的内容。它只返回 EvidenceRecord/CriterionEvidence，不返回 TaskCompleted、StepCompleted、progress mutation 或 grant。
@@ -1607,17 +2007,25 @@ purchase、payment、send、delete、account change 和 irreversible external tr
 
 ```mermaid
 stateDiagram-v2
-    [*] --> OBSERVED
+    [*] --> CAPTURED
+    CAPTURED --> OBSERVED: RuntimeCommitter commits fresh O1
     OBSERVED --> TASK_EVALUATED: initial root trigger
     TASK_EVALUATED --> TASK_COMPLETED: root satisfied / RuntimeCommitter
     TASK_EVALUATED --> PLANNED: not satisfied
     PLANNED --> CATALOG_BUILT
     CATALOG_BUILT --> ACTION_SELECTED: 1 choice or valid page selection
     CATALOG_BUILT --> RECOVERY: 0 choices / typed cause
-    ACTION_SELECTED --> CONTRACT_ADMITTED
-    CONTRACT_ADMITTED --> EXECUTED
-    CONTRACT_ADMITTED --> REOBSERVE: stale preflight
-    EXECUTED --> LOOP_EVALUATED: fresh post-action observation
+    ACTION_SELECTED --> CONTRACT_DRAFTED: full materialization from committed O1
+    CONTRACT_DRAFTED --> CONTRACT_SEALED: authority + capability allow
+    CONTRACT_SEALED --> APPROVED: exact approval or policy exemption
+    CONTRACT_SEALED --> REOBSERVE: stale or denied
+    APPROVED --> PREFLIGHT_PASSED: approved hash equals final hash + snapshot/page/target current
+    APPROVED --> REOBSERVE: stale / hash mismatch / expired
+    PREFLIGHT_PASSED --> TRANSPORT_SETTLED: serial Executor consumes same immutable contract
+    TRANSPORT_SETTLED --> EFFECT_RECONCILIATION: sent unknown or receipt missing
+    TRANSPORT_SETTLED --> LOOP_EVALUATED: fresh post-action observation
+    EFFECT_RECONCILIATION --> LOOP_EVALUATED: authoritative result available
+    EFFECT_RECONCILIATION --> USER_INPUT: still uncertain / handoff
     LOOP_EVALUATED --> STEP_ACTIVE: step unsatisfied
     LOOP_EVALUATED --> STEP_VERIFIED: step satisfied
     LOOP_EVALUATED --> RECOVERY: unknown / stale / conflict / unsupported / error
@@ -1659,7 +2067,7 @@ flowchart LR
 2. **`UnifiedObservation`：**由 `CanonicalObservationBuilder.build(capture)` 单向建立，是唯一 current semantic observation authority。
 3. **`TaskPlanningObservationView` / `PlannerObservationView` / `ChoicePage`：**仅表示“本次给某模型展示什么”，生命周期限于该次 request。
 
-Production path 必须删除 `UnifiedObservation.from_planner_observation(...)`。以下组件禁止消费 presentation view：`ActionChoiceBuilder`、`InteractionGrounder`、`ActionContractBuilder`、`PreflightService`、`LoopEvaluator`、`EvidenceProvider`、`TaskCompletionEvaluator`。
+Production path 必须删除 `UnifiedObservation.from_planner_observation(...)`。以下组件禁止消费 presentation view：`ActionChoiceBuilder`、`InteractionGrounder`、`ActionTransactionMaterializer`、`PreflightService`、`LoopEvaluator`、`EvidenceProvider`、`TaskCompletionEvaluator`。
 
 ### 10.2 Canonical UnifiedObservation 数据合同
 
@@ -1667,6 +2075,10 @@ Production path 必须删除 `UnifiedObservation.from_planner_observation(...)`�
 @dataclass(frozen=True)
 class UnifiedObservation:
     ref: ObservationRef
+    execution_context_requirement_ref: ExecutionContextRequirementRef
+    live_surface_binding_ref: LiveSurfaceBindingRef
+    live_surface_binding_digest: str
+    executor_capability_descriptor_ref: ExecutorCapabilityDescriptorRef
     targets: tuple[CanonicalTarget, ...]
     source_coverage: tuple[SourceCoverage, ...]
     artifact_refs: tuple[str, ...]
@@ -1718,14 +2130,43 @@ Canonical observation 不声称是外部世界全集。每个 source 必须携�
 @dataclass(frozen=True)
 class SourceCoverage:
     source: GroundingSource
+    adapter_id: str
+    adapter_version: str
+    acquisition_epoch_ref: AcquisitionEpochRef
     capture_policy_id: str
+    capture_scope: CoverageScope
+    acquisition_budget: FrozenObject
+    acquisition_model_id: str | None
+    acquisition_model_version: str | None
+    threshold_policy_digest: str | None
     captured_item_count: int
     truncated: bool
+    source_exhausted: bool | None
+    termination: Literal[
+        "exhausted", "budget", "limit", "timeout",
+        "provider_error", "not_attempted", "unknown",
+    ]
+    truncation_reason_code: str | None
     omitted_item_count_estimate: int | None
+    capture_error: FailureEnvelope | None
     completeness: Literal["complete", "bounded", "unknown"]
 ```
 
-例如 accessibility adapter 最多采集 256 个节点属于 acquisition budget；第 257 个节点若未进入 capture，CanonicalObservationBuilder 无法恢复它，但必须通过 `truncated=True` 与 `completeness="bounded"` 使该未知性可见。
+`SourceCoverage` 的 producer/owner 是执行实际采集的 acquisition adapter；CanonicalObservationBuilder 只能验证、合并与保留，不能根据 candidate 存在、空列表或 confidence 推导 `complete`。未提供 coverage、adapter error、未知 scope/model/threshold 或不可证明的 absence 一律是 `unknown`。例如 accessibility adapter 最多采集 256 个节点属于 acquisition budget；第 257 个节点若未进入 capture，必须通过 `truncated=True` 与 `completeness="bounded"` 使该未知性可见。
+
+Perception owner 在调用 adapters 前分配 `AcquisitionEpochRef`；adapter 的 items、assertions
+与 coverage 都必须返回同一 ref。CanonicalObservationBuilder 只接受一个 acquisition epoch，
+并把它绑定到新 `ObservationRef`；混入旧 capture 的 coverage/item 必须整批拒绝，不能靠
+timestamp、source name 或 count 拼接。
+
+targeted continuation 同样遵守此规则：它新建 acquisition epoch，并只重采/revalidate 当前
+决策联合所需的 source scopes；旧 committed observation 只能作为 continuation lineage，不能
+作为新 Builder 的 item/coverage 输入。这不要求每轮全量采集，也不允许跨 epoch 增量拼接。
+
+`complete` 还要求 scope 已知且 `termination="exhausted"`、
+`source_exhausted=True`；budget/limit/timeout/error/not-attempted 均不能被 count 或空结果
+升级为 complete。`truncation_reason_code` 是 adapter vocabulary 的稳定 reason code，不能
+塞入 raw provider exception、页面文本或模型解释。
 
 | 边界 | 决定什么 | 可影响 Runtime Catalog | 证明责任 |
 |---|---|---:|---|
@@ -1759,7 +2200,7 @@ DOM / AX / Visual / SVG / WoT / API / Device use one shared TaskSpec、one curre
 | WoT | Thing Description、property/resource state | thing/form/operation/resource binding | WoT executor receipt | fresh device/resource state and contract-bound outcome |
 | API / Device | resource/device snapshot | endpoint/device operation binding | API/device executor receipt | authoritative resource/device state when declared |
 
-Planner selects the semantic action; ActionContractBuilder selects the current backend/binding. 该选择必须基于 current canonical observation、required evidence strength、capability、risk 与 policy，并绑定到新的 contract；Planner 不选择 selector、coordinate、href、method 或 executor。
+Planner selects the semantic action; the route owner inside `ActionTransactionMaterializer` selects the current backend/binding. 该选择必须基于 current canonical observation、required evidence strength、capability、risk 与 policy，并绑定到新的 contract；Planner 不选择 selector、coordinate、href、method 或 executor。
 
 同一 semantic target 同时存在 DOM、Visual、WoT 或 API bindings 且无 material conflict 时，Catalog 通常只建立一个 backend-neutral semantic choice。若 source state 冲突，必须保留 assertion 与 conflict status；若当前 route 在 dispatch 前失效，只能在 fresh observation epoch 上重新 route 并建立新 contract，不能修改旧 contract 或盲目重复 effectful action。
 
@@ -1856,6 +2297,25 @@ ArtifactStore   → DOM、截图、AX tree 等大型历史内容
 
 单进程 MVP 可用内存 map 实现 ObservationStore，Trace/ArtifactStore 保存历史。Planner 永远不能获得 ObservationStore handle，只能接收 projector 生成的 immutable request。
 
+### 11.5 Checkpoint、resume、interrupt 与 replay 边界
+
+P5 的 checkpoint/resume 是后置 containment，不得把尚未闭合的 transaction 状态永久化。最小 `RunCheckpoint` 只保存最后一次 committed typed state：TaskSpec/plan/progress refs 与 digests、`last_committed_observation_ref`（historical，不恢复为 current authority）、contract ref/hash、approval request ref/status、attempt/dispatch/effect identities、budgets、trace head、run provenance manifest digest 与 lifecycle state。它不保存完整 executable contract、approval token、credential、cookie、raw DOM/AX/screenshot、selector、coordinate、live browser/backend handle、`LiveSurfaceBinding`、`CoordinateBinding`、`AffordanceLease` 或 `SurfaceLease`。
+
+process restart 必须创建新的 session generation、重新取得 task/surface lease、提交 fresh canonical observation，再从 current state 完整 materialize；旧 Observation、Catalog、selection、contract、approval 与 permit 只供审计或 effect reconciliation，永不可复活执行。same-process suspend 仅可在明确 policy 且 live session/lease 仍有效时作为优化，不能改变上述安全语义。迟到 approval grant 在 interrupt/cancel/restart/stale 后必须 tombstone。
+
+`runtime_resume.py` 只验证 checkpoint schema/authenticity、TaskSpec lineage、code/policy/provider/model/tool schema/profile/environment manifest 和 lifecycle，并输出 `ResumeDirective` 或 `ReconciliationRequired`；它不打开 session、不采集、不 grounding、不审批、不查询 effect、不判断 completion、不 commit。Session owner、Perception、effect-specific recovery/evidence owner 与 RuntimeCommitter 分别执行这些职责。`RuntimeCommitter` 只产生 immutable checkpoint snapshot，不负责序列化、文件 I/O 或 restore policy；store 只做原子编码/写入/读取与 torn-write/tamper 检测。
+
+通用 checkpoint 不足以支持 hard-crash dispatch recovery。只有在 fault model 明确要求跨进程判定 `DISPATCH_STARTED` 时，才在 P4/P5 边界增加窄化 durable dispatch journal、state-version CAS、run/surface lease fencing 与 single-use permit recovery；否则能力声明仅限 cooperative interruption。cancel 只表示安全停止控制流和释放资源，不声称撤销已发生效果；dispatch 中断或 lease 丢失进入 `SENT_UNKNOWN / STILL_UNCERTAIN`。
+
+若对外 API 需要较粗的恢复投影，只允许从 canonical transport/effect pair 单向派生：
+`NOT_DISPATCHED` 仅对应有证明的 `NOT_SENT`；`MAY_HAVE_OCCURRED` 覆盖
+`SENT_UNKNOWN`、missing receipt，以及 `SENT + STILL_UNCERTAIN`；
+`CONFIRMED_NOT_OCCURRED` 与 `CONFIRMED_OCCURRED` 分别要求 identity-bound
+`NOT_OCCURRED` / `OCCURRED` settlement。该投影不是第二状态机，不能反向补写 receipt
+或 effect truth，也不能把 service status/cancel request 变成 `NOT_SENT` 证据。
+
+Replay 只读取 pinned manifest 与 simulated adapters，任何 miss 都 fail closed；禁止调用 live driver、network、credential 或把 simulated receipt 冒充真实 receipt。需要再次真实执行时创建新的 live run identity，并重新 observation、admission、approval 与 dispatch。当前 P5 不新增 batch contract、batch cursor、rollback coordinator 或 batch resume。
+
 ## 12. Authority Matrix
 
 | 责任 | 唯一 Owner | 禁止承担的责任 |
@@ -1867,7 +2327,11 @@ ArtifactStore   → DOM、截图、AX tree 等大型历史内容
 | Bounded source context projection | `SourceContextProjector` | 创建 requirement、扩大 consumer allowlist、把 summary 变成 authority |
 | Task meaning 与 revision | `TaskSpecAuthority` | 生成步骤或动作 |
 | Canonical requirement identity | `TaskSpecAuthority` | 创建 obligation/dependency graph、由 objective 恢复字段 |
-| Perception acquisition + coverage | `PerceptionSession` | 把未采集目标宣称为不存在 |
+| Perception acquisition + truthful coverage | route-specific acquisition adapter / `PerceptionSession` | Builder 根据 candidates 反推 complete；把未采集目标宣称为不存在 |
+| Durable execution-context requirement | TaskSpec/InputBinding admission | 保存 credential/live handle，或用页面内容猜 account/profile |
+| Live session/surface lifecycle | Session owner/factory + `SurfaceLease` owner | 修改 task semantics、授予 capability、跨 restart 复活 binding |
+| Coordinate/frame transform binding | route-specific coordinate binder | 执行 click、修改 policy、将旧 transform 自动适配新 frame |
+| Executor capability descriptor | provider/environment edge adapter | 根据 model name 硬编码 grant、未知 schema fail open |
 | Canonical current world | `CanonicalObservationBuilder` + `ObservationStore` | 读取 model projection policy、修改 task/progress |
 | Model presentation view | 对应 `TaskPlanningObservationProjector` / `ChoicePresentationProjector` | 改变 canonical observation 或 Catalog |
 | Plan proposal | `TaskPlanner` | 创建 PlanRef、执行动作、从 SourceContextView 创建新 requirement |
@@ -1882,23 +2346,28 @@ ArtifactStore   → DOM、截图、AX tree 等大型历史内容
 | N-choice presentation | `ChoicePresentationProjector` | 删除/添加 Catalog member |
 | N-choice selection/retrieval | `StepChoicePlanner` | 发明动作/参数、选择未展示 ID |
 | Selection admission | `ActionSelectionValidator` | 改成另一个 choice |
-| Concrete transaction/binding route | `ActionContractBuilder` | 从 model view 绑定、执行、审批、自我授权 |
+| Full transaction materialization | `ActionTransactionMaterializer`（编排 pure route/classifier/binder） | 从 model/旧合同 patch，打开 session、采集、审批、dispatch、写 state、自我授权 |
 | Task effect authorization | `TaskAuthorityGate` | 用关键词扩权 |
 | Effective capability | `CapabilityGate` | 修改 TaskSpec ceiling |
 | Concrete approval | `ApprovalGate` | 预批 plan/action family |
 | State freshness | `PreflightService` | 在旧合同上自动重定位 |
-| Backend execution | `Executor` | 判断 effect/step/task |
+| Attempt + dispatch-intent commit / permit issue | `RuntimeCommitter` + narrow dispatch lifecycle | 在 commit 前执行、让 Executor 接收裸 contract、声称任意 backend exactly-once |
+| Backend execution | `Executor` | 接收裸 contract，判断 external effect/step/task，自动 retry uncertain effect |
+| Transport receipt normalization | executor/provider edge adapter | 用 success Boolean 合并 transport/effect；exception 变 COMPLETE |
 | Evidence extraction | internal `EvidenceProvider` | 判断 root completion、写 state |
 | Effect/step/task typed evaluation | `LoopEvaluator` | 执行动作、写 progress、提交 terminal |
 | Evidence admission | `EvidenceAdmissionPolicy` | 重定义 criterion/composite semantics |
 | Open semantic resolution | bounded `OpenSemanticResolver` | 修改 TaskSpec、读取 unrestricted conversation/page text、授予 effect |
 | Task closure semantics | `TaskCompletionEvaluator` | 写 StateKernel、根据 plan exhausted 通过 |
-| Required output closure | `TaskCompletionEvaluator` | 用 Planner prose 代替 typed/source-bound materialization |
+| Actual output construction | focused `OutputMaterializer` / artifact owner | 用 OutputSpec metadata/Planner prose冒充结果，默认复制 secret 进 trace |
+| Required output closure | `TaskCompletionEvaluator` | 构造输出、用 Planner prose 代替 typed/source-bound materialization |
 | Observation continuation | `PerceptionOwner` | 隐式重复 capture、修改 task |
 | Durable evidence persistence | `DurableEvidenceStore` | 保存 current observation 或无界 action history |
 | Failure classification | `FailureOwnerRouter` | 执行 recovery |
 | Recovery command | 对应 typed owner | 任意修改 state |
-| State/trace commit | `Coordinator / RuntimeCommitter` | 重解语义或实现领域算法 |
+| State/trace commit | `RuntimeCommitter`；Coordinator 仅顺序调用 | 重解语义、先 execute 后补 commit、实现 session/coordinate/store I/O |
+| Checkpoint snapshot / persistence / resume routing | `RuntimeCommitter` snapshot producer / focused store / pure resume validator | 任一 owner 同时采集、session、effect lookup、completion 或第二次 state commit |
+| Run provenance + strict replay | manifest builder / offline replay runner | manifest miss 调 live adapter，或 simulated receipt 冒充 real receipt |
 | Trace/artifact | event subscribers | 影响当前 completion |
 | Benchmark/evolution | offline pipeline | 影响当前 RunResult |
 
@@ -1937,8 +2406,8 @@ StepSpec:
 动作后：
 
 ```text
-ExecutionReceipt.success
-    → only executor accepted the click
+TypedExecutionReceipt.dispatch_state == SENT
+    → only transport accepted the click; effect remains separately evaluated
 
 ActionEffectEvaluation
     → dialog changed / close control disappeared
@@ -2004,7 +2473,7 @@ ChoicePage size 40/80/160 → Catalog digest unchanged
 
 ### 13.6 高风险、多 binding 与 conflict
 
-同一 recipient target 同时有 DOM 与 AX bindings 且无语义冲突时，Catalog 中只建立一个 semantic send choice，ActionContractBuilder 再 route 具体 binding。若 recipient identity 的 source assertions material-conflicted，则不建立 executable send choice；若 page 又被截断，模型也不能从当前页挑一个相似 recipient 执行。系统先 active perceive、继续检索或向用户澄清。
+同一 recipient target 同时有 DOM 与 AX bindings 且无语义冲突时，Catalog 中只建立一个 semantic send choice，`ActionTransactionMaterializer` 再编排具体 binding route。若 recipient identity 的 source assertions material-conflicted，则不建立 executable send choice；若 page 又被截断，模型也不能从当前页挑一个相似 recipient 执行。系统先 active perceive、继续检索或向用户澄清。
 
 ### 13.7 SourceEnvelope 与 material anchor
 
@@ -2065,26 +2534,33 @@ Audit 不能补充附件中未授权的 recipient，也不能把页面建议联�
 | mechanical verifiers | KEEP + INTERNALIZE | LoopEvaluator evidence providers |
 | ModelVerifier | DEFER + LIMIT | evidence only；never model-only high-risk completion |
 | typed recovery | KEEP + REFINE | finer owner taxonomy |
-| single-writer Coordinator | KEEP + SLIM | commit/orchestration only |
+| single sequencing Coordinator + single-writing RuntimeCommitter | KEEP + SLIM | Coordinator 只排顺序；Committer 独占 authoritative state/trace writes |
 | Trace / Artifact / Benchmark / Evolution | KEEP OFFLINE | never synchronous completion authority |
 
 ## 15. 迁移阶段
 
-详细依赖与覆盖台账由[演进规划](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)定义。权威顺序为：
+详细依赖与覆盖台账由[演进规划](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)定义。以下只是目标架构中的同步摘要，不拥有 migration-order / exit-gate authority；若有任何差异，一律以演进规划 §6 为准：
 
-1. **P0-A — completion correctness：**TaskCompletionEvaluator 递归验证完整 `TaskSpec.success`；删除 receipt fallback、disabled PASSED、latest-report/plan-exhausted completion。
-2. **P0-B — canonical observation correctness：**建立 `PerceptionCapture → CanonicalObservationBuilder → UnifiedObservation`，封住 presentation-derived observation。
+1. **P0-A — completion correctness（MVP closed；broader output resolution demand-gated）：**保留完整 `TaskSpec.success` evaluator；实际 `OutputMaterialization`、本地 artifact digest 与 receipt/prose fail-closed 已闭合；opaque/remote resolver 按场景后置。
+2. **P0-B — canonical observation correctness（MVP freshness closed；broader coverage/context deferred）：**保留 `PerceptionCapture → CanonicalObservationBuilder → UnifiedObservation`；coverage 真值归 acquisition adapter，missing/error 为 UNKNOWN；adapter breadth、tenant/profile 与完整 coordinate 按场景后置。
 3. **P0-C — choice-space correctness：**将 ActionChoiceBuilder 移出 GeneralistLMPlanner；Runtime 先建立 full Catalog，再决定 0/1/N 和是否调用模型。
-4. **P0-D — regression redlines：**第 81 个目标、state 第 13 字段、artifact/label/context limit、material conflict、multi-binding、未展示 choice 与 effectful truncated page。
-5. **P0-E — thin source correctness：**SourceEnvelope 成为默认 source path；普通任务不再建立/验证 clause/claim/obligation graph。
+4. **P0-E — thin source correctness：**SourceEnvelope 成为默认 source path；普通任务不再建立/验证 clause/claim/obligation graph。
+5. **P0-D — regression redlines：**在 P0-A/B/C/E 的边界确定后冻结第 81 个目标、state 第 13 字段、artifact/label/context limit、material conflict、multi-binding、未展示 choice、raw-text read set 与 effectful truncated page。
 6. **P1 — direct plan + loop-native evaluation：**删除 Step/Subgoal/obligation plan shape，引入 LoopEvaluator 与 ObservationContinuation。
 7. **P2 — minimal CriterionPolicy + evidence providers：**2 satisfaction × 3 validity × 3 assurance；先实现 mandatory mechanical operator baseline，其他 registered operator 可返回 UNSUPPORTED；current/outcome/durable evidence 分层；mechanical providers 内化。
 8. **P3 — stable TaskSpec v2 + optional SemanticAudit：**TaskSpecAuthority 单一准入，audit 保持 trigger-based veto/clarify-only，selective SourceAnchor 冻结。
-9. **P4 — rolling TaskPlanner + strict StepChoice port：**拆分 TaskPlanFlow/StepChoiceFlow；先稳定 deterministic narrowing/small ChoicePage，再按需要引入 paging、typed retrieval；TaskPlanner 只由 typed planning trigger 调用。
-10. **P4-G — concrete action authority / high-risk closure：**以 `EffectAuthorizationScope ⊒ RuntimeEffectSignature → ActionAuthorityProof` 替换字符串、无字段 value set、Boolean/copy-field proof；Catalog 只接纳 ALLOW，route 后重建 proof，高风险执行闭合 exact approval、fresh preflight 与 causal/final verification。
-11. **P5 — bounded stores + legacy deletion：**使用 ref/index-based ObservationStore 与可组合 RunLedger namespace；Fact/Binding、RecentActionOutcome、DurableEvidence 保持逻辑生命周期隔离，并落实旧 source/completion authority 删除门。
+9. **P4 — rolling TaskPlanner + strict StepChoice port（planning core retained）：**保留 closed choice port 与最小 read→mutation laundering guard；不把 exhaustive destination/function/usage policy 写成五项 P4-MVP closure claim。
+10. **P4-G1–G3 — concrete effect core（retained；MVP evidence passed）：**保留分型 scope/signature/proof、Runtime classifier 与 tri-state Catalog admission；更强 context/transaction breadth 按 future hardening 启用。
+11. **P4-C0 — zero-call containment：**gate/preflight 失败立即返回；stale state、missing dependency、uncommitted/invalid contract 均证明 Executor 调用数为零。
+12. **P4-C1 — verifier-backed completion：**receipt 不能完成任务；required output 必须来自实际可解析的 value/artifact evidence。TaskPlan 字段只在 action semantics 需要时强制，不建设为通过 schema 的通用 DSL。
+13. **P4-C2 — future context hardening（NON-BLOCKING）：**tenant/profile live proof、完整 surface/coordinate identity、four-way capability manifest 与 provenance envelope 按 benchmark/部署需求启用；不阻塞 P5。
+14. **P4-C3 — exact finalized contract：**从 fresh O1 一次性构造 immutable executable contract；materialization/encoding 完成后再执行 policy/approval，并保证 `approved_contract_hash == executed_contract_hash`；删除 approval 后追加参数与 partial patch。
+15. **P4-C4 — serial uncertain-effect safety：**可信进程内保持一个 coordinator 串行 state mutation、approval consumption 与 effectful execution；uncertain effect 先 inspect/block/handoff，不盲重试。revocation linearizability、clone-resistant permit、global registry、worker fencing 与 attempt-bound collateral 后置。
+16. **P4-C5 — core cutover gate：**默认产品 composition 只走 final-contract 主线，删除 core fallback；以 focused tests、`pytest`、Ruff、mypy 与 core benchmark 验收。immutable manifest、AgentDojo/WASP/OSWorld 多套件 attestation 属于发布/论文复现工作。
+17. **P4-R0 — optional narrow durable journal：**仅在声明 hard-crash dispatch recovery 时实现；不是 P4/P5 默认前置。
+18. **P5 — bounded stores、interruption recovery 与 legacy deletion：**五项 `P4-MVP` invariant 通过即可进入；future hardening 不能用作阻塞理由，P5 也不重新定义 transaction authority。
 
-source/plan authority、completion authority 与 observation/choice authority 都是 correctness boundary：分别防止 intake graph 决定执行、错误宣布成功，以及合法动作在进入 ActionContract 安全链前被 presentation 错误删除。
+source/plan authority、completion authority 与 observation/choice/transaction authority 都是 correctness boundary：分别防止 intake graph 决定执行、错误宣布成功、合法动作被 presentation 错误删除，以及旧/混合状态越过 dispatch 主链。P4 的 MVP queue 已完成 C0、C1、C3 最小缺口并复用既有 no-blind-retry/default-cutover 行为；`P4 CLOSED (MVP scope)`，P5 准入解除但尚未开始。C2 与 C4/C5 的生产级扩展保留为 future hardening。
 
 附件中的最小 cutover 编号按以下方式原样保留：
 
@@ -2119,7 +2595,12 @@ Verification 自身的 P0–P3 优先级不可被总体阶段编号稀释：
 | `planning_phase.py` | 注入 `StepChoiceFlow`，Planner 调用前建立 full Catalog | 删除“先 build model request、再由 planner reconstruct choices”的默认顺序 |
 | `perception_phase.py` | 普通/targeted capture 后统一调用 CanonicalObservationBuilder，并输出 canonical observation ref | BrowserSnapshot 不再作为后续 Runtime semantic authority |
 | `state_kernel.py` | 增加 `current_observation_ref`、`current_choice_catalog_ref` | 停止从 planner projection 恢复 current target state |
-| `ActionContractBuilder` | 接收 selected choice、CatalogRef、Canonical ObservationRef，并从完整 candidates route binding | 禁止从 representative/model view bind；new epoch 使旧 contract/approval stale |
+| `action_transaction_materializer.py` | 接收 selected choice、CatalogRef 与 committed fresh ObservationRef，从完整 context/candidate/coordinate/capability indexes 一次性建立 Draft，再由独立 gates seal | 禁止从 representative/model view/旧 contract patch；不得打开 session、采集、审批、dispatch 或写 state；new epoch/context/schema 使旧 Draft/contract/approval stale |
+| route-specific acquisition adapters | 产生 PerceptionCapture、adapter-owned SourceCoverage、LiveSurfaceBinding、CoordinateBinding 与 ExecutorCapabilityDescriptor | 禁止 Builder 反推 coverage complete；禁止 credentials/live handles 进入 checkpoint |
+| final policy/approval/preflight | 在完整 materialization 后检查同一个 immutable contract，并输出 typed allow/deny | 禁止 approval 后追加参数；deny/stale 后调用 Executor |
+| serial dispatch lifecycle / `RuntimeCommitter` | 顺序记录适用 attempt/transport facts；Executor 消费与批准 hash 相同的 final contract | 不把 receipt 当 effect/completion；不盲重试 uncertain effect。CAS/permit/fencing 是 future hardening |
+| typed executor receipt / effect settlement | 每个退出路径表达 NOT_SENT/SENT/SENT_UNKNOWN，effect/collateral 独立结算 | 禁止 Boolean success、exception-as-complete、uncertain effect blind retry |
+| `OutputMaterializer` | 构造实际 typed value/artifact、schema/content digest、lineage 与受控 trace projection | 禁止 OutputSpec metadata/Planner prose 充当结果；禁止默认复制 secret/raw sensitive output |
 | `effect_authority_contracts.py` | 仅定义 `EffectAuthorizationScope`、`RuntimeEffectSignature`、externality/reversibility、typed proof 与 digests | 不拥有 TaskSpec admission、Catalog membership、route、approval 或执行；两种合同不得合并成一个类型 |
 | `action_effect_classifier.py` / risk policy | 从 canonical assertions 与 actual candidate/backend/binding 纯派生 Runtime signature、risk 与 assurance | 不读取 Planner risk/effectful、不得将未知 effect 默认 LOW、不得成为独立服务 |
 | `action_choice_authority.py` | 执行 typed subsumption 与窄 `EnablingActionPolicy`，返回 ALLOW/DENY/UNPROVEN proof | 不做 label/keyword/value-set matching，不调用模型，不让 approval/capability 扩权 |
@@ -2235,10 +2716,23 @@ foundation
 - 不因逻辑 authority、gate 或 evidence namespace 存在就默认创建独立 service/process/database/queue/model call。
 - 不因 TaskPlan 可替换就每轮调用 TaskPlanner；无 typed planning trigger 时复用仍可行计划。
 - 不让 feature profile 关闭任务实际要求的授权、安全、freshness、completion 或 single-writer gate。
+- 不把裸 Bash/任意 CLI 字符串作为普通 GUI action；需要命令执行时使用独立 typed capability、allowlist、工作目录与 effect policy。
+- 不建设全程序动态污点平台、通用 theorem prover 或第二份 intent graph；provenance enforcement 只覆盖 authority 与 effectful source→sink 的 typed 安全维度。
+- 不默认建设微服务、分布式 lease、通用 event sourcing、每 namespace 数据库或 cross-device transaction coordinator；modular monolith 是首期物理边界。
+- 不把 provider safety、model refusal、prompt-injection detector、benchmark reward 或 user-facing confirmation 当作本地 authorization proof。
+- 不让 replay miss 回退 live driver/network/credential，也不把 replay 变成隐式 retry。
+- 不在 P5 引入 effectful batch、batch approval、rollback 或 resume；未来 batch 也必须逐 child observation/admission/receipt/effect settlement。
+- 不宣称消除所有漏洞或对任意第三方实现 global exactly-once；无法证明的外部效果保持 UNKNOWN 并 handoff/block。
 
 ## 17. 架构验收 Gate
 
 ### 17.1 阻塞 Gate
+
+对 P4/P5 调度而言，本节唯一阻塞语义子集是 §0.0 的五项 `P4-MVP` invariant；
+是否闭合仍由 focused/full/static checks 与 core benchmark 对 default route 给出证据。
+下列较长清单同时记录长期目标；其中 context/coordinate/tenant、并发 revocation、
+permit/fencing、collateral 与 manifest/multi-suite 项均按场景或发布声明启用，不得反向扩大
+MVP completion gate。
 
 1. TaskSpec accepted object 中不存在 step、selector、coordinate、backend 或 environment-derived action sequence。
 2. Planner API 无 TaskSpec patch、ActionContract、approval token、capability grant 和 TaskCompleted 返回类型。
@@ -2255,6 +2749,48 @@ foundation
 13. 无合格 evidence 返回 `UNKNOWN`、`UNSUPPORTED` 或其他 typed failure，不乐观完成。
 14. Coordinator 只提交 typed transitions，不包含 semantic parser/planner/verifier/recovery 算法。
 15. Trace/Artifact/Benchmark/Evolution 不在同步 completion dependency graph 中。
+16. 一个 executable contract 的实际执行字段来自同一 fresh observation，禁止旧合同局部 patch。
+17. product composition 不能关闭适用 mandatory gates，也不能从 required-capability 声明合成 grant。
+18. materialization/encoding 完成后，policy/approval 检查 final immutable contract；Executor 执行同一 hash，任何 deny/stale/hash mismatch 的调用数为零。
+19. transport receipt 与 external effect 分型；任何异常或 receipt 都不能变成 COMPLETE，uncertain effect 不盲重试。
+20. SourceCoverage 由 adapter 对明确 scope/budget/version 产生；missing/error 只能是 UNKNOWN。
+21. required output 由实际 OutputMaterialization 满足并执行 redaction/access/retention policy。
+22. TaskPlanAuthority 执行 action-semantics 所需字段的 typed semantic subsumption，不能仅检查 requirement ID membership，也不要求无关字段非空。
+23. live surface、coordinate transform、provider schema/capability 与 run provenance 只在实际 scenario/fault model 需要时进入 contract/manifest identity。
+24. replay 无 live fallback；P5 只等待五项 `P4-MVP` invariant 及其 default-route closure evidence，evidence 不构成第六项；P4-R0 与多套件 release attestation 均不默认阻塞。
+
+#### Future transaction hardening Gate（NON-BLOCKING）
+
+以下 `TXN` 项保留为 future hardening backlog。它们不属于 P4/P5 MVP gate；只有产品
+声明并发 worker、跨进程撤销、hard-crash recovery 或对应高风险 release claim 时才提升。
+
+| ID | 阻塞不变量 |
+|---|---|
+| `TXN-01` | `INV-01`–`INV-16` 每项均有 production sentinel；同一 transaction 不得混用 epoch/context/route/payload/verifier；route/payload digest 必须由 actual target/destination + authorized named parameters + pinned schema/encoder/policy 重算一致。 |
+| `TXN-02` | `ActionTransactionMaterializer` 只从 committed O1 完整建立 Draft/Sealed；canonical core 无 `replace` patch 或 legacy fallback/import；payload 不是独立输入，deterministic re-encoding mismatch 必须 DENY。 |
+| `TXN-03` | `FinalDispatchAdmission.consume_if_current` 与 attempt/dispatch-intent CAS/permit issuance 在一个无异步间隙的线性化临界区；其 committed lifecycle 先于 Executor，fencing、lease 与 permit 阻止 stale/concurrent worker。 |
+| `TXN-04` | NOT_SENT/SENT/SENT_UNKNOWN 与 NOT_OCCURRED/OCCURRED/STILL_UNCERTAIN 分别覆盖 provider success/error/timeout/schema exception/process-loss 路径。 |
+| `TXN-05` | effect occurred/not occurred evidence 都绑定 attempt/contract/resource/version/backend request/idempotency identity；适用 collateral 未结算时不得完成。 |
+| `TXN-06` | product safety dependency、provider/tool schema 或 capability descriptor 缺失/漂移时 fail closed；benchmark ablation 不能进入 product composition。 |
+| `TXN-07` | third-party observation data 不能生成 TaskSpec/capability/approval/policy/control flow；effectful source→field flow 必须由 TaskSpec 准许。 |
+| `TXN-08` | RunProvenanceManifest mismatch 拒绝 resume；offline replay 对 live adapter/network/credential 的调用计数恒为零。 |
+
+#### Future GUI context / coordinate / resume Gate（NON-BLOCKING）
+
+以下 gate 只适用于 multi-account/profile、coordinate-heavy、并发 surface 或 resume 场景。
+当前 one-session MVP 不因缺少这些维度而阻塞。
+
+| ID | 阻塞不变量 |
+|---|---|
+| `GUI-CTX-01` | same URL/DOM/screenshot、different account/profile/session/window 必须拒绝；checkpoint 不含 credential/live handle。 |
+| `GUI-CTX-02` | restart 创建 new session generation；旧 Observation/Catalog/Contract/Approval/lease/binding 不可执行。 |
+| `GUI-COORD-01` | point/bbox/selector/node 绑定 frame/document、source/destination space、screenshot、viewport/crop/scroll、DPR/zoom/scale/orientation/origin 与 transform digest。 |
+| `GUI-COORD-02` | resize/scroll/zoom/window/display/tab/frame/document/focus/modal/occlusion 变化触发 stale；真实输入前再次校验 surface/transform/lease。 |
+| `GUI-APR-01` | `FUTURE-HARDENING`：并发/restart claim 可要求 late-grant tombstone，以及 admission/revocation 与 CAS/intent/permit 的线性化排序。 |
+| `GUI-LEASE-01` | AffordanceLease、task claim lease、SurfaceLease 分型；同一 mutable surface 不允许两个 run 并发输入，dispatch 后 lease loss 进入 uncertain。 |
+| `GUI-RESUME-01` | checkpoint 仅含 refs/digests、`last_committed_observation_ref`、request/status 与 effect identities；不含完整 executable contract/token/DOM/screenshot/selector/coordinate。 |
+| `GUI-RESUME-02` | resume validator 只输出 directive/routing，不打开 session、采集、审批、effect lookup、completion 或 commit。 |
+| `GUI-BATCH-00` | 当前不存在 BatchActionContract、batch approval/cursor/rollback/resume；checkpoint 不声称恢复 batch。 |
 
 #### Observation / Choice P0 Gate
 
@@ -2269,7 +2805,7 @@ foundation
 | `OBS-07` | 所有 ActionChoices 绑定一个 canonical observation epoch。 |
 | `OBS-08` | 所有 ActionContracts 绑定 current Catalog choice 与相同 pre-action observation epoch。 |
 | `OBS-09` | Material conflict 必须显式；unknown/inconclusive 不等于 no conflict。 |
-| `OBS-10` | Acquisition truncation 表示为 SourceCoverage，不得编码成 target absence。 |
+| `OBS-10` | Acquisition items/assertions/coverage 绑定同一 `AcquisitionEpochRef`；truncation 表示为 SourceCoverage，不得编码成 target absence。 |
 | `OBS-11` | Truncated ChoicePage 保留 total/included count、policy 与 continuation metadata。 |
 | `OBS-12` | Effectful selection 来自 incomplete ChoicePage 时，必须有 deterministic unique authorization 或继续检索/澄清。 |
 | `OBS-13` | 可复用的 fresh post-action observation 不得立即重复 capture。 |
@@ -2345,7 +2881,7 @@ foundation
 | `AUTHZ-05` | 未知 operation/effect/externality/reversibility/risk、assurance 不足、material conflict 或 coverage 不足为 `UNPROVEN`；不得默认 LOW 或自动放行。Text/VLM 只能升风险或触发观察/澄清，不能产生 ALLOW 或降风险。 |
 | `AUTHZ-06` | Catalog 只接纳 `ALLOW` proof，并区分 `DENY` 与 `UNPROVEN` rejection/recovery。 |
 | `AUTHZ-07` | EnablingActionPolicy 只允许 requirement-bound INTERACTION_ONLY/local reversible draft；必须证明无 external commit、高风险 effect、未授权 data disclosure 或 cross-origin expansion，不能只靠 action-kind/role whitelist。 |
-| `AUTHZ-08` | ActionContract hash 绑定 TaskSpec scope digest、route-specific RuntimeEffectSignature、proof/evaluator-policy version、target/destination binding、named parameters、externality/reversibility、risk、assurance、epoch 与 candidate digest。 |
+| `AUTHZ-08` | ActionContract hash 绑定 TaskSpec scope digest、route-specific RuntimeEffectSignature、proof/evaluator-policy version、target/destination binding、named parameters、externality/reversibility、risk、assurance、epoch、candidate、`RouteBinding` 与 application-payload digest；seal/Task Gate 以 pinned schema/encoder/policy 从 actual fields 重算，mismatch 为 DENY。 |
 | `AUTHZ-09` | Task Authority Gate 从 actual bound transaction 独立重建 proof；不得只复算 choice 复制字段或 scope digest。 |
 | `AUTHZ-10` | Approval/Capability 只能收窄已经 ALLOW 的动作；任何 concrete scope 变化要求新 contract，授权范围扩大要求新 TaskSpec revision。 |
 | `HRA-01` | external/destructive/account-security/safety-device effect 必须满足 effect-specific material fields、minimum assurance、capability、approval/preflight 与 completion policy。 |
@@ -2369,7 +2905,7 @@ foundation
 |---|---|
 | `SURFACE-01` | DOM、AX、Visual、SVG、WoT、API 与 Device 共享同一 TaskSpec、current TaskPlan、logical Catalog、ActionContract admission 与 LoopEvaluator；surface 不拥有平行任务或完成权威。 |
 | `SURFACE-02` | 一个 semantic CanonicalTarget 保留所有 current bindings、source assertions、coverage 与 conflicts；不得选择 representative surface 或以最大 confidence 静默覆盖冲突。 |
-| `SURFACE-03` | Planner selects the semantic action; ActionContractBuilder selects the current backend/binding，并将 route 绑定 current observation、evidence requirement、capability、risk 与 policy。 |
+| `SURFACE-03` | Planner selects the semantic action; `ActionTransactionMaterializer` 的 route owner selects the current backend/binding，并将 route 绑定 current observation、evidence requirement、capability、risk、context/transform 与 policy。 |
 
 #### Loop-native Verification / Recovery Gate
 
@@ -2402,6 +2938,9 @@ Runtime catalog construction must not call PlanningRequestBuilder
 
 ### 17.2 行为 Gate
 
+五项 `P4-MVP` 的对应行为是当前阻塞门；带 `FUTURE-HARDENING` 标记的行为保留为
+可选 release/场景测试，不参与 P4/P5 准入。
+
 - 关闭弹窗场景不能用 `close_control is_available` 完成任务。
 - 多 terminal/composite success 可由 AllOf/AnyOf 正确求值。
 - prefix + suffix 候选条件不被压成 equals、visible 或 task enum。
@@ -2424,12 +2963,16 @@ Runtime catalog construction must not call PlanningRequestBuilder
 - effectful/high-risk truncated page 没有唯一授权匹配时必须继续 retrieval/clarification。
 - 同一 target 上存在多个 operation 时，只能生成与 admitted `operation_ref` 匹配的 choice；相同 label、相同 risk 或相同 target ID 不构成 operation authority。
 - `recipient=Alice, amount=100` 与 `recipient=100, amount=Alice` 必须得到不同 authorization result；parameter field 名是 proof 的一部分。
+- proof/named parameters 为 Alice 而 sealed backend application payload 编码为 Bob 时，seal 与 Task Authority Gate 的 deterministic re-encoding 都必须 DENY；payload 不是第三个参数 authority。
 - 普通 DOM 页面未声明 action risk 时，potentially effectful control 必须由 Runtime classifier 得到 typed risk/effect，无法证明时为 `UNPROVEN`；不得因缺少自报属性默认 LOW。
 - 将已授权 choice 的 label/digest 复制到指向另一个 actual grounding candidate 的 ActionContract 时，Task Authority Gate 必须拒绝。
 - source assurance 不足或 DOM/Visual/WoT/API 对 operation/target/state 有 material conflict 时，高风险 choice 不得进入可审批 Catalog。
 - TaskSpec `EffectAuthorizationScope` 与 Runtime `RuntimeEffectSignature` 必须是不同类型；尝试把 current action kind/backend/binding 写入 TaskSpec 或从 TaskSpec 直接构造 concrete signature 时门禁失败。
 - Text/VLM 建议更高风险时 Runtime 可以上调或触发观察；建议更低风险、ALLOW 或新 effect scope 时必须忽略并记录 policy rejection。
 - Approval presentation 必须向用户显示 concrete resource/destination、关键参数、可逆性、来源与不确定性；任一 hash-critical typed field 改变使 token 失效。
+- `FUTURE-HARDENING`：并发 approval wait 中 capability/policy/schema revocation 与 dispatch admission 的线性化排序、permit 签发和 TOCTOU probes。
+- `FUTURE-HARDENING`：inbound ref 的 cross-principal/tenant/account/audience 授权与多租户 dereference policy。
+- 完整 `RouteBinding`/contract projection（包括 target/destination encoding、URI/query、payload 与 refs）不得含 cookie/token/private key/signed-URL secret/session handle；closed-allowlist late binding 只能注入与 sealed principal/audience/credential scope 匹配的 auth/transport 字段，且不得改变 application semantics，也不得进入 trace/checkpoint。
 - LOW/MODERATE/HIGH/CRITICAL 的 source/evidence minimum 必须按 policy matrix 执行；visual-only high-risk semantics 不能取得 ALLOW。
 - acquisition policy 改变可以改变 Catalog，但必须由 SourceCoverage 与新的 observation/catalog digest 显式解释。
 - 普通低风险 request 即使超过旧 32-clause bound，也必须能通过 SourceEnvelope 默认路径进入 MinimalIntentProposal；不得因未建 source claim/obligation coverage 而失败。
@@ -2449,6 +2992,18 @@ Runtime catalog construction must not call PlanningRequestBuilder
 - ObservationStore 内部从 tuple 改为 indexes 不得改变 canonical observation digest、coverage 或 conflict result。
 - 无 typed replan trigger 的普通 loop continuation 不得调用 TaskPlanner；仍可行 active Step 必须复用。
 - DIRECT_LOW_RISK profile 仍必须执行适用的 Task/Capability/Freshness gates 和完整 completion/output closure。
+- 用 fresh proof 拼接 old locator/route/payload/verifier 的 contract 必须拒绝；full O1 rematerialization 前不得请求 approval。
+- `FUTURE-HARDENING`：attempt/dispatch-intent durable commit、重复/clone permit 与 run/session/surface fencing；MVP 仅要求 gate/preflight reject 后 Executor 调用次数为零。
+- provider success/error/timeout/schema exception/process-loss 均产生 typed transport/effect state；未知不能自动成为 NOT_SENT、NOT_OCCURRED 或 COMPLETE。
+- `FUTURE-HARDENING`：multi-account/profile/session/window 与完整 tab/frame/zoom/DPR/display/occlusion currentness matrix；MVP 只强制 snapshot/page/target/expiry。
+- approval 等待期间 UI 变化或 grant 迟到时，旧 grant tombstone；fresh rebuild 后必须重新审批。
+- SourceCoverage 缺失、adapter error、unknown model/threshold/scope 或 truncated capture 不得推出 absence/complete。
+- OutputSpec metadata、Planner summary 或 schema declaration 不能满足 required output；实际 materialization trace projection 不得泄露 credential/secret/raw sensitive content。
+- 合法 read requirement ID 不能包装 mutation；destination/material value/element function/task usage 仅在 action semantics 声明需要时参与 admission。
+- 页面、邮件、PDF、tool output 中的“已授权/请执行”不能扩大 capability、approval、TaskSpec 或 effect scope；adaptive prompt-injection gate 同时报告 benign utility、utility-under-attack 与 targeted ASR。
+- `FUTURE-HARDENING`：immutable replay manifest 与 adapter-miss sentinel；任何已启用 replay 仍不得回退到真实副作用。
+- `FUTURE-HARDENING`：payment/send/delete/file/process/permission/device 的 attempt-bound collateral probe matrix；普通 read/click 不运行无关扫描。
+- `FUTURE-HARDENING`：restart checkpoint、secret/live-handle serialization 与 fresh-session restore sentinel。
 
 ### 17.3 治理 Gate
 
@@ -2481,7 +3036,7 @@ Runtime catalog construction must not call PlanningRequestBuilder
 | ChoicePage / paging / typed retrieval | §7.4–§7.6 |
 | ChoicePresentation bounded semantic contract | §7.5、§17.1 |
 | Grounding 与 PredicateResolver | §7.8 |
-| ActionContract 与四重 gate | §8 |
+| committed O1 → Draft/Sealed ActionContract → four gates → committed dispatch permit | §8–§9 |
 | 动作附近审批 | §8.3 |
 | receipt/effect/step/task 四层 typed evaluation | §9 |
 | loop-native physical sequence / logical authority separation | §1、§9.1、§12 |
@@ -2493,7 +3048,7 @@ Runtime catalog construction must not call PlanningRequestBuilder
 | Recovery/Replan/Coordinator | §11 |
 | module authority matrix | §12 |
 | 保留与删除边界 | §14 |
-| P0-A/P0-B/P0-C/P0-D/P0-E/P1–P5 | §15 |
+| P0-A/P0-B/P0-C/P0-E/P0-D/P1–P4、五项 P4-minimum、non-blocking future hardening、P5 | §0.0、§15 |
 | 非目标与验收 | §16–§17 |
 
 ### 18.1 Active-step 修正逐条映射
@@ -2591,6 +3146,20 @@ Runtime catalog construction must not call PlanningRequestBuilder
 | semantic choice 与 backend/binding route 分离 | §7、§10.4–§10.5、§17.1 |
 | `SURFACE-01`–`SURFACE-03` 可执行不变量 | §17.1–§17.2 |
 
+### 18.7 Transaction / Surface / Provenance corrective amendment
+
+| Amendment | 权威设计落点 |
+|---|---|
+| `INV-01`–`INV-10` epoch、product safety、commit-before-dispatch、typed receipt/effect、truthful coverage/output、semantic admission、canonical cutover | §0.6、§6.5、§8–§10、§15、§17 |
+| `INV-11`–`INV-12` execution context、surface lease 与 coordinate transform identity | §0.6–§0.7、§8.1、§8.4、§10、§11.5、§17 |
+| `INV-13`–`INV-14` observation non-authority、source→sink flow 与 capability intersection | §0.1、§0.6、§8、§12、§16–§17 |
+| `INV-15` primitive dispatch / batch deferred | §0.6–§0.7、§8.4、§11.5、§16–§17 |
+| `INV-16` immutable run provenance / strict offline replay | §0.1、§0.6–§0.8、§11.5、§12、§16–§17 |
+| P4 minimum / P5 admission boundary | §0.0、§15；仅五项 `P4-MVP` invariant 阻塞，focused/full/static/core-benchmark 只提供 default-route closure evidence；C2 与并发/permit/collateral/manifest hardening 非阻塞；实际状态见 implementation status |
+| SOTA selective adoption/rejection | §0.8；benchmark/security 下位合同只作为离线 gate |
+| 防过重物理边界 | §0.5、§0.7、§9.1、§11.5、§12、§16 |
+| designed/implemented/default-routed/adversarially-verified/legacy-isolated/closed 状态证据 | §0.7.1；实施计划与状态页只能引用，不得重新定义 |
+
 ## 19. 最终收口
 
 目标 Runtime 的主线最终只允许：
@@ -2606,7 +3175,9 @@ one canonical observation epoch per current state
 one shared cross-surface authority chain for DOM / AX / Visual / SVG / WoT / API / Device
 one runtime-owned logically full action choice catalog per active-step epoch
 zero or one bounded choice page per model call
-one concrete action contract per attempt
+one full same-epoch Draft and one sealed concrete action contract per attempt
+zero or one in-process dispatch token as an implementation detail
+one typed transport receipt plus separately settled external-effect state
 one typed LoopEvaluation per post-action evaluation cycle
 one bounded RecentActionOutcome index and one small DurableEvidenceStore
 one pure task completion semantic authority
@@ -2627,7 +3198,15 @@ UserRequest
 → observation-grounded TaskPlan / Milestone Graph
 → full Runtime ActionChoiceCatalog
 → bounded model ChoicePage
-→ ActionContract / Gates / Execute
+→ committed fresh O1
+→ full ActionContractDraft materialization
+→ Task Authority + capability intersection
+→ SealedActionContract
+→ policy + exact approval of the final contract
+→ final snapshot/page/target/expiry check
+→ assert approved_contract_hash == executed_contract_hash
+→ serial Execute of that same immutable contract
+→ typed transport receipt / effect reconciliation
 → post-action Canonical UnifiedObservation
 → inline LoopEvaluator
 → RuntimeCommitter
@@ -2641,4 +3220,13 @@ UserRequest
 
 > **逻辑完整与严格 authority 不要求 eager materialization 或 service/store/model-call 碎片化；首期复杂度由 typed trigger、实际规模和任务风险渐进启用。**
 
-Step Planner 不再从页面摘要中发明或恢复动作空间；Runtime 先建立完整合法动作目录，模型只在该目录的受控页面中选择。项目的差异化安全能力——stable TaskSpec、runtime-owned action choices、versioned ActionContract、capability boundary、exact approval binding、fresh preflight、independent completion authority、bounded recovery 与 auditable trace——全部保留。被删除的是 default clause/claim/obligation coverage path、obligation-shaped plan、庞大默认 verifier platform、presentation-derived Runtime semantics、同一语义的重复图、有损 projector 和模糊 completion authority。
+> **公开 GUI-agent SOTA 只提供可借鉴的 session、action-space、coordinate、partial-observation 与 functional-evaluation 方法；本地 transaction/authorization/effect semantics 仍由上述不变量独立决定。**
+
+Step Planner 不再从页面摘要中发明或恢复动作空间；Runtime 先建立完整合法动作目录，模型只在该目录的受控页面中选择。项目的差异化能力——stable TaskSpec、runtime-owned action choices、finalized immutable contract、exact approval hash、typed transport/effect、independent completion authority、bounded recovery 与 privacy-aware trace——全部保留。被删除的是 default clause/claim/obligation coverage path、obligation-shaped plan、庞大默认 verifier platform、presentation-derived Runtime semantics、同一语义的重复图、有损 projector、approval 后参数 materialization、partial-contract patch 和模糊 completion authority。
+
+截至 2026-08-07，旧的“P4-C0–C5 production-security closure”声明已撤回并被
+`P4-MVP-1`–`P4-MVP-5` 取代。是否已通过这些最小门只由 implementation status 与 focused
+tests 记录。P4-R0、tenant/profile proof、linearizable revocation、global permit registry、
+attempt-bound collateral、完整 fencing 和 immutable multi-suite attestation 均为 future
+hardening；它们不阻塞 P5，也不能被文档存在本身写成已实现。公开 SOTA/benchmark 方法仍
+只属于离线评估，不形成线上 authority 或 production-grade security 声明。

@@ -436,4 +436,5 @@ def test_evidence_lifetimes_are_epoch_bound_bounded_and_selectively_durable() ->
         },
     )
     admitted = admit_observation_durable_evidence(observation, store)
-    assert admitted[0].evidence_ref == "sha256:report"
+    assert admitted == ()
+    assert store.records == [artifact]

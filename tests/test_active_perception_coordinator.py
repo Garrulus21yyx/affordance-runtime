@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -10,6 +9,7 @@ from affordance_runtime.contracts import (
     Observation,
     RiskLevel,
     RuntimeErrorCode,
+    TransportState,
     VerifierSpec,
 )
 from affordance_runtime.coordinator import RunBudget
@@ -48,8 +48,14 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     canonical_effect_requirement_refs,
 )
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
 from affordance_runtime.unified_grounding import candidate_from_affordance
-from affordance_runtime.verification.contracts import SuccessExpression
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    EvidenceSourceKind,
+    PredicateEvidence,
+    SuccessExpression,
+)
 
 
 def _snapshot(sequence: int, *, conflict: bool = False) -> BrowserSnapshot:
@@ -227,6 +233,9 @@ class OneContractPlanner:
 
 @dataclass
 class RecordingExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities = ("settings.write",)
+    adapter_capabilities = provider_capabilities
     backend: str = "dom"
     contracts: list[ActionContract] = field(default_factory=list)
 
@@ -279,6 +288,17 @@ def _resolved_snapshot(sequence: int) -> BrowserSnapshot:
     )
     return replace(
         snapshot,
+        predicate_evidence=(
+            PredicateEvidence(
+                evidence_ref=f"observation:{snapshot.observation.snapshot_id}:effect-present",
+                subject_ref="dom_button_1",
+                observed_value="satisfied",
+                source_kind=EvidenceSourceKind.DOM_STATE,
+                assurance=AssuranceLevel.STRUCTURAL,
+                observation_ref=snapshot.observation.snapshot_id,
+                effect_criterion_ids=("criterion:effect-present",),
+            ),
+        ),
         observation=replace(
             snapshot.observation,
             metadata={
@@ -317,9 +337,11 @@ class FinishAfterObservationPlanner:
 
 class ZeroBudgetVisualObserver:
     targeted_captures = 0
+    captures = 0
 
     def capture(self) -> BrowserSnapshot:
-        snapshot_id = "zero-budget-snapshot"
+        self.captures += 1
+        snapshot_id = f"zero-budget-snapshot-{self.captures}"
         model = DomAdapter().transduce(
             "<main></main>",
             environment_revision="revision-1",
@@ -403,14 +425,7 @@ def test_targeted_probe_resolves_injected_conflict_in_a_new_epoch() -> None:
         observer=observer,
         executor=RecordingExecutor(),
     ).run_sync(
-        legacy_run_request(
-            task_spec=_task().model_copy(
-                update={
-                    "task_id": "resolve-conflict",
-                    "operation_class": OperationClass.READ_ONLY,
-                }
-            )
-        )
+        legacy_run_request(task_spec=_task().model_copy(update={"task_id": "resolve-conflict"}))
     )
 
     events = [node.kind for node in result.trace.nodes]
@@ -504,6 +519,17 @@ class RecoveryInspectionObserver:
         if self.targeted_captures:
             snapshot = replace(
                 snapshot,
+                predicate_evidence=(
+                    PredicateEvidence(
+                        evidence_ref=f"observation:{snapshot.observation.snapshot_id}:effect-present",
+                        subject_ref="dom_button_1",
+                        observed_value="satisfied",
+                        source_kind=EvidenceSourceKind.DOM_STATE,
+                        assurance=AssuranceLevel.STRUCTURAL,
+                        observation_ref=snapshot.observation.snapshot_id,
+                        effect_criterion_ids=("criterion:effect-present",),
+                    ),
+                ),
                 observation=replace(
                     snapshot.observation,
                     metadata={
@@ -544,6 +570,9 @@ class RecoveryAwarePlanner:
 
 @dataclass
 class UncertainExecutor:
+    supported_actions = ("activate", "click")
+    provider_capabilities = ()
+    adapter_capabilities = ()
     backend: str = "dom"
     calls: int = 0
 
@@ -558,6 +587,7 @@ class UncertainExecutor:
             1.0,
             evidence={"dispatched": True},
             error_code=RuntimeErrorCode.EXECUTION_TIMEOUT,
+            transport_state=TransportState.SENT_UNKNOWN,
         )
 
 
@@ -573,7 +603,7 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     ).run_sync(legacy_run_request(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.ABORTED
     assert executor.calls == 1
     assert observer.targeted_captures == 1
     assert "EvidenceGapResolved" in events
@@ -583,5 +613,5 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     recovery_outcome = next(
         node.payload["outcome"] for node in reversed(result.trace.nodes) if node.kind == "RecoveryOutcomeRecorded"
     )
-    assert recovery_outcome["success"]
+    assert not recovery_outcome["success"]
     assert recovery_outcome["changed_dimensions"][0] == "effect_status"

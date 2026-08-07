@@ -15,18 +15,32 @@ The track is independent of feature priority: one vertical behavior/authority
 slice and one horizontal containment slice may be active, with one production
 writer for each affected state surface.
 
+Current admission is scoped to the trusted single-process, single-run,
+single-coordinator, single-browser-session MVP. Production-grade multi-tenant,
+concurrent-worker and hard-crash guarantees require a separate admitted threat
+model and cannot be smuggled into an ordinary P4/P5 gate.
+
+Trusted Runtime-selected/configured in-process adapter/provider implementation
+code belongs to the TCB. The external page, document, tool, or provider content
+it observes or returns remains untrusted data and cannot create local authority.
+
 ## 2. Non-negotiable authority rules
 
 1. `TaskSpecAuthority` owns accepted task meaning and revision.
 2. `TaskPlanAuthority` admits one current replaceable execution hypothesis.
 3. `CanonicalObservationBuilder` owns current observed semantics.
 4. `ActionChoiceBuilder` owns the full current legal Catalog before model presentation.
-5. `ActionContractBuilder` owns concrete binding; gates own authorization decisions.
-6. `Executor` returns receipt and never completion.
+5. `ActionTransactionMaterializer` is the only full Draft/Sealed construction entrypoint; its pure route owner binds the concrete backend, while independent gates own authorization decisions.
+6. Materialization finishes and freezes the executable ActionContract before policy/approval; `Executor` consumes that same hash, returns a typed transport receipt, and never owns effect or completion truth.
 7. `LoopEvaluator` returns typed evaluations and never writes state.
 8. `TaskCompletionEvaluator` owns pure closure semantics but not commits.
 9. `RuntimeCommitter` is the single production state/trace writer.
 10. Trace, benchmark, evolution, model evidence, and archived documents have no synchronous authority.
+11. Acquisition adapters own truthful epoch/scope/budget coverage; missing or failed coverage is UNKNOWN, never builder-inferred COMPLETE.
+12. Product composition cannot disable applicable mandatory safety gates or synthesize capability grants; unknown actual adapter support fails closed.
+13. Fresh O1 precedes final materialization; approval/policy evaluates the final contract, stale preflight is zero-call, and approved/executed hashes are equal. Transport, effect and actual output materialization are separate typed facts.
+14. Third-party observation content cannot create TaskSpec, capability, approval, policy, or control flow; effectful source→sink values require admitted typed flow.
+15. Replay has no live fallback. P5's semantic gate contains only the five P4-minimum invariants; focused/full/static checks and the core benchmark are closure evidence for those invariants and the default route, not a sixth invariant. P4-C2, permit/fencing/collateral hardening, P4-R0 and multi-suite attestation are non-blocking unless their matching claim is admitted.
 
 The `TaskSpecAuthority` rule is the Task Meaning Write Barrier. Raw language
 visibility and semantic authority are separate: TaskPlanner,

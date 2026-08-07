@@ -17,6 +17,7 @@ from affordance_runtime.grounding import (
     EvidenceKind,
     GroundingSource,
     PerceptionRequirements,
+    UnifiedAffordance,
 )
 from affordance_runtime.task_intake import OperationClass, StrictModel
 from affordance_runtime.unified_observation import (
@@ -852,7 +853,7 @@ def _source_probe_profile(source: GroundingSource) -> tuple[ProbeKind, int, int,
 
 def _semantic_targets(
     snapshot: "PerceptionCapture",
-) -> tuple[object, ...]:
+) -> tuple[UnifiedAffordance, ...]:
     return tuple(snapshot.semantic_targets)
 
 

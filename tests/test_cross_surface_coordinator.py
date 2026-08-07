@@ -2,7 +2,6 @@ import asyncio
 from dataclasses import dataclass, replace
 from typing import Any
 
-from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
@@ -19,6 +18,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.effect_authority_contracts import EffectAuthorizationScope, EffectClass, ResourceScopeRef
 from affordance_runtime.executors import VisualExecutor, WotExecutor
+from affordance_runtime.grounding import GroundingSource, SourceObservation
 from affordance_runtime.planning import (
     ContractRequirements,
 )
@@ -29,6 +29,10 @@ from affordance_runtime.task_intake import (
     TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
+)
+from affordance_runtime.transaction_materialization import ActionTransactionMaterializer as ContractBuilder
+from affordance_runtime.unified_observation import (
+    SourceCoverage,
 )
 from affordance_runtime.verification.contracts import SuccessExpression
 
@@ -46,10 +50,35 @@ class StaticObserver:
             metadata=({"image_width": 100, "image_height": 100} if affordance.surface.value == "visual" else {}),
         )
         model = PageAffordanceModel("surface", "", revision, snapshot_id, page_revision, [affordance], 1, 1)
-        self.snapshot = BrowserSnapshot(observation, model)
+        source = (
+            GroundingSource.SOM
+            if affordance.surface.value == "visual" and affordance.locator.get("mark_id")
+            else GroundingSource(affordance.surface.value)
+        )
+        self.snapshot = BrowserSnapshot(
+            observation,
+            model,
+            source_observations=(
+                SourceObservation(source, "static-observer@v1", snapshot_id, revision, page_revision),
+            ),
+            source_coverage=(
+                SourceCoverage.complete(
+                    source,
+                    captured_item_count=1,
+                    capture_policy_id="static-observer-exhaustive@v1",
+                    acquisition_epoch_ref=snapshot_id,
+                    source_scope="test-fixture",
+                    adapter_version="static-observer@v1",
+                ),
+            ),
+        )
 
     def capture(self) -> BrowserSnapshot:
         return self.snapshot
+
+    @staticmethod
+    def coordinate_transform_is_current(expected: object) -> bool:
+        return bool(getattr(expected, "transform_digest", ""))
 
 
 class Pointer:
@@ -62,6 +91,9 @@ class Pointer:
 
 @dataclass
 class EvidenceExecutor:
+    supported_actions = ("activate", "click", "invoke", "point_activate")
+    provider_capabilities = ("conformance.shared-state.write",)
+    adapter_capabilities = provider_capabilities
     backend: str
     evidence: dict[str, Any]
 
@@ -249,13 +281,13 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
                         subject=affordance.label,
                         target_identity=affordance.id,
                         operation_class=OperationClass.REVERSIBLE_WRITE,
-                        capability="shared.write",
+                        capability="conformance.shared-state.write",
                         effect_authorization_scope=EffectAuthorizationScope(
                             requirement_ref="requirement:effect:1",
                             operation_constraint="resource.update@v1",
                             resource_scope=ResourceScopeRef(affordance.id),
                             effect_class=EffectClass.UPDATE,
-                            required_capabilities=frozenset({"shared.write"}),
+                            required_capabilities=frozenset({"conformance.shared-state.write"}),
                         ),
                     ),
                     source_anchor_refs=("surface-test",),
@@ -268,12 +300,12 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
                 criterion_id="criterion:shared-state-enabled",
                 requirement_refs=("requirement:effect:1",),
             ),
-            capability_ceiling=("shared.write",),
+            capability_ceiling=("conformance.shared-state.write",),
             source_request_ref="surface-test",
         )
         requirements = ContractRequirements(
             verifier_plan=(verifier,),
-            required_capabilities=("shared.write",),
+            required_capabilities=("conformance.shared-state.write",),
             risk=RiskLevel.MEDIUM,
             idempotency_key=f"shared-{affordance.surface.value}",
             compensation="disable shared state",
@@ -283,7 +315,12 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
                 StaticObserver(affordance),
                 executor,
                 contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
-            ).run(legacy_run_request(task_spec=task, capabilities=["shared.write"]))
+            ).run(
+                legacy_run_request(
+                    task_spec=task,
+                    capabilities=["conformance.shared-state.write"],
+                )
+            )
         )
         events = [node.kind for node in result.trace.nodes]
         assert "ActionChoiceCatalogBuilt" in events

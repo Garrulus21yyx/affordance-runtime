@@ -13,95 +13,19 @@ from affordance_runtime.benchmarks.local import run_local_benchmark
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.coordinator import RuntimeFeatures
-from affordance_runtime.effect_authority_contracts import EffectClass
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.planners import (
-    PricingTaskPlanner,
-    export_contract_builder,
-    extract_pricing,
-    pricing_contract_builder,
-    pricing_output_requirement,
-    pricing_required_outputs,
-    pricing_success_expression,
-    settings_contract_builder,
+from affordance_runtime.planners import extract_pricing
+from affordance_runtime.reference_scenarios import (
+    ReferenceScenario,
+    reference_contract_builder,
+    reference_task_planner,
+    reference_task_spec,
 )
 from affordance_runtime.runtime import RunRequest, legacy_run_request
-from affordance_runtime.task_intake import (
-    OperationClass,
-    TaskRequirement,
-    TaskSemanticPayload,
-    TaskSpec,
-    canonical_effect_requirement_refs,
-    canonical_effect_requirements,
-)
-from affordance_runtime.task_planner import PlanningRouter
 from affordance_runtime.task_spec_authority import AdmittedTaskSpec
-from affordance_runtime.verification.contracts import (
-    AssuranceLevel,
-    CriterionPolicy,
-    EvidenceValidityMode,
-    SatisfactionMode,
-    SuccessExpression,
-)
-
-
-def _scenario_requirement(
-    requirement_id: str,
-    subject: str,
-    operation_class: OperationClass,
-    capability: str = "",
-) -> TaskRequirement:
-    return TaskRequirement(
-        requirement_id=requirement_id,
-        payload=TaskSemanticPayload(
-            kind="effect",
-            subject=subject,
-            target_identity=subject,
-            operation_class=operation_class,
-            capability=capability,
-        ),
-        source_anchor_refs=(f"reference-cli:{requirement_id}",),
-    )
-
-
-def _scenario_success(requirement_id: str, scenario: str) -> SuccessExpression:
-    if scenario == "export":
-        return SuccessExpression(
-            expression_id="success:export",
-            operator="all_of",
-            children=(
-                SuccessExpression(
-                    expression_id="success:export-effect",
-                    operator="criterion",
-                    criterion_id="criterion:export-effect",
-                    requirement_refs=(requirement_id,),
-                    policy=CriterionPolicy(
-                        satisfaction=SatisfactionMode.ACTION_CAUSED,
-                        validity=EvidenceValidityMode.RECENT_ACTION,
-                        causal_lineage_required=True,
-                    ),
-                ),
-                SuccessExpression(
-                    expression_id="success:export-final",
-                    operator="criterion",
-                    criterion_id="criterion:export-final",
-                    requirement_refs=(requirement_id,),
-                    policy=CriterionPolicy(
-                        validity=EvidenceValidityMode.FINAL_RECHECK,
-                        minimum_assurance=AssuranceLevel.AUTHORITATIVE,
-                    ),
-                ),
-            ),
-        )
-    return SuccessExpression(
-        expression_id=f"success:{scenario}",
-        operator="criterion",
-        criterion_id=f"criterion:{scenario}",
-        requirement_refs=(requirement_id,),
-    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -401,7 +325,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(manifest, indent=2, sort_keys=True))
         return 0
     if args.command == "evolve":
-        evolution_report = build_evolution_report(args.benchmark_report, args.output)
+        from affordance_runtime.evolution_replay import recorded_replay_runner_from_report
+
+        evolution_report = build_evolution_report(
+            args.benchmark_report,
+            args.output,
+            replay_runner=recorded_replay_runner_from_report(args.benchmark_report),
+        )
         print(
             json.dumps(
                 {
@@ -443,7 +373,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def run_scenario(
-    scenario: str,
+    scenario: ReferenceScenario,
     target: str | None,
     artifact_root: Path,
     *,
@@ -477,157 +407,16 @@ def run_scenario(
 
         loaded_profile = AcceptedProfileLoader(accepted_profile).load()
     task_spec = admitted_task.task_spec if admitted_task is not None else None
-    if admitted_task is None and task_planning:
-        task_spec = TaskSpec(
-            task_id=selected_run_id,
-            revision=1,
-            objective="Reveal Pro and Enterprise plan limits with structural evidence.",
-            operation_class=OperationClass.READ_ONLY,
-            requirements=(
-                *canonical_effect_requirements(
-                    ("Show Pro limits", "Show Enterprise limits"),
-                    OperationClass.READ_ONLY,
-                    "reference-cli",
-                    (),
-                    resource_refs=(
-                        "semantic:show-pro-limits:d560036f53a2",
-                        "semantic:show-enterprise-limits:7ac4b4b12278",
-                    ),
-                    operation_ref_override="interaction.reveal@v1",
-                    effect_class_override=EffectClass.INTERACTION_ONLY,
-                ),
-                pricing_output_requirement("reference-cli"),
-            ),
-            allowed_effect_refs=canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits")),
-            success=pricing_success_expression(),
-            required_outputs=pricing_required_outputs(),
-            source_request_ref="reference-cli",
-        )
-    elif admitted_task is None and loaded_profile is not None:
-        profile_objectives = {
-            "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
-            "settings": "Enable the reversible notifications setting and verify persisted state.",
-            "export": "Export a report only after explicit approval and return the file receipt.",
-        }
-        profile_operation = {
-            "pricing": OperationClass.READ_ONLY,
-            "settings": OperationClass.REVERSIBLE_WRITE,
-            "export": OperationClass.EXTERNAL_SIDE_EFFECT,
-        }[scenario]
-        profile_requirement_id = f"requirement:{scenario}"
-        profile_capabilities = tuple(
-            capabilities_override if capabilities_override is not None else capabilities[scenario]
-        )
-        profile_requirements = (
-            (
-                *canonical_effect_requirements(
-                    ("Show Pro limits", "Show Enterprise limits"),
-                    OperationClass.READ_ONLY,
-                    "reference-cli-accepted-profile",
-                    (),
-                    resource_refs=(
-                        "semantic:show-pro-limits:d560036f53a2",
-                        "semantic:show-enterprise-limits:7ac4b4b12278",
-                    ),
-                    operation_ref_override="interaction.reveal@v1",
-                    effect_class_override=EffectClass.INTERACTION_ONLY,
-                ),
-                pricing_output_requirement("reference-cli-accepted-profile"),
-            )
-            if scenario == "pricing"
-            else (
-                _scenario_requirement(
-                    profile_requirement_id,
-                    {"settings": "Enable notifications", "export": "Export report"}[scenario],
-                    profile_operation,
-                    profile_capabilities[0] if profile_capabilities else "",
-                ),
-            )
-        )
-        task_spec = TaskSpec(
-            task_id=selected_run_id,
-            revision=1,
-            objective=profile_objectives[scenario],
-            operation_class=profile_operation,
-            requirements=profile_requirements,
-            allowed_effect_refs=(
-                canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits"))
-                if scenario == "pricing"
-                else (profile_requirement_id,)
-            ),
-            success=(
-                pricing_success_expression()
-                if scenario == "pricing"
-                else _scenario_success(profile_requirement_id, scenario)
-            ),
-            required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
-            external_effect_criterion_ids=(("criterion:export-effect",) if scenario == "export" else ()),
-            final_recheck_criterion_ids=(("criterion:export-final",) if scenario == "export" else ()),
-            capability_ceiling=profile_capabilities,
-            source_request_ref="reference-cli-accepted-profile",
-        )
     if task_spec is None:
-        default_objectives = {
-            "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
-            "settings": "Enable the reversible notifications setting and verify persisted state.",
-            "export": "Export a report only after explicit approval and return the file receipt.",
-        }
-        default_operation = {
-            "pricing": OperationClass.READ_ONLY,
-            "settings": OperationClass.REVERSIBLE_WRITE,
-            "export": OperationClass.EXTERNAL_SIDE_EFFECT,
-        }[scenario]
-        default_requirement_id = f"requirement:{scenario}"
-        default_capabilities = tuple(
-            capabilities_override if capabilities_override is not None else capabilities[scenario]
-        )
-        default_requirements = (
-            (
-                *canonical_effect_requirements(
-                    ("Show Pro limits", "Show Enterprise limits"),
-                    OperationClass.READ_ONLY,
-                    "reference-cli",
-                    (),
-                    resource_refs=(
-                        "semantic:show-pro-limits:d560036f53a2",
-                        "semantic:show-enterprise-limits:7ac4b4b12278",
-                    ),
-                    operation_ref_override="interaction.reveal@v1",
-                    effect_class_override=EffectClass.INTERACTION_ONLY,
-                ),
-                pricing_output_requirement("reference-cli"),
-            )
-            if scenario == "pricing"
-            else (
-                _scenario_requirement(
-                    default_requirement_id,
-                    {"settings": "Enable notifications", "export": "Export report"}[scenario],
-                    default_operation,
-                    default_capabilities[0] if default_capabilities else "",
-                ),
-            )
-        )
-        task_spec = TaskSpec(
-            task_id=selected_run_id,
-            revision=1,
-            objective=default_objectives[scenario],
-            operation_class=default_operation,
-            requirements=default_requirements,
-            allowed_effect_refs=(
-                canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits"))
-                if scenario == "pricing"
-                else (default_requirement_id,)
+        task_spec = reference_task_spec(
+            scenario,
+            selected_run_id,
+            capabilities=tuple(
+                capabilities_override if capabilities_override is not None else capabilities[scenario]
             ),
-            success=(
-                pricing_success_expression()
-                if scenario == "pricing"
-                else _scenario_success(default_requirement_id, scenario)
+            source_anchor_ref=(
+                "reference-cli-accepted-profile" if loaded_profile is not None else "reference-cli"
             ),
-            required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
-            external_effect_criterion_ids=(("criterion:export-effect",) if scenario == "export" else ()),
-            final_recheck_criterion_ids=(("criterion:export-final",) if scenario == "export" else ()),
-            capability_ceiling=default_capabilities,
-            source_request_ref="reference-cli",
         )
     runtime_features = (
         loaded_profile.profile.features_for(selected_run_id) if loaded_profile is not None else RuntimeFeatures()
@@ -638,14 +427,13 @@ def run_scenario(
         result = compose_run_coordinator(
             observer=session,
             executor=router,
-            contract_builder={
-                "pricing": pricing_contract_builder(),
-                "settings": settings_contract_builder(target.rsplit("/", 1)[0] + "/api/state"),
-                "export": export_contract_builder(target.rsplit("/", 1)[0] + "/api/state"),
-            }[scenario],
+            contract_builder=reference_contract_builder(
+                scenario,
+                base_url=target.rsplit("/", 1)[0],
+            ),
             artifacts=ArtifactStore(artifact_root),
             approval_provider=approval_provider,
-            task_planner=(PricingTaskPlanner() if scenario == "pricing" else PlanningRouter()),
+            task_planner=reference_task_planner(scenario),
             features=runtime_features,
             task_skill_runtime=(loaded_profile.task_skill_runtime if loaded_profile is not None else None),
             runtime_profile_digest=(loaded_profile.profile_digest if loaded_profile is not None else ""),

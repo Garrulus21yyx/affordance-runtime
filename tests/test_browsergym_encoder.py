@@ -979,7 +979,8 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
 
     assert report.passed
     assert report.evidence[-2].passed
-    assert report.evidence[-2].source == "external_evaluator"
+    assert report.evidence[-2].source == "execution_receipt"
+    assert report.evidence[-2].strength == "weak"
     assert report.evidence[-2].criterion_ids == ("subgoal:button-one-completed:criterion:0",)
     assert report.evidence[-2].requirement_ids == ("subgoal:button-one-completed:evidence-requirement:0",)
     assert not report.evidence[-1].passed

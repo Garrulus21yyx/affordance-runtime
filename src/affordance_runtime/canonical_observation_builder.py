@@ -54,6 +54,17 @@ def _maximum_resource_sensitivity(values: Iterable[str]) -> str:
     return max(normalized, key=ranks.__getitem__)
 
 
+def _maximum_source_assurance(values: Iterable[str]) -> str:
+    """Describe the strongest available route; final materialization rechecks it."""
+
+    ranks = {"weak": 0, "structural": 1, "authoritative": 2}
+    known = [str(value).casefold() for value in values if str(value).strip()]
+    if not known:
+        return ""
+    normalized = [value if value in ranks else "weak" for value in known]
+    return max(normalized, key=ranks.__getitem__)
+
+
 @dataclass(frozen=True)
 class CanonicalObservationBuilder:
     """Own canonical fusion without consulting any presentation policy."""
@@ -100,6 +111,9 @@ class CanonicalObservationBuilder:
             "coverage": coverage,
             "artifacts": artifact_refs,
             "acquisition_policy_id": self.acquisition_policy_id,
+            "live_surface_binding": capture.live_surface_binding,
+            "coordinate_binding": capture.coordinate_binding,
+            "capability_descriptor": capture.capability_descriptor,
         }
         digest = "sha256:" + hashlib.sha256(
             json.dumps(
@@ -122,6 +136,10 @@ class CanonicalObservationBuilder:
             digest=digest,
             acquisition_policy_id=self.acquisition_policy_id,
             metadata=metadata,
+            live_surface_binding=capture.live_surface_binding,
+            coordinate_binding=capture.coordinate_binding,
+            capability_descriptor=capture.capability_descriptor,
+            predicate_evidence=capture.predicate_evidence,
         )
 
 
@@ -136,6 +154,9 @@ def _validate_capture_epoch(capture: PerceptionCapture) -> None:
         {item.source for item in capture.source_coverage}
     ):
         raise ValueError("capture source coverage must contain one record per source")
+    for coverage in capture.source_coverage:
+        if coverage.acquisition_epoch_ref != observation.snapshot_id:
+            raise ValueError("source coverage belongs to a different capture epoch")
     for source in capture.source_observations:
         if (
             source.observation_epoch_id,
@@ -191,7 +212,7 @@ def _complete_semantic_inputs(
     capture: PerceptionCapture,
 ) -> tuple[tuple[UnifiedAffordance, ...], tuple[GroundingCandidate, ...]]:
     if capture.semantic_targets:
-        candidates = tuple(
+        merged_candidates = tuple(
             {
                 item.candidate_id: item
                 for item in (
@@ -200,7 +221,7 @@ def _complete_semantic_inputs(
                 )
             }.values()
         )
-        return capture.semantic_targets, candidates
+        return capture.semantic_targets, merged_candidates
     targets: list[UnifiedAffordance] = []
     candidates: list[GroundingCandidate] = []
     for affordance in capture.affordances:
@@ -274,7 +295,7 @@ def _canonical_target(
                 for candidate in candidates
                 if action in candidate.supported_actions
             ),
-            source_assurance=_single_typed_value(
+            source_assurance=_maximum_source_assurance(
                 candidate.authority_source_assurance
                 for candidate in candidates
                 if action in candidate.supported_actions

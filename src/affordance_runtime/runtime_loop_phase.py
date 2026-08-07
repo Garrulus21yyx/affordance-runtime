@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from affordance_runtime.contracts import RuntimeErrorCode
+from affordance_runtime.execution_context import RunProvenanceManifest
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.stage_protocol import StageResult, TerminalResult
@@ -62,6 +63,9 @@ class RuntimeBudgetView(Protocol):
     @property
     def max_effectful_actions(self) -> int: ...
 
+    @property
+    def max_active_perception_observations(self) -> int: ...
+
 
 class RuntimeLoopPhase:
     """Prepare loop lifecycle transitions and events without committing them."""
@@ -73,6 +77,7 @@ class RuntimeLoopPhase:
         upstream_trace: TraceDag | None,
         runtime_profile_digest: str,
         loaded_profile_artifact_ids: tuple[str, ...],
+        provenance_manifest: RunProvenanceManifest,
     ) -> RuntimeLoopStartResult:
         state = StateKernel(
             task_id=envelope.task_id,
@@ -94,6 +99,7 @@ class RuntimeLoopPhase:
                 ),
                 "runtime_profile_digest": runtime_profile_digest,
                 "loaded_profile_artifact_ids": list(loaded_profile_artifact_ids),
+                "run_provenance_manifest_digest": provenance_manifest.digest,
             },
             parent_ids=(upstream_parent.id,) if upstream_parent else (),
         )
@@ -155,12 +161,14 @@ class RuntimeCommitSession:
         envelope: RunRequest,
         budget: RuntimeBudgetView,
         upstream_trace: TraceDag | None,
+        provenance_manifest: RunProvenanceManifest,
     ) -> RuntimeCommitSession:
         started = RuntimeLoopPhase().start(
             envelope=envelope,
             upstream_trace=upstream_trace,
             runtime_profile_digest=recovery_stage.runtime_profile_digest,
             loaded_profile_artifact_ids=recovery_stage.loaded_profile_artifact_ids,
+            provenance_manifest=provenance_manifest,
         )
         return cls(
             committer,
@@ -216,6 +224,16 @@ class RuntimeCommitSession:
         self.parent = self.committer.commit(
             self.state, self.trace, self.parent, result
         )
+
+    def admit_dispatch(self, admission: Any, attempt: Any) -> Any:
+        permit, self.parent = self.committer.admit_dispatch(
+            self.state,
+            self.trace,
+            self.parent,
+            admission,
+            attempt,
+        )
+        return permit
 
     def enter_planning(self) -> None:
         self.committer.commit_loop_transition(

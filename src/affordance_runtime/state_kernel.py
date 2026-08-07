@@ -15,6 +15,7 @@ from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.observation_store import ObservationCommit, ObservationRef
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
 from affordance_runtime.simplified_runtime_contracts import (
+    EffectSettlement,
     ExecutionAttempt,
     UncertainExternalEffect,
 )
@@ -154,6 +155,7 @@ class StateKernel:
     current_execution_attempt: ExecutionAttempt | None = None
     uncertain_external_effects: tuple[UncertainExternalEffect, ...] = ()
     latest_verification: VerificationReport | None = None
+    latest_effect_settlement: EffectSettlement | None = None
     step_count: int = 0
     observation_count: int = 0
     replan_count: int = 0

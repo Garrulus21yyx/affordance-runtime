@@ -74,16 +74,6 @@ def test_recovery_retries_only_idempotent_contract() -> None:
     )
 
 
-def test_recovery_uses_declared_fallback_after_retry_budget() -> None:
-    decision = EvolutionRecoveryPolicy().decide(
-        _contract(fallback_backends=["visual"]),
-        _failed_receipt(),
-        EvolutionRecoveryContext(attempt=1, tried_backends=["dom"]),
-    )
-    assert decision.kind == RecoveryKind.REROUTE
-    assert decision.route_ref == "visual"
-
-
 def test_recovery_context_tried_backends_is_immutable_from_source_list() -> None:
     tried_backends = ["dom"]
 
