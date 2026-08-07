@@ -7,7 +7,12 @@ from dataclasses import dataclass, field
 from affordance_runtime.agent.decisions import AskUser, Finish, Reobserve, SelectAction, Stop
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
-from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation.contracts import (
+    ActionEvaluation,
+    ActionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution.contracts import ActionIntent, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.world.action_space import ActionSpaceBuilder
@@ -50,7 +55,7 @@ class AgentLoop:
             initial_evaluation = await self.task_evaluator.evaluate(task, state.current_observation)
             if initial_evaluation.status == TaskEvaluationStatus.COMPLETE:
                 return _result(AgentLoopStatus.DONE, task, state, observations, executions, initial_evaluation.reason)
-            action_space = self.action_space_builder.build(state.current_observation)
+            action_space = self.action_space_builder.build(task, state.current_observation)
             decision = await self.policy.decide(
                 task,
                 build_agent_world_view(state.current_observation),
@@ -66,20 +71,22 @@ class AgentLoop:
                 return _result(AgentLoopStatus.FAILED, task, state, observations, executions, decision.reason)
             if isinstance(decision, Finish):
                 state.append_turn(Turn(state.current_observation.observation_id, decision, task_evaluation=initial_evaluation))
-                return _result(
-                    AgentLoopStatus.BLOCKED,
-                    task,
-                    state,
-                    observations,
-                    executions,
-                    "policy finish was not confirmed by task evaluation",
-                )
+                continue
             if isinstance(decision, Reobserve):
+                if observations >= task.loop_budget.max_observations:
+                    return _observation_budget_result(task, state, observations, executions)
                 state.append_turn(Turn(state.current_observation.observation_id, decision))
                 state.current_observation = await environment.observe(decision.reason)
                 observations += 1
                 continue
-            outcome = await self._execute_selection(task, environment, state, action_space, decision)
+            outcome = await self._execute_selection(
+                task,
+                environment,
+                state,
+                action_space,
+                decision,
+                can_observe=observations < task.loop_budget.max_observations,
+            )
             if isinstance(outcome, AgentResult):
                 return _with_counts(outcome, observations + outcome.observation_count, executions + outcome.execution_count)
             state, observed, executed, terminal = outcome
@@ -103,11 +110,15 @@ class AgentLoop:
         state: AgentLoopState,
         action_space: ActionSpace,
         decision: SelectAction,
+        *,
+        can_observe: bool,
     ):
         admitted = self._admit_selection(task, state, action_space, decision)
         if isinstance(admitted, AgentResult):
             return admitted
         intent = admitted
+        if not can_observe:
+            return _observation_budget_result(task, state, 0, 0)
         before = state.current_observation
         try:
             request = self.binder.bind(intent, before)
@@ -133,7 +144,19 @@ class AgentLoop:
                 "environment reused the post-action observation identity",
             )
             return state, 1, 1, terminal
-        action_evaluation = await self.action_evaluator.evaluate(task, before, intent, result, after)
+        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+            state.append_turn(Turn(before.observation_id, decision, intent, request.request_id, result, after.observation_id))
+            state.current_observation = after
+            terminal = _result(
+                AgentLoopStatus.FAILED,
+                task,
+                state,
+                0,
+                0,
+                "action result lineage does not match the bound request",
+            )
+            return state, 1, 1, terminal
+        action_evaluation = await self.action_evaluator.evaluate(task, before, request, result, after)
         task_evaluation = await self.task_evaluator.evaluate(task, after)
         state.append_turn(
             Turn(
@@ -148,7 +171,14 @@ class AgentLoop:
             )
         )
         state.current_observation = after
-        return state, 1, 1, self._post_action_terminal(task, state, request, result, task_evaluation)
+        return state, 1, 1, self._post_action_terminal(
+            task,
+            state,
+            request,
+            result,
+            action_evaluation,
+            task_evaluation,
+        )
 
     def _admit_selection(
         self,
@@ -192,11 +222,26 @@ class AgentLoop:
         state: AgentLoopState,
         request: BoundActionRequest,
         result: ActionResult,
+        action_evaluation: ActionEvaluation,
         task_evaluation: TaskEvaluation,
     ) -> AgentResult | None:
         if task_evaluation.status == TaskEvaluationStatus.COMPLETE:
             return _result(AgentLoopStatus.DONE, task, state, 0, 0, task_evaluation.reason)
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
+            if action_evaluation.status in {
+                ActionEvaluationStatus.VERIFIED,
+                ActionEvaluationStatus.NOT_VERIFIED,
+            }:
+                return None
+            if action_evaluation.status == ActionEvaluationStatus.REJECTED:
+                return _result(
+                    AgentLoopStatus.FAILED,
+                    task,
+                    state,
+                    0,
+                    0,
+                    action_evaluation.reason,
+                )
             state.pending_unknown_request = request
             return _result(
                 AgentLoopStatus.WAITING_USER,
@@ -234,6 +279,22 @@ def _result(
         observation_count,
         execution_count,
         message,
+    )
+
+
+def _observation_budget_result(
+    task: TaskGoal,
+    state: AgentLoopState,
+    observation_count: int,
+    execution_count: int,
+) -> AgentResult:
+    return _result(
+        AgentLoopStatus.FAILED,
+        task,
+        state,
+        observation_count,
+        execution_count,
+        "agent loop observation budget exhausted",
     )
 
 

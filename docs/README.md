@@ -83,6 +83,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-0 entry-hardening baseline review](reviews/2026-08-07-p5-entry-hardening.md)
 - [World-Interaction migration latest review](reviews/2026-08-08-world-interaction-migration-review.md)
 - [P5-A/B/C1 Unified World and DOM implementation record](reviews/2026-08-08-p5-dom-vertical-slice.md)
+- [P5-C1.1/B1.1 correctness closure](reviews/2026-08-08-p5-c1-1-correctness-closure.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

@@ -43,18 +43,24 @@ class ActionIntent:
 @dataclass(frozen=True)
 class BoundActionRequest:
     request_id: str
-    observation_id: str
+    world_observation_id: str
     intent: ActionIntent
     binding: ActionBinding
     timeout_ms: int = 5_000
 
     def __post_init__(self) -> None:
-        if not self.request_id.strip() or self.observation_id != self.binding.observation_id:
+        if not self.request_id.strip() or self.world_observation_id != self.binding.world_observation_id:
             raise ValueError("bound request must identify its binding observation")
         if self.intent.target_id != self.binding.target_id:
             raise ValueError("intent target does not match binding target")
         if self.timeout_ms <= 0:
             raise ValueError("timeout must be positive")
+
+    @property
+    def observation_id(self) -> str:
+        """Compatibility read; world identity is canonical."""
+
+        return self.world_observation_id
 
 
 @dataclass(frozen=True)

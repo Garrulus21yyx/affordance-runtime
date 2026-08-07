@@ -64,23 +64,52 @@ class ObservationConflict:
 @dataclass(frozen=True)
 class ActionBinding:
     binding_id: str
-    observation_id: str
+    world_observation_id: str
+    source_observation_id: str
+    source_revision: str
+    target_fingerprint: str
     target_id: str
     surface: str
     executor_id: str
-    supported_actions: tuple[str, ...]
+    semantic_action: str
+    primitive_action: str
+    semantic_effects: tuple[str, ...]
+    parameter_schema: dict[str, Any]
     payload: dict[str, Any]
+    observation_barrier: bool = True
     expires_at_s: float = 0.0
     confidence: float = 1.0
     cost: float = 0.0
     risk: ActionRisk = ActionRisk.LOW
 
     def __post_init__(self) -> None:
-        required = (self.binding_id, self.observation_id, self.target_id, self.surface, self.executor_id)
-        if not all(value.strip() for value in required) or not self.supported_actions:
-            raise ValueError("action binding requires identity, route, and supported actions")
-        object.__setattr__(self, "supported_actions", tuple(self.supported_actions))
+        required = (
+            self.binding_id,
+            self.world_observation_id,
+            self.source_observation_id,
+            self.source_revision,
+            self.target_fingerprint,
+            self.target_id,
+            self.surface,
+            self.executor_id,
+            self.semantic_action,
+            self.primitive_action,
+        )
+        if not all(value.strip() for value in required):
+            raise ValueError("action binding requires world/source identity, fingerprint, and route")
+        object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "payload", freeze_json(self.payload))
+
+    @property
+    def observation_id(self) -> str:
+        """Compatibility read; new code uses explicit world_observation_id."""
+
+        return self.world_observation_id
+
+    @property
+    def supported_actions(self) -> tuple[str, ...]:
+        return (self.semantic_action,)
 
 
 @dataclass(frozen=True)
@@ -97,8 +126,11 @@ class SurfaceObservation:
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
             raise ValueError("surface observation requires identity, surface, and revision")
-        if any(binding.observation_id != self.observation_id for binding in self.bindings):
-            raise ValueError("surface binding must belong to its observation")
+        if any(
+            binding.source_observation_id != self.observation_id or binding.source_revision != self.revision
+            for binding in self.bindings
+        ):
+            raise ValueError("surface binding must retain its source identity and revision")
         object.__setattr__(self, "targets", tuple(self.targets))
         object.__setattr__(self, "facts", tuple(self.facts))
         object.__setattr__(self, "bindings", tuple(self.bindings))
@@ -118,7 +150,7 @@ class WorldObservation:
     def __post_init__(self) -> None:
         if not self.observation_id.strip():
             raise ValueError("world observation requires non-empty identity")
-        if any(binding.observation_id != self.observation_id for binding in self.bindings):
+        if any(binding.world_observation_id != self.observation_id for binding in self.bindings):
             raise ValueError("world binding must reference the current observation")
         object.__setattr__(self, "targets", tuple(self.targets))
         object.__setattr__(self, "facts", tuple(self.facts))
@@ -136,6 +168,7 @@ class ActionOption:
     target_id: str
     parameter_schema: dict[str, Any]
     description: str
+    semantic_effects: tuple[str, ...] = ()
     risk: ActionRisk = ActionRisk.LOW
     destination_required: bool = False
     batchable: bool = False
@@ -145,6 +178,7 @@ class ActionOption:
         if not all(value.strip() for value in (self.action_id, self.observation_id, self.semantic_action, self.target_id)):
             raise ValueError("action option requires current semantic identity")
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
+        object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
 
 
 @dataclass(frozen=True)

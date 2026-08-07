@@ -22,6 +22,7 @@ loop without changing the default product path.
 | A4 | complete, non-default | ActionIntent/request/result, evaluations, decisions, bounded turns |
 | B1 | complete for DOM minimum | SurfaceAdapter, UnifiedWorldEnvironment, DOM adapter, binder |
 | C1 | complete, non-default | real Chromium positive loop plus negative matrix |
+| C1.1/B1.1 | complete | task-aware ActionSpace, source/world/fingerprint currentness, lineage, schema, budget, Finish/unknown closure |
 | Visual/WoT verticals | `NOT_STARTED` | next slice; reuse the same TaskGoal/policy/evaluators |
 | P5-D | `NOT_STARTED` | full semantic confirmation continuation |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
@@ -30,7 +31,8 @@ loop without changing the default product path.
 
 ## Next admitted slice
 
-Implement symmetric Visual and WoT SurfaceAdapters/positive loops using the
+Implement a single-surface Visual adapter/positive loop, then the WoT adapter,
+using the
 same task, policy, semantic ActionSpace, and evaluators. Do not add batch,
 long-horizon planning, global confirmation registries, external full-agent
 benchmarks, or old-core deletion to that slice.

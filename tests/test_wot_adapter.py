@@ -129,7 +129,66 @@ def test_wot_does_not_guess_first_security_scheme_when_td_does_not_select_one() 
 
     assert model.security_scheme_ref == ""
     assert model.state_sources[0]["security_scheme_ref"] == ""
-    assert model.parser_issues == ("security_scheme_unresolved",)
+    assert model.state_sources[0]["available"] is False
+    assert "href" not in model.state_sources[0]
+    assert model.affordances == []
+    assert "security_scheme_unresolved:sensor:property:value:read" in model.parser_issues
+
+
+def test_wot_explicit_nosec_remains_available_and_executable() -> None:
+    td = {
+        "id": "lamp",
+        "securityDefinitions": {"public": {"scheme": "nosec"}, "api": {"scheme": "apikey"}},
+        "security": "public",
+        "properties": {
+            "power": {
+                "type": "boolean",
+                "forms": [{"href": "http://fixture/power", "op": ["readproperty", "writeproperty"]}],
+            }
+        },
+    }
+
+    model = WotAdapter().parse(td, environment_revision="rev-1")
+
+    assert model.state_sources[0]["available"] is True
+    assert model.state_sources[0]["security_scheme_ref"] == "public"
+    assert len(model.affordances) == 1
+
+
+def test_wot_explicit_unknown_security_without_definitions_fails_closed() -> None:
+    td = {
+        "id": "locked-lamp",
+        "security": "missing",
+        "properties": {
+            "power": {
+                "forms": [
+                    {
+                        "href": "http://fixture/power",
+                        "op": ["readproperty", "writeproperty"],
+                    }
+                ]
+            }
+        },
+        "actions": {
+            "reset": {
+                "forms": [
+                    {
+                        "href": "http://fixture/reset",
+                        "op": "invokeaction",
+                        "security": "also-missing",
+                    }
+                ]
+            }
+        },
+    }
+
+    model = WotAdapter().parse(td, environment_revision="rev-1")
+
+    assert model.state_sources[0]["available"] is False
+    assert "href" not in model.state_sources[0]
+    assert model.affordances == []
+    assert "security_scheme_unresolved:locked-lamp:property:power:write" in model.parser_issues
+    assert "security_scheme_unresolved:locked-lamp:action:reset" in model.parser_issues
 
 
 def test_wot_adapter_supports_implicit_property_operations_but_respects_write_only() -> None:

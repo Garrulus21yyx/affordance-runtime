@@ -18,7 +18,7 @@ class InteractivePage:
 
     def content(self) -> str:
         label = "Shared state enabled" if self.enabled else "Enable shared state"
-        return f"<main><button id='shared'>{label}</button></main>"
+        return f"<main><button id='shared' data-runtime-effect-class='shared_state_enabled'>{label}</button></main>"
 
     def click(self, selector: str) -> None:
         assert selector == "#shared"
@@ -46,7 +46,7 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
         await world.reset(task)
         before = await world.observe("initial")
         view = build_agent_world_view(before)
-        space = ActionSpaceBuilder().build(before)
+        space = ActionSpaceBuilder().build(task, before)
         option = space.options[0]
         request = ActionBinder().bind(ActionIntent(option.semantic_action, option.target_id), before)
 
@@ -72,9 +72,38 @@ def test_stale_dom_binding_makes_zero_executor_calls() -> None:
         task = TaskGoal("read", "Inspect shared state")
         await world.reset(task)
         old = await world.observe("old")
-        option = ActionSpaceBuilder().build(old).options[0]
+        effectful = TaskGoal(
+            "shared",
+            "Enable shared state",
+            allowed_effects=("shared_state_enabled",),
+            risk_profile=RiskProfile.LOW,
+        )
+        option = ActionSpaceBuilder().build(effectful, old).options[0]
         request = ActionBinder().bind(ActionIntent(option.semantic_action, option.target_id), old)
         await world.observe("new")
+
+        assert not world.is_current(request)
+        assert page.clicks == 0
+
+    asyncio.run(scenario())
+
+
+def test_async_dom_fingerprint_change_makes_zero_executor_calls() -> None:
+    async def scenario() -> None:
+        page = InteractivePage()
+        world = UnifiedWorldEnvironment((DomSurfaceAdapter(BrowserSession(page)),))  # type: ignore[arg-type]
+        task = TaskGoal(
+            "shared",
+            "Enable shared state",
+            allowed_effects=("shared_state_enabled",),
+            risk_profile=RiskProfile.LOW,
+        )
+        await world.reset(task)
+        observed = await world.observe("initial")
+        option = ActionSpaceBuilder().build(task, observed).options[0]
+        request = ActionBinder().bind(ActionIntent(option.semantic_action, option.target_id), observed)
+
+        page.enabled = True  # DOM changes after observation, before execute.
 
         assert not world.is_current(request)
         assert page.clicks == 0

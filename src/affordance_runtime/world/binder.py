@@ -21,7 +21,8 @@ class ActionBinder:
             binding
             for binding in observation.bindings
             if binding.target_id == intent.target_id
-            and intent.semantic_action in binding.supported_actions
+            and intent.semantic_action == binding.semantic_action
+            and binding.world_observation_id == observation.observation_id
             and (not binding.expires_at_s or time() <= binding.expires_at_s)
         ]
         if not bindings:

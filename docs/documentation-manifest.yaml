@@ -115,6 +115,9 @@ reference:
   - role: p5_dom_vertical_implementation_record
     path: docs/reviews/2026-08-08-p5-dom-vertical-slice.md
     lifecycle: current
+  - role: p5_c1_1_correctness_closure
+    path: docs/reviews/2026-08-08-p5-c1-1-correctness-closure.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

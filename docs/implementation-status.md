@@ -23,10 +23,10 @@ The target path now has:
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
 | TaskPlan / Milestone / LocalObjective contracts | `INTEGRATED_NON_DEFAULT` (no model planner) |
-| WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT` |
+| WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; task-aware legality and source/world currentness closed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT` |
 | Evaluator-owned completion and bounded Turn state | `INTEGRATED_NON_DEFAULT` |
-| SurfaceAdapter / UnifiedWorldEnvironment | `INTEGRATED_NON_DEFAULT` for DOM minimum |
+| SurfaceAdapter / UnifiedWorldEnvironment | complete for single-DOM minimum; multi-source identity/currentness closed, semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
 | real-browser DOM short loop | `INTEGRATED_NON_DEFAULT`, positive C1 proof |
 | Visual and WoT new-loop verticals | `NOT_STARTED` |
@@ -50,7 +50,8 @@ ActionContract, or ExecutionReceipt.
   as executable options.
 - WoT read state sources carry public security-scheme, minimum-interval,
   content-type, and property-schema metadata. An unselected scheme is reported
-  unresolved rather than guessed from dictionary order.
+  unavailable without transport fields, and related write/invoke affordances
+  are withheld. Only an explicitly referenced `nosec` scheme is executable.
 - SoM utilities and smart-room/mock-web assets are implemented.
 - Smart-room images use committed lockfiles and `npm ci`. Audit debt remains:
   node-wot 4 vulnerabilities (2 moderate, 2 high); dashboard 2 (1 moderate,
@@ -58,10 +59,13 @@ ActionContract, or ExecutionReceipt.
 
 ## Proof and remaining gates
 
-Focused target tests cover stale zero-call, unknown no-retry, initial zero-op
+Focused target tests cover source/world/fingerprint stale zero-call, task-forbidden
+effect filtering, result lineage, schema values, observation budget, unknown
+no-retry, initial zero-op
 completion, finish-proposal rejection, receipt/effect separation, private
 parameter rejection, observation identity freshness, low-risk-only admission,
 bounded turns, and real Chromium DOM completion.
 
-The new-loop DOM/Visual/WoT positive matrix is not complete. External full-agent
+The new-loop DOM/Visual/WoT positive matrix is not complete. Semantic fusion and
+route selection across simultaneous sources remain future work. External full-agent
 benchmarks remain blocked. Old-core deletion is not admitted.

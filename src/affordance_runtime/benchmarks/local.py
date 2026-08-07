@@ -52,6 +52,19 @@ class DriftOnceObserver:
 
     def capture(self) -> BrowserSnapshot:
         self.capture_count += 1
+        if self.injected and self.capture_count == 3:
+            self.session.evaluate(
+                """() => new Promise((resolve, reject) => {
+                    const deadline = Date.now() + 1000;
+                    const poll = () => {
+                        const button = document.querySelector('button[onclick="saveSetting()"]');
+                        if (button && !button.disabled) { resolve(true); return; }
+                        if (Date.now() >= deadline) { reject(new Error('settings button readiness timeout')); return; }
+                        setTimeout(poll, 10);
+                    };
+                    poll();
+                })"""
+            )
         snapshot = self.session.capture()
         if not self.injected and self.capture_count == 2:
             self.session.evaluate(

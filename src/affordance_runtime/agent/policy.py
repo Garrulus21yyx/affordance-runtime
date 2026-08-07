@@ -5,7 +5,7 @@ from typing import Protocol
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.agent.state import Turn
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
-from affordance_runtime.execution.contracts import ActionIntent, ActionResult
+from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.planning_contracts import TaskPlan
 from affordance_runtime.world.contracts import ActionSpace, WorldObservation
@@ -28,7 +28,7 @@ class ActionEvaluator(Protocol):
         self,
         task: TaskGoal,
         before: WorldObservation,
-        intent: ActionIntent,
+        request: BoundActionRequest,
         result: ActionResult,
         after: WorldObservation,
     ) -> ActionEvaluation: ...

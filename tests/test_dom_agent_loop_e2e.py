@@ -31,8 +31,8 @@ class SharedStateTaskEvaluator:
 
 
 class LabelChangeActionEvaluator:
-    async def evaluate(self, task, before, intent, result, after):
-        del task, intent, result
+    async def evaluate(self, task, before, request, result, after):
+        del task, request, result
         before_labels = {target.label for target in before.targets}
         after_labels = {target.label for target in after.targets}
         changed = before_labels != after_labels
@@ -55,7 +55,8 @@ def _run_immediate(coroutine):
 def test_real_browser_dom_short_loop_completes_with_one_semantic_action() -> None:
     html = """
     <!doctype html><html><body><main>
-      <button id="shared" onclick="this.textContent='Shared state enabled'">Enable shared state</button>
+      <button id="shared" data-runtime-effect-class="shared_state_enabled"
+              onclick="this.textContent='Shared state enabled'">Enable shared state</button>
     </main></body></html>
     """
     session = BrowserSession.launch("data:text/html," + quote(html), lease_ttl_ms=30_000)

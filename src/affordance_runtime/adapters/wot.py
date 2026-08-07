@@ -102,6 +102,7 @@ class WotAdapter:
         title = str(td.get("title") or thing_id)
         base = str(td.get("base") or "")
         security_schemes = parse_security_definitions(td)
+        thing_security_declared = "security" in td
         thing_security_ref = active_security_ref(
             td.get("security"),
             security_schemes,
@@ -131,20 +132,32 @@ class WotAdapter:
             read_only = bool(prop.get("readOnly", False))
             read_form = _first_form(forms, ("readproperty", "observeproperty"), allow_implicit=True)
             if read_form is not None and not write_only:
-                read_security_ref = active_security_ref(
-                    read_form.get("security"), security_schemes, fallback=thing_security_ref
-                )
+                read_security_ref = _form_security_ref(read_form, security_schemes, thing_security_ref)
+                read_available = not _security_required(
+                    read_form,
+                    security_schemes,
+                    thing_security_declared,
+                ) or bool(read_security_ref)
                 read_rate_limit = _parse_declared_rate_limit(read_form) or thing_rate_limit
                 state_sources.append(
                     {
                         "thing_id": thing_id,
                         "property": prop_name,
-                        "href": _resolve_href(base, str(read_form.get("href") or "")),
-                        "method": str(read_form.get("htv:methodName") or _DEFAULT_METHOD["readproperty"]).upper(),
+                        "available": read_available,
                         "read_only": read_only,
                         "security_scheme_ref": read_security_ref,
                         "content_type": read_form.get("contentType", "application/json"),
                         "property_schema": _schema_of(prop),
+                        **(
+                            {
+                                "href": _resolve_href(base, str(read_form.get("href") or "")),
+                                "method": str(
+                                    read_form.get("htv:methodName") or _DEFAULT_METHOD["readproperty"]
+                                ).upper(),
+                            }
+                            if read_available
+                            else {"unavailable_reason": "security_scheme_unresolved"}
+                        ),
                         **(
                             {"min_interval_ms": read_rate_limit.min_interval_ms}
                             if read_rate_limit is not None
@@ -152,9 +165,15 @@ class WotAdapter:
                         ),
                     }
                 )
+                if not read_available:
+                    parser_issues.append(f"security_scheme_unresolved:{thing_id}:property:{prop_name}:read")
             if not read_only:
                 write_form = _first_form(forms, ("writeproperty",), allow_implicit=True)
                 if write_form is not None:
+                    write_security_ref = _form_security_ref(write_form, security_schemes, thing_security_ref)
+                    if _security_required(write_form, security_schemes, thing_security_declared) and not write_security_ref:
+                        parser_issues.append(f"security_scheme_unresolved:{thing_id}:property:{prop_name}:write")
+                        continue
                     affordances.append(
                         self._affordance(
                             thing_id,
@@ -166,9 +185,7 @@ class WotAdapter:
                             "property",
                             input_schema=_schema_of(prop),
                             security_schemes=security_schemes,
-                            security_scheme_ref=active_security_ref(
-                                write_form.get("security"), security_schemes, fallback=thing_security_ref
-                            ),
+                            security_scheme_ref=write_security_ref,
                             rate_limit=_parse_declared_rate_limit(write_form) or thing_rate_limit,
                             extra_state={"read_only": read_only, "write_only": write_only},
                         )
@@ -177,6 +194,10 @@ class WotAdapter:
         for action_name, action in (td.get("actions") or {}).items():
             form = _first_form(list(action.get("forms") or []), ("invokeaction",), allow_implicit=True)
             if form is not None:
+                action_security_ref = _form_security_ref(form, security_schemes, thing_security_ref)
+                if _security_required(form, security_schemes, thing_security_declared) and not action_security_ref:
+                    parser_issues.append(f"security_scheme_unresolved:{thing_id}:action:{action_name}")
+                    continue
                 affordances.append(
                     self._affordance(
                         thing_id,
@@ -189,9 +210,7 @@ class WotAdapter:
                         input_schema=action.get("input"),
                         output_schema=action.get("output"),
                         security_schemes=security_schemes,
-                        security_scheme_ref=active_security_ref(
-                            form.get("security"), security_schemes, fallback=thing_security_ref
-                        ),
+                        security_scheme_ref=action_security_ref,
                         rate_limit=_parse_declared_rate_limit(form) or thing_rate_limit,
                     )
                 )
@@ -288,3 +307,21 @@ def _parse_declared_rate_limit(value: Mapping[str, Any]) -> RateLimit | None:
         if parsed is not None:
             return parsed
     return None
+
+
+def _form_security_ref(
+    form: Mapping[str, Any],
+    schemes: Mapping[str, SecurityScheme],
+    thing_security_ref: str,
+) -> str:
+    if "security" in form:
+        return active_security_ref(form.get("security"), schemes)
+    return thing_security_ref
+
+
+def _security_required(
+    form: Mapping[str, Any],
+    schemes: Mapping[str, SecurityScheme],
+    thing_security_declared: bool,
+) -> bool:
+    return "security" in form or thing_security_declared or bool(schemes)

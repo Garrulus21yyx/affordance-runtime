@@ -109,7 +109,14 @@ class RuntimeStateSnapshot:
         )
         if previous.effect_satisfied and same_page:
             return "effect_already_satisfied"
-        if not previous.verification_passed and previous.post_environment_revision == current_revision:
+        settlement = getattr(self, "latest_effect_settlement", None)
+        settlement_status = getattr(getattr(settlement, "status", None), "value", "")
+        verified_absence = settlement_status == "not_occurred"
+        if (
+            not previous.verification_passed
+            and previous.post_environment_revision == current_revision
+            and not verified_absence
+        ):
             return "no_progress_repeat"
         return None
 

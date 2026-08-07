@@ -236,7 +236,15 @@ class StateKernel:
         )
         if previous.effect_satisfied and same_page:
             return ProgressGuardReason.EFFECT_ALREADY_SATISFIED
-        if not previous.verification_passed and previous.post_environment_revision == self.current_revision():
+        verified_absence = bool(
+            self.latest_effect_settlement
+            and self.latest_effect_settlement.status.value == "not_occurred"
+        )
+        if (
+            not previous.verification_passed
+            and previous.post_environment_revision == self.current_revision()
+            and not verified_absence
+        ):
             return ProgressGuardReason.NO_PROGRESS_REPEAT
         return None
 

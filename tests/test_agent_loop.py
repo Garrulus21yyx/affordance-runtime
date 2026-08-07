@@ -17,7 +17,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
-from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     ActionBinding,
@@ -36,13 +36,19 @@ def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.
         {"enabled": enabled},
     )
     binding = ActionBinding(
-        f"binding:{observation_id}",
-        observation_id,
-        target.target_id,
-        "dom",
-        "dom",
-        ("click",),
-        {"selector": "#shared"},
+        binding_id=f"binding:{observation_id}",
+        world_observation_id=observation_id,
+        source_observation_id=observation_id,
+        source_revision=f"revision:{observation_id}",
+        target_fingerprint=f"fingerprint:{observation_id}",
+        target_id=target.target_id,
+        surface="dom",
+        executor_id="dom",
+        semantic_action="activate",
+        primitive_action="click",
+        semantic_effects=("shared_state_enabled",),
+        parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        payload={"selector": "#shared"},
         risk=risk,
     )
     return WorldObservation(
@@ -87,9 +93,11 @@ class SharedTaskEvaluator:
 
 
 class SharedActionEvaluator:
-    async def evaluate(self, task, before, intent, result, after):
-        del task, intent, result
+    async def evaluate(self, task, before, request, result, after):
+        del task, request
         changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
+        if result.dispatch_status == DispatchStatus.SENT_UNKNOWN and not changed:
+            return ActionEvaluation(ActionEvaluationStatus.UNKNOWN, "effect remains unknown")
         return ActionEvaluation(
             ActionEvaluationStatus.VERIFIED if changed else ActionEvaluationStatus.NOT_VERIFIED,
             "state changed" if changed else "state did not change",
@@ -172,11 +180,13 @@ def test_selector_injection_on_offered_action_is_rejected() -> None:
 def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([Finish({"claim": "done"})]))).run(
+        environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", True)], [_sent()])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([Finish({"claim": "done"}), "first"]))).run(
             environment, _task()
         )
-        assert result.status != AgentLoopStatus.DONE
-        assert result.execution_count == 0
+        assert result.status == AgentLoopStatus.DONE
+        assert result.execution_count == 1
+        assert isinstance(result.turns[0].decision, Finish)
 
     asyncio.run(scenario())
 
@@ -245,5 +255,59 @@ def test_recent_turns_are_bounded() -> None:
             _task(),
         )
         assert len(result.turns) == 12
+
+    asyncio.run(scenario())
+
+
+def test_sent_unknown_verified_effect_continues_when_task_is_incomplete() -> None:
+    class IncompleteTaskEvaluator:
+        async def evaluate(self, task, observation):
+            del task, observation
+            return TaskEvaluation(TaskEvaluationStatus.INCOMPLETE, "more work remains")
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [_world("obs-1", False), _world("obs-2", True)],
+            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
+        )
+        loop = AgentLoop(ScriptedPolicy(["first", Stop("next objective unavailable")]), SharedActionEvaluator(), IncompleteTaskEvaluator())
+        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        assert result.status == AgentLoopStatus.FAILED
+        assert result.execution_count == 1
+        assert "unknown" not in result.message
+
+    asyncio.run(scenario())
+
+
+def test_observation_budget_is_reserved_before_execution() -> None:
+    async def scenario() -> None:
+        task = TaskGoal(
+            "enable-shared",
+            "Enable shared state",
+            allowed_effects=("shared_state_enabled",),
+            risk_profile=RiskProfile.LOW,
+            loop_budget=LoopBudget(max_turns=2, max_observations=2),
+        )
+        environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", False)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([Reobserve("refresh"), "first"]))).run(
+            environment, task
+        )
+        assert result.status == AgentLoopStatus.FAILED
+        assert "observation budget" in result.message
+        assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_wrong_action_result_lineage_is_rejected_before_evaluation() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [_world("obs-1", False), _world("obs-2", True)],
+            [ActionResult("wrong-request", DispatchStatus.SENT, "wrong-backend", True)],
+        )
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        assert result.status == AgentLoopStatus.FAILED
+        assert "lineage" in result.message
+        assert result.turns[0].action_evaluation is None
 
     asyncio.run(scenario())

@@ -70,8 +70,6 @@ class StaticEnvironment:
             raise IndexError("static action result sequence exhausted")
         result = self.results[self._result_index]
         self._result_index += 1
-        if result.request_id not in {request.request_id, "*"}:
-            raise ValueError("static result request_id does not match request")
         if result.request_id == "*":
             return ActionResult(
                 request.request_id,
@@ -86,6 +84,6 @@ class StaticEnvironment:
     def is_current(self, request: BoundActionRequest) -> bool:
         return bool(
             self._current_observation
-            and request.observation_id == self._current_observation.observation_id
-            and request.binding.observation_id == self._current_observation.observation_id
+            and request.world_observation_id == self._current_observation.observation_id
+            and request.binding.world_observation_id == self._current_observation.observation_id
         )

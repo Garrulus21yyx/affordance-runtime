@@ -15,6 +15,7 @@ from affordance_runtime.world.contracts import WorldObservation
 class UnifiedWorldEnvironment:
     adapters: tuple[SurfaceAdapter, ...]
     _source_observation_ids: dict[str, str] = field(default_factory=dict, init=False)
+    _world_observation_id: str = field(default="", init=False)
 
     def __post_init__(self) -> None:
         self.adapters = tuple(self.adapters)
@@ -35,11 +36,12 @@ class UnifiedWorldEnvironment:
             else "world:" + hashlib.sha256("\0".join(item.observation_id for item in sources).encode()).hexdigest()
         )
         bindings = tuple(
-            replace(binding, observation_id=observation_id)
+            replace(binding, world_observation_id=observation_id)
             for source in sources
             for binding in source.bindings
         )
         self._source_observation_ids = {source.surface: source.observation_id for source in sources}
+        self._world_observation_id = observation_id
         return WorldObservation(
             observation_id,
             tuple(target for source in sources for target in source.targets),
@@ -53,11 +55,13 @@ class UnifiedWorldEnvironment:
         adapter = self._adapter(request.binding.surface)
         if adapter is None:
             return False
-        if len(self.adapters) == 1:
-            return adapter.is_current(request)
-        source_id = self._source_observation_ids.get(request.binding.surface, "")
-        source_request = _for_source(request, source_id) if source_id else None
-        return source_request is not None and adapter.is_current(source_request)
+        return (
+            request.world_observation_id == self._world_observation_id
+            and request.binding.world_observation_id == self._world_observation_id
+            and request.binding.source_observation_id
+            == self._source_observation_ids.get(request.binding.surface, "")
+            and adapter.is_current(request)
+        )
 
     async def execute(self, request: BoundActionRequest) -> ActionResult:
         adapter = self._adapter(request.binding.surface)
@@ -69,11 +73,7 @@ class UnifiedWorldEnvironment:
                 False,
                 ActionError.UNSUPPORTED_ACTION,
             )
-        if len(self.adapters) == 1:
-            return await adapter.execute(request)
-        source_id = self._source_observation_ids.get(request.binding.surface, "")
-        source_request = _for_source(request, source_id) if source_id else None
-        if source_request is None:
+        if not self.is_current(request):
             return ActionResult(
                 request.request_id,
                 DispatchStatus.NOT_SENT,
@@ -81,15 +81,7 @@ class UnifiedWorldEnvironment:
                 False,
                 ActionError.STALE_BINDING,
             )
-        return await adapter.execute(source_request)
+        return await adapter.execute(request)
 
     def _adapter(self, surface: str) -> SurfaceAdapter | None:
         return next((adapter for adapter in self.adapters if adapter.surface == surface), None)
-
-
-def _for_source(request: BoundActionRequest, observation_id: str) -> BoundActionRequest:
-    return replace(
-        request,
-        observation_id=observation_id,
-        binding=replace(request.binding, observation_id=observation_id),
-    )

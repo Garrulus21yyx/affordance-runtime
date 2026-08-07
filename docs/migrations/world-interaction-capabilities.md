@@ -43,6 +43,10 @@ state authoritative in the current Runtime.
   until a surface executor implements subscription execution.
 - DOM policy input contains target semantics and offered action IDs, never the
   selector retained in `ActionBinding.payload`.
+- World/source observation identity, source revision, and target fingerprint
+  remain distinct and immutable across multi-adapter currentness checks.
+- Unresolved WoT security produces unavailable source metadata and no
+  executable write/invoke affordance; explicit `nosec` remains supported.
 
 The older state-kernel/coordinator implementation remains temporarily available
 for compatibility and its existing benchmark evidence. The migrated AgentLoop
