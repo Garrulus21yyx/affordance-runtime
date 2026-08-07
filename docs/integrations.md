@@ -1,112 +1,48 @@
 # Integrations
 
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
-> **Scope:** parent-agent, CLI, service, adapter, and result boundaries
+> **Scope:** parent-agent, API, CLI, and UI boundary
 
-## 1. Integration principle
+## 1. Request boundary
 
-The current MVP is single-process and single-session. Principal/tenant/account
-rules in this document apply only when an integration explicitly admits a
-multi-principal or multi-tenant deployment claim; they are not P4/P5 blockers.
+Canonical integrations submit a TaskGoal and may attach an optional
+EvaluationSpec or explicit strict-ingestion profile. They do not submit raw
+selectors, coordinates, backend bindings/endpoints, file paths, approval tokens,
+milestone satisfaction, or completion facts.
 
-A caller submits bounded user intent and legal source references. The caller
-does not need to adopt Runtime internals and cannot bypass Runtime authority by
-supplying accepted TaskSpec identity, concrete selector/coordinate, capability,
-approval, verification result, or TaskCompleted state.
+During migration, legacy TaskSpec-based endpoints may project one-way into new
+contracts. New core code never imports those legacy request types.
 
-## 2. Request boundary
+## 2. Runtime outcomes
 
-An integration request may provide:
-
-- request/caller/conversation identity and revision;
-- request text or stable source ref;
-- attachment, target, and profile-context refs;
-- caller-asserted capability/delegation refs plus issuer/subject/audience metadata;
-- risk/approval policy refs;
-- run budgets and continuation/cancellation handles.
-
-Runtime creates SourceEnvelope and interprets a MinimalIntentProposal. Material
-fields use SourceAnchor. Optional SemanticAudit may veto or request
-clarification. TaskSpecAuthority alone admits the TaskSpec.
-
-`caller_identity` and every identity field supplied in request JSON are
-untrusted claims; the effective principal comes only from the authenticated
-transport/session. Before dereferencing any inbound source, attachment, target,
-profile-context, capability/delegation, policy, continuation, or cancellation
-ref, Runtime authorizes that exact ref against principal, tenant/account,
-audience, resource kind/identity/version, and run/task scope. Cross-tenant or
-cross-account substitution fails closed even when the opaque ref is syntactically
-valid. Risk/approval policy refs resolve only in a trusted, versioned
-Runtime/tenant policy namespace: a caller may request a stricter/narrower policy,
-but cannot replace, weaken, or shadow mandatory product/tenant policy.
-
-Caller capability material is untrusted context until an independent capability
-authority verifies a signed/opaque grant by exact issuer, subject, audience,
-tenant/account, resource scope, run/task binding, revision, expiry and
-revocation state. An unverified ref may only narrow the requested ceiling; it
-never enters `granted_capabilities`. A caller cannot self-issue a grant merely
-because it is authenticated to submit requests.
-
-## 3. Runtime operations
-
-A service/tool surface may expose:
+Integrations handle:
 
 ```text
-submit / execute / get_run
-approve / deny / cancel / clarify
-get_result / get_evidence / get_trace
+Done(result)
+WaitingUser(question)
+WaitingConfirmation(confirmation_subject_id, semantic_summary, consequences)
+Failed(reason)
 ```
 
-Every operation is authorized against an authenticated principal and the exact
-run owner/tenant/account/audience; possession or guessability of a run/ref ID is
-not authorization. `approve` additionally requires an authenticated approver
-whose role/scope is allowed by approval policy, and binds issuer/subject/run/
-session-generation/contract hash/nonce/expiry/revocation. Service-to-service
-delegation is verified by the same rules rather than trusted from request JSON.
+Confirmation UX must display the concrete semantic effect/consequences and
+return a decision bound to confirmation-subject identity. Runtime reobserves and
+rebinds before execution; binding-only changes do not require another prompt.
 
-Approval is requested only for an exact `SealedActionContract` built from a
-committed fresh observation. It binds run/session generation, contract hash,
-state/page/document revision, context/surface/coordinate/capability/proof
-digests, material parameters and expiry. It does not grant capability or amend
-TaskSpec. Parent agents cannot approve a Draft, action family, stale future
-action, or third-party page/tool instruction in advance; late grants are
-tombstoned after interrupt, cancel, restart or contract staleness.
+## 3. Observation and action privacy
 
-## 4. Result boundary
+External APIs may expose AgentWorldView and safe turn summaries. They do not
+expose credentials, selectors, backend handles, signed URLs, or unrestricted
+screenshots/trace by default.
 
-The integration result distinguishes:
+## 4. Cancellation and resume
 
-- Runtime lifecycle/terminal status;
-- TaskCompletionEvaluation and actual typed `OutputMaterialization` refs;
-- pending approval/clarification/recheck;
-- typed failure and recovery state;
-- observation, artifact, durable-evidence, and trace refs;
-- external evaluator result when applicable.
+Cancellation can stop before the next primitive action. A cancel racing with an
+effectful dispatch cannot claim the action did not occur; the Runtime returns
+SENT_UNKNOWN and requires fresh observation. Current target does not promise process-
+crash checkpoint/resume.
 
-Transport receipt success, plan exhaustion, model finish, or benchmark reward is never
-reported as Runtime task success by itself.
+## 5. Benchmark integrations
 
-## 5. Adapter boundary
-
-BrowserGym, Playwright, DOM, visual, AX, API, device, and future desktop/mobile
-adapters translate public Runtime contracts. They may capture source data and
-adapter-owned truthful SourceCoverage/context/coordinate/capability descriptors,
-route permit-authorized concrete actions, and collect external results. They may not
-own TaskSpec, full Catalog membership, ActionContract admission, recovery
-policy, or completion semantics.
-
-## 6. Streaming and cancellation
-
-Streaming projects committed events. Cancellation and user takeover are typed
-Runtime transitions; they do not directly mutate provider/session state behind
-the committer or prove an in-flight effect did not occur. Restart uses a new
-session generation and fresh observation; `runtime_resume.py` only validates
-and routes. Sensitive source content and artifacts are returned by scoped
-refs rather than embedded in every event/result. Dereferencing result, evidence,
-artifact, approval, or trace refs repeats principal/run/tenant/account policy,
-revocation and retention checks and applies field redaction; opaque identifiers
-alone are not an anti-IDOR boundary. Cross-run listing and ref substitution fail
-closed and are audit events.
-
-The previous integration document is archived at
-[maintained-pre-consolidation/integrations.md](archive/superseded-2026-08-05/maintained-pre-consolidation/integrations.md).
+Benchmark adapters translate environments into the same world/action/evaluation
+contracts. They cannot pass hidden expected answers or fixture metadata into
+the policy or Runtime.

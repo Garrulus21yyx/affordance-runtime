@@ -2,7 +2,13 @@
 
 > **Lifecycle:** CURRENT REFERENCE THREAT MODEL
 > **Implementation scope:** existing ActionContract digest identity and approval-token binding
-> **Target alignment:** canonical observation/Catalog identity and typed evaluation requirements remain hash-critical under the current authoritative architecture
+> **Target status:** legacy transactional-baseline analysis; not a target architecture contract
+
+The unified-world target replaces the god `ActionContract` with semantic
+`ActionIntent` plus a small observation-bound `BoundActionRequest`. It retains
+request identity for stale/result lineage and semantic identity for human
+confirmation, but it does not carry this document's wider
+transaction/proof/trace digest model into the target core.
 
 > **MVP scope:** trusted single-process, single-coordinator, serial execution. This
 > model protects final-contract immutability and approval/execution hash equality;

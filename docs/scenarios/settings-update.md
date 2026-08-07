@@ -1,7 +1,13 @@
 # Scenario: Reversible Settings Update
 
 > **Lifecycle:** CURRENT REFERENCE SCENARIO
-> **Architecture:** effect-authorized TaskSpec → ActionContract/gates → contract-bound ACTION_CAUSED evidence → final persisted-state recheck
+> **Scope:** retained transactional-baseline scenario; not target architecture authority
+> **Target mapping:** TaskGoal → ActionIntent → current BoundActionRequest → execute once → fresh persisted-state observation → TaskEvaluation
+
+The detailed TaskSpec/ActionContract vocabulary below documents the current
+baseline implementation. The target retains stale rejection, exact semantic
+confirmation when required, fresh reobservation, and persisted-effect evaluation without
+retaining the full transaction platform.
 
 ## Scenario ID
 

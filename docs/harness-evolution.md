@@ -1,68 +1,47 @@
 # Harness Evolution
 
-> **Lifecycle:** CURRENT NORMATIVE POLICY
-> **Scope:** offline, regression-gated learning from traces and failures
+> **Lifecycle:** CURRENT NORMATIVE CONTRACT
+> **Scope:** offline policy, observation, route, and evaluator improvement
 
 ## 1. Boundary
 
-Harness evolution is offline and advisory. It consumes committed trace,
-artifacts, typed failures, evaluations, and immutable benchmark evidence. It
-never participates in synchronous TaskSpec admission, Catalog construction,
-ActionContract gating, recovery ownership, task completion, or state commit.
+The harness consumes immutable run/turn records and benchmark outcomes. It may
+propose changes to observation policy, route policy, prompts, or evaluators, but
+it never changes a live run or grants execution authority.
 
-## 2. Controlled loop
+## 2. Candidate types
 
-```text
-immutable failed trace/evidence
-→ typed failure analysis
-→ generic evolution proposal
-→ quarantined candidate
-→ replay original failure
-→ metamorphic/non-benchmark controls
-→ protected breadth and safety replay
-→ accept / reject
-→ versioned registry entry
-```
+- targeted-observation policy;
+- semantic entity fusion or conflict resolution;
+- route ranking and cost model;
+- AgentWorldView compression;
+- AgentPolicy prompt/model configuration;
+- ActionEvaluator/TaskEvaluator logic;
+- benchmark task and adapter coverage;
+- currentness-checked BindingCache candidates;
+- verified milestone/Skill templates.
 
-Accepted candidates enter production only through a separate reviewed change
-with architecture admission and explicit owner/deletion gates.
+Event schema, commit protocol, ledger, or recovery-transaction tuning is not a
+primary product-evolution axis.
 
-## 3. Candidate types
+## 3. Promotion evidence
 
-Permitted proposals include:
+Candidates require focused correctness checks plus positive cross-surface
+comparison. Report task success, observation/model/visual cost, latency, route
+mistakes, fallback, confirmation, and unknown-effect behavior. No candidate may
+weaken stale zero-call, semantic confirmation identity, fresh observation, no blind
+retry, or output integrity.
 
-- adapter/source acquisition improvements;
-- typed predicate/evidence-provider improvements;
-- generic grounding/binding or recovery policy changes;
-- prompt/context projection changes that cannot alter Runtime authority;
-- new regression fixtures or benchmark profiles;
-- reusable skills that remain subordinate to TaskSpec and Runtime gates.
+The promotion chain is Turn records → failure attribution → candidate memory,
+Skill or route hint → offline replay/cross-surface evaluation → publish/reject.
+The live Runtime never mutates or automatically publishes its own core policy.
 
-Proposals cannot embed task IDs, answers, selectors, coordinates, site-specific
-templates, or expand user authorization.
+BindingCache hits are hints only: target identity and fingerprint/currentness
+must be resolved against the current observation, and execution still requires
+fresh post-action observation.
 
-## 4. Evidence requirements
+## 4. Isolation
 
-Every proposal binds source revision/profile, failure cause, changed owner,
-expected generic invariant, replay set, safety/uncertain-effect analysis,
-before/after metrics, and rollback identity.
-
-No-op diagnostic changes do not count as behavior improvement. Targeted success
-without breadth/metamorphic controls cannot be promoted.
-
-## 5. Safety constraints
-
-- never mutate production code directly from a live trace;
-- never learn capability/approval grants from observed page content;
-- never make model evidence authoritative for high-risk external effects;
-- never auto-retry an uncertain external transaction during replay;
-- never rewrite immutable source traces or evaluator outputs.
-
-## 6. Deferred scale
-
-Queues, worker pools, cross-task evidence reuse, multi-agent parallel evolution,
-and automatic source-code mutation remain deferred until measured needs justify
-their operational and evidence-lineage cost.
-
-The previous detailed evolution document is archived at
-[maintained-pre-consolidation/harness-evolution.md](archive/superseded-2026-08-05/maintained-pre-consolidation/harness-evolution.md).
+Offline replay cannot call live drivers, networks, credentials, accounts, or
+effectful adapters. Benchmark reward and harness suggestions never become
+online TaskEvaluation.

@@ -1,7 +1,12 @@
 # Scenario: Pricing Extraction
 
 > **Lifecycle:** CURRENT REFERENCE SCENARIO
-> **Architecture:** read-only TaskSpec → canonical observation → Runtime choices/contracts → evidence-backed result
+> **Scope:** retained transactional-baseline scenario; not target architecture authority
+> **Target mapping:** TaskGoal → unified observation → semantic action → fresh observation → TaskEvaluation
+
+The detailed TaskSpec/ActionContract vocabulary below documents the current
+baseline implementation. Migration may change those objects while preserving
+the scenario's read-only behavior and evidence requirement.
 
 ## Scenario ID
 

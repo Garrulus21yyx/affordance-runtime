@@ -1,7 +1,13 @@
 # Scenario: Approval-Gated Report Export
 
 > **Lifecycle:** CURRENT REFERENCE SCENARIO
-> **Architecture:** TaskSpec authorization → Runtime Catalog → fresh O1 → final immutable ActionContract H → exact approval of H → stale preflight → serial execution of H → typed transport/effect/output evaluation
+> **Scope:** retained transactional-baseline scenario; not target architecture authority
+> **Target mapping:** TaskGoal → ActionIntent → HumanConfirmation(intent/risk/consequences) → reobserve/fresh bind → BoundActionRequest → execute once → fresh observation → output/task evaluation
+
+The detailed TaskSpec/ActionContract/token vocabulary below documents the
+current baseline implementation. The target keeps exact semantic confirmation,
+stale zero-call, no blind retry, and real output integrity as local checks while
+allowing binding-only fresh rebind.
 
 ## Scenario ID
 

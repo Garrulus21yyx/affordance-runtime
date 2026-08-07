@@ -1,20 +1,27 @@
 # Architecture Entry Point
 
 > **Lifecycle:** CURRENT REFERENCE ENTRYPOINT
-> **Authority:** redirects readers; does not duplicate the authoritative design
+> **Authority:** discovery only; does not duplicate target semantics
 
 Current target authority:
 
-- [Task Contract-Centered Authoritative Runtime Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
-- [Task Contract-Centered Runtime Architecture Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+- [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Unified World Interface and E2E AgentLoop Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
-Current truth and governance:
+Current truth and scheduling:
 
 - [Implementation Status](implementation-status.md)
 - [Current Implementation Plan](current-implementation-plan.md)
-- [Architecture Governance Track](architecture-governance-track.md)
-- [Documentation Index](README.md)
+- [Project Plan](project-plan.md)
 
-The former root architecture is preserved at
-[archive/superseded-2026-07-29/architecture.md](archive/superseded-2026-07-29/architecture.md).
-It is history, not a competing design.
+Governance:
+
+- [Documentation Index](README.md)
+- [Documentation Governance](documentation-governance.md)
+- [Architecture Governance](architecture-governance-track.md)
+
+The target center is the unified world interface and short
+observe–act–observe–evaluate loop. TaskSpec/ActionContract/StateKernel/
+RuntimeCommitter documents describe the retained implementation baseline or
+archive history unless the target architecture explicitly adopts a local
+invariant from them.

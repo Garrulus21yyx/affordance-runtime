@@ -1,144 +1,64 @@
 # Architecture Governance Track
 
 > **Lifecycle:** CURRENT NORMATIVE POLICY
-> **Scope:** synchronous architecture admission for production changes
-> **Authority:** subordinate to the [authoritative architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
-> **Active queue:** [Current Implementation Plan](current-implementation-plan.md)
+> **Scope:** architecture change admission and migration discipline
+> **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## 1. Decision
 
-Every production change passes an architecture admission check in the same
-change. Existing debt does not block unrelated work, but a touched authority
-boundary cannot grow, duplicate, or move into a less suitable owner.
+The architecture center is environment generalization through one semantic
+observe–act–observe interface. Changes are admitted when they improve
+observation quality, grounding, route selection, execution, evaluation, or
+cross-surface task success while preserving local correctness invariants.
 
-The track is independent of feature priority: one vertical behavior/authority
-slice and one horizontal containment slice may be active, with one production
-writer for each affected state surface.
+## 2. Admission questions
 
-Current admission is scoped to the trusted single-process, single-run,
-single-coordinator, single-browser-session MVP. Production-grade multi-tenant,
-concurrent-worker and hard-crash guarantees require a separate admitted threat
-model and cannot be smuggled into an ordinary P4/P5 gate.
+Every behavior-changing proposal must answer:
 
-Trusted Runtime-selected/configured in-process adapter/provider implementation
-code belongs to the TCB. The external page, document, tool, or provider content
-it observes or returns remains untrusted data and cannot create local authority.
+1. Which agent/environment behavior improves?
+2. Which canonical contract owns it?
+3. Which positive vertical case proves it?
+4. Does it keep surface-specific payload below the world interface?
+5. Which old owner is displaced and when is it deleted?
+6. Which freshness, semantic-confirmation/current-rebind, observation-barrier,
+   no-retry, and evaluation invariants apply?
+7. Does it add a service/store/protocol without a measured product need?
 
-## 2. Non-negotiable authority rules
+## 3. One-default-path rule
 
-1. `TaskSpecAuthority` owns accepted task meaning and revision.
-2. `TaskPlanAuthority` admits one current replaceable execution hypothesis.
-3. `CanonicalObservationBuilder` owns current observed semantics.
-4. `ActionChoiceBuilder` owns the full current legal Catalog before model presentation.
-5. `ActionTransactionMaterializer` is the only full Draft/Sealed construction entrypoint; its pure route owner binds the concrete backend, while independent gates own authorization decisions.
-6. Materialization finishes and freezes the executable ActionContract before policy/approval; `Executor` consumes that same hash, returns a typed transport receipt, and never owns effect or completion truth.
-7. `LoopEvaluator` returns typed evaluations and never writes state.
-8. `TaskCompletionEvaluator` owns pure closure semantics but not commits.
-9. `RuntimeCommitter` is the single production state/trace writer.
-10. Trace, benchmark, evolution, model evidence, and archived documents have no synchronous authority.
-11. Acquisition adapters own truthful epoch/scope/budget coverage; missing or failed coverage is UNKNOWN, never builder-inferred COMPLETE.
-12. Product composition cannot disable applicable mandatory safety gates or synthesize capability grants; unknown actual adapter support fails closed.
-13. Fresh O1 precedes final materialization; approval/policy evaluates the final contract, stale preflight is zero-call, and approved/executed hashes are equal. Transport, effect and actual output materialization are separate typed facts.
-14. Third-party observation content cannot create TaskSpec, capability, approval, policy, or control flow; effectful source→sink values require admitted typed flow.
-15. Replay has no live fallback. P5's semantic gate contains only the five P4-minimum invariants; focused/full/static checks and the core benchmark are closure evidence for those invariants and the default route, not a sixth invariant. P4-C2, permit/fencing/collateral hardening, P4-R0 and multi-suite attestation are non-blocking unless their matching claim is admitted.
-
-The `TaskSpecAuthority` rule is the Task Meaning Write Barrier. Raw language
-visibility and semantic authority are separate: TaskPlanner,
-OpenSemanticResolver, and ClarificationComposer may receive explicitly bounded
-`context_only` source excerpts, but cannot create or revise accepted IDs.
-Action construction, binding, gates, execution, evaluation, completion, and
-commit remain raw-text-free.
-
-No change may create simultaneous progress, plan-admission, observation,
-choice-space, completion, or commit authorities.
-
-Logical authority does not require a physical service boundary. The default is
-an in-process modular monolith; extraction into a service/store/queue/model call
-requires measured isolation, scale, concurrency, reliability, or regulatory
-need. Catalog/observation completeness may use immutable indexes and refs, but
-physical realization cannot change logical membership, coverage, conflict,
-digest, deny, or write semantics.
-
-## 3. Substitutive migration rule
-
-Every authority migration names:
+Migration order is:
 
 ```text
-canonical replacement
-→ production call-site cutover
-→ legacy deletion or explicit isolated adapter
+new contract
+→ focused implementation
+→ migrate one vertical caller
+→ positive and negative evidence
+→ switch default composition
+→ delete or edge-isolate old owner
 ```
 
-Compatibility requires a narrow allowlist, owner, reason, and deletion gate. A
-shadow object or projector cannot become a permanent second authority.
+Core code may not dual-read, dual-write, or round-trip new contracts through
+legacy objects. Compatibility is one-way at an external edge with an expiry.
 
-## 4. Responsibility containment
+## 4. Redlines
 
-Planner, Coordinator, StateKernel, adapters, verifiers, benchmarks, and trace
-must not acquire responsibility merely because they possess useful context.
-Domain algorithms return typed results; the committer applies transitions.
+Do not admit work whose primary output is more RuntimeDelta kinds, global
+atomic commit, StateKernel/CAS surface area, durable ledger/checkpoint, generic
+recovery transaction, trace authority, or capability-proof machinery unless a
+separate approved product fault model requires it.
 
-Neutral contracts and authority-free collaborators must not depend on:
+Do not admit benchmark-specific production branches or tests that only prove a
+surface entered the old contract/trace pipeline. Cross-surface work needs a
+positive completed task.
 
-- adapters or benchmark packages;
-- Coordinator or StateKernel mutation APIs;
-- trace/evolution implementations;
-- mutable planner/provider objects.
+## 5. Evidence
 
-## 5. Benchmark and semantic neutrality
+Focused tests localize failures. The cross-surface matrix measures product
+behavior. Full pytest/static checks protect integration. Evidence is bound to
+the exact revision/profile and never becomes online authority.
 
-Production logic must not branch on benchmark task ID, seed, family, URL,
-selector, coordinate, or expected answer. Benchmark failure can motivate a
-generic invariant and regression; it cannot define Runtime semantics.
+## 6. Record rule
 
-Natural-language fallback logic belongs in typed intake/semantic owners, not in
-strict Step Planner, Coordinator, recovery policy, or benchmark adapters.
-Source-assisted downstream reasoning must reference existing canonical IDs;
-missing semantics returns TaskSpecGap/clarification rather than silent plan or
-contract expansion.
-
-## 6. Horizontal ratchets
-
-The executable governance tests freeze known control hotspots. Ceilings may
-decrease; increases require an explicit time-bounded admission exception.
-
-| Surface | Ceiling |
-|---|---:|
-| `coordinator.py` | 3,461 lines |
-| `compatibility_planner_algorithms.py` | 2,042 lines |
-| `task_planning.py` | 1,642 lines |
-| `RunCoordinator.run_sync` | 2,034 lines |
-| `GeneralistLMPlanner.propose` | 222 lines |
-| `LLMIntentCompiler.compile` | 253 lines |
-| `TaskPlanValidator.validate` | 239 lines |
-| `RunCoordinator` method count | 26 methods |
-
-These are maximum debt ratchets, not design targets.
-
-## 7. Change-admission record
-
-A production slice records:
-
-- changed authority and owner;
-- production behavior change or foundation-only scope;
-- legacy deletion/isolation result;
-- focused tests and immutable evidence identity;
-- architecture admission, promotion, and remote-CI status;
-- explicit non-claims.
-
-Foundation-only work cannot claim production cutover. Historical admissions
-remain immutable even when their parent design is later archived.
-
-## 8. Simple documentation gate
-
-Documentation lifecycle is governed by
-[Documentation Governance](documentation-governance.md). Its mechanical gate is
-deliberately small: manifest/path validity, one current architecture and plan,
-current-entry links outside archive, valid redirect/archive targets, and
-maintained relative links. It does not inspect historical prose semantics.
-
-## 9. Historical track
-
-The detailed pre-consolidation governance chronology is preserved at
-[architecture-governance-track-pre-consolidation.md](archive/superseded-2026-08-05/status-snapshots/architecture-governance-track-pre-consolidation.md).
-It is evidence of prior decisions, not the current policy surface.
+Large or irreversible architecture changes receive a scoped record under
+`docs/change-admission/`. Historical records remain immutable but cannot
+override the current architecture or evolution plan.

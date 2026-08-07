@@ -56,34 +56,34 @@ normative:
   - role: architecture_change_admission
     path: docs/architecture-governance-track.md
     lifecycle: current
-  - role: responsibility_containment
+  - role: target_module_responsibility_containment
     path: docs/responsibility-containment-boundary.md
     lifecycle: current
-  - role: runtime_product_boundary
+  - role: runtime_model_adapter_benchmark_boundary
     path: docs/runtime-first-boundary.md
     lifecycle: current
   - role: benchmark_boundary
     path: docs/benchmark-governance-boundary.md
     lifecycle: current
-  - role: task_intake_and_planning_contract
+  - role: task_goal_and_agent_policy_contract
     path: docs/task-intake-and-planner.md
     lifecycle: current
-  - role: perception_and_recovery_contract
+  - role: perception_and_bounded_loop_recovery_contract
     path: docs/active-perception-and-online-recovery.md
     lifecycle: current
-  - role: orchestration_contract
+  - role: short_agent_loop_orchestration_contract
     path: docs/orchestration-and-feedback.md
     lifecycle: current
-  - role: trace_and_evaluation_contract
+  - role: evaluation_and_turn_recording_contract
     path: docs/trace-and-evaluation.md
     lifecycle: current
   - role: integration_contract
     path: docs/integrations.md
     lifecycle: current
-  - role: controlled_evolution_contract
+  - role: offline_harness_evolution_contract
     path: docs/harness-evolution.md
     lifecycle: current
-  - role: benchmark_execution_policy
+  - role: positive_cross_surface_benchmark_policy
     path: docs/benchmark-plan.md
     lifecycle: current
 
@@ -94,19 +94,19 @@ reference:
   - role: world_interaction_capability_migration_record
     path: docs/migrations/world-interaction-capabilities.md
     lifecycle: current
-  - role: approval_scenario
+  - role: legacy_approval_scenario
     path: docs/scenarios/approval-gated-report-export.md
     lifecycle: current
-  - role: read_only_scenario
+  - role: legacy_read_only_scenario
     path: docs/scenarios/pricing-extraction.md
     lifecycle: current
-  - role: reversible_effect_scenario
+  - role: legacy_reversible_effect_scenario
     path: docs/scenarios/settings-update.md
     lifecycle: current
-  - role: action_contract_digest_threat_model
+  - role: legacy_action_contract_digest_threat_model
     path: docs/security/action-contract-digest-threat-model.md
     lifecycle: current
-  - role: p5_entry_hardening_review
+  - role: transactional_baseline_review
     path: docs/reviews/2026-08-07-p5-entry-hardening.md
     lifecycle: current
 

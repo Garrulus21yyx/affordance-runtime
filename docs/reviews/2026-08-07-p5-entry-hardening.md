@@ -1,5 +1,15 @@
 # P5-0 Entry Hardening / Owner-Boundary Closure
 
+> **Lifecycle:** CURRENT REFERENCE TO A FROZEN TRANSACTIONAL BASELINE
+> **Direction status:** superseded as an implementation queue by the
+> [Unified World Interface Evolution Plan](../superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+
+This review remains the factual record of P5-0 hardening work. Its committer,
+delta, read-view, and dispatch recommendations are no longer future target gates.
+They are retained baseline history until the short-loop path replaces them.
+The repository's consolidated review baseline is now `8d7cfd6b7d43c72f9b45bb4144a62553d90c23a8`;
+the intermediate SHAs below are preserved as the chronology of the review.
+
 ## Baseline
 
 - Branch: `agent/migrate-runtime-components`

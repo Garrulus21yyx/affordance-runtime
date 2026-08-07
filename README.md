@@ -1,152 +1,138 @@
 # Affordance Runtime
 
-Affordance Runtime is a planner-neutral GUI execution Runtime. It turns bounded
-user tasks and current environment observations into versioned, authorized,
-observable action transactions with explicit approval, verification, recovery,
-trace, and evaluation boundaries.
+Affordance Runtime is a planner-neutral environment interface for GUI agents.
+It lets one agent policy observe and act across DOM, Accessibility, Visual,
+SVG, WoT, API, Device, and CLI surfaces through one semantic world model and one
+short observe–act–observe–evaluate loop.
 
-Its strategy is **complete vertical loop, limited horizontal breadth**. The MVP
-is a GUI-agent research Runtime: one process, one run, one coordinator, one
-browser session, and one active ActionContract, with trusted in-process
-components and serialized effectful execution. It does not claim
-production-grade, multi-tenant, distributed-worker, or global exactly-once
-security.
+Its design rule is: **responsibility-thin, semantics-strong intake; capability-
+thick, infrastructure-thin execution**. The loop is powerful because it sees,
+grounds, generates legal actions, validates, and replans well—not because it
+contains a large transaction kernel.
 
-The trusted computing base (TCB) includes Runtime-selected in-process adapter
-and provider implementation code plus its configuration. The page, email, PDF,
-DOM/AX/OCR/screenshot, tool, or provider-returned content that this code
-observes remains untrusted data and cannot create local authority.
-
-## Current architecture
-
-The long-term target is defined only by:
-
-- [Task Contract-Centered Authoritative Runtime Architecture](docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
-- [Task Contract-Centered Runtime Architecture Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+The project center is:
 
 ```text
-SourceEnvelope
-→ MinimalIntentProposal
-→ optional SemanticAudit
-→ immutable TaskSpec
-→ canonical observation
-→ replaceable TaskPlan<StepSpec>
-→ Runtime-owned full ActionChoiceCatalog
-→ materialize and freeze final immutable ActionContract H
-→ Authority/Capability/Approval evaluate H
-→ stale snapshot/page/target preflight
-→ serial Execute of H with approved_hash == executed_hash
-→ post-action observation
-→ inline LoopEvaluator
-→ RuntimeCommitter
+TaskGoal
+→ Unified World Observation
+→ optional TaskPlan / LocalObjective
+→ semantic ActionSpace
+→ ActionIntent
+→ current BoundActionRequest
+→ environment executes
+→ ActionResult
+→ fresh observation
+→ action/task evaluation
+→ continue / ask / stop
 ```
 
-`TaskSpec` owns user authorization and completion semantics. `TaskPlan` is a
-replaceable execution hypothesis. `ActionContract` is one grounded, gated,
-expiring transaction. `TaskCompletionEvaluator` evaluates full TaskSpec success;
-all required structured outputs must also be materialized and source-bound when
-required; only RuntimeCommitter writes authoritative completion.
+One semantic target may have several surface-specific bindings. The agent sees
+stable target IDs, roles, labels, state, relations, and supported actions; the
+Runtime retains selectors, coordinates, WoT forms, API handles, freshness, and
+route evidence. This lets the Runtime choose the most effective executable
+route without teaching the policy a separate action language for each platform.
 
-TaskSpecAuthority is the only accepted-meaning writer. Task Planner and
-OpenSemanticResolver may receive bounded, source-bound, explicitly
-non-authoritative context when needed; action construction, gates, execution,
-evaluation, completion, and commit do not use raw request text. In short:
-single semantic admission, bounded contextual rereading, no downstream
-authority expansion.
+## Target architecture
 
-The target keeps logical boundaries strict while defaulting to a lightweight
-modular-monolith realization: full Catalog membership may be lazy/indexed,
-canonical observations are ref/index-backed, and optional audit/model machinery
-is enabled by task risk rather than for every run.
+The current target is defined only by:
 
-DOM, AX, Visual, SVG, WoT, API, and Device are composable observation,
-grounding, execution, and evidence surfaces under this one chain. Planner
-selects a backend-neutral semantic action; ActionContractBuilder selects the
-current backend/binding from the canonical target's retained candidates and
-conflicts.
+- [Unified World Interface and E2E AgentLoop Architecture](docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Unified World Interface and E2E AgentLoop Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
-The target is not implemented as a whole. See
-[Implementation Status](docs/implementation-status.md) for current code truth.
+```text
+┌─────────────────────────────────────────────────────┐
+│ AgentLoop                                           │
+│ observe → evaluate → decide → bind → confirm → act │
+│         → fresh observe → evaluate → continue      │
+└──────────────────────────┬──────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────┐
+│ Unified World Interface                             │
+│ WorldObservation · AgentWorldView · ActionSpace     │
+│ ActionIntent · BoundActionRequest · ActionResult    │
+└──────────────────────────┬──────────────────────────┘
+                           │
+       DOM · AX · Visual · SVG · WoT · API · Device · CLI
+```
 
-P4 is intentionally small and is **CLOSED (MVP scope)**. Its five invariants
-are:
+The target deliberately does not center event sourcing, typed state deltas,
+global atomic commit, a durable ledger, checkpoint/resume, or a general
+authorization-proof platform. Those mechanisms do not make an agent observe
+or act across environments more effectively.
 
-1. Executor accepts only a finalized immutable ActionContract.
-2. Policy/approval evaluates that exact contract, so the approved and executed hashes match.
-3. Stale snapshot/page/target rejection makes zero Executor calls.
-4. Completion requires verifier evidence; a receipt alone cannot produce DONE.
-5. An uncertain effectful execution is never blindly retried.
+## Current implementation truth
 
-Focused tests, the full test/static suite, and the core benchmark are closure
-evidence for these five invariants and the default-route cutover; the benchmark
-is not a sixth invariant. The test/static suite and fresh core benchmark pass,
-so P5 admission is unblocked but P5 has not started. Tenant/profile live proof,
-revocation linearizability, global permit registries, worker fencing,
-attempt-bound collateral, and immutable multi-suite release attestation are
-future hardening, not P5 blockers.
+The code at baseline
+`agent/migrate-runtime-components@8d7cfd6b7d43c72f9b45bb4144a62553d90c23a8`
+still uses the older TaskSpec/TaskPlan/ActionContract/StateKernel/
+RuntimeCommitter control path. It also contains the most valuable foundations
+for the new target: `UnifiedObservation`, multi-surface grounding candidates,
+semantic entity fusion, backend-neutral actions, executor routing, active
+perception, fresh post-action observation, and independent evaluation.
 
-## Product boundary
+The baseline is retained, not rolled back. Transaction/commit/recovery
+machinery is frozen against further expansion while a new short-loop path is
+built in vertical slices. See [Implementation Status](docs/implementation-status.md)
+for exact code truth and [Current Implementation Plan](docs/current-implementation-plan.md)
+for the completed docs-only consolidation slice and next, not-yet-started code work.
+
+## Correctness invariants retained during simplification
+
+1. Every bound action request binds to the observation and binding that produced it.
+2. A stale observation or binding makes zero executor calls.
+3. High-risk actions require confirmation of exact semantic intent, effects, risk, and consequences; a fresh binding alone does not change what the user confirmed.
+4. An execution receipt does not prove effect or task completion.
+5. Every action—or strictly admitted no-barrier local batch—is followed by fresh observation and independent evaluation.
+6. An unknown effect is never blindly retried.
+7. Required artifacts must exist and match their expected content.
+8. Models cannot directly provide raw selectors, coordinates, backend payloads, endpoints, or file paths.
+
+These are local action-boundary checks. They do not require a global
+event-sourced transaction runtime.
+
+## Product and benchmark boundary
 
 Affordance Runtime—not BrowserGym or another benchmark—is the product.
-Benchmarks are external evaluators. Production logic may not depend on task ID,
-seed, family, expected answer, selector, coordinate, or authored benchmark
-semantics.
+Benchmarks evaluate the Runtime and may not provide task IDs, expected answers,
+selectors, coordinates, or fixture semantics to production policy.
 
-The Runtime owns:
-
-- multi-source DOM/AX/Visual/SVG/WoT/API/Device perception and canonical observation;
-- complete legal action construction before model presentation;
-- versioned ActionContracts and exact target/binding identity;
-- Task authority, capability, approval, freshness, and preflight gates;
-- backend-neutral execution and typed receipts;
-- loop-native typed effect/step/task evaluation;
-- bounded, side-effect-aware recovery;
-- authoritative state/trace commit and offline evaluation evidence.
+The next core benchmark is a positive cross-surface matrix: the same TaskGoal,
+AgentPolicy, semantic action vocabulary, and evaluator must succeed against
+DOM, AX, Visual, SVG, and WoT implementations where only the adapter differs.
+It records task success, steps, observations, model/visual calls, latency,
+fallbacks, route mistakes, confirmations, long-horizon constraint retention,
+batch utilization, and cache-currentness rejection.
 
 ## Documentation
 
 Start with [docs/README.md](docs/README.md). The
-[documentation manifest](docs/documentation-manifest.yaml) is the machine-readable
-authority/lifecycle index.
-
-Key current documents:
+[documentation manifest](docs/documentation-manifest.yaml) records authority
+and lifecycle.
 
 - [Project Plan](docs/project-plan.md)
 - [Current Implementation Plan](docs/current-implementation-plan.md)
 - [Implementation Status](docs/implementation-status.md)
 - [Architecture Governance](docs/architecture-governance-track.md)
 - [Documentation Governance](docs/documentation-governance.md)
-- [Task Intake and Planner Contract](docs/task-intake-and-planner.md)
-- [Active Perception and Recovery Contract](docs/active-perception-and-online-recovery.md)
-- [Trace and Evaluation Contract](docs/trace-and-evaluation.md)
 
-Historical audits, completed plans, and superseded designs are indexed under
-[docs/archive](docs/archive/superseded-2026-08-05/README.md). Evidence and
-change-admission records remain in their dedicated immutable directories.
+Historical evidence and change-admission records remain immutable and do not
+define the current target.
 
 ## Repository layout
 
 ```text
-src/affordance_runtime/   Runtime implementation
-tests/                    unit, integration, architecture, governance tests
-docs/                     current documentation and immutable records
-docs/archive/             superseded prose, plans, audits, and snapshots
-scripts/                  reproduction, benchmark, and maintenance entrypoints
+src/affordance_runtime/   current Runtime implementation
+tests/                    unit, integration, architecture, and benchmark tests
+docs/                     current authority, status, policy, and references
+docs/archive/             superseded design and planning history
+scripts/                  reproduction and benchmark entrypoints
 ```
-
-Important implementation surfaces include TaskSpec/intake contracts, planning
-requests and planners, canonical observation, ActionChoice/ActionContract,
-safety/preflight, execution, verification/evaluation, recovery, StateKernel,
-trace/artifacts, integrations, and benchmark adapters.
 
 ## Validation and reproduction
 
-Repository-governed tests and reproduction commands are recorded in
-[Implementation Status](docs/implementation-status.md) and immutable
-[evidence](docs/evidence/README.md). Historical results apply only to their exact
-revision/profile and do not imply current promotion.
-
-Container entrypoints:
+Repository-governed commands and revision-scoped evidence are recorded in
+[Implementation Status](docs/implementation-status.md) and
+[Evidence](docs/evidence/README.md).
 
 ```bash
 ./scripts/reproduce_container.sh
@@ -155,6 +141,5 @@ AFFORDANCE_WOT_PROOF=1 ./scripts/reproduce_container.sh
 
 ## One sentence
 
-Affordance Runtime gives agents a versioned and policy-bound GUI action layer in
-which model proposals remain subordinate to Runtime-owned observation, action,
-approval, verification, recovery, and commit authority.
+Affordance Runtime gives agents one semantic observe–act–observe interface for
+acting effectively across heterogeneous digital and physical surfaces.
