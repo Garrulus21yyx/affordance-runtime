@@ -194,7 +194,7 @@ class SavePlanner:
 
 @dataclass
 class FakeExecutor:
-    backend: str = "fake"
+    backend: str = "dom"
     supported_backends = ("dom",)
     supported_actions = ("activate", "click", "type_text", "fill", "select_option", "press_key")
     provider_capabilities = ("settings.write",)
@@ -1226,7 +1226,7 @@ class RepeatingPlanner:
 
 @dataclass
 class AlwaysFailExecutor:
-    backend: str = "fake"
+    backend: str = "dom"
     supported_backends = ("dom",)
     supported_actions = FakeExecutor.supported_actions
     provider_capabilities = FakeExecutor.provider_capabilities

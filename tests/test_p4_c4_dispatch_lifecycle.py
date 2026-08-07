@@ -19,6 +19,7 @@ from affordance_runtime.dispatch_lifecycle import (
     DispatchAdmissionRejected,
     DispatchPermitRejected,
     FinalDispatchAdmission,
+    PreparedDispatch,
 )
 from affordance_runtime.execution_context import (
     CoordinateBinding,
@@ -165,6 +166,18 @@ def _admission(state: StateKernel, gate: CapabilityGate):
     ), _attempt(contract, state.version)
 
 
+def _admit(committer, state, trace, parent, admission, attempt, *ignored):
+    del ignored
+    prepared = PreparedDispatch(
+        contract=admission.contract,
+        observation=admission.observation,
+        attempt=attempt,
+        admission=admission,
+        expected_state_version=admission.expected_state_version,
+    )
+    return committer.admit_dispatch(state, trace, parent, prepared)
+
+
 def test_attempt_and_dispatch_intent_are_visible_before_executor() -> None:
     state = StateKernel("task:1", "save")
     state.phase = "preflight"
@@ -182,7 +195,7 @@ def test_attempt_and_dispatch_intent_are_visible_before_executor() -> None:
             "ExecutionAttemptIssued",
         )
     )
-    permit, _parent = RuntimeCommitter().admit_dispatch(
+    permit, _parent = _admit(RuntimeCommitter(),
         state, trace, parent, admission, attempt, pre_events
     )
 
@@ -195,6 +208,7 @@ def test_attempt_and_dispatch_intent_are_visible_before_executor() -> None:
             assert kinds[1:] == [
                 "ContractBuilt",
                 "RouteSelected",
+                "CommittedObservationPreflightChecked",
                 "PreflightPassed",
                 "ExecutionAttemptIssued",
                 "ExecutionAttemptCommitted",
@@ -231,14 +245,14 @@ def test_schema_revocation_and_state_cas_fail_before_executor() -> None:
     trace = TraceDag("task:1")
     parent = trace.add("root", {})
     with pytest.raises(DispatchAdmissionRejected):
-        RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+        _admit(RuntimeCommitter(), state, trace, parent, admission, attempt)
     assert state.current_execution_attempt is None
 
     gate.executor_descriptor = _descriptor()
     admission, attempt = _admission(state, gate)
     state.version += 1
     with pytest.raises(DispatchAdmissionRejected):
-        RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+        _admit(RuntimeCommitter(), state, trace, parent, admission, attempt)
     assert state.current_execution_attempt is None
 
 
@@ -257,13 +271,13 @@ def test_policy_drift_is_rechecked_at_linearization_before_permit() -> None:
     parent = trace.add("root", {})
 
     with pytest.raises(DispatchAdmissionRejected) as rejected:
-        RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+        _admit(RuntimeCommitter(), state, trace, parent, admission, attempt)
     assert rejected.value.code == RuntimeErrorCode.POLICY_DENIED
     assert state.current_execution_attempt is None
     assert not any(node.kind == "DispatchIntentCommitted" for node in trace.nodes)
 
     live_policy["denied"] = False
-    permit, _ = RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+    permit, _ = _admit(RuntimeCommitter(), state, trace, parent, admission, attempt)
     assert permit.attempt == attempt
 
 
@@ -276,7 +290,7 @@ def test_live_coordinate_transform_drift_is_rejected_at_final_admission() -> Non
     parent = trace.add("root", {})
 
     with pytest.raises(DispatchAdmissionRejected) as exc_info:
-        RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+        _admit(RuntimeCommitter(), state, trace, parent, admission, attempt)
 
     assert exc_info.value.code == RuntimeErrorCode.STALE_OBSERVATION
     assert state.current_execution_attempt is None
@@ -293,7 +307,7 @@ def test_concurrent_consumers_receive_only_one_permit() -> None:
 
     def consume() -> None:
         try:
-            RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+            _admit(RuntimeCommitter(), state, trace, parent, admission, attempt)
             outcomes.append("permit")
         except DispatchAdmissionRejected:
             outcomes.append("rejected")
@@ -379,7 +393,7 @@ def test_capability_revocation_before_linearization_issues_no_permit() -> None:
     gate.granted_capabilities.clear()
     trace = TraceDag("task:1")
     with pytest.raises(DispatchAdmissionRejected):
-        RuntimeCommitter().admit_dispatch(state, trace, trace.add("root", {}), admission, attempt)
+        _admit(RuntimeCommitter(), state, trace, trace.add("root", {}), admission, attempt)
     assert state.current_execution_attempt is None
     assert not any(node.kind == "DispatchIntentCommitted" for node in trace.nodes)
 
@@ -419,7 +433,7 @@ def test_root_grant_revocation_invalidates_run_scoped_gate_before_linearization(
     trace = TraceDag("task:1")
 
     with pytest.raises(DispatchAdmissionRejected) as rejected:
-        RuntimeCommitter().admit_dispatch(
+        _admit(RuntimeCommitter(),
             state, trace, trace.add("root", {}), admission, attempt
         )
     assert rejected.value.code == RuntimeErrorCode.CAPABILITY_DENIED
@@ -470,7 +484,7 @@ def test_grant_revocation_cannot_linearize_between_authorize_and_intent_commit()
     result: list[object] = []
     commit_thread = Thread(
         target=lambda: result.append(
-            RuntimeCommitter().admit_dispatch(
+            _admit(RuntimeCommitter(),
                 state, trace, trace.add("root", {}), admission, attempt
             )
         )
@@ -500,7 +514,7 @@ def test_surface_drift_after_permit_issue_blocks_executor_call() -> None:
     admission, attempt = _admission(state, gate)
     admission = replace(admission, surface_check=lambda: current["matches"])
     trace = TraceDag("task:1")
-    permit, _ = RuntimeCommitter().admit_dispatch(
+    permit, _ = _admit(RuntimeCommitter(),
         state, trace, trace.add("root", {}), admission, attempt
     )
     current["matches"] = False
@@ -541,7 +555,7 @@ def test_surface_owner_lock_closes_check_to_executor_gap() -> None:
 
     admission = replace(admission, surface_check=surface_check, fence_lock=fence)
     trace = TraceDag("task:1")
-    permit, _ = RuntimeCommitter().admit_dispatch(
+    permit, _ = _admit(RuntimeCommitter(),
         state, trace, trace.add("root", {}), admission, attempt
     )
 
@@ -593,8 +607,8 @@ def test_attempt_identity_mismatch_is_rejected_before_admission_consumption() ->
     gate = CapabilityGate(executor_descriptor=_descriptor())
     admission, attempt = _admission(state, gate)
     trace = TraceDag("task:1")
-    with pytest.raises(DispatchAdmissionRejected):
-        RuntimeCommitter().admit_dispatch(
+    with pytest.raises(ValueError, match="prepared dispatch attempt"):
+        _admit(RuntimeCommitter(),
             state,
             trace,
             trace.add("root", {}),
@@ -610,7 +624,7 @@ def test_executor_failures_default_to_sent_unknown(failure: Exception) -> None:
     gate = CapabilityGate(executor_descriptor=_descriptor())
     admission, attempt = _admission(state, gate)
     trace = TraceDag("task:1")
-    permit, _ = RuntimeCommitter().admit_dispatch(state, trace, trace.add("root", {}), admission, attempt)
+    permit, _ = _admit(RuntimeCommitter(), state, trace, trace.add("root", {}), admission, attempt)
 
     class _FailingExecutor:
         def execute(self, contract, observation):
@@ -628,7 +642,7 @@ def test_provider_exception_named_like_fence_rejection_is_still_sent_unknown() -
     gate = CapabilityGate(executor_descriptor=_descriptor())
     admission, attempt = _admission(state, gate)
     trace = TraceDag("task:1")
-    permit, _ = RuntimeCommitter().admit_dispatch(
+    permit, _ = _admit(RuntimeCommitter(),
         state, trace, trace.add("root", {}), admission, attempt
     )
 
@@ -654,6 +668,6 @@ def test_wrong_surface_fence_cannot_construct_a_dispatch_permit() -> None:
     gate = CapabilityGate(executor_descriptor=_descriptor())
     admission, attempt = _admission(state, gate)
     trace = TraceDag("task:1")
-    permit, _ = RuntimeCommitter().admit_dispatch(state, trace, trace.add("root", {}), admission, attempt)
+    permit, _ = _admit(RuntimeCommitter(), state, trace, trace.add("root", {}), admission, attempt)
     with pytest.raises(ValueError, match="fence mismatch"):
         replace(permit, session_generation="session:other")
