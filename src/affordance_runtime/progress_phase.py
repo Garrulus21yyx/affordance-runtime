@@ -40,7 +40,7 @@ from affordance_runtime.runtime_evidence import (
     observation_predicate_evidence,
     verification_satisfies_effect,
 )
-from affordance_runtime.runtime_state_projection import project_working_phase
+from affordance_runtime.runtime_state_projection import progress_delta_from_projection, project_working_phase
 from affordance_runtime.simplified_runtime_contracts import (
     ActionOutcome,
     CollateralSettlementStatus,
@@ -652,7 +652,7 @@ class ProgressStage:
         return StageResult(
             output=output,
             transition=RuntimeTransition(
-                state_updates=state.changes(),
+                deltas=(progress_delta_from_projection(state),),
                 artifact_refs=tuple(dict.fromkeys(events.artifact_index)),
                 observation_commits=output.observation_commits,
                 task_completion=task_completion,

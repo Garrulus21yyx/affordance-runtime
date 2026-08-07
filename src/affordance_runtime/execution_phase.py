@@ -57,6 +57,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     UncertainExternalEffect,
 )
 from affordance_runtime.stage_protocol import (
+    EffectSettlementDelta,
     LoopDirective,
     RuntimeEvent,
     RuntimeStateSnapshot,
@@ -151,7 +152,6 @@ class ActionStage:
                 idempotency_identity=attempt.idempotency_identity,
             )
         )
-        events.append(_event("ActionStarted", RuntimeStep.ACTING, contract_id=contract.id))
         if stage_input.dispatch_committer is None:
             return self._failure(
                 stage_input,
@@ -184,7 +184,8 @@ class ActionStage:
                 ),
                 fence_lock=self.perception_session.surface_lock,
             )
-            permit = stage_input.dispatch_committer(admission, attempt)
+            permit = stage_input.dispatch_committer(admission, attempt, tuple(events))
+            events = []
         except DispatchAdmissionRejected as exc:
             drift = exc.code in _DRIFT_ERRORS
             events.append(
@@ -240,7 +241,7 @@ class ActionStage:
             step_count_delta=0,
             subgoal_action_count_delta=1,
             effectful_action_count_delta=0,
-            state_updates=uncertain_updates,
+            deltas=((uncertain_updates,) if uncertain_updates is not None else ()),
         )
         if not receipt.success:
             execution_uncertain = receipt.transport_state == TransportState.SENT_UNKNOWN and contract.effectful
@@ -500,8 +501,9 @@ class ActionStage:
                     terminal=TerminalResult("", "approval_required", RuntimeStep.WAITING_APPROVAL, error),
                     directive=LoopDirective.WAIT_USER,
                 )
+            # The run-scoped gate references the single registry owned by the
+            # root gate; do not maintain a second shadow token store.
             gate.approval_tokens[token.token_id] = token
-            self.runtime_gate.approval_tokens[token.token_id] = token
             events.append(
                 _event(
                     "HumanApprovalGranted",
@@ -748,7 +750,7 @@ def _uncertain_effect_updates(
     stage_input: ActionStageInput,
     contract: ActionContract,
     attempt: ExecutionAttempt,
-) -> dict[str, object] | None:
+) -> EffectSettlementDelta | None:
     signature = contract.runtime_effect_signature
     if not contract.effectful or signature is None or signature.externality is None:
         return None
@@ -757,12 +759,7 @@ def _uncertain_effect_updates(
     existing = tuple(stage_input.state_view.uncertain_external_effects)
     if any(item.attempt.attempt_id == attempt.attempt_id for item in existing):
         return None
-    return {
-        "uncertain_external_effects": (
-            *existing,
-            UncertainExternalEffect(attempt),
-        )
-    }
+    return EffectSettlementDelta((*existing, UncertainExternalEffect(attempt)))
 
 
 def _fresh_route_candidate(

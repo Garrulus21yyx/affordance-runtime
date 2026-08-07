@@ -355,3 +355,12 @@ The complete pre-consolidation 1,582-line ledger is preserved at
 [implementation-status-pre-consolidation.md](archive/superseded-2026-08-05/status-snapshots/implementation-status-pre-consolidation.md).
 Individual claims remain attributable through evidence and change-admission
 records; the snapshot is not a current status source.
+## P5-0 review — 2026-08-07
+
+The P4 MVP remains CLOSED. The current branch has closed the pre-dispatch
+ordering seam and removed generic `state_updates`/state-field setattr from the
+product committer. The explicit read-set factory and canonical action semantic
+owner are in place. Remaining P5 entry debt is tracked in
+`docs/reviews/2026-08-07-p5-entry-hardening.md`; P5 admission remains UNBLOCKED,
+but P5-1 is not started while the remaining read-view and compatibility-boundary
+entry debt is closed.

@@ -133,8 +133,6 @@ class RunCoordinator:
             )
             if recovery_observation is not None:
                 loop.commit(recovery_observation)
-                if recovery_observation.output is not None and recovery_observation.output.verification is not None:
-                    loop.latest_verification = recovery_observation.output.verification
                 if recovery_observation.terminal is not None:
                     return loop.finish(recovery_observation.terminal)
             progress = self.progress_stage.run(
@@ -161,7 +159,7 @@ class RunCoordinator:
                     observation_ref=observation_ref,
                     state_view=runtime_state_snapshot(loop.state),
                     budget=loop.budget,
-                    latest_verification=loop.latest_verification,
+                    latest_verification=loop.state.latest_verification,
                     remaining_budgets=loop.remaining_budgets,
                 )
             )
@@ -238,8 +236,6 @@ class RunCoordinator:
                 )
             )
             loop.commit(progress)
-            if progress.output is not None and progress.output.verification is not None:
-                loop.latest_verification = progress.output.verification
             if progress.terminal is not None:
                 return loop.finish(progress.terminal)
             if progress.directive == LoopDirective.REPEAT_OBSERVATION:

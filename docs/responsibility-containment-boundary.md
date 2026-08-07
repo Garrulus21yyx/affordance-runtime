@@ -196,3 +196,12 @@ is insufficient.
 
 The detailed pre-consolidation containment document is archived at
 [maintained-pre-consolidation/responsibility-containment-boundary.md](archive/superseded-2026-08-05/maintained-pre-consolidation/responsibility-containment-boundary.md).
+## 2026-08-07 P5-0 owner-boundary closure note
+
+`RuntimeCommitter` is the canonical owner for pre-dispatch trace/phase
+linearization and exhaustive typed-delta application. The root capability gate
+owns the run-scoped approval-token registry; compatibility paths do not grant,
+approve, seal, dispatch, or commit. Canonical transaction code uses
+`action_semantics.py` for shared action-family compatibility and does not
+import a private planning helper. See the dated review for the remaining
+deferred read-view, route-calibration, and compatibility inventory work.

@@ -16,7 +16,6 @@ from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.stage_protocol import StageResult, TerminalResult
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification.mechanical import VerificationReport
 
 
 @dataclass(frozen=True)
@@ -150,7 +149,6 @@ class RuntimeCommitSession:
     state: StateKernel
     trace: TraceDag
     parent: TraceNode
-    latest_verification: VerificationReport | None = None
 
     @classmethod
     def start(
@@ -199,7 +197,7 @@ class RuntimeCommitSession:
             self.trace,
             terminal,
             self.parent,
-            self.latest_verification,
+            self.state.latest_verification,
         )
 
     def check_budget(self) -> Any | None:
@@ -217,7 +215,7 @@ class RuntimeCommitSession:
             result.status,
             self.parent,
             result.error_code,
-            self.latest_verification,
+            self.state.latest_verification,
         )
 
     def commit(self, result: StageResult[Any]) -> None:
@@ -225,13 +223,19 @@ class RuntimeCommitSession:
             self.state, self.trace, self.parent, result
         )
 
-    def admit_dispatch(self, admission: Any, attempt: Any) -> Any:
+    def admit_dispatch(
+        self,
+        admission: Any,
+        attempt: Any,
+        pre_dispatch_events: tuple[Any, ...] = (),
+    ) -> Any:
         permit, self.parent = self.committer.admit_dispatch(
             self.state,
             self.trace,
             self.parent,
             admission,
             attempt,
+            pre_dispatch_events,
         )
         return permit
 

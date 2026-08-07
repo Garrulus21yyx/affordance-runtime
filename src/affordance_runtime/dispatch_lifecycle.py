@@ -11,6 +11,7 @@ from affordance_runtime.contracts import ActionContract, Observation, RuntimeErr
 from affordance_runtime.execution_context import CoordinateBinding, digest_payload
 from affordance_runtime.safety import CapabilityGate
 from affordance_runtime.simplified_runtime_contracts import ExecutionAttempt
+from affordance_runtime.stage_protocol import RuntimeEvent
 
 
 @dataclass(frozen=True)
@@ -202,7 +203,9 @@ class DispatchPermit:
         object.__setattr__(self, "_used", True)
 
 
-DispatchCommitter = Callable[[FinalDispatchAdmission, ExecutionAttempt], DispatchPermit]
+DispatchCommitter = Callable[
+    [FinalDispatchAdmission, ExecutionAttempt, tuple[RuntimeEvent, ...]], DispatchPermit
+]
 
 
 class DispatchAdmissionRejected(RuntimeError):

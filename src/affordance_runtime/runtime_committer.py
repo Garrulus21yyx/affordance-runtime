@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from threading import RLock
 from time import time
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.dispatch_lifecycle import (
@@ -18,6 +18,17 @@ from affordance_runtime.execution_context import digest_payload
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.simplified_runtime_contracts import ExecutionAttempt
 from affordance_runtime.stage_protocol import (
+    ArtifactIndexDelta,
+    CompletionDelta,
+    EffectSettlementDelta,
+    ExecutionAdmissionDelta,
+    ObservationDelta,
+    PhaseDelta,
+    PlanningDelta,
+    ProgressDelta,
+    ReceiptDelta,
+    RecoveryDelta,
+    RouteCalibrationDelta,
     RuntimeEvent,
     StageResult,
 )
@@ -38,6 +49,7 @@ class RuntimeCommitter:
         parent: TraceNode,
         admission: FinalDispatchAdmission,
         attempt: ExecutionAttempt,
+        pre_dispatch_events: tuple[RuntimeEvent, ...] = (),
     ) -> tuple[DispatchPermit, TraceNode]:
         """Consume owner-issued admission and commit intent at one linearization point."""
 
@@ -59,11 +71,13 @@ class RuntimeCommitter:
                 raise DispatchAdmissionRejected(error)
             state.current_contract = admission.contract
             state.current_execution_attempt = attempt
+            self._commit_phase(state, RuntimeStep.ACTING)
             state.step_count += 1
             if admission.contract.effectful:
                 state.effectful_action_count += 1
             state.version += 1
             committed_version = state.version
+            parent = self.commit_events(trace, parent, pre_dispatch_events)
             attempt_node = trace.add(
                 "ExecutionAttemptCommitted",
                 {
@@ -141,9 +155,8 @@ class RuntimeCommitter:
         if transition is not None and transition.phase == RuntimeStep.DONE and transition.task_completion is None:
             raise ValueError("terminal success state and result require typed task completion")
         if transition is not None:
-            if transition.state_updates is not None:
-                for name, value in transition.state_updates.items():
-                    setattr(state, name, deepcopy(value))
+            for delta in transition.deltas:
+                self._apply_delta(state, delta)
             for intermediate in transition.intermediate_phases:
                 if state.phase != intermediate.value:
                     self._commit_phase(state, intermediate)
@@ -200,6 +213,111 @@ class RuntimeCommitter:
                 transition.task_completion,
             )
         return parent
+
+    @staticmethod
+    def _apply_delta(state: StateKernel, delta: object) -> None:
+        """Apply only the closed state-delta union; unknown values fail closed."""
+
+        if isinstance(delta, PhaseDelta):
+            RuntimeCommitter._commit_phase(state, delta.phase)
+        elif isinstance(delta, ObservationDelta):
+            for observation in delta.commits:
+                state.remember_observation_commit(observation)
+        elif isinstance(delta, PlanningDelta):
+            if delta.task_plan_transition is not None:
+                transition = delta.task_plan_transition
+                if transition.previous_plan is None:
+                    state.install_task_plan(transition.plan)
+                else:
+                    state.replace_task_plan(transition.plan)
+                state.activate_next_step()
+        elif isinstance(delta, ExecutionAdmissionDelta):
+            if delta.contract.id != delta.attempt.contract_id:
+                raise ValueError("execution admission contract id mismatch")
+            if delta.contract.contract_hash != delta.attempt.contract_hash:
+                raise ValueError("execution admission contract hash mismatch")
+            if delta.expected_state_version != state.version:
+                raise ValueError("execution admission state version mismatch")
+            state.current_contract = delta.contract
+            state.current_execution_attempt = delta.attempt
+        elif isinstance(delta, ReceiptDelta):
+            attempt = state.current_execution_attempt
+            if attempt is None or delta.receipt.contract_id != attempt.contract_id:
+                raise ValueError("receipt is not bound to current execution attempt")
+            state.record_receipt(delta.receipt)
+        elif isinstance(delta, EffectSettlementDelta):
+            state.uncertain_external_effects = tuple(delta.uncertain_effects)
+        elif isinstance(delta, ProgressDelta):
+            if delta.latest_verification is not None:
+                state.latest_verification = delta.latest_verification
+            if delta.progress_guard is not None:
+                from affordance_runtime.state_kernel import ProgressGuardReason
+
+                reason, signature = delta.progress_guard
+                state.record_progress_guard(ProgressGuardReason(reason), signature)
+            if delta.excluded_candidates is not None:
+                state.current_excluded_candidates = {
+                    key: set(values) for key, values in delta.excluded_candidates.items()
+                }
+            if delta.grounding_fallback is not None:
+                state.current_grounding_fallback = {
+                    key: dict(value) for key, value in delta.grounding_fallback.items()
+                }
+            if delta.phase is not None and state.phase != delta.phase.value:
+                RuntimeCommitter._commit_phase(state, delta.phase)
+            if delta.has_latest_effect_settlement:
+                state.latest_effect_settlement = delta.latest_effect_settlement
+            if delta.has_task_progress:
+                state.task_progress = deepcopy(delta.task_progress)
+            if delta.has_replan_count:
+                if delta.replan_count is None or delta.replan_count < state.replan_count:
+                    raise ValueError("progress replan count cannot decrease")
+                state.replan_count = delta.replan_count
+            if delta.has_final_result:
+                state.final_result = dict(delta.final_result or {})
+            if delta.has_latest_progress_guard:
+                state.latest_progress_guard = dict(delta.latest_progress_guard or {})
+            if delta.has_recent_action_outcomes:
+                from affordance_runtime.state_kernel import RecentActionOutcomeIndex
+
+                state.recent_action_outcomes = cast(
+                    RecentActionOutcomeIndex, deepcopy(delta.recent_action_outcomes)
+                )
+            if delta.has_latest_probe_receipt:
+                state.latest_probe_receipt = deepcopy(delta.latest_probe_receipt)
+        elif isinstance(delta, RecoveryDelta):
+            if delta.failure is not None:
+                state.current_failure = delta.failure
+            if delta.decision is not None:
+                state.current_recovery_decision = delta.decision
+            if delta.outcome is not None:
+                state.current_recovery_outcome = delta.outcome
+            if delta.attempted_strategy_ids is not None:
+                state.attempted_recovery_strategy_ids = set(delta.attempted_strategy_ids)
+            if delta.recovery_count is not None:
+                state.recovery_count = delta.recovery_count
+            if delta.disproved_assumption is not None:
+                state.record_disproved_assumption(delta.disproved_assumption)
+            if delta.excluded_candidates is not None:
+                state.current_excluded_candidates = {
+                    key: set(values) for key, values in delta.excluded_candidates.items()
+                }
+            if delta.grounding_fallback is not None:
+                state.current_grounding_fallback = {
+                    key: dict(value) for key, value in delta.grounding_fallback.items()
+                }
+            if delta.clear_decision:
+                state.current_recovery_decision = None
+            if delta.clear_outcome:
+                state.current_recovery_outcome = None
+        elif isinstance(delta, CompletionDelta):
+            state.final_result = dict(delta.result_payload)
+        elif isinstance(delta, ArtifactIndexDelta):
+            return
+        elif isinstance(delta, RouteCalibrationDelta):
+            return
+        else:
+            raise TypeError(f"unknown runtime delta: {type(delta).__name__}")
 
     @staticmethod
     def commit_task_completion(

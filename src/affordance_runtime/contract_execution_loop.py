@@ -290,20 +290,22 @@ class ContractExecutionLoop:
         )
 
     def effective_gate(self, envelope: RunRequest) -> CapabilityGate:
-        return CapabilityGate(
+        gate = CapabilityGate(
             # RunRequest.capabilities are caller/user grants admitted at the edge;
             # contract.required_capabilities remain declarations only.
             granted_capabilities=set(envelope.capabilities),
             approval_required_risks=set(self.gate.approval_required_risks),
             approval_required_capabilities=self.gate.approval_required_capabilities
             | set(str(item) for item in envelope.constraints.get("require_approval_for", [])),
-            approval_tokens=self.gate.approval_tokens,
+            approval_tokens={},
             executor_descriptor=self.gate.executor_descriptor,
             product_allowed_actions=self.gate.product_allowed_actions,
             product_allowed_capabilities=self.gate.product_allowed_capabilities,
             grant_source=self.gate,
             _linearization_lock=self.gate._linearization_lock,
         )
+        gate.approval_tokens = self.gate.approval_tokens
+        return gate
 
 
 def _observation_identity(observation: Observation) -> ObservationIdentity:

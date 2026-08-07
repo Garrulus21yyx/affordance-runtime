@@ -8,6 +8,7 @@ from typing import Any
 
 from affordance_runtime.action_choice_authority import authorize_runtime_signature
 from affordance_runtime.action_effect_classifier import classify_action
+from affordance_runtime.action_semantics import action_compatible
 from affordance_runtime.choice_contracts import ActionChoice
 from affordance_runtime.contracts import ActionContract
 from affordance_runtime.effect_authority_contracts import (
@@ -17,7 +18,6 @@ from affordance_runtime.effect_authority_contracts import (
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.material_contracts import MaterialField
-from affordance_runtime.planning import _action_compatible
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.unified_observation import UnifiedObservation
 
@@ -100,7 +100,7 @@ def rebuild_contract_authority(
     observation: UnifiedObservation,
     contract: ActionContract,
 ) -> tuple[RuntimeEffectSignature, ActionAuthorityProof]:
-    if not _action_compatible(choice.action_kind, contract.action):
+    if not action_compatible(choice.action_kind, contract.action):
         raise ValueError("actual contract action changes the authorized semantic action family")
     _assert_encoded_material_parameters_authorized(choice, task_spec, contract.parameters)
     candidate = contract.grounding_candidate

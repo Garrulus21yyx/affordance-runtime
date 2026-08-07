@@ -15,6 +15,7 @@ from affordance_runtime.action_choice_authority import authorize_runtime_signatu
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.action_contract_authority import rebuild_contract_authority
 from affordance_runtime.action_effect_classifier import classify_action
+from affordance_runtime.action_semantics import action_compatible
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.choice_contracts import ActionSelection
 from affordance_runtime.contracts import ActionContract, GestureContractBinder, VerifierSpec
@@ -35,7 +36,6 @@ from affordance_runtime.planning import (
     ProposalRejectionCode,
     TaskPlanProgressTarget,
     UnifiedTargetResolver,
-    _action_compatible,
     bind_active_step_verifiers,
 )
 from affordance_runtime.state_kernel import StateKernel
@@ -144,7 +144,7 @@ class ActionTransactionMaterializer:
         )
         source = source_resolution.route.selected_candidate
         source_affordance = source_resolution.source_affordance
-        if not _action_compatible(choice.action_kind, source_affordance.action):
+        if not action_compatible(choice.action_kind, source_affordance.action):
             raise ProposalRejected(ProposalRejectionCode.UNSUPPORTED_ACTION, choice.action_kind.value)
 
         destination_resolution = None
@@ -209,7 +209,7 @@ class ActionTransactionMaterializer:
             raise ValueError("selected backend is not supported by the pinned executor descriptor")
         if encoded_action not in descriptor.actions_for(source.compatible_executor):
             raise ValueError("selected action is not supported by provider and adapter")
-        if not _action_compatible(choice.action_kind, encoded_action):
+        if not action_compatible(choice.action_kind, encoded_action):
             raise ValueError("encoded action changes the authorized semantic action family")
 
         named_parameters = dict(choice.parameters)

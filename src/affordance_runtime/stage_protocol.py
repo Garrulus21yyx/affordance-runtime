@@ -7,7 +7,7 @@ import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
-from types import MappingProxyType, MethodType
+from types import MappingProxyType
 from typing import Any, Generic, Mapping, TypeAlias, TypeVar
 
 from affordance_runtime.active_perception import (
@@ -24,7 +24,7 @@ from affordance_runtime.contracts import (
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.observation_store import ObservationCommit
-from affordance_runtime.recovery_protocol import FailureOwner
+from affordance_runtime.recovery_protocol import FailureOwner, RecoveryDecision, RecoveryOutcome
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.simplified_runtime_contracts import ExecutionAttempt
 from affordance_runtime.verification.contracts import TaskCompletionEvaluation
@@ -55,7 +55,6 @@ class RuntimeStateSnapshot:
     """Detached read-only attribute view supplied to pure stages."""
 
     values: Mapping[str, Any]
-    prototype: Any
 
     def __getattr__(self, name: str) -> Any:
         try:
@@ -115,17 +114,16 @@ class RuntimeStateSnapshot:
             return "no_progress_repeat"
         return None
 
-    def projection(self) -> RuntimeStateProjection:
-        """Create a detached change-tracking projection for pure computation."""
+    def projection(self) -> ProgressWorkingState:
+        """Compatibility bridge pending the dedicated ProgressStateView cutover."""
 
-        return RuntimeStateProjection(self)
+        return ProgressWorkingState(self)
 
 
-class RuntimeStateProjection:
-    """Detached state calculator; it cannot mutate the live StateKernel."""
+class ProgressWorkingState:
+    """Detached progress working set; it never aliases the live StateKernel."""
 
     def __init__(self, snapshot: RuntimeStateSnapshot) -> None:
-        object.__setattr__(self, "_prototype_type", type(snapshot.prototype))
         values = deepcopy(dict(snapshot.values))
         object.__setattr__(self, "_values", values)
         object.__setattr__(self, "_initial", deepcopy(values))
@@ -134,21 +132,55 @@ class RuntimeStateProjection:
         values = object.__getattribute__(self, "_values")
         if name in values:
             return values[name]
-        method = getattr(object.__getattribute__(self, "_prototype_type"), name, None)
-        if callable(method):
-            return MethodType(method, self)
         raise AttributeError(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
         self._values[name] = value
 
-    def changes(self) -> dict[str, Any]:
+    def delta_values(self) -> dict[str, Any]:
         initial = object.__getattribute__(self, "_initial")
         return {
             name: deepcopy(value)
             for name, value in self._values.items()
             if name not in initial or value != initial[name]
         }
+
+    def record_action_progress(
+        self,
+        signature: str,
+        post_environment_revision: str,
+        *,
+        verification_passed: bool,
+        effect_satisfied: bool | None = None,
+        post_page_revision: str = "",
+    ) -> None:
+        from affordance_runtime.state_kernel import ActionKey
+
+        index = self._values["recent_action_outcomes"]
+        index.record(
+            ActionKey.from_signature(signature),
+            post_environment_revision,
+            verification_passed=verification_passed,
+            effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
+            post_page_revision=post_page_revision,
+        )
+
+    def transition(self, next_phase: str) -> None:
+        self._values["phase"] = next_phase
+
+    def complete_step(
+        self,
+        step_id: str,
+        evidence: tuple[str, ...],
+        criterion_ids: tuple[str, ...] = (),
+    ) -> None:
+        self._values["task_progress"].complete(
+            plan=self._values["task_plan"],
+            step_id=step_id,
+            criterion_ids=criterion_ids,
+            evidence_refs=evidence,
+            state_version=self._values["version"],
+        )
 
 
 @dataclass(frozen=True)
@@ -181,7 +213,112 @@ class RuntimeEventBuffer:
 
 
 @dataclass(frozen=True)
+class RuntimeDelta:
+    """Closed base type for committed state changes."""
+
+
+@dataclass(frozen=True)
+class PhaseDelta(RuntimeDelta):
+    phase: RuntimeStep
+
+
+@dataclass(frozen=True)
+class ObservationDelta(RuntimeDelta):
+    commits: tuple[ObservationCommit, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlanningDelta(RuntimeDelta):
+    task_plan_transition: Any | None = None
+
+
+@dataclass(frozen=True)
+class ExecutionAdmissionDelta(RuntimeDelta):
+    contract: ActionContract
+    attempt: ExecutionAttempt
+    expected_state_version: int
+
+
+@dataclass(frozen=True)
+class ReceiptDelta(RuntimeDelta):
+    receipt: ExecutionReceipt
+
+
+@dataclass(frozen=True)
+class EffectSettlementDelta(RuntimeDelta):
+    uncertain_effects: tuple[Any, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProgressDelta(RuntimeDelta):
+    latest_verification: VerificationReport | None = None
+    progress_guard: tuple[str, str] | None = None
+    excluded_candidates: Mapping[str, frozenset[str]] | None = None
+    grounding_fallback: Mapping[str, Mapping[str, str]] | None = None
+    phase: RuntimeStep | None = None
+    latest_effect_settlement: Any | None = None
+    task_progress: Any | None = None
+    replan_count: int | None = None
+    final_result: Mapping[str, Any] | None = None
+    latest_progress_guard: Mapping[str, str] | None = None
+    recent_action_outcomes: Any | None = None
+    latest_probe_receipt: Any | None = None
+    has_latest_effect_settlement: bool = False
+    has_task_progress: bool = False
+    has_replan_count: bool = False
+    has_final_result: bool = False
+    has_latest_progress_guard: bool = False
+    has_recent_action_outcomes: bool = False
+    has_latest_probe_receipt: bool = False
+
+
+@dataclass(frozen=True)
+class RecoveryDelta(RuntimeDelta):
+    failure: FailureEnvelope | None = None
+    decision: RecoveryDecision | None = None
+    outcome: RecoveryOutcome | None = None
+    attempted_strategy_ids: frozenset[str] | None = None
+    recovery_count: int | None = None
+    disproved_assumption: str | None = None
+    excluded_candidates: Mapping[str, frozenset[str]] | None = None
+    grounding_fallback: Mapping[str, Mapping[str, str]] | None = None
+    clear_decision: bool = False
+    clear_outcome: bool = False
+
+
+@dataclass(frozen=True)
+class CompletionDelta(RuntimeDelta):
+    result_payload: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class ArtifactIndexDelta(RuntimeDelta):
+    refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RouteCalibrationDelta(RuntimeDelta):
+    outcome_id: str
+
+
+RuntimeDeltaUnion: TypeAlias = (
+    PhaseDelta
+    | ObservationDelta
+    | PlanningDelta
+    | ExecutionAdmissionDelta
+    | ReceiptDelta
+    | EffectSettlementDelta
+    | ProgressDelta
+    | RecoveryDelta
+    | CompletionDelta
+    | ArtifactIndexDelta
+    | RouteCalibrationDelta
+)
+
+
+@dataclass(frozen=True)
 class RuntimeTransition:
+    deltas: tuple[RuntimeDeltaUnion, ...] = ()
     phase: RuntimeStep | None = None
     intermediate_phases: tuple[RuntimeStep, ...] = ()
     perception_update: bool = False
@@ -206,7 +343,6 @@ class RuntimeTransition:
     clear_recovery_decision: bool = False
     final_result: Mapping[str, Any] | None = None
     task_completion: TaskCompletionEvaluation | None = None
-    state_updates: Mapping[str, Any] | None = None
     version_delta: int = 0
 
     def __post_init__(self) -> None:
@@ -228,6 +364,7 @@ class RuntimeTransition:
         object.__setattr__(self, "probe_receipts", tuple(self.probe_receipts))
         object.__setattr__(self, "artifact_refs", tuple(self.artifact_refs))
         object.__setattr__(self, "intermediate_phases", tuple(self.intermediate_phases))
+        object.__setattr__(self, "deltas", tuple(self.deltas))
 
 
 @dataclass(frozen=True)

@@ -103,6 +103,9 @@ reference:
   - role: action_contract_digest_threat_model
     path: docs/security/action-contract-digest-threat-model.md
     lifecycle: current
+  - role: p5_entry_hardening_review
+    path: docs/reviews/2026-08-07-p5-entry-hardening.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

@@ -34,6 +34,7 @@ from affordance_runtime.stage_protocol import (
     LoopDirective,
     OwnerHandoff,
     ProgressHandoff,
+    RecoveryDelta,
     RuntimeEvent,
     RuntimeStateSnapshot,
     RuntimeTransition,
@@ -104,7 +105,7 @@ class RecoveryStage:
             output=FailureResolutionOutput(terminal),
             transition=RuntimeTransition(
                 phase=status,
-                state_updates={"current_failure": failure},
+                deltas=(RecoveryDelta(failure=failure),),
             ),
             failure=failure,
             terminal=terminal,
@@ -158,15 +159,11 @@ class RecoveryStage:
             )
         phase: RuntimeStep | None = None
         replan_delta = 0
-        updates: dict[str, Any] = {
-            "current_failure": failure,
-            "current_recovery_decision": None,
-            "current_recovery_outcome": None,
-        }
+        recovery_delta = RecoveryDelta(failure=failure, clear_decision=True, clear_outcome=True)
         if isinstance(handoff, (StepPlannerHandoff, TaskPlannerHandoff)):
             phase = RuntimeStep.OBSERVING
             replan_delta = 1
-            updates["current_disproved_assumption"] = failed_assumption
+            recovery_delta = replace(recovery_delta, disproved_assumption=failed_assumption)
         elif isinstance(handoff, UserInputRequest):
             phase = RuntimeStep.WAITING_CLARIFICATION
         elif isinstance(handoff, TerminalResult):
@@ -201,7 +198,7 @@ class RecoveryStage:
             output=FailureResolutionOutput(handoff),
             transition=RuntimeTransition(
                 phase=phase,
-                state_updates=updates,
+                deltas=(recovery_delta,),
                 replan_count_delta=replan_delta,
             ),
             events=events,
@@ -304,11 +301,7 @@ class RecoveryStage:
                 transition=RuntimeTransition(
                     phase=RuntimeStep(stage_input.abort_reentry_phase.value),
                     intermediate_phases=(RuntimeStep.RECOVERING,),
-                    state_updates={
-                        "current_failure": failure,
-                        "current_recovery_decision": None,
-                        "current_recovery_outcome": None,
-                    },
+                    deltas=(RecoveryDelta(failure=failure, clear_decision=True, clear_outcome=True),),
                 ),
                 events=(
                     RuntimeEvent(
@@ -337,15 +330,15 @@ class RecoveryStage:
                 ),
                 directive=LoopDirective.TERMINAL,
             )
-        state_updates: dict[str, Any] = {
-            "current_failure": failure,
-            "current_recovery_decision": decision,
-            "current_recovery_outcome": None,
-            "attempted_recovery_strategy_ids": set(
+        recovery_delta = RecoveryDelta(
+            failure=failure,
+            decision=decision,
+            attempted_strategy_ids=frozenset(
                 (*state.attempted_recovery_strategy_ids, decision.strategy_key)
             ),
-            "recovery_count": state.recovery_count + 1,
-        }
+            recovery_count=state.recovery_count + 1,
+            clear_outcome=True,
+        )
         events = tuple(
             RuntimeEvent(item.kind, item.payload)
             for item in recovery_protocol_projections(
@@ -354,10 +347,14 @@ class RecoveryStage:
                 decision=decision,
             )
         )
-        grounding_updates, grounding_version_delta = _grounding_updates(
+        excluded_candidates, grounding_fallback, grounding_version_delta = _grounding_updates(
             state, contract, decision.kind
         )
-        state_updates.update(grounding_updates)
+        recovery_delta = replace(
+            recovery_delta,
+            excluded_candidates=excluded_candidates,
+            grounding_fallback=grounding_fallback,
+        )
         if decision.kind in {
             RecoveryKind.REOBSERVE,
             RecoveryKind.REGROUND,
@@ -370,7 +367,7 @@ class RecoveryStage:
                 decision,
                 events,
                 LoopDirective.REPEAT_OBSERVATION,
-                state_updates,
+                recovery_delta,
                 phase=RuntimeStep.OBSERVING,
                 version_delta=grounding_version_delta,
             )
@@ -380,7 +377,7 @@ class RecoveryStage:
                 failure=failure,
                 previous_attempt_fingerprint=_previous_fingerprint(failure),
             )
-            state_updates["current_recovery_outcome"] = dispatched.outcome
+            recovery_delta = replace(recovery_delta, outcome=dispatched.outcome)
             outcome_event = _outcome_event(RuntimeStep.RECOVERING.value, dispatched.outcome)
             if not dispatched.outcome.success:
                 routed = RuntimeEvent(
@@ -398,7 +395,7 @@ class RecoveryStage:
                     decision,
                     (*events, outcome_event, routed),
                     LoopDirective.TERMINAL,
-                    state_updates,
+                    recovery_delta,
                     outcome=dispatched.outcome,
                     terminal=TerminalResult(
                         failure.failure_id,
@@ -408,8 +405,9 @@ class RecoveryStage:
                     phase=RuntimeStep(stage_input.abort_reentry_phase.value),
                     version_delta=grounding_version_delta,
                 )
-            state_updates["current_disproved_assumption"] = (
-                f"{failure.phase.value}:{failure.error_code}:{failure.message}"
+            recovery_delta = replace(
+                recovery_delta,
+                disproved_assumption=f"{failure.phase.value}:{failure.error_code}:{failure.message}",
             )
             return _result(
                 decision,
@@ -419,7 +417,7 @@ class RecoveryStage:
                     _reentry_event(RuntimeStep.OBSERVING.value, decision),
                 ),
                 LoopDirective.REPEAT_OBSERVATION,
-                state_updates,
+                recovery_delta,
                 outcome=dispatched.outcome,
                 phase=RuntimeStep.OBSERVING,
                 replan_count_delta=1,
@@ -434,7 +432,7 @@ class RecoveryStage:
             decision,
             events,
             LoopDirective.TERMINAL,
-            state_updates,
+        recovery_delta,
             terminal=terminal,
             phase=RuntimeStep(stage_input.abort_reentry_phase.value),
             version_delta=grounding_version_delta,
@@ -445,7 +443,7 @@ def _result(
     decision: RecoveryDecision,
     events: tuple[RuntimeEvent, ...],
     directive: LoopDirective,
-    state_updates: dict[str, Any],
+    delta: RecoveryDelta,
     *,
     outcome: RecoveryOutcome | None = None,
     terminal: TerminalResult | None = None,
@@ -458,7 +456,7 @@ def _result(
         transition=RuntimeTransition(
             phase=phase,
             intermediate_phases=(RuntimeStep.RECOVERING,),
-            state_updates=state_updates,
+            deltas=(delta,),
             replan_count_delta=replan_count_delta,
             version_delta=version_delta,
         ),
@@ -531,17 +529,17 @@ def _grounding_updates(
     state: Any,
     contract: Any,
     kind: RecoveryKind,
-) -> tuple[dict[str, Any], int]:
+) -> tuple[dict[str, frozenset[str]] | None, dict[str, dict[str, str]] | None, int]:
     if contract is None or kind not in {
         RecoveryKind.REROUTE,
         RecoveryKind.REGROUND,
         RecoveryKind.REOBSERVE,
         RecoveryKind.RETRY_IDEMPOTENT,
     }:
-        return {}, 0
+        return None, None, 0
     candidate = contract.grounding_candidate
     if candidate is None:
-        return {}, 0
+        return None, None, 0
     excluded = {
         key: set(values) for key, values in state.current_excluded_candidates.items()
     }
@@ -562,10 +560,11 @@ def _grounding_updates(
         ),
         "failed_source": candidate.source.value,
     }
-    return {
-        "current_excluded_candidates": excluded,
-        "current_grounding_fallback": fallback,
-    }, 1
+    return (
+        {key: frozenset(values) for key, values in excluded.items()},
+        fallback,
+        1,
+    )
 
 
 def _previous_fingerprint(failure: FailureEnvelope) -> str:

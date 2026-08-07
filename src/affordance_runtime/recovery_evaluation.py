@@ -12,7 +12,11 @@ from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.runtime_evidence import effect_settlement_status
 from affordance_runtime.simplified_runtime_contracts import EffectSettlementStatus
 from affordance_runtime.stage_protocol import (
+    EffectSettlementDelta,
     LoopDirective,
+    ProgressDelta,
+    RecoveryDelta,
+    RuntimeDeltaUnion,
     RuntimeEvent,
     RuntimeStateSnapshot,
     RuntimeTransition,
@@ -57,7 +61,7 @@ class RecoveryObservationEvaluator:
         verification = None
         failed = False
         events: list[RuntimeEvent] = []
-        updates: dict[str, object] = {}
+        deltas: list[RuntimeDeltaUnion] = []
         if decision.kind == RecoveryKind.INSPECT_POST_STATE:
             contract = state.current_contract
             receipt = state.last_receipt
@@ -70,7 +74,7 @@ class RecoveryObservationEvaluator:
                 structural_verification_enabled=True,
                 disabled_reason="",
             )
-            updates["latest_verification"] = verification
+            deltas.append(ProgressDelta(latest_verification=verification))
             events.append(
                 RuntimeEvent(
                     "RecoveryStateInspected",
@@ -129,14 +133,23 @@ class RecoveryObservationEvaluator:
                 )
             )
             if effect_settled:
-                updates["uncertain_external_effects"] = tuple(
-                    item
-                    for item in state.uncertain_external_effects
-                    if current_attempt is None or item.attempt.attempt_id != current_attempt.attempt_id
+                deltas.append(
+                    EffectSettlementDelta(
+                        tuple(
+                            item
+                            for item in state.uncertain_external_effects
+                            if current_attempt is None
+                            or item.attempt.attempt_id != current_attempt.attempt_id
+                        )
+                    )
                 )
             if absence_confirmed:
-                updates["current_failure"] = failure.model_copy(
-                    update={"effect_status": EffectStatus.CONFIRMED_NOT_OCCURRED},
+                deltas.append(
+                    RecoveryDelta(
+                        failure=failure.model_copy(
+                            update={"effect_status": EffectStatus.CONFIRMED_NOT_OCCURRED}
+                        )
+                    )
                 )
         outcome = RecoveryOutcome(
             decision_id=decision.decision_id,
@@ -148,7 +161,7 @@ class RecoveryObservationEvaluator:
             observation_refs=(() if failed else (snapshot.observation.snapshot_id,)),
             error_code="verification_failed" if failed else "",
         )
-        updates["current_recovery_outcome"] = outcome
+        deltas.append(RecoveryDelta(outcome=outcome))
         events.append(_outcome_event(state.phase, outcome))
         terminal = None
         phase = None
@@ -173,7 +186,7 @@ class RecoveryObservationEvaluator:
             events.append(_reentry_event(state.phase, decision.reentry_phase.value))
         return StageResult(
             output=RecoveryObservationEvaluation(verification, outcome),
-            transition=RuntimeTransition(phase=phase, state_updates=updates),
+            transition=RuntimeTransition(phase=phase, deltas=tuple(deltas)),
             events=tuple(events),
             terminal=terminal,
             directive=(LoopDirective.TERMINAL if terminal is not None else LoopDirective.NEXT_STAGE),
@@ -251,7 +264,7 @@ class RecoveryActionEvaluator:
             transition=RuntimeTransition(
                 phase=phase,
                 intermediate_phases=((RuntimeStep.RECOVERING,) if phase == RuntimeStep.ABORTED else ()),
-                state_updates={"current_recovery_outcome": outcome},
+                deltas=(RecoveryDelta(outcome=outcome, clear_decision=clear_decision),),
                 clear_recovery_decision=clear_decision,
             ),
             events=tuple(events),

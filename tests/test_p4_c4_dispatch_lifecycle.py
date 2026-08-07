@@ -40,6 +40,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     ExecutionAttempt,
     ObservationIdentity,
 )
+from affordance_runtime.stage_protocol import RuntimeEvent
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification.mechanical import (
@@ -151,6 +152,8 @@ def _attempt(contract: ActionContract, version: int) -> ExecutionAttempt:
 
 
 def _admission(state: StateKernel, gate: CapabilityGate):
+    if state.phase == "created":
+        state.phase = "preflight"
     contract, observation = _contract(gate.executor_descriptor)  # type: ignore[arg-type]
     return FinalDispatchAdmission.issue(
         contract=contract,
@@ -164,19 +167,43 @@ def _admission(state: StateKernel, gate: CapabilityGate):
 
 def test_attempt_and_dispatch_intent_are_visible_before_executor() -> None:
     state = StateKernel("task:1", "save")
+    state.phase = "preflight"
     descriptor = _descriptor()
     gate = CapabilityGate(executor_descriptor=descriptor, product_allowed_actions=frozenset({"activate"}))
     admission, attempt = _admission(state, gate)
     trace = TraceDag("task:1")
     parent = trace.add("root", {})
-    permit, _parent = RuntimeCommitter().admit_dispatch(state, trace, parent, admission, attempt)
+    pre_events = tuple(
+        RuntimeEvent(kind, {"contract_id": admission.contract.id})
+        for kind in (
+            "ContractBuilt",
+            "RouteSelected",
+            "PreflightPassed",
+            "ExecutionAttemptIssued",
+        )
+    )
+    permit, _parent = RuntimeCommitter().admit_dispatch(
+        state, trace, parent, admission, attempt, pre_events
+    )
 
     class _Executor:
         def execute(self, contract, observation):
+            assert state.phase == "acting"
             assert state.current_contract == contract
             assert state.current_execution_attempt == attempt
-            assert any(node.kind == "ExecutionAttemptCommitted" for node in trace.nodes)
-            assert any(node.kind == "DispatchIntentCommitted" for node in trace.nodes)
+            kinds = [node.kind for node in trace.nodes]
+            assert kinds[1:] == [
+                "ContractBuilt",
+                "RouteSelected",
+                "PreflightPassed",
+                "ExecutionAttemptIssued",
+                "ExecutionAttemptCommitted",
+                "DispatchIntentCommitted",
+            ]
+            assert kinds.index("ContractBuilt") < kinds.index("RouteSelected")
+            assert kinds.index("RouteSelected") < kinds.index("PreflightPassed")
+            assert kinds.index("PreflightPassed") < kinds.index("ExecutionAttemptCommitted")
+            assert kinds.index("ExecutionAttemptCommitted") < kinds.index("DispatchIntentCommitted")
             return ExecutionReceipt(
                 contract.id,
                 contract.backend,

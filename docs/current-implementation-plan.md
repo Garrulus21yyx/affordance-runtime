@@ -549,7 +549,7 @@ Before marking done:
 | 12 | `P4-C5` | **MVP CLOSED** — default-route benchmark passes; release attestation deferred |
 | 13 | `P4-C2` | **DEFERRED / NON-BLOCKING** — context/tenant/coordinate/provenance hardening |
 | 14 | `P4-R0` | **DEFERRED / NON-BLOCKING** — only for an admitted hard-crash claim |
-| 15 | `P5` | **ADMISSION UNBLOCKED; NOT STARTED** — no future-hardening blocker |
+| 15 | `P5` | **ADMISSION UNBLOCKED; P5-0 ENTRY HARDENING IN PROGRESS** — P5-1 not started |
 
 `P0-A5` and the P4-required P0-B behavior are complete. P4-G1–G3 remain retained
 foundations; P4-G4–G6 contributed only their MVP subsets through P4-C3–C5.
@@ -561,3 +561,12 @@ to the one-writer/one-authority migration rules above.
 The pre-consolidation 3,203-line queue is preserved at
 [current-implementation-plan-pre-consolidation.md](archive/superseded-2026-08-05/status-snapshots/current-implementation-plan-pre-consolidation.md).
 It is implementation history, not the active scheduler.
+## 2026-08-07 P5-0 entry-hardening status
+
+P5-0A and P5-0B are implemented: pre-dispatch trace/phase linearization is
+owned by `RuntimeCommitter`, and product transitions use the closed typed delta
+family documented in [the review record](reviews/2026-08-07-p5-entry-hardening.md).
+P5-0C/0D remain entry-hardening work in progress: the aggregate read set and
+compatibility inventory have been narrowed, but frozen per-stage views,
+committer-owned route calibration, and complete compatibility isolation are
+deferred. P5-R1 through P5-R4 remain unstarted.

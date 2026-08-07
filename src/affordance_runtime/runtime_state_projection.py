@@ -11,7 +11,7 @@ from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.perception_phase import PerceptionStateView
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import semantic_progress_fingerprint
-from affordance_runtime.stage_protocol import RuntimeStateSnapshot
+from affordance_runtime.stage_protocol import ProgressDelta, RuntimeStateSnapshot
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
@@ -30,6 +30,30 @@ class RuntimeBudgetView(Protocol):
     def max_effectful_actions(self) -> int: ...
     @property
     def max_active_perception_observations(self) -> int: ...
+
+
+def progress_delta_from_projection(state: object) -> ProgressDelta:
+    """Convert the legacy detached calculator result into a closed delta."""
+
+    values = state.delta_values()  # type: ignore[attr-defined]
+    return ProgressDelta(
+        phase=RuntimeStep(values["phase"]) if "phase" in values else None,
+        latest_verification=values.get("latest_verification"),
+        latest_effect_settlement=values.get("latest_effect_settlement"),
+        task_progress=values.get("task_progress"),
+        replan_count=values.get("replan_count"),
+        final_result=values.get("final_result"),
+        latest_progress_guard=values.get("latest_progress_guard"),
+        recent_action_outcomes=values.get("recent_action_outcomes"),
+        latest_probe_receipt=values.get("latest_probe_receipt"),
+        has_latest_effect_settlement="latest_effect_settlement" in values,
+        has_task_progress="task_progress" in values,
+        has_replan_count="replan_count" in values,
+        has_final_result="final_result" in values,
+        has_latest_progress_guard="latest_progress_guard" in values,
+        has_recent_action_outcomes="recent_action_outcomes" in values,
+        has_latest_probe_receipt="latest_probe_receipt" in values,
+    )
 
 
 def perception_state_view(
@@ -88,9 +112,54 @@ def perception_state_view(
 
 
 def runtime_state_snapshot(state: StateKernel) -> RuntimeStateSnapshot:
+    """Build an explicit detached read set; do not expose the aggregate internals."""
     return RuntimeStateSnapshot(
-        MappingProxyType(deepcopy(vars(state))),
-        deepcopy(state),
+        MappingProxyType(
+            deepcopy(
+                {
+                    "task_id": state.task_id,
+                    "goal": state.goal,
+                    "constraints": dict(state.constraints),
+                    "task_plan": state.task_plan,
+                    "task_progress": state.task_progress,
+                    "phase": state.phase,
+                    "version": state.version,
+                    "current_observation_ref": state.current_observation_ref,
+                    "current_observation_environment_revision": state.current_observation_environment_revision,
+                    "current_observation_page_revision": state.current_observation_page_revision,
+                    "current_snapshot_id": state.current_snapshot_id,
+                    "last_receipt": state.last_receipt,
+                    "step_count": state.step_count,
+                    "effectful_action_count": state.effectful_action_count,
+                    "observation_count": state.observation_count,
+                    "active_perception_count": state.active_perception_count,
+                    "recovery_count": state.recovery_count,
+                    "replan_count": state.replan_count,
+                    "current_failure": state.current_failure,
+                    "current_disproved_assumption": state.current_disproved_assumption,
+                    "current_contract": state.current_contract,
+                    "current_execution_attempt": state.current_execution_attempt,
+                    "current_recovery_decision": state.current_recovery_decision,
+                    "current_recovery_outcome": state.current_recovery_outcome,
+                    "attempted_recovery_strategy_ids": frozenset(state.attempted_recovery_strategy_ids),
+                    "current_excluded_candidates": {
+                        key: frozenset(values) for key, values in state.current_excluded_candidates.items()
+                    },
+                    "current_grounding_fallback": {
+                        key: dict(value) for key, value in state.current_grounding_fallback.items()
+                    },
+                    "uncertain_external_effects": tuple(state.uncertain_external_effects),
+                    "evidence_gaps": tuple(state.evidence_gaps),
+                    "recent_action_outcomes": state.recent_action_outcomes,
+                    "latest_verification": state.latest_verification,
+                    "latest_effect_settlement": state.latest_effect_settlement,
+                    "latest_probe_receipt": state.latest_probe_receipt,
+                    "active_probe_plan": state.active_probe_plan,
+                    "perception_resolution": state.perception_resolution,
+                    "final_result": dict(state.final_result),
+                }
+            )
+        ),
     )
 
 
