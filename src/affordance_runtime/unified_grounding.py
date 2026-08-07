@@ -27,6 +27,7 @@ from affordance_runtime.grounding import (
     WoTGroundingPayload,
 )
 from affordance_runtime.route_calibration import RouteCalibrator, RouteScope
+from affordance_runtime.routing_policy import RouteContext, RoutePolicy, WeightedRoutePolicy
 from affordance_runtime.unified_observation import CanonicalTarget, ConflictStatus, UnifiedObservation
 
 
@@ -300,6 +301,7 @@ class UnifiedRoutePlanner:
     cost_weight: float = 0.2
     verification_weight: float = 0.4
     calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
+    policy: RoutePolicy | None = None
 
     def plan(
         self,
@@ -420,10 +422,6 @@ class UnifiedRoutePlanner:
             if candidate.source in requirements.preferred_sources
             else len(requirements.preferred_sources)
         )
-        confidence_component = 1.0 - candidate.confidence
-        latency_component = min(candidate.expected_latency_ms / max(requirements.latency_budget_ms, 1), 1.0)
-        cost_denominator = requirements.cost_budget if requirements.cost_budget > 0 else 1.0
-        cost_component = min(candidate.expected_cost / cost_denominator, 1.0)
         observed_failure = None
         if verifier_kinds:
             scope = RouteScope(
@@ -434,21 +432,20 @@ class UnifiedRoutePlanner:
                 verifier_kinds=verifier_kinds,
             )
             observed_failure = self.calibrator.failure_component(scope)
-        verification_component = 0.5 if observed_failure is None else observed_failure
-        score = (
-            self.confidence_weight * confidence_component
-            + self.latency_weight * latency_component
-            + self.cost_weight * cost_component
-            + self.verification_weight * verification_component
-            + preferred_rank * 0.01
+        policy = self.policy or WeightedRoutePolicy(
+            confidence_weight=self.confidence_weight,
+            latency_weight=self.latency_weight,
+            cost_weight=self.cost_weight,
+            verification_weight=self.verification_weight,
         )
-        return RouteScore(
-            candidate.candidate_id,
-            round(score, 6),
-            round(confidence_component, 6),
-            round(latency_component, 6),
-            round(cost_component, 6),
-            round(verification_component, 6),
+        return policy.score(
+            candidate,
+            RouteContext(
+                latency_budget_ms=requirements.latency_budget_ms,
+                cost_budget=requirements.cost_budget,
+                preferred_rank=preferred_rank,
+                verified_failure_rate=observed_failure,
+            ),
         )
 
 

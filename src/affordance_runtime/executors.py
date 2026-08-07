@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from time import monotonic, perf_counter
 from typing import Any, Callable, Protocol
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from affordance_runtime.adapters.wot_security import SecurityScheme, build_auth
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 
@@ -48,6 +51,7 @@ class VisualPointer(Protocol):
 
 
 SendFn = Callable[..., tuple[int, Any]]
+CredentialProvider = Callable[[str], str | None]
 
 
 @dataclass(frozen=True)
@@ -387,26 +391,43 @@ class WotExecutor:
     adapter_capabilities = provider_capabilities
     send: SendFn = _stdlib_send
     gate: MinIntervalGate = field(default_factory=MinIntervalGate)
+    security_schemes: Mapping[str, SecurityScheme] = field(default_factory=dict)
+    credential_provider: CredentialProvider | None = None
     backend: str = "wot"
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         started_at = perf_counter()
+        credential: str | None = None
         try:
             href = str(contract.locator.get("href") or "")
             if not href:
                 raise ValueError("WoT contract requires locator.href")
             method = str(contract.locator.get("method") or "GET").upper()
             thing_id = str(contract.locator.get("thing_id") or contract.affordance_id)
-            min_interval_ms = float(contract.parameters.get("min_interval_ms", 0.0))
+            declared_interval_ms = float(contract.locator.get("min_interval_ms", 0.0))
+            requested_interval_ms = float(contract.parameters.get("min_interval_ms", 0.0))
+            min_interval_ms = max(declared_interval_ms, requested_interval_ms)
             self.gate.check(thing_id, min_interval_ms)
 
             payload = thaw_json_at_external_boundary(
                 contract.parameters.get("payload", contract.parameters.get("value"))
             )
             headers = dict(thaw_json_at_external_boundary(contract.parameters.get("headers") or {}))
+            security_ref = str(contract.locator.get("security_scheme_ref") or "")
+            request_href = href
+            if security_ref:
+                scheme = self.security_schemes.get(security_ref)
+                if scheme is None:
+                    raise ValueError(f"unknown WoT security scheme ref {security_ref!r}")
+                credential = self.credential_provider(security_ref) if self.credential_provider is not None else None
+                if scheme.requires_credential and not credential:
+                    raise ValueError(f"credential unavailable for WoT security scheme ref {security_ref!r}")
+                auth_headers, auth_query = build_auth(scheme, credential)
+                headers.update(auth_headers)
+                request_href = _append_query(href, auth_query)
             status, response = self.send(
                 method,
-                href,
+                request_href,
                 json=None if method == "GET" else payload,
                 headers=headers,
                 timeout_s=contract.timeout_ms / 1_000.0,
@@ -419,7 +440,12 @@ class WotExecutor:
                 backend=self.backend,
                 started_at=started_at,
                 success=True,
-                evidence={"method": method, "href": href, "status": status, "response": response},
+                evidence={
+                    "method": method,
+                    "href": href,
+                    "status": status,
+                    "response": _redact_credential(response, credential),
+                },
             )
         except TimeoutError as exc:
             return _receipt(
@@ -429,7 +455,7 @@ class WotExecutor:
                 started_at=started_at,
                 success=False,
                 error_code=RuntimeErrorCode.EXECUTION_TIMEOUT,
-                message=str(exc),
+                message=str(_redact_credential(str(exc), credential)),
             )
         except Exception as exc:
             return _receipt(
@@ -439,8 +465,29 @@ class WotExecutor:
                 started_at=started_at,
                 success=False,
                 error_code=RuntimeErrorCode.EXECUTION_FAILED,
-                message=f"{type(exc).__name__}: {exc}",
+                message=f"{type(exc).__name__}: {_redact_credential(str(exc), credential)}",
             )
+
+
+def _append_query(url: str, values: Mapping[str, str]) -> str:
+    if not values:
+        return url
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    query.extend(values.items())
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _redact_credential(value: Any, credential: str | None) -> Any:
+    if not credential:
+        return value
+    if isinstance(value, str):
+        return value.replace(credential, "[REDACTED]")
+    if isinstance(value, Mapping):
+        return {key: _redact_credential(item, credential) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact_credential(item, credential) for item in value]
+    return value
 
 
 @dataclass

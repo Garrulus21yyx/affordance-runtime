@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -64,6 +65,12 @@ class ConformanceSurfaceResult:
     event_types: list[str]
     trace_path: str
     screenshot_refs: list[str]
+    task_success: bool = False
+    observation_count: int = 0
+    model_calls: int = 0
+    route_selected: str = ""
+    fallback_count: int = 0
+    latency_ms: float = 0.0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "contract_capabilities", FrozenSequence(self.contract_capabilities))
@@ -246,6 +253,7 @@ def run_cross_surface_conformance(
     browser_versions: set[str] = set()
 
     for surface in ("dom", "visual", "wot"):
+        surface_started_at = perf_counter()
         _post_json(f"{oracle_url.rstrip('/')}/reset", {})
         run_id = f"cross-surface-{surface}"
         artifact_store = ArtifactStore(output_dir / "runs")
@@ -329,6 +337,12 @@ def run_cross_surface_conformance(
                     for ref in node.payload.get("artifact_refs", [])
                     if ref.endswith(".png")
                 ],
+                task_success=result.status == RuntimeStep.DONE and bool(oracle["state"]["enabled"]),
+                observation_count=result.state.observation_count,
+                model_calls=sum(bool(node.payload.get("model_call")) for node in result.trace.nodes),
+                route_selected=contract.backend if contract else "",
+                fallback_count=max(0, sum(node.kind == "RouteSelected" for node in result.trace.nodes) - 1),
+                latency_ms=round((perf_counter() - surface_started_at) * 1_000.0, 3),
             )
         )
 
@@ -336,6 +350,8 @@ def run_cross_surface_conformance(
     for item in results:
         if item.status != RuntimeStep.DONE.value or not item.oracle_enabled:
             errors.append(f"{item.surface} did not reach the shared oracle")
+        if not item.task_success or item.observation_count < 2:
+            errors.append(f"{item.surface} lacks task-success or fresh-observation metrics")
         if item.verification_status != "passed" or "PostActionEvaluated" not in item.event_types:
             errors.append(f"{item.surface} lacks independent verifier evidence")
         if item.backend != item.surface:

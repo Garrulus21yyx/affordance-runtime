@@ -212,6 +212,8 @@ def test_conformance_acceptance_uses_current_action_contract_schema() -> None:
     )
 
     assert _preserves_shared_contract_envelope(item)
+    assert item.model_calls == 0
+    assert item.fallback_count == 0
     assert not _preserves_shared_contract_envelope(item.__class__(**{**item.__dict__, "contract_schema": "1.0"}))
 
 

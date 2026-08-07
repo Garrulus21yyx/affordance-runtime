@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import html
+import io
 import json
 from dataclasses import dataclass
 from typing import Any
 
-from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
+from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface
+from affordance_runtime.immutable import FrozenSequence
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,41 @@ class BoundingBox:
     @property
     def center(self) -> tuple[int, int]:
         return self.x + self.w // 2, self.y + self.h // 2
+
+    @property
+    def xywh(self) -> tuple[int, int, int, int]:
+        return self.x, self.y, self.w, self.h
+
+    def __post_init__(self) -> None:
+        if self.x < 0 or self.y < 0 or self.w <= 0 or self.h <= 0:
+            raise ValueError("visual bbox requires a non-negative origin and positive size")
+
+
+@dataclass(frozen=True)
+class VisualMark:
+    mark_id: str
+    label: str
+    bbox: BoundingBox
+    confidence: float
+    screenshot_ref: str
+    snapshot_id: str
+    page_revision: str
+    target_fingerprint: str
+
+    def __post_init__(self) -> None:
+        if not self.mark_id or not 0 <= self.confidence <= 1:
+            raise ValueError("visual mark requires an id and confidence within [0, 1]")
+
+
+@dataclass(frozen=True)
+class SomOverlay:
+    marks: tuple[VisualMark, ...]
+    svg: str
+    screenshot_ref: str
+    snapshot_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "marks", FrozenSequence(self.marks))
 
 
 class SomAdapter:
@@ -44,6 +82,7 @@ class SomAdapter:
             if len(bbox) != 4:
                 raise ValueError(f"bbox must be [x, y, w, h], got {bbox!r}")
             x, y, w, h = bbox
+            BoundingBox(x, y, w, h)
             mark_id = f"M{mark_index}"
             action = str(region.get("action", "click"))
             target_fingerprint = "sha256:" + hashlib.sha256(
@@ -82,7 +121,91 @@ class SomAdapter:
         return affordances
 
     def select(self, affordances: list[Affordance], mark_id: str) -> Affordance:
+        """Look up a mark only; this method does not authorize execution."""
+
         for affordance in affordances:
             if affordance.locator.get("mark_id") == mark_id:
                 return affordance
         raise KeyError(f"mark_id {mark_id!r} not present")
+
+    def select_current(
+        self,
+        affordances: list[Affordance],
+        mark_id: str,
+        observation: Observation,
+    ) -> Affordance:
+        affordance = self.select(affordances, mark_id)
+        if not affordance.lease.is_current(observation, affordance_id=affordance.id):
+            raise ValueError(f"mark_id {mark_id!r} is stale for the current observation")
+        return affordance
+
+    def marks_from_affordances(self, affordances: list[Affordance]) -> tuple[VisualMark, ...]:
+        marks: list[VisualMark] = []
+        for affordance in affordances:
+            mark_id = affordance.locator.get("mark_id")
+            raw_bbox = affordance.locator.get("bbox")
+            if not mark_id or not isinstance(raw_bbox, (list, tuple)) or len(raw_bbox) != 4:
+                continue
+            bbox = BoundingBox(*(int(value) for value in raw_bbox))
+            marks.append(
+                VisualMark(
+                    mark_id=str(mark_id),
+                    label=affordance.label,
+                    bbox=bbox,
+                    confidence=affordance.confidence,
+                    screenshot_ref=str(affordance.locator.get("screenshot_ref") or ""),
+                    snapshot_id=affordance.lease.snapshot_id,
+                    page_revision=affordance.lease.page_revision,
+                    target_fingerprint=affordance.lease.target_fingerprint,
+                )
+            )
+        return tuple(marks)
+
+    def render_overlay_svg(
+        self,
+        affordances: list[Affordance],
+        *,
+        width: int,
+        height: int,
+    ) -> SomOverlay:
+        if width <= 0 or height <= 0:
+            raise ValueError("overlay dimensions must be positive")
+        marks = self.marks_from_affordances(affordances)
+        identities = {(mark.screenshot_ref, mark.snapshot_id) for mark in marks}
+        if len(identities) > 1:
+            raise ValueError("overlay marks must belong to one screenshot observation")
+        elements: list[str] = []
+        for mark in marks:
+            x, y, box_width, box_height = mark.bbox.xywh
+            mark_id = html.escape(mark.mark_id, quote=True)
+            elements.append(
+                f'<rect x="{x}" y="{y}" width="{box_width}" height="{box_height}" '
+                'fill="none" stroke="#e2001a" stroke-width="2"/>'
+                f'<text x="{x + 2}" y="{y + 14}" fill="#e2001a" '
+                f'font-family="monospace" font-size="13">{mark_id}</text>'
+            )
+        screenshot_ref, snapshot_id = next(iter(identities), ("", ""))
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+            + "".join(elements)
+            + "</svg>"
+        )
+        return SomOverlay(marks, svg, screenshot_ref, snapshot_id)
+
+
+def annotate_screenshot(screenshot_bytes: bytes, marks: tuple[VisualMark, ...]) -> bytes:
+    """Return PNG bytes with mark boxes; Pillow remains an optional dependency."""
+
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return screenshot_bytes
+    image = Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    for mark in marks:
+        x, y, width, height = mark.bbox.xywh
+        draw.rectangle((x, y, x + width, y + height), outline=(0, 200, 0), width=2)
+        draw.text((x + 2, y + 2), mark.mark_id, fill=(0, 200, 0))
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()

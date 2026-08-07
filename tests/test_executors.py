@@ -1,6 +1,7 @@
 from dataclasses import replace
 from typing import Any
 
+from affordance_runtime.adapters.wot_security import SecurityScheme
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -233,6 +234,95 @@ def test_wot_executor_uses_contract_form_without_hardcoding() -> None:
     assert receipt.success
     assert calls[0][0:2] == ("POST", "http://fixture/lamp/on")
     assert calls[0][2]["json"] == {"power": "on"}
+
+
+def test_wot_executor_late_binds_header_credential_without_recording_it() -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def send(method: str, url: str, **kwargs: Any) -> tuple[int, Any]:
+        calls.append((method, url, kwargs))
+        return 200, {"echo": "runtime-only-secret"}
+
+    receipt = WotExecutor(
+        send=send,
+        security_schemes={"api": SecurityScheme("api", "apikey", "header", "X-API-Key")},
+        credential_provider=lambda scheme_ref: "runtime-only-secret" if scheme_ref == "api" else None,
+    ).execute(
+        _contract(
+            backend="wot",
+            action="invoke",
+            locator={
+                "thing_id": "lamp",
+                "href": "http://fixture/lamp/on",
+                "method": "POST",
+                "security_scheme_ref": "api",
+            },
+        ),
+        Observation(environment_revision="rev-1"),
+    )
+
+    assert receipt.success
+    assert calls[0][2]["headers"] == {"X-API-Key": "runtime-only-secret"}
+    assert receipt.evidence["response"] == {"echo": "[REDACTED]"}
+    assert "runtime-only-secret" not in repr(receipt)
+
+
+def test_wot_executor_late_binds_query_credential_but_redacts_evidence() -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def send(method: str, url: str, **kwargs: Any) -> tuple[int, Any]:
+        calls.append((method, url, kwargs))
+        return 200, {}
+
+    receipt = WotExecutor(
+        send=send,
+        security_schemes={"api": SecurityScheme("api", "apikey", "query", "key")},
+        credential_provider=lambda _scheme_ref: "runtime-only-secret",
+    ).execute(
+        _contract(
+            backend="wot",
+            action="invoke",
+            locator={
+                "thing_id": "lamp",
+                "href": "http://fixture/lamp/on?mode=fast",
+                "method": "POST",
+                "security_scheme_ref": "api",
+            },
+        ),
+        Observation(environment_revision="rev-1"),
+    )
+
+    assert receipt.success
+    assert calls[0][1] == "http://fixture/lamp/on?mode=fast&key=runtime-only-secret"
+    assert receipt.evidence["href"] == "http://fixture/lamp/on?mode=fast"
+    assert "runtime-only-secret" not in repr(receipt)
+
+
+def test_wot_executor_redacts_query_credential_from_transport_errors() -> None:
+    def send(_method: str, url: str, **_kwargs: Any) -> tuple[int, Any]:
+        raise RuntimeError(f"request failed for {url}")
+
+    receipt = WotExecutor(
+        send=send,
+        security_schemes={"api": SecurityScheme("api", "apikey", "query", "key")},
+        credential_provider=lambda _scheme_ref: "runtime-only-secret",
+    ).execute(
+        _contract(
+            backend="wot",
+            action="invoke",
+            locator={
+                "thing_id": "lamp",
+                "href": "http://fixture/lamp/on",
+                "method": "POST",
+                "security_scheme_ref": "api",
+            },
+        ),
+        Observation(environment_revision="rev-1"),
+    )
+
+    assert not receipt.success
+    assert "runtime-only-secret" not in receipt.message
+    assert "[REDACTED]" in receipt.message
 
 
 def test_executor_router_does_not_implicitly_fallback() -> None:
