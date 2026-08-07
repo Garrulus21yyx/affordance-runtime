@@ -13,8 +13,8 @@ from affordance_runtime.contracts import (
     TransportState,
 )
 from affordance_runtime.environment_port import ObservationRequest
-from affordance_runtime.execution import ActionBatch, execute_action_batch
-from affordance_runtime.testing import StaticEnvironment
+from affordance_runtime.execution.batch import ActionBatch, execute_action_batch
+from affordance_runtime.testing import LegacyStaticEnvironment
 
 
 def _action(identity: str, *, backend: str = "dom", action: str = "click") -> ActionContract:
@@ -45,8 +45,8 @@ def _receipt(identity: str, *, success: bool = True, uncertain: bool = False) ->
     )
 
 
-def _environment(receipts: list[ExecutionReceipt]) -> StaticEnvironment:
-    return StaticEnvironment(
+def _environment(receipts: list[ExecutionReceipt]) -> LegacyStaticEnvironment:
+    return LegacyStaticEnvironment(
         [Observation("rev-1", snapshot_id="snap-1", page_revision="page-1")],
         receipts,
     )

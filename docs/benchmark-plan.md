@@ -84,3 +84,20 @@ No “cross-platform generalization” claim is allowed until all required surfa
 variants complete positively under the same policy/evaluators and adapter-only
 variation is demonstrated. A shared failure or shared entry into the same old
 pipeline is not success evidence.
+
+## 6. External benchmark admission
+
+Full external agent benchmarks are currently **BLOCKED**. Admission requires:
+
+1. positive new-loop DOM, Visual, and WoT verticals;
+2. the same TaskGoal, policy, evaluators, and semantic actions with adapter-only variation;
+3. runtime-owned ActionSpace and evaluator-owned completion;
+4. stale zero-call, fresh observation, and SENT_UNKNOWN no-retry;
+5. P5-D confirmation/unknown-effect core;
+6. a 100% internal DOM/Visual/WoT matrix with zero forbidden side effects and duplicate unknown attempts.
+
+The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
+for harness and loop-contract validation, not a generalization claim.
+WebArena/WorkArena wait for an internal 20–50 turn case. OSWorld waits for
+AX/Visual/CLI/app-switch contracts. Component tests and the real local DOM
+vertical continue to run before this admission gate.

@@ -1,176 +1,249 @@
 import asyncio
 from dataclasses import dataclass
-from time import time
 
 from affordance_runtime.agent import (
-    ActionEvaluation,
     AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
-    LoopDecision,
-    LoopDecisionKind,
-    TaskGoal,
+    Finish,
+    Reobserve,
+    SelectAction,
+    Stop,
 )
-from affordance_runtime.agent.types import AgentTurn
-from affordance_runtime.contracts import (
-    ActionContract,
-    ExecutionReceipt,
-    Observation,
-    ProviderAck,
-    TransportState,
+from affordance_runtime.evaluation import (
+    ActionEvaluation,
+    ActionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
 )
+from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
+from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
+from affordance_runtime.world import (
+    ActionBinding,
+    ActionRisk,
+    CoverageState,
+    SemanticTarget,
+    WorldObservation,
+)
 
 
-def _observation(snapshot_id: str, power: str) -> Observation:
-    return Observation(
-        "rev-1",
-        snapshot_id=snapshot_id,
-        page_revision="page-1",
-        target_fingerprints={"lamp": "fp-lamp"},
-        metadata={"power": power},
+def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.LOW) -> WorldObservation:
+    target = SemanticTarget(
+        "shared-toggle",
+        "button",
+        "Shared state enabled" if enabled else "Enable shared state",
+        {"enabled": enabled},
+    )
+    binding = ActionBinding(
+        f"binding:{observation_id}",
+        observation_id,
+        target.target_id,
+        "dom",
+        "dom",
+        ("click",),
+        {"selector": "#shared"},
+        risk=risk,
+    )
+    return WorldObservation(
+        observation_id,
+        (target,),
+        (),
+        (binding,),
+        {"dom": CoverageState.COMPLETE},
     )
 
 
-def _contract(snapshot_id: str = "snap-1") -> ActionContract:
-    return ActionContract(
-        id="contract-lamp-on",
-        intent="turn on lamp",
-        affordance_id="lamp",
-        action="invoke",
-        backend="wot",
-        environment_revision="rev-1",
-        locator={"thing_id": "lamp", "href": "http://fixture/lamp/on"},
-        snapshot_id=snapshot_id,
-        page_revision="page-1",
-        target_fingerprint="fp-lamp",
-        target_fingerprint_key="lamp",
-        expires_at_s=time() + 60,
+def _task() -> TaskGoal:
+    return TaskGoal(
+        "enable-shared",
+        "Enable shared state",
+        allowed_effects=("shared_state_enabled",),
+        success_criteria=({"target_id": "shared-toggle", "state": {"enabled": True}},),
+        risk_profile=RiskProfile.LOW,
     )
 
 
 @dataclass
 class ScriptedPolicy:
-    decisions: list[LoopDecision]
+    decisions: list[object]
 
-    async def decide(
-        self,
-        _goal: TaskGoal,
-        _observation: Observation,
-        _recent_turns: tuple[AgentTurn, ...],
-    ) -> LoopDecision:
-        return self.decisions.pop(0)
-
-
-class PowerEvaluator:
-    async def evaluate(
-        self,
-        _goal: TaskGoal,
-        _before: Observation,
-        _receipt: ExecutionReceipt,
-        after: Observation,
-    ) -> ActionEvaluation:
-        enabled = after.metadata.get("power") == "on"
-        return ActionEvaluation(enabled, enabled, "lamp is on" if enabled else "lamp remains off")
+    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+        del task, world, recent_turns, optional_plan
+        decision = self.decisions.pop(0)
+        if decision == "first":
+            return SelectAction(action_space.options[0].action_id)
+        return decision
 
 
-def _sent_unknown() -> ExecutionReceipt:
-    return ExecutionReceipt(
-        "contract-lamp-on",
-        "wot",
-        False,
-        "rev-1",
-        "rev-1",
-        10,
-        transport_state=TransportState.SENT_UNKNOWN,
-        provider_ack=ProviderAck.UNKNOWN,
-    )
+class SharedTaskEvaluator:
+    async def evaluate(self, task, observation):
+        del task
+        enabled = bool(observation.targets[0].state.get("enabled"))
+        return TaskEvaluation(
+            TaskEvaluationStatus.COMPLETE if enabled else TaskEvaluationStatus.INCOMPLETE,
+            "shared state is enabled" if enabled else "shared state is disabled",
+        )
 
 
-def test_agent_episode_sent_unknown_reobserves_and_accepts_verified_effect_without_retry() -> None:
+class SharedActionEvaluator:
+    async def evaluate(self, task, before, intent, result, after):
+        del task, intent, result
+        changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
+        return ActionEvaluation(
+            ActionEvaluationStatus.VERIFIED if changed else ActionEvaluationStatus.NOT_VERIFIED,
+            "state changed" if changed else "state did not change",
+        )
+
+
+def _loop(policy) -> AgentLoop:
+    return AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+
+
+def _sent(status: DispatchStatus = DispatchStatus.SENT, success: bool = True) -> ActionResult:
+    return ActionResult("*", status, "dom", success)
+
+
+def test_initial_satisfaction_is_zero_execution_done() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", True)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([]))).run(environment, _task())
+        assert result.status == AgentLoopStatus.DONE
+        assert result.execution_count == 0
+        assert result.observation_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_sent_unknown_confirmed_effect_executes_once_and_completes() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment(
-            [_observation("snap-1", "off"), _observation("snap-2", "on")],
-            [_sent_unknown()],
+            [_world("obs-1", False), _world("obs-2", True)],
+            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
-        policy = ScriptedPolicy([LoopDecision(LoopDecisionKind.EXECUTE, "invoke current WoT binding", _contract())])
-        result = await AgentEpisodeRunner(AgentLoop(policy, PowerEvaluator())).run(
-            environment,
-            TaskGoal("lamp-on", "Turn on the lamp"),
-        )
-
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1
         assert result.observation_count == 2
-        assert result.turns[0].receipt.transport_state == TransportState.SENT_UNKNOWN
 
     asyncio.run(scenario())
 
 
-def test_agent_loop_does_not_blindly_retry_sent_unknown_when_effect_is_absent() -> None:
+def test_sent_unknown_unconfirmed_effect_waits_without_replay() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment(
-            [_observation("snap-1", "off"), _observation("snap-2", "off")],
-            [_sent_unknown()],
+            [_world("obs-1", False), _world("obs-2", False)],
+            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
-        policy = ScriptedPolicy(
-            [
-                LoopDecision(LoopDecisionKind.EXECUTE, "invoke current WoT binding", _contract()),
-                LoopDecision(
-                    LoopDecisionKind.ASK_USER,
-                    "effect remains uncertain after fresh observation",
-                    user_prompt="The lamp state is still uncertain. Continue?",
-                ),
-            ]
-        )
-        result = await AgentEpisodeRunner(AgentLoop(policy, PowerEvaluator())).run(
-            environment,
-            TaskGoal("lamp-on", "Turn on the lamp"),
-        )
-
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.execution_count == 1
-        assert len(environment.executed_contracts) == 1
+        assert len(environment.executed_requests) == 1
 
     asyncio.run(scenario())
 
 
-def test_agent_loop_blocks_stale_contract_before_environment_execution() -> None:
-    async def scenario() -> None:
-        environment = StaticEnvironment([_observation("snap-2", "off")])
-        policy = ScriptedPolicy(
-            [
-                LoopDecision(LoopDecisionKind.EXECUTE, "stale proposal", _contract("snap-1")),
-                LoopDecision(LoopDecisionKind.STOP, "no current binding remains"),
-            ]
-        )
-        result = await AgentEpisodeRunner(AgentLoop(policy, PowerEvaluator())).run(
-            environment,
-            TaskGoal("lamp-on", "Turn on the lamp"),
-        )
+def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> None:
+    async def scenario(decision) -> AgentLoopStatus:
+        environment = StaticEnvironment([_world("obs-1", False)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([decision]))).run(environment, _task())
+        assert result.execution_count == 0
+        return result.status
 
+    assert asyncio.run(scenario(SelectAction("not-offered"))) == AgentLoopStatus.BLOCKED
+    assert asyncio.run(scenario(SelectAction("not-offered", {"selector": "#other"}))) == AgentLoopStatus.BLOCKED
+
+
+def test_selector_injection_on_offered_action_is_rejected() -> None:
+    class InjectingPolicy:
+        async def decide(self, task, world, action_space, recent_turns, optional_plan):
+            del task, world, recent_turns, optional_plan
+            return SelectAction(action_space.options[0].action_id, {"selector": "#other"})
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", False)])
+        result = await AgentEpisodeRunner(_loop(InjectingPolicy())).run(environment, _task())
+        assert result.status == AgentLoopStatus.BLOCKED
+        assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", False)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([Finish({"claim": "done"})]))).run(
+            environment, _task()
+        )
+        assert result.status != AgentLoopStatus.DONE
+        assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_transport_success_without_state_change_is_not_done() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [_world("obs-1", False), _world("obs-2", False)],
+            [_sent()],
+        )
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", Stop("no progress")]))).run(
+            environment, _task()
+        )
+        assert result.status == AgentLoopStatus.FAILED
+        assert result.execution_count == 1
+        assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.INCOMPLETE
+
+    asyncio.run(scenario())
+
+
+def test_reused_post_action_observation_is_rejected() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", False), _world("obs-1", True)], [_sent()])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        assert result.status == AgentLoopStatus.FAILED
+        assert "reused" in result.message
+
+    asyncio.run(scenario())
+
+
+def test_non_low_risk_action_waits_for_confirmation_with_zero_execution() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", False, risk=ActionRisk.MEDIUM)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        assert result.status == AgentLoopStatus.WAITING_CONFIRMATION
+        assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
+    class StaleEnvironment(StaticEnvironment):
+        def is_current(self, request):
+            del request
+            return False
+
+    async def scenario() -> None:
+        environment = StaleEnvironment([_world("obs-1", False), _world("obs-2", False)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", Stop("still stale")]))).run(
+            environment, _task()
+        )
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 0
-        assert environment.executed_contracts == []
+        assert environment.executed_requests == []
         assert result.observation_count == 2
 
     asyncio.run(scenario())
 
 
-def test_agent_loop_refuses_to_evaluate_reused_post_action_snapshot() -> None:
+def test_recent_turns_are_bounded() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_observation("snap-1", "off"), _observation("snap-1", "on")],
-            [_sent_unknown()],
+        observations = [_world(f"obs-{index}", False) for index in range(20)]
+        decisions = [Reobserve("refresh") for _ in range(15)] + [Stop("enough")]
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(decisions))).run(
+            StaticEnvironment(observations),
+            _task(),
         )
-        policy = ScriptedPolicy([LoopDecision(LoopDecisionKind.EXECUTE, "invoke binding", _contract())])
-        result = await AgentEpisodeRunner(AgentLoop(policy, PowerEvaluator())).run(
-            environment,
-            TaskGoal("lamp-on", "Turn on the lamp"),
-        )
-
-        assert result.status == AgentLoopStatus.FAILED
-        assert "fresh post-action observation" in result.message
-        assert result.turns[0].evaluation is None
+        assert len(result.turns) == 12
 
     asyncio.run(scenario())

@@ -62,19 +62,18 @@ or act across environments more effectively.
 
 ## Current implementation truth
 
-The code at baseline
-`agent/migrate-runtime-components@8d7cfd6b7d43c72f9b45bb4144a62553d90c23a8`
-still uses the older TaskSpec/TaskPlan/ActionContract/StateKernel/
-RuntimeCommitter control path. It also contains the most valuable foundations
-for the new target: `UnifiedObservation`, multi-surface grounding candidates,
-semantic entity fusion, backend-neutral actions, executor routing, active
-perception, fresh post-action observation, and independent evaluation.
+The older TaskSpec/TaskPlan/ActionContract/StateKernel/RuntimeCommitter control
+path remains the default baseline. A non-default target path now implements the
+strong TaskGoal and world/action/evaluation contracts, a minimum Unified World
+Interface, and one real-browser DOM short loop. Visual/WoT target verticals and
+default cutover remain pending. The repository also retains valuable grounding,
+fusion, routing, active-perception, and independent-evaluation foundations.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)
 for exact code truth and [Current Implementation Plan](docs/current-implementation-plan.md)
-for the completed docs-only consolidation slice and next, not-yet-started code work.
+for exact slice status and the next Visual/WoT vertical work.
 
 ## Correctness invariants retained during simplification
 
@@ -96,12 +95,15 @@ Affordance Runtime—not BrowserGym or another benchmark—is the product.
 Benchmarks evaluate the Runtime and may not provide task IDs, expected answers,
 selectors, coordinates, or fixture semantics to production policy.
 
-The next core benchmark is a positive cross-surface matrix: the same TaskGoal,
+The next internal proof is a positive cross-surface matrix: the same TaskGoal,
 AgentPolicy, semantic action vocabulary, and evaluator must succeed against
 DOM, AX, Visual, SVG, and WoT implementations where only the adapter differs.
 It records task success, steps, observations, model/visual calls, latency,
 fallbacks, route mistakes, confirmations, long-horizon constraint retention,
 batch utilization, and cache-currentness rejection.
+
+Full external agent benchmarks remain blocked until the internal DOM/Visual/WoT
+matrix and P5-D confirmation/unknown-effect gates pass.
 
 ## Documentation
 

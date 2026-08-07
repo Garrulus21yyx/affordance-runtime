@@ -1,5 +1,11 @@
-"""Bounded execution helpers that do not own planning or recovery."""
+"""Target execution contracts; the isolated batch helper is explicit-only."""
 
-from affordance_runtime.execution.batch import ActionBatch, BatchResult, execute_action_batch
+from affordance_runtime.execution.contracts import (
+    ActionError,
+    ActionIntent,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+)
 
-__all__ = ["ActionBatch", "BatchResult", "execute_action_batch"]
+__all__ = ["ActionError", "ActionIntent", "ActionResult", "BoundActionRequest", "DispatchStatus"]

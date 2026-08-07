@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-08-07
+updated: 2026-08-08
 repository: affordance-runtime
 
 authority_precedence:
@@ -108,6 +108,12 @@ reference:
     lifecycle: current
   - role: transactional_baseline_review
     path: docs/reviews/2026-08-07-p5-entry-hardening.md
+    lifecycle: current
+  - role: world_interaction_migration_review_snapshot
+    path: docs/reviews/2026-08-08-world-interaction-migration-review.md
+    lifecycle: current
+  - role: p5_dom_vertical_implementation_record
+    path: docs/reviews/2026-08-08-p5-dom-vertical-slice.md
     lifecycle: current
 
 immutable_records:

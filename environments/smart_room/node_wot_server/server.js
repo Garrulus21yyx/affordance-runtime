@@ -52,8 +52,9 @@ async function guard(thing) {
 
 function applyWrite(thing, key, value) {
   // postcondition_mismatch: accept the call (HTTP 200) but do NOT change state.
-  if (faults[thing] && faults[thing].type === "postcondition_mismatch") return;
+  if (faults[thing] && faults[thing].type === "postcondition_mismatch") return false;
   state[thing][key] = value;
+  return true;
 }
 
 // ── thing factory ─────────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ function buildDefs() {
       writables: { targetTemperature: "targetTemperature" },
       actions: {
         setTargetTemperature: (v) => {
-          applyWrite("thermostat", "targetTemperature", v);
+          if (!applyWrite("thermostat", "targetTemperature", v)) return undefined;
           state.thermostat.currentTemperature = v; // physical convergence
           return undefined;
         },

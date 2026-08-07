@@ -49,12 +49,14 @@ class ThingAffordanceModel:
     security_scheme_ref: str = ""
     rate_limit: RateLimit | None = None
     events: tuple[str, ...] = ()
+    parser_issues: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "affordances", FrozenSequence(self.affordances))
         object.__setattr__(self, "state_sources", freeze_json(self.state_sources))
         object.__setattr__(self, "security_schemes", MappingProxyType(dict(self.security_schemes)))
         object.__setattr__(self, "events", tuple(self.events))
+        object.__setattr__(self, "parser_issues", tuple(self.parser_issues))
 
     @property
     def security(self) -> SecurityScheme | None:
@@ -103,9 +105,11 @@ class WotAdapter:
         thing_security_ref = active_security_ref(
             td.get("security"),
             security_schemes,
-            fallback=next(iter(security_schemes), ""),
         )
         thing_rate_limit = _parse_declared_rate_limit(td)
+        parser_issues: list[str] = []
+        if security_schemes and not thing_security_ref:
+            parser_issues.append("security_scheme_unresolved")
         def lease_for(name: str, form: dict[str, Any]) -> AffordanceLease:
             fingerprint = "sha256:" + hashlib.sha256(
                 json.dumps({"thing_id": thing_id, "name": name, "form": form}, sort_keys=True).encode()
@@ -127,6 +131,10 @@ class WotAdapter:
             read_only = bool(prop.get("readOnly", False))
             read_form = _first_form(forms, ("readproperty", "observeproperty"), allow_implicit=True)
             if read_form is not None and not write_only:
+                read_security_ref = active_security_ref(
+                    read_form.get("security"), security_schemes, fallback=thing_security_ref
+                )
+                read_rate_limit = _parse_declared_rate_limit(read_form) or thing_rate_limit
                 state_sources.append(
                     {
                         "thing_id": thing_id,
@@ -134,6 +142,14 @@ class WotAdapter:
                         "href": _resolve_href(base, str(read_form.get("href") or "")),
                         "method": str(read_form.get("htv:methodName") or _DEFAULT_METHOD["readproperty"]).upper(),
                         "read_only": read_only,
+                        "security_scheme_ref": read_security_ref,
+                        "content_type": read_form.get("contentType", "application/json"),
+                        "property_schema": _schema_of(prop),
+                        **(
+                            {"min_interval_ms": read_rate_limit.min_interval_ms}
+                            if read_rate_limit is not None
+                            else {}
+                        ),
                     }
                 )
             if not read_only:
@@ -183,25 +199,8 @@ class WotAdapter:
         events: list[str] = []
         for event_name, event in (td.get("events") or {}).items():
             events.append(str(event_name))
-            form = _first_form(list(event.get("forms") or []), ("subscribeevent",), allow_implicit=True)
-            if form is not None:
-                affordances.append(
-                    self._affordance(
-                        thing_id,
-                        str(event_name),
-                        "subscribeevent",
-                        form,
-                        base,
-                        lease_for(str(event_name), form),
-                        "event",
-                        input_schema=event.get("data"),
-                        security_schemes=security_schemes,
-                        security_scheme_ref=active_security_ref(
-                            form.get("security"), security_schemes, fallback=thing_security_ref
-                        ),
-                        rate_limit=_parse_declared_rate_limit(form) or thing_rate_limit,
-                    )
-                )
+            # Parsing event descriptions is intentionally separate from
+            # subscription execution. No current executor implements subscribe.
 
         return ThingAffordanceModel(
             thing_id=thing_id,
@@ -213,6 +212,7 @@ class WotAdapter:
             security_scheme_ref=thing_security_ref,
             rate_limit=thing_rate_limit,
             events=tuple(events),
+            parser_issues=tuple(parser_issues),
         )
 
     def _affordance(

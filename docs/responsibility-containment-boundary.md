@@ -66,3 +66,10 @@ Current `ActionContract`, `ProgressStage`, `RecoveryStage`, `StateKernel`, and
 default. New target modules cannot depend on them; temporary projectors point
 legacy → new only. Old owner-specific tests are deleted with the owner after
 default cutover.
+
+The current DOM target path follows this boundary: `DomSurfaceAdapter` owns
+`BrowserSession`; `UnifiedWorldEnvironment` owns adapter composition;
+`ActionSpaceBuilder` owns membership; `ActionBinder` owns the current private
+binding; and `TaskEvaluator` alone returns COMPLETE. `agent/` has no adapter or
+browser import. The old ActionBatch helper remains an explicit compatibility
+edge and is not part of this target call path.

@@ -12,7 +12,8 @@ from affordance_runtime.contracts import (
     TransportState,
 )
 from affordance_runtime.environment_port import ObservationRequest, contract_is_current
-from affordance_runtime.testing import StaleEnvironmentBinding, StaticEnvironment
+from affordance_runtime.testing import LegacyStaticEnvironment as StaticEnvironment
+from affordance_runtime.testing import StaleEnvironmentBinding
 
 
 def _contract() -> ActionContract:

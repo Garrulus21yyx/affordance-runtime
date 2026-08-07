@@ -20,6 +20,17 @@ def test_smart_room_compose_build_contexts_and_runtime_assets_exist() -> None:
     assert "SMART_ROOM_WOT_PORT" in compose
     assert (SMART_ROOM / "node_wot_server" / "server.js").is_file()
     assert (SMART_ROOM / "react_dashboard" / "src" / "App.jsx").is_file()
+    assert (SMART_ROOM / "node_wot_server" / "package-lock.json").is_file()
+    assert (SMART_ROOM / "react_dashboard" / "package-lock.json").is_file()
+    assert "npm ci" in (SMART_ROOM / "node_wot_server" / "Dockerfile").read_text(encoding="utf-8")
+    assert "npm ci" in (SMART_ROOM / "react_dashboard" / "Dockerfile").read_text(encoding="utf-8")
+
+
+def test_thermostat_postcondition_mismatch_keeps_related_state_atomic() -> None:
+    server = (SMART_ROOM / "node_wot_server" / "server.js").read_text(encoding="utf-8")
+
+    assert 'return false;' in server
+    assert 'if (!applyWrite("thermostat", "targetTemperature", v)) return undefined;' in server
 
 
 def test_all_migrated_td_fixtures_parse_into_source_local_models() -> None:

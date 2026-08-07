@@ -83,12 +83,53 @@ def test_wot_adapter_extracts_security_rate_schema_and_events_without_credential
     assert model.security is not None and model.security.field_name == "X-API-Key"
     assert model.rate_limit is not None and model.rate_limit.min_interval_ms == 6_000
     assert model.events == ("overheated",)
+    assert all(item.action != "subscribe" for item in model.affordances)
     assert action.locator["security_scheme_ref"] == "api"
     assert action.state["input_schema"]["maximum"] == 30
     assert action.state["output_schema"]["type"] == "boolean"
     assert action.state["rate_limit"]["min_interval_ms"] == 6_000
     assert action.locator["min_interval_ms"] == 6_000
     assert "credential" not in repr(model)
+
+
+def test_wot_state_source_carries_public_transport_and_schema_metadata() -> None:
+    td = {
+        "id": "sensor",
+        "securityDefinitions": {"api": {"scheme": "apikey"}},
+        "security": "api",
+        "rateLimit": "2/sec",
+        "properties": {
+            "temperature": {
+                "type": "number",
+                "minimum": 10,
+                "forms": [{"href": "http://fixture/temp", "op": "readproperty", "contentType": "application/json"}],
+            }
+        },
+    }
+
+    source = WotAdapter().parse(td, environment_revision="rev-1").state_sources[0]
+
+    assert source["security_scheme_ref"] == "api"
+    assert source["min_interval_ms"] == 500
+    assert source["content_type"] == "application/json"
+    assert source["property_schema"] == {"type": "number", "minimum": 10}
+
+
+def test_wot_does_not_guess_first_security_scheme_when_td_does_not_select_one() -> None:
+    td = {
+        "id": "sensor",
+        "securityDefinitions": {
+            "first": {"scheme": "apikey"},
+            "public": {"scheme": "nosec"},
+        },
+        "properties": {"value": {"forms": [{"href": "http://fixture/value", "op": "readproperty"}]}},
+    }
+
+    model = WotAdapter().parse(td, environment_revision="rev-1")
+
+    assert model.security_scheme_ref == ""
+    assert model.state_sources[0]["security_scheme_ref"] == ""
+    assert model.parser_issues == ("security_scheme_unresolved",)
 
 
 def test_wot_adapter_supports_implicit_property_operations_but_respects_write_only() -> None:

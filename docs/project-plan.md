@@ -1,7 +1,7 @@
 # Affordance Runtime Project Plan
 
 > **Lifecycle:** CURRENT PRODUCT ROADMAP
-> **Updated:** 2026-08-07
+> **Updated:** 2026-08-08
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Migration authority:** [Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
@@ -53,13 +53,13 @@ core contracts for every GUI task.
 | Phase | Outcome | Status |
 |---|---|---|
 | P4 baseline | Existing serial path preserves final-request identity, stale zero-call, receipt/effect separation, output integrity, and unknown no-retry | retained baseline |
-| P5-A | Documentation reset; strong TaskGoal/risk profiles and minimal world/action contracts | A0 docs complete in working tree; code not started |
-| P5-B | Symmetric SurfaceAdapter interface across DOM/AX/Visual/SVG/WoT/API/Device/CLI | not started |
-| P5-C | Positive DOM, Visual, and WoT vertical loops using the same policy/evaluator | not started |
+| P5-A | Documentation reset; strong TaskGoal/risk profiles and minimal world/action contracts | target contracts integrated non-default |
+| P5-B | Symmetric SurfaceAdapter interface across DOM/AX/Visual/SVG/WoT/API/Device/CLI | DOM minimum integrated non-default; other surfaces pending |
+| P5-C | Positive DOM, Visual, and WoT vertical loops using the same policy/evaluator | real DOM complete; Visual/WoT not started |
 | P5-D | Semantic human confirmation, current rebind, unknown-effect and evaluator cutover | not started |
 | P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
-| P5-F | Strictly bounded no-observation-barrier ActionBatch | not started |
-| P5-G | Currentness-checked memory/Skill with offline promotion | not started |
+| P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
+| P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
 | P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
 
 The detailed order and exit/deletion gates live only in the evolution plan.

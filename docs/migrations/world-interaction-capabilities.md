@@ -14,15 +14,16 @@ state authoritative in the current Runtime.
 | DOM transduction | Existing `adapters/dom.py` and `BrowserSession` |
 | WoT TD/security/rate/events | `adapters/wot.py`, `adapters/wot_security.py` |
 | Visual SoM/overlay | `adapters/som.py` |
-| Fresh environment boundary | `environment_port.py` |
-| Deterministic fixture | `testing/static_environment.py` |
+| Unified world boundary | `surfaces/base.py`, `world/environment.py`, `world/orchestrator.py` |
+| Deterministic target fixture | `testing/static_environment.py` |
+| Edge-only old fixture | `testing/legacy_static_environment.py` |
 | Failure catalogue | `testing/failure_injection.py` |
 | Smart-room and mock web | `environments/` |
 | External MiniWoB/WebArena glue | Existing BrowserGym benchmark modules |
 | Viable-route ranking | `routing_policy.py` behind `UnifiedRoutePlanner` hard gates |
 | Fast-path hints | `memory/binding_cache.py` |
-| Short control loop | `agent/` |
-| Low-risk batches | `execution/batch.py` |
+| Target short control loop | `agent/` (`INTEGRATED_NON_DEFAULT`) |
+| Low-risk batches | `execution/batch.py` helper only; not AgentLoop-integrated |
 
 ## Preserved invariants
 
@@ -38,7 +39,15 @@ state authoritative in the current Runtime.
   the first failure or uncertain transport result.
 - Telemetry and compatibility runtime state cannot authorize execution or mark
   a task complete in the new loop.
+- Event descriptions may be parsed, but no `subscribe` ActionOption is exposed
+  until a surface executor implements subscription execution.
+- DOM policy input contains target semantics and offered action IDs, never the
+  selector retained in `ActionBinding.payload`.
 
 The older state-kernel/coordinator implementation remains temporarily available
 for compatibility and its existing benchmark evidence. The migrated AgentLoop
 does not import it; boundary tests enforce that separation.
+
+The current positive matrix status is DOM complete, Visual not started, WoT not
+started. RoutePolicy is implemented only after hard gates. BindingCache remains
+a not-admitted prototype. Cross-surface claims and default cutover are blocked.
