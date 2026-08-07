@@ -366,3 +366,6 @@ started. See `docs/reviews/2026-08-07-p5-entry-hardening.md`.
 P5-0E is partial: strict commit protocol and artifact/receipt lineage are in
 place, but frozen domain read views and compatibility/god-file containment are
 still open. P5-0 is not CLOSED and P5-1 is not READY.
+
+Final local HEAD for this follow-up: `f34ce04762c04aa4d391b669e15b269bc76632bb`;
+the branch was not pushed.
