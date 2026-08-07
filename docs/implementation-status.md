@@ -367,5 +367,5 @@ P5-0E is partial: strict commit protocol and artifact/receipt lineage are in
 place, but frozen domain read views and compatibility/god-file containment are
 still open. P5-0 is not CLOSED and P5-1 is not READY.
 
-Final local HEAD for this follow-up: `f34ce04762c04aa4d391b669e15b269bc76632bb`;
+Final local HEAD for this follow-up: `ea94671eed0147212007e4580a022dfcded9cdf9`;
 the branch was not pushed.

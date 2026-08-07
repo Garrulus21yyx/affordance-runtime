@@ -118,7 +118,7 @@ platform was added.
 
 Start SHA: `538be27f8a9aea3fa9d7f25d271b4d0bf6681f7f`; the follow-up began from a
 clean worktree and has not been pushed. Final local HEAD after the follow-up is
-`f34ce04762c04aa4d391b669e15b269bc76632bb`, with a clean worktree.
+`ea94671eed0147212007e4580a022dfcded9cdf9`, with a clean worktree.
 
 The transition owner is now `RuntimeTransition(expected_state_version, deltas)`.
 `PreparedDispatch` is the immutable ActionStage-to-committer handoff. The
