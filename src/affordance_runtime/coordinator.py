@@ -195,11 +195,11 @@ class RunCoordinator:
                     dispatch_committer=loop.admit_dispatch,
                 )
             )
+            loop.commit(action)
             action_recovery = self.recovery_stage.evaluate_action(
                 state=runtime_state_snapshot(loop.state),
                 action_result=action,
             )
-            loop.commit(action)
             if action_recovery is not None:
                 loop.commit(action_recovery)
                 if action_recovery.terminal is not None:

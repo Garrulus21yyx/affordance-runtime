@@ -40,7 +40,14 @@ from affordance_runtime.perception_session import (
 )
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.simplified_runtime_contracts import StepSpec
-from affordance_runtime.stage_protocol import RuntimeEvent, RuntimeTransition, StageResult
+from affordance_runtime.stage_protocol import (
+    ArtifactIndexDelta,
+    PerceptionDelta,
+    PhaseDelta,
+    RuntimeEvent,
+    RuntimeTransition,
+    StageResult,
+)
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import ObservationContinuation
@@ -142,7 +149,10 @@ class PerceptionStage:
                     progress_fingerprint=view.progress_fingerprint,
                 )
                 return StageResult(
-                    transition=RuntimeTransition(phase=phase),
+                    transition=RuntimeTransition(
+                        expected_state_version=view.state_version,
+                        deltas=((PhaseDelta(phase),) if phase is not None else ()),
+                    ),
                     events=(
                         _event(
                             "ObservationFailed",
@@ -213,22 +223,26 @@ class PerceptionStage:
             continuation=self.continuation_policy.decide(canonical_observations[-1]),
         )
         transition = RuntimeTransition(
-            phase=phase,
-            perception_update=True,
-            observation_commits=tuple(
-                ObservationCommit(
-                    ref,
-                    canonical.environment_revision,
-                    canonical.page_revision,
-                )
-                for canonical, ref in zip(canonical_observations, observation_refs, strict=True)
+            expected_state_version=view.state_version,
+            deltas=(
+                *((PhaseDelta(phase),) if phase is not None else ()),
+                PerceptionDelta(
+                    commits=tuple(
+                        ObservationCommit(
+                            ref,
+                            canonical.environment_revision,
+                            canonical.page_revision,
+                        )
+                        for canonical, ref in zip(canonical_observations, observation_refs, strict=True)
+                    ),
+                    evidence_gaps=gaps,
+                    active_probe_plan=probe_plan,
+                    probe_receipts=receipts,
+                    perception_resolution=resolution,
+                    active_perception_count_delta=len(receipts),
+                ),
+                ArtifactIndexDelta(output.artifact_refs),
             ),
-            evidence_gaps=gaps,
-            active_probe_plan=probe_plan,
-            probe_receipts=receipts,
-            perception_resolution=resolution,
-            active_perception_count_delta=len(receipts),
-            artifact_refs=output.artifact_refs,
         )
         effectful_task = (
             stage_input.envelope.task_spec is not None

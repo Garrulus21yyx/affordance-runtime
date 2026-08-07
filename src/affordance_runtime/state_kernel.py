@@ -148,6 +148,7 @@ class StateKernel:
     current_observation_environment_revision: str = ""
     current_observation_page_revision: str = ""
     last_receipt: ExecutionReceipt | None = None
+    last_receipt_attempt_id: str = ""
     current_disproved_assumption: str = ""
     phase: str = "created"
     current_snapshot_id: str = ""
@@ -187,8 +188,13 @@ class StateKernel:
         self.current_snapshot_id = observation.ref.epoch_id
         self.version += 1
 
-    def record_receipt(self, receipt: ExecutionReceipt) -> None:
+    def record_receipt(self, receipt: ExecutionReceipt, *, attempt_id: str = "") -> None:
         self.last_receipt = receipt
+        self.last_receipt_attempt_id = attempt_id or (
+            self.current_execution_attempt.attempt_id
+            if self.current_execution_attempt is not None
+            else ""
+        )
         self.version += 1
 
     def record_disproved_assumption(self, assumption: str) -> None:

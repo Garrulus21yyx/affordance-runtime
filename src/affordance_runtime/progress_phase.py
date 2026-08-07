@@ -50,7 +50,10 @@ from affordance_runtime.simplified_runtime_contracts import (
 )
 from affordance_runtime.source_context import TaskSpecGap
 from affordance_runtime.stage_protocol import (
+    ArtifactIndexDelta,
+    CompletionDelta,
     LoopDirective,
+    ObservationDelta,
     RuntimeEventBuffer,
     RuntimeStateSnapshot,
     RuntimeTransition,
@@ -649,14 +652,16 @@ class ProgressStage:
         terminal: TerminalResult | None = None,
         task_completion: TaskCompletionEvaluation | None = None,
     ) -> StageResult[ProgressOutput]:
+        deltas = list(progress_delta_from_projection(state))
+        if output.observation_commits:
+            deltas.append(ObservationDelta(output.observation_commits))
+        if events.artifact_index:
+            deltas.append(ArtifactIndexDelta(tuple(dict.fromkeys(events.artifact_index))))
+        if task_completion is not None:
+            deltas.append(CompletionDelta(task_completion))
         return StageResult(
             output=output,
-            transition=RuntimeTransition(
-                deltas=(progress_delta_from_projection(state),),
-                artifact_refs=tuple(dict.fromkeys(events.artifact_index)),
-                observation_commits=output.observation_commits,
-                task_completion=task_completion,
-            ),
+            transition=RuntimeTransition(expected_state_version=state.version, deltas=tuple(deltas)),
             events=tuple(events.events),
             failure=failure,
             terminal=terminal,

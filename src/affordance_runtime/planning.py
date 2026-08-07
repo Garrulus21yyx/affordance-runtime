@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
+from affordance_runtime.action_semantics import action_compatible
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import (
@@ -591,7 +592,7 @@ class PlannerProposalValidator:
             if (
                 destination
                 or action.value in unified.supported_actions
-                or any(_action_compatible(action, item) for item in unified.supported_actions)
+                or any(action_compatible(action, item) for item in unified.supported_actions)
             ):
                 return
             raise ProposalRejected(
@@ -856,33 +857,6 @@ class UnifiedTargetResolver:
             snapshot.affordance_model.affordances,
         )
         return UnifiedTargetResolution(target, route, source)
-
-
-def _action_compatible(kind: PlannerActionKind, affordance_action: str) -> bool:
-    return (
-        affordance_action
-        in {
-            PlannerActionKind.ACTIVATE: {
-                "activate",
-                "click",
-                "download",
-                "invoke",
-                "point_activate",
-                "write_property",
-            },
-            PlannerActionKind.FOCUS: {"focus", "fill", "type"},
-            PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
-            PlannerActionKind.TYPE_TEXT: {"fill", "type"},
-            PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
-            PlannerActionKind.PRESS_KEY: {"press"},
-            PlannerActionKind.DRAG: {"drag"},
-            PlannerActionKind.NAVIGATE: {"navigate"},
-            PlannerActionKind.SCROLL: {"scroll"},
-            PlannerActionKind.WAIT: {"wait"},
-            PlannerActionKind.ASK_USER: set(),
-            PlannerActionKind.FINISH: set(),
-        }[kind]
-    )
 
 
 def _contract_parameters(proposal: PlannerProposal) -> dict[str, Any]:

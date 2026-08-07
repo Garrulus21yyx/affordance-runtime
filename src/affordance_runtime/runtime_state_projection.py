@@ -11,7 +11,16 @@ from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.perception_phase import PerceptionStateView
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import semantic_progress_fingerprint
-from affordance_runtime.stage_protocol import ProgressDelta, RuntimeStateSnapshot
+from affordance_runtime.stage_protocol import (
+    PerceptionDelta,
+    PhaseDelta,
+    ProgressDelta,
+    ResultDelta,
+    RuntimeDeltaUnion,
+    RuntimeStateSnapshot,
+    StepProgressDelta,
+    VerificationDelta,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
@@ -32,28 +41,32 @@ class RuntimeBudgetView(Protocol):
     def max_active_perception_observations(self) -> int: ...
 
 
-def progress_delta_from_projection(state: object) -> ProgressDelta:
+def progress_delta_from_projection(state: object) -> tuple[RuntimeDeltaUnion, ...]:
     """Convert the legacy detached calculator result into a closed delta."""
 
     values = state.delta_values()  # type: ignore[attr-defined]
-    return ProgressDelta(
-        phase=RuntimeStep(values["phase"]) if "phase" in values else None,
-        latest_verification=values.get("latest_verification"),
-        latest_effect_settlement=values.get("latest_effect_settlement"),
-        task_progress=values.get("task_progress"),
-        replan_count=values.get("replan_count"),
-        final_result=values.get("final_result"),
-        latest_progress_guard=values.get("latest_progress_guard"),
-        recent_action_outcomes=values.get("recent_action_outcomes"),
-        latest_probe_receipt=values.get("latest_probe_receipt"),
-        has_latest_effect_settlement="latest_effect_settlement" in values,
-        has_task_progress="task_progress" in values,
-        has_replan_count="replan_count" in values,
-        has_final_result="final_result" in values,
-        has_latest_progress_guard="latest_progress_guard" in values,
-        has_recent_action_outcomes="recent_action_outcomes" in values,
-        has_latest_probe_receipt="latest_probe_receipt" in values,
-    )
+    deltas: list[RuntimeDeltaUnion] = []
+    if values.get("phase") is not None:
+        deltas.append(PhaseDelta(RuntimeStep(values["phase"])))
+    if "latest_verification" in values and values["latest_verification"] is not None:
+        deltas.append(VerificationDelta(values["latest_verification"]))
+    if any(key in values for key in ("task_progress", "recent_action_outcomes", "latest_effect_settlement", "replan_count")):
+        deltas.append(
+            StepProgressDelta(
+                task_progress=values.get("task_progress"),
+                recent_action_outcomes=values.get("recent_action_outcomes"),
+                latest_effect_settlement=values.get("latest_effect_settlement"),
+                replan_count=values.get("replan_count"),
+            )
+        )
+    if "latest_progress_guard" in values and values["latest_progress_guard"] is not None:
+        guard = values["latest_progress_guard"]
+        deltas.append(ProgressDelta(progress_guard=(str(guard["reason"]), str(guard["signature"]))))
+    if "final_result" in values:
+        deltas.append(ResultDelta(values["final_result"]))
+    if "latest_probe_receipt" in values and values["latest_probe_receipt"] is not None:
+        deltas.append(PerceptionDelta(probe_receipts=(values["latest_probe_receipt"],)))
+    return tuple(deltas)
 
 
 def perception_state_view(

@@ -10,10 +10,15 @@ from affordance_runtime.failure_envelope import EffectStatus
 from affordance_runtime.recovery_protocol import RecoveryKind, RecoveryOutcome, RuntimePhase
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.runtime_evidence import effect_settlement_status
-from affordance_runtime.simplified_runtime_contracts import EffectSettlementStatus
+from affordance_runtime.simplified_runtime_contracts import (
+    CollateralSettlementStatus,
+    EffectSettlement,
+    EffectSettlementStatus,
+)
 from affordance_runtime.stage_protocol import (
     EffectSettlementDelta,
     LoopDirective,
+    PhaseDelta,
     ProgressDelta,
     RecoveryDelta,
     RuntimeDeltaUnion,
@@ -133,14 +138,25 @@ class RecoveryObservationEvaluator:
                 )
             )
             if effect_settled:
+                evidence_refs = tuple(
+                    item.evidence_id
+                    for item in verification.evidence
+                    if item.evidence_id
+                ) if verification is not None else ()
+                if not evidence_refs:
+                    raise ValueError("effect settlement requires identity-bound evidence")
+                settlement_value = EffectSettlement(
+                    attempt_id=current_attempt.attempt_id,
+                    status=settlement,
+                    evidence_refs=evidence_refs,
+                    collateral_status=CollateralSettlementStatus.UNRESOLVED,
+                )
                 deltas.append(
                     EffectSettlementDelta(
-                        tuple(
-                            item
-                            for item in state.uncertain_external_effects
-                            if current_attempt is None
-                            or item.attempt.attempt_id != current_attempt.attempt_id
-                        )
+                        attempt_id=current_attempt.attempt_id,
+                        contract_hash=current_attempt.contract_hash,
+                        settlement=settlement_value,
+                        evidence_refs=evidence_refs,
                     )
                 )
             if absence_confirmed:
@@ -186,7 +202,13 @@ class RecoveryObservationEvaluator:
             events.append(_reentry_event(state.phase, decision.reentry_phase.value))
         return StageResult(
             output=RecoveryObservationEvaluation(verification, outcome),
-            transition=RuntimeTransition(phase=phase, deltas=tuple(deltas)),
+            transition=RuntimeTransition(
+                expected_state_version=state.version,
+                deltas=(
+                    *((PhaseDelta(phase),) if phase is not None else ()),
+                    *tuple(deltas),
+                ),
+            ),
             events=tuple(events),
             terminal=terminal,
             directive=(LoopDirective.TERMINAL if terminal is not None else LoopDirective.NEXT_STAGE),
@@ -262,10 +284,12 @@ class RecoveryActionEvaluator:
         return StageResult(
             output=RecoveryActionSettlement(outcome),
             transition=RuntimeTransition(
-                phase=phase,
-                intermediate_phases=((RuntimeStep.RECOVERING,) if phase == RuntimeStep.ABORTED else ()),
-                deltas=(RecoveryDelta(outcome=outcome, clear_decision=clear_decision),),
-                clear_recovery_decision=clear_decision,
+                expected_state_version=state.version,
+                deltas=(
+                    *((PhaseDelta(RuntimeStep.RECOVERING),) if phase == RuntimeStep.ABORTED else ()),
+                    *((PhaseDelta(phase),) if phase is not None else ()),
+                    RecoveryDelta(outcome=outcome, clear_decision=clear_decision),
+                ),
             ),
             events=tuple(events),
             terminal=terminal,

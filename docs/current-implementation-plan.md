@@ -563,10 +563,14 @@ The pre-consolidation 3,203-line queue is preserved at
 It is implementation history, not the active scheduler.
 ## 2026-08-07 P5-0 entry-hardening status
 
-P5-0A and P5-0B are implemented: pre-dispatch trace/phase linearization is
-owned by `RuntimeCommitter`, and product transitions use the closed typed delta
-family documented in [the review record](reviews/2026-08-07-p5-entry-hardening.md).
+P5-0A core is implemented: pre-dispatch trace/phase linearization is owned by
+`RuntimeCommitter`. P5-0B is partial; typed deltas exist, but transition
+dual-channel support and failure atomicity remain open for P5-0E.
 P5-0C/0D remain entry-hardening work in progress: the aggregate read set and
 compatibility inventory have been narrowed, but frozen per-stage views,
 committer-owned route calibration, and complete compatibility isolation are
 deferred. P5-R1 through P5-R4 remain unstarted.
+
+P5-0E follow-up is partial: commit-batch atomicity and PreparedDispatch are
+implemented, while the mutable snapshot/progress bridge and full compatibility
+boundary remain deferred. Do not begin P5-1 from this state.

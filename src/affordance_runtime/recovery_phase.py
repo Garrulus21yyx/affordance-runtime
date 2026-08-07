@@ -31,8 +31,10 @@ from affordance_runtime.recovery_protocol import (
 from affordance_runtime.recovery_trace_projection import recovery_protocol_projections
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.stage_protocol import (
+    CounterDelta,
     LoopDirective,
     OwnerHandoff,
+    PhaseDelta,
     ProgressHandoff,
     RecoveryDelta,
     RuntimeEvent,
@@ -43,6 +45,7 @@ from affordance_runtime.stage_protocol import (
     TaskPlannerHandoff,
     TerminalResult,
     UserInputRequest,
+    VersionDelta,
     build_failure_owner_handoff,
 )
 
@@ -104,8 +107,8 @@ class RecoveryStage:
         return StageResult(
             output=FailureResolutionOutput(terminal),
             transition=RuntimeTransition(
-                phase=status,
-                deltas=(RecoveryDelta(failure=failure),),
+                expected_state_version=failure.state_version,
+                deltas=(PhaseDelta(status), RecoveryDelta(failure=failure)),
             ),
             failure=failure,
             terminal=terminal,
@@ -197,9 +200,12 @@ class RecoveryStage:
         return StageResult(
             output=FailureResolutionOutput(handoff),
             transition=RuntimeTransition(
-                phase=phase,
-                deltas=(recovery_delta,),
-                replan_count_delta=replan_delta,
+                expected_state_version=state.version,
+                deltas=(
+                    *((PhaseDelta(phase),) if phase is not None else ()),
+                    recovery_delta,
+                    CounterDelta(replan_count=replan_delta),
+                ),
             ),
             events=events,
             failure=failure,
@@ -299,9 +305,12 @@ class RecoveryStage:
                 raise
             return StageResult(
                 transition=RuntimeTransition(
-                    phase=RuntimeStep(stage_input.abort_reentry_phase.value),
-                    intermediate_phases=(RuntimeStep.RECOVERING,),
-                    deltas=(RecoveryDelta(failure=failure, clear_decision=True, clear_outcome=True),),
+                    expected_state_version=stage_input.state_view.version,
+                    deltas=(
+                        PhaseDelta(RuntimeStep.RECOVERING),
+                        PhaseDelta(RuntimeStep(stage_input.abort_reentry_phase.value)),
+                        RecoveryDelta(failure=failure, clear_decision=True, clear_outcome=True),
+                    ),
                 ),
                 events=(
                     RuntimeEvent(
@@ -368,6 +377,7 @@ class RecoveryStage:
                 events,
                 LoopDirective.REPEAT_OBSERVATION,
                 recovery_delta,
+                expected_state_version=state.version,
                 phase=RuntimeStep.OBSERVING,
                 version_delta=grounding_version_delta,
             )
@@ -396,6 +406,7 @@ class RecoveryStage:
                     (*events, outcome_event, routed),
                     LoopDirective.TERMINAL,
                     recovery_delta,
+                    expected_state_version=state.version,
                     outcome=dispatched.outcome,
                     terminal=TerminalResult(
                         failure.failure_id,
@@ -418,6 +429,7 @@ class RecoveryStage:
                 ),
                 LoopDirective.REPEAT_OBSERVATION,
                 recovery_delta,
+                expected_state_version=state.version,
                 outcome=dispatched.outcome,
                 phase=RuntimeStep.OBSERVING,
                 replan_count_delta=1,
@@ -432,7 +444,8 @@ class RecoveryStage:
             decision,
             events,
             LoopDirective.TERMINAL,
-        recovery_delta,
+            recovery_delta,
+            expected_state_version=state.version,
             terminal=terminal,
             phase=RuntimeStep(stage_input.abort_reentry_phase.value),
             version_delta=grounding_version_delta,
@@ -445,6 +458,7 @@ def _result(
     directive: LoopDirective,
     delta: RecoveryDelta,
     *,
+    expected_state_version: int,
     outcome: RecoveryOutcome | None = None,
     terminal: TerminalResult | None = None,
     phase: RuntimeStep | None = None,
@@ -454,11 +468,14 @@ def _result(
     return StageResult(
         output=RecoveryOutput(decision, outcome),
         transition=RuntimeTransition(
-            phase=phase,
-            intermediate_phases=(RuntimeStep.RECOVERING,),
-            deltas=(delta,),
-            replan_count_delta=replan_count_delta,
-            version_delta=version_delta,
+            expected_state_version=expected_state_version,
+            deltas=(
+                PhaseDelta(RuntimeStep.RECOVERING),
+                *((PhaseDelta(phase),) if phase is not None else ()),
+                delta,
+                CounterDelta(replan_count=replan_count_delta),
+                *((VersionDelta(version_delta),) if version_delta else ()),
+            ),
         ),
         events=events,
         terminal=terminal,

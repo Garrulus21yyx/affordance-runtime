@@ -30,6 +30,9 @@ from affordance_runtime.runtime_evidence import semantic_progress_fingerprint
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.stage_protocol import (
     LoopDirective,
+    PhaseDelta,
+    PlanningDelta,
+    ResultDelta,
     RuntimeEvent,
     RuntimeStateSnapshot,
     RuntimeTransition,
@@ -211,8 +214,8 @@ class PlanningStage:
             return StageResult(
                 output=PlanningOutput(),
                 transition=RuntimeTransition(
-                    phase=RuntimeStep.WAITING_CLARIFICATION,
-                    final_result=result,
+                    expected_state_version=stage_input.state_view.version,
+                    deltas=(PhaseDelta(RuntimeStep.WAITING_CLARIFICATION), ResultDelta(result)),
                 ),
                 events=(
                     _event(
@@ -233,8 +236,11 @@ class PlanningStage:
             return StageResult(
                 output=PlanningOutput(),
                 transition=RuntimeTransition(
-                    phase=RuntimeStep.DEFERRED,
-                    final_result={"deferred": True, "reason": choice.response.reason},
+                    expected_state_version=stage_input.state_view.version,
+                    deltas=(
+                        PhaseDelta(RuntimeStep.DEFERRED),
+                        ResultDelta({"deferred": True, "reason": choice.response.reason}),
+                    ),
                 ),
                 events=(
                     _event(
@@ -386,11 +392,25 @@ class PlanningStage:
             committed=TaskPlanCommitStateView(active, completed),
         )
         events.append(RuntimeEvent(accepted.kind, accepted.payload))
+        proposal_payload = next(
+            (
+                dict(event.payload)
+                for event in events
+                if event.kind == "TaskPlanProposed"
+            ),
+            None,
+        )
         return StageResult(
             output=PlanningOutput(task_plan_changed=True),
             transition=RuntimeTransition(
-                phase=RuntimeStep.OBSERVING,
-                task_plan_transition=transition,
+                expected_state_version=stage_input.state_view.version,
+                deltas=(
+                    PhaseDelta(RuntimeStep.OBSERVING),
+                    PlanningDelta(
+                        task_plan_transition=transition,
+                        planner_proposal=proposal_payload,
+                    ),
+                ),
             ),
             events=tuple(events),
             directive=LoopDirective.NEXT_STAGE,

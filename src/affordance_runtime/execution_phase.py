@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +19,7 @@ from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
+    ProviderAck,
     RiskLevel,
     RuntimeErrorCode,
     TransportState,
@@ -26,6 +28,7 @@ from affordance_runtime.dispatch_lifecycle import (
     DispatchAdmissionRejected,
     DispatchCommitter,
     FinalDispatchAdmission,
+    PreparedDispatch,
 )
 from affordance_runtime.failure_envelope import (
     EffectStatus,
@@ -54,16 +57,22 @@ from affordance_runtime.runtime_evidence import (
 from affordance_runtime.safety import CapabilityGate
 from affordance_runtime.simplified_runtime_contracts import (
     ExecutionAttempt,
-    UncertainExternalEffect,
 )
 from affordance_runtime.stage_protocol import (
-    EffectSettlementDelta,
+    ArtifactIndexDelta,
+    CounterDelta,
     LoopDirective,
+    PerceptionDelta,
+    PhaseDelta,
+    PlanningDelta,
+    ProgressDelta,
+    ReceiptDelta,
     RuntimeEvent,
     RuntimeStateSnapshot,
     RuntimeTransition,
     StageResult,
     TerminalResult,
+    UncertainEffectDelta,
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
@@ -134,6 +143,7 @@ class ActionStage:
         if isinstance(checked, StageResult):
             return checked
         contract, execution_snapshot, events, artifact_refs, perception_delta, gate = checked
+        approval_decision_id = ""
 
         attempt = self.contract_execution_loop.build_execution_attempt(
             contract,
@@ -184,7 +194,45 @@ class ActionStage:
                 ),
                 fence_lock=self.perception_session.surface_lock,
             )
-            permit = stage_input.dispatch_committer(admission, attempt, tuple(events))
+            prepared = PreparedDispatch(
+                contract=contract,
+                observation=execution_snapshot.observation,
+                attempt=attempt,
+                admission=admission,
+                expected_state_version=admission.expected_state_version,
+                selection_id=stage_input.selection.choice_id if stage_input.selection is not None else "",
+                catalog_id=stage_input.catalog.catalog_id if stage_input.catalog is not None else "",
+                action_signature=attempt.transaction_identity,
+                approval_decision_id=next(
+                    (
+                        str(event.payload.get("token_id", ""))
+                        for event in events
+                        if event.kind == "HumanApprovalGranted"
+                    ),
+                    approval_decision_id,
+                ),
+                preflight_passed=True,
+                artifact_refs=tuple(artifact_refs),
+                semantic_target=next(
+                    (
+                        dict(event.payload["semantic_action"]["target"])
+                        for event in events
+                        if event.kind == "ContractBuilt"
+                        and isinstance(event.payload.get("semantic_action"), Mapping)
+                    ),
+                    {},
+                ),
+                semantic_destination=next(
+                    (
+                        dict(event.payload["semantic_action"].get("destination") or {})
+                        for event in events
+                        if event.kind == "ContractBuilt"
+                        and isinstance(event.payload.get("semantic_action"), Mapping)
+                    ),
+                    {},
+                ),
+            )
+            permit = stage_input.dispatch_committer(prepared)
             events = []
         except DispatchAdmissionRejected as exc:
             drift = exc.code in _DRIFT_ERRORS
@@ -206,6 +254,19 @@ class ActionStage:
                 recoverable=self.recovery_enabled if drift else False,
             )
         receipt = self.contract_execution_loop.dispatch(permit)
+        if receipt.backend != contract.backend:
+            # A provider receipt from a different backend is not evidence of a
+            # successful execution of this contract. Preserve the conservative
+            # transport truth and route it through the uncertain-effect path.
+            receipt = replace(
+                receipt,
+                backend=contract.backend,
+                success=False,
+                error_code=RuntimeErrorCode.EXECUTION_FAILED,
+                message="executor receipt backend does not match the admitted contract",
+                transport_state=TransportState.SENT_UNKNOWN,
+                provider_ack=ProviderAck.UNKNOWN,
+            )
 
         receipt_ref = self._write_receipt(stage_input, receipt)
         if receipt_ref:
@@ -227,21 +288,34 @@ class ActionStage:
                 )
             )
         transition = RuntimeTransition(
-            phase=RuntimeStep.VERIFYING if receipt.success else RuntimeStep.ACTING,
-            observation_commits=perception_delta.observation_commits,
-            perception_update=perception_delta.resolution is not None,
-            probe_receipts=perception_delta.probe_receipts,
-            perception_resolution=perception_delta.resolution,
-            active_perception_count_delta=perception_delta.active_count_delta,
-            artifact_refs=tuple(artifact_refs),
-            planner_proposal=proposal_payload,
-            current_contract=contract,
-            execution_attempt=attempt,
-            receipt=receipt,
-            step_count_delta=0,
-            subgoal_action_count_delta=1,
-            effectful_action_count_delta=0,
-            deltas=((uncertain_updates,) if uncertain_updates is not None else ()),
+            # Final admission commits the attempt and advances the aggregate
+            # version exactly once before the provider call.
+            # The current phase bridge performs PLANNING -> PREFLIGHT -> ACTING
+            # plus the admission commit's version increment.
+            expected_state_version=attempt.issued_at_state_version + 3,
+            deltas=(
+                PhaseDelta(RuntimeStep.VERIFYING if receipt.success else RuntimeStep.ACTING),
+                PerceptionDelta(
+                    commits=perception_delta.observation_commits,
+                    probe_receipts=perception_delta.probe_receipts,
+                    perception_resolution=perception_delta.resolution,
+                    active_perception_count_delta=perception_delta.active_count_delta,
+                ),
+                PlanningDelta(
+                    planner_proposal=(
+                        {
+                            "selection_id": stage_input.selection.choice_id,
+                            "catalog_id": stage_input.catalog.catalog_id if stage_input.catalog is not None else "",
+                        }
+                        if stage_input.selection is not None
+                        else None
+                    )
+                ),
+                ReceiptDelta(attempt.attempt_id, contract.id, contract.contract_hash, receipt),
+                CounterDelta(subgoal_action_count=1),
+                ArtifactIndexDelta(tuple(artifact_refs)),
+                *( (UncertainEffectDelta(attempt),) if uncertain_updates is not None else () ),
+            ),
         )
         if not receipt.success:
             execution_uncertain = receipt.transport_state == TransportState.SENT_UNKNOWN and contract.effectful
@@ -348,7 +422,10 @@ class ActionStage:
             if requirement_error:
                 self.task_skill_runtime.fallthrough(cast(Any, stage_input.state_view), requirement_error)
                 return StageResult(
-                    transition=RuntimeTransition(phase=RuntimeStep.OBSERVING, replan_count_delta=1),
+                    transition=RuntimeTransition(
+                        expected_state_version=stage_input.state_view.version,
+                        deltas=(PhaseDelta(RuntimeStep.OBSERVING), CounterDelta(replan_count=1)),
+                    ),
                     events=(
                         _event(
                             "TaskSkillFellThrough",
@@ -384,9 +461,12 @@ class ActionStage:
                 )
             return StageResult(
                 transition=RuntimeTransition(
-                    phase=RuntimeStep.OBSERVING,
-                    replan_count_delta=1,
-                    progress_guard=(progress_block, signature),
+                    expected_state_version=stage_input.state_view.version,
+                    deltas=(
+                        PhaseDelta(RuntimeStep.OBSERVING),
+                        CounterDelta(replan_count=1),
+                        ProgressDelta(progress_guard=(progress_block, signature)),
+                    ),
                 ),
                 events=(
                     _event(
@@ -471,12 +551,16 @@ class ActionStage:
                     contract=contract,
                     events=tuple(events),
                     transition=RuntimeTransition(
-                        observation_commits=perception_delta.observation_commits,
-                        perception_update=perception_delta.resolution is not None,
-                        probe_receipts=perception_delta.probe_receipts,
-                        perception_resolution=perception_delta.resolution,
-                        active_perception_count_delta=perception_delta.active_count_delta,
-                        artifact_refs=tuple(artifact_refs),
+                        expected_state_version=stage_input.state_view.version,
+                        deltas=(
+                            PerceptionDelta(
+                                commits=perception_delta.observation_commits,
+                                probe_receipts=perception_delta.probe_receipts,
+                                perception_resolution=perception_delta.resolution,
+                                active_perception_count_delta=perception_delta.active_count_delta,
+                            ),
+                            ArtifactIndexDelta(tuple(artifact_refs)),
+                        ),
                     ),
                     recoverable=self.recovery_enabled,
                 )
@@ -496,7 +580,10 @@ class ActionStage:
             token = self.approval_provider.approve(contract) if self.approval_provider else None
             if token is None:
                 return StageResult(
-                    transition=RuntimeTransition(phase=RuntimeStep.WAITING_APPROVAL, current_contract=contract),
+                    transition=RuntimeTransition(
+                        expected_state_version=stage_input.state_view.version,
+                        deltas=(PhaseDelta(RuntimeStep.WAITING_APPROVAL),),
+                    ),
                     events=tuple(events),
                     terminal=TerminalResult("", "approval_required", RuntimeStep.WAITING_APPROVAL, error),
                     directive=LoopDirective.WAIT_USER,
@@ -557,13 +644,16 @@ class ActionStage:
                 contract=contract,
                 events=tuple(events),
                 transition=RuntimeTransition(
-                    observation_commits=perception_delta.observation_commits,
-                    perception_update=perception_delta.resolution is not None,
-                    probe_receipts=perception_delta.probe_receipts,
-                    perception_resolution=perception_delta.resolution,
-                    active_perception_count_delta=perception_delta.active_count_delta,
-                    artifact_refs=tuple(artifact_refs),
-                    current_contract=contract,
+                    expected_state_version=stage_input.state_view.version,
+                    deltas=(
+                        PerceptionDelta(
+                            commits=perception_delta.observation_commits,
+                            probe_receipts=perception_delta.probe_receipts,
+                            perception_resolution=perception_delta.resolution,
+                            active_perception_count_delta=perception_delta.active_count_delta,
+                        ),
+                        ArtifactIndexDelta(tuple(artifact_refs)),
+                    ),
                 ),
                 recoverable=error in _DRIFT_ERRORS and self.recovery_enabled,
             )
@@ -750,7 +840,7 @@ def _uncertain_effect_updates(
     stage_input: ActionStageInput,
     contract: ActionContract,
     attempt: ExecutionAttempt,
-) -> EffectSettlementDelta | None:
+) -> bool | None:
     signature = contract.runtime_effect_signature
     if not contract.effectful or signature is None or signature.externality is None:
         return None
@@ -759,7 +849,7 @@ def _uncertain_effect_updates(
     existing = tuple(stage_input.state_view.uncertain_external_effects)
     if any(item.attempt.attempt_id == attempt.attempt_id for item in existing):
         return None
-    return EffectSettlementDelta((*existing, UncertainExternalEffect(attempt)))
+    return True
 
 
 def _fresh_route_candidate(

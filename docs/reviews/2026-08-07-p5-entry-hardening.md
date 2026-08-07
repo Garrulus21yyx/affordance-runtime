@@ -3,10 +3,9 @@
 ## Baseline
 
 - Branch: `agent/migrate-runtime-components`
-- Start SHA: `92f7725397171200230d2f52767b477a69746092`
-- Final HEAD SHA: `92f7725397171200230d2f52767b477a69746092` (changes uncommitted)
-- Start worktree: clean
-- Final worktree: modified by this review; no merge/push performed
+- P5-0E start SHA: `538be27f8a9aea3fa9d7f25d271b4d0bf6681f7f`
+- P5-0E start worktree: clean
+- Previous P5-0 review SHA: `538be27f8a9aea3fa9d7f25d271b4d0bf6681f7f`
 - Baseline full suite: `1028 passed`
 - Baseline Ruff, mypy, and `git diff --check`: passed
 
@@ -35,7 +34,9 @@ zero-call. Focused P4 C4 dispatch tests pass.
 ## 0B — typed deltas
 
 `RuntimeTransition.state_updates` and generic `setattr(state, ...)` application
-were removed from product source. The closed delta family is:
+were removed from the previous product committer path. The typed delta family
+was introduced, but it is not yet a closed commit protocol. Its current members
+are:
 
 `PhaseDelta`, `ObservationDelta`, `PlanningDelta`, `ExecutionAdmissionDelta`,
 `ReceiptDelta`, `EffectSettlementDelta`, `ProgressDelta`, `RecoveryDelta`,
@@ -88,7 +89,8 @@ streaming SHA/path containment and a commit-owned route-calibration update.
 
 ## Verification
 
-- Full pytest after changes: `1032 passed`
+- Full pytest after changes: `1036 passed` on the final completed run; one
+  browser-fixture recovery case was rerun separately and passed.
 - Ruff: passed
 - mypy: passed (`192` source files)
 - `git diff --check`: passed
@@ -101,12 +103,42 @@ streaming SHA/path containment and a commit-owned route-calibration update.
 ## Deferred
 
 - Finish frozen per-stage read views and remove the mutable progress working set.
+- Close transition dual-channel support and transition-level commit atomicity.
 - Move route calibration behind an authoritative committer-owned update.
 - Complete compatibility consumer inventory/isolation and god-file containment.
 - Run and record the separately provisioned Stable Task API 3/3 and official
   21-run core benchmark command if the harness is available.
 
 P4 MVP remains CLOSED. P5 admission remains UNBLOCKED; P5-1 is not being
-started from this slice because the deferred 0C/0D entry debt above is still
-open. P5-R1 through P5-R4 have not started. No production
-authorization platform was added.
+started from this slice because the deferred 0C/0D/0E entry debt above is still
+open. P5-R1 through P5-R4 have not started. No production authorization
+platform was added.
+
+## P5-0E follow-up
+
+Start SHA: `538be27f8a9aea3fa9d7f25d271b4d0bf6681f7f`; the follow-up began from a
+clean worktree and has not been pushed.
+
+The transition owner is now `RuntimeTransition(expected_state_version, deltas)`.
+`PreparedDispatch` is the immutable ActionStage-to-committer handoff. The
+committer generates and orders `ContractBuilt`, `RouteSelected`, committed
+preflight, approval, `PreflightPassed`, `ExecutionAttemptIssued`,
+`ExecutionAttemptCommitted`, and `DispatchIntentCommitted`; stages no longer
+provide the successful dispatch event tuple. Batch validation runs against
+detached state and trace before live state, trace, artifact index, or failure
+ownership is mutated.
+
+Receipt and effect settlement deltas are attempt/hash-bound; duplicate receipts,
+weak settlement evidence, stale versions, unknown/no-op deltas, and invalid
+lineage fail closed. Artifact registration now enforces run-root containment,
+rejects symlinks, and computes SHA-256 incrementally. Canonical compatibility
+checks use `action_semantics.action_compatible` rather than a private planning
+owner.
+
+The remaining open owner debt is material: `RuntimeStateSnapshot` and
+`ProgressWorkingState` are still a detached compatibility bridge, the complete
+frozen per-domain read-view cutover is not done, and the full compatibility
+consumer inventory/god-file containment is not closed. Accordingly this
+follow-up does not declare P5-0 CLOSED or P5-1 READY. P4 MVP remains CLOSED;
+P5-R1 through P5-R4 remain unstarted; no production authorization platform was
+added.

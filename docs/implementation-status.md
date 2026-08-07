@@ -357,10 +357,12 @@ Individual claims remain attributable through evidence and change-admission
 records; the snapshot is not a current status source.
 ## P5-0 review — 2026-08-07
 
-The P4 MVP remains CLOSED. The current branch has closed the pre-dispatch
-ordering seam and removed generic `state_updates`/state-field setattr from the
-product committer. The explicit read-set factory and canonical action semantic
-owner are in place. Remaining P5 entry debt is tracked in
-`docs/reviews/2026-08-07-p5-entry-hardening.md`; P5 admission remains UNBLOCKED,
-but P5-1 is not started while the remaining read-view and compatibility-boundary
-entry debt is closed.
+The P4 MVP remains CLOSED. At HEAD `538be27f8a9aea3fa9d7f25d271b4d0bf6681f7f`,
+P5-0A core is implemented, while P5-0B remains partial: transition dual-channel
+support, failure atomicity, read-view closure, and compatibility containment
+remain P5-0E entry debt. P5 admission remains UNBLOCKED, but P5-1 is not
+started. See `docs/reviews/2026-08-07-p5-entry-hardening.md`.
+
+P5-0E is partial: strict commit protocol and artifact/receipt lineage are in
+place, but frozen domain read views and compatibility/god-file containment are
+still open. P5-0 is not CLOSED and P5-1 is not READY.

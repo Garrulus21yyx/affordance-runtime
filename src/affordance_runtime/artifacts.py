@@ -20,6 +20,26 @@ def _safe_run_id(run_id: str) -> str:
     return run_id
 
 
+def _contained_path(root: Path, path: Path) -> Path:
+    resolved_root = root.resolve()
+    if path.is_symlink():
+        raise ValueError(f"symlink artifact path is not allowed: {path}")
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError(f"artifact path escapes run root: {path}") from exc
+    return resolved
+
+
+def _streaming_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 @dataclass(frozen=True)
 class ArtifactRef:
     path: str
@@ -41,7 +61,7 @@ class ArtifactStore:
         relative = Path(relative_path)
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError(f"unsafe artifact path: {relative_path!r}")
-        path = self.run_dir(run_id) / relative
+        path = _contained_path(self.run_dir(run_id), self.run_dir(run_id) / relative)
         path.parent.mkdir(parents=True, exist_ok=True)
         encoded = json.dumps(
             to_json_compatible(value),
@@ -53,8 +73,10 @@ class ArtifactStore:
         return self._record(run_id, ArtifactRef(str(path), hashlib.sha256(encoded).hexdigest(), "application/json"))
 
     def register_file(self, run_id: str, path: Path, media_type: str) -> ArtifactRef:
-        encoded = path.read_bytes()
-        return self._record(run_id, ArtifactRef(str(path), hashlib.sha256(encoded).hexdigest(), media_type))
+        contained = _contained_path(self.run_dir(run_id), path)
+        if not contained.is_file():
+            raise ValueError(f"artifact path is not a regular file: {path}")
+        return self._record(run_id, ArtifactRef(str(contained), _streaming_sha256(contained), media_type))
 
     def references(self, run_id: str) -> list[ArtifactRef]:
         return list(self._refs.get(run_id, []))

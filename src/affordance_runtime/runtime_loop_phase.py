@@ -225,17 +225,13 @@ class RuntimeCommitSession:
 
     def admit_dispatch(
         self,
-        admission: Any,
-        attempt: Any,
-        pre_dispatch_events: tuple[Any, ...] = (),
+        prepared: Any,
     ) -> Any:
         permit, self.parent = self.committer.admit_dispatch(
             self.state,
             self.trace,
             self.parent,
-            admission,
-            attempt,
-            pre_dispatch_events,
+            prepared,
         )
         return permit
 

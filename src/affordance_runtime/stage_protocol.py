@@ -17,7 +17,6 @@ from affordance_runtime.active_perception import (
     ProbeReceipt,
 )
 from affordance_runtime.contracts import (
-    ActionContract,
     ExecutionReceipt,
     RuntimeErrorCode,
 )
@@ -230,46 +229,83 @@ class ObservationDelta(RuntimeDelta):
 @dataclass(frozen=True)
 class PlanningDelta(RuntimeDelta):
     task_plan_transition: Any | None = None
+    planner_proposal: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
-class ExecutionAdmissionDelta(RuntimeDelta):
-    contract: ActionContract
+class PerceptionDelta(RuntimeDelta):
+    commits: tuple[ObservationCommit, ...] = ()
+    evidence_gaps: tuple[EvidenceGap, ...] = ()
+    active_probe_plan: ProbePlan | None = None
+    probe_receipts: tuple[ProbeReceipt, ...] = ()
+    perception_resolution: PerceptionResolution | None = None
+    active_perception_count_delta: int = 0
+
+
+@dataclass(frozen=True)
+class VerificationDelta(RuntimeDelta):
+    report: VerificationReport
+
+
+@dataclass(frozen=True)
+class StepProgressDelta(RuntimeDelta):
+    task_progress: Any | None = None
+    recent_action_outcomes: Any | None = None
+    latest_effect_settlement: Any | None = None
+    latest_progress_guard: Mapping[str, str] | None = None
+    replan_count: int | None = None
+
+
+@dataclass(frozen=True)
+class CounterDelta(RuntimeDelta):
+    step_count: int = 0
+    subgoal_action_count: int = 0
+    effectful_action_count: int = 0
+    replan_count: int = 0
+
+
+@dataclass(frozen=True)
+class VersionDelta(RuntimeDelta):
+    delta: int
+
+
+@dataclass(frozen=True)
+class ResultDelta(RuntimeDelta):
+    result_payload: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class UncertainEffectDelta(RuntimeDelta):
     attempt: ExecutionAttempt
-    expected_state_version: int
 
 
 @dataclass(frozen=True)
 class ReceiptDelta(RuntimeDelta):
+    attempt_id: str
+    contract_id: str
+    contract_hash: str
     receipt: ExecutionReceipt
 
 
 @dataclass(frozen=True)
 class EffectSettlementDelta(RuntimeDelta):
-    uncertain_effects: tuple[Any, ...] = ()
+    attempt_id: str
+    contract_hash: str
+    settlement: Any
+    evidence_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ProgressDelta(RuntimeDelta):
     latest_verification: VerificationReport | None = None
     progress_guard: tuple[str, str] | None = None
+    verification: VerificationReport | None = None
+
+
+@dataclass(frozen=True)
+class GroundingRecoveryDelta(RuntimeDelta):
     excluded_candidates: Mapping[str, frozenset[str]] | None = None
     grounding_fallback: Mapping[str, Mapping[str, str]] | None = None
-    phase: RuntimeStep | None = None
-    latest_effect_settlement: Any | None = None
-    task_progress: Any | None = None
-    replan_count: int | None = None
-    final_result: Mapping[str, Any] | None = None
-    latest_progress_guard: Mapping[str, str] | None = None
-    recent_action_outcomes: Any | None = None
-    latest_probe_receipt: Any | None = None
-    has_latest_effect_settlement: bool = False
-    has_task_progress: bool = False
-    has_replan_count: bool = False
-    has_final_result: bool = False
-    has_latest_progress_guard: bool = False
-    has_recent_action_outcomes: bool = False
-    has_latest_probe_receipt: bool = False
 
 
 @dataclass(frozen=True)
@@ -288,7 +324,7 @@ class RecoveryDelta(RuntimeDelta):
 
 @dataclass(frozen=True)
 class CompletionDelta(RuntimeDelta):
-    result_payload: Mapping[str, Any]
+    evaluation: TaskCompletionEvaluation
 
 
 @dataclass(frozen=True)
@@ -296,74 +332,35 @@ class ArtifactIndexDelta(RuntimeDelta):
     refs: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
-class RouteCalibrationDelta(RuntimeDelta):
-    outcome_id: str
-
-
 RuntimeDeltaUnion: TypeAlias = (
     PhaseDelta
     | ObservationDelta
     | PlanningDelta
-    | ExecutionAdmissionDelta
+    | PerceptionDelta
+    | VerificationDelta
+    | StepProgressDelta
+    | CounterDelta
+    | VersionDelta
+    | ResultDelta
+    | UncertainEffectDelta
     | ReceiptDelta
     | EffectSettlementDelta
     | ProgressDelta
     | RecoveryDelta
+    | GroundingRecoveryDelta
     | CompletionDelta
     | ArtifactIndexDelta
-    | RouteCalibrationDelta
 )
 
 
 @dataclass(frozen=True)
 class RuntimeTransition:
+    expected_state_version: int
     deltas: tuple[RuntimeDeltaUnion, ...] = ()
-    phase: RuntimeStep | None = None
-    intermediate_phases: tuple[RuntimeStep, ...] = ()
-    perception_update: bool = False
-    observation_commits: tuple[ObservationCommit, ...] = ()
-    evidence_gaps: tuple[EvidenceGap, ...] = ()
-    active_probe_plan: ProbePlan | None = None
-    probe_receipts: tuple[ProbeReceipt, ...] = ()
-    perception_resolution: PerceptionResolution | None = None
-    active_perception_count_delta: int = 0
-    latest_verification: VerificationReport | None = None
-    artifact_refs: tuple[str, ...] = ()
-    task_plan_transition: Any | None = None
-    planner_proposal: Mapping[str, Any] | None = None
-    current_contract: ActionContract | None = None
-    execution_attempt: ExecutionAttempt | None = None
-    receipt: ExecutionReceipt | None = None
-    step_count_delta: int = 0
-    subgoal_action_count_delta: int = 0
-    effectful_action_count_delta: int = 0
-    replan_count_delta: int = 0
-    progress_guard: tuple[str, str] | None = None
-    clear_recovery_decision: bool = False
-    final_result: Mapping[str, Any] | None = None
-    task_completion: TaskCompletionEvaluation | None = None
-    version_delta: int = 0
 
     def __post_init__(self) -> None:
-        if self.active_perception_count_delta < 0:
-            raise ValueError("active perception count delta must be non-negative")
-        if (
-            min(
-                self.step_count_delta,
-                self.subgoal_action_count_delta,
-                self.effectful_action_count_delta,
-                self.replan_count_delta,
-                self.version_delta,
-            )
-            < 0
-        ):
-            raise ValueError("runtime counter deltas must be non-negative")
-        object.__setattr__(self, "observation_commits", tuple(self.observation_commits))
-        object.__setattr__(self, "evidence_gaps", tuple(self.evidence_gaps))
-        object.__setattr__(self, "probe_receipts", tuple(self.probe_receipts))
-        object.__setattr__(self, "artifact_refs", tuple(self.artifact_refs))
-        object.__setattr__(self, "intermediate_phases", tuple(self.intermediate_phases))
+        if self.expected_state_version < 0:
+            raise ValueError("runtime transition requires an expected state version")
         object.__setattr__(self, "deltas", tuple(self.deltas))
 
 

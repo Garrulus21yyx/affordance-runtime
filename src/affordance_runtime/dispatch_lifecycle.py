@@ -5,13 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from threading import Lock, RLock
 from time import time
-from typing import Callable
+from typing import Callable, Mapping
 
 from affordance_runtime.contracts import ActionContract, Observation, RuntimeErrorCode
 from affordance_runtime.execution_context import CoordinateBinding, digest_payload
 from affordance_runtime.safety import CapabilityGate
 from affordance_runtime.simplified_runtime_contracts import ExecutionAttempt
-from affordance_runtime.stage_protocol import RuntimeEvent
 
 
 @dataclass(frozen=True)
@@ -134,6 +133,45 @@ class FinalDispatchAdmission:
 
 
 @dataclass(frozen=True)
+class PreparedDispatch:
+    """Immutable handoff from ActionStage to the commit-owned admission path."""
+
+    contract: ActionContract
+    observation: Observation
+    attempt: ExecutionAttempt
+    admission: FinalDispatchAdmission
+    expected_state_version: int
+    selection_id: str = ""
+    catalog_id: str = ""
+    catalog_digest: str = ""
+    action_signature: str = ""
+    approval_decision_id: str = ""
+    preflight_passed: bool = True
+    artifact_refs: tuple[str, ...] = ()
+    semantic_target: Mapping[str, object] = field(default_factory=dict)
+    semantic_destination: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.preflight_passed:
+            raise ValueError("prepared dispatch requires passed preflight")
+        if self.expected_state_version != self.admission.expected_state_version:
+            raise ValueError("prepared dispatch state version mismatch")
+        if self.contract is not self.admission.contract:
+            raise ValueError("prepared dispatch contract must be the admitted contract")
+        if self.observation != self.admission.observation:
+            raise ValueError("prepared dispatch observation mismatch")
+        if (
+            self.attempt.contract_id != self.contract.id
+            or self.attempt.contract_hash != self.contract.contract_hash
+            or self.attempt.issued_at_state_version != self.expected_state_version
+        ):
+            raise ValueError("prepared dispatch attempt is not bound to the contract")
+        object.__setattr__(self, "artifact_refs", tuple(self.artifact_refs))
+        object.__setattr__(self, "semantic_target", dict(self.semantic_target))
+        object.__setattr__(self, "semantic_destination", dict(self.semantic_destination))
+
+
+@dataclass(frozen=True)
 class DispatchPermit:
     permit_id: str
     admission_id: str
@@ -203,9 +241,7 @@ class DispatchPermit:
         object.__setattr__(self, "_used", True)
 
 
-DispatchCommitter = Callable[
-    [FinalDispatchAdmission, ExecutionAttempt, tuple[RuntimeEvent, ...]], DispatchPermit
-]
+DispatchCommitter = Callable[[PreparedDispatch], DispatchPermit]
 
 
 class DispatchAdmissionRejected(RuntimeError):

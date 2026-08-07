@@ -7,6 +7,7 @@ from typing import Any, Mapping, cast
 
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.action_contract_authority import rebuild_contract_authority
+from affordance_runtime.action_semantics import action_compatible
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.choice_contracts import ActionSelection
@@ -31,7 +32,6 @@ from affordance_runtime.planning import (
     ProposalRejectionCode,
     UnifiedTargetResolution,
     UnifiedTargetResolver,
-    _action_compatible,
     _canonical_active_value_transfer_source_target,
     _contract_parameters,
     _exact_transfer_source_value,
@@ -104,7 +104,7 @@ class CanonicalRouteMaterializer:
                 ProposalRejectionCode.MISSING_TARGET,
                 proposal.target_affordance_id,
             )
-        if not _action_compatible(proposal.action_kind, affordance.action):
+        if not action_compatible(proposal.action_kind, affordance.action):
             raise ProposalRejected(
                 ProposalRejectionCode.UNSUPPORTED_ACTION,
                 f"{proposal.action_kind.value} cannot bind {affordance.action}",

@@ -183,7 +183,7 @@ class _StageEnvironment:
         self.stage += 1
         return ExecutionReceipt(
             contract.id,
-            "controlled-stage",
+            contract.backend,
             True,
             f"stage-{self.stage - 1}",
             f"stage-{self.stage}",
