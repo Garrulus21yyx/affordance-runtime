@@ -12,6 +12,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
     BenchmarkRunIdentity,
     BenchmarkSuiteResult,
+    MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
 from affordance_runtime.benchmarks.target_loop.metrics import (
@@ -33,13 +34,20 @@ async def run_suite(suite_id: str, profile_id: str, cases, seed: int) -> Benchma
     for case in cases:
         result = await _run_case(case)
         results.append(result)
-        decisions.append(accept_case(result, case.expected_terminal_statuses, case.required_metrics))
+        decisions.append(accept_case(
+            result, case.expected_terminal_statuses, case.required_measurements,
+            case.metric_expectations,
+        ))
     accepted = accept_suite(tuple(results), tuple(decisions))
     sent_unknown = sum(item.sent_unknown_count for item in results)
     stale = sum(item.stale_opportunities for item in results)
     rates = {
-        "unknown_duplicate_rate": safe_rate(sum(item.duplicate_unknown_attempts for item in results), sent_unknown),
-        "stale_zero_call_rate": safe_rate(stale - sum(item.stale_zero_call_violations for item in results), stale),
+        "unknown_duplicate_rate": safe_rate(MetricMeasurement(
+            sum(item.duplicate_unknown_attempts for item in results), True, sent_unknown,
+        )),
+        "stale_zero_call_rate": safe_rate(MetricMeasurement(
+            stale - sum(item.stale_zero_call_violations for item in results), True, stale,
+        )),
     }
     return BenchmarkSuiteResult(identity, tuple(results), accepted, rates)
 
@@ -105,18 +113,35 @@ def _case_result(case_id, result, counters, latency_ms, failure, environment) ->
         and item.result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}
         for item in turns
     )
+    values = {
+        "observations": result.observation_count if result else 0,
+        "executions": result.execution_count if result else 0,
+        "currentness_probes": result.currentness_probe_count if result else 0,
+        "turns": len(turns),
+        "policy_calls": counters.policy_calls,
+        "semantic_judge_calls": counters.semantic_judge_calls,
+        "provider_attempts": counters.provider_attempts,
+        "confirmations": int(case_id == "confirmation-fresh-rebind" and result is not None and result.execution_count == 1),
+        "ask_user_count": sum(item.decision.__class__.__name__ == "AskUser" for item in turns),
+        "wait_count": sum(item.decision.__class__.__name__ == "Wait" for item in turns),
+        "page_request_count": sum(item.decision.__class__.__name__ == "RequestActionPage" for item in turns),
+        "sent_unknown_count": sent_unknown,
+        "duplicate_unknown_attempts": _duplicate_unknown(turns),
+        "forbidden_effect_attempts": int(getattr(environment, "benchmark_forbidden_effect_attempts", 0)),
+        "stale_opportunities": stale,
+        "stale_zero_call_violations": 0,
+    }
+    measurements = {name: MetricMeasurement(value, True) for name, value in values.items()}
+    measurements["duplicate_unknown_attempts"] = MetricMeasurement(values["duplicate_unknown_attempts"], True, sent_unknown)
+    measurements["stale_zero_call_violations"] = MetricMeasurement(values["stale_zero_call_violations"], True, stale)
     return BenchmarkCaseResult(
-        case_id, str(result.status) if result else str(AgentLoopStatus.FAILED), not failure, failure,
-        result.observation_count if result else 0, result.execution_count if result else 0,
-        result.currentness_probe_count if result else 0, len(turns), counters.policy_calls,
-        counters.semantic_judge_calls, counters.provider_attempts,
-        int(case_id == "confirmation-fresh-rebind" and result is not None and result.execution_count == 1),
-        sum(item.decision.__class__.__name__ == "AskUser" for item in turns),
-        sum(item.decision.__class__.__name__ == "Wait" for item in turns),
-        sum(item.decision.__class__.__name__ == "RequestActionPage" for item in turns),
-        sent_unknown, _duplicate_unknown(turns),
-        int(getattr(environment, "benchmark_forbidden_effect_attempts", 0)),
-        stale, 0, latency_ms,
+        case_id=case_id,
+        status=str(result.status) if result else str(AgentLoopStatus.FAILED),
+        execution_completed=not failure,
+        failure_reason=failure,
+        latency_ms=latency_ms,
+        measurements=measurements,
+        **values,
     )
 
 

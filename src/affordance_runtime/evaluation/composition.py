@@ -62,8 +62,9 @@ class ProductionTaskEvaluator:
                     value == CoverageState.COMPLETE for value in observation.coverage.values()
                 )
                 output_status = TaskEvaluationStatus.INCOMPLETE if complete_inventory else TaskEvaluationStatus.UNKNOWN
-                if status != TaskEvaluationStatus.BLOCKED:
+                if status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.INCOMPLETE}:
                     return _task(task, observation, output_status, evaluations, outputs, "required outputs are not yet available")
+                return _task(task, observation, status, evaluations, outputs, "criterion status precedes missing output")
             candidate = _task(task, observation, status, evaluations, outputs, "Runtime composed criterion status")
             if status == TaskEvaluationStatus.COMPLETE:
                 validate_required_outputs(task, candidate, index)

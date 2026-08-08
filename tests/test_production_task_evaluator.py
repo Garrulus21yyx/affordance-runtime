@@ -305,6 +305,22 @@ def test_missing_required_output_is_incomplete_when_inventory_is_complete() -> N
     assert asyncio.run(ProductionTaskEvaluator().evaluate(task, truncated)).status == TaskEvaluationStatus.UNKNOWN
 
 
+def test_missing_required_output_does_not_overwrite_unknown_criterion() -> None:
+    task = TaskGoal(
+        "output-unknown", "Export report",
+        success_criteria=({"id": "ready", "predicate": "ready", "value": True},),
+        requested_outputs=("report",),
+    )
+    world = _world(True)
+    ambiguous = StateFact("fact:ambiguous", "target:2", "ready", False, "source:1")
+    world = WorldObservation(
+        world.observation_id, world.targets, (*world.facts, ambiguous), (),
+        world.coverage, sources=world.sources,
+    )
+
+    assert asyncio.run(ProductionTaskEvaluator().evaluate(task, world)).status == TaskEvaluationStatus.UNKNOWN
+
+
 def test_output_value_path_sha_file_and_current_artifact_are_bound(tmp_path) -> None:
     output = tmp_path / "report.txt"
     output.write_text("complete report", encoding="utf-8")

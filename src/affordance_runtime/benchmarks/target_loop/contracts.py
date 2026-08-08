@@ -6,14 +6,57 @@ import platform
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.environment import WorldEnvironment
+
+
+@dataclass(frozen=True)
+class MetricMeasurement:
+    value: int | float | None
+    measured: bool
+    opportunities: int | None = None
+    unit: str = "count"
+
+    def __post_init__(self) -> None:
+        if self.measured == (self.value is None):
+            raise ValueError("measured metrics require a value and unmeasured metrics require None")
+        if self.opportunities is not None and self.opportunities < 0:
+            raise ValueError("metric opportunities cannot be negative")
+        if not self.unit:
+            raise ValueError("metric unit is required")
+
+
+class MetricExpectationOperator(StrEnum):
+    EQ = "eq"
+    MIN = "min"
+    MAX = "max"
+    ZERO = "zero"
+    NONZERO = "nonzero"
+
+
+@dataclass(frozen=True)
+class MetricExpectation:
+    metric: str
+    operator: MetricExpectationOperator
+    value: int | float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.metric:
+            raise ValueError("metric expectation name is required")
+        requires_value = self.operator in {
+            MetricExpectationOperator.EQ,
+            MetricExpectationOperator.MIN,
+            MetricExpectationOperator.MAX,
+        }
+        if requires_value != (self.value is not None):
+            raise ValueError("metric expectation value does not match its operator")
 
 
 @dataclass(frozen=True)
@@ -35,8 +78,9 @@ class BenchmarkCase:
     expected_terminal_statuses: tuple[AgentLoopStatus, ...]
     timeout_s: float
     seed: int
-    required_metrics: tuple[str, ...]
+    required_measurements: tuple[str, ...]
     acceptance_profile: str
+    metric_expectations: tuple[MetricExpectation, ...] = ()
     auto_confirm: bool = False
 
     def __post_init__(self) -> None:
@@ -70,7 +114,7 @@ class BenchmarkRunIdentity:
 class BenchmarkCaseResult:
     case_id: str
     status: str
-    passed: bool
+    execution_completed: bool
     failure_reason: str
     observations: int
     executions: int
@@ -89,6 +133,7 @@ class BenchmarkCaseResult:
     stale_opportunities: int
     stale_zero_call_violations: int
     latency_ms: float
+    measurements: dict[str, MetricMeasurement] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

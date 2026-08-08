@@ -36,6 +36,8 @@ def assess_semantic_readiness(
     )
     if relevant:
         return SemanticReadiness.READY
+    if window is not None and window.eligible_count > 0:
+        return SemanticReadiness.INCONCLUSIVE
     if window is not None and window.eligible_count > window.visible_count:
         return SemanticReadiness.INCONCLUSIVE
     complete = bool(observation.coverage) and all(

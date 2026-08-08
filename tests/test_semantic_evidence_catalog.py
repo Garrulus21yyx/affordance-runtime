@@ -21,13 +21,15 @@ from affordance_runtime.world import (
 )
 
 
-def _task(*, hybrid=False, outputs=()):
+def _task(*, hybrid=False, outputs=(), required_assurance=""):
     criterion = {
         "id": "quality", "adjudicator": "hybrid" if hybrid else "semantic",
         "kind": "hybrid" if hybrid else "semantic_rubric",
         "rubric": "The report is clear.", "evidence_scope_target_ids": ["report:1"],
         "evidence_scope_output_ids": list(outputs),
     }
+    if required_assurance:
+        criterion["required_assurance"] = required_assurance
     if hybrid:
         criterion.update({"subject_id": "control:1", "predicate": "enabled", "expected_value": True})
     return TaskGoal("semantic", "Create and review report", success_criteria=(criterion,))
@@ -145,3 +147,18 @@ def test_scoped_evidence_fully_hidden_by_budget_is_inconclusive() -> None:
     assert request.evidence_windows[0].eligible_count == 2
     assert request.evidence_windows[0].visible_count == 0
     assert assess_semantic_readiness(criterion, request, world) == SemanticReadiness.INCONCLUSIVE
+
+
+def test_scoped_evidence_below_required_assurance_is_inconclusive() -> None:
+    task = _task(required_assurance="structural")
+    criterion = normalize_task_criteria(task)[0]
+    weak = replace(
+        _world(),
+        sources=(replace(_world().sources[0], source_profile=ObservationSourceProfile.visual()),),
+    )
+    request = build_semantic_judge_request(
+        task, (criterion,), weak, WorldEvidenceIndex.from_observation(weak)
+    )
+
+    assert request.evidence_windows[0].eligible_count == 2
+    assert assess_semantic_readiness(criterion, request, weak) == SemanticReadiness.INCONCLUSIVE
