@@ -138,6 +138,11 @@ fixed authority prompt, strict parser and policy adapter in `model_policy/`.
 That package imports neither concrete surfaces nor Binder/Executor; AgentLoop
 continues to depend only on the `AgentPolicy` protocol. Raw responses stop at
 the parser and raw provider failures stop at the policy boundary.
+P5-M1.1 keeps provider HTTP, credentials, response extraction and
+`ModelCallRecord` in the existing `model_port.py` owner. The thin bridge owns
+only system/user composition, canonical schema selection, typed failure mapping
+and secret-free metadata copying; it forces zero retries, rejects fallback and
+is bounded by the policy deadline.
 The target dependency gates additionally forbid AgentPolicy→binder/executor/
 surface, model_boundary→concrete surface, confirmation→private binding,
 evaluation→execution, telemetry→decision and production core→benchmark imports.

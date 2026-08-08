@@ -43,8 +43,11 @@ The target path now has:
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
-| P5-M1 model policy core | `CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT`; canonical context JSON, strict parser, one call/no retry |
-| real provider profile | `NOT_STARTED` |
+| P5-M1 model policy core | `CLOSED`; canonical context JSON, typed decision parser and Runtime admission |
+| P5-M1.1 strict decision boundary | `CLOSED`; duplicate/non-finite/depth/node/byte limits and canonical seven-variant spec |
+| P5-M1.1 existing ModelPort bridge | `CLOSED`; existing transport owner, outer deadline, zero retry/no fallback, typed metadata/failures |
+| local HTTP provider-transport proof | `CLOSED`; one request/one execution plus 429/500/schema/deadline zero-call proofs |
+| live provider profile | `UNAVAILABLE`; opt-in smoke not configured at this revision |
 | deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
 | production model evaluators | `NOT_STARTED` |
 | semantic evidence entailment | `NOT_STARTED` |
@@ -154,8 +157,10 @@ task and per-target sections report truthful truncation; failed acquisition
 results do not erase adapter capability; and non-action decisions enter bounded
 semantic recurrent history. Targeted provider selection remains deferred.
 
-P5-M1 is closed for `CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT`: deterministic
-AgentContext serialization, an explicit response schema, strict typed parsing,
-one provider-neutral call per turn, and DOM/Visual/WoT internal proofs reuse the
-existing deterministic evaluators and Runtime admission. Scripted/local fixture
-ports are not a real-provider generalization claim.
+P5-M1/P5-M1.1 are closed for the model-policy core and existing ModelPort
+bridge: deterministic AgentContext serialization, one canonical seven-variant
+schema/parser, hostile-shape JSON limits, one bounded provider attempt, typed
+failure/metadata handling, artifact evidence refs, and DOM/Visual/WoT proofs
+reuse deterministic evaluators and Runtime admission. The local HTTP fixture
+proves transport composition only; live-provider reasoning/generalization is
+not attested. `remote_ci_attestation: unavailable`.

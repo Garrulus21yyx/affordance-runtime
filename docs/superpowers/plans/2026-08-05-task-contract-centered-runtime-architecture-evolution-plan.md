@@ -79,7 +79,7 @@ freeze target contracts
 DOM、Visual full-digest 与 WoT local HTTP JSON 已用相同 TaskGoal、确定性
 AgentPolicy 和 evaluators 证明 shared-state adapter-only matrix，通用
 confirmation/evaluation 信任边界与声明的 target output minimum 已闭合。
-P5-M0.1/M0.1.1 与 injected-port P5-M1 已完成；当前下一切片是 production
+P5-M0.1/M0.1.1、P5-M1 与 existing-ModelPort bridge M1.1 已完成；当前下一切片是 production
 evaluator composition，随后才是 new-AgentLoop harness。
 所有阶段继续以 completed behavior 为主证据。
 
@@ -98,9 +98,11 @@ P5-D6.1: COMPLETE
 P5-M0: COMPLETE
 P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT
 P5-M0.1.1 context operational closure: COMPLETE_NON_DEFAULT
-model-backed AgentPolicy: CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT
-P5-M1 model-backed AgentPolicy: COMPLETE_NON_DEFAULT_FOR_INJECTED_STRUCTURED_MODEL_PORT
-real provider profile: NOT_STARTED
+model-backed AgentPolicy: CLOSED
+P5-M1 model-backed AgentPolicy: COMPLETE_NON_DEFAULT
+P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT
+local HTTP provider transport proof: COMPLETE
+live provider profile: UNAVAILABLE
 P5-M2 production evaluator composition: NOT_STARTED / NEXT
 P5-M3 new-AgentLoop benchmark harness: NOT_STARTED
 external benchmark: BLOCKED
@@ -142,12 +144,19 @@ confirmation dominance, semantic fusion, benchmark admission or cutover.
 | `M2` | production evaluator composition, criterion adjudicators and semantic-evidence applicability | MECHANICAL/SEMANTIC/USER_ACCEPTANCE/HYBRID are explicit; Runtime owns final completion and output validation |
 | `M3` | new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke | exact-head remote CI, zero forbidden effects, zero duplicate unknown attempts; no generalization claim |
 
-M1 is complete only for an injected provider-neutral structured model port:
+M1 established the injected provider-neutral structured model port:
 canonical bounded AgentContext JSON, a fixed authority prompt, strict decision
 schema/parser, one call without core retry, typed failure mapping, and internal
-DOM/Visual/WoT proofs with retained deterministic evaluators. A real provider
-profile, production model evaluator, semantic entailment, harness and benchmark
-admission remain unstarted or blocked.
+DOM/Visual/WoT proofs with retained deterministic evaluators. Production model
+evaluation, semantic entailment, harness and benchmark admission remain
+unstarted or blocked.
+
+M1.1 closes the canonical hostile-JSON boundary and connects the policy through
+the existing ModelPort transport owner. The admitted profile enforces one
+attempt, zero retry, no fallback, an outer deadline, typed failures and
+secret-free call metadata. A local OpenAI-compatible HTTP fixture proves the
+transport path; live-provider attestation remains unavailable. M2 production
+evaluator composition is next.
 
 ### P5-A — Target contracts
 
@@ -312,7 +321,8 @@ DONE: P5-D6.1 confirmation and evaluation contract completion
 DONE: P5-M0 model-safe policy views and evidence-validated evaluation boundary
 DONE: P5-M0.1 AgentContext architecture and context completeness
 DONE: P5-M0.1.1 context operational closure
-DONE: P5-M1 model-backed target AgentPolicy for injected structured model port
+DONE: P5-M1 model-backed target AgentPolicy core
+DONE: P5-M1.1 strict decision boundary and existing ModelPort bridge
 NEXT: P5-M2 production evaluator composition and criterion adjudicators
 THEN: P5-M3 new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke
 THEN: P5-E long-horizon planning

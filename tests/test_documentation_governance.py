@@ -72,7 +72,10 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "P5-D6.1: COMPLETE" in text
     assert "P5-M0: COMPLETE" in text
     assert "P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT" in text
-    assert "model-backed AgentPolicy: CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT" in text
+    assert "model-backed AgentPolicy: CLOSED" in text
+    assert "P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT" in text
+    assert "local HTTP provider transport proof: COMPLETE" in text
+    assert "live provider profile: UNAVAILABLE" in text
     assert "P5-M2 production evaluator composition: NOT_STARTED / NEXT" in text
 
 

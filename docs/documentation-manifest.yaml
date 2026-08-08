@@ -149,6 +149,9 @@ reference:
   - role: p5_m1_model_backed_policy
     path: docs/reviews/2026-08-08-p5-m1-model-backed-policy.md
     lifecycle: current
+  - role: p5_m1_1_provider_bridge_hardening
+    path: docs/reviews/2026-08-08-p5-m1-1-provider-bridge-hardening.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

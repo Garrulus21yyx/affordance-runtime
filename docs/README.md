@@ -54,8 +54,10 @@ baseline remains the default product path. P5-D semantic confirmation, fresh
 rebind, and effect certainty are integrated non-default. P5-D6.1 contract
 completion is closed on the non-default path. P5-M0 model-safe
 policy views and deterministic evaluator trust validation are closed. P5-M1
-model policy core is closed for an injected structured model port; a real
-provider profile and production model evaluators have not started.
+model policy core is closed, and P5-M1.1 connects it to the existing ModelPort
+owner with hostile-JSON limits, an outer deadline, zero retry/fallback, typed
+failures, metadata and a local HTTP transport proof. Live-provider attestation
+is unavailable; production model evaluators have not started.
 P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
 is implemented on the non-default target path. P5-M1 uses the same non-default
 loop and retained deterministic evaluators.
@@ -106,6 +108,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M0.1 AgentContext implementation](reviews/2026-08-08-p5-m0-1-agent-context-implementation.md)
 - [P5-M0.1.1 context operational closure](reviews/2026-08-08-p5-m0-1-1-context-operational-closure.md)
 - [P5-M1 model-backed policy](reviews/2026-08-08-p5-m1-model-backed-policy.md)
+- [P5-M1.1 provider bridge hardening](reviews/2026-08-08-p5-m1-1-provider-bridge-hardening.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

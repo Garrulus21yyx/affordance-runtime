@@ -75,6 +75,8 @@ policy. P5-D semantic confirmation, fresh semantic rebind, and unknown-effect
 no-replay are closed. P5-M0 model-safe policy inputs and evaluator trust
 validation are complete. P5-M1 now supplies one injected, provider-neutral
 structured model call, canonical AgentContext JSON and strict typed-decision parsing.
+P5-M1.1 hardens hostile structured JSON and bridges that policy through the
+existing ModelPort transport with one bounded, zero-retry/no-fallback attempt.
 External full-agent benchmarks remain blocked and default cutover remains pending.
 
 P5-D6.1 is complete on the non-default path: effective risk, semantic
@@ -92,9 +94,10 @@ path: every policy call receives a monotonic one-shot context epoch; every
 fresh-observation path rejects acquisition-identity reuse; deterministic pages
 are traversable through Runtime-issued cursors; action/destination/task/world
 budgets are enforced coherently; and non-action decisions recur as bounded
-semantic history. P5-M1 is closed only for an injected
-`StructuredDecisionModelPort`; no real provider profile, retry platform, model
-evaluator, default cutover, or weakening of exact-subject confirmation is included.
+semantic history. P5-M1.1 closes the existing-transport bridge and local HTTP
+transport proof; live-provider attestation remains unavailable without explicit
+opt-in configuration. No retry platform, model evaluator, default cutover, or
+weakening of exact-subject confirmation is included.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
@@ -124,8 +127,7 @@ selectors, coordinates, or fixture semantics to production policy.
 
 The DOM/Visual/WoT adapter-only shared-state matrix is complete for the current
 declared single-surface profiles. Full external agent benchmarks remain blocked
-until a model-backed target AgentPolicy, production evaluator
-composition, a new-AgentLoop benchmark harness, and exact-head remote CI
+until production evaluator composition, a new-AgentLoop benchmark harness, and exact-head remote CI
 evidence are all complete. P5-D/M0 do not by themselves admit an external run.
 
 ## Documentation

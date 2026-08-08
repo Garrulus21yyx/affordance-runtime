@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
@@ -41,7 +42,7 @@ class ModelBackedAgentPolicy:
         except Exception:
             return _policy_failure(ModelFailure(ModelFailureKind.INTERNAL_ERROR, "request construction failed", False))
         try:
-            outcome = await asyncio.wait_for(self.port.generate(request), timeout=self.call_timeout_s)
+            outcome = await _generate_with_deadline(self.port, request, self.call_timeout_s)
         except TimeoutError:
             return _policy_failure(ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False))
         except Exception:
@@ -67,6 +68,30 @@ def _build_request(context: AgentContext) -> ModelDecisionRequest:
         instructions=MODEL_POLICY_INSTRUCTIONS,
         decision_schema=decision_response_schema(),
     )
+
+
+async def _generate_with_deadline(
+    port: StructuredDecisionModelPort,
+    request: ModelDecisionRequest,
+    timeout_s: float,
+) -> ModelDecisionResponse | ModelFailure:
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    if task is None:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="model-policy-deadline") as worker:
+            future = worker.submit(asyncio.run, _bounded_generate(port, request, timeout_s))
+            return future.result(timeout=timeout_s + 1.0)
+    return await _bounded_generate(port, request, timeout_s)
+
+
+async def _bounded_generate(
+    port: StructuredDecisionModelPort,
+    request: ModelDecisionRequest,
+    timeout_s: float,
+) -> ModelDecisionResponse | ModelFailure:
+    return await asyncio.wait_for(port.generate(request), timeout=timeout_s)
 
 
 def _policy_failure(failure: ModelFailure) -> PolicyFailure:

@@ -120,3 +120,8 @@ structured-model call, parses exactly one typed decision, then reuses these
 same Runtime context/page/admission, binding, confirmation and evaluator steps.
 There is no core retry and provider exceptions/raw payloads do not enter Turn
 history. ProposeDone remains advisory and deterministic TaskEvaluator control is retained.
+P5-M1.1 routes that single call through the existing ModelPort owner. An outer
+policy deadline bounds the awaited attempt; 429, transient transport, refusal
+and structured-output failures become internal `PolicyFailure` results with
+zero execution and no Turn entry. Provider metadata is diagnostic only and
+never enters AgentContext or changes Runtime behavior.

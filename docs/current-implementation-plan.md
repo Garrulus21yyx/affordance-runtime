@@ -32,7 +32,8 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M0 | complete, non-default | model-safe policy projections, evidence-resolved evaluations, target output integrity |
 | P5-M0.1 AgentContext architecture | `COMPLETE_NON_DEFAULT` | disposable unified context, bounded intent/world/history, current context identity, relevance, paging, source assurance, typed decisions |
 | P5-M0.1.1 operational closure | `COMPLETE_NON_DEFAULT` | one-shot epochs, fresh acquisition identity, cursor paging, projection coherence, recurrent decision history |
-| P5-M1 model-backed AgentPolicy | `CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT` | strict structured parser, one call/no retry, deterministic evaluators retained; real provider not started |
+| P5-M1 model-backed AgentPolicy | `CLOSED` | canonical structured decision contract and deterministic evaluators retained |
+| P5-M1.1 ModelPort bridge/hardening | `CLOSED` | hostile JSON, deadline, typed failures/metadata, zero retry/fallback, local HTTP proof; live unavailable |
 | P5-M2 production evaluator composition | `NOT_STARTED / NEXT` | criterion adjudicators and semantic evidence applicability |
 | P5-M3 new-loop benchmark harness | `NOT_STARTED` | fixed BrowserGym/MiniWoB smoke only after M0.1–M2 |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
@@ -42,7 +43,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 ## Next admitted slice
 
 The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
-complete. P5-M0, P5-M0.1, P5-M0.1.1 and the injected-port P5-M1 core are
+complete. P5-M0, P5-M0.1, P5-M0.1.1, P5-M1 and the P5-M1.1 existing-transport bridge are
 complete on the non-default path. The next admitted slice is P5-M2 evaluator
 composition; P5-M3 harness follows, without
 adding semantic fusion, ActionBatch, long-horizon planning, external full-agent
