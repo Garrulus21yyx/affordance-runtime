@@ -92,7 +92,7 @@ async def execute_cycle(
         )
     )
     state.current_observation = after
-    post_terminal = post_action_result(task, state, request, action_evaluation, task_evaluation)
+    post_terminal = post_action_result(task, state, request, result, action_evaluation, task_evaluation)
     return state, 1, 1, probed, post_terminal
 
 

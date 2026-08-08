@@ -222,7 +222,7 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
     asyncio.run(scenario())
 
 
-def test_sent_unknown_no_effect_consumes_confirmation_and_requires_a_new_one() -> None:
+def test_sent_unknown_no_effect_consumes_confirmation_and_waits_without_replay() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment(
             [
@@ -245,10 +245,9 @@ def test_sent_unknown_no_effect_consumes_confirmation_and_requires_a_new_one() -
 
         second = await session.resolve_confirmation(_decision(first))
 
-        assert second.status == AgentLoopStatus.WAITING_CONFIRMATION
+        assert second.status == AgentLoopStatus.WAITING_USER
         assert second.execution_count == 1
-        assert second.confirmation_request is not None
-        assert second.confirmation_request.confirmation_id != first.confirmation_request.confirmation_id
+        assert second.confirmation_request is None
         assert len(environment.executed_requests) == 1
 
     asyncio.run(scenario())

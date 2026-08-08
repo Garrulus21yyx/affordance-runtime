@@ -36,6 +36,7 @@ async def validated_action_evaluation(
     proposal = await evaluator.evaluate(task, before, request, result, after)
     return validate_action_evaluation(
         proposal,
+        task,
         request,
         before,
         after,

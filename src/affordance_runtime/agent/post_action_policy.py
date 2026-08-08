@@ -8,7 +8,7 @@ from affordance_runtime.evaluation.contracts import (
     ActionEvaluationStatus,
     TaskEvaluation,
 )
-from affordance_runtime.execution.contracts import BoundActionRequest
+from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.task.contracts import TaskGoal
 
 
@@ -16,6 +16,7 @@ def post_action_result(
     task: TaskGoal,
     state: AgentLoopState,
     request: BoundActionRequest,
+    result: ActionResult,
     action_evaluation: ActionEvaluation,
     task_evaluation: TaskEvaluation,
 ) -> AgentResult | None:
@@ -28,6 +29,11 @@ def post_action_result(
         return None
     if action_evaluation.status == ActionEvaluationStatus.REJECTED:
         return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, action_evaluation.reason)
+    low_local = str(request.selection.risk) == "low" and request.selection.effect_category in {
+        "observation", "local_reversible",
+    }
+    if result.dispatch_status == DispatchStatus.SENT and low_local:
+        return None
     state.set_pending_unknown_effect(request)
     return build_result(
         AgentLoopStatus.WAITING_USER,

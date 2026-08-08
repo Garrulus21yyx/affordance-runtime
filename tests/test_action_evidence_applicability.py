@@ -2,8 +2,10 @@ from types import SimpleNamespace
 
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.action_applicability import apply_action_evidence_profile
+from affordance_runtime.evaluation.action_verification import derive_action_verification_obligations
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionIntent
+from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     CoverageState,
     ObservationSourceProfile,
@@ -26,6 +28,21 @@ def _request(*, expected_outcome=None):
     return SimpleNamespace(intent=ActionIntent("activate", "target:1", expected_outcome=expected_outcome or {}))
 
 
+def _task():
+    return TaskGoal(
+        "effect", "Enable target",
+        success_criteria=({"id": "enabled", "subject_id": "target:1", "predicate": "enabled", "value": True},),
+    )
+
+
+def _apply(proposal, request, before, after):
+    task = _task()
+    return apply_action_evidence_profile(
+        proposal, task, request, before, after, WorldEvidenceIndex.from_observation(after),
+        derive_action_verification_obligations(task, request, before),
+    )
+
+
 def test_changed_relevant_fact_supports_effect_but_unrelated_fact_does_not() -> None:
     before = _world("before", False, ObservationSourceProfile.dom())
     after = _world("after", True, ObservationSourceProfile.dom())
@@ -35,10 +52,10 @@ def test_changed_relevant_fact_supports_effect_but_unrelated_fact_does_not() -> 
         ActionEvaluationStatus.EFFECT_CONFIRMED, "changed", ("fact:after",)
     )
 
-    accepted = apply_action_evidence_profile(proposal, _request(), before, after, WorldEvidenceIndex.from_observation(after))
-    rejected = apply_action_evidence_profile(
+    accepted = _apply(proposal, _request(), before, after)
+    rejected = _apply(
         ActionEvaluation("request:1", before.observation_id, unrelated.observation_id, ActionEvaluationStatus.EFFECT_CONFIRMED, "changed", ("fact:unrelated",)),
-        _request(), before, unrelated, WorldEvidenceIndex.from_observation(unrelated)
+        _request(), before, unrelated,
     )
     assert accepted.status == ActionEvaluationStatus.EFFECT_CONFIRMED
     assert rejected.status == ActionEvaluationStatus.UNKNOWN
@@ -52,9 +69,7 @@ def test_after_only_fact_without_matching_before_predicate_cannot_support_effect
         "appeared", ("fact:after",),
     )
 
-    result = apply_action_evidence_profile(
-        proposal, _request(), before, after, WorldEvidenceIndex.from_observation(after)
-    )
+    result = _apply(proposal, _request(), before, after)
 
     assert result.status == ActionEvaluationStatus.UNKNOWN
 
@@ -71,9 +86,7 @@ def test_weak_visual_unchanged_cannot_prove_no_effect_but_strong_sources_can() -
             "request:1", before.observation_id, after.observation_id,
             ActionEvaluationStatus.NO_EFFECT_CONFIRMED, "unchanged", (f"fact:after-{profile.debug_source}",)
         )
-        result = apply_action_evidence_profile(
-            proposal, _request(), before, after, WorldEvidenceIndex.from_observation(after)
-        )
+        result = _apply(proposal, _request(), before, after)
         assert result.status == expected
 
 
@@ -92,9 +105,11 @@ def test_current_after_only_scoped_artifact_supports_creation_effect() -> None:
         "created", (evidence_ref,),
     )
 
+    request = _request(expected_outcome={"output_id": "report"})
+    task = TaskGoal("artifact", "Create report", requested_outputs=("report",))
     result = apply_action_evidence_profile(
-        proposal, _request(expected_outcome={"output_id": "report"}), before, after,
-        WorldEvidenceIndex.from_observation(after),
+        proposal, task, request, before, after, WorldEvidenceIndex.from_observation(after),
+        derive_action_verification_obligations(task, request, before),
     )
 
     assert result.status == ActionEvaluationStatus.EFFECT_CONFIRMED

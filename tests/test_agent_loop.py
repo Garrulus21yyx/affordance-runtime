@@ -336,7 +336,7 @@ def test_recent_turns_are_bounded() -> None:
     asyncio.run(scenario())
 
 
-def test_sent_unknown_verified_effect_continues_when_task_is_incomplete() -> None:
+def test_sent_unknown_verified_effect_waits_when_task_is_incomplete() -> None:
     class IncompleteTaskEvaluator:
         async def evaluate(self, task, observation):
             return TaskEvaluation(
@@ -354,9 +354,9 @@ def test_sent_unknown_verified_effect_continues_when_task_is_incomplete() -> Non
         abort = Abort("context:test", "next objective unavailable", "policy")
         loop = AgentLoop(ScriptedPolicy(["first", abort]), SharedActionEvaluator(), IncompleteTaskEvaluator())
         result = await AgentEpisodeRunner(loop).run(environment, _task())
-        assert result.status == AgentLoopStatus.FAILED
+        assert result.status == AgentLoopStatus.WAITING_USER
         assert result.execution_count == 1
-        assert "unknown" not in result.message
+        assert "unknown" in result.message
 
     asyncio.run(scenario())
 
