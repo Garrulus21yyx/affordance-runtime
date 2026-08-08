@@ -18,6 +18,14 @@ from affordance_runtime.benchmarks.target_loop.model_policy_support import (
     local_http_policy,
     local_http_policy_environment,
 )
+from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
+    VisualStateCriterionJudge,
+    real_adapter_task,
+    real_dom_environment,
+    real_visual_environment,
+    real_visual_task,
+    real_wot_environment,
+)
 from affordance_runtime.benchmarks.target_loop.support import (
     CurrentFactActionEvaluator,
     PagingPolicy,
@@ -55,6 +63,8 @@ def build_manifest(suite_id: str, profile_id: str, seed: int):
         )
     elif suite_id == "internal-evaluation" and profile_id == "local-http-semantic-judge":
         cases = (_semantic_case(seed), _output_case(seed))
+    elif suite_id == "internal-real-adapters" and profile_id == "deterministic":
+        cases = tuple(_real_adapter_case(surface, seed) for surface in ("dom", "visual", "wot"))
     else:
         raise ValueError("unknown fixed target-loop suite/profile")
     return BenchmarkManifest("target-loop-manifest.v1", suite_id, profile_id, seed, cases)
@@ -69,7 +79,7 @@ def _expect(**values: int) -> tuple[MetricExpectation, ...]:
 
 def _shared_case(surface: str, profile: str, seed: int) -> BenchmarkCase:
     return BenchmarkCase(
-        f"shared-{surface}", "internal-core", f"{surface} shared-state target loop",
+        f"shared-{surface}", "internal-core", f"synthetic {surface} profile protocol case",
         shared_task, lambda _metrics: shared_environment(surface),
         lambda _metrics: BenchmarkComposition(policy_for(profile), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
@@ -217,4 +227,39 @@ def _output_case(seed: int) -> BenchmarkCase:
         (AgentLoopStatus.DONE,), 10.0, seed,
         ("observations", "executions"), "internal-evaluation",
         _expect(observations=2, executions=1),
+    )
+
+
+def _real_adapter_case(surface: str, seed: int) -> BenchmarkCase:
+    factories = {
+        "dom": real_dom_environment,
+        "visual": real_visual_environment,
+        "wot": real_wot_environment,
+    }
+    surface_metrics = {
+        "dom": _expect(dom_click_calls=1),
+        "visual": _expect(visual_proposer_calls=2, pointer_calls=1),
+        "wot": _expect(td_requests=3, property_reads=2, wot_action_calls=1),
+    }
+    expectations = (
+        *_expect(
+            observations=2, executions=1, currentness_probes=1,
+            effectful_dispatches=1,
+        ),
+        *surface_metrics[surface],
+    )
+    task_factory = real_visual_task if surface == "visual" else real_adapter_task
+    task_evaluator = (
+        ProductionTaskEvaluator(VisualStateCriterionJudge())
+        if surface == "visual" else ProductionTaskEvaluator()
+    )
+    return BenchmarkCase(
+        f"real-{surface}", "internal-real-adapters",
+        f"real production {surface} adapter target-loop case",
+        task_factory, factories[surface],
+        lambda _metrics: BenchmarkComposition(
+            policy_for("deterministic"), CurrentFactActionEvaluator(), task_evaluator,
+        ),
+        (AgentLoopStatus.DONE,), 30.0, seed,
+        tuple(item.metric for item in expectations), "internal-real-adapters", expectations,
     )

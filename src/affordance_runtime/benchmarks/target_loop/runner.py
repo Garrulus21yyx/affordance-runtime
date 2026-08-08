@@ -150,6 +150,15 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure) -> Bench
     measurements["stale_zero_call_violations"] = MetricMeasurement(
         values["stale_zero_call_violations"], True, values["stale_opportunities"],
     )
+    contract_values = {
+        name: values[name] for name in (
+            "observations", "executions", "currentness_probes", "turns", "policy_calls",
+            "semantic_judge_calls", "provider_attempts", "confirmations", "ask_user_count",
+            "wait_count", "page_request_count", "sent_unknown_count", "duplicate_unknown_attempts",
+            "forbidden_effect_attempts", "stale_opportunities", "stale_zero_call_violations",
+            "effectful_dispatches",
+        )
+    }
     return BenchmarkCaseResult(
         case_id=case_id,
         status=str(result.status) if result else str(AgentLoopStatus.FAILED),
@@ -157,7 +166,7 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure) -> Bench
         failure_reason=failure,
         latency_ms=latency_ms,
         measurements=measurements,
-        **values,
+        **contract_values,
     )
 
 
