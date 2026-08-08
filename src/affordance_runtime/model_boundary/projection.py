@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import (
     AgentActionOptionView,
     AgentActionSpaceView,
@@ -19,6 +20,7 @@ from affordance_runtime.model_boundary.contracts import (
 )
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.planning_contracts import TaskPlan
+from affordance_runtime.world.action_paging import InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.relevance import ActionRelevance
 from affordance_runtime.world.view import AgentWorldView
@@ -81,17 +83,63 @@ def project_action_space(
     world: AgentWorldView,
     relevance: Mapping[str, ActionRelevance] | None = None,
 ) -> AgentActionSpaceView:
-    labels = {target.target_id: target.label for target in world.targets}
-    relevance = relevance or {}
     return AgentActionSpaceView(
-        tuple(
+        _project_action_options(
+            action_space,
+            tuple(option.action_id for option in action_space.options),
+            world,
+            relevance or {},
+            max_destinations_per_option=max(
+                (len(option.eligible_destination_ids) for option in action_space.options),
+                default=1,
+            ),
+        )
+    )
+
+
+def project_action_page(
+    action_space: ActionSpace,
+    page: InternalActionPage,
+    world: AgentWorldView,
+    max_destinations_per_option: int,
+) -> AgentActionSpaceView:
+    if page.action_space_id != action_space.action_space_id:
+        raise ValueError("action page does not belong to the projected ActionSpace")
+    return AgentActionSpaceView(
+        _project_action_options(
+            action_space,
+            page.visible_action_ids,
+            world,
+            dict(page.relevance),
+            max_destinations_per_option,
+        )
+    )
+
+
+def _project_action_options(
+    action_space: ActionSpace,
+    visible_action_ids: tuple[str, ...],
+    world: AgentWorldView,
+    relevance: Mapping[str, ActionRelevance],
+    max_destinations_per_option: int,
+) -> tuple[AgentActionOptionView, ...]:
+    labels = {target.target_id: target.label for target in world.targets}
+    by_id = {option.action_id: option for option in action_space.options}
+    return tuple(
             AgentActionOptionView(
                 option.action_id,
                 option.semantic_action,
                 option.target_id,
                 labels.get(option.target_id, option.target_id),
                 option.destination_required,
-                tuple(AgentDestinationView(item, labels.get(item, item)) for item in option.eligible_destination_ids),
+                BoundedSection(
+                    tuple(
+                        AgentDestinationView(item, labels.get(item, item))
+                        for item in option.eligible_destination_ids[:max_destinations_per_option]
+                    ),
+                    len(option.eligible_destination_ids),
+                    len(option.eligible_destination_ids) > max_destinations_per_option,
+                ),
                 project_parameter_schema_for_model(option.parameter_schema),
                 option.description,
                 option.semantic_effects,
@@ -104,9 +152,9 @@ def project_action_space(
                 relevance[option.action_id].score if option.action_id in relevance else 0.0,
                 relevance[option.action_id].reason_codes if option.action_id in relevance else (),
             )
-            for option in action_space.options
+            for action_id in visible_action_ids
+            if (option := by_id.get(action_id)) is not None
         )
-    )
 
 
 def project_turns(turns: tuple[Turn, ...]) -> tuple[AgentTurnView, ...]:

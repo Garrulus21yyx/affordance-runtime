@@ -77,7 +77,7 @@ class AgentLoop:
             if task_status is not None:
                 return self._result(session, task_status, task_evaluation.reason)
             action_space = self.action_space_builder.build(task, state.current_observation)
-            ensure_current_action_page(session, action_space, self.context_builder.pager)
+            ensure_current_action_page(session, action_space, self.context_builder)
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
             else:

@@ -47,6 +47,7 @@ class RequestActionPage:
     query: str = ""
     target_id: str = ""
     relevance_role: str = ""
+    cursor: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)

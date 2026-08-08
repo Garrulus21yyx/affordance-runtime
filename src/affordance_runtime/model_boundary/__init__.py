@@ -25,6 +25,7 @@ from affordance_runtime.model_boundary.contracts import (
 )
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_boundary.projection import (
+    project_action_page,
     project_action_space,
     project_parameter_schema_for_model,
     project_plan,
@@ -56,6 +57,7 @@ __all__ = [
     "ModelFailure",
     "ModelFailureKind",
     "project_action_space",
+    "project_action_page",
     "project_parameter_schema_for_model",
     "project_plan",
     "project_task",

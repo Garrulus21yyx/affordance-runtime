@@ -85,7 +85,15 @@ class ModelWorldView:
     observation_capabilities: tuple[ObservationCapabilityView, ...] = ()
 
 
-def project_model_world(observation: WorldObservation, budget: ContextProjectionBudget) -> ModelWorldView:
+def project_model_world(
+    observation: WorldObservation,
+    budget: ContextProjectionBudget,
+    pinned_target_ids: tuple[str, ...] = (),
+) -> ModelWorldView:
+    pinned = set(pinned_target_ids)
+    ordered_targets = tuple(item for item in observation.targets if item.target_id in pinned) + tuple(
+        item for item in observation.targets if item.target_id not in pinned
+    )
     targets = tuple(
         ModelTargetView(
             item.target_id,
@@ -94,7 +102,7 @@ def project_model_world(observation: WorldObservation, budget: ContextProjection
             _public_mapping(item.state, _MAX_STATE_FIELDS),
             _public_mapping(item.relations, budget.max_relations_per_target),
         )
-        for item in observation.targets[: budget.max_targets]
+        for item in ordered_targets[: budget.max_targets]
     )
     target_ids = {item.target_id for item in targets}
     fact_counts: dict[str, int] = {}

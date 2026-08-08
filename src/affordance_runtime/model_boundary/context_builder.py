@@ -19,7 +19,7 @@ from affordance_runtime.model_boundary.context import (
 )
 from affordance_runtime.model_boundary.contracts import AgentActionPageView
 from affordance_runtime.model_boundary.projection import (
-    project_action_space,
+    project_action_page,
     project_plan,
     project_public_value,
     project_task,
@@ -52,30 +52,38 @@ class ContextBuilder:
         observation_count: int = 1,
         context_generation: int = 0,
     ) -> AgentContext:
-        world = project_model_world(state.current_observation, self.budget)
-        labels = {item.target_id: item.label for item in state.current_observation.targets}
-        page = action_page or self.pager.page(
-            action_space,
-            state.active_objective,
-            labels=labels,
-        )
+        page = action_page or self.page(action_space, state)
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
-        relevance = dict(page.relevance)
-        projected_actions = project_action_space(
+        projected_actions = project_action_page(
             action_space,
+            page,
             build_agent_world_view(state.current_observation),
-            relevance,
+            self.budget.max_destinations_per_option,
         )
-        by_id = {item.action_id: item for item in projected_actions.options}
-        shown_actions = tuple(by_id[item] for item in page.visible_action_ids if item in by_id)
+        shown_actions = projected_actions.options
+        pinned_targets = tuple(
+            dict.fromkeys(
+                target_id
+                for option in shown_actions
+                for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
+            )
+        )
+        world = project_model_world(state.current_observation, self.budget, pinned_targets)
+        visible_targets = {item.target_id for item in world.targets.items}
+        if any(target_id not in visible_targets for target_id in pinned_targets):
+            raise ValueError("current action page target is absent from ModelWorldView")
         actions = AgentActionPageView(
             shown_actions,
             page.total_count,
             len(shown_actions),
-            page.has_more,
+            page.total_count > len(shown_actions),
             page.has_more,
             ("target_id", "relevance_role", "query"),
+            page.query,
+            page.target_id,
+            page.relevance_role.value if page.relevance_role else "",
+            page.next_cursor,
         )
         history_items = project_turns(state.recent_turns)[-self.budget.max_history_turns :]
         identity = ContextIdentity(
@@ -113,6 +121,30 @@ class ContextBuilder:
             DecisionMode.ACT,
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes)
+
+    def page(
+        self,
+        action_space: ActionSpace,
+        state: AgentLoopState,
+        *,
+        query: str = "",
+        target_id: str = "",
+        relevance_role: str = "",
+        cursor: str = "",
+    ) -> InternalActionPage:
+        labels = {item.target_id: item.label for item in state.current_observation.targets}
+        return self.pager.page(
+            action_space,
+            state.active_objective,
+            query=query,
+            target_id=target_id,
+            relevance_role=relevance_role or None,
+            labels=labels,
+            cursor=cursor,
+            page_size=self.budget.max_action_options,
+            max_destinations_per_option=self.budget.max_destinations_per_option,
+            max_targets=self.budget.max_targets,
+        )
 
 
 def project_intent_context(

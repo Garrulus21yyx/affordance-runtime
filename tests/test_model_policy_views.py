@@ -93,8 +93,10 @@ def test_action_space_projection_excludes_runtime_route_identity() -> None:
 
     assert option.action_id == "action:opaque"
     assert option.target_label == "Send message"
-    assert option.destinations[0].destination_id == "alice"
-    assert option.destinations[0].label == "Alice"
+    assert option.destinations.items[0].destination_id == "alice"
+    assert option.destinations.items[0].label == "Alice"
+    assert option.destinations.total_count == 1
+    assert not option.destinations.truncated
     assert option.parameter_schema["properties"]["text"]["type"] == "string"
     representation = repr(view)
     for private in (

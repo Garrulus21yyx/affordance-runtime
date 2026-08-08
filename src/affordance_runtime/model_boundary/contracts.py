@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.task.contracts import RiskProfile
 from affordance_runtime.world.contracts import ActionRisk
 
@@ -62,7 +63,7 @@ class AgentActionOptionView:
     target_id: str
     target_label: str
     destination_required: bool
-    destinations: tuple[AgentDestinationView, ...]
+    destinations: BoundedSection[AgentDestinationView]
     parameter_schema: Mapping[str, object]
     description: str
     semantic_effects: tuple[str, ...]
@@ -76,7 +77,6 @@ class AgentActionOptionView:
     relevance_reason_codes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "destinations", tuple(self.destinations))
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "relevance_reason_codes", tuple(self.relevance_reason_codes))
@@ -98,14 +98,20 @@ class AgentActionPageView:
     truncated: bool
     has_more: bool
     available_filters: tuple[str, ...] = ()
+    active_query: str = ""
+    active_target_filter: str = ""
+    active_relevance_filter: str = ""
+    next_cursor: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "options", tuple(self.options))
         object.__setattr__(self, "available_filters", tuple(self.available_filters))
         if self.total_count < len(self.options) or self.page_size != len(self.options):
             raise ValueError("action page counts are inconsistent")
-        if self.truncated != (self.total_count > len(self.options)) or self.has_more != self.truncated:
+        if self.truncated != (self.total_count > len(self.options)):
             raise ValueError("action page truncation metadata is untruthful")
+        if self.has_more != bool(self.next_cursor):
+            raise ValueError("action page has_more requires a usable next cursor")
 
 
 @dataclass(frozen=True)

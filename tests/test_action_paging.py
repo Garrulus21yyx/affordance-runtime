@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _world
+from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _world
 
 from affordance_runtime.agent import (
     Abort,
@@ -57,6 +57,62 @@ def test_action_page_is_bounded_truthful_and_other_remains_retrievable() -> None
     assert "action:39" not in default.visible_action_ids
     assert "action:39" in other.visible_action_ids or other.has_more
     assert other.page_id != default.page_id
+
+
+def test_cursor_pager_traverses_every_action_without_overlap() -> None:
+    space = ActionSpace("obs:1", tuple(_option(index) for index in range(20)))
+    pager = ActionPager(page_size=6)
+    pages = []
+    cursor = ""
+
+    while True:
+        page = pager.page(space, cursor=cursor)
+        pages.append(page)
+        if not page.has_more:
+            break
+        assert page.next_cursor
+        cursor = page.next_cursor
+
+    flattened = tuple(action_id for page in pages for action_id in page.visible_action_ids)
+    assert flattened == tuple(option.action_id for option in space.options)
+    assert len(flattened) == len(set(flattened))
+    assert pages[-1].next_cursor == ""
+
+
+def test_filtered_page_can_continue_and_cursor_is_filter_bound() -> None:
+    options = tuple(_option(index, action="read", effect="") for index in range(12))
+    space = ActionSpace("obs:1", options)
+    pager = ActionPager(page_size=5)
+
+    first = pager.page(space, relevance_role=ActionRelevanceRole.INFORMATION)
+    second = pager.page(
+        space,
+        relevance_role=ActionRelevanceRole.INFORMATION,
+        cursor=first.next_cursor,
+    )
+
+    assert first.visible_action_ids != second.visible_action_ids
+    assert second.cursor == first.next_cursor
+    with pytest.raises(ValueError, match="cursor"):
+        pager.page(space, query="different", cursor=first.next_cursor)
+
+
+def test_single_oversized_option_fails_closed_instead_of_bypassing_byte_budget() -> None:
+    option = replace(_option(0), description="x" * 1_000)
+
+    with pytest.raises(ValueError, match="byte budget"):
+        ActionPager(max_projected_bytes=100).page(ActionSpace("obs:1", (option,)))
+
+
+def test_empty_filtered_page_is_not_a_truncated_page() -> None:
+    page = ActionPager(page_size=1).page(
+        ActionSpace("obs:1", (_option(0),)),
+        target_id="target:missing",
+    )
+
+    assert page.visible_action_ids == ()
+    assert page.total_count == 0
+    assert not page.has_more and not page.next_cursor
 
 
 def test_action_page_filters_are_exact_and_page_identity_binds_visible_membership() -> None:
@@ -225,6 +281,73 @@ def test_page_a_to_b_to_a_never_revalidates_first_page_decision() -> None:
 
         assert result.status == AgentLoopStatus.FAILED
         assert len(set(policy.context_ids)) == 3
+        assert result.execution_count == 0
+        assert environment.executed_requests == []
+
+    asyncio.run(scenario())
+
+
+def test_next_page_action_is_selectable_and_model_sees_active_cursor_state() -> None:
+    before = _two_action_world("before", False)
+    after = _two_action_world("after", True)
+
+    class Policy:
+        first_action_id = ""
+
+        async def decide(self, context):
+            if not self.first_action_id:
+                self.first_action_id = context.actions.options[0].action_id
+                assert context.actions.has_more
+                assert context.actions.next_cursor
+                return RequestActionPage(context.context_id, cursor=context.actions.next_cursor)
+            assert context.actions.active_query == ""
+            assert context.actions.active_target_filter == ""
+            assert context.actions.active_relevance_filter == ""
+            assert context.actions.options[0].action_id != self.first_action_id
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([before, after], [_sent()])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                context_builder=ContextBuilder(pager=ActionPager(page_size=1)),
+            )
+        ).run(environment, _paging_task())
+
+        assert result.status == AgentLoopStatus.DONE
+        assert result.execution_count == 1
+        assert len(environment.executed_requests) == 1
+
+    asyncio.run(scenario())
+
+
+def test_previous_page_action_is_rejected_even_with_current_context_id() -> None:
+    before = _two_action_world("before", False)
+
+    class Policy:
+        previous_action_id = ""
+
+        async def decide(self, context):
+            if not self.previous_action_id:
+                self.previous_action_id = context.actions.options[0].action_id
+                return RequestActionPage(context.context_id, cursor=context.actions.next_cursor)
+            return SelectAction(context.context_id, self.previous_action_id)
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([before])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                context_builder=ContextBuilder(pager=ActionPager(page_size=1)),
+            )
+        ).run(environment, _paging_task())
+
+        assert result.status == AgentLoopStatus.BLOCKED
         assert result.execution_count == 0
         assert environment.executed_requests == []
 
