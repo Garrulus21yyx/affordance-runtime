@@ -4,7 +4,9 @@
 > **Semantic authority:** false
 > **Branch:** `codex/migrate-world-interaction-capabilities`
 > **Start SHA:** `b14e6fbbafc83f4e163bdada4a4e3750010f6a84`
-> **Final revision:** the commit containing this record; exact pushed SHA is reported by Git and the final task report
+> **Implementation SHA:** `d03ffdb58e4fe4f4da4ae3072c9979639665ce9e`
+> **Documentation closure:** the commit containing this record; final pushed HEAD is reported by Git and the final task report
+> **Expected post-commit working tree:** clean
 > **Date:** 2026-08-08
 
 ## Result
