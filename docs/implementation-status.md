@@ -43,7 +43,12 @@ The target path now has:
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
-| model-backed AgentPolicy | `NOT_STARTED` |
+| P5-M1 model policy core | `CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT`; canonical context JSON, strict parser, one call/no retry |
+| real provider profile | `NOT_STARTED` |
+| deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
+| production model evaluators | `NOT_STARTED` |
+| semantic evidence entailment | `NOT_STARTED` |
+| new-AgentLoop benchmark harness | `NOT_STARTED` |
 | external benchmark | `BLOCKED` |
 | default cutover | `NOT_READY` |
 | RoutePolicy | implemented, post-hard-gate only |
@@ -126,8 +131,9 @@ into private-payload-free model views while retaining internal ActionSpace as
 the sole admission authority. Per-observation evidence indexes resolve action
 and task evidence. COMPLETE is deterministically bound to task, observation,
 criteria, current evidence, requested outputs, and declared path/SHA-256 checks.
-Only typed future model failure/evaluator-input contracts exist; no provider or
-model-backed policy/evaluator is implemented.
+The target loop now has a provider-neutral `ModelBackedAgentPolicy` using one
+injected structured call and typed failures. No real-provider profile or
+production model evaluator is implemented.
 TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
 Semantic fusion remains deliberately deferred. The small `AgentLoopState` is
@@ -136,7 +142,7 @@ P5-M0.1 now provides the unified disposable AgentContext, ContextIdentity,
 bounded context-only intent, bounded model world/progress/pending/budget views,
 typed recurrent decisions, current-page paging, explicit-hint relevance and
 source-assurance summaries. Criterion adjudication, targeted observation
-provider selection, model-backed target policy/evaluator composition and the new-loop
+provider selection, production model evaluator composition and the new-loop
 benchmark harness have not begun. WoT effectful rate limiting is implemented; property
 read-side scheduling/rate limiting is not implemented.
 
@@ -147,3 +153,9 @@ bound; page projection uses the configured action/destination/world budgets;
 task and per-target sections report truthful truncation; failed acquisition
 results do not erase adapter capability; and non-action decisions enter bounded
 semantic recurrent history. Targeted provider selection remains deferred.
+
+P5-M1 is closed for `CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT`: deterministic
+AgentContext serialization, an explicit response schema, strict typed parsing,
+one provider-neutral call per turn, and DOM/Visual/WoT internal proofs reuse the
+existing deterministic evaluators and Runtime admission. Scripted/local fixture
+ports are not a real-provider generalization claim.

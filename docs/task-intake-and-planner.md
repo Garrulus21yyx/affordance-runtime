@@ -189,7 +189,8 @@ ActionChoiceCatalog authority objects. Those remain baseline behavior until
 P5-A/P5-E/P5-H cutover and are not target contracts.
 
 P5-M0 and P5-M0.1 model-boundary contracts are integrated only on the
-non-default target loop. No provider SDK, model-backed AgentPolicy, or model
-evaluator is present. AgentContext/ContextIdentity/current-page admission and
+non-default target loop. P5-M1 adds a model-backed AgentPolicy only through an
+injected provider-neutral structured port; no real provider profile, provider
+SDK, or model evaluator is present. AgentContext/ContextIdentity/current-page admission and
 explicit-hint relevance are implemented; clarification continuation and
 targeted observation provider selection remain deferred.

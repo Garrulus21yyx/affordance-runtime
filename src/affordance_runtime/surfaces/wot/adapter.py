@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from time import monotonic, time
 from typing import Any, Callable
@@ -201,7 +202,10 @@ class WotSurfaceAdapter:
             supports = getattr(self.transport, "supports", None)
             if supports is not None and not supports(route):
                 continue
-            binding = self._binding(affordance, route, target_id)
+            try:
+                binding = self._binding(affordance, route, target_id)
+            except ValueError:
+                continue
             bindings.append(binding)
             routes[binding.binding_id] = (route, scheme)
         return tuple(targets), tuple(bindings), routes
@@ -209,7 +213,7 @@ class WotSurfaceAdapter:
     def _binding(self, affordance: Any, route: WotAffordanceBinding, target_id: str) -> ActionBinding:
         if self._task is None:
             raise RuntimeError("WoT surface adapter must be reset before binding")
-        metadata = action_metadata(self.surface, route.primitive_action, dict(route.input_schema))
+        metadata = action_metadata(self.surface, route.primitive_action, _semantic_input_schema(route.input_schema))
         authored = affordance.risk.value if bool(getattr(affordance, "risk_asserted", False)) else ""
         classification = classify_wot_action(
             self._task,
@@ -292,3 +296,24 @@ def _coverage(declared_reads: int, successful_reads: int, failed_reads: int) -> 
     if successful_reads == 0:
         return CoverageState.FAILED
     return CoverageState.TRUNCATED
+
+
+def _semantic_input_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "enum",
+        "minimum",
+        "maximum",
+        "description",
+    }
+    result = {key: value for key, value in schema.items() if key in allowed}
+    properties = result.get("properties")
+    if isinstance(properties, Mapping):
+        result["properties"] = {
+            str(key): _semantic_input_schema(value) if isinstance(value, Mapping) else value
+            for key, value in properties.items()
+        }
+    return result

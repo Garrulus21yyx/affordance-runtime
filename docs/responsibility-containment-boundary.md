@@ -133,6 +133,11 @@ acquisition identity, `model_boundary/task_projection.py` owns truthful task
 sections, and `world/evidence_refs.py` canonicalizes value-free public evidence
 identity. No ContextStore, page database, revision service or new Runtime state
 aggregate was introduced.
+P5-M1 places the provider-neutral request/response port, canonical serializer,
+fixed authority prompt, strict parser and policy adapter in `model_policy/`.
+That package imports neither concrete surfaces nor Binder/Executor; AgentLoop
+continues to depend only on the `AgentPolicy` protocol. Raw responses stop at
+the parser and raw provider failures stop at the policy boundary.
 The target dependency gates additionally forbid AgentPolicy→binder/executor/
 surface, model_boundary→concrete surface, confirmation→private binding,
 evaluation→execution, telemetry→decision and production core→benchmark imports.

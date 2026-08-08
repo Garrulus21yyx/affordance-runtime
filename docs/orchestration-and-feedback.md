@@ -114,3 +114,9 @@ decision recovery and no-op page cycles. RequestObservation, Wait, stale/current
 refresh, confirmation refresh and post-action observation share the same
 new-acquisition-identity check. Page requests record `page_changed` or
 `page_unchanged` in bounded semantic history; they never execute an action.
+
+P5-M1 serializes each disposable context once, makes at most one injected
+structured-model call, parses exactly one typed decision, then reuses these
+same Runtime context/page/admission, binding, confirmation and evaluator steps.
+There is no core retry and provider exceptions/raw payloads do not enter Turn
+history. ProposeDone remains advisory and deterministic TaskEvaluator control is retained.

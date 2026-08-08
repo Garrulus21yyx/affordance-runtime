@@ -1,6 +1,7 @@
 from io import BytesIO
 from urllib.parse import quote
 
+from model_policy_support import first_action_model_policy
 from PIL import Image
 from target_agent_loop_support import (
     FirstOfferedActionPolicy,
@@ -82,5 +83,33 @@ def test_real_browser_visual_only_short_loop_completes_with_one_semantic_action(
         assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
         assert environment.adapters[0].surface == "visual"
         assert proposer.calls == 2
+    finally:
+        session.close()
+
+
+def test_real_browser_visual_model_policy_completes_through_strict_structured_decision() -> None:
+    html = """
+    <!doctype html><html><body style="margin:0;background:white">
+      <button id="shared" aria-expanded="false" style="position:absolute;left:160px;top:120px;
+        width:240px;height:100px;border:0;background:rgb(220,40,60);color:white"
+        onclick="this.style.background='rgb(35, 180, 80)';this.setAttribute('aria-expanded','true')">
+        Enable shared state
+      </button>
+    </body></html>
+    """
+    session = BrowserSession.launch("data:text/html," + quote(html), lease_ttl_ms=30_000)
+    try:
+        proposer = ScreenshotOnlySharedStateProposer()
+        environment = UnifiedWorldEnvironment((VisualSurfaceAdapter(session, proposer),))
+        policy = first_action_model_policy()
+        loop = AgentLoop(policy, SharedStateActionEvaluator(), SharedStateTaskEvaluator())
+
+        result = run_immediate(AgentEpisodeRunner(loop).run(environment, shared_state_task()))
+
+        assert result.status == AgentLoopStatus.DONE
+        assert result.execution_count == 1
+        assert policy.port.calls == 1
+        request = policy.port.requests[0].serialized_context
+        assert "action_point" not in request and "screenshot_digest" not in request
     finally:
         session.close()

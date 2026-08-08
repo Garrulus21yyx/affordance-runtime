@@ -72,7 +72,8 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "P5-D6.1: COMPLETE" in text
     assert "P5-M0: COMPLETE" in text
     assert "P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT" in text
-    assert "model-backed AgentPolicy: NEXT" in text
+    assert "model-backed AgentPolicy: CLOSED_FOR_INJECTED_STRUCTURED_MODEL_PORT" in text
+    assert "P5-M2 production evaluator composition: NOT_STARTED / NEXT" in text
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

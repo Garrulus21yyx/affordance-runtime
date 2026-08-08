@@ -3,6 +3,7 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from model_policy_support import first_action_model_policy
 from target_agent_loop_support import (
     FirstOfferedActionPolicy,
     SharedStateActionEvaluator,
@@ -129,3 +130,26 @@ def test_real_http_wot_only_short_loop_completes_with_one_semantic_action() -> N
         assert tuple(adapter.surface for adapter in environment.adapters) == ("wot",)
         assert "href" not in repr(result.turns)
         assert "credential" not in repr(result)
+
+
+def test_real_http_wot_model_policy_completes_through_strict_structured_decision() -> None:
+    with shared_state_server() as (fixture, td_url):
+        environment = UnifiedWorldEnvironment(
+            (
+                WotSurfaceAdapter(
+                    HttpWotTransport(td_url),
+                    deployment_scope=WotDeploymentScope.LOCAL_SIMULATION,
+                ),
+            )
+        )
+        policy = first_action_model_policy()
+        loop = AgentLoop(policy, SharedStateActionEvaluator(), SharedStateTaskEvaluator())
+
+        result = run_immediate(AgentEpisodeRunner(loop).run(environment, shared_state_task()))
+
+        assert result.status == AgentLoopStatus.DONE
+        assert result.execution_count == 1
+        assert fixture.action_calls == 1
+        assert policy.port.calls == 1
+        request = policy.port.requests[0].serialized_context
+        assert "href" not in request and "securityDefinitions" not in request

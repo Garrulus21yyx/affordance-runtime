@@ -13,6 +13,7 @@ TARGET_CORE = (
     PACKAGE / "risk",
     PACKAGE / "confirmation",
     PACKAGE / "model_boundary",
+    PACKAGE / "model_policy",
 )
 SIZE_GATED = TARGET_CORE + (
     PACKAGE / "surfaces" / "dom",
@@ -95,6 +96,17 @@ def test_model_boundary_has_no_concrete_surface_execution_or_fixture_dependencie
     assert not any(name.startswith("affordance_runtime.executors") for name in imports)
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
     assert "affordance_runtime.world.binder" not in imports
+
+
+def test_model_policy_has_no_surface_binding_execution_or_loop_state_dependencies() -> None:
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_policy")))
+    loop_imports = _imports(PACKAGE / "agent" / "loop.py")
+
+    assert not any(name.startswith("affordance_runtime.surfaces") for name in imports)
+    assert not any(name.startswith("affordance_runtime.executors") for name in imports)
+    assert "affordance_runtime.world.binder" not in imports
+    assert "affordance_runtime.agent.state" not in imports
+    assert not any(name.startswith("affordance_runtime.model_policy") for name in loop_imports)
 
 
 def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() -> None:

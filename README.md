@@ -73,14 +73,15 @@ Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
 three-surface adapter-only shared-state matrix is proven with one deterministic
 policy. P5-D semantic confirmation, fresh semantic rebind, and unknown-effect
 no-replay are closed. P5-M0 model-safe policy inputs and evaluator trust
-validation are complete; a model-backed target AgentPolicy remains unimplemented.
+validation are complete. P5-M1 now supplies one injected, provider-neutral
+structured model call, canonical AgentContext JSON and strict typed-decision parsing.
 External full-agent benchmarks remain blocked and default cutover remains pending.
 
 P5-D6.1 is complete on the non-default path: effective risk, semantic
 destination identity, confirmation presentation, immutable terminal sessions,
 and evidence-lineage fields are closed. P5-M0 now resolves evidence against the
-current world and validates declared-minimum target outputs; no model-backed
-policy has started. P5-M0.1 is now closed on that same non-default path:
+current world and validates declared-minimum target outputs; production model
+evaluators have not started. P5-M0.1 is now closed on that same non-default path:
 each policy turn receives a bounded disposable AgentContext, all decisions bind
 an opaque current context ID, stale/replayed decisions are zero-call, and
 deterministic relevance/paging plus DOM/Visual/WoT source summaries are live.
@@ -91,14 +92,15 @@ path: every policy call receives a monotonic one-shot context epoch; every
 fresh-observation path rejects acquisition-identity reuse; deterministic pages
 are traversable through Runtime-issued cursors; action/destination/task/world
 budgets are enforced coherently; and non-action decisions recur as bounded
-semantic history. This does not start P5-M1, change the default path, or weaken
-exact-subject confirmation.
+semantic history. P5-M1 is closed only for an injected
+`StructuredDecisionModelPort`; no real provider profile, retry platform, model
+evaluator, default cutover, or weakening of exact-subject confirmation is included.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)
 for exact code truth and [Current Implementation Plan](docs/current-implementation-plan.md)
-for exact slice status and the next target-policy work queue.
+for exact slice status and the next evaluator-composition work queue.
 
 ## Correctness invariants retained during simplification
 

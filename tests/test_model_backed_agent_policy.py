@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from test_agent_loop import SharedTaskEvaluator, _task, _world
 
@@ -49,6 +49,46 @@ def test_agent_context_serialization_is_deterministic_bounded_and_route_free() -
         assert json.loads(first)["context_id"] == context.context_id
         for private in ("selector", "#shared", "binding:model-context", "executor", "credential"):
             assert private not in first
+
+    asyncio.run(scenario())
+
+
+def test_private_binding_route_and_credentials_never_enter_model_request() -> None:
+    async def scenario() -> None:
+        task = _task()
+        observation = _world("private-model-context", False)
+        private_binding = replace(
+            observation.bindings[0],
+            payload={
+                "selector": "#private",
+                "href": "https://private.example/action",
+                "credential": "top-secret",
+                "backend": "private-executor",
+            },
+        )
+        observation = replace(observation, bindings=(private_binding,))
+        evaluation = await SharedTaskEvaluator().evaluate(task, observation)
+        context = ContextBuilder().build(
+            task,
+            AgentLoopState(observation),
+            ActionSpaceBuilder().build(task, observation),
+            evaluation,
+        )
+        raw = json.dumps(
+            {
+                "type": "abort",
+                "context_id": context.context_id,
+                "reason": "inspection complete",
+                "category": "policy",
+            }
+        )
+        port = ScriptedPort(ModelDecisionResponse(raw))
+
+        await ModelBackedAgentPolicy(port).decide(context)
+
+        request = port.request.serialized_context
+        for private in ("#private", "private.example", "top-secret", "private-executor"):
+            assert private not in request
 
     asyncio.run(scenario())
 
