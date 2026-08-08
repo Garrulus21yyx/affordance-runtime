@@ -8,6 +8,7 @@ from affordance_runtime.agent.evaluation_control import (
     validated_action_evaluation,
     validated_task_evaluation,
 )
+from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
 from affordance_runtime.agent.policy import ActionEvaluator, TaskEvaluator
 from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.result import build_result, observation_budget_result
@@ -33,7 +34,13 @@ async def execute_cycle(
     try:
         request = binder.bind(selection, before, decision.context_id)
     except BindingError:
-        state.current_observation = await environment.observe("binding unavailable; refresh world")
+        try:
+            state.current_observation = await observe_fresh(
+                environment, before.observation_id, "binding unavailable; refresh world"
+            )
+        except FreshObservationUnavailable as exc:
+            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
+            return state, 1, 0, 0, terminal
         return state, 1, 0, 0, None
     current = session.current_context_snapshot
     if current is None or request.context_id != current.context_id or session.consumed_context_id != request.context_id:
@@ -45,16 +52,12 @@ async def execute_cycle(
         terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch")
         return state, 0, int(result.dispatch_status != DispatchStatus.NOT_SENT), probed, terminal
     if result.dispatch_status == DispatchStatus.NOT_SENT:
+        return await _not_sent_outcome(session, decision, request, result, probed)
+    try:
+        after = await observe_fresh(environment, before.observation_id, "fresh post-action observation")
+    except FreshObservationUnavailable as exc:
         state.append_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result))
-        if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
-            state.current_observation = await environment.observe("currentness unavailable; refresh world")
-            return state, 1, 0, probed, None
-        terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action was not dispatched")
-        return state, 0, 0, probed, terminal
-    after = await environment.observe("fresh post-action observation")
-    if after.observation_id == before.observation_id:
-        state.append_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result, after.observation_id))
-        terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "post-action identity was reused")
+        terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
         return state, 1, 1, probed, terminal
     try:
         action_evaluation = await validated_action_evaluation(
@@ -96,3 +99,20 @@ async def execute_cycle(
 def _probe_count(result: ActionResult) -> int:
     value = result.adapter_evidence.get("currentness_probe_count", 0)
     return int(value) if isinstance(value, int | float) else 0
+
+
+async def _not_sent_outcome(session, decision, request, result, probed):
+    task, state = session.task, session.state
+    before_id = state.current_observation.observation_id
+    state.append_turn(Turn(before_id, decision, request.intent, request.request_id, result))
+    if result.error not in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
+        terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action was not dispatched")
+        return state, 0, 0, probed, terminal
+    try:
+        state.current_observation = await observe_fresh(
+            session.environment, before_id, "currentness unavailable; refresh world"
+        )
+    except FreshObservationUnavailable as exc:
+        terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
+        return state, 1, 0, probed, terminal
+    return state, 1, 0, probed, None

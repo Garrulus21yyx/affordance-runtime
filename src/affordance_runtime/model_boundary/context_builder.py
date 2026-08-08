@@ -50,6 +50,7 @@ class ContextBuilder:
         intent_context: IntentContext | None = None,
         action_page: InternalActionPage | None = None,
         observation_count: int = 1,
+        context_generation: int = 0,
     ) -> AgentContext:
         world = project_model_world(state.current_observation, self.budget)
         labels = {item.target_id: item.label for item in state.current_observation.targets}
@@ -84,6 +85,7 @@ class ContextBuilder:
             page.page_id,
             state.progress_revision,
             state.pending_revision,
+            context_generation,
         )
         truncation = {
             "intent": project_intent_context(intent_context, self.budget).excerpts.truncated,

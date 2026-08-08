@@ -54,3 +54,48 @@ class AgentLoopState:
     def append_turn(self, turn: Turn) -> None:
         self.recent_turns = (*self.recent_turns, turn)[-self.recent_turn_limit :]
         self.progress_revision += 1
+
+    def set_active_objective(self, objective: LocalObjective) -> None:
+        if self.active_objective != objective:
+            self.active_objective = objective
+            self.progress_revision += 1
+
+    def clear_active_objective(self) -> None:
+        if self.active_objective is not None:
+            self.active_objective = None
+            self.progress_revision += 1
+
+    def replace_plan(self, plan: TaskPlan | None) -> None:
+        if self.plan != plan:
+            self.plan = plan
+            self.progress_revision += 1
+
+    def set_pending_question(self, question: str) -> None:
+        if self.pending_user_question != question:
+            self.pending_user_question = question
+            self.pending_revision += 1
+
+    def clear_pending_question(self) -> None:
+        if self.pending_user_question:
+            self.pending_user_question = ""
+            self.pending_revision += 1
+
+    def set_pending_confirmation(self, confirmation: ConfirmationRequest) -> None:
+        if self.pending_confirmation != confirmation:
+            self.pending_confirmation = confirmation
+            self.pending_revision += 1
+
+    def clear_pending_confirmation(self) -> None:
+        if self.pending_confirmation is not None:
+            self.pending_confirmation = None
+            self.pending_revision += 1
+
+    def set_pending_unknown_effect(self, request: BoundActionRequest) -> None:
+        if self.pending_unknown_request != request:
+            self.pending_unknown_request = request
+            self.pending_revision += 1
+
+    def clear_pending_unknown_effect(self) -> None:
+        if self.pending_unknown_request is not None:
+            self.pending_unknown_request = None
+            self.pending_revision += 1

@@ -187,3 +187,45 @@ def test_page_request_changes_context_and_old_page_decision_is_stale_zero_call()
         assert environment.executed_requests == []
 
     asyncio.run(scenario())
+
+
+def test_page_a_to_b_to_a_never_revalidates_first_page_decision() -> None:
+    before = _two_action_world("before", False)
+
+    class Policy:
+        calls = 0
+        first_page_decision = None
+        context_ids = []
+
+        async def decide(self, context):
+            self.calls += 1
+            self.context_ids.append(context.context_id)
+            if self.calls == 1:
+                self.first_page_decision = SelectAction(
+                    context.context_id, context.actions.options[0].action_id
+                )
+                return RequestActionPage(context.context_id, target_id="z-other-toggle")
+            if self.calls == 2:
+                return RequestActionPage(context.context_id)
+            if self.calls == 3:
+                return self.first_page_decision
+            return Abort(context.context_id, "old page decision rejected", "policy")
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment([before])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                policy,
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                context_builder=ContextBuilder(pager=ActionPager(page_size=1)),
+            )
+        ).run(environment, _paging_task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert len(set(policy.context_ids)) == 3
+        assert result.execution_count == 0
+        assert environment.executed_requests == []
+
+    asyncio.run(scenario())

@@ -34,8 +34,13 @@ class AgentRunSession:
     last_result: AgentResult | None = field(default=None, repr=False)
     current_context_snapshot: AgentContext | None = field(default=None, repr=False)
     consumed_context_id: str = field(default="", repr=False)
+    context_generation: int = field(default=0, repr=False)
     current_action_space: ActionSpace | None = field(default=None, repr=False)
     current_action_page: InternalActionPage | None = field(default=None, repr=False)
+
+    def next_context_generation(self) -> int:
+        self.context_generation += 1
+        return self.context_generation
 
     async def run_until_pause(self) -> AgentResult:
         if self.last_result is not None:

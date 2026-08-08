@@ -28,8 +28,7 @@ def post_action_result(
         return None
     if action_evaluation.status == ActionEvaluationStatus.REJECTED:
         return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, action_evaluation.reason)
-    state.pending_unknown_request = request
-    state.pending_revision += 1
+    state.set_pending_unknown_effect(request)
     return build_result(
         AgentLoopStatus.WAITING_USER,
         task,

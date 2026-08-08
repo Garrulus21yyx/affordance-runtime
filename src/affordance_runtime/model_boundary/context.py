@@ -27,9 +27,15 @@ class ContextIdentity:
     action_page_id: str
     progress_revision: int
     pending_revision: int
+    context_generation: int = 0
 
     def __post_init__(self) -> None:
-        if self.task_revision <= 0 or self.progress_revision < 0 or self.pending_revision < 0:
+        if (
+            self.task_revision <= 0
+            or self.progress_revision < 0
+            or self.pending_revision < 0
+            or self.context_generation < 0
+        ):
             raise ValueError("context revisions are invalid")
         if not all(value.strip() for value in (self.observation_id, self.action_space_id, self.action_page_id)):
             raise ValueError("context identity requires current observation, action space, and page")
@@ -43,6 +49,7 @@ class ContextIdentity:
             self.action_page_id,
             self.progress_revision,
             self.pending_revision,
+            self.context_generation,
         )
         digest = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
         return f"context:{digest}"

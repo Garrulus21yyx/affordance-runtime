@@ -15,6 +15,7 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
+from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
 from affordance_runtime.agent.policy import AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import build_result, observation_budget_result
 from affordance_runtime.agent.session import AgentRunSession
@@ -59,6 +60,7 @@ async def run_policy_turn(
         session.intent_context,
         session.current_action_page,
         observation_count=session.observation_count,
+        context_generation=session.next_context_generation(),
     )
     session.current_context_snapshot = context
     decision = await policy.decide(context)
@@ -66,8 +68,7 @@ async def run_policy_turn(
     if not accept_current_decision(session, decision):
         return None
     if isinstance(decision, AskUser):
-        state.pending_user_question = decision.question
-        state.pending_revision += 1
+        state.set_pending_question(decision.question)
         return build_result(AgentLoopStatus.WAITING_USER, task, state, 0, 0, decision.question)
     if isinstance(decision, Abort):
         return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, decision.reason)
@@ -127,7 +128,12 @@ async def _fresh_observation(session: AgentRunSession, decision: AgentDecision, 
     if not _can_observe(session):
         return observation_budget_result(session.task, state, 0, 0)
     state.append_turn(Turn(state.current_observation.observation_id, decision))
-    state.current_observation = await session.environment.observe(reason)
+    previous_id = state.current_observation.observation_id
+    try:
+        state.current_observation = await observe_fresh(session.environment, previous_id, reason)
+    except FreshObservationUnavailable as exc:
+        session.observation_count += 1
+        return build_result(AgentLoopStatus.FAILED, session.task, state, 0, 0, str(exc))
     session.observation_count += 1
     return None
 

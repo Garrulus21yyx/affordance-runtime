@@ -16,6 +16,7 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.task import IntentContext, IntentExcerpt, IntentSourceKind, LoopBudget
 from affordance_runtime.testing import StaticEnvironment
+from affordance_runtime.world.binder import BindingError
 
 
 @pytest.mark.parametrize(
@@ -55,9 +56,11 @@ def test_stale_decision_is_zero_execute_and_zero_probe_then_rebuilt() -> None:
     class Policy:
         def __init__(self) -> None:
             self.context_ids = []
+            self.remaining_turns = []
 
         async def decide(self, context):
             self.context_ids.append(context.context_id)
+            self.remaining_turns.append(context.budgets.remaining_turns)
             context_id = "context:stale" if len(self.context_ids) == 1 else context.context_id
             return SelectAction(context_id, context.actions.options[0].action_id)
 
@@ -69,11 +72,12 @@ def test_stale_decision_is_zero_execute_and_zero_probe_then_rebuilt() -> None:
         )
 
         assert result.status == AgentLoopStatus.DONE
-        assert policy.context_ids[0] == policy.context_ids[1]
+        assert policy.context_ids[0] != policy.context_ids[1]
         assert result.execution_count == 1
         assert result.observation_count == 2
         assert result.currentness_probe_count == 0
         assert len(environment.executed_requests) == 1
+        assert policy.remaining_turns == [20, 19]
 
     asyncio.run(scenario())
 
@@ -156,6 +160,118 @@ def test_wait_uses_fake_controller_and_performs_fresh_observe() -> None:
         assert waiter.waits == [25]
         assert result.observation_count == 2
         assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("decision_kind", ("observe", "wait"))
+def test_fresh_observation_decisions_reject_reused_identity(decision_kind: str) -> None:
+    class Policy:
+        async def decide(self, context):
+            if decision_kind == "observe":
+                capability = context.world.observation_capabilities[0]
+                return RequestObservation(
+                    context.context_id,
+                    "shared-toggle",
+                    capability.modality,
+                    capability.assurance,
+                    "refresh",
+                )
+            return Wait(context.context_id, "settle", 1)
+
+    async def scenario() -> None:
+        observation = _world("same", False)
+        environment = StaticEnvironment([observation, observation])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                wait_controller=_FakeWaiter(),
+            )
+        ).run(environment, _task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert result.execution_count == 0
+        assert result.observation_count == 2
+        assert "identity was reused" in result.message
+
+    asyncio.run(scenario())
+
+
+def test_each_policy_call_gets_a_new_context_epoch_even_when_projection_is_unchanged() -> None:
+    class Policy:
+        def __init__(self) -> None:
+            self.context_ids = []
+
+        async def decide(self, context):
+            self.context_ids.append(context.context_id)
+            if len(self.context_ids) == 1:
+                return SelectAction("context:stale", context.actions.options[0].action_id)
+            return Abort(context.context_id, "stop", "policy")
+
+    async def scenario() -> None:
+        policy = Policy()
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(StaticEnvironment([_world("before", False)]), _task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert len(policy.context_ids) == 2
+        assert policy.context_ids[0] != policy.context_ids[1]
+
+    asyncio.run(scenario())
+
+
+def test_no_op_page_request_advances_context_epoch() -> None:
+    class Policy:
+        def __init__(self) -> None:
+            self.context_ids = []
+
+        async def decide(self, context):
+            self.context_ids.append(context.context_id)
+            if len(self.context_ids) == 1:
+                return RequestActionPage(context.context_id)
+            return Abort(context.context_id, "page unchanged", "policy")
+
+    async def scenario() -> None:
+        policy = Policy()
+        await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(StaticEnvironment([_world("before", False)]), _task())
+
+        assert len(policy.context_ids) == 2
+        assert policy.context_ids[0] != policy.context_ids[1]
+
+    asyncio.run(scenario())
+
+
+def test_stale_binding_refresh_rejects_reused_observation_identity() -> None:
+    class UnavailableBinder:
+        def bind(self, selection, observation, context_id):
+            raise BindingError("unavailable")
+
+    class Policy:
+        async def decide(self, context):
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    async def scenario() -> None:
+        observation = _world("same", False)
+        environment = StaticEnvironment([observation, observation])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                binder=UnavailableBinder(),
+            )
+        ).run(environment, _task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert result.execution_count == 0
+        assert result.observation_count == 2
+        assert environment.executed_requests == []
+        assert "identity was reused" in result.message
 
     asyncio.run(scenario())
 

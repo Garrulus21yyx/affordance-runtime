@@ -8,6 +8,7 @@ from affordance_runtime.agent.decision_control import ensure_current_action_page
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
+from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, add_counts, build_result
 from affordance_runtime.agent.session import AgentRunSession
@@ -133,6 +134,7 @@ class AgentLoop:
                 session.intent_context,
                 session.current_action_page,
                 observation_count=session.observation_count,
+                context_generation=session.next_context_generation(),
             )
             session.current_context_snapshot = context
             session.consumed_context_id = context.context_id
@@ -189,12 +191,11 @@ class AgentLoop:
                 dict(selection.parameters),
                 selection.destination_id,
             )
-            state.pending_confirmation = build_confirmation_request(
+            state.set_pending_confirmation(build_confirmation_request(
                 intent,
                 assessment,
                 build_agent_world_view(state.current_observation),
-            )
-            state.pending_revision += 1
+            ))
             return build_result(AgentLoopStatus.WAITING_CONFIRMATION, task, state, 0, 0, assessment.reason)
         return selection
 
@@ -209,8 +210,7 @@ class AgentLoop:
         if not decision.matches(pending):
             return self._result(session, AgentLoopStatus.BLOCKED, "confirmation decision identity mismatch")
         session.resolved_confirmation_ids.add(decision.confirmation_id)
-        session.state.pending_confirmation = None
-        session.state.pending_revision += 1
+        session.state.clear_pending_confirmation()
         if decision.decision == ConfirmationDecisionKind.DENY:
             session.approved_confirmation = None
             return self._result(session, AgentLoopStatus.CANCELLED, "user denied the semantic action")
@@ -218,11 +218,15 @@ class AgentLoop:
             return self._result(session, AgentLoopStatus.FAILED, "agent loop observation budget exhausted")
         session.approved_confirmation = pending
         previous_id = session.state.current_observation.observation_id
-        fresh = await session.environment.observe("fresh observation after confirmation")
-        session.observation_count += 1
-        if fresh.observation_id == previous_id:
+        try:
+            fresh = await observe_fresh(
+                session.environment, previous_id, "fresh observation after confirmation"
+            )
+        except FreshObservationUnavailable as exc:
+            session.observation_count += 1
             session.approved_confirmation = None
-            return self._result(session, AgentLoopStatus.FAILED, "confirmation observation identity was reused")
+            return self._result(session, AgentLoopStatus.FAILED, str(exc))
+        session.observation_count += 1
         session.state.current_observation = fresh
         session.last_result = None
         return await self._run_session(session)
