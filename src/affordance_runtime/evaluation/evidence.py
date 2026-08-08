@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
@@ -52,10 +53,13 @@ def _fact_record(observation, fact) -> EvidenceRecord:
 
 
 def _artifact_record(observation, source, key: str) -> EvidenceRecord:
+    artifact = source.artifacts.get(key)
+    summary = artifact.get("public_summary", "") if isinstance(artifact, Mapping) else ""
     return EvidenceRecord(
         canonical_artifact_ref(source.observation_id, key), observation.observation_id, "artifact",
         source.surface, source.observation_id, str(source.source_profile.modality),
-        str(source.source_profile.assurance), artifact_kind=key,
+        str(source.source_profile.assurance), artifact_kind=key, output_id=key,
+        public_summary=str(summary)[:500],
     )
 
 

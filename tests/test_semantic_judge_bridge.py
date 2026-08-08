@@ -8,6 +8,7 @@ from affordance_runtime.evaluation.criterion_normalization import normalize_task
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.model_boundary import ModelFailure
+from affordance_runtime.model_boundary.evaluator_views import build_semantic_judge_request
 from affordance_runtime.model_evaluator.bridge import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model_policy.strict_json import StrictJsonError
@@ -47,7 +48,11 @@ def test_semantic_judge_bridge_uses_existing_model_port_once_and_cannot_return_t
         port, ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0), call_timeout_s=2
     )
 
-    outcome = asyncio.run(judge.evaluate(_semantic_task(), normalize_task_criteria(_semantic_task()), world, WorldEvidenceIndex.from_observation(world)))
+    request = build_semantic_judge_request(
+        _semantic_task(), normalize_task_criteria(_semantic_task()), world,
+        WorldEvidenceIndex.from_observation(world),
+    )
+    outcome = asyncio.run(judge.evaluate(request))
 
     assert port.calls == 1 and port.schema is SemanticProposalResponse
     assert [message.role for message in port.messages] == ["system", "user"]
@@ -73,7 +78,11 @@ def test_semantic_judge_malformed_payload_is_typed_failure() -> None:
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         call_timeout_s=2,
     )
-    outcome = asyncio.run(judge.evaluate(_semantic_task(), normalize_task_criteria(_semantic_task()), world, WorldEvidenceIndex.from_observation(world)))
+    request = build_semantic_judge_request(
+        _semantic_task(), normalize_task_criteria(_semantic_task()), world,
+        WorldEvidenceIndex.from_observation(world),
+    )
+    outcome = asyncio.run(judge.evaluate(request))
     assert isinstance(outcome, ModelFailure)
 
 

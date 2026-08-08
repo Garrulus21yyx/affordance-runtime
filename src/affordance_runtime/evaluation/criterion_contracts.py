@@ -27,6 +27,7 @@ class NormalizedCriterionSpec:
     state_key: str = ""
     rubric: str = ""
     evidence_scope_target_ids: tuple[str, ...] = ()
+    evidence_scope_output_ids: tuple[str, ...] = ()
     required_assurance: str = ""
     output_id: str = ""
 
@@ -35,9 +36,13 @@ class NormalizedCriterionSpec:
             raise ValueError("normalized criterion requires identity and kind")
         if self.required_assurance:
             ObservationAssurance(self.required_assurance)
-        if len(self.rubric) > 2_000 or len(self.evidence_scope_target_ids) > 64:
+        if len(self.rubric) > 2_000 or len(self.evidence_scope_target_ids) > 64 or len(self.evidence_scope_output_ids) > 64:
             raise ValueError("normalized criterion exceeds bounded semantic fields")
-        if any(not item.strip() or len(item) > 240 for item in self.evidence_scope_target_ids):
+        if any(
+            not item.strip() or len(item) > 240
+            for item in (*self.evidence_scope_target_ids, *self.evidence_scope_output_ids)
+        ):
             raise ValueError("criterion evidence scope is invalid")
         object.__setattr__(self, "expected_value", freeze_json(self.expected_value))
         object.__setattr__(self, "evidence_scope_target_ids", tuple(self.evidence_scope_target_ids))
+        object.__setattr__(self, "evidence_scope_output_ids", tuple(self.evidence_scope_output_ids))

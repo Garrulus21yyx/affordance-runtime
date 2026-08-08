@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -58,10 +58,11 @@ def _mechanical_task(*, expression=None, evaluation_spec=None) -> TaskGoal:
 class ScriptedJudge:
     outcome: object
     calls: int = 0
+    requests: list[object] = field(default_factory=list)
 
-    async def evaluate(self, task, criteria, observation, evidence_index):
-        del task, criteria, observation, evidence_index
+    async def evaluate(self, request):
         self.calls += 1
+        self.requests.append(request)
         return self.outcome
 
 
@@ -125,8 +126,19 @@ def test_semantic_proposal_requires_exact_ids_current_refs_and_scope() -> None:
 
 
 def test_semantic_missing_extra_or_wrong_target_proposals_are_unknown() -> None:
-    world = _world("clear conclusion", subject="other:1", predicate="content")
-    proposal = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:current",), "wrong scope")
+    absent_world = _world("clear conclusion", subject="other:1", predicate="content")
+    absent_judge = ScriptedJudge(())
+    absent = asyncio.run(ProductionTaskEvaluator(absent_judge).evaluate(_semantic_task(), absent_world))
+    assert absent.status == TaskEvaluationStatus.INCOMPLETE
+    assert absent_judge.calls == 0
+
+    world = _world("clear conclusion", subject="report:1", predicate="content")
+    unrelated_fact = StateFact("fact:other", "other:1", "content", "unrelated", "source:1")
+    world = WorldObservation(
+        world.observation_id, world.targets, world.facts + (unrelated_fact,), (),
+        world.coverage, sources=world.sources,
+    )
+    proposal = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:other",), "wrong scope")
     extra = (
         proposal,
         SemanticCriterionProposal("extra", CriterionEvaluationStatus.UNKNOWN, (), "extra"),
@@ -156,17 +168,56 @@ def test_user_acceptance_requires_explicit_authoritative_user_source() -> None:
 
 
 def test_hybrid_requires_both_mechanical_and_semantic_components() -> None:
-    satisfied = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:current",), "quality ok")
+    satisfied = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:semantic",), "quality ok")
     unknown = SemanticCriterionProposal("quality", CriterionEvaluationStatus.UNKNOWN, (), "cannot judge")
     task = _semantic_task("hybrid")
 
-    mechanical_failed = asyncio.run(ProductionTaskEvaluator(ScriptedJudge((satisfied,))).evaluate(task, _world(False, subject="report:1")))
-    semantic_unknown = asyncio.run(ProductionTaskEvaluator(ScriptedJudge((unknown,))).evaluate(task, _world(True, subject="report:1")))
-    both = asyncio.run(ProductionTaskEvaluator(ScriptedJudge((satisfied,))).evaluate(task, _world(True, subject="report:1")))
+    failed_judge = ScriptedJudge((satisfied,))
+    def hybrid_world(value):
+        world = _world(value, subject="report:1")
+        semantic = StateFact("fact:semantic", "report:1", "content", "clear conclusion", "source:1")
+        return WorldObservation(
+            world.observation_id, world.targets, world.facts + (semantic,), (),
+            world.coverage, sources=world.sources,
+        )
+
+    mechanical_failed = asyncio.run(ProductionTaskEvaluator(failed_judge).evaluate(task, hybrid_world(False)))
+    semantic_unknown = asyncio.run(ProductionTaskEvaluator(ScriptedJudge((unknown,))).evaluate(task, hybrid_world(True)))
+    both = asyncio.run(ProductionTaskEvaluator(ScriptedJudge((satisfied,))).evaluate(task, hybrid_world(True)))
 
     assert mechanical_failed.status == TaskEvaluationStatus.INCOMPLETE
+    assert failed_judge.calls == 0
     assert semantic_unknown.status == TaskEvaluationStatus.UNKNOWN
     assert both.status == TaskEvaluationStatus.COMPLETE
+
+
+def test_hybrid_mechanical_fact_cannot_be_reused_as_semantic_evidence() -> None:
+    task = _semantic_task("hybrid")
+    proposal = SemanticCriterionProposal(
+        "quality", CriterionEvaluationStatus.SATISFIED, ("fact:current",), "borrowed mechanical fact"
+    )
+
+    result = asyncio.run(
+        ProductionTaskEvaluator(ScriptedJudge((proposal,))).evaluate(task, _world(True, subject="report:1"))
+    )
+
+    assert result.status == TaskEvaluationStatus.UNKNOWN
+
+
+def test_hybrid_mechanical_unknown_skips_semantic_judge() -> None:
+    task = _semantic_task("hybrid")
+    world = _world(True, subject="report:1")
+    duplicate = StateFact("fact:duplicate", "report:1", "ready", True, "source:1")
+    world = WorldObservation(
+        world.observation_id, world.targets, world.facts + (duplicate,), (),
+        world.coverage, sources=world.sources,
+    )
+    judge = ScriptedJudge(())
+
+    result = asyncio.run(ProductionTaskEvaluator(judge).evaluate(task, world))
+
+    assert result.status == TaskEvaluationStatus.UNKNOWN
+    assert judge.calls == 0
 
 
 @pytest.mark.parametrize(

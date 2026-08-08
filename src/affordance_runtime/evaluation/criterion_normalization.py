@@ -10,7 +10,7 @@ from affordance_runtime.task.contracts import TaskGoal, criterion_id
 _COMMON = {
     "id", "criterion_id", "adjudicator", "kind", "subject_id", "target_id",
     "predicate", "value", "expected_value", "state", "state_key", "rubric",
-    "evidence_scope_target_ids", "required_assurance", "output_id",
+    "evidence_scope_target_ids", "evidence_scope_output_ids", "required_assurance", "output_id",
 }
 _KINDS = {"fact_equals", "target_state_equals", "artifact_exists", "user_acceptance", "semantic_rubric", "hybrid"}
 
@@ -34,12 +34,13 @@ def normalize_criterion(raw: Mapping[str, object]) -> NormalizedCriterionSpec:
     expected, state_key = _mechanical_fields(raw, kind, legacy_state_keys)
     rubric = _optional_string(raw.get("rubric"), "criterion rubric", max_length=2_000)
     scope = _string_tuple(raw.get("evidence_scope_target_ids", ()))
+    output_scope = _string_tuple(raw.get("evidence_scope_output_ids", ()))
     required_assurance = _optional_string(raw.get("required_assurance"), "required assurance", max_length=80)
     output_id = _optional_string(raw.get("output_id"), "criterion output")
-    _validate_shape(kind, adjudicator, subject_id, predicate, state_key, rubric, scope, output_id)
+    _validate_shape(kind, adjudicator, subject_id, predicate, state_key, rubric, scope, output_scope, output_id)
     return NormalizedCriterionSpec(
         criterion_id(raw), adjudicator, kind, subject_id, predicate, expected,
-        state_key, rubric, scope, required_assurance, output_id,
+        state_key, rubric, scope, output_scope, required_assurance, output_id,
     )
 
 
@@ -92,18 +93,18 @@ def _mechanical_fields(raw: Mapping[str, object], kind: str, legacy_state_keys: 
     return None, state_key
 
 
-def _validate_shape(kind, adjudicator, subject, predicate, state_key, rubric, scope, output_id) -> None:
+def _validate_shape(kind, adjudicator, subject, predicate, state_key, rubric, scope, output_scope, output_id) -> None:
     if kind == "fact_equals" and (not predicate or adjudicator != CriterionAdjudicator.MECHANICAL):
         raise ValueError("fact_equals requires a mechanical predicate")
     if kind == "target_state_equals" and (not subject or not state_key or adjudicator != CriterionAdjudicator.MECHANICAL):
         raise ValueError("target_state_equals requires mechanical target and state key")
     if kind == "artifact_exists" and (not output_id or adjudicator != CriterionAdjudicator.MECHANICAL):
         raise ValueError("artifact_exists requires a mechanical output ID")
-    if kind == "semantic_rubric" and (adjudicator != CriterionAdjudicator.SEMANTIC or not rubric or not scope):
+    if kind == "semantic_rubric" and (adjudicator != CriterionAdjudicator.SEMANTIC or not rubric or not (scope or output_scope)):
         raise ValueError("semantic rubric requires explicit semantic scope")
     if kind == "user_acceptance" and adjudicator != CriterionAdjudicator.USER_ACCEPTANCE:
         raise ValueError("user acceptance requires its explicit adjudicator")
-    if kind == "hybrid" and (adjudicator != CriterionAdjudicator.HYBRID or not rubric or not scope or not predicate):
+    if kind == "hybrid" and (adjudicator != CriterionAdjudicator.HYBRID or not rubric or not (scope or output_scope) or not predicate):
         raise ValueError("hybrid criterion requires mechanical and semantic components")
 
 

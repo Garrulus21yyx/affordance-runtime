@@ -87,6 +87,7 @@ class ObservationCapabilityView:
 class ModelArtifactView:
     evidence_ref: str
     kind: str
+    output_id: str
     summary: str
 
 
@@ -104,6 +105,7 @@ def project_model_world(
     observation: WorldObservation,
     budget: ContextProjectionBudget,
     pinned_target_ids: tuple[str, ...] = (),
+    pinned_output_ids: tuple[str, ...] = (),
 ) -> ModelWorldView:
     pinned = set(pinned_target_ids)
     ordered_targets = tuple(item for item in observation.targets if item.target_id in pinned) + tuple(
@@ -132,15 +134,20 @@ def project_model_world(
         ConflictSummary(item.subject_id, _text(item.predicate), _text(item.summary))
         for item in observation.conflicts[: budget.max_conflicts]
     )
-    artifacts = tuple(
+    artifact_values = tuple(
         ModelArtifactView(
             canonical_artifact_ref(source.observation_id, str(key)),
+            _text(str(key)),
             _text(str(key)),
             _text(f"{key} artifact available"),
         )
         for source in observation.sources
         for key in source.artifacts
         if not _private_key(str(key))
+    )
+    pinned_outputs = set(pinned_output_ids)
+    artifacts = tuple(item for item in artifact_values if item.output_id in pinned_outputs) + tuple(
+        item for item in artifact_values if item.output_id not in pinned_outputs
     )
     shown_artifacts = artifacts[: budget.max_artifact_summaries]
     capabilities = tuple(
@@ -170,20 +177,31 @@ def project_model_world(
             ObservationCapabilityView(modality, assurance) for modality, assurance in capabilities
         ),
     )
-    return fit_model_world(view, budget.max_total_serialized_bytes // 2, pinned_target_ids)
+    return fit_model_world(
+        view, budget.max_total_serialized_bytes // 2, pinned_target_ids, pinned_output_ids
+    )
 
 
 def fit_model_world(
     view: ModelWorldView,
     max_bytes: int,
     pinned_target_ids: tuple[str, ...] = (),
+    pinned_output_ids: tuple[str, ...] = (),
 ) -> ModelWorldView:
     pinned = set(pinned_target_ids)
+    pinned_outputs = set(pinned_output_ids)
     while serialized_size(view) > max_bytes:
-        if view.artifact_summaries.items:
+        removable_artifact = next(
+            (item for item in reversed(view.artifact_summaries.items) if item.output_id not in pinned_outputs),
+            None,
+        )
+        if removable_artifact is not None:
             view = replace(
                 view,
-                artifact_summaries=_resize(view.artifact_summaries, view.artifact_summaries.items[:-1]),
+                artifact_summaries=_resize(
+                    view.artifact_summaries,
+                    tuple(item for item in view.artifact_summaries.items if item != removable_artifact),
+                ),
             )
             continue
         if view.conflicts.items:

@@ -78,14 +78,13 @@ class CriterionEvaluation:
     def __post_init__(self) -> None:
         if not self.criterion_id.strip() or not self.reason.strip():
             raise ValueError("criterion evaluation requires identity and reason")
-        resolved_status = self.status in {
-            CriterionEvaluationStatus.SATISFIED,
-            CriterionEvaluationStatus.UNSATISFIED,
-        }
         object.__setattr__(
             self,
             "evidence_refs",
-            validate_evidence_refs(tuple(self.evidence_refs), allow_empty=not resolved_status),
+            validate_evidence_refs(
+                tuple(self.evidence_refs),
+                allow_empty=self.status != CriterionEvaluationStatus.SATISFIED,
+            ),
         )
 
 

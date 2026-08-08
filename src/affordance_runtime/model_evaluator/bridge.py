@@ -10,13 +10,9 @@ from enum import Enum
 
 from pydantic import ValidationError
 
-from affordance_runtime.evaluation.criterion_contracts import NormalizedCriterionSpec
-from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.semantic_contracts import SemanticJudgeOutcome
-from affordance_runtime.model_boundary.budgets import ContextProjectionBudget
+from affordance_runtime.model_boundary.evaluator_views import SemanticJudgeRequest
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.model_boundary.task_projection import project_task
-from affordance_runtime.model_boundary.world_projection import project_model_world
 from affordance_runtime.model_evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model_port import (
     FallbackModelPort,
@@ -29,8 +25,6 @@ from affordance_runtime.model_port import (
     StructuredModelError,
     StructuredOutputError,
 )
-from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.contracts import WorldObservation
 
 SEMANTIC_JUDGE_INSTRUCTIONS = """
 Evaluate only the supplied semantic criterion IDs and rubrics. Agent context is
@@ -56,16 +50,10 @@ class ModelPortSemanticCriterionJudge:
         if not 0 < self.config.timeout_s < self.call_timeout_s <= 300:
             raise ValueError("semantic judge transport timeout must be inside its deadline")
 
-    async def evaluate(
-        self,
-        task: TaskGoal,
-        criteria: tuple[NormalizedCriterionSpec, ...],
-        observation: WorldObservation,
-        evidence_index: WorldEvidenceIndex,
-    ) -> SemanticJudgeOutcome:
+    async def evaluate(self, request: SemanticJudgeRequest) -> SemanticJudgeOutcome:
         object.__setattr__(self, "last_metadata", None)
         try:
-            content = _serialize_request(task, criteria, observation, evidence_index)
+            content = _serialize_request(request)
             response = await asyncio.wait_for(
                 self.port.generate_structured(
                     (ModelMessage(role="system", content=SEMANTIC_JUDGE_INSTRUCTIONS), ModelMessage(role="user", content=content)),
@@ -92,13 +80,13 @@ class ModelPortSemanticCriterionJudge:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "semantic judge proposal was invalid")
 
 
-def _serialize_request(task, criteria, observation, evidence_index) -> str:
+def _serialize_request(request: SemanticJudgeRequest) -> str:
     payload = {
         "schema_version": "semantic-criterion-proposal.v1",
-        "task": _json_value(project_task(task)),
-        "criteria": [_json_value(item) for item in criteria],
-        "world": _json_value(project_model_world(observation, ContextProjectionBudget())),
-        "available_evidence_refs": list(evidence_index.refs),
+        "task": _json_value(request.task),
+        "criteria": [_json_value(item) for item in request.criteria],
+        "world": _json_value(request.world),
+        "evidence_catalog": _json_value(request.evidence_catalog),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if len(encoded.encode()) > 64 * 1024:

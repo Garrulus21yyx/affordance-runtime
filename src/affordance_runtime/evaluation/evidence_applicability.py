@@ -33,6 +33,38 @@ def assess_criterion_evidence(
     return EvidenceApplicability.ACCEPTED
 
 
+def assess_semantic_evidence(
+    criterion: NormalizedCriterionSpec,
+    evaluation: CriterionEvaluation,
+    evidence_index: WorldEvidenceIndex,
+    visible_evidence_refs: tuple[str, ...],
+) -> EvidenceApplicability:
+    if any(ref not in visible_evidence_refs for ref in evaluation.evidence_refs):
+        return EvidenceApplicability.REJECTED
+    if not evaluation.evidence_refs:
+        return EvidenceApplicability.UNKNOWN if evaluation.status == CriterionEvaluationStatus.UNKNOWN else EvidenceApplicability.REJECTED
+    records = tuple(evidence_index.resolve_record(ref) for ref in evaluation.evidence_refs)
+    if any(record is None or not _semantic_record_applies(criterion, record) for record in records):
+        return EvidenceApplicability.REJECTED
+    return EvidenceApplicability.ACCEPTED
+
+
+def _semantic_record_applies(criterion: NormalizedCriterionSpec, record) -> bool:
+    if criterion.required_assurance and not assurance_satisfies(record.source_assurance, criterion.required_assurance):
+        return False
+    if (
+        criterion.kind == "hybrid"
+        and record.kind == "fact"
+        and record.predicate == criterion.predicate
+        and (not criterion.subject_id or record.subject_id == criterion.subject_id)
+    ):
+        return False
+    return (
+        record.kind == "fact" and record.subject_id in criterion.evidence_scope_target_ids
+        or record.kind == "artifact" and record.output_id in criterion.evidence_scope_output_ids
+    )
+
+
 def _record_applies(criterion: NormalizedCriterionSpec, record) -> bool:
     if criterion.required_assurance and not assurance_satisfies(record.source_assurance, criterion.required_assurance):
         return False
@@ -40,7 +72,7 @@ def _record_applies(criterion: NormalizedCriterionSpec, record) -> bool:
         mechanical = record.kind == "fact" and record.predicate == criterion.predicate and (
             not criterion.subject_id or record.subject_id == criterion.subject_id
         )
-        semantic = record.kind in {"fact", "artifact"} and record.subject_id in criterion.evidence_scope_target_ids
+        semantic = _semantic_record_applies(criterion, record)
         return mechanical or semantic
     if criterion.evidence_scope_target_ids and record.subject_id not in criterion.evidence_scope_target_ids:
         return False

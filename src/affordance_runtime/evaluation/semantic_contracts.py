@@ -6,11 +6,8 @@ from dataclasses import dataclass
 from typing import Protocol, TypeAlias
 
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus
-from affordance_runtime.evaluation.criterion_contracts import NormalizedCriterionSpec
-from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.model_boundary.evaluator_views import SemanticJudgeRequest
 from affordance_runtime.model_boundary.failures import ModelFailure
-from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.contracts import WorldObservation
 
 
 @dataclass(frozen=True)
@@ -37,10 +34,4 @@ SemanticJudgeOutcome: TypeAlias = tuple[SemanticCriterionProposal, ...] | ModelF
 
 
 class SemanticCriterionJudge(Protocol):
-    async def evaluate(
-        self,
-        task: TaskGoal,
-        criteria: tuple[NormalizedCriterionSpec, ...],
-        observation: WorldObservation,
-        evidence_index: WorldEvidenceIndex,
-    ) -> SemanticJudgeOutcome: ...
+    async def evaluate(self, request: SemanticJudgeRequest) -> SemanticJudgeOutcome: ...

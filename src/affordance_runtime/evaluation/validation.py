@@ -8,6 +8,7 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.evaluation.criterion_contracts import CriterionAdjudicator
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_applicability import EvidenceApplicability, assess_criterion_evidence
@@ -65,8 +66,15 @@ def validate_task_evaluation(
         _require_resolved(criterion.evidence_refs, evidence_index, "criterion")
     normalized = {item.criterion_id: item for item in normalize_task_criteria(task)}
     for criterion in evaluation.criteria:
-        if criterion.status in {CriterionEvaluationStatus.SATISFIED, CriterionEvaluationStatus.UNSATISFIED} and assess_criterion_evidence(
-            normalized[criterion.criterion_id], criterion, evidence_index
+        spec = normalized[criterion.criterion_id]
+        absent_semantic_scope = (
+            criterion.status == CriterionEvaluationStatus.UNSATISFIED
+            and not criterion.evidence_refs
+            and spec.adjudicator == CriterionAdjudicator.SEMANTIC
+            and _semantic_scope_absent_with_complete_coverage(spec, observation, evidence_index)
+        )
+        if criterion.status in {CriterionEvaluationStatus.SATISFIED, CriterionEvaluationStatus.UNSATISFIED} and not absent_semantic_scope and assess_criterion_evidence(
+            spec, criterion, evidence_index
         ) != EvidenceApplicability.ACCEPTED:
             raise ValueError("task evaluation criterion evidence is not applicable")
     _require_resolved(evaluation.completion_evidence_refs, evidence_index, "completion evidence")
@@ -87,3 +95,13 @@ def validate_task_evaluation(
 def _require_resolved(refs: tuple[str, ...], index: WorldEvidenceIndex, label: str) -> None:
     if any(not index.resolve(item) for item in refs):
         raise ValueError(f"task evaluation {label} does not resolve in the current observation")
+
+
+def _semantic_scope_absent_with_complete_coverage(spec, observation, index) -> bool:
+    complete = bool(observation.coverage) and all(str(value) == "complete" for value in observation.coverage.values())
+    present = any(
+        record.kind == "fact" and record.subject_id in spec.evidence_scope_target_ids
+        or record.kind == "artifact" and record.output_id in spec.evidence_scope_output_ids
+        for record in index.records
+    )
+    return complete and not present

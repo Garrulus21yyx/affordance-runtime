@@ -44,7 +44,7 @@ def _serve(behavior: JudgeBehavior) -> tuple[ThreadingHTTPServer, threading.Thre
                 self.send_response(behavior.status)
             else:
                 request = json.loads(body["messages"][1]["content"])
-                evidence_ref = "fact:invented" if behavior.invented else request["available_evidence_refs"][0]
+                evidence_ref = "fact:invented" if behavior.invented else request["evidence_catalog"]["items"][0]["evidence_ref"]
                 proposal = {
                     "proposals": [{
                         "criterion_id": request["criteria"][0]["criterion_id"],
