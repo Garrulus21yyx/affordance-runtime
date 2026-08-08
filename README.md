@@ -77,6 +77,9 @@ validation are complete. P5-M1 now supplies one injected, provider-neutral
 structured model call, canonical AgentContext JSON and strict typed-decision parsing.
 P5-M1.1 hardens hostile structured JSON and bridges that policy through the
 existing ModelPort transport with one bounded, zero-retry/no-fallback attempt.
+P5-M2 now composes criterion-specific production evaluation: mechanical checks
+are deterministic, semantic judges can only propose current evidence, explicit
+user evidence is isolated, and Runtime alone computes task completion.
 External full-agent benchmarks remain blocked and default cutover remains pending.
 
 P5-D6.1 is complete on the non-default path: effective risk, semantic
@@ -87,7 +90,9 @@ evaluators have not started. P5-M0.1 is now closed on that same non-default path
 each policy turn receives a bounded disposable AgentContext, all decisions bind
 an opaque current context ID, stale/replayed decisions are zero-call, and
 deterministic relevance/paging plus DOM/Visual/WoT source summaries are live.
-Criterion adjudicators remain unimplemented and belong to P5-M2.
+Criterion adjudicators are closed for the declared mechanical, semantic,
+explicit-user, hybrid, bounded-expression, current-lineage and path/SHA/artifact
+profiles. General semantic entailment remains partial.
 
 P5-M0.1.1 closes the ordinary Runtime correctness gaps on the same non-default
 path: every policy call receives a monotonic one-shot context epoch; every
@@ -127,7 +132,7 @@ selectors, coordinates, or fixture semantics to production policy.
 
 The DOM/Visual/WoT adapter-only shared-state matrix is complete for the current
 declared single-surface profiles. Full external agent benchmarks remain blocked
-until production evaluator composition, a new-AgentLoop benchmark harness, and exact-head remote CI
+until a new-AgentLoop benchmark harness, exact live model-policy profile, and exact-head remote CI
 evidence are all complete. P5-D/M0 do not by themselves admit an external run.
 
 ## Documentation

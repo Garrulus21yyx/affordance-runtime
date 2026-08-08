@@ -57,7 +57,9 @@ policy views and deterministic evaluator trust validation are closed. P5-M1
 model policy core is closed, and P5-M1.1 connects it to the existing ModelPort
 owner with hostile-JSON limits, an outer deadline, zero retry/fallback, typed
 failures, metadata and a local HTTP transport proof. Live-provider attestation
-is unavailable; production model evaluators have not started.
+is unavailable. P5-M2 production evaluation is closed for declared-minimum
+criterion profiles: Runtime composes mechanical, evidence-scoped semantic,
+explicit-user and hybrid results; general semantic entailment remains partial.
 P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
 is implemented on the non-default target path. P5-M1 uses the same non-default
 loop and retained deterministic evaluators.
@@ -109,6 +111,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M0.1.1 context operational closure](reviews/2026-08-08-p5-m0-1-1-context-operational-closure.md)
 - [P5-M1 model-backed policy](reviews/2026-08-08-p5-m1-model-backed-policy.md)
 - [P5-M1.1 provider bridge hardening](reviews/2026-08-08-p5-m1-1-provider-bridge-hardening.md)
+- [P5-M2 production evaluator composition](reviews/2026-08-08-p5-m2-production-evaluator-composition.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

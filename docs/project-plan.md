@@ -66,7 +66,8 @@ core contracts for every GUI task.
 | P5-M0.1.1 | One-shot context epochs, fresh observation identity, traversable cursor paging and coherent bounded projections/history | complete, non-default |
 | P5-M1 | Model-backed target AgentPolicy using deterministic evaluators | complete |
 | P5-M1.1 | Existing ModelPort bridge and invocation hardening | complete for strict boundary and local HTTP transport; live provider unavailable |
-| P5-M2 | Production evaluator composition and criterion adjudicators | not started |
+| P5-M2 | Production evaluator composition and criterion adjudicators | complete for declared minimum profiles; general entailment partial |
+| P5-M3 | New-loop benchmark harness | not started; next admitted slice |
 | P5-M3 | New-AgentLoop harness and fixed BrowserGym/MiniWoB smoke | not started; external admission blocked |
 | P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |

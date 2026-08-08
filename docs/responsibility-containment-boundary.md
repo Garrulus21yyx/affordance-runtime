@@ -143,6 +143,10 @@ P5-M1.1 keeps provider HTTP, credentials, response extraction and
 only system/user composition, canonical schema selection, typed failure mapping
 and secret-free metadata copying; it forces zero retries, rejects fallback and
 is bounded by the policy deadline.
+P5-M2 keeps criterion normalization, current evidence records, mechanical
+checking, applicability and final status composition in `evaluation/`.
+`model_evaluator/` owns only the strict semantic proposal schema and its thin
+existing-ModelPort bridge; it cannot execute actions or emit task status.
 The target dependency gates additionally forbid AgentPolicy→binder/executor/
 surface, model_boundary→concrete surface, confirmation→private binding,
 evaluation→execution, telemetry→decision and production core→benchmark imports.

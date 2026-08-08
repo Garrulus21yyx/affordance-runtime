@@ -41,7 +41,7 @@ The target path now has:
 | LocalObjective relevance | `CLOSED_FOR_CURRENT_EXPLICIT_HINT_PROFILE`; legality and risk unchanged |
 | action paging | `CLOSED_FOR_DETERMINISTIC_CURSOR_PAGER`; traversable Runtime-issued cursor; only current-page IDs admitted |
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
-| criterion adjudicators | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
 | P5-M1 model policy core | `CLOSED`; canonical context JSON, typed decision parser and Runtime admission |
 | P5-M1.1 strict decision boundary | `CLOSED`; duplicate/non-finite/depth/node/byte limits and canonical seven-variant spec |
@@ -49,8 +49,13 @@ The target path now has:
 | local HTTP provider-transport proof | `CLOSED`; one request/one execution plus 429/500/schema/deadline zero-call proofs |
 | live provider profile | `UNAVAILABLE`; opt-in smoke not configured at this revision |
 | deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
-| production model evaluators | `NOT_STARTED` |
-| semantic evidence entailment | `NOT_STARTED` |
+| production model evaluators | `CLOSED_FOR_INJECTED_AND_LOCAL_HTTP_SEMANTIC_PROPOSAL_PROFILE` |
+| mechanical criterion evaluation | `CLOSED_FOR_DECLARED_MINIMUM` |
+| user acceptance | `CLOSED_FOR_EXPLICIT_USER_EVIDENCE_PROFILE` |
+| action effect applicability | `CLOSED_FOR_STATE_TRANSITION_AND_ARTIFACT_PROFILE` |
+| success expression | `CLOSED_FOR_BOUNDED_BOOLEAN_PROFILE` |
+| output semantic binding | `CLOSED_FOR_PATH_SHA_ARTIFACT_PROFILE` |
+| semantic evidence entailment | `PARTIAL`; model proposals remain evidence-scoped, not general proof |
 | new-AgentLoop benchmark harness | `NOT_STARTED` |
 | external benchmark | `BLOCKED` |
 | default cutover | `NOT_READY` |
@@ -136,7 +141,8 @@ and task evidence. COMPLETE is deterministically bound to task, observation,
 criteria, current evidence, requested outputs, and declared path/SHA-256 checks.
 The target loop now has a provider-neutral `ModelBackedAgentPolicy` using one
 injected structured call and typed failures. No real-provider profile or
-production model evaluator is implemented.
+live model-policy attestation is implemented; the criterion-scoped evaluator
+profile is described below.
 TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
 Semantic fusion remains deliberately deferred. The small `AgentLoopState` is
@@ -144,9 +150,9 @@ complete; a distinct LoopPolicy and optional TurnRecorder remain future work.
 P5-M0.1 now provides the unified disposable AgentContext, ContextIdentity,
 bounded context-only intent, bounded model world/progress/pending/budget views,
 typed recurrent decisions, current-page paging, explicit-hint relevance and
-source-assurance summaries. Criterion adjudication, targeted observation
-provider selection, production model evaluator composition and the new-loop
-benchmark harness have not begun. WoT effectful rate limiting is implemented; property
+source-assurance summaries. Criterion adjudication and production evaluator
+composition are now closed for declared-minimum profiles. Targeted observation
+provider selection and the new-loop benchmark harness have not begun. WoT effectful rate limiting is implemented; property
 read-side scheduling/rate limiting is not implemented.
 
 P5-M0.1.1 closes the operational profile: every actual policy call advances a
@@ -164,3 +170,11 @@ failure/metadata handling, artifact evidence refs, and DOM/Visual/WoT proofs
 reuse deterministic evaluators and Runtime admission. The local HTTP fixture
 proves transport composition only; live-provider reasoning/generalization is
 not attested. `remote_ci_attestation: unavailable`.
+
+P5-M2 is closed for declared-minimum production evaluation on the non-default
+path. Runtime normalizes criterion adjudicators, resolves current typed evidence,
+computes mechanical/user/hybrid results, validates semantic proposals, bounded
+success expressions, assurance and current lineage, and binds requested outputs
+to path/SHA/current artifacts. The local HTTP semantic judge proof is transport
+and composition evidence only. Live evaluator attestation is unavailable;
+general semantic entailment remains partial and P5-M3 has not started.

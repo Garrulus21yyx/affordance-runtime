@@ -76,7 +76,8 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT" in text
     assert "local HTTP provider transport proof: COMPLETE" in text
     assert "live provider profile: UNAVAILABLE" in text
-    assert "P5-M2 production evaluator composition: NOT_STARTED / NEXT" in text
+    assert "P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM" in text
+    assert "P5-M3 new-AgentLoop benchmark harness: NOT_STARTED / NEXT" in text
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

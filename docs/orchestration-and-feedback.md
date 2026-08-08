@@ -106,8 +106,9 @@ declared integrity validation before its status controls the loop. Invalid
 proposals fail the run and are not recorded as trusted evaluations.
 
 P5-M0.1 is implemented on the non-default target loop. ProposeDone remains
-advisory, must reference current evidence, and re-enters validated TaskEvaluator
-control; criterion-specific production adjudicators remain future P5-M2 work.
+advisory, must claim known criteria without unresolved items, and re-enters
+validated TaskEvaluator control. P5-M2 adds criterion-specific production
+composition without adding criterion branches to AgentLoop.
 
 P5-M0.1.1 makes every policy invocation a new one-shot epoch, including stale
 decision recovery and no-op page cycles. RequestObservation, Wait, stale/currentness
@@ -125,3 +126,6 @@ policy deadline bounds the awaited attempt; 429, transient transport, refusal
 and structured-output failures become internal `PolicyFailure` results with
 zero execution and no Turn entry. Provider metadata is diagnostic only and
 never enters AgentContext or changes Runtime behavior.
+P5-M2 semantic evaluation is likewise one bounded zero-retry provider attempt
+covering all current semantic/hybrid criteria. Failure yields UNKNOWN criterion
+proposals; Runtime evidence applicability and success composition remain final.

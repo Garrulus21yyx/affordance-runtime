@@ -198,7 +198,13 @@ def test_dom_visual_wot_confirmation_uses_fresh_private_binding(profile: str) ->
         assert evaluation.request_id == result.turns[-1].request_id
         assert evaluation.before_observation_id == result.turns[-1].before_observation_id
         assert evaluation.after_observation_id == result.turns[-1].after_observation_id
-        assert evaluation.evidence_refs
+        if profile == "wot":
+            # The TD does not declare that the action target owns the separate
+            # property target, so the stricter effect validator must not infer it.
+            assert str(evaluation.status) == "unknown"
+            assert not evaluation.evidence_refs
+        else:
+            assert evaluation.evidence_refs
         assert all(
             private not in old_private_representation
             for private in ("selector", "action_point", "bbox", "href", "method", "credential")

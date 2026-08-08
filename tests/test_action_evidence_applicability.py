@@ -22,8 +22,8 @@ def _world(identity: str, value: bool, profile: ObservationSourceProfile, *, unr
     return WorldObservation(identity, (), (fact,), (), {source.surface: CoverageState.COMPLETE}, sources=(source,))
 
 
-def _request():
-    return SimpleNamespace(intent=ActionIntent("activate", "target:1"))
+def _request(*, expected_outcome=None):
+    return SimpleNamespace(intent=ActionIntent("activate", "target:1", expected_outcome=expected_outcome or {}))
 
 
 def test_changed_relevant_fact_supports_effect_but_unrelated_fact_does_not() -> None:
@@ -75,3 +75,26 @@ def test_weak_visual_unchanged_cannot_prove_no_effect_but_strong_sources_can() -
             proposal, _request(), before, after, WorldEvidenceIndex.from_observation(after)
         )
         assert result.status == expected
+
+
+def test_current_after_only_scoped_artifact_supports_creation_effect() -> None:
+    before = _world("before", False, ObservationSourceProfile.dom())
+    source = SurfaceObservation(
+        "source:after", "dom", "revision:after", ObservationSourceProfile.dom(),
+        artifacts={"report": {"public_summary": "report created"}},
+    )
+    after = WorldObservation(
+        "after", (), (), (), {"dom": CoverageState.COMPLETE}, sources=(source,),
+    )
+    evidence_ref = "artifact:source:after:report"
+    proposal = ActionEvaluation(
+        "request:1", "before", "after", ActionEvaluationStatus.EFFECT_CONFIRMED,
+        "created", (evidence_ref,),
+    )
+
+    result = apply_action_evidence_profile(
+        proposal, _request(expected_outcome={"output_id": "report"}), before, after,
+        WorldEvidenceIndex.from_observation(after),
+    )
+
+    assert result.status == ActionEvaluationStatus.EFFECT_CONFIRMED

@@ -79,8 +79,8 @@ freeze target contracts
 DOM、Visual full-digest 与 WoT local HTTP JSON 已用相同 TaskGoal、确定性
 AgentPolicy 和 evaluators 证明 shared-state adapter-only matrix，通用
 confirmation/evaluation 信任边界与声明的 target output minimum 已闭合。
-P5-M0.1/M0.1.1、P5-M1 与 existing-ModelPort bridge M1.1 已完成；当前下一切片是 production
-evaluator composition，随后才是 new-AgentLoop harness。
+P5-M0.1/M0.1.1、P5-M1、existing-ModelPort bridge M1.1 与 declared-minimum
+production evaluator composition M2 已完成；当前下一切片是 new-AgentLoop harness。
 所有阶段继续以 completed behavior 为主证据。
 
 ## 3. P5 阶段与切片
@@ -103,8 +103,8 @@ P5-M1 model-backed AgentPolicy: COMPLETE_NON_DEFAULT
 P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT
 local HTTP provider transport proof: COMPLETE
 live provider profile: UNAVAILABLE
-P5-M2 production evaluator composition: NOT_STARTED / NEXT
-P5-M3 new-AgentLoop benchmark harness: NOT_STARTED
+P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM
+P5-M3 new-AgentLoop benchmark harness: NOT_STARTED / NEXT
 external benchmark: BLOCKED
 ```
 
@@ -323,8 +323,8 @@ DONE: P5-M0.1 AgentContext architecture and context completeness
 DONE: P5-M0.1.1 context operational closure
 DONE: P5-M1 model-backed target AgentPolicy core
 DONE: P5-M1.1 strict decision boundary and existing ModelPort bridge
-NEXT: P5-M2 production evaluator composition and criterion adjudicators
-THEN: P5-M3 new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke
+DONE: P5-M2 production evaluator composition and criterion adjudicators
+NEXT: P5-M3 new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars

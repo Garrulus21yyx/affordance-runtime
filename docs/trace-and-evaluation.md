@@ -62,7 +62,8 @@ Each criterion declares `MECHANICAL`, `SEMANTIC`, `USER_ACCEPTANCE`, or
 `HYBRID` adjudication. Mechanical checks are deterministic; semantic proposals
 must bind applicable rubric/current evidence; user acceptance counts only when
 TaskGoal explicitly requires it; hybrid keeps mechanical hard constraints.
-These adjudicators are `TARGET_DOCUMENTED / NOT_IMPLEMENTED`.
+These adjudicators are implemented for the declared minimum. Semantic judgment
+is model-proposed and current-evidence validated; it is not general entailment.
 
 TaskEvaluation binds task ID, current observation ID, stable criterion IDs,
 criterion statuses/evidence, completion evidence, and evaluated outputs.
@@ -73,8 +74,9 @@ cannot simultaneously claim every required criterion satisfied.
 When an EvaluationSpec requires an artifact, the artifact must exist and match
 the required content/integrity check. The declared minimum accepts an explicit
 output path plus SHA-256, requires a regular file, and streams the digest.
-Declaration metadata or an execution receipt is insufficient; unsupported
-integrity structures fail closed.
+The evaluated output must carry the identical path/SHA mapping and a current
+matching artifact ref. Declaration metadata, model summary, or an execution
+receipt is insufficient; unsupported integrity structures fail closed.
 
 ## 4. Evidence lifetime
 

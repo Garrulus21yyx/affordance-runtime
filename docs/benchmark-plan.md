@@ -101,7 +101,7 @@ single-surface adapter-only activation matrix is complete, but admission still r
 9. P5-M0.1.1 one-shot epoch/cursor paging/projection operational closure (closed non-default);
 10. P5-M1 model-backed target AgentPolicy (closed);
 11. P5-M1.1 strict existing-ModelPort bridge (closed locally; no live-provider generalization claim);
-12. P5-M2 minimum production evaluator composition and criterion adjudicators;
+12. P5-M2 minimum production evaluator composition and criterion adjudicators (closed locally);
 13. P5-M3 benchmark harness that runs the new AgentLoop rather than the retained baseline;
 14. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
 
@@ -116,6 +116,6 @@ P5-D6.1 completion likewise does not independently admit an external run.
 P5-M0 completion likewise does not independently admit an external run.
 P5-M0.1 completion likewise does not independently admit an external run.
 P5-M0.1.1 completion likewise does not independently admit an external run.
-P5-M1.1 completion likewise does not admit an external run: P5-M2 production
-evaluator composition, P5-M3 harness, and exact-head remote CI still block it.
+P5-M2 completion likewise does not admit an external run: P5-M3 harness, an
+exact live model-policy profile, and exact-head remote CI still block it.
 Semantic fusion remains deferred and is not an M1 prerequisite.

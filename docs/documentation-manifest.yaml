@@ -152,6 +152,9 @@ reference:
   - role: p5_m1_1_provider_bridge_hardening
     path: docs/reviews/2026-08-08-p5-m1-1-provider-bridge-hardening.md
     lifecycle: current
+  - role: p5_m2_production_evaluator_composition
+    path: docs/reviews/2026-08-08-p5-m2-production-evaluator-composition.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/
