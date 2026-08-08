@@ -52,6 +52,8 @@ class StateFact:
     def __post_init__(self) -> None:
         if not all(value.strip() for value in (self.fact_id, self.subject_id, self.predicate, self.source_id)):
             raise ValueError("state fact identity fields cannot be blank")
+        if not self.fact_id.startswith("fact:"):
+            object.__setattr__(self, "fact_id", f"fact:{self.fact_id}")
         object.__setattr__(self, "value", freeze_json(self.value))
 
 

@@ -34,6 +34,20 @@ def test_world_evidence_index_contains_current_facts_and_controlled_artifact_ref
     assert "private-value" not in repr(index)
 
 
+def test_semantic_evidence_ids_may_contain_security_vocabulary() -> None:
+    observation = WorldObservation(
+        "obs-security-vocabulary",
+        (),
+        (StateFact("fact:api-token-enabled", "service", "authorization-ready", True, "source"),),
+        (),
+        {"dom": CoverageState.COMPLETE},
+    )
+
+    index = WorldEvidenceIndex.from_observation(observation)
+
+    assert index.resolve("fact:api-token-enabled")
+
+
 @pytest.mark.parametrize("refs", (("",), ("fact:after", "fact:after")))
 def test_action_evaluation_rejects_blank_or_duplicate_evidence_refs(refs) -> None:
     with pytest.raises(ValueError, match="evidence"):

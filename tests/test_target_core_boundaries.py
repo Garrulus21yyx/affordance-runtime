@@ -15,6 +15,7 @@ TARGET_CORE = (
     PACKAGE / "model_boundary",
 )
 SIZE_GATED = TARGET_CORE + (
+    PACKAGE / "surfaces" / "dom",
     PACKAGE / "surfaces" / "visual",
     PACKAGE / "surfaces" / "wot",
 )
@@ -125,4 +126,33 @@ def test_target_core_size_review_gates_remain_closed() -> None:
                         violations.append(
                             f"{path.relative_to(ROOT)}:{node.lineno} {node.name} has {function_lines} lines"
                         )
+                if isinstance(node, ast.ClassDef):
+                    public_methods = [
+                        item
+                        for item in node.body
+                        if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                        and not item.name.startswith("_")
+                    ]
+                    if len(public_methods) > 10:
+                        violations.append(
+                            f"{path.relative_to(ROOT)}:{node.lineno} {node.name} has "
+                            f"{len(public_methods)} public methods"
+                        )
+                    init = next(
+                        (
+                            item
+                            for item in node.body
+                            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                            and item.name == "__init__"
+                        ),
+                        None,
+                    )
+                    if init is not None and len(init.args.args) - 1 > 8:
+                        violations.append(
+                            f"{path.relative_to(ROOT)}:{node.lineno} {node.name} injects "
+                            f"{len(init.args.args) - 1} collaborators"
+                        )
+    loop_lines = len((PACKAGE / "agent" / "loop.py").read_text(encoding="utf-8").splitlines())
+    if loop_lines > 300:
+        violations.append(f"src/affordance_runtime/agent/loop.py has {loop_lines} lines")
     assert violations == []

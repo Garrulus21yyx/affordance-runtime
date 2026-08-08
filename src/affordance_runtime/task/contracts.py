@@ -36,10 +36,13 @@ class MaterialBinding:
     name: str
     digest: str
     media_type: str = "application/octet-stream"
+    public_reference: str = ""
 
     def __post_init__(self) -> None:
         if not self.name.strip() or not self.digest.strip():
             raise ValueError("material binding requires name and digest")
+        if self.public_reference and not self.public_reference.strip():
+            raise ValueError("material public reference cannot be blank")
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,9 @@ class TaskGoal:
         object.__setattr__(self, "forbidden_effects", tuple(self.forbidden_effects))
         object.__setattr__(self, "inputs", freeze_json(self.inputs))
         object.__setattr__(self, "success_criteria", tuple(freeze_json(item) for item in self.success_criteria))
+        criterion_ids = tuple(criterion_id(item) for item in self.success_criteria)
+        if any(not item.strip() for item in criterion_ids) or len(set(criterion_ids)) != len(criterion_ids):
+            raise ValueError("success criterion IDs must be nonblank and unique")
         if any(not item.strip() for item in self.requested_outputs) or len(set(self.requested_outputs)) != len(
             self.requested_outputs
         ):

@@ -5,26 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent.decisions import AskUser, Finish, Reobserve, SelectAction, Stop
-from affordance_runtime.agent.evaluation_control import (
-    untrusted_evaluation_turn,
-    validated_action_evaluation,
-    validated_task_evaluation,
-)
+from affordance_runtime.agent.evaluation_control import validated_task_evaluation
+from affordance_runtime.agent.execution_cycle import execute_cycle
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
-from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.result import AgentResult, add_counts, build_result, observation_budget_result
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
-from affordance_runtime.execution.contracts import ActionError, ActionIntent, ActionResult, DispatchStatus
+from affordance_runtime.execution.contracts import ActionIntent
 from affordance_runtime.model_boundary.projection import project_action_space, project_plan, project_task, project_turns
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.action_space import ActionSpaceBuilder
-from affordance_runtime.world.binder import ActionBinder, BindingError
+from affordance_runtime.world.binder import ActionBinder
 from affordance_runtime.world.contracts import ActionSpace, AdmittedActionSelection
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.view import build_agent_world_view
@@ -147,80 +143,14 @@ class AgentLoop:
         selection: AdmittedActionSelection,
         decision: SelectAction,
     ):
-        task, state, environment = session.task, session.state, session.environment
-        if not self._can_observe(session):
-            return observation_budget_result(task, state, 0, 0)
-        before = state.current_observation
-        try:
-            request = self.binder.bind(selection, before)
-        except BindingError:
-            state.current_observation = await environment.observe("binding unavailable; refresh world")
-            return state, 1, 0, 0, None
-        result = await environment.execute(request)
-        probed = _probe_count(result)
-        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
-            state.append_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result))
-            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch")
-            return state, 0, int(result.dispatch_status != DispatchStatus.NOT_SENT), probed, terminal
-        if result.dispatch_status == DispatchStatus.NOT_SENT:
-            state.append_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result))
-            if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
-                state.current_observation = await environment.observe("currentness unavailable; refresh world")
-                return state, 1, 0, probed, None
-            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action was not dispatched")
-            return state, 0, 0, probed, terminal
-        after = await environment.observe("fresh post-action observation")
-        if after.observation_id == before.observation_id:
-            state.append_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result, after.observation_id))
-            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "post-action identity was reused")
-            return state, 1, 1, probed, terminal
-        try:
-            action_evaluation = await validated_action_evaluation(
-                self.action_evaluator, task, before, request, result, after
-            )
-        except ValueError as exc:
-            state.append_turn(untrusted_evaluation_turn(before.observation_id, decision, request, result, after.observation_id))
-            state.current_observation = after
-            terminal = build_result(
-                AgentLoopStatus.FAILED,
-                task,
-                state,
-                0,
-                0,
-                str(exc),
-            )
-            return state, 1, 1, probed, terminal
-        try:
-            task_evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
-        except ValueError as exc:
-            state.append_turn(
-                untrusted_evaluation_turn(
-                    before.observation_id,
-                    decision,
-                    request,
-                    result,
-                    after.observation_id,
-                    action_evaluation,
-                )
-            )
-            state.current_observation = after
-            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
-            return state, 1, 1, probed, terminal
-        state.append_turn(
-            Turn(
-                before.observation_id,
-                decision,
-                request.intent,
-                request.request_id,
-                result,
-                after.observation_id,
-                action_evaluation,
-                task_evaluation,
-            )
+        return await execute_cycle(
+            session,
+            selection,
+            decision,
+            self.binder,
+            self.action_evaluator,
+            self.task_evaluator,
         )
-        state.current_observation = after
-        post_terminal = post_action_result(task, state, request, action_evaluation, task_evaluation)
-        return state, 1, 1, probed, post_terminal
 
     def _admit_selection(
         self,
@@ -338,8 +268,3 @@ class AgentEpisodeRunner:
 
     async def run(self, environment: WorldEnvironment, task: TaskGoal) -> AgentResult:
         return await (await self.start(environment, task)).run_until_pause()
-
-
-def _probe_count(result: ActionResult) -> int:
-    value = result.adapter_evidence.get("currentness_probe_count", 0)
-    return int(value) if isinstance(value, int | float) else 0

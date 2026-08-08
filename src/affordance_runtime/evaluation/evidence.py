@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from affordance_runtime.world.contracts import WorldObservation
 
-_SECRET_MARKERS = ("password", "secret", "token", "credential", "authorization", "api_key", "apikey")
 _MAX_REFS = 4096
 _MAX_REF_LENGTH = 512
+_FACT_REF = re.compile(r"^fact:[A-Za-z0-9][A-Za-z0-9._:-]{0,506}$")
+_ARTIFACT_REF = re.compile(r"^artifact:[A-Za-z0-9][A-Za-z0-9._:-]{1,502}$")
 
 
 @dataclass(frozen=True)
@@ -23,7 +25,6 @@ class WorldEvidenceIndex:
             f"artifact:{source.observation_id}:{key}"
             for source in observation.sources
             for key in source.artifacts
-            if not evidence_ref_contains_secret(str(key))
         )
         validated = validate_evidence_refs(tuple(refs), allow_empty=True)
         if len(validated) > _MAX_REFS:
@@ -44,11 +45,21 @@ def validate_evidence_refs(refs: tuple[str, ...], *, allow_empty: bool) -> tuple
         raise ValueError("evidence references must be unique")
     if any(len(item) > _MAX_REF_LENGTH for item in values):
         raise ValueError("evidence reference exceeds bounded length")
-    if any(evidence_ref_contains_secret(item) for item in values):
-        raise ValueError("evidence reference contains secret material")
+    if any(not _valid_evidence_ref(item) for item in values):
+        raise ValueError("evidence reference must use the canonical fact or artifact namespace")
     return values
 
 
 def evidence_ref_contains_secret(value: str) -> bool:
-    normalized = value.casefold().replace("-", "_")
-    return any(marker in normalized for marker in _SECRET_MARKERS)
+    """Compatibility predicate: non-canonical values are unsafe as references."""
+
+    return not _valid_evidence_ref(value)
+
+
+def _valid_evidence_ref(value: str) -> bool:
+    if _FACT_REF.fullmatch(value):
+        return True
+    if not _ARTIFACT_REF.fullmatch(value):
+        return False
+    _, source_id, safe_key = value.rsplit(":", 2)
+    return bool(source_id and safe_key)
