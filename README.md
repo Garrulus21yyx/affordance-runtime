@@ -67,15 +67,16 @@ path remains the default baseline. A non-default target path now implements the
 strong TaskGoal and world/action/evaluation contracts and integrated DOM,
 Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
 three-surface adapter-only shared-state matrix is proven with one deterministic
-policy. P5-D semantic confirmation and effect certainty is next. A model-backed
-target AgentPolicy is not implemented, external full-agent benchmarks remain
-blocked, and default cutover remains pending.
+policy. P5-D semantic confirmation, fresh semantic rebind, and unknown-effect
+no-replay are closed. A model-backed target AgentPolicy is next but not yet
+implemented; external full-agent benchmarks remain blocked and default cutover
+remains pending.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)
 for exact code truth and [Current Implementation Plan](docs/current-implementation-plan.md)
-for exact slice status and the P5-D work queue.
+for exact slice status and the next target-policy work queue.
 
 ## Correctness invariants retained during simplification
 
@@ -99,9 +100,9 @@ selectors, coordinates, or fixture semantics to production policy.
 
 The DOM/Visual/WoT adapter-only shared-state matrix is complete for the current
 declared single-surface profiles. Full external agent benchmarks remain blocked
-until P5-D, a model-backed target AgentPolicy and production evaluator
-composition, a new-AgentLoop benchmark harness, and exact-head remote CI
-evidence are all complete.
+until a model-backed target AgentPolicy and production evaluator composition,
+a new-AgentLoop benchmark harness, and exact-head remote CI evidence are all
+complete. P5-D is closed but does not by itself admit an external run.
 
 ## Documentation
 

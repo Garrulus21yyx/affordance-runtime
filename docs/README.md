@@ -51,8 +51,9 @@ Current code still runs the older TaskSpec/ActionContract/StateKernel/
 RuntimeCommitter path. It is a retained migration baseline, not the target.
 The unified DOM, Visual full-digest, and WoT local HTTP JSON paths are integrated
 non-default, and their shared-state adapter-only matrix is proven. The older
-baseline remains the default product path. P5-D semantic confirmation and
-effect certainty is the active migration slice.
+baseline remains the default product path. P5-D semantic confirmation, fresh
+rebind, and effect certainty are integrated non-default. Model-backed target
+policy/evaluator composition is the next migration slice.
 
 ## 3. Maintained policies and contracts
 
@@ -89,6 +90,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-C1.2/B1.2 exact-selection closure](reviews/2026-08-08-p5-c1-2-exact-selection-closure.md)
 - [P5 Visual single-surface vertical](reviews/2026-08-08-p5-visual-single-surface-vertical.md)
 - [P5 WoT single-surface and three-surface matrix](reviews/2026-08-08-p5-wot-single-surface-and-matrix.md)
+- [P5-D semantic confirmation and effect certainty](reviews/2026-08-08-p5-d-semantic-confirmation.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

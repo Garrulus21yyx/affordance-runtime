@@ -221,7 +221,8 @@ DONE: P5-B1–B4 for DOM, Visual full-digest, and WoT local HTTP JSON simulation
 DONE: P5-C1–C3 shared-state deterministic-policy DOM/Visual/WoT matrix
 DEFERRED: P5-C4 semantic fusion; it is not a prerequisite for P5-D
 PARTIAL: P5-C5 small AgentLoopState complete; LoopPolicy and optional TurnRecorder remain
-NOW: P5-D semantic confirmation and effect-certainty continuation
+DONE: P5-D semantic confirmation, fresh rebind, and effect-certainty continuation
+NEXT: model-backed target AgentPolicy and production evaluator composition
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars

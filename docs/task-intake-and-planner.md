@@ -45,6 +45,13 @@ evaluates the current request against the task's stable risk/effect boundary.
 For an effectful task, allowed effects must come from explicit instruction or
 clarification; an empty set never means unrestricted effects.
 
+RiskPolicy hashes only the canonical semantic action, semantic target,
+destination, normalized semantic parameters, semantic effects, Runtime risk,
+and human-readable consequence categories. Observation/option/binding IDs,
+selector, coordinate, bbox, WoT form/href/method, backend, screenshot/TD digest,
+and credentials are excluded. Authored low-risk metadata cannot lower the
+Runtime-owned risk floor.
+
 ## 3. Risk-proportionate profiles
 
 | Profile | Intake requirement |

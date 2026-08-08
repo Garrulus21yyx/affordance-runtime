@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
+from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -19,6 +20,7 @@ class AgentResult:
     execution_count: int
     currentness_probe_count: int = 0
     message: str = ""
+    confirmation_request: ConfirmationRequest | None = None
 
 
 def build_result(
@@ -39,6 +41,7 @@ def build_result(
         execution_count,
         currentness_probe_count,
         message,
+        state.pending_confirmation if status == AgentLoopStatus.WAITING_CONFIRMATION else None,
     )
 
 
@@ -68,4 +71,5 @@ def add_counts(result_value: AgentResult, observations: int, executions: int, pr
         executions,
         probes,
         result_value.message,
+        result_value.confirmation_request,
     )

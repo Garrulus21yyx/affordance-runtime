@@ -94,7 +94,7 @@ single-surface adapter-only activation matrix is complete, but admission still r
 2. the same TaskGoal, policy, evaluators, and semantic actions with adapter-only variation;
 3. runtime-owned ActionSpace and evaluator-owned completion;
 4. stale zero-call, fresh observation, and SENT_UNKNOWN no-retry;
-5. P5-D confirmation/unknown-effect core;
+5. P5-D confirmation/unknown-effect core (closed on the non-default target path);
 6. model-backed target AgentPolicy and production target evaluator composition;
 7. a benchmark harness that runs the new AgentLoop rather than the retained baseline;
 8. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.

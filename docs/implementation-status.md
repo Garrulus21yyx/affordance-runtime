@@ -31,7 +31,7 @@ The target path now has:
 | real-browser DOM short loop | `INTEGRATED_NON_DEFAULT`, positive C1 proof |
 | Visual new-loop vertical | `INTEGRATED_NON_DEFAULT`, positive C2 proof |
 | WoT new-loop vertical | `INTEGRATED_NON_DEFAULT`, local-simulation positive C3 proof |
-| semantic confirmation continuation | `NOT_STARTED` (typed waiting placeholder only) |
+| semantic confirmation continuation | `INTEGRATED_NON_DEFAULT`; typed request/decision, run-scoped session, fresh semantic rebind, single-send consumption |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
 | ActionBatch | helper implemented; not AgentLoop-integrated |
@@ -90,7 +90,15 @@ task. This does not prove semantic fusion or physical-device confirmation. Seman
 simultaneous sources remains future work. External full-agent
 benchmarks remain blocked. Old-core deletion is not admitted.
 
-P5-D is the next admitted slice. Semantic fusion is deliberately deferred and
-is not a P5-D prerequisite. The small `AgentLoopState` is complete; a distinct
-LoopPolicy and optional TurnRecorder remain future work. Model-backed target
-policy/evaluator composition and the new-loop benchmark harness have not begun.
+P5-D is closed on the non-default target path. `ActionEvaluationStatus` now
+distinguishes `EFFECT_CONFIRMED`, `NO_EFFECT_CONFIRMED`, `UNKNOWN`, and
+`REJECTED`. `AgentRunSession` is process-local only: confirmation always starts
+from a fresh observation, matches the semantic subject, binds the current
+private route, and consumes confirmation only after `SENT`/`SENT_UNKNOWN`.
+Unknown effect waits for the user and never replays automatically.
+
+Semantic fusion remains deliberately deferred. The small `AgentLoopState` is
+complete; a distinct LoopPolicy and optional TurnRecorder remain future work.
+Model-backed target policy/evaluator composition and the new-loop benchmark
+harness have not begun. WoT effectful rate limiting is implemented; property
+read-side scheduling/rate limiting is not implemented.

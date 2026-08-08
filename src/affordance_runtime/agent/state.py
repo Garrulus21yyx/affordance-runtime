@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionIntent, ActionResult, BoundActionRequest
 from affordance_runtime.task.planning_contracts import TaskPlan
@@ -18,6 +19,7 @@ class AgentLoopStatus(StrEnum):
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
     FAILED = "failed"
 
 
@@ -39,7 +41,7 @@ class AgentLoopState:
     recent_turns: tuple[Turn, ...] = ()
     plan: TaskPlan | None = None
     pending_user_question: str = ""
-    pending_confirmation: ActionIntent | None = None
+    pending_confirmation: ConfirmationRequest | None = None
     pending_unknown_request: BoundActionRequest | None = None
     remaining_turns: int = 20
     final_result: dict[str, object] = field(default_factory=dict)

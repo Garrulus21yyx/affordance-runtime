@@ -25,6 +25,7 @@ class SharedStateHttpFixture:
         self.td_calls = 0
         self.property_calls = 0
         self.action_calls = 0
+        self.action_path = "/actions/enable"
 
 
 @contextmanager
@@ -35,7 +36,7 @@ def shared_state_server():
         def do_GET(self):
             if self.path == "/td":
                 state.td_calls += 1
-                self._json(_td(self.server.server_address[1]))
+                self._json(_td(self.server.server_address[1], state.action_path))
                 return
             if self.path == "/properties/expanded":
                 state.property_calls += 1
@@ -44,7 +45,7 @@ def shared_state_server():
             self.send_error(404)
 
         def do_POST(self):
-            if self.path == "/actions/enable":
+            if self.path == state.action_path:
                 state.action_calls += 1
                 state.expanded = True
                 self._json({"enabled": True})
@@ -73,7 +74,7 @@ def shared_state_server():
         thread.join(timeout=2)
 
 
-def _td(port: int) -> dict:
+def _td(port: int, action_path: str = "/actions/enable") -> dict:
     base = f"http://127.0.0.1:{port}"
     return {
         "id": "shared-state",
@@ -90,7 +91,7 @@ def _td(port: int) -> dict:
         },
         "actions": {
             "enable": {
-                "forms": [{"href": "/actions/enable", "op": "invokeaction"}]
+                "forms": [{"href": action_path, "op": "invokeaction"}]
             }
         },
     }

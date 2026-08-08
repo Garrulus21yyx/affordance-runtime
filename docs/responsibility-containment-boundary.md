@@ -18,6 +18,8 @@
 | `RouteSelector` | choose one current binding for a semantic action | effectful fallback execution |
 | `ActionBinder` | ActionIntent + current binding → BoundActionRequest | confirmation semantics or evaluation |
 | `RiskPolicy` | ALLOW/NEEDS_CONFIRMATION/BLOCK | executor capability discovery or token registry |
+| `confirmation/` | semantic request/decision contracts and human-readable summary | surface payloads, BrowserSession, HTTP transport, registry |
+| `AgentRunSession` | one in-memory run, pending confirmation, consumption and continuation counts | persistence, global lookup, cross-process resume |
 | `Executor` | one BoundActionRequest → ActionResult | effect/task success judgment |
 | `ActionEvaluator` | before/request/result/after → effect status | task completion |
 | `TaskEvaluator` | TaskGoal/EvaluationSpec + world/turns → task status | action dispatch |
@@ -91,3 +93,10 @@ late-binding; `currentness.py` owns pure TD/affordance comparison; and
 rate timestamps. It does not import AgentLoop, DOM/Visual adapters, benchmark
 tasks, old ActionContract, or transaction owners. Physical/remote risk is
 Runtime configuration, not TD authority.
+
+P5-D keeps semantic subject canonicalization in `risk/`, confirmation contracts
+and summaries in `confirmation/`, continuation state in `agent/session.py`, and
+effect-certainty continuation in `agent/post_action_policy.py`. `AgentLoop`
+sequences these owners. Target core, risk, confirmation, Visual, and WoT files
+remain below 350 lines with functions below 80 lines; dependency tests reject
+surface imports from risk/confirmation/agent and AgentLoop imports from adapters.

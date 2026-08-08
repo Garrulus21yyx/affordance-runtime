@@ -30,7 +30,7 @@ The serial MVP state contains current observation ref, bounded recent turns,
 optional TaskPlan/milestone summary, pending semantic confirmation, pending
 uncertain request, budget, and final result.
 Externally meaningful states are RUNNING, WAITING_USER,
-WAITING_CONFIRMATION, DONE, and FAILED.
+WAITING_CONFIRMATION, CANCELLED, DONE, BLOCKED, and FAILED.
 
 Preflight, acting, verifying, and recovering are local call steps, not a global
 durable state machine.
@@ -43,10 +43,14 @@ or complete a task. Sensitive binding payloads and credentials are excluded.
 
 ## 4. Confirmation
 
-WaitingConfirmation carries ActionIntent, consequences and a semantic
-confirmation-subject identity. On confirmation, Runtime reobserves and rebinds.
-Binding-only changes are allowed; target/destination/parameters/effect/risk
-changes invalidate confirmation.
+WaitingConfirmation carries a typed `ConfirmationRequest`: confirmation ID,
+semantic subject ID, ActionIntent, effects, risk, consequences, and a semantic
+summary. A decision binds both IDs. On CONFIRM, `AgentRunSession` reobserves,
+checks whether the task is already complete, rebuilds ActionSpace, recomputes
+the subject, and only then binds the current route. Binding-only changes are
+allowed; action/target/destination/parameters/effects/risk/consequences changes
+require a new confirmation. DENY clears the request and returns CANCELLED with
+zero execution.
 
 ## 5. Serial execution
 
@@ -57,9 +61,11 @@ false; failure stops the batch and final fresh observation is mandatory.
 
 ## 6. Interruption
 
-General checkpoint/resume and crash restoration are non-goals for the current
-target. A waiting user/confirmation result may be resumed by the product using
-fresh observation; it does not restore stale bindings or replay an old action.
+General checkpoint/resume and crash restoration are non-goals. `AgentRunSession`
+is in-memory and process-local with no registry, token, database, or serialized
+checkpoint. `NOT_SENT` retains same-subject confirmation for another bounded
+fresh rebind; `SENT` and `SENT_UNKNOWN` consume it. No old bound request is
+restored or replayed.
 
 ## 7. Current migration note
 

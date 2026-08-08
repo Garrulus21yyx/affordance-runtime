@@ -20,9 +20,14 @@ ActionResult dispatch status is `NOT_SENT`, `SENT`, or `SENT_UNKNOWN`.
 `success` only means the adapter did not report an execution error. A
 SENT_UNKNOWN result always goes through fresh observation and never direct retry.
 
-Statuses are EFFECT_CONFIRMED, NO_EFFECT, UNKNOWN, CONFLICT, and ERROR. Evidence must be
-about the requested target/effect and come from the fresh observation or an
-explicit authoritative external check. UNKNOWN never authorizes replay.
+Target statuses are `EFFECT_CONFIRMED`, `NO_EFFECT_CONFIRMED`, `UNKNOWN`, and
+`REJECTED`. `NO_EFFECT_CONFIRMED` requires fresh identity-bound authoritative
+evidence that the effect did not occur and permits a new policy turn, never an
+automatic replay. `UNKNOWN` means coverage/evidence cannot determine whether
+the effect occurred; the loop stores the pending unknown request, waits for the
+user, and never enters ordinary execution for that intent. `REJECTED` fails or
+stops according to loop policy. Evidence must concern the requested target and
+effect and come from the fresh observation or an authoritative external check.
 
 Evaluation prefers environment-native/API/WoT state, then DOM/AX structured
 state, filesystem/artifact state, visual/VLM evidence, and finally human input.
