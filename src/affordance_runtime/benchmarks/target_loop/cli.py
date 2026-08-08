@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+from dataclasses import replace
 
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest
 from affordance_runtime.benchmarks.target_loop.reporting import write_run_report
@@ -16,12 +17,13 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
-    cases = get_manifest(args.suite, args.profile, args.seed)
+    manifest = get_manifest(args.suite, args.profile, args.seed)
     if args.case_id:
-        cases = tuple(item for item in cases if item.case_id == args.case_id)
+        cases = tuple(item for item in manifest.cases if item.case_id == args.case_id)
         if not cases:
             parser.error("case ID is not part of the selected fixed manifest")
-    result = asyncio.run(run_suite(args.suite, args.profile, cases, args.seed))
+        manifest = replace(manifest, cases=cases)
+    result = asyncio.run(run_suite(manifest))
     write_run_report(result, args.output_dir)
     return 0 if result.acceptance.accepted else 1
 

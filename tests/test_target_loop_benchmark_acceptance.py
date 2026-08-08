@@ -10,7 +10,8 @@ def _result(**changes):
         semantic_judge_calls=0, provider_attempts=0, confirmations=0, ask_user_count=0,
         wait_count=0, page_request_count=0, sent_unknown_count=0,
         duplicate_unknown_attempts=0, forbidden_effect_attempts=0,
-        stale_opportunities=0, stale_zero_call_violations=0, latency_ms=1.0,
+        stale_opportunities=0, stale_zero_call_violations=0, effectful_dispatches=1,
+        latency_ms=1.0,
     )
     values.update(changes)
     values.setdefault("measurements", {

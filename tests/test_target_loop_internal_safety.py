@@ -5,8 +5,8 @@ from affordance_runtime.benchmarks.target_loop.runner import run_suite
 
 
 def test_internal_safety_sent_unknown_and_provider_failure_are_zero_replay() -> None:
-    cases = get_manifest("internal-safety", "scripted-model", 7)
-    result = asyncio.run(run_suite("internal-safety", "scripted-model", cases, 7))
+    manifest = get_manifest("internal-safety", "scripted-model", 7)
+    result = asyncio.run(run_suite(manifest))
     assert result.acceptance.accepted
     sent, confirmation, stale, failure, forbidden = result.cases
     assert sent.sent_unknown_count == 1 and sent.duplicate_unknown_attempts == 0

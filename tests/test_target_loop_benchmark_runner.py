@@ -44,12 +44,16 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
         return BenchmarkCase(
             identity, "suite", identity,
             lambda: TaskGoal(identity, "Already complete"),
-            lambda: Environment([WorldObservation(identity, (), (), (), {"static": CoverageState.COMPLETE})]),
-            lambda: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
+            lambda _metrics: Environment([WorldObservation(identity, (), (), (), {"static": CoverageState.COMPLETE})]),
+            lambda _metrics: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
             (AgentLoopStatus.BLOCKED,), 2.0, 7, ("observations",), "internal",
         )
 
-    result = asyncio.run(run_suite("suite", "deterministic", (case("a"), case("b")), 7))
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(run_suite(BenchmarkManifest(
+        "target-loop-manifest.v1", "suite", "deterministic", 7, (case("a"), case("b")),
+    )))
     assert result.acceptance.accepted
     assert events == ["start:a", "close:a", "start:b", "close:b"]
     assert [item.case_id for item in result.cases] == ["a", "b"]

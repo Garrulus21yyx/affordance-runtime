@@ -9,12 +9,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.environment import WorldEnvironment
+
+if TYPE_CHECKING:
+    from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
 
 @dataclass(frozen=True)
@@ -73,8 +77,8 @@ class BenchmarkCase:
     suite_id: str
     description: str
     task_factory: Callable[[], TaskGoal]
-    environment_factory: Callable[[], WorldEnvironment]
-    composition_factory: Callable[[], BenchmarkComposition]
+    environment_factory: Callable[[BenchmarkInstrumentation], WorldEnvironment]
+    composition_factory: Callable[[BenchmarkInstrumentation], BenchmarkComposition]
     expected_terminal_statuses: tuple[AgentLoopStatus, ...]
     timeout_s: float
     seed: int
@@ -86,6 +90,29 @@ class BenchmarkCase:
     def __post_init__(self) -> None:
         if not self.case_id or not self.suite_id or not 0 < self.timeout_s <= 300:
             raise ValueError("benchmark case identity and timeout are required")
+        names = tuple(item.metric for item in self.metric_expectations)
+        if len(names) != len(set(names)):
+            raise ValueError("benchmark metric expectations must be unique")
+        if any(name not in _KNOWN_METRICS for name in (*self.required_measurements, *names)):
+            raise ValueError("benchmark case references an unknown metric")
+
+
+@dataclass(frozen=True)
+class BenchmarkManifest:
+    schema_version: str
+    suite_id: str
+    profile_id: str
+    seed: int
+    cases: tuple[BenchmarkCase, ...]
+
+    def __post_init__(self) -> None:
+        if not self.schema_version or not self.suite_id or not self.profile_id or not self.cases:
+            raise ValueError("benchmark manifest identity and cases are required")
+        identities = tuple(item.case_id for item in self.cases)
+        if any(not item for item in identities) or len(identities) != len(set(identities)):
+            raise ValueError("benchmark manifest case IDs must be nonblank and unique")
+        if any(item.suite_id != self.suite_id or item.seed != self.seed for item in self.cases):
+            raise ValueError("benchmark case suite and seed must match its manifest")
 
 
 @dataclass(frozen=True)
@@ -100,13 +127,15 @@ class BenchmarkRunIdentity:
     started_at_utc: str
     python_version: str
     platform: str
+    manifest_schema_version: str = "target-loop-manifest.v1"
+    harness_schema_version: str = "target-loop-harness.v2"
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:
         sha = _git("rev-parse", "HEAD")
         dirty = bool(_git("status", "--short"))
         started = datetime.now(UTC).isoformat()
-        run_id = f"{suite_id}:{sha[:12]}:{digest[:12]}:{seed}"
+        run_id = f"{suite_id}:{profile_id}:{sha[:12]}:{digest[:12]}:{seed}"
         return cls(run_id, sha, dirty, suite_id, digest, profile_id, seed, started, sys.version.split()[0], platform.platform())
 
 
@@ -132,6 +161,7 @@ class BenchmarkCaseResult:
     forbidden_effect_attempts: int
     stale_opportunities: int
     stale_zero_call_violations: int
+    effectful_dispatches: int
     latency_ms: float
     measurements: dict[str, MetricMeasurement] = field(default_factory=dict)
 
@@ -156,3 +186,13 @@ def _git(*args: str) -> str:
     if args[:2] == ("rev-parse", "HEAD") and len(value) != 40:
         raise RuntimeError("benchmark run requires an exact git identity")
     return value
+
+
+_KNOWN_METRICS = frozenset({
+    "observations", "executions", "currentness_probes", "turns", "policy_calls",
+    "semantic_judge_calls", "provider_attempts", "confirmations", "ask_user_count",
+    "wait_count", "page_request_count", "sent_unknown_count", "duplicate_unknown_attempts",
+    "forbidden_effect_attempts", "stale_opportunities", "stale_zero_call_violations",
+    "effectful_dispatches", "dom_click_calls", "visual_proposer_calls", "pointer_calls",
+    "td_requests", "property_reads", "wot_action_calls",
+})

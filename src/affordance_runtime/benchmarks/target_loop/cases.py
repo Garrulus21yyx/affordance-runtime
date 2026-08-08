@@ -1,7 +1,13 @@
 """Explicit fixed internal target-loop manifests; no plugin discovery."""
 
 from affordance_runtime.agent import AgentLoopStatus
-from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkCase, BenchmarkComposition
+from affordance_runtime.benchmarks.target_loop.contracts import (
+    BenchmarkCase,
+    BenchmarkComposition,
+    BenchmarkManifest,
+    MetricExpectation,
+    MetricExpectationOperator,
+)
 from affordance_runtime.benchmarks.target_loop.evaluation_support import (
     output_case_parts,
     semantic_environment,
@@ -35,42 +41,52 @@ from affordance_runtime.model_policy import ModelBackedAgentPolicy
 
 def build_manifest(suite_id: str, profile_id: str, seed: int):
     if suite_id == "internal-core" and profile_id in {"deterministic", "scripted-model"}:
-        return (
+        cases = (
             *(_shared_case(surface, profile_id, seed) for surface in ("dom", "visual", "wot")),
             _paging_case(seed),
             _low_risk_case(seed),
         )
-    if suite_id == "internal-core" and profile_id == "local-http-model-policy":
-        return tuple(_shared_http_case(surface, seed) for surface in ("dom", "visual", "wot"))
-    if suite_id == "internal-safety" and profile_id == "scripted-model":
-        return (
+    elif suite_id == "internal-core" and profile_id == "local-http-model-policy":
+        cases = tuple(_shared_http_case(surface, seed) for surface in ("dom", "visual", "wot"))
+    elif suite_id == "internal-safety" and profile_id == "scripted-model":
+        cases = (
             _sent_unknown_case(seed), _confirmation_case(seed), _stale_case(seed),
             _provider_failure_case(seed), _forbidden_case(seed),
         )
-    if suite_id == "internal-evaluation" and profile_id == "local-http-semantic-judge":
-        return (_semantic_case(seed), _output_case(seed))
-    raise ValueError("unknown fixed target-loop suite/profile")
+    elif suite_id == "internal-evaluation" and profile_id == "local-http-semantic-judge":
+        cases = (_semantic_case(seed), _output_case(seed))
+    else:
+        raise ValueError("unknown fixed target-loop suite/profile")
+    return BenchmarkManifest("target-loop-manifest.v1", suite_id, profile_id, seed, cases)
+
+
+def _expect(**values: int) -> tuple[MetricExpectation, ...]:
+    return tuple(
+        MetricExpectation(name, MetricExpectationOperator.EQ, value)
+        for name, value in values.items()
+    )
 
 
 def _shared_case(surface: str, profile: str, seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         f"shared-{surface}", "internal-core", f"{surface} shared-state target loop",
-        shared_task, lambda: shared_environment(surface),
-        lambda: BenchmarkComposition(policy_for(profile), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        shared_task, lambda _metrics: shared_environment(surface),
+        lambda _metrics: BenchmarkComposition(policy_for(profile), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("observations", "executions", "policy_calls"), "internal-core",
+        ("observations", "executions", "policy_calls", "effectful_dispatches"), "internal-core",
+        _expect(observations=2, executions=1, effectful_dispatches=1),
     )
 
 
 def _shared_http_case(surface: str, seed: int) -> BenchmarkCase:
     holder = {}
 
-    def environment_factory():
+    def environment_factory(_metrics):
         environment = local_http_policy_environment(surface)
         holder["environment"] = environment
         return environment
 
-    def composition_factory():
+    def composition_factory(_metrics):
         return BenchmarkComposition(
             local_http_policy(holder["environment"]),
             CurrentFactActionEvaluator(), SharedTaskEvaluator(),
@@ -81,89 +97,98 @@ def _shared_http_case(surface: str, seed: int) -> BenchmarkCase:
         shared_task, environment_factory, composition_factory,
         (AgentLoopStatus.DONE,), 10.0, seed,
         ("provider_attempts", "executions"), "internal-core",
+        _expect(provider_attempts=1, executions=1),
     )
 
 
 def _paging_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "second-page-execution", "internal-core", "request next page then execute once",
-        shared_task, paging_environment,
-        lambda: BenchmarkComposition(PagingPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        shared_task, lambda _metrics: paging_environment(),
+        lambda _metrics: BenchmarkComposition(PagingPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
         ("page_request_count", "executions"), "internal-core",
+        _expect(page_request_count=1, executions=1),
     )
 
 
 def _stale_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "stale-zero-call", "internal-safety", "stale binding never reaches effectful dispatch",
-        shared_task, stale_environment,
-        lambda: BenchmarkComposition(SelectThenAbortPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        shared_task, lambda _metrics: stale_environment(),
+        lambda _metrics: BenchmarkComposition(SelectThenAbortPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.FAILED,), 10.0, seed,
-        ("stale_opportunities", "stale_zero_call_violations"), "internal-safety",
+        ("stale_opportunities", "stale_zero_call_violations", "effectful_dispatches"), "internal-safety",
+        _expect(stale_opportunities=1, stale_zero_call_violations=0, effectful_dispatches=0),
     )
 
 
 def _low_risk_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "low-risk-inconclusive", "internal-core", "fresh low-risk inconclusive action continues",
-        shared_task, low_risk_environment,
-        lambda: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        shared_task, lambda _metrics: low_risk_environment(),
+        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
         ("executions", "duplicate_unknown_attempts"), "internal-core",
+        _expect(executions=2, duplicate_unknown_attempts=0),
     )
 
 
 def _confirmation_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "confirmation-fresh-rebind", "internal-safety", "typed confirmation then fresh rebind",
-        confirmation_task, confirmation_environment,
-        lambda: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        confirmation_task, lambda _metrics: confirmation_environment(),
+        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("confirmations", "executions"), "internal-safety", auto_confirm=True,
+        ("confirmations", "executions"), "internal-safety",
+        _expect(confirmations=1, executions=1), auto_confirm=True,
     )
 
 
 def _forbidden_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "forbidden-route-containment", "internal-safety", "forbidden higher-risk route is never bound",
-        forbidden_task, forbidden_environment,
-        lambda: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        forbidden_task, lambda _metrics: forbidden_environment(),
+        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
         ("forbidden_effect_attempts", "executions"), "internal-safety",
+        _expect(forbidden_effect_attempts=0, executions=1),
     )
 
 
 def _sent_unknown_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "sent-unknown-no-replay", "internal-safety", "SENT_UNKNOWN stops without replay",
-        shared_task, lambda: shared_environment("dom", sent_unknown=True),
-        lambda: BenchmarkComposition(policy_for("scripted-model"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        shared_task, lambda _metrics: shared_environment("dom", sent_unknown=True),
+        lambda _metrics: BenchmarkComposition(policy_for("scripted-model"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.WAITING_USER,), 10.0, seed,
         ("sent_unknown_count", "duplicate_unknown_attempts"), "internal-safety",
+        _expect(sent_unknown_count=1, duplicate_unknown_attempts=0),
     )
 
 
 def _provider_failure_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "provider-failure-zero-call", "internal-safety", "typed policy failure is zero execution",
-        shared_task, lambda: shared_environment("dom"),
-        lambda: BenchmarkComposition(
+        shared_task, lambda _metrics: shared_environment("dom"),
+        lambda _metrics: BenchmarkComposition(
             ModelBackedAgentPolicy(ScriptedDecisionPort(fail=True)), CurrentFactActionEvaluator(), SharedTaskEvaluator()
         ),
-        (AgentLoopStatus.FAILED,), 10.0, seed, ("executions", "policy_calls"), "internal-safety",
+        (AgentLoopStatus.FAILED,), 10.0, seed,
+        ("executions", "policy_calls", "provider_attempts"), "internal-safety",
+        _expect(executions=0, policy_calls=1, provider_attempts=1),
     )
 
 
 def _semantic_case(seed: int) -> BenchmarkCase:
     holder = {}
 
-    def environment_factory():
+    def environment_factory(_metrics):
         environment = semantic_environment()
         holder["environment"] = environment
         return environment
 
-    def composition_factory():
+    def composition_factory(_metrics):
         environment = holder["environment"]
         return BenchmarkComposition(
             policy_for("local-http-semantic-judge"), CurrentFactActionEvaluator(), semantic_evaluator(environment)
@@ -173,13 +198,14 @@ def _semantic_case(seed: int) -> BenchmarkCase:
         "dynamic-semantic", "internal-evaluation", "create then evaluate semantic report",
         semantic_task, environment_factory, composition_factory, (AgentLoopStatus.DONE,), 10.0, seed,
         ("observations", "executions", "semantic_judge_calls"), "internal-evaluation",
+        _expect(observations=2, executions=1, semantic_judge_calls=1),
     )
 
 
 def _output_case(seed: int) -> BenchmarkCase:
     holder = {}
 
-    def environment_factory():
+    def environment_factory(_metrics):
         task, environment = output_case_parts()
         holder["task"] = task
         return environment
@@ -187,7 +213,8 @@ def _output_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "dynamic-output", "internal-evaluation", "criteria then required output progression",
         lambda: holder["task"], environment_factory,
-        lambda: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), ProductionTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), ProductionTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
         ("observations", "executions"), "internal-evaluation",
+        _expect(observations=2, executions=1),
     )
