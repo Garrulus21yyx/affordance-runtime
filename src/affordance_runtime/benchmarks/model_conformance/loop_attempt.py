@@ -1,0 +1,110 @@
+"""Level-4 real DOM attempt through the production target AgentLoop."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+
+from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
+from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_adapter_task, real_dom_environment
+from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
+from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.model_boundary.failures import ModelFailure
+from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.contracts import ModelDecisionResponse
+from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model_port import ModelConfig, ModelPort
+
+from .contracts import ConformanceAttempt, ModelConformanceStage
+from .stages import attribute_decision_payload
+
+
+@dataclass
+class CapturingDecisionPort:
+    wrapped: ModelPortDecisionAdapter
+    request: object | None = None
+    outcome: ModelDecisionResponse | ModelFailure | None = None
+
+    @property
+    def transport_timeout_s(self) -> float:
+        return self.wrapped.transport_timeout_s
+
+    async def generate(self, request):
+        self.request = request
+        self.outcome = await self.wrapped.generate(request)
+        return self.outcome
+
+
+async def run_level_four_attempt(
+    port: ModelPort,
+    *,
+    grounding_variant: str,
+    attempt_number: int,
+) -> ConformanceAttempt:
+    config = ModelConfig(
+        timeout_s=89, rate_limit_retries=0, transient_retries=0, prompt_version="p5-m1.1",
+    )
+    capturing = CapturingDecisionPort(ModelPortDecisionAdapter(port, config))
+    policy = ModelBackedAgentPolicy(capturing, call_timeout_s=90)
+    instrumentation = BenchmarkInstrumentation()
+    environment = real_dom_environment(instrumentation)
+    try:
+        result = await AgentEpisodeRunner(AgentLoop(
+            policy, CurrentFactActionEvaluator(), ProductionTaskEvaluator(),
+        )).run(environment, real_adapter_task())
+    finally:
+        close = getattr(environment, "close", None)
+        if close is not None:
+            await close()
+    request = capturing.request
+    user = getattr(request, "serialized_context", "")
+    schema = getattr(request, "decision_schema", {})
+    schema_bytes = len(json.dumps(schema, sort_keys=True, separators=(",", ":")).encode())
+    output = capturing.outcome.raw_payload if isinstance(capturing.outcome, ModelDecisionResponse) else ""
+    attributed = _attributed(capturing.outcome, user)
+    stage = attributed.stage
+    if stage == ModelConformanceStage.SUCCESS and result.status != AgentLoopStatus.DONE:
+        stage = ModelConformanceStage.RUNTIME_ADMISSION if result.execution_count == 0 else ModelConformanceStage.TASK_EVALUATION
+    metadata = policy.last_metadata
+    return ConformanceAttempt(
+        f"attempt:{grounding_variant}:4:{attempt_number}", "4", grounding_variant,
+        stage, stage == ModelConformanceStage.SUCCESS, attributed.failure_kind,
+        attributed.decision_variant, len(user.encode()),
+        len(getattr(request, "instructions", "").encode()), len(user.encode()), schema_bytes,
+        len(user.encode()) + len(getattr(request, "instructions", "").encode()) + schema_bytes,
+        _count(user, "action_id"), _count(user, "target_id"), _count(user, "fact_ref"),
+        _history(user), metadata.prompt_tokens if metadata else 0,
+        metadata.completion_tokens if metadata else 0, metadata.total_tokens if metadata else 0,
+        len(output.encode()), f"sha256:{hashlib.sha256(output.encode()).hexdigest()}" if output else "",
+        metadata.latency_ms if metadata else 0.0,
+    )
+
+
+def _attributed(outcome, user):
+    if isinstance(outcome, ModelFailure):
+        return attribute_decision_payload(outcome, "", (), {})
+    if not isinstance(outcome, ModelDecisionResponse):
+        return attribute_decision_payload("{", "", (), {})
+    value = json.loads(user)
+    options = value.get("actions", {}).get("options", ())
+    action_ids = tuple(str(item.get("action_id") or "") for item in options)
+    destinations = {
+        str(item.get("action_id") or ""): tuple(
+            ["", *(str(dest.get("destination_id") or "") for dest in item.get("destinations", {}).get("items", ()))]
+        )
+        for item in options
+    }
+    return attribute_decision_payload(outcome.raw_payload, str(value.get("context_id") or ""), action_ids, destinations)
+
+
+def _count(user: str, key: str) -> int:
+    return user.count(f'"{key}"')
+
+
+def _history(user: str) -> int:
+    try:
+        return len(json.loads(user).get("history", {}).get("items", ()))
+    except (AttributeError, json.JSONDecodeError):
+        return 0

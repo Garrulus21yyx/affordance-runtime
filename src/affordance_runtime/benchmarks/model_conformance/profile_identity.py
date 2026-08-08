@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import urllib.request
 from collections.abc import Mapping, Sequence
 
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelProfileIdentity
@@ -39,3 +41,19 @@ def remote_profile_identity(provider: str, model: str, endpoint_class: str) -> M
         PROMPT_VERSION, SCHEMA_VERSION, CONTEXT_BUDGET_PROFILE,
     )
 
+
+def ollama_inventory(base_url: str = "http://127.0.0.1:11434") -> tuple[str, tuple[Mapping[str, object], ...]]:
+    version = _get_json(f"{base_url.rstrip('/')}/api/version")
+    tags = _get_json(f"{base_url.rstrip('/')}/api/tags")
+    models = tags.get("models", ())
+    return str(version.get("version") or ""), tuple(
+        item for item in models if isinstance(item, Mapping)
+    ) if isinstance(models, Sequence) else ()
+
+
+def _get_json(url: str) -> Mapping[str, object]:
+    with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310 - fixed local inventory endpoint
+        value = json.loads(response.read())
+    if not isinstance(value, Mapping):
+        raise ValueError("Ollama inventory response must be an object")
+    return value

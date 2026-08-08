@@ -1,0 +1,61 @@
+"""Narrow CLI for explicit exact-profile conformance diagnostics."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+from collections.abc import Callable
+from pathlib import Path
+
+from affordance_runtime.model_port import ModelPort, OllamaModelPort, model_port_from_environment
+
+from .profile_identity import (
+    identity_from_ollama_inventory,
+    ollama_inventory,
+    remote_profile_identity,
+)
+from .runner import run_profile
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    run = sub.add_parser("run")
+    run.add_argument("--profile", choices=("ollama", "environment"), required=True)
+    run.add_argument("--model", default="")
+    run.add_argument("--levels", required=True)
+    run.add_argument("--grounding", required=True)
+    run.add_argument("--repetitions", type=int)
+    run.add_argument("--support-attestation", action="store_true")
+    run.add_argument("--output-dir", required=True)
+    args = parser.parse_args()
+    if args.profile == "environment" and os.environ.get("RUN_MODEL_PROFILE_CONFORMANCE") != "1":
+        parser.error("remote environment profile requires RUN_MODEL_PROFILE_CONFORMANCE=1")
+    levels = tuple(item.strip() for item in args.levels.split(",") if item.strip())
+    if set(levels) - {"0", "1", "2", "3", "4"}:
+        parser.error("levels must be selected from 0,1,2,3,4")
+    grounding = tuple(item.strip() for item in args.grounding.split(",") if item.strip())
+    repetitions = args.repetitions or (5 if args.profile == "ollama" else 1)
+    factory: Callable[[], ModelPort]
+    if args.profile == "ollama":
+        version, models = ollama_inventory()
+        identity = identity_from_ollama_inventory(args.model, runtime_version=version, models=models)
+        installed = {str(item.get("name") or item.get("model") or "") for item in models}
+        if args.model not in installed:
+            parser.error("requested Ollama model is not already installed")
+        factory = lambda: OllamaModelPort(model=args.model)  # noqa: E731
+    else:
+        configured = model_port_from_environment()
+        identity = remote_profile_identity(configured.provider, configured.model, configured.endpoint_class)
+        factory = lambda: model_port_from_environment()  # noqa: E731
+    asyncio.run(run_profile(
+        identity, factory, levels=levels, grounding_variants=grounding,
+        repetitions=repetitions, output_dir=Path(args.output_dir),
+        support_attestation=args.support_attestation,
+    ))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
