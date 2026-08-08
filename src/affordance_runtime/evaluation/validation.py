@@ -87,7 +87,12 @@ def validate_task_evaluation(
         raise ValueError("COMPLETE task evaluation requires its Runtime success expression")
     if evaluation.status == TaskEvaluationStatus.COMPLETE:
         validate_required_outputs(task, evaluation, evidence_index)
-    if evaluation.status == TaskEvaluationStatus.INCOMPLETE and expected and expression_result is True:
+    output_ids = {item.output_id for item in evaluation.outputs}
+    outputs_pending = any(item not in output_ids for item in task.requested_outputs)
+    if (
+        evaluation.status == TaskEvaluationStatus.INCOMPLETE
+        and expected and expression_result is True and not outputs_pending
+    ):
         raise ValueError("INCOMPLETE task evaluation cannot satisfy its Runtime success expression")
     return evaluation
 

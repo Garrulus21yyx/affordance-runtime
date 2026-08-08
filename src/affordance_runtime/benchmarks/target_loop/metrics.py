@@ -19,7 +19,14 @@ class CountingPolicy:
 
     async def decide(self, context):
         self.counters.policy_calls += 1
-        return await self.wrapped.decide(context)
+        before = getattr(getattr(self.wrapped, "port", None), "calls", None)
+        outcome = await self.wrapped.decide(context)
+        after = getattr(getattr(self.wrapped, "port", None), "calls", None)
+        if isinstance(before, int) and isinstance(after, int):
+            self.counters.provider_attempts += max(0, after - before)
+        elif getattr(self.wrapped, "last_metadata", None) is not None:
+            self.counters.provider_attempts += 1
+        return outcome
 
 
 @dataclass
@@ -39,4 +46,9 @@ class CountingTaskEvaluator:
 
     async def evaluate(self, task, observation):
         self.counters.task_evaluator_calls += 1
-        return await self.wrapped.evaluate(task, observation)
+        outcome = await self.wrapped.evaluate(task, observation)
+        judge = getattr(self.wrapped, "semantic_judge", None)
+        if judge is not None and getattr(judge, "last_metadata", None) is not None:
+            self.counters.semantic_judge_calls += 1
+            self.counters.provider_attempts += 1
+        return outcome

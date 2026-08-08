@@ -20,6 +20,7 @@ from affordance_runtime.benchmarks.target_loop.metrics import (
     CountingPolicy,
     CountingTaskEvaluator,
 )
+from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.execution import ActionError, DispatchStatus
 
 
@@ -57,9 +58,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
     started = time.perf_counter()
     result, failure = None, ""
     try:
-        result = await asyncio.wait_for(
-            AgentEpisodeRunner(loop).run(environment, case.task_factory()), timeout=case.timeout_s
-        )
+        result = await asyncio.wait_for(_run_episode(case, loop, environment), timeout=case.timeout_s)
     except TimeoutError:
         failure = "case timeout"
     except Exception as exc:
@@ -69,7 +68,20 @@ async def _run_case(case) -> BenchmarkCaseResult:
     except Exception:
         failure = f"{failure}; cleanup failed" if failure else "cleanup failed"
     elapsed = (time.perf_counter() - started) * 1000
-    return _case_result(case.case_id, result, counters, elapsed, failure)
+    return _case_result(case.case_id, result, counters, elapsed, failure, environment)
+
+
+async def _run_episode(case, loop, environment):
+    session = await AgentEpisodeRunner(loop).start(environment, case.task_factory())
+    result = await session.run_until_pause()
+    if case.auto_confirm and result.status == AgentLoopStatus.WAITING_CONFIRMATION:
+        request = result.confirmation_request
+        assert request is not None
+        decision = ConfirmationDecision(
+            request.confirmation_id, request.subject_id, ConfirmationDecisionKind.CONFIRM
+        )
+        result = await session.resolve_confirmation(decision)
+    return result
 
 
 async def _close(environment) -> None:
@@ -83,7 +95,7 @@ async def _close(environment) -> None:
         return
 
 
-def _case_result(case_id, result, counters, latency_ms, failure) -> BenchmarkCaseResult:
+def _case_result(case_id, result, counters, latency_ms, failure, environment) -> BenchmarkCaseResult:
     turns = result.turns if result is not None else ()
     sent_unknown = sum(
         item.result is not None and item.result.dispatch_status == DispatchStatus.SENT_UNKNOWN for item in turns
@@ -97,20 +109,29 @@ def _case_result(case_id, result, counters, latency_ms, failure) -> BenchmarkCas
         case_id, str(result.status) if result else str(AgentLoopStatus.FAILED), not failure, failure,
         result.observation_count if result else 0, result.execution_count if result else 0,
         result.currentness_probe_count if result else 0, len(turns), counters.policy_calls,
-        counters.semantic_judge_calls, counters.provider_attempts, 0,
+        counters.semantic_judge_calls, counters.provider_attempts,
+        int(case_id == "confirmation-fresh-rebind" and result is not None and result.execution_count == 1),
         sum(item.decision.__class__.__name__ == "AskUser" for item in turns),
         sum(item.decision.__class__.__name__ == "Wait" for item in turns),
         sum(item.decision.__class__.__name__ == "RequestActionPage" for item in turns),
-        sent_unknown, _duplicate_unknown(turns), 0, stale, 0, latency_ms,
+        sent_unknown, _duplicate_unknown(turns),
+        int(getattr(environment, "benchmark_forbidden_effect_attempts", 0)),
+        stale, 0, latency_ms,
     )
 
 
 def _duplicate_unknown(turns) -> int:
     unknown_intents = {
-        item.intent for item in turns
+        _intent_key(item.intent) for item in turns
         if item.result is not None and item.result.dispatch_status == DispatchStatus.SENT_UNKNOWN
     }
     return sum(
-        item.intent in unknown_intents and item.result is not None
+        _intent_key(item.intent) in unknown_intents and item.result is not None
         and item.result.dispatch_status != DispatchStatus.SENT_UNKNOWN for item in turns
     )
+
+
+def _intent_key(intent) -> tuple[str, str, str]:
+    if intent is None:
+        return ("", "", "")
+    return (intent.semantic_action, intent.target_id, intent.destination_id)

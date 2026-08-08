@@ -37,6 +37,7 @@ class BenchmarkCase:
     seed: int
     required_metrics: tuple[str, ...]
     acceptance_profile: str
+    auto_confirm: bool = False
 
     def __post_init__(self) -> None:
         if not self.case_id or not self.suite_id or not 0 < self.timeout_s <= 300:
