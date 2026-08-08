@@ -99,6 +99,14 @@ Visual-only, and WoT production adapters. Secret-free reports can be hashed into
 an exact-tree local attestation. Synthetic protocol cases remain explicitly
 labelled synthetic; no external benchmark or default cutover is admitted.
 
+P5-M3.2 closes manifest/result/attestation integrity and configures exact-head
+full-regression plus opt-in live-policy workflows. A reviewed mechanical-only
+`browsergym-miniwob==0.14.3` three-case manifest and pure admission checker now
+exist in a separate optional package. The target-loop BrowserGym environment
+wrapper is still partial, so preflight fails closed and no external task runs by
+default. Local Ollama availability is not a live attestation until the exact
+clean head completes the real-DOM profile.
+
 P5-D6.1 is complete on the non-default path: effective risk, semantic
 destination identity, confirmation presentation, immutable terminal sessions,
 and evidence-lineage fields are closed. P5-M0 now resolves evidence against the

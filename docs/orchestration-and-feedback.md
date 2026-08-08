@@ -142,3 +142,8 @@ counts provider/judge attempts at their call ports. Stale zero-call compares a
 stale opportunity with actual effectful dispatch, while canonical unknown-attempt
 identity excludes bindings/routes and includes semantic parameters, effects and
 effective risk.
+External-smoke preflight is outside orchestration. Even an admitted manifest
+requires both `RUN_EXTERNAL_SMOKE=1` and explicit `--execute`; absent any gate,
+no external environment or provider is constructed. Environment-native reward
+or completion is consumed only by the benchmark-only mechanical TaskEvaluator
+and post-run acceptance, never by policy routing.

@@ -67,13 +67,17 @@ The target path now has:
 | M3.1 machine acceptance | `MEASURED_AND_FAIL_CLOSED` |
 | real DOM/Visual/WoT adapter harness | `ATTESTED_LOCALLY` |
 | local exact-head report attestation | `AVAILABLE_AFTER_FINAL_CLEAN_HEAD_RUN` |
-| remote exact-head CI artifact | `UNAVAILABLE` until exact-SHA workflow completion |
+| remote exact-head internal harness artifact | `AVAILABLE` for reviewed head `d440665`; final-head rerun pending |
+| remote exact-head full regression artifact | `WORKFLOW_CONFIGURED`; final-head run pending |
 | internal deterministic profile | `ATTESTED` |
 | internal scripted-model profile | `ATTESTED` |
 | local HTTP model-policy harness profile | `ATTESTED` |
 | local HTTP semantic-judge profile | `ATTESTED` |
-| live internal profile | `UNAVAILABLE`; opt-in profile not configured |
-| external benchmark | `BLOCKED` |
+| live model-policy profile | `OPT_IN_IMPLEMENTED`; local Ollama discovered, final exact-head attestation pending |
+| live semantic evaluator | `NOT_REQUIRED_FOR_FIRST_MECHANICAL_EXTERNAL_MANIFEST` |
+| external smoke manifest | `REVIEWED_AND_FIXED` for BrowserGym MiniWoB 0.14.3 tasks click-button/enter-text/choose-list |
+| external target-loop adapter | `PARTIAL`; official package/registry pinned, WorldEnvironment lifecycle deferred |
+| external benchmark | `BLOCKED / NOT_RUN` |
 | default cutover | `NOT_READY` |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |

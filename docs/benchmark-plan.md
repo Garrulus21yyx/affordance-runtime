@@ -134,4 +134,16 @@ Visual-only and WoT production adapters. `MetricMeasurement` distinguishes zero
 from unmeasured, manifest expectations are digest-bound, and attestation hashes
 exact-head report files. These are internal adapter and protocol proofs, not
 BrowserGym/MiniWoB runs or model-generalization evidence.
+
+P5-M3.2 fixes the first external candidate to the official
+`browsergym-miniwob==0.14.3` registry entries
+`browsergym/miniwob.click-button`, `browsergym/miniwob.enter-text`, and
+`browsergym/miniwob.choose-list`, with MiniWoB source commit `7fd85d71...`.
+This manifest is mechanical-only, so a live semantic evaluator is not a gate.
+The optional SDK is isolated in the `external-smoke` extra. Admission still
+requires one clean exact SHA across the complete internal run set, full CI, and
+live policy attestations, zero safety counters, the exact manifest digest, and
+a closed target-loop environment wrapper. The last wrapper is not yet closed;
+therefore preflight is expected to reject execution and no external benchmark
+is run.
 Semantic fusion remains deferred and is not an M1 prerequisite.

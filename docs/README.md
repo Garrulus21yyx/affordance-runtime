@@ -117,6 +117,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M2.1 evidence semantics closure](reviews/2026-08-08-p5-m2-1-evidence-semantics-closure.md)
 - [P5-M3 target-loop internal benchmark harness](reviews/2026-08-08-p5-m3-target-loop-benchmark-harness.md)
 - [P5-M3.1 harness measurement and real-adapter closure](reviews/2026-08-08-p5-m3-1-harness-measurement-real-adapters.md)
+- [P5-M3.2 external benchmark admission package](reviews/2026-08-08-p5-m3-2-external-benchmark-admission-package.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

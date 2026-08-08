@@ -163,3 +163,10 @@ P5-M3.1 keeps mutable counters in harness-only `instrumentation.py`, declarative
 oracles in immutable manifests, and report hashing in `attestation.py`.
 `real_adapter_support.py` composes existing public adapters and owns only fixture
 resource lifecycle; it does not copy adapters or execute around Runtime.
+P5-M3.2 adds `benchmarks/external_smoke/` as an optional, preflight-first owner.
+It owns only the reviewed manifest, mechanical verifier adapter contract,
+attestation evidence comparison, execution gates, and secret-free reporting.
+It is not imported by target production core or surfaces, cannot call Binder or
+Executor directly, and cannot place benchmark oracle material in AgentContext.
+The existing BrowserGym package remains isolated; its target-loop
+`WorldEnvironment` lifecycle wrapper is explicitly partial and blocks admission.

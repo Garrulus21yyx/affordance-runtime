@@ -130,3 +130,8 @@ M3.1 additionally treats semantic evidence below required assurance as
 inconclusive and preserves criterion UNKNOWN over a merely missing output.
 Benchmark measurements record whether a value was measured and its opportunity
 denominator; zero opportunities render rates as `N/A`, never 100%.
+M3.2 gives benchmark case metrics one storage authority (`measurements`) and
+attests the exact expected run set plus summary/case report equality. The first
+external manifest permits only environment-native mechanical verifier evidence;
+it does not expose reward, hidden state, expected answers, selectors, or
+reference trajectories to AgentContext or model requests.

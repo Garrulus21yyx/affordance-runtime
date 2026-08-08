@@ -27,6 +27,8 @@ from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, model_policy_from_environment
+from affordance_runtime.model_policy.contracts import ModelMetadata
+from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 
 LIVE_ATTESTATION_SCHEMA_VERSION = "target-loop-live-model-policy.v1"
 
@@ -48,6 +50,7 @@ class LiveModelPolicyAttestation:
     endpoint_class: str = ""
     prompt_version: str = ""
     schema_version: str = ""
+    task_profile: str = "internal-real-dom-mechanical-v1"
     terminal_status: str = ""
     observations: int = 0
     executions: int = 0
@@ -89,7 +92,7 @@ async def run_live_model_policy_attestation(
         policy = policy_factory(env)
     except Exception as exc:
         return _failed(output, sha, f"model policy construction failed: {type(exc).__name__}")
-    holder: dict[str, object] = {}
+    holder: dict[str, object] = {"configured_metadata": _configured_metadata(policy)}
 
     def environment_factory(instrumentation):
         holder["instrumentation"] = instrumentation
@@ -121,6 +124,7 @@ async def run_live_model_policy_attestation(
     return _write(output, evaluate_live_policy_suite(
         sha, result, holder.get("instrumentation"),
         live_origin=policy_factory is model_policy_from_environment,
+        configured_metadata=holder["configured_metadata"],
     ))
 
 
@@ -130,10 +134,11 @@ def evaluate_live_policy_suite(
     instrumentation,
     *,
     live_origin: bool,
+    configured_metadata: object = None,
 ) -> LiveModelPolicyAttestation:
     case = suite.cases[0]
     metric = lambda name: int(case.measurements[name].value or 0)  # noqa: E731
-    metadata = getattr(instrumentation, "model_metadata", None)
+    metadata = getattr(instrumentation, "model_metadata", None) or configured_metadata
     errors = list(suite.acceptance.acceptance_errors)
     if not live_origin:
         errors.append("injected policy evidence is test-only and cannot attest a live profile")
@@ -173,6 +178,22 @@ def evaluate_live_policy_suite(
         total_tokens=getattr(metadata, "total_tokens", 0),
         accepted=accepted, acceptance_errors=tuple(errors),
     )
+
+
+def _configured_metadata(policy: ModelBackedAgentPolicy) -> ModelMetadata:
+    adapter = policy.port
+    transport = getattr(adapter, "port", None)
+    config = getattr(adapter, "config", None)
+    try:
+        return ModelMetadata(
+            provider_id=str(getattr(transport, "provider", "")),
+            model_id=str(getattr(transport, "model", "")),
+            endpoint_class=str(getattr(transport, "endpoint_class", "")),
+            prompt_version=str(getattr(config, "prompt_version", "")),
+            schema_version=SCHEMA_VERSION,
+        )
+    except ValueError:
+        return ModelMetadata(schema_version=SCHEMA_VERSION)
 
 
 def _failed(output: Path, sha: str, reason: str) -> LiveModelPolicyAttestation:

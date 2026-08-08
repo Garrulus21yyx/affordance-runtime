@@ -38,6 +38,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M2.1 evidence semantics closure | `CLOSED_FOR_DECLARED_PROFILES` | relevance-bound effects, strong no-effect scope, presented evidence only, dynamic readiness |
 | P5-M3 new-loop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` | internal core/safety/evaluation accepted; external suites not run |
 | P5-M3.1 measurement/real adapters | `CLOSED_LOCALLY` | typed expectations, actual safety counters, real DOM/Visual/WoT suite, exact-head attestation command |
+| P5-M3.2 admission package | `PARTIAL_FAIL_CLOSED` | full-CI/live workflows and fixed external manifest exist; target-loop BrowserGym environment wrapper remains open |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
@@ -49,9 +50,10 @@ complete. P5-M0, P5-M0.1, P5-M0.1.1, P5-M1 and the P5-M1.1 existing-transport br
 complete on the non-default path. P5-M2 criterion-specific composition is also
 complete for its declared minimum, and M2.1 closes its evidence-semantic entry
 gates. P5-M3 now closes the internal fixed-manifest harness. External benchmark
-admission remains blocked by an exact live model profile, exact-head remote CI,
-and separate reviewed external manifests; default cutover and old-core deletion
-remain unauthorized.
+admission remains blocked until final-head full CI, exact live policy evidence,
+and the target-loop BrowserGym environment wrapper all close. The reviewed
+mechanical manifest is not itself execution authority; default cutover and
+old-core deletion remain unauthorized.
 
 ## Frozen work
 

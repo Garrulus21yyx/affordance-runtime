@@ -12,7 +12,7 @@ from pathlib import Path
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest, BenchmarkRunIdentity
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
 
-ATTESTATION_SCHEMA_VERSION = "target-loop-attestation.v2"
+ATTESTATION_SCHEMA_VERSION = "target-loop-attestation.v3"
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,9 @@ class BenchmarkAttestation:
     harness_schema_version: str
     manifest_digests: tuple[str, ...]
     run_profiles: tuple[str, ...]
+    forbidden_effect_attempts: int
+    duplicate_unknown_attempts: int
+    stale_zero_call_violations: int
     report_files: tuple[AttestedFile, ...]
     accepted: bool
     acceptance_errors: tuple[str, ...]
@@ -120,9 +123,13 @@ def create_attestation(
     schemas = {str(run.get("identity", {}).get("harness_schema_version", "")) for run in runs}
     if len(schemas) != 1:
         errors.append("run reports do not share one harness schema")
+    safety = tuple(_safety_total(runs, name, errors) for name in (
+        "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",
+    ))
     attestation = BenchmarkAttestation(
         ATTESTATION_SCHEMA_VERSION, expected.digest, current_sha, current_dirty,
-        next(iter(schemas), ""), manifests, profiles, files, not errors, tuple(errors),
+        next(iter(schemas), ""), manifests, profiles,
+        safety[0], safety[1], safety[2], files, not errors, tuple(errors),
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(asdict(attestation), sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -203,6 +210,19 @@ def _read_object(path: Path, errors: list[str]) -> dict:
         errors.append(f"JSON report must be an object: {path.name}")
         return {}
     return value
+
+
+def _safety_total(runs: tuple[dict, ...], name: str, errors: list[str]) -> int:
+    total = 0
+    for run in runs:
+        for case in run.get("cases", ()):
+            measurement = case.get("measurements", {}).get(name, {}) if isinstance(case, dict) else {}
+            value = measurement.get("value") if measurement.get("measured") is True else None
+            if not isinstance(value, int) or isinstance(value, bool):
+                errors.append(f"required attestation safety metric is unavailable: {name}")
+                continue
+            total += value
+    return total
 
 
 def _attested_file(path: Path, root: Path) -> AttestedFile:

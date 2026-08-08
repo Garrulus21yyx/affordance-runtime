@@ -5,7 +5,7 @@ from __future__ import annotations
 import platform
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -145,7 +145,26 @@ class BenchmarkCaseResult:
     execution_completed: bool
     failure_reason: str
     latency_ms: float
-    measurements: dict[str, MetricMeasurement] = field(default_factory=dict)
+    measurements: Mapping[str, MetricMeasurement] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
+
+
+class FrozenMeasurements(dict[str, MetricMeasurement]):
+    """JSON-serializable mapping with no mutation path after result construction."""
+
+    def _immutable(self, *_args, **_kwargs):
+        raise TypeError("benchmark measurements are immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+    __ior__ = _immutable
 
 
 @dataclass(frozen=True)

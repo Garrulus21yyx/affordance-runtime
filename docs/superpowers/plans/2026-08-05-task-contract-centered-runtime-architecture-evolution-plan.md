@@ -106,8 +106,9 @@ live provider profile: UNAVAILABLE
 P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM
 P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT
 P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST
-P5-M3.1 measurement and real-adapter attestation: COMPLETE_LOCALLY; remote exact-head artifact unavailable until workflow completion
-external benchmark: BLOCKED
+P5-M3.1 measurement and real-adapter attestation: COMPLETE; reviewed exact-head internal artifact available
+P5-M3.2 admission package: PARTIAL_FAIL_CLOSED; full-CI/live workflows and fixed mechanical BrowserGym MiniWoB manifest implemented, target-loop external environment wrapper pending
+external benchmark: BLOCKED / NOT_RUN
 ```
 
 ### P5-M0.1 — Disposable AgentContext architecture

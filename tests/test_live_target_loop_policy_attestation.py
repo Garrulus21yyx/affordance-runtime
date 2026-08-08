@@ -77,6 +77,7 @@ def test_injected_policy_result_cannot_satisfy_live_attestation() -> None:
 
     result = evaluate_live_policy_suite(
         "a" * 40, suite, instrumentation, live_origin=False,
+        configured_metadata=ModelMetadata("fixture", "scripted"),
     )
 
     assert not result.accepted
