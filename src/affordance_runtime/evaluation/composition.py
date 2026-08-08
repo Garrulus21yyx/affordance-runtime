@@ -1,0 +1,153 @@
+"""Runtime-owned criterion-specific production task evaluation composition."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from affordance_runtime.evaluation.contracts import (
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
+from affordance_runtime.evaluation.criterion_contracts import CriterionAdjudicator
+from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.evaluation.evidence_applicability import EvidenceApplicability, assess_criterion_evidence
+from affordance_runtime.evaluation.mechanical_criteria import MechanicalCriterionEvaluator
+from affordance_runtime.evaluation.output_binding import collect_current_outputs
+from affordance_runtime.evaluation.output_validation import validate_required_outputs
+from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionJudge
+from affordance_runtime.evaluation.success_expression import evaluate_success_expression
+from affordance_runtime.evaluation.user_acceptance import UserAcceptanceCriterionEvaluator
+from affordance_runtime.model_boundary.failures import ModelFailure
+from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.world.contracts import WorldObservation
+
+
+@dataclass(frozen=True)
+class ProductionTaskEvaluator:
+    semantic_judge: SemanticCriterionJudge | None = None
+    mechanical: MechanicalCriterionEvaluator = MechanicalCriterionEvaluator()
+    user_acceptance: UserAcceptanceCriterionEvaluator = UserAcceptanceCriterionEvaluator()
+
+    async def evaluate(self, task: TaskGoal, observation: WorldObservation) -> TaskEvaluation:
+        try:
+            specs = normalize_task_criteria(task)
+        except ValueError:
+            return _task(task, observation, TaskEvaluationStatus.BLOCKED, (), (), "criterion contract is unsupported")
+        index = WorldEvidenceIndex.from_observation(observation)
+        semantic = await self._semantic(task, observation, index, specs)
+        evaluations = tuple(self._criterion(spec, observation, index, semantic) for spec in specs)
+        try:
+            evaluations = _apply_authority_and_lineage(task, observation, index, evaluations)
+        except ValueError:
+            return _task(task, observation, TaskEvaluationStatus.BLOCKED, evaluations, (), "authoritative or lineage contract is unsupported")
+        outputs = collect_current_outputs(task.requested_outputs, observation)
+        try:
+            expression = task.evaluation_spec.success_expression if task.evaluation_spec else None
+            success = evaluate_success_expression(expression, {item.criterion_id: item.status for item in evaluations})
+            status = _status(success, evaluations)
+            candidate = _task(task, observation, status, evaluations, outputs, "Runtime composed criterion status")
+            if status == TaskEvaluationStatus.COMPLETE:
+                validate_required_outputs(task, candidate, index)
+            elif task.requested_outputs and len(outputs) != len(task.requested_outputs):
+                return _task(task, observation, TaskEvaluationStatus.UNKNOWN, evaluations, outputs, "required outputs are unavailable")
+            return candidate
+        except ValueError:
+            return _task(task, observation, TaskEvaluationStatus.BLOCKED, evaluations, outputs, "evaluation contract is unsupported or violated")
+
+    async def _semantic(self, task, observation, index, specs):
+        requested = tuple(spec for spec in specs if spec.adjudicator in {CriterionAdjudicator.SEMANTIC, CriterionAdjudicator.HYBRID})
+        if not requested or self.semantic_judge is None:
+            return {}
+        try:
+            outcome = await self.semantic_judge.evaluate(task, requested, observation, index)
+        except Exception:
+            return {}
+        if isinstance(outcome, ModelFailure):
+            return {}
+        identities = tuple(item.criterion_id for item in outcome)
+        expected = tuple(item.criterion_id for item in requested)
+        if len(set(identities)) != len(identities) or set(identities) != set(expected):
+            return {}
+        return {item.criterion_id: item for item in outcome}
+
+    def _criterion(self, spec, observation, index, semantic):
+        if spec.adjudicator == CriterionAdjudicator.MECHANICAL:
+            return self.mechanical.evaluate(spec, observation)
+        if spec.adjudicator == CriterionAdjudicator.USER_ACCEPTANCE:
+            return self.user_acceptance.evaluate(spec, index)
+        semantic_result = _semantic_evaluation(spec, semantic.get(spec.criterion_id), index)
+        if spec.adjudicator == CriterionAdjudicator.SEMANTIC:
+            return semantic_result
+        mechanical_result = self.mechanical.evaluate(spec, observation)
+        return _hybrid(spec, mechanical_result, semantic_result)
+
+
+def _semantic_evaluation(spec, proposal, index) -> CriterionEvaluation:
+    if proposal is None:
+        return CriterionEvaluation(spec.criterion_id, CriterionEvaluationStatus.UNKNOWN, (), "semantic proposal unavailable")
+    try:
+        evaluation = CriterionEvaluation(spec.criterion_id, proposal.status, proposal.evidence_refs, proposal.reason)
+    except ValueError:
+        return CriterionEvaluation(spec.criterion_id, CriterionEvaluationStatus.UNKNOWN, (), "semantic proposal invalid")
+    if assess_criterion_evidence(spec, evaluation, index) != EvidenceApplicability.ACCEPTED:
+        return CriterionEvaluation(spec.criterion_id, CriterionEvaluationStatus.UNKNOWN, (), "semantic evidence is not applicable")
+    return evaluation
+
+
+def _hybrid(spec, mechanical, semantic) -> CriterionEvaluation:
+    statuses = {mechanical.status, semantic.status}
+    if CriterionEvaluationStatus.UNSATISFIED in statuses:
+        status = CriterionEvaluationStatus.UNSATISFIED
+    elif statuses == {CriterionEvaluationStatus.SATISFIED}:
+        status = CriterionEvaluationStatus.SATISFIED
+    else:
+        return CriterionEvaluation(spec.criterion_id, CriterionEvaluationStatus.UNKNOWN, (), "hybrid component is unknown")
+    refs = tuple(dict.fromkeys((*mechanical.evidence_refs, *semantic.evidence_refs)))
+    return CriterionEvaluation(spec.criterion_id, status, refs, "mechanical and semantic components composed")
+
+
+def _apply_authority_and_lineage(task, observation, index, evaluations):
+    spec = task.evaluation_spec
+    required = set(spec.authoritative_checks) if spec else set()
+    known = {item.criterion_id for item in evaluations}
+    if not required.issubset(known):
+        raise ValueError("authoritative check references unknown criterion")
+    result = []
+    for evaluation in evaluations:
+        records = tuple(index.resolve_record(ref) for ref in evaluation.evidence_refs)
+        invalid_lineage = bool(spec and spec.strict_source_lineage) and any(
+            record is None or record.observation_id != observation.observation_id
+            or not record.source_observation_id
+            or all(source.observation_id != record.source_observation_id for source in observation.sources)
+            for record in records
+        )
+        insufficient = evaluation.criterion_id in required and any(
+            record is None or record.source_assurance != "authoritative" for record in records
+        )
+        if evaluation.status in {CriterionEvaluationStatus.SATISFIED, CriterionEvaluationStatus.UNSATISFIED} and (invalid_lineage or insufficient):
+            evaluation = CriterionEvaluation(evaluation.criterion_id, CriterionEvaluationStatus.UNKNOWN, (), "criterion assurance or lineage is insufficient")
+        result.append(evaluation)
+    return tuple(result)
+
+
+def _status(success: bool | None, evaluations) -> TaskEvaluationStatus:
+    if any(item.status == CriterionEvaluationStatus.BLOCKED for item in evaluations):
+        return TaskEvaluationStatus.BLOCKED
+    if success is True:
+        return TaskEvaluationStatus.COMPLETE
+    if success is False:
+        return TaskEvaluationStatus.INCOMPLETE
+    return TaskEvaluationStatus.UNKNOWN
+
+
+def _task(task, observation, status, criteria, outputs, reason) -> TaskEvaluation:
+    refs = tuple(
+        dict.fromkeys(
+            [ref for item in criteria for ref in item.evidence_refs]
+            + [ref for item in outputs for ref in item.evidence_refs]
+        )
+    ) if status == TaskEvaluationStatus.COMPLETE else ()
+    return TaskEvaluation(task.task_id, observation.observation_id, status, reason, tuple(criteria), refs, tuple(outputs))

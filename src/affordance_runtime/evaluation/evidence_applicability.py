@@ -36,9 +36,15 @@ def assess_criterion_evidence(
 def _record_applies(criterion: NormalizedCriterionSpec, record) -> bool:
     if criterion.required_assurance and not assurance_satisfies(record.source_assurance, criterion.required_assurance):
         return False
+    if criterion.kind == "hybrid":
+        mechanical = record.kind == "fact" and record.predicate == criterion.predicate and (
+            not criterion.subject_id or record.subject_id == criterion.subject_id
+        )
+        semantic = record.kind in {"fact", "artifact"} and record.subject_id in criterion.evidence_scope_target_ids
+        return mechanical or semantic
     if criterion.evidence_scope_target_ids and record.subject_id not in criterion.evidence_scope_target_ids:
         return False
-    if criterion.kind in {"fact_equals", "hybrid"}:
+    if criterion.kind == "fact_equals":
         return record.kind == "fact" and record.predicate == criterion.predicate and (
             not criterion.subject_id or record.subject_id == criterion.subject_id
         )
@@ -48,13 +54,20 @@ def _record_applies(criterion: NormalizedCriterionSpec, record) -> bool:
         return record.kind == "artifact" and record.artifact_kind == criterion.output_id
     if criterion.kind == "semantic_rubric":
         return record.kind in {"fact", "artifact"}
-    return criterion.kind == "user_acceptance" and record.kind == "fact"
+    subject = criterion.subject_id or criterion.criterion_id
+    return (
+        criterion.kind == "user_acceptance" and record.kind == "fact"
+        and record.source_modality == "user" and record.source_assurance == "authoritative"
+        and record.subject_id == subject and record.predicate == "accepted" and type(record.value) is bool
+    )
 
 
 def _status_matches(criterion: NormalizedCriterionSpec, status: CriterionEvaluationStatus, record) -> bool:
-    if criterion.kind in {"fact_equals", "target_state_equals", "hybrid"}:
+    if criterion.kind in {"fact_equals", "target_state_equals"}:
         equals = record.value == criterion.expected_value
         return equals if status == CriterionEvaluationStatus.SATISFIED else not equals
     if criterion.kind == "artifact_exists":
         return status == CriterionEvaluationStatus.SATISFIED
+    if criterion.kind == "user_acceptance":
+        return bool(record.value) if status == CriterionEvaluationStatus.SATISFIED else not bool(record.value)
     return True

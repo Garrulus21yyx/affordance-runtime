@@ -7,8 +7,11 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.evaluation.evidence_applicability import EvidenceApplicability, assess_criterion_evidence
 from affordance_runtime.evaluation.output_validation import validate_required_outputs
+from affordance_runtime.evaluation.success_expression import evaluate_success_expression
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.world.contracts import WorldObservation
@@ -53,21 +56,28 @@ def validate_task_evaluation(
     proposed = {item.criterion_id for item in evaluation.criteria}
     if not proposed.issubset(expected):
         raise ValueError("task evaluation contains an unknown criterion")
+    if evaluation.status == TaskEvaluationStatus.COMPLETE and expected != proposed:
+        raise ValueError("COMPLETE task evaluation requires all expression criteria to be proposed")
     for criterion in evaluation.criteria:
         _require_resolved(criterion.evidence_refs, evidence_index, "criterion")
+    normalized = {item.criterion_id: item for item in normalize_task_criteria(task)}
+    for criterion in evaluation.criteria:
+        if criterion.status in {CriterionEvaluationStatus.SATISFIED, CriterionEvaluationStatus.UNSATISFIED} and assess_criterion_evidence(
+            normalized[criterion.criterion_id], criterion, evidence_index
+        ) != EvidenceApplicability.ACCEPTED:
+            raise ValueError("task evaluation criterion evidence is not applicable")
     _require_resolved(evaluation.completion_evidence_refs, evidence_index, "completion evidence")
     for output in evaluation.outputs:
         _require_resolved(output.evidence_refs, evidence_index, "output evidence")
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}
-    all_satisfied = bool(expected) and expected == proposed and all(
-        statuses[item] == CriterionEvaluationStatus.SATISFIED for item in expected
-    )
-    if evaluation.status == TaskEvaluationStatus.COMPLETE and expected and not all_satisfied:
-        raise ValueError("COMPLETE task evaluation requires all success criteria satisfied")
+    expression = task.evaluation_spec.success_expression if task.evaluation_spec else None
+    expression_result = evaluate_success_expression(expression, statuses) if expected and expected == proposed else None
+    if evaluation.status == TaskEvaluationStatus.COMPLETE and expected and expression_result is not True:
+        raise ValueError("COMPLETE task evaluation requires its Runtime success expression")
     if evaluation.status == TaskEvaluationStatus.COMPLETE:
         validate_required_outputs(task, evaluation, evidence_index)
-    if evaluation.status == TaskEvaluationStatus.INCOMPLETE and all_satisfied:
-        raise ValueError("INCOMPLETE task evaluation cannot claim all criteria satisfied")
+    if evaluation.status == TaskEvaluationStatus.INCOMPLETE and expected and expression_result is True:
+        raise ValueError("INCOMPLETE task evaluation cannot satisfy its Runtime success expression")
     return evaluation
 
 

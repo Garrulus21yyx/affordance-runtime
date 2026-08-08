@@ -25,6 +25,7 @@ from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
+from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.source_profile import assurance_satisfies
 
@@ -153,6 +154,11 @@ async def _propose_done(
 ) -> None | object:
     task, state = session.task, session.state
     index = WorldEvidenceIndex.from_observation(state.current_observation)
+    known = {criterion_id(item) for item in task.success_criteria}
+    if len(set(decision.claimed_criteria)) != len(decision.claimed_criteria) or not set(decision.claimed_criteria).issubset(known):
+        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "completion claim contains an unknown or duplicate criterion")
+    if decision.unresolved_items:
+        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "completion claim retains unresolved items")
     if any(not index.resolve(item) for item in decision.evidence_refs):
         return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "completion evidence is not current")
     evaluation = await validated_task_evaluation(task_evaluator, task, state.current_observation)

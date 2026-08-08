@@ -10,6 +10,7 @@ class ObservationModality(StrEnum):
     STRUCTURAL = "structural"
     VISUAL = "visual"
     ENVIRONMENT_STATE = "environment_state"
+    USER = "user"
 
 
 class ObservationAssurance(StrEnum):
@@ -70,6 +71,16 @@ class ObservationSourceProfile:
             VerificationStrength.AUTHORITATIVE,
             AcquisitionCost.MEDIUM,
             "wot",
+        )
+
+    @classmethod
+    def user(cls) -> ObservationSourceProfile:
+        return cls(
+            ObservationModality.USER,
+            ObservationAssurance.AUTHORITATIVE,
+            VerificationStrength.AUTHORITATIVE,
+            AcquisitionCost.LOW,
+            "user",
         )
 
 

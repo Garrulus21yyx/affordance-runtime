@@ -31,10 +31,10 @@ def validate_required_outputs(
     for output_id, requirement in integrity.items():
         if output_id not in outputs:
             raise ValueError("required output integrity references a missing requested output")
-        _validate_file_requirement(requirement)
+        _validate_file_requirement(output_id, requirement, outputs[output_id], evidence_index)
 
 
-def _validate_file_requirement(requirement: object) -> None:
+def _validate_file_requirement(output_id: str, requirement: object, output, evidence_index: WorldEvidenceIndex) -> None:
     if not isinstance(requirement, Mapping) or set(requirement) != {"path", "sha256"}:
         raise ValueError("required output integrity contract is unsupported")
     path_value = requirement.get("path")
@@ -43,6 +43,13 @@ def _validate_file_requirement(requirement: object) -> None:
         raise ValueError("required output integrity path is invalid")
     if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
         raise ValueError("required output SHA-256 is invalid")
+    if not isinstance(output.value, Mapping) or set(output.value) != {"path", "sha256"}:
+        raise ValueError("evaluated output value does not match the required integrity shape")
+    if output.value.get("path") != path_value or output.value.get("sha256") != digest:
+        raise ValueError("evaluated output value does not match required path and SHA-256")
+    records = tuple(evidence_index.resolve_record(ref) for ref in output.evidence_refs)
+    if not any(record is not None and record.kind == "artifact" and record.artifact_kind == output_id for record in records):
+        raise ValueError("evaluated output evidence is not the corresponding current artifact")
     path = Path(path_value)
     if not path.is_file():
         raise ValueError("required output path is not a regular file")

@@ -200,6 +200,37 @@ def test_model_propose_done_can_reference_current_artifact_without_bypassing_eva
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("claimed", "unresolved"),
+    ((["criterion:invented"], []), ([], ["still pending"])),
+)
+def test_model_propose_done_rejects_unknown_criteria_and_unresolved_items(claimed, unresolved) -> None:
+    def script(context, call):
+        del call
+        return {
+            "type": "propose_done",
+            "context_id": context["context_id"],
+            "claimed_criteria": claimed,
+            "evidence_refs": [],
+            "result_summary": "done",
+            "unresolved_items": unresolved,
+        }
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("before", False)])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                ModelBackedAgentPolicy(ScriptedStructuredDecisionPort(script)),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+            )
+        ).run(environment, _task())
+        assert result.status == AgentLoopStatus.BLOCKED
+        assert result.execution_count == result.currentness_probe_count == 0
+
+    asyncio.run(scenario())
+
+
 def test_stale_model_context_response_is_zero_execution() -> None:
     def script(context, call):
         del call

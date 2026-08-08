@@ -14,6 +14,7 @@ TARGET_CORE = (
     PACKAGE / "confirmation",
     PACKAGE / "model_boundary",
     PACKAGE / "model_policy",
+    PACKAGE / "model_evaluator",
 )
 SIZE_GATED = TARGET_CORE + (
     PACKAGE / "surfaces" / "dom",
@@ -115,6 +116,16 @@ def test_model_policy_transport_is_owned_only_by_existing_model_port() -> None:
 
     assert not any(name == "requests" or name.startswith(("urllib", "httpx")) for name in imports)
     assert "affordance_runtime.model_policy.model_port_bridge" not in loop_imports
+
+
+def test_model_evaluator_keeps_transport_and_execution_boundaries() -> None:
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_evaluator")))
+    loop_imports = _imports(PACKAGE / "agent" / "loop.py")
+
+    assert not any(name.startswith(("urllib", "httpx", "requests", "affordance_runtime.surfaces")) for name in imports)
+    assert "affordance_runtime.world.binder" not in imports
+    assert not any(name.startswith("affordance_runtime.executors") for name in imports)
+    assert not any(name.startswith("affordance_runtime.model_evaluator") for name in loop_imports)
 
 
 def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() -> None:

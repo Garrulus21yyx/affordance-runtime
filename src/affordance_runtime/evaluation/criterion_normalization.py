@@ -24,13 +24,14 @@ def normalize_task_criteria(task: TaskGoal) -> tuple[NormalizedCriterionSpec, ..
 
 
 def normalize_criterion(raw: Mapping[str, object]) -> NormalizedCriterionSpec:
-    if not isinstance(raw, Mapping) or set(raw) - _COMMON:
+    legacy_state_keys = set(raw) - _COMMON if isinstance(raw, Mapping) else set()
+    if not isinstance(raw, Mapping) or (legacy_state_keys and not ("target_id" in raw and len(legacy_state_keys) == 1)):
         raise ValueError("criterion shape is unsupported")
     kind = _kind(raw)
     adjudicator = _adjudicator(raw, kind)
     subject_id = _optional_string(raw.get("subject_id") or raw.get("target_id"), "criterion subject")
     predicate = _optional_string(raw.get("predicate"), "criterion predicate")
-    expected, state_key = _mechanical_fields(raw, kind)
+    expected, state_key = _mechanical_fields(raw, kind, legacy_state_keys)
     rubric = _optional_string(raw.get("rubric"), "criterion rubric", max_length=2_000)
     scope = _string_tuple(raw.get("evidence_scope_target_ids", ()))
     required_assurance = _optional_string(raw.get("required_assurance"), "required assurance", max_length=80)
@@ -50,6 +51,8 @@ def _kind(raw: Mapping[str, object]) -> str:
         return explicit
     if "state" in raw:
         return "target_state_equals"
+    if "target_id" in raw and set(raw) - _COMMON:
+        return "target_state_equals"
     if "predicate" in raw:
         return "fact_equals"
     raise ValueError("criterion kind cannot be inferred")
@@ -67,7 +70,10 @@ def _adjudicator(raw: Mapping[str, object], kind: str) -> CriterionAdjudicator:
         raise ValueError("criterion adjudicator is unsupported") from exc
 
 
-def _mechanical_fields(raw: Mapping[str, object], kind: str) -> tuple[object, str]:
+def _mechanical_fields(raw: Mapping[str, object], kind: str, legacy_state_keys: set[str]) -> tuple[object, str]:
+    if kind == "target_state_equals" and legacy_state_keys:
+        state_key = next(iter(legacy_state_keys))
+        return raw[state_key], state_key
     if kind == "target_state_equals" and "state" in raw:
         state = raw["state"]
         if not isinstance(state, Mapping) or len(state) != 1:
