@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse
+from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
 from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.port import StructuredDecisionModelPort
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS, SCHEMA_VERSION, decision_response_schema
@@ -27,20 +28,30 @@ _PUBLIC_FAILURES = {
 @dataclass(frozen=True)
 class ModelBackedAgentPolicy:
     port: StructuredDecisionModelPort
+    call_timeout_s: float = 90.0
+    last_metadata: ModelMetadata | None = field(default=None, init=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not 0 < self.call_timeout_s <= 300:
+            raise ValueError("model policy call timeout must be in (0, 300]")
 
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
         try:
             request = _build_request(context)
-            outcome = await self.port.generate(request)
-        except TimeoutError:
-            outcome = ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False)
         except Exception:
-            outcome = ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "provider call failed", False)
+            return _policy_failure(ModelFailure(ModelFailureKind.INTERNAL_ERROR, "request construction failed", False))
+        try:
+            outcome = await asyncio.wait_for(self.port.generate(request), timeout=self.call_timeout_s)
+        except TimeoutError:
+            return _policy_failure(ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False))
+        except Exception:
+            return _policy_failure(ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "provider call failed", False))
         if isinstance(outcome, ModelFailure):
             return _policy_failure(outcome)
         if not isinstance(outcome, ModelDecisionResponse):
             failure = ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
             return _policy_failure(failure)
+        object.__setattr__(self, "last_metadata", outcome.metadata)
         decision = parse_agent_decision(outcome.raw_payload, context.context_id)
         if isinstance(decision, ModelFailure):
             return _policy_failure(decision)

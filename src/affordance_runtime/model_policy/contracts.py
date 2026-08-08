@@ -19,11 +19,36 @@ class ModelMetadata:
     provider_id: str = ""
     model_id: str = ""
     response_id: str = ""
+    endpoint_class: str = ""
+    prompt_version: str = ""
+    schema_version: str = ""
+    latency_ms: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    rate_limit_retry_count: int = 0
+    transient_retry_count: int = 0
 
     def __post_init__(self) -> None:
-        for value in (self.provider_id, self.model_id, self.response_id):
+        for value in (
+            self.provider_id,
+            self.model_id,
+            self.response_id,
+            self.endpoint_class,
+            self.prompt_version,
+            self.schema_version,
+        ):
             if value and (_SAFE_METADATA.fullmatch(value) is None or "://" in value):
                 raise ValueError("model metadata must contain only bounded public identifiers")
+        counters = (
+            self.prompt_tokens,
+            self.completion_tokens,
+            self.total_tokens,
+            self.rate_limit_retry_count,
+            self.transient_retry_count,
+        )
+        if self.latency_ms < 0 or any(value < 0 for value in counters):
+            raise ValueError("model metadata counters must be nonnegative")
 
 
 @dataclass(frozen=True)

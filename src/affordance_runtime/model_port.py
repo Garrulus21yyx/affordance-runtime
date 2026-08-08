@@ -247,7 +247,7 @@ class OpenAICompatibleModelPort:
                     str(item.get("text") or "") for item in content if isinstance(item, dict)
                 )
             parsed = output_schema.model_validate_json(_structured_json_content(content))
-        except (KeyError, IndexError, TypeError, ValidationError, json.JSONDecodeError) as exc:
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
             ) from exc
@@ -328,7 +328,7 @@ class OllamaModelPort:
         latency_ms = round((perf_counter() - started) * 1_000, 3)
         try:
             parsed = output_schema.model_validate_json(str(response["message"]["content"]))
-        except (KeyError, TypeError, ValidationError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
             ) from exc

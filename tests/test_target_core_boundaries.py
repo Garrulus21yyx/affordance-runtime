@@ -109,6 +109,14 @@ def test_model_policy_has_no_surface_binding_execution_or_loop_state_dependencie
     assert not any(name.startswith("affordance_runtime.model_policy") for name in loop_imports)
 
 
+def test_model_policy_transport_is_owned_only_by_existing_model_port() -> None:
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_policy")))
+    loop_imports = _imports(PACKAGE / "agent" / "loop.py")
+
+    assert not any(name == "requests" or name.startswith(("urllib", "httpx")) for name in imports)
+    assert "affordance_runtime.model_policy.model_port_bridge" not in loop_imports
+
+
 def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() -> None:
     imports = set()
     agent_text = ""
