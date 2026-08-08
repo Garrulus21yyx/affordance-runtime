@@ -7,7 +7,60 @@ on:
   workflow_dispatch:
 
 jobs:
+  full-exact-head-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev,web,visual,parent]'
+      - run: python -m playwright install --with-deps chromium
+      - name: Collect exact test manifest
+        run: python -m pytest --collect-only -q | tee /tmp/target-loop-collection.txt
+      - name: Run full pytest collection
+        run: python -m pytest -q | tee /tmp/target-loop-pytest.txt
+      - name: Ruff
+        run: ruff check src tests
+      - name: Mypy
+        run: mypy src
+      - name: Diff check
+        run: git diff --check
+      - name: Smart-room Compose configuration
+        run: docker compose -f environments/smart_room/docker-compose.yml config
+      - name: Legacy default-path runxfail
+        run: >-
+          python -m pytest -q --runxfail
+          tests/test_local_benchmark_mainline.py::test_settings_recovery_blocks_stale_dispatch_then_retries_verified_absence
+      - name: Target boundary gates
+        run: >-
+          python -m pytest -q
+          tests/test_target_core_boundaries.py
+          tests/architecture/test_runtime_redlines.py
+      - name: Documentation governance
+        run: python -m pytest -q tests/test_documentation_governance.py
+      - name: Generate exact-head full-validation attestation
+        run: >-
+          python -m affordance_runtime.benchmarks.target_loop.full_validation
+          --collection /tmp/target-loop-collection.txt
+          --pytest-log /tmp/target-loop-pytest.txt
+          --output /tmp/target-loop-full-validation/full-validation.json
+          --check ruff
+          --check mypy
+          --check diff_check
+          --check compose_config
+          --check legacy_runxfail
+          --check target_boundaries
+          --check docs_governance
+      - uses: actions/upload-artifact@v4
+        with:
+          name: target-loop-full-validation-${{ github.sha }}
+          path: /tmp/target-loop-full-validation
+          if-no-files-found: error
+
   fixed-internal-manifests:
+    needs: full-exact-head-regression
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
