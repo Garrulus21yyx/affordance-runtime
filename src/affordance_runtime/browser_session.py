@@ -244,6 +244,33 @@ def _image_size(
     return None
 
 
+def _visual_viewport(evaluator: Any) -> VisualViewport:
+    raw = evaluator(
+        """() => ({
+          width: window.innerWidth, height: window.innerHeight,
+          scrollX: window.scrollX, scrollY: window.scrollY,
+          dpr: window.devicePixelRatio,
+          zoom: window.visualViewport?.scale || 1,
+          orientation: screen.orientation?.type ||
+            (window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait')
+        })"""
+    )
+    if not isinstance(raw, dict):
+        raise RuntimeError("page returned invalid visual viewport facts")
+    try:
+        return VisualViewport(
+            int(raw["width"]),
+            int(raw["height"]),
+            float(raw["scrollX"]),
+            float(raw["scrollY"]),
+            float(raw["dpr"]),
+            float(raw["zoom"]),
+            str(raw["orientation"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("page returned invalid visual viewport facts") from exc
+
+
 def _environment_family(url: str) -> str:
     parsed = urlsplit(url)
     if parsed.scheme in {"http", "https"} and parsed.hostname:
@@ -1274,32 +1301,24 @@ class BrowserSession:
         evaluator = getattr(self._page, "evaluate", None)
         if not callable(evaluator):
             raise RuntimeError("page does not expose visual viewport facts")
-        raw = evaluator(
-            """() => ({
-              width: window.innerWidth, height: window.innerHeight,
-              scrollX: window.scrollX, scrollY: window.scrollY,
-              dpr: window.devicePixelRatio,
-              zoom: window.visualViewport?.scale || 1,
-              orientation: screen.orientation?.type ||
-                (window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait')
-            })"""
-        )
-        if not isinstance(raw, dict):
-            raise RuntimeError("page returned invalid visual viewport facts")
-        image_bytes = self.screenshot()
+        image_bytes = b""
+        viewport: VisualViewport | None = None
+        for attempt in range(2):
+            before = _visual_viewport(evaluator)
+            candidate = self.screenshot()
+            after = _visual_viewport(evaluator)
+            if before == after:
+                image_bytes = candidate
+                viewport = after
+                break
+            if attempt == 1:
+                raise RuntimeError("visual viewport changed during screenshot")
+        if viewport is None or not image_bytes:
+            raise RuntimeError("coherent visual capture is unavailable")
         image_size = _image_size(image_bytes, None)
         if image_size is None:
             raise RuntimeError("visual screenshot dimensions are unavailable")
         digest = "sha256:" + hashlib.sha256(image_bytes).hexdigest()
-        viewport = VisualViewport(
-            int(raw["width"]),
-            int(raw["height"]),
-            float(raw["scrollX"]),
-            float(raw["scrollY"]),
-            float(raw["dpr"]),
-            float(raw["zoom"]),
-            str(raw["orientation"]),
-        )
         return VisualFrame(
             observation_id,
             digest,

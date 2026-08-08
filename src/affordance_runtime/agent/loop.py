@@ -19,7 +19,13 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.execution.contracts import ActionIntent, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.execution.contracts import (
+    ActionError,
+    ActionIntent,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+)
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.binder import ActionBinder, BindingError
@@ -144,8 +150,11 @@ class AgentLoop:
             state.append_turn(
                 Turn(before.observation_id, decision, intent=intent, request_id=request.request_id, result=result)
             )
-            if result.error is not None and result.error.value == "stale_binding":
-                state.current_observation = await environment.observe("stale binding; refresh world")
+            if result.error is not None and result.error in {
+                ActionError.STALE_BINDING,
+                ActionError.CURRENTNESS_UNAVAILABLE,
+            }:
+                state.current_observation = await environment.observe("currentness unavailable; refresh world")
                 return state, 1, 0, probed, None
             terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action was not dispatched")
             return state, 0, 0, probed, terminal

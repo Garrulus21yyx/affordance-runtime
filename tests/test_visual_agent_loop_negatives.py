@@ -41,6 +41,18 @@ class StatefulProposer(Proposer):
         return [replace(regions[0], state={"expanded": expanded})]
 
 
+class FailOnceCurrentnessSession(VisualSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    def capture_visual_frame(self, observation_id):
+        self.attempts += 1
+        if self.attempts == 2:
+            raise RuntimeError("currentness capture unavailable")
+        return super().capture_visual_frame(observation_id)
+
+
 class MissingActionPolicy:
     async def decide(self, task, world, action_space, recent_turns, optional_plan):
         del task, world, action_space, recent_turns, optional_plan
@@ -124,6 +136,19 @@ def test_visual_transport_success_without_world_state_change_is_not_complete() -
     result = _run(session, StatefulProposer(session, change=False), _task(turns=1), FirstPolicy())
     assert result.status != AgentLoopStatus.DONE
     assert result.execution_count == 1
+
+
+def test_visual_currentness_unavailable_reobserves_without_counting_execution() -> None:
+    session = FailOnceCurrentnessSession()
+    proposer = StatefulProposer(session)
+    result = _run(session, proposer, _task(turns=2), FirstPolicy())
+
+    assert result.status == AgentLoopStatus.DONE
+    assert result.observation_count == 3
+    assert result.execution_count == 1
+    assert result.currentness_probe_count == 2
+    assert len(session.clicks) == 1
+    assert proposer.calls == 3
 
 
 def test_visual_sent_unknown_confirmed_by_fresh_world_is_done_without_replay() -> None:

@@ -7,9 +7,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
-from affordance_runtime.surfaces.visual.contracts import VisualFrame, VisualRegionBinding
+from affordance_runtime.surfaces.visual.contracts import (
+    VisualRegionBinding,
+    project_visual_semantic_state,
+)
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
-from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, point_is_in_viewport
+from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, integer_click_point
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.visual_grounding import VisualRegionProposalRequest, VisualRegionProposerPort
 from affordance_runtime.world.action_classification import classify_surface_action
@@ -49,20 +52,29 @@ class VisualSurfaceAdapter:
             raise RuntimeError("Visual surface adapter must be reset before observation")
         observation_id = f"visual:{uuid.uuid4().hex}"
         frame = self.session.capture_visual_frame(observation_id)
-        proposed = self.proposer.propose(
-            VisualRegionProposalRequest(
-                observation_id,
-                None,
-                frame.image_bytes,
-                (frame.image_width, frame.image_height),
-                self._task.instruction,
-            )
+        proposal_request = VisualRegionProposalRequest(
+            observation_id,
+            None,
+            frame.image_bytes,
+            (frame.image_width, frame.image_height),
+            self._task.instruction,
         )
+        proposed = tuple(self.proposer.propose(proposal_request))
+        if len(proposed) > proposal_request.max_regions:
+            raise ValueError("visual proposer exceeded the region bound")
         regions = tuple(
             VisualRegionBinding.from_region(frame, f"region:{index}", region)
             for index, region in enumerate(proposed)
         )
-        targets = tuple(SemanticTarget(region.region_id, region.role, region.label, dict(region.state)) for region in regions)
+        targets = tuple(
+            SemanticTarget(
+                region.region_id,
+                region.role,
+                region.label,
+                project_visual_semantic_state(dict(region.state)),
+            )
+            for region in regions
+        )
         candidate_bindings = tuple(self._binding(self._task, frame.source_revision, region) for region in regions)
         bindings = tuple(binding for binding in candidate_bindings if binding is not None)
         self._regions = {
@@ -85,7 +97,9 @@ class VisualSurfaceAdapter:
             targets,
             facts,
             bindings,
-            CoverageState.COMPLETE,
+            CoverageState.COMPLETE
+            if bool(getattr(self.proposer, "acquisition_exhaustive", False))
+            else CoverageState.TRUNCATED,
             {"screenshot_ref": frame.screenshot_ref, "unsupported_actions": unsupported},
         )
 
@@ -102,16 +116,27 @@ class VisualSurfaceAdapter:
         if not self.is_current(request):
             return self._not_sent(request, ActionError.STALE_BINDING, 0)
         region = self._regions[request.binding.binding_id]
-        live = self.session.capture_visual_frame(f"probe:{uuid.uuid4().hex}")
-        live_region = self._live_region(region, live)
-        if not visual_binding_is_current(region, live, live_region):
+        try:
+            live = self.session.capture_visual_frame(f"probe:{uuid.uuid4().hex}")
+        except Exception as exc:
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                self.surface,
+                False,
+                ActionError.CURRENTNESS_UNAVAILABLE,
+                {"error_type": type(exc).__name__, "currentness_probe_count": 1},
+            )
+        if not visual_binding_is_current(region, live):
             return self._not_sent(request, ActionError.STALE_BINDING, 1)
-        if not point_is_in_viewport(region):
+        try:
+            click_point = integer_click_point(region)
+        except ValueError:
             return self._not_sent(request, ActionError.INVALID_PARAMETERS, 1)
         if request.binding.primitive_action != "point_activate":
             return self._not_sent(request, ActionError.UNSUPPORTED_ACTION, 1)
         try:
-            dispatch_point_activate(self.session, region)
+            dispatch_point_activate(self.session, click_point)
         except Exception as exc:
             return ActionResult(
                 request.request_id,
@@ -128,24 +153,6 @@ class VisualSurfaceAdapter:
             True,
             adapter_evidence={"dispatched_action": request.intent.semantic_action, "currentness_probe_count": 1},
         )
-
-    def _live_region(self, bound: VisualRegionBinding, live: VisualFrame) -> VisualRegionBinding | None:
-        if self._task is None:
-            return None
-        proposals = self.proposer.propose(
-            VisualRegionProposalRequest(
-                live.observation_id,
-                None,
-                live.image_bytes,
-                (live.image_width, live.image_height),
-                self._task.instruction,
-            )
-        )
-        try:
-            index = int(bound.region_id.rsplit(":", 1)[1])
-            return VisualRegionBinding.from_region(live, bound.region_id, proposals[index])
-        except (IndexError, ValueError):
-            return None
 
     def _binding(self, task: TaskGoal, revision: str, region: VisualRegionBinding) -> ActionBinding | None:
         if region.primitive_action != "point_activate":

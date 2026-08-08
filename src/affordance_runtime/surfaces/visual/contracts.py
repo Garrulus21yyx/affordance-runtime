@@ -10,6 +10,10 @@ from dataclasses import dataclass, field
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.visual_grounding import VisualRegion
 
+_SEMANTIC_STATE_KEYS = frozenset({"visible", "enabled", "selected", "checked", "expanded", "value"})
+_MAX_STATE_LIST_ITEMS = 32
+_MAX_STATE_STRING_LENGTH = 256
+
 
 @dataclass(frozen=True)
 class VisualViewport:
@@ -180,3 +184,32 @@ def region_fingerprint(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def project_visual_semantic_state(state: dict[str, object]) -> dict[str, object]:
+    """Project proposer output onto a small, bounded semantic-state vocabulary."""
+
+    projected: dict[str, object] = {}
+    for key, value in state.items():
+        if key not in _SEMANTIC_STATE_KEYS:
+            continue
+        bounded = _bounded_state_value(value, depth=0)
+        if bounded is not _INVALID_STATE:
+            projected[key] = bounded
+    return projected
+
+
+_INVALID_STATE = object()
+
+
+def _bounded_state_value(value: object, *, depth: int) -> object:
+    if value is None or isinstance(value, bool | int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else _INVALID_STATE
+    if isinstance(value, str):
+        return value if len(value) <= _MAX_STATE_STRING_LENGTH else _INVALID_STATE
+    if isinstance(value, list | tuple) and depth < 2 and len(value) <= _MAX_STATE_LIST_ITEMS:
+        items = tuple(_bounded_state_value(item, depth=depth + 1) for item in value)
+        return items if all(item is not _INVALID_STATE for item in items) else _INVALID_STATE
+    return _INVALID_STATE

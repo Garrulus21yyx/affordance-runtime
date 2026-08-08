@@ -23,7 +23,11 @@ class ScreenshotOnlySharedStateProposer:
     model = "pixel-segmentation"
     prompt_version = "visual-only-v1"
 
+    def __init__(self) -> None:
+        self.calls = 0
+
     def propose(self, request):
+        self.calls += 1
         image = Image.open(BytesIO(request.image_bytes)).convert("RGB")
         pixels = image.load()
         matches = [
@@ -62,9 +66,8 @@ def test_real_browser_visual_only_short_loop_completes_with_one_semantic_action(
     """
     session = BrowserSession.launch("data:text/html," + quote(html), lease_ttl_ms=30_000)
     try:
-        environment = UnifiedWorldEnvironment(
-            (VisualSurfaceAdapter(session, ScreenshotOnlySharedStateProposer()),)
-        )
+        proposer = ScreenshotOnlySharedStateProposer()
+        environment = UnifiedWorldEnvironment((VisualSurfaceAdapter(session, proposer),))
         task = shared_state_task()
         loop = AgentLoop(FirstOfferedActionPolicy(), SharedStateActionEvaluator(), SharedStateTaskEvaluator())
 
@@ -78,5 +81,6 @@ def test_real_browser_visual_only_short_loop_completes_with_one_semantic_action(
         assert result.turns[0].before_observation_id != result.turns[0].after_observation_id
         assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
         assert environment.adapters[0].surface == "visual"
+        assert proposer.calls == 2
     finally:
         session.close()

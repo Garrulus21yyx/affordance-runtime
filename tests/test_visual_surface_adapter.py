@@ -45,9 +45,11 @@ class Proposer:
     def __init__(self, primitive: str = "point_activate") -> None:
         self.primitive = primitive
         self.bbox = (0.2, 0.25, 0.4, 0.5)
+        self.calls = 0
 
     def propose(self, request):
         del request
+        self.calls += 1
         return [VisualRegion(self.bbox, "Shared state", 0.95, True, "button", self.primitive)]
 
 
@@ -74,7 +76,8 @@ async def _bound(session: VisualSession, proposer: Proposer):
 def test_visual_adapter_keeps_coordinates_private_and_uses_one_probe_and_pointer_call() -> None:
     async def scenario() -> None:
         session = VisualSession()
-        _, world, observed, request = await _bound(session, Proposer())
+        proposer = Proposer()
+        _, world, observed, request = await _bound(session, proposer)
 
         assert "action_point" not in repr(build_agent_world_view(observed))
         assert request.binding.payload["action_point_xy"] == (40.0, 40.0)
@@ -84,6 +87,7 @@ def test_visual_adapter_keeps_coordinates_private_and_uses_one_probe_and_pointer
         assert result.adapter_evidence["currentness_probe_count"] == 1
         assert session.captures == 2
         assert session.clicks == [(40, 40)]
+        assert proposer.calls == 1
 
     asyncio.run(scenario())
 
@@ -97,7 +101,6 @@ def test_visual_adapter_keeps_coordinates_private_and_uses_one_probe_and_pointer
         lambda session, proposer: setattr(session, "viewport", replace(session.viewport, device_pixel_ratio=2)),
         lambda session, proposer: setattr(session, "viewport", replace(session.viewport, zoom=1.25)),
         lambda session, proposer: setattr(session, "viewport", replace(session.viewport, orientation="portrait")),
-        lambda session, proposer: setattr(proposer, "bbox", (0.25, 0.25, 0.4, 0.5)),
     ],
 )
 def test_visual_currentness_changes_are_not_sent(mutate) -> None:
@@ -109,6 +112,99 @@ def test_visual_currentness_changes_are_not_sent(mutate) -> None:
         result = await world.execute(request)
 
         assert result.dispatch_status.value == "not_sent"
+        assert result.adapter_evidence["currentness_probe_count"] == 1
+        assert session.clicks == []
+
+    asyncio.run(scenario())
+
+
+def test_bounded_visual_proposer_reports_truncated_coverage_even_when_empty() -> None:
+    async def scenario() -> None:
+        session = VisualSession()
+        proposer = Proposer()
+        proposer.propose = lambda request: []  # type: ignore[method-assign]
+        adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
+        await adapter.reset(_task())
+
+        observed = await adapter.observe("bounded empty")
+        assert observed.coverage.value == "truncated"
+        assert observed.targets == ()
+
+    asyncio.run(scenario())
+
+
+def test_explicitly_exhaustive_visual_proposer_may_report_complete_coverage() -> None:
+    async def scenario() -> None:
+        session = VisualSession()
+        proposer = Proposer()
+        proposer.acquisition_exhaustive = True
+        adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
+        await adapter.reset(_task())
+
+        observed = await adapter.observe("exhaustive")
+        assert observed.coverage.value == "complete"
+
+    asyncio.run(scenario())
+
+
+def test_visual_proposer_exceeding_region_bound_fails_closed() -> None:
+    async def scenario() -> None:
+        session = VisualSession()
+        proposer = Proposer()
+        region = VisualRegion((0, 0, 0.01, 0.01), "mark", 1.0)
+        proposer.propose = lambda request: [region] * (request.max_regions + 1)  # type: ignore[method-assign]
+        adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
+        await adapter.reset(_task())
+
+        with pytest.raises(ValueError, match="region bound"):
+            await adapter.observe("too many")
+
+    asyncio.run(scenario())
+
+
+def test_visual_state_projection_keeps_only_bounded_semantic_values() -> None:
+    async def scenario() -> None:
+        session = VisualSession()
+        proposer = Proposer()
+        raw_state = {
+            "enabled": True,
+            "expanded": False,
+            "value": ["bounded", 2],
+            "selector": "#secret",
+            "x": 10,
+            "href": "https://private.invalid",
+            "backend": "dom",
+            "visible": {"nested": "mapping"},
+        }
+        proposer.propose = lambda request: [  # type: ignore[method-assign]
+            VisualRegion((0.2, 0.2, 0.2, 0.2), "Shared", 1.0, state=raw_state)
+        ]
+        adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
+        world = UnifiedWorldEnvironment((adapter,))
+        await world.reset(_task())
+
+        observed = await world.observe("state projection")
+        assert observed.targets[0].state == {
+            "enabled": True,
+            "expanded": False,
+            "value": ["bounded", 2],
+        }
+        assert "selector" not in repr(build_agent_world_view(observed))
+
+    asyncio.run(scenario())
+
+
+def test_pre_pointer_capture_failure_is_currentness_unavailable() -> None:
+    async def scenario() -> None:
+        session = VisualSession()
+        _, world, _, request = await _bound(session, Proposer())
+        session.capture_visual_frame = lambda observation_id: (_ for _ in ()).throw(  # type: ignore[method-assign]
+            RuntimeError("capture unavailable")
+        )
+
+        result = await world.execute(request)
+        assert result.dispatch_status.value == "not_sent"
+        assert result.error.value == "currentness_unavailable"
         assert result.adapter_evidence["currentness_probe_count"] == 1
         assert session.clicks == []
 
