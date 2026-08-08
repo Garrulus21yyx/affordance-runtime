@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-08
-> **Start baseline:** `codex/migrate-world-interaction-capabilities@d435250e25f1d1c07ffd0f2558affcbdba4983a3`
+> **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -30,6 +30,10 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-D | complete, non-default | semantic confirmation, fresh rebind, single-send consumption, explicit effect certainty |
 | P5-D6.1 | complete, non-default | effective risk, destination, presentation, terminal immutability, policy reselection, evaluation lineage/evidence, task-evaluation control |
 | P5-M0 | complete, non-default | model-safe policy projections, evidence-resolved evaluations, target output integrity |
+| P5-M0.1 AgentContext architecture | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` | disposable unified context, bounded intent/world/history, current context identity, relevance, paging, source assurance, typed decisions |
+| P5-M1 model-backed AgentPolicy | `NOT_STARTED` | waits for M0.1 implementation |
+| P5-M2 production evaluator composition | `NOT_STARTED` | criterion adjudicators and semantic evidence applicability |
+| P5-M3 new-loop benchmark harness | `NOT_STARTED` | fixed BrowserGym/MiniWoB smoke only after M0.1–M2 |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
@@ -37,10 +41,13 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 ## Next admitted slice
 
 The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
-complete. P5-M0 is also complete. Model-backed target AgentPolicy is next;
-production model evaluator composition follows the policy minimum,
-without adding semantic fusion, ActionBatch, long-horizon planning, external
-full-agent benchmarks, default cutover, or old-core deletion.
+complete. P5-M0 is also complete. The next admitted slice is P5-M0.1:
+implement the documented disposable AgentContext, opaque ContextIdentity,
+bounded IntentContext/world/progress/history, source assurance, LocalObjective
+relevance, action paging and typed decision union. P5-M1 model-backed policy,
+P5-M2 evaluator composition and P5-M3 harness follow in that order, without
+adding semantic fusion, ActionBatch, long-horizon planning, external full-agent
+benchmarks, default cutover, or old-core deletion.
 
 ## Frozen work
 
@@ -49,6 +56,8 @@ full-agent benchmarks, default cutover, or old-core deletion.
 - global approval/capability/token registry or worker fencing;
 - ActionBatch integration and long-horizon plan mutation;
 - default cutover or deletion before the positive cross-surface gates.
+- any AgentContext ownership of Runtime state, private route projection, or
+  LocalObjective-based legality/risk change.
 
 ## Verification policy
 

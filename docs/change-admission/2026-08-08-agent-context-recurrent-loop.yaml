@@ -1,0 +1,32 @@
+schema_version: 1
+date: 2026-08-08
+change_id: agent-context-recurrent-loop
+decision: unify model-facing inputs into a disposable bounded AgentContext
+scope: documentation-only target architecture refinement
+baseline: codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349
+preserved_authorities:
+  - TaskGoal
+  - WorldObservation
+  - Internal ActionSpace
+  - AgentLoopState
+  - RiskPolicy
+  - current binding
+  - validated evaluations
+non_goals:
+  - no new Runtime state aggregate
+  - no universal provenance graph
+  - no transaction or event core
+  - no authorization platform
+  - no durable resume
+  - no semantic fusion implementation
+  - no default-path change
+next_implementation_slice: P5-M0.1
+rollback_conditions:
+  - AgentContext begins to own Runtime state
+  - private binding enters policy context
+  - LocalObjective changes legality
+  - source assurance grants execution authority
+  - stale context can execute
+implementation_status: TARGET_DOCUMENTED_NOT_IMPLEMENTED
+production_code_changed: false
+default_path_changed: false

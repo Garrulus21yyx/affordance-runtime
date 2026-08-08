@@ -34,7 +34,10 @@ The stable target vocabulary is:
 semantically strong TaskGoal + risk-proportionate MaterialBindings
 optional EvaluationSpec / strict source lineage
 optional TaskPlan<Milestone> + LocalObjective
-WorldObservation + AgentWorldView
+WorldObservation + Internal ActionSpace
+disposable AgentContext + opaque ContextIdentity
+bounded IntentContext + progress/world/history/pending/budget views
+AgentActionPageView + typed AgentDecision
 SemanticTarget + ActionBinding
 ActionSpace + ActionIntent
 BoundActionRequest + ActionResult
@@ -59,6 +62,10 @@ core contracts for every GUI task.
 | P5-D | Semantic human confirmation, current rebind, unknown-effect and evaluator cutover | complete, non-default |
 | P5-D6.1 | General semantic confirmation and evidence-bound evaluation contracts | complete, non-default |
 | P5-M0 | Model-safe policy views and evidence-validated evaluator boundary | complete, non-default |
+| P5-M0.1 | Unified disposable AgentContext, ContextIdentity, bounded intent/world/history, relevance, paging, source assurance and typed decisions | target documented; not implemented |
+| P5-M1 | Model-backed target AgentPolicy using deterministic evaluators | not started |
+| P5-M2 | Production evaluator composition and criterion adjudicators | not started |
+| P5-M3 | New-AgentLoop harness and fixed BrowserGym/MiniWoB smoke | not started; external admission blocked |
 | P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
@@ -91,6 +98,9 @@ Every phase preserves observation-bound request identity, stale zero-call,
 semantic confirmation identity with current rebinding, model/binding separation, result/effect/completion
 separation, fresh post-action observation, unknown no-retry, required-output
 integrity, and benchmark neutrality.
+AgentContext remains a one-way disposable projection; every decision binds the
+current context ID, LocalObjective changes relevance only, and source assurance
+never grants execution authority.
 
 ## 6. Non-goals
 

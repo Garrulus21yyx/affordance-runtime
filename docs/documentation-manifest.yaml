@@ -137,6 +137,9 @@ reference:
   - role: p5_m0_model_safe_policy_and_evaluator_boundary
     path: docs/reviews/2026-08-08-p5-m0-model-evaluator-boundary.md
     lifecycle: current
+  - role: agent_context_recurrent_loop_architecture_refinement
+    path: docs/reviews/2026-08-08-agent-context-architecture-refinement.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

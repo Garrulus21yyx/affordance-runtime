@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-08
-> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@d435250e25f1d1c07ffd0f2558affcbdba4983a3`
+> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -34,6 +34,17 @@ The target path now has:
 | semantic confirmation continuation | `INTEGRATED_NON_DEFAULT`; typed request/decision, run-scoped session, fresh semantic rebind, single-send consumption |
 | P5-D6.1 confirmation/evaluation contract completion | `INTEGRATED_NON_DEFAULT`; effective risk, destination identity, bounded presentation, terminal immutability, policy reselection, evidence lineage, explicit task control |
 | P5-M0 model/evaluator boundary | `INTEGRATED_NON_DEFAULT`; model-safe projections, current-world evidence resolution, structured completion and target output integrity |
+| AgentContext architecture | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| ContextIdentity | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| IntentContextView | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| LocalObjective relevance | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| action paging | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| source assurance summaries | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| criterion adjudicators | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| current M0 model projections | `INTEGRATED_NON_DEFAULT` |
+| model-backed AgentPolicy | `NOT_STARTED` |
+| external benchmark | `BLOCKED` |
+| default cutover | `NOT_READY` |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
 | ActionBatch | helper implemented; not AgentLoop-integrated |
@@ -120,6 +131,9 @@ TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
 Semantic fusion remains deliberately deferred. The small `AgentLoopState` is
 complete; a distinct LoopPolicy and optional TurnRecorder remain future work.
-Model-backed target policy/evaluator composition and the new-loop benchmark
-harness have not begun. WoT effectful rate limiting is implemented; property
+P5-M0.1 is documentation-only at this baseline: no unified AgentContext,
+ContextIdentity, bounded raw intent, relevance/paging, source-assurance summary,
+typed recurrent decision union or criterion-adjudicator implementation is
+claimed. Model-backed target policy/evaluator composition and the new-loop
+benchmark harness have not begun. WoT effectful rate limiting is implemented; property
 read-side scheduling/rate limiting is not implemented.

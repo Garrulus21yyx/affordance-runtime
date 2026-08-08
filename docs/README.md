@@ -11,8 +11,8 @@ ranking, and historical references do not establish authority.
 
 Exactly two documents define the target and its migration:
 
-1. [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
-2. [Unified World Interface and E2E AgentLoop Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+1. [AgentContext Recurrent E2E Agent Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+2. [AgentContext Recurrent E2E Agent Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 The paths are retained for repository compatibility; the documents no longer
 define a Task Contract-centered architecture.
@@ -21,10 +21,9 @@ Core target order:
 
 ```text
 TaskGoal
-→ WorldObservation / AgentWorldView
-→ optional TaskPlan<Milestone> / LocalObjective
-→ ActionSpace
-→ ActionIntent
+→ Runtime-owned WorldObservation / Internal ActionSpace
+→ disposable bounded AgentContext
+→ typed AgentDecision
 → RiskPolicy / HumanConfirmation when needed
 → current BoundActionRequest
 → execute once → ActionResult
@@ -52,10 +51,12 @@ RuntimeCommitter path. It is a retained migration baseline, not the target.
 The unified DOM, Visual full-digest, and WoT local HTTP JSON paths are integrated
 non-default, and their shared-state adapter-only matrix is proven. The older
 baseline remains the default product path. P5-D semantic confirmation, fresh
-rebind, and effect certainty are integrated non-default. Model-backed target
-P5-D6.1 contract completion is closed on the non-default path. P5-M0 model-safe
+rebind, and effect certainty are integrated non-default. P5-D6.1 contract
+completion is closed on the non-default path. P5-M0 model-safe
 policy views and deterministic evaluator trust validation are closed; real
 model policy/evaluator composition has not started.
+P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
+architecture is documented only and is the next admitted slice.
 
 ## 3. Maintained policies and contracts
 
@@ -95,6 +96,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-D semantic confirmation and effect certainty](reviews/2026-08-08-p5-d-semantic-confirmation.md)
 - [P5-D6.1 confirmation and evaluation contract completion](reviews/2026-08-08-p5-d6-1-contract-completion.md)
 - [P5-M0 model-safe policy and evaluator boundary](reviews/2026-08-08-p5-m0-model-evaluator-boundary.md)
+- [AgentContext architecture refinement](reviews/2026-08-08-agent-context-architecture-refinement.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

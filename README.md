@@ -14,15 +14,15 @@ The project center is:
 
 ```text
 TaskGoal
-→ Unified World Observation
-→ optional TaskPlan / LocalObjective
-→ semantic ActionSpace
-→ ActionIntent
+→ Runtime authoritative WorldObservation / Internal ActionSpace
+→ disposable bounded AgentContext
+→ typed AgentDecision
+→ Runtime validation / semantic confirmation
 → current BoundActionRequest
-→ environment executes
+→ execute once
 → ActionResult
-→ fresh observation
-→ action/task evaluation
+→ fresh WorldObservation
+→ validated ActionEvaluation / TaskEvaluation
 → continue / ask / stop
 ```
 
@@ -36,14 +36,18 @@ route without teaching the policy a separate action language for each platform.
 
 The current target is defined only by:
 
-- [Unified World Interface and E2E AgentLoop Architecture](docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
-- [Unified World Interface and E2E AgentLoop Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+- [AgentContext Recurrent E2E Agent Architecture](docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [AgentContext Recurrent E2E Agent Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│ AgentLoop                                           │
-│ observe → evaluate → decide → bind → confirm → act │
-│         → fresh observe → evaluate → continue      │
+│ Runtime authoritative state                         │
+│ WorldObservation · Internal ActionSpace · progress │
+└──────────────────────────┬──────────────────────────┘
+                           │ bounded one-way projection
+┌──────────────────────────▼──────────────────────────┐
+│ disposable AgentContext → typed AgentDecision       │
+│ → validate → bind → execute once → fresh evaluate  │
 └──────────────────────────┬──────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────┐
@@ -78,6 +82,12 @@ and evidence-lineage fields are closed. P5-M0 now resolves evidence against the
 current world and validates declared-minimum target outputs; no model-backed
 policy has started.
 
+The next slice is P5-M0.1. The unified disposable AgentContext, opaque
+ContextIdentity, bounded raw intent, LocalObjective relevance, action paging,
+source-assurance summaries, recurrent typed decision union, and criterion
+adjudicators are documented targets and are **not implemented**. Existing M0
+model projections remain integrated non-default.
+
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)
@@ -88,7 +98,7 @@ for exact slice status and the next target-policy work queue.
 
 1. Every bound action request binds to the observation and binding that produced it.
 2. A stale observation or binding makes zero executor calls.
-3. High-risk actions require confirmation of exact semantic intent, effects, risk, and consequences; a fresh binding alone does not change what the user confirmed.
+3. High-risk actions require a confirmed semantic subject that covers the current action: action/target/destination/material parameters remain exact, while effects may only narrow, risk/consequences may not strengthen, and reversibility may not worsen. Exact subject equality remains the conservative implementation until dominance is complete; a fresh private binding alone does not change what the user confirmed.
 4. An execution receipt does not prove effect or task completion.
 5. Every action—or strictly admitted no-barrier local batch—is followed by fresh observation and independent evaluation.
 6. An unknown effect is never blindly retried.
@@ -106,9 +116,9 @@ selectors, coordinates, or fixture semantics to production policy.
 
 The DOM/Visual/WoT adapter-only shared-state matrix is complete for the current
 declared single-surface profiles. Full external agent benchmarks remain blocked
-until a model-backed target AgentPolicy and production evaluator composition,
-a new-AgentLoop benchmark harness, and exact-head remote CI evidence are all
-complete. P5-D is closed but does not by itself admit an external run.
+until P5-M0.1, a model-backed target AgentPolicy, production evaluator
+composition, a new-AgentLoop benchmark harness, and exact-head remote CI
+evidence are all complete. P5-D/M0 do not by themselves admit an external run.
 
 ## Documentation
 

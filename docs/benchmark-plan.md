@@ -97,9 +97,11 @@ single-surface adapter-only activation matrix is complete, but admission still r
 5. P5-D confirmation/unknown-effect core (closed on the non-default target path);
 6. P5-D6.1 general confirmation/evaluation contract completion (closed non-default);
 7. P5-M0 model-safe policy/evaluator trust boundary (closed non-default);
-8. model-backed target AgentPolicy and production target evaluator composition;
-9. a benchmark harness that runs the new AgentLoop rather than the retained baseline;
-10. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
+8. P5-M0.1 disposable AgentContext/context identity/paging implementation;
+9. P5-M1 model-backed target AgentPolicy;
+10. P5-M2 minimum production evaluator composition and criterion adjudicators;
+11. P5-M3 benchmark harness that runs the new AgentLoop rather than the retained baseline;
+12. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
 
 The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
 for harness and loop-contract validation, not a generalization claim.
@@ -110,3 +112,4 @@ alone does not admit an external run; the model-backed target policy/evaluators,
 new-loop harness, and exact-head remote CI evidence remain mandatory.
 P5-D6.1 completion likewise does not independently admit an external run.
 P5-M0 completion likewise does not independently admit an external run.
+Semantic fusion remains deferred and is not an M1 prerequisite.

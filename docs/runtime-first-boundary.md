@@ -16,11 +16,15 @@ selection, validation, and replanning, while remaining infrastructure-thin.
 
 ## 2. Policy/model boundary
 
-The policy sees `TaskGoal`, `AgentWorldView`, `ActionSpace`, bounded recent
-turns, optional TaskPlan and LocalObjective. It may select an offered action,
-request an admitted local batch, ask the user, reobserve, or suggest finish. It
+The policy sees only a disposable bounded `AgentContext`: task, context-only
+intent, progress, model world, current action page, semantic history, pending
+summaries, budgets and decision mode. It may select a current-page action,
+request observation/action paging, ask the user, wait, abort, or propose done. It
 cannot provide raw selector, coordinate, backend payload, endpoint, file path,
 credential, approval, milestone satisfaction, or completion truth.
+Every typed decision carries an opaque current context ID; stale context means
+zero execution. Runtime alone retains Internal ActionSpace membership and
+private routes.
 
 Text from pages, email, documents, screenshots, tools, or providers is observed
 data. It may inform state and decisions but cannot create confirmation or widen
@@ -39,10 +43,12 @@ enter AgentWorldView, BoundActionRequest telemetry, or general trace payloads.
 
 An ActionIntent expresses one semantic action. ActionBinder binds it to one
 current observation and binding as a BoundActionRequest. Runtime checks support
-and freshness, asks for exact confirmation of semantic intent/risk/consequences
-when needed, executes at most once, then reobserves. A selector/coordinate/form
-may fresh-rebind without new confirmation only when semantics and consequences
-are unchanged.
+and freshness, asks for semantic confirmation when needed, executes at most
+once, then reobserves. Target confirmation reuse requires the current subject
+to be covered by the confirmed subject: exact action/target/destination/material
+parameters, no added effects or stronger risk/consequence, and no worse
+reversibility. Exact equality is the conservative current implementation;
+selector/coordinate/form changes alone may fresh-rebind.
 
 Executor success is transport/execution information only. ActionEvaluator and
 TaskEvaluator use fresh independent evidence.
@@ -65,3 +71,5 @@ Current production still uses TaskSpec/ActionContract/StateKernel/
 RuntimeCommitter machinery. That is implementation truth during migration, not
 the target product boundary. The target makes trace optional and keeps strict
 ingestion/evaluation as explicit profiles outside the ordinary GUI loop.
+P5-M0.1 AgentContext architecture is documented only; it does not change the
+default path or restore those legacy owners as target concepts.

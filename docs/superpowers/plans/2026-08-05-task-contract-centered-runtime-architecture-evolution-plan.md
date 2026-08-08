@@ -1,8 +1,8 @@
-# Affordance Runtime：统一世界接口与 E2E AgentLoop 演进计划
+# Affordance Runtime：AgentContext 循环式 E2E Agent 演进计划
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
 > **Updated:** 2026-08-08
-> **Reviewed baseline:** `codex/migrate-world-interaction-capabilities@e22c519cebd185abcb9c173bffeef8af80b0f18d`
+> **Reviewed baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -29,6 +29,8 @@ freeze target contracts
 → symmetric SurfaceAdapter
 → positive DOM/Visual/WoT short loops
 → semantic human confirmation + unknown-effect handling
+→ disposable AgentContext + context identity + paging
+→ model-backed AgentPolicy + production evaluators + new-loop harness
 → optional milestone planning and long-horizon loop
 → bounded ActionBatch
 → evaluated memory/skill sidecars
@@ -77,8 +79,9 @@ freeze target contracts
 DOM、Visual full-digest 与 WoT local HTTP JSON 已用相同 TaskGoal、确定性
 AgentPolicy 和 evaluators 证明 shared-state adapter-only matrix，通用
 confirmation/evaluation 信任边界与声明的 target output minimum 已闭合。
-当前下一切片是 model-backed AgentPolicy；production model evaluator
-composition 在 policy minimum 之后。所有阶段继续以 completed behavior 为主证据。
+当前下一切片是 P5-M0.1 AgentContext architecture/context completeness；随后才是
+model-backed AgentPolicy、production evaluator composition 与 new-AgentLoop harness。
+所有阶段继续以 completed behavior 为主证据。
 
 ## 3. P5 阶段与切片
 
@@ -93,10 +96,34 @@ P5-D5 evaluator control: COMPLETE_FOR_CURRENT_NO_REQUIRED_OUTPUT_PROFILE
 P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM
 P5-D6.1: COMPLETE
 P5-M0: COMPLETE
-model-backed AgentPolicy: NEXT_AFTER_M0
-production model evaluator composition: AFTER_MODEL_POLICY_MINIMUM
+P5-M0.1 AgentContext architecture: TARGET_DOCUMENTED; NOT_IMPLEMENTED
+model-backed AgentPolicy: NEXT_AFTER_M0.1
+P5-M1 model-backed AgentPolicy: NOT_STARTED
+P5-M2 production evaluator composition: NOT_STARTED
+P5-M3 new-AgentLoop benchmark harness: NOT_STARTED
 external benchmark: BLOCKED
 ```
+
+### P5-M0.1 — Disposable AgentContext architecture
+
+| Slice | Deliverable | Exit gate |
+|---|---|---|
+| `M0.1a` | bounded `IntentContextView` and one-way `AgentContext` projection | raw intent is source-labelled/context-only; no private route or Runtime owner enters context |
+| `M0.1b` | opaque `ContextIdentity` over task/observation/action-space/page/progress/pending revisions | every typed decision binds current context; stale decision is zero-call |
+| `M0.1c` | bounded world/progress/pending/budget/history views with truthful totals/truncation | projection budgets include total serialized bytes; absence is distinguishable from truncation |
+| `M0.1d` | source assurance summary, LocalObjective relevance and action paging | assurance does not grant authorization; relevance cannot change legality; only current-page action IDs are selectable |
+| `M0.1e` | typed decision union and documentation/contract completeness | SelectAction/RequestObservation/RequestActionPage/AskUser/ProposeDone/Wait/Abort only; no ProposeRecovery platform |
+
+This documentation refinement makes M0.1 the next admitted implementation slice; it does not
+claim any M0.1 code exists. Current M0 projections remain `INTEGRATED_NON_DEFAULT`.
+
+### P5-M1–M3 — First model loop and evaluation gate
+
+| Slice | Deliverable | Exit gate |
+|---|---|---|
+| `M1` | model-backed target AgentPolicy using typed AgentContext/Decision and deterministic evaluators | no private binding/provider SDK in policy; fixed internal tasks pass |
+| `M2` | production evaluator composition, criterion adjudicators and semantic-evidence applicability | MECHANICAL/SEMANTIC/USER_ACCEPTANCE/HYBRID are explicit; Runtime owns final completion and output validation |
+| `M3` | new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke | exact-head remote CI, zero forbidden effects, zero duplicate unknown attempts; no generalization claim |
 
 ### P5-A — Target contracts
 
@@ -150,7 +177,7 @@ P5-D/D6.1 前置条件；`C5` 仅 small AgentLoopState 已完成。
 | Slice | Deliverable | Exit gate |
 |---|---|---|
 | `D1` | `ExecutorSupport + RiskPolicy` | ALLOW/CONFIRM/BLOCK only; task risk boundary applied |
-| `D2` | `ConfirmationRequest` over ActionIntent + consequences | semantic changes re-confirm; pure fresh binding changes do not |
+| `D2` | `ConfirmationRequest` over ActionIntent + consequences | target dominance permits only covered/non-stronger current subjects; incomparable or expanded semantics re-confirm; exact equality remains the current conservative implementation; pure fresh binding changes do not re-confirm |
 | `D3` | reobserve/rebind continuation | executor receives current BoundActionRequest; stale is zero-call |
 | `D4` | `SENT_UNKNOWN` handling | fresh observe/evaluate; no automatic replay |
 | `D5` | `ActionEvaluator + TaskEvaluator + target output validation` | evaluator control complete for no-required-output profile; output integrity pending M0 |
@@ -213,7 +240,9 @@ outside this phase and the core Runtime.
 1. Runtime builds ActionSpace from current observation.
 2. AgentPolicy cannot emit raw selector/coordinate/backend payload/path/endpoint.
 3. BoundActionRequest is current or executor receives zero calls.
-4. confirmation subject semantics/risk/consequences equal executed ActionIntent; binding may fresh-rebind only.
+4. the current semantic confirmation subject must be covered by the confirmed
+   subject under the target dominance order; until dominance is implemented,
+   exact subject equality is the conservative gate. Private binding may fresh-rebind only.
 5. result/receipt alone cannot confirm effect or task completion.
 6. each action/admitted batch gets fresh post-observation.
 7. SENT_UNKNOWN never replays automatically.
@@ -224,6 +253,9 @@ outside this phase and the core Runtime.
 12. recorder failure cannot alter behavior.
 13. benchmark metadata/reward cannot alter product decisions.
 14. memory/skill never bypasses the loop and is promoted only offline.
+15. AgentContext is one-way/disposable; all decisions bind current context ID.
+16. LocalObjective changes relevance only; source assurance never grants execution authority.
+17. ProposeDone is advisory; criterion-specific Runtime validation owns completion.
 
 Old hash/event/delta tests remain while their baseline path is default. When an old owner is deleted,
 owner-specific tests are deleted rather than translated into permanent target constraints.
@@ -254,15 +286,18 @@ DONE: P5-D1–D4 semantic confirmation, fresh rebind, and effect-certainty conti
 DONE: P5-D5 evaluator control and declared-minimum target output validation
 DONE: P5-D6.1 confirmation and evaluation contract completion
 DONE: P5-M0 model-safe policy views and evidence-validated evaluation boundary
-NEXT: model-backed target AgentPolicy
-AFTER: production model evaluator composition
+NEXT: P5-M0.1 AgentContext architecture and context completeness
+THEN: P5-M1 model-backed target AgentPolicy using deterministic evaluators
+THEN: P5-M2 production evaluator composition and criterion adjudicators
+THEN: P5-M3 new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars
 LAST: P5-H breadth, default cutover and old-core deletion
 ```
 
-不得先做 Batch/Skill/大规模删除，也不得继续旧 P5-0E commit/read-view closure。
+Semantic fusion 继续 deferred，且不是 M0.1/M1 前置。不得先做 Batch/Skill/大规模
+删除，也不得继续旧 P5-0E commit/read-view closure。
 
 ## 7. Completion definition
 

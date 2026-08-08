@@ -106,29 +106,33 @@ click/read/fill/export tasks bypass it.
 MilestoneEvaluator—not Planner—decides satisfaction. LocalObjective describes
 the next nearby world state for one to several turns; it is not a StepPlan.
 
-## 6. AgentPolicy
+## 6. IntentContext and AgentContext
 
-Input:
+Raw user language may be retained only as bounded, source-labelled
+`IntentContextView(authority="context_only")`. Current TaskGoal revision outranks
+admitted clarification, which outranks IntentContext, which outranks page/tool
+content. A clarification that changes semantics must first create a new
+TaskGoal revision and therefore a new context ID.
 
-```text
-AgentTaskView
-AgentWorldView
-AgentActionSpaceView
-bounded AgentTurnView tuple
-optional AgentPlanView
-```
+The unified policy input is a disposable `AgentContext`: opaque current
+`context_id`, task, intent, progress, bounded world, current action page,
+bounded semantic history, pending summaries, budgets and decision mode. It is
+a one-way projection, never Runtime state. Every bounded section reports total
+count and truncation; private route/binding/credential data is excluded.
+
+## 7. AgentPolicy
+
+Input: `AgentContext` only.
 
 Output:
 
 ```text
-Select(action_id, parameters)
-ActBatch(action_ids, parameters)
-AskUser(question)
-Reobserve(reason)
-Finish(result)
+SelectAction | RequestObservation | RequestActionPage | AskUser
+| ProposeDone | Wait | Abort
 ```
 
-The policy selects only offered opaque action IDs and supplies schema-valid
+Every decision carries the current `context_id`. The policy selects only an
+offered ID from the current action page and supplies schema-valid
 semantic parameters plus an offered semantic destination ID. Runtime retains
 the internal ActionSpace for membership, schema, destination, binding-group,
 and current-route admission. The model views exclude binding/schema digests,
@@ -138,7 +142,11 @@ Secret-like TaskGoal inputs are display-redacted without changing Runtime
 authority. The policy cannot invent target identity, binding, backend payload,
 confirmation, or completion truth.
 
-## 7. Planning semantics
+P5-M0.1 adds ContextIdentity over task/observation/action-space/page/progress/
+pending revisions. A stale decision is discarded with zero execution. Source
+assurance describes observation quality but never grants write authorization.
+
+## 8. Planning semantics
 
 ```text
 TaskGoal      = what
@@ -153,11 +161,17 @@ observation. Simple tasks act directly from ActionSpace. Complex tasks may use
 milestones, but Plan is neither intake output nor Runtime authority. Plan or
 milestone exhaustion cannot complete the task.
 
-## 8. ActionSpace, Batch and clarification
+LocalObjective assigns DIRECT/ENABLING/INFORMATION/OTHER relevance to actions
+already legal under TaskGoal. It cannot expand effects, lower risk, create a
+capability or prove completion.
+
+## 9. ActionSpace, paging, Batch and clarification
 
 ActionSpace contains current legal, bindable semantic actions. Backend material
 remains hidden in the world model. Presentation may be paged or compressed, but
 the model cannot select omitted IDs or create raw bindings.
+RequestActionPage creates a new action-page ID and therefore a new context ID;
+decisions over the prior page are stale.
 
 Material ambiguity yields `AskUser`. A strict profile may validate source
 fields and output bindings before the loop, but it cannot create a second
@@ -168,7 +182,7 @@ options explicitly marked batchable with no observation barrier. The Runtime
 validator enforces max-three, low-risk, same-surface/session, no navigation,
 external effect, app/page change, or cross-surface dependency.
 
-## 9. Current migration note
+## 10. Current migration note
 
 Current code still requires admitted TaskSpec, mandatory planning flows, and
 ActionChoiceCatalog authority objects. Those remain baseline behavior until
@@ -176,3 +190,5 @@ P5-A/P5-E/P5-H cutover and are not target contracts.
 
 P5-M0 model-boundary contracts are integrated only on the non-default target
 loop. No provider SDK, model-backed AgentPolicy, or model evaluator is present.
+The unified AgentContext/ContextIdentity/paging/relevance design is
+`TARGET_DOCUMENTED / NOT_IMPLEMENTED`.

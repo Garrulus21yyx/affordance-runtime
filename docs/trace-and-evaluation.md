@@ -6,7 +6,7 @@
 ## 1. Separation rule
 
 ```text
-ActionResult ≠ ActionEvaluation ≠ TaskEvaluation ≠ benchmark reward
+ActionResult ≠ ActionEvaluation ≠ Milestone completion ≠ TaskEvaluation ≠ benchmark reward
 ```
 
 Executor/transport success means the backend accepted or completed a call. It
@@ -58,6 +58,12 @@ proposal and must be confirmed by TaskEvaluator.
 TaskEvaluator checks all success criteria, task constraints, forbidden effects,
 required outputs/materialization, and any required current final recheck.
 
+Each criterion declares `MECHANICAL`, `SEMANTIC`, `USER_ACCEPTANCE`, or
+`HYBRID` adjudication. Mechanical checks are deterministic; semantic proposals
+must bind applicable rubric/current evidence; user acceptance counts only when
+TaskGoal explicitly requires it; hybrid keeps mechanical hard constraints.
+These adjudicators are `TARGET_DOCUMENTED / NOT_IMPLEMENTED`.
+
 TaskEvaluation binds task ID, current observation ID, stable criterion IDs,
 criterion statuses/evidence, completion evidence, and evaluated outputs.
 COMPLETE requires all task criteria satisfied, current resolvable evidence,
@@ -86,6 +92,8 @@ Batch, bound request/result lineage, after observation ID, evaluations, route,
 latency, and model/visual-call counts.
 Recorder failure must not change admission, execution, evaluation, or loop
 state. Trace is an offline debugging/benchmark input, never an authority.
+It records context revision/decision summaries but never reconstructs Runtime
+state or participates in admission/commit.
 
 ## 6. Replay and benchmarks
 

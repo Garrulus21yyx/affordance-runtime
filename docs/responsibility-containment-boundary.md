@@ -8,6 +8,7 @@
 | Owner | Owns | Must not own |
 |---|---|---|
 | `AgentLoop` | serial turn sequencing and small loop state | surface parsing, policy reasoning, evaluation algorithms, telemetry persistence |
+| `task/` | TaskGoal, bounded IntentContext and planning contracts | current route, model projection, binding or execution |
 | `AgentPolicy` | next semantic decision | raw binding payload, execution, task completion |
 | `TaskPlanner` | optional high-level Milestone hypothesis | GUI actions, binding, completion authority |
 | `ObjectivePolicy` | current LocalObjective from task/plan/world | selector, route, action execution |
@@ -15,6 +16,7 @@
 | `SurfaceAdapter` | truthful observation, bindings, supported execution | global task planning or completion |
 | `WorldFusion` | semantic entity/fact fusion and conflicts | action execution or user confirmation |
 | `ActionSpaceBuilder` | current legal semantic options and barrier metadata | model choice or backend execution |
+| `ActionRelevancePolicy` | DIRECT/ENABLING/INFORMATION/OTHER ranking and paging hints | legality, capability, risk lowering or completion |
 | `RouteSelector` | choose one current binding for a semantic action | effectful fallback execution |
 | `ActionBinder` | ActionIntent + current binding → BoundActionRequest | confirmation semantics or evaluation |
 | `RiskPolicy` | ALLOW/NEEDS_CONFIRMATION/BLOCK | executor capability discovery or token registry |
@@ -30,7 +32,7 @@
 | `LoopPolicy` | continue/reobserve/ask/stop | domain observation or execution |
 | `TurnRecorder` | optional telemetry | admission, execution, state authority |
 | `BindingCache` / Skill sidecars | currentness-checked hints and offline-evaluated templates | bypassing ActionSpace/RiskPolicy/evaluation or online publication |
-| `model_boundary/` | bounded policy/evaluator views and typed future provider failures | concrete adapters, binders/executors, provider SDKs, fixtures, or Runtime authority |
+| `model_boundary/` | disposable AgentContext, one-way projection, ContextIdentity, budgets, paging, model-safe views and typed future provider failures | Runtime state, concrete adapters, binders/executors, provider SDKs or fixtures |
 
 ## 2. Dependency direction
 
@@ -118,3 +120,10 @@ evidence indexing and proposal validation in `evaluation/`, and only the
 sequencing calls in AgentLoop. Source-local target IDs remain source-local;
 the three-surface policy-view test proves shared semantic action vocabulary and
 private-route isolation, not semantic fusion or cross-surface target identity.
+
+P5-M0.1 keeps `ContextIdentity` and authoritative revisions inside Runtime and
+projects only an opaque `context_id`. LocalObjective relevance may rank/page
+already-legal actions but cannot add an action, lower risk or affect completion.
+The target dependency gates additionally forbid AgentPolicy→binder/executor/
+surface, model_boundary→concrete surface, confirmation→private binding,
+evaluation→execution, telemetry→decision and production core→benchmark imports.

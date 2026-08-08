@@ -10,8 +10,10 @@ observe
 → evaluate current task state
 → optionally plan/replace milestones
 → select LocalObjective
-→ build ActionSpace
-→ policy selects ActionIntent or admitted ActionBatch
+→ build Internal ActionSpace and current page
+→ project disposable AgentContext
+→ policy returns typed AgentDecision with context_id
+→ reject stale decision with zero execution
 → risk decision / human confirmation
 → bind current request
 → execute one action or admitted batch once
@@ -24,8 +26,9 @@ observe
 AgentLoop sequences collaborators; it does not parse surfaces, choose policy
 internals, evaluate effects, or persist telemetry.
 
-Before policy invocation, Runtime projects TaskGoal, AgentWorldView, internal
-ActionSpace, bounded Turns, and optional TaskPlan into model-safe typed views.
+Before policy invocation, Runtime projects TaskGoal, bounded IntentContext,
+progress, WorldObservation, current action page, bounded Turns, pending state
+and budgets into a disposable AgentContext.
 The policy never receives the internal ActionSpace or Turn objects. Its opaque
 action ID is resolved and admitted only against the still-current internal
 ActionSpace.
@@ -40,6 +43,8 @@ WAITING_CONFIRMATION, CANCELLED, DONE, BLOCKED, and FAILED.
 
 Preflight, acting, verifying, and recovering are local call steps, not a global
 durable state machine.
+AgentLoopState, task/observation/action-space revisions and pending state remain
+Runtime-owned; AgentContext never becomes a second state aggregate.
 
 ## 3. Feedback
 
@@ -53,10 +58,13 @@ WaitingConfirmation carries a typed `ConfirmationRequest`: confirmation ID,
 semantic subject ID, ActionIntent, effects, risk, consequences, and a semantic
 summary. A decision binds both IDs. On CONFIRM, `AgentRunSession` reobserves,
 checks whether the task is already complete, rebuilds ActionSpace, recomputes
-the subject, and only then binds the current route. Binding-only changes are
-allowed; action/target/destination/parameters/effects/risk/consequences changes
-require a new confirmation. DENY clears the request and returns CANCELLED with
-zero execution.
+the subject, and only then binds the current route. The target admits reuse only
+when the current subject is covered by the confirmed subject: exact semantic
+action/target/destination/material parameters, effects no broader, risk and
+consequences no stronger, and reversibility no worse. The current implementation
+uses exact subject equality conservatively. Binding-only changes are allowed;
+incomparable or expanded semantics require a new confirmation. DENY clears the
+request and returns CANCELLED with zero execution.
 
 If the confirmed subject is absent after the fresh observation, Runtime clears
 that approval and returns the already-fresh ActionSpace to the ordinary policy
@@ -96,3 +104,6 @@ evidence ref in the fresh after observation. Task evaluation must match the
 task/current observation and pass criterion, evidence, requested-output, and
 declared integrity validation before its status controls the loop. Invalid
 proposals fail the run and are not recorded as trusted evaluations.
+
+P5-M0.1 is documented but not implemented. ProposeDone remains advisory and
+criterion-specific Runtime validators own final completion.
