@@ -96,8 +96,8 @@ P5-D5 evaluator control: COMPLETE_FOR_CURRENT_NO_REQUIRED_OUTPUT_PROFILE
 P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM
 P5-D6.1: COMPLETE
 P5-M0: COMPLETE
-P5-M0.1 AgentContext architecture: TARGET_DOCUMENTED; NOT_IMPLEMENTED
-model-backed AgentPolicy: NEXT_AFTER_M0.1
+P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT
+model-backed AgentPolicy: NEXT
 P5-M1 model-backed AgentPolicy: NOT_STARTED
 P5-M2 production evaluator composition: NOT_STARTED
 P5-M3 new-AgentLoop benchmark harness: NOT_STARTED
@@ -114,8 +114,11 @@ external benchmark: BLOCKED
 | `M0.1d` | source assurance summary, LocalObjective relevance and action paging | assurance does not grant authorization; relevance cannot change legality; only current-page action IDs are selectable |
 | `M0.1e` | typed decision union and documentation/contract completeness | SelectAction/RequestObservation/RequestActionPage/AskUser/ProposeDone/Wait/Abort only; no ProposeRecovery platform |
 
-This documentation refinement makes M0.1 the next admitted implementation slice; it does not
-claim any M0.1 code exists. Current M0 projections remain `INTEGRATED_NON_DEFAULT`.
+M0.1 is implemented on the non-default target path. The closed profile includes
+bounded context-only intent/world/progress/pending/budgets, opaque recurrent
+identity, typed decisions, deterministic paging/relevance and DOM/Visual/WoT
+source summaries. Targeted acquisition optimization and confirmation dominance
+remain deferred; M0 projections remain `INTEGRATED_NON_DEFAULT`.
 
 ### P5-M1–M3 — First model loop and evaluation gate
 
@@ -286,8 +289,8 @@ DONE: P5-D1–D4 semantic confirmation, fresh rebind, and effect-certainty conti
 DONE: P5-D5 evaluator control and declared-minimum target output validation
 DONE: P5-D6.1 confirmation and evaluation contract completion
 DONE: P5-M0 model-safe policy views and evidence-validated evaluation boundary
-NEXT: P5-M0.1 AgentContext architecture and context completeness
-THEN: P5-M1 model-backed target AgentPolicy using deterministic evaluators
+DONE: P5-M0.1 AgentContext architecture and context completeness
+NEXT: P5-M1 model-backed target AgentPolicy using deterministic evaluators
 THEN: P5-M2 production evaluator composition and criterion adjudicators
 THEN: P5-M3 new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke
 THEN: P5-E long-horizon planning

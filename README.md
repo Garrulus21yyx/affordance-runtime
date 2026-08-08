@@ -80,13 +80,11 @@ P5-D6.1 is complete on the non-default path: effective risk, semantic
 destination identity, confirmation presentation, immutable terminal sessions,
 and evidence-lineage fields are closed. P5-M0 now resolves evidence against the
 current world and validates declared-minimum target outputs; no model-backed
-policy has started.
-
-The next slice is P5-M0.1. The unified disposable AgentContext, opaque
-ContextIdentity, bounded raw intent, LocalObjective relevance, action paging,
-source-assurance summaries, recurrent typed decision union, and criterion
-adjudicators are documented targets and are **not implemented**. Existing M0
-model projections remain integrated non-default.
+policy has started. P5-M0.1 is now closed on that same non-default path:
+each policy turn receives a bounded disposable AgentContext, all decisions bind
+an opaque current context ID, stale/replayed decisions are zero-call, and
+deterministic relevance/paging plus DOM/Visual/WoT source summaries are live.
+Criterion adjudicators remain unimplemented and belong to P5-M2.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
@@ -116,7 +114,7 @@ selectors, coordinates, or fixture semantics to production policy.
 
 The DOM/Visual/WoT adapter-only shared-state matrix is complete for the current
 declared single-surface profiles. Full external agent benchmarks remain blocked
-until P5-M0.1, a model-backed target AgentPolicy, production evaluator
+until a model-backed target AgentPolicy, production evaluator
 composition, a new-AgentLoop benchmark harness, and exact-head remote CI
 evidence are all complete. P5-D/M0 do not by themselves admit an external run.
 

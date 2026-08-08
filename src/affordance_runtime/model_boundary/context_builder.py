@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
@@ -30,6 +28,7 @@ from affordance_runtime.model_boundary.projection import (
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.view import build_agent_world_view
 
@@ -40,6 +39,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class ContextBuilder:
     budget: ContextProjectionBudget = field(default_factory=ContextProjectionBudget)
+    pager: ActionPager = field(default_factory=ActionPager)
 
     def build(
         self,
@@ -48,20 +48,32 @@ class ContextBuilder:
         action_space: ActionSpace,
         task_evaluation: TaskEvaluation,
         intent_context: IntentContext | None = None,
-        action_page_id: str = "",
+        action_page: InternalActionPage | None = None,
         observation_count: int = 1,
     ) -> AgentContext:
         world = project_model_world(state.current_observation, self.budget)
-        projected_actions = project_action_space(action_space, build_agent_world_view(state.current_observation))
-        shown_actions = _bounded_action_options(projected_actions.options, self.budget)
-        visible_ids = tuple(item.action_id for item in shown_actions)
-        page_id = action_page_id or default_action_page_id(action_space, visible_ids)
+        labels = {item.target_id: item.label for item in state.current_observation.targets}
+        page = action_page or self.pager.page(
+            action_space,
+            state.active_objective,
+            labels=labels,
+        )
+        if page.action_space_id != action_space.action_space_id:
+            raise ValueError("action page does not belong to the current Internal ActionSpace")
+        relevance = dict(page.relevance)
+        projected_actions = project_action_space(
+            action_space,
+            build_agent_world_view(state.current_observation),
+            relevance,
+        )
+        by_id = {item.action_id: item for item in projected_actions.options}
+        shown_actions = tuple(by_id[item] for item in page.visible_action_ids if item in by_id)
         actions = AgentActionPageView(
             shown_actions,
-            len(projected_actions.options),
+            page.total_count,
             len(shown_actions),
-            len(shown_actions) < len(projected_actions.options),
-            len(shown_actions) < len(projected_actions.options),
+            page.has_more,
+            page.has_more,
             ("target_id", "relevance_role", "query"),
         )
         history_items = project_turns(state.recent_turns)[-self.budget.max_history_turns :]
@@ -69,7 +81,7 @@ class ContextBuilder:
             state.task_revision,
             state.current_observation.observation_id,
             action_space.action_space_id,
-            page_id,
+            page.page_id,
             state.progress_revision,
             state.pending_revision,
         )
@@ -115,12 +127,6 @@ def project_intent_context(
     return IntentContextView(BoundedSection(tuple(items), len(excerpts), len(items) < len(excerpts)))
 
 
-def default_action_page_id(action_space: ActionSpace, visible_action_ids: tuple[str, ...]) -> str:
-    payload = (action_space.action_space_id, visible_action_ids, "default")
-    digest = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
-    return f"action-page:{digest}"
-
-
 def _progress_view(task, state, evaluation, facts) -> AgentProgressView:
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}
     unresolved = tuple(
@@ -151,16 +157,6 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
         confirmation,
         "effect outcome remains uncertain" if state.pending_unknown_request is not None else "",
     )
-
-
-def _bounded_action_options(options, budget):
-    shown = []
-    byte_quota = budget.max_total_serialized_bytes // 3
-    for option in options[: budget.max_action_options]:
-        if shown and serialized_size((*shown, option)) > byte_quota:
-            break
-        shown.append(option)
-    return tuple(shown)
 
 
 def _fit_context(context: AgentContext, max_bytes: int) -> AgentContext:

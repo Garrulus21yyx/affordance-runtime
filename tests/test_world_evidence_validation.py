@@ -7,7 +7,13 @@ from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopSta
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import CoverageState, StateFact, SurfaceObservation, WorldObservation
+from affordance_runtime.world import (
+    CoverageState,
+    ObservationSourceProfile,
+    StateFact,
+    SurfaceObservation,
+    WorldObservation,
+)
 
 
 def test_world_evidence_index_contains_current_facts_and_controlled_artifact_refs() -> None:
@@ -15,6 +21,7 @@ def test_world_evidence_index_contains_current_facts_and_controlled_artifact_ref
         "surface:after",
         "visual",
         "revision:after",
+        ObservationSourceProfile.visual(),
         facts=(StateFact("fact:after", "target:1", "enabled", True, "surface:after"),),
         artifacts={"screenshot": {"digest": "private-value"}},
     )

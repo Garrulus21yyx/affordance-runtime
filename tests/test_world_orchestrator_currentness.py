@@ -9,6 +9,7 @@ from affordance_runtime.world import (
     ActionRisk,
     ActionSpaceBuilder,
     CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
     SurfaceObservation,
 )
@@ -56,6 +57,7 @@ class SequencedAdapter:
             source_id,
             self.surface,
             revision,
+            ObservationSourceProfile.dom() if self.surface == "dom" else ObservationSourceProfile.wot(),
             (SemanticTarget(target_id, "button", target_id),),
             bindings=(binding,),
             coverage=CoverageState.COMPLETE,

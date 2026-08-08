@@ -121,19 +121,24 @@ def project_model_world(observation: WorldObservation, budget: ContextProjection
     )
     shown_artifacts = artifact_names[: budget.max_artifact_summaries]
     capabilities = tuple(
-        sorted(
-            {
-                _legacy_capability(source)
-                for source, coverage in observation.coverage.items()
-                if str(coverage) not in {"failed", "not_acquired", "stale"}
-            }
+        sorted(_capabilities(observation))
+    )
+    source_summaries = tuple(
+        ObservationSourceSummary(
+            source.source_profile.modality,
+            source.source_profile.assurance,
+            source.source_profile.verification_strength,
+            source.source_profile.acquisition_cost,
+            observation.coverage.get(source.surface, source.coverage),
         )
+        for source in observation.sources
     )
     view = ModelWorldView(
         _section(targets, len(observation.targets)),
         _section(tuple(projected_facts), len(observation.facts)),
         _section(conflicts, len(observation.conflicts)),
         _section(shown_artifacts, len(artifact_names)),
+        sources=source_summaries,
         observation_capabilities=tuple(
             ObservationCapabilityView(modality, assurance) for modality, assurance in capabilities
         ),
@@ -215,3 +220,18 @@ def _legacy_capability(source: str) -> tuple[str, str]:
     if normalized == "wot":
         return "environment_state", "authoritative"
     return "structural", "structural"
+
+
+def _capabilities(observation: WorldObservation) -> set[tuple[str, str]]:
+    if observation.sources:
+        return {
+            (source.source_profile.modality, source.source_profile.assurance)
+            for source in observation.sources
+            if str(observation.coverage.get(source.surface, source.coverage))
+            not in {"failed", "not_acquired", "stale"}
+        }
+    return {
+        _legacy_capability(source)
+        for source, coverage in observation.coverage.items()
+        if str(coverage) not in {"failed", "not_acquired", "stale"}
+    }

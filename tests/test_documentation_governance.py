@@ -71,7 +71,8 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM" in text
     assert "P5-D6.1: COMPLETE" in text
     assert "P5-M0: COMPLETE" in text
-    assert "model-backed AgentPolicy: NEXT_AFTER_M0" in text
+    assert "P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT" in text
+    assert "model-backed AgentPolicy: NEXT" in text
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

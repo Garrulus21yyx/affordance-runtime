@@ -68,11 +68,18 @@ class AgentActionOptionView:
     semantic_effects: tuple[str, ...]
     risk: ActionRisk
     observation_barrier: bool
+    effect_category: str = ""
+    consequence_class: str = ""
+    reversible: bool = True
+    relevance_role: str = "other"
+    relevance_score: float = 0.0
+    relevance_reason_codes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "destinations", tuple(self.destinations))
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        object.__setattr__(self, "relevance_reason_codes", tuple(self.relevance_reason_codes))
 
 
 @dataclass(frozen=True)

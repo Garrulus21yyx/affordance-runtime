@@ -188,7 +188,8 @@ Current code still requires admitted TaskSpec, mandatory planning flows, and
 ActionChoiceCatalog authority objects. Those remain baseline behavior until
 P5-A/P5-E/P5-H cutover and are not target contracts.
 
-P5-M0 model-boundary contracts are integrated only on the non-default target
-loop. No provider SDK, model-backed AgentPolicy, or model evaluator is present.
-The unified AgentContext/ContextIdentity/paging/relevance design is
-`TARGET_DOCUMENTED / NOT_IMPLEMENTED`.
+P5-M0 and P5-M0.1 model-boundary contracts are integrated only on the
+non-default target loop. No provider SDK, model-backed AgentPolicy, or model
+evaluator is present. AgentContext/ContextIdentity/current-page admission and
+explicit-hint relevance are implemented; clarification continuation and
+targeted observation provider selection remain deferred.

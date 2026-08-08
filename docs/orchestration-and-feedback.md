@@ -105,5 +105,6 @@ task/current observation and pass criterion, evidence, requested-output, and
 declared integrity validation before its status controls the loop. Invalid
 proposals fail the run and are not recorded as trusted evaluations.
 
-P5-M0.1 is documented but not implemented. ProposeDone remains advisory and
-criterion-specific Runtime validators own final completion.
+P5-M0.1 is implemented on the non-default target loop. ProposeDone remains
+advisory, must reference current evidence, and re-enters validated TaskEvaluator
+control; criterion-specific production adjudicators remain future P5-M2 work.

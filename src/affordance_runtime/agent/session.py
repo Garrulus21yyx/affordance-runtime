@@ -15,6 +15,8 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.model_boundary.context import AgentContext
+    from affordance_runtime.world.action_paging import InternalActionPage
+    from affordance_runtime.world.contracts import ActionSpace
 
 
 @dataclass
@@ -32,6 +34,8 @@ class AgentRunSession:
     last_result: AgentResult | None = field(default=None, repr=False)
     current_context_snapshot: AgentContext | None = field(default=None, repr=False)
     consumed_context_id: str = field(default="", repr=False)
+    current_action_space: ActionSpace | None = field(default=None, repr=False)
+    current_action_page: InternalActionPage | None = field(default=None, repr=False)
 
     async def run_until_pause(self) -> AgentResult:
         if self.last_result is not None:

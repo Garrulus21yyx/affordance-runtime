@@ -20,6 +20,7 @@ from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -94,6 +95,7 @@ class VisualSurfaceAdapter:
             observation_id,
             self.surface,
             frame.source_revision,
+            ObservationSourceProfile.visual(),
             targets,
             facts,
             bindings,

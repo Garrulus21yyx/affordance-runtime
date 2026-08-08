@@ -24,6 +24,7 @@ from affordance_runtime.agent.waiting import WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
+from affordance_runtime.world.action_paging import ActionPager
 from affordance_runtime.world.contracts import ActionSpace
 
 SelectionExecutor = Callable[[AgentRunSession, ActionSpace, SelectAction], Awaitable[object]]
@@ -56,6 +57,7 @@ async def run_policy_turn(
         action_space,
         task_evaluation,
         session.intent_context,
+        session.current_action_page,
         observation_count=session.observation_count,
     )
     session.current_context_snapshot = context
@@ -82,8 +84,42 @@ async def run_policy_turn(
         await waiter.wait(decision.max_wait_ms)
         return await _fresh_observation(session, decision, "fresh observation after wait")
     if isinstance(decision, RequestActionPage):
-        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "requested action page is unavailable")
+        labels = {item.target_id: item.label for item in state.current_observation.targets}
+        try:
+            session.current_action_page = context_builder.pager.page(
+                action_space,
+                state.active_objective,
+                query=decision.query,
+                target_id=decision.target_id,
+                relevance_role=decision.relevance_role or None,
+                labels=labels,
+            )
+        except ValueError:
+            return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "invalid action page request")
+        return None
+    page = session.current_action_page
+    if page is None or decision.action_id not in page.visible_action_ids:
+        return build_result(
+            AgentLoopStatus.BLOCKED,
+            task,
+            state,
+            0,
+            0,
+            "policy selected outside the current action page",
+        )
     return await execute_selection(session, action_space, decision)
+
+
+def ensure_current_action_page(
+    session: AgentRunSession,
+    action_space: ActionSpace,
+    pager: ActionPager,
+) -> None:
+    if session.current_action_space is not None and session.current_action_space.action_space_id == action_space.action_space_id:
+        return
+    labels = {item.target_id: item.label for item in session.state.current_observation.targets}
+    session.current_action_space = action_space
+    session.current_action_page = pager.page(action_space, session.state.active_objective, labels=labels)
 
 
 async def _fresh_observation(session: AgentRunSession, decision: AgentDecision, reason: str) -> None | object:

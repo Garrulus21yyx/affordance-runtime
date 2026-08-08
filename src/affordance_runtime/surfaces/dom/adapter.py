@@ -18,6 +18,7 @@ from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -76,6 +77,7 @@ class DomSurfaceAdapter:
             observation_id,
             self.surface,
             snapshot.observation.page_revision,
+            ObservationSourceProfile.dom(),
             targets,
             facts,
             bindings,

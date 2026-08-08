@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.world.source_profile import ObservationSourceProfile
 
 _PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
 
@@ -132,6 +133,7 @@ class SurfaceObservation:
     observation_id: str
     surface: str
     revision: str
+    source_profile: ObservationSourceProfile
     targets: tuple[SemanticTarget, ...] = ()
     facts: tuple[StateFact, ...] = ()
     bindings: tuple[ActionBinding, ...] = ()

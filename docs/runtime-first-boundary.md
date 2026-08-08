@@ -71,5 +71,5 @@ Current production still uses TaskSpec/ActionContract/StateKernel/
 RuntimeCommitter machinery. That is implementation truth during migration, not
 the target product boundary. The target makes trace optional and keeps strict
 ingestion/evaluation as explicit profiles outside the ordinary GUI loop.
-P5-M0.1 AgentContext architecture is documented only; it does not change the
+P5-M0.1 AgentContext architecture is integrated on the non-default path; it does not change the
 default path or restore those legacy owners as target concepts.

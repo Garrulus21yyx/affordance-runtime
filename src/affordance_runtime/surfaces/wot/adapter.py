@@ -16,6 +16,7 @@ from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -82,6 +83,7 @@ class WotSurfaceAdapter:
             observation_id,
             self.surface,
             td_digest,
+            ObservationSourceProfile.wot(),
             property_targets + action_targets + event_targets,
             facts,
             candidate_bindings,

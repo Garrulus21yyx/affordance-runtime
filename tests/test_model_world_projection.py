@@ -5,6 +5,9 @@ from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_boundary.world_projection import project_model_world
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
+    ActionOption,
+    ActionRisk,
+    ActionSpace,
     ActionSpaceBuilder,
     CoverageState,
     ObservationConflict,
@@ -82,3 +85,50 @@ def test_complete_agent_context_respects_total_serialized_byte_budget() -> None:
     assert serialized_size(context) <= budget.max_total_serialized_bytes
     assert context.world.targets.truncated
     assert context.budgets.section_truncation["targets"]
+
+
+def test_action_options_share_the_total_context_byte_budget_truthfully() -> None:
+    observation = WorldObservation(
+        "world:actions",
+        (SemanticTarget("target:0", "form", "Target"),),
+        (),
+        (),
+        {"dom": CoverageState.COMPLETE},
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            f"field_{index}": {"type": "string", "description": "x" * 240}
+            for index in range(12)
+        },
+        "additionalProperties": False,
+    }
+    options = tuple(
+        ActionOption(
+            f"action:{index}",
+            observation.observation_id,
+            "activate",
+            "target:0",
+            "local_reversible",
+            schema,
+            "schema:large",
+            (f"binding:{index}",),
+            "activate target",
+            ("changed",),
+            ActionRisk.LOW,
+        )
+        for index in range(32)
+    )
+    task = TaskGoal("bounded-actions", "Inspect actions")
+    evaluation = TaskEvaluation(
+        task.task_id,
+        observation.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "not complete",
+    )
+
+    context = ContextBuilder().build(task, AgentLoopState(observation), ActionSpace("world:actions", options), evaluation)
+
+    assert serialized_size(context) <= ContextProjectionBudget().max_total_serialized_bytes
+    assert context.actions.truncated
+    assert context.actions.total_count == 32

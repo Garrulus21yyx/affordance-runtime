@@ -156,3 +156,17 @@ def test_target_core_size_review_gates_remain_closed() -> None:
     if loop_lines > 300:
         violations.append(f"src/affordance_runtime/agent/loop.py has {loop_lines} lines")
     assert violations == []
+
+
+def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:
+    tree = ast.parse((PACKAGE / "agent" / "loop.py").read_text(encoding="utf-8"))
+    loop = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "AgentLoop")
+    collaborators = {
+        node.target.id
+        for node in loop.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id not in {"recent_turn_limit"}
+    }
+
+    assert len(collaborators) <= 8

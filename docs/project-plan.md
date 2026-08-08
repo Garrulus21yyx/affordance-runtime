@@ -62,7 +62,7 @@ core contracts for every GUI task.
 | P5-D | Semantic human confirmation, current rebind, unknown-effect and evaluator cutover | complete, non-default |
 | P5-D6.1 | General semantic confirmation and evidence-bound evaluation contracts | complete, non-default |
 | P5-M0 | Model-safe policy views and evidence-validated evaluator boundary | complete, non-default |
-| P5-M0.1 | Unified disposable AgentContext, ContextIdentity, bounded intent/world/history, relevance, paging, source assurance and typed decisions | target documented; not implemented |
+| P5-M0.1 | Unified disposable AgentContext, ContextIdentity, bounded intent/world/history, relevance, paging, source assurance and typed decisions | complete, non-default |
 | P5-M1 | Model-backed target AgentPolicy using deterministic evaluators | not started |
 | P5-M2 | Production evaluator composition and criterion adjudicators | not started |
 | P5-M3 | New-AgentLoop harness and fixed BrowserGym/MiniWoB smoke | not started; external admission blocked |

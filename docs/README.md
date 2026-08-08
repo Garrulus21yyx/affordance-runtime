@@ -56,7 +56,8 @@ completion is closed on the non-default path. P5-M0 model-safe
 policy views and deterministic evaluator trust validation are closed; real
 model policy/evaluator composition has not started.
 P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
-architecture is documented only and is the next admitted slice.
+is implemented on the non-default target path. P5-M1 model-backed policy is
+next; no provider-backed policy or evaluator has started.
 
 ## 3. Maintained policies and contracts
 
@@ -97,6 +98,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-D6.1 confirmation and evaluation contract completion](reviews/2026-08-08-p5-d6-1-contract-completion.md)
 - [P5-M0 model-safe policy and evaluator boundary](reviews/2026-08-08-p5-m0-model-evaluator-boundary.md)
 - [AgentContext architecture refinement](reviews/2026-08-08-agent-context-architecture-refinement.md)
+- [P5-M0.1 AgentContext implementation](reviews/2026-08-08-p5-m0-1-agent-context-implementation.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

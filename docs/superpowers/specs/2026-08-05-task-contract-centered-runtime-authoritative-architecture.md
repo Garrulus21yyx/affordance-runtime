@@ -7,8 +7,9 @@
 > **Migration order:** [Architecture Evolution Plan](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 文件路径仅为兼容文档治理检查而保留；文件名中的
-`task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，且不表示
-尚未实现的 AgentContext、model policy、criterion adjudicator 或长程能力已经落地。
+`task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，但实现状态
+仍以 Implementation Status 为准：AgentContext 的 P5-M0.1 profile 已在 non-default
+路径落地；model policy、criterion adjudicator 与长程能力仍未实现。
 
 ## 0. 系统定位与计算模型
 

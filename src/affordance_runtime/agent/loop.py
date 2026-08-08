@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from affordance_runtime.agent.decision_control import run_policy_turn
+from affordance_runtime.agent.decision_control import ensure_current_action_page, run_policy_turn
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
@@ -76,6 +76,7 @@ class AgentLoop:
             if task_status is not None:
                 return self._result(session, task_status, task_evaluation.reason)
             action_space = self.action_space_builder.build(task, state.current_observation)
+            ensure_current_action_page(session, action_space, self.context_builder.pager)
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
             else:
@@ -130,6 +131,7 @@ class AgentLoop:
                 action_space,
                 task_evaluation,
                 session.intent_context,
+                session.current_action_page,
                 observation_count=session.observation_count,
             )
             session.current_context_snapshot = context

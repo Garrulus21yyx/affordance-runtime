@@ -212,7 +212,7 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
         async def decide(self, context):
             task, action_space = context.task, context.actions
             recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-            captured.append((task, action_space, recent_turns, optional_plan))
+            captured.append((task, action_space, recent_turns, optional_plan, context.world.sources))
             return SelectAction(context.context_id, action_space.options[0].action_id)
 
     for profile in ("dom", "visual", "wot"):
@@ -232,6 +232,7 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
                 option.destination_required,
                 option.semantic_effects,
                 option.risk,
+                option.relevance_role,
             )
             for option in item[1].options
         )
@@ -239,6 +240,11 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
     ]
     assert task_views[0] == task_views[1] == task_views[2]
     assert semantic_options[0] == semantic_options[1] == semantic_options[2]
+    assert tuple(item[4][0].modality for item in captured) == (
+        "structural",
+        "visual",
+        "environment_state",
+    )
     assert all(option.target_id for item in captured for option in item[1].options)
     representation = repr(captured)
     assert all(

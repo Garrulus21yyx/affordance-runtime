@@ -20,6 +20,7 @@ from affordance_runtime.model_boundary.contracts import (
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.planning_contracts import TaskPlan
 from affordance_runtime.world.contracts import ActionSpace
+from affordance_runtime.world.relevance import ActionRelevance
 from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
@@ -75,8 +76,13 @@ def project_task(task: TaskGoal) -> AgentTaskView:
     )
 
 
-def project_action_space(action_space: ActionSpace, world: AgentWorldView) -> AgentActionSpaceView:
+def project_action_space(
+    action_space: ActionSpace,
+    world: AgentWorldView,
+    relevance: Mapping[str, ActionRelevance] | None = None,
+) -> AgentActionSpaceView:
     labels = {target.target_id: target.label for target in world.targets}
+    relevance = relevance or {}
     return AgentActionSpaceView(
         tuple(
             AgentActionOptionView(
@@ -91,6 +97,12 @@ def project_action_space(action_space: ActionSpace, world: AgentWorldView) -> Ag
                 option.semantic_effects,
                 option.risk,
                 option.observation_barrier,
+                option.effect_category,
+                option.effect_category,
+                option.risk != "irreversible",
+                relevance[option.action_id].role if option.action_id in relevance else "other",
+                relevance[option.action_id].score if option.action_id in relevance else 0.0,
+                relevance[option.action_id].reason_codes if option.action_id in relevance else (),
             )
             for option in action_space.options
         )

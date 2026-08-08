@@ -124,6 +124,10 @@ private-route isolation, not semantic fusion or cross-surface target identity.
 P5-M0.1 keeps `ContextIdentity` and authoritative revisions inside Runtime and
 projects only an opaque `context_id`. LocalObjective relevance may rank/page
 already-legal actions but cannot add an action, lower risk or affect completion.
+The implemented split keeps policy routing in `agent/decision_control.py`, the
+single execution cycle in `agent/execution_cycle.py`, bounded projection in
+`model_boundary/`, and relevance/paging in `world/`; AgentLoop remains below
+the 300-line orchestration gate.
 The target dependency gates additionally forbid AgentPolicy→binder/executor/
 surface, model_boundary→concrete surface, confirmation→private binding,
 evaluation→execution, telemetry→decision and production core→benchmark imports.

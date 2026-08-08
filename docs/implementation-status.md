@@ -34,12 +34,12 @@ The target path now has:
 | semantic confirmation continuation | `INTEGRATED_NON_DEFAULT`; typed request/decision, run-scoped session, fresh semantic rebind, single-send consumption |
 | P5-D6.1 confirmation/evaluation contract completion | `INTEGRATED_NON_DEFAULT`; effective risk, destination identity, bounded presentation, terminal immutability, policy reselection, evidence lineage, explicit task control |
 | P5-M0 model/evaluator boundary | `INTEGRATED_NON_DEFAULT`; model-safe projections, current-world evidence resolution, structured completion and target output integrity |
-| AgentContext architecture | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
-| ContextIdentity | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
-| IntentContextView | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
-| LocalObjective relevance | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
-| action paging | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
-| source assurance summaries | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
+| AgentContext architecture | `INTEGRATED_NON_DEFAULT / CLOSED_P5_M0_1` |
+| ContextIdentity | `CLOSED`; current task/observation/action-space/page/progress/pending digest, stale/replay zero-call |
+| IntentContextView | `CLOSED_FOR_BOUNDED_CONTEXT_ONLY`; always `context_only`, never TaskGoal authority |
+| LocalObjective relevance | `CLOSED_FOR_CURRENT_EXPLICIT_HINT_PROFILE`; legality and risk unchanged |
+| action paging | `CLOSED_FOR_DETERMINISTIC_PAGER`; only current-page IDs admitted |
+| source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
 | model-backed AgentPolicy | `NOT_STARTED` |
@@ -131,9 +131,10 @@ TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
 Semantic fusion remains deliberately deferred. The small `AgentLoopState` is
 complete; a distinct LoopPolicy and optional TurnRecorder remain future work.
-P5-M0.1 is documentation-only at this baseline: no unified AgentContext,
-ContextIdentity, bounded raw intent, relevance/paging, source-assurance summary,
-typed recurrent decision union or criterion-adjudicator implementation is
-claimed. Model-backed target policy/evaluator composition and the new-loop
+P5-M0.1 now provides the unified disposable AgentContext, ContextIdentity,
+bounded context-only intent, bounded model world/progress/pending/budget views,
+typed recurrent decisions, current-page paging, explicit-hint relevance and
+source-assurance summaries. Criterion adjudication, targeted observation
+provider selection, model-backed target policy/evaluator composition and the new-loop
 benchmark harness have not begun. WoT effectful rate limiting is implemented; property
 read-side scheduling/rate limiting is not implemented.
