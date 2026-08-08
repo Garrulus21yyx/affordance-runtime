@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
 from model_policy_support import ScriptedStructuredDecisionPort, first_action_model_policy
@@ -24,7 +25,7 @@ from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopSta
 from affordance_runtime.model_boundary import ContextBuilder, ContextProjectionBudget
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionPager, ActionSpaceBuilder
+from affordance_runtime.world import ActionPager, ActionSpaceBuilder, ObservationSourceProfile, SurfaceObservation
 
 
 class FakeWaiter:
@@ -146,6 +147,55 @@ def test_model_propose_done_still_requires_the_deterministic_task_evaluator() ->
         assert result.status == AgentLoopStatus.FAILED
         assert evaluator.calls == 3
         assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_model_propose_done_can_reference_current_artifact_without_bypassing_evaluator() -> None:
+    def script(context, call):
+        if call == 1:
+            evidence = context["world"]["artifact_summaries"]["items"][0]["evidence_ref"]
+            return {
+                "type": "propose_done",
+                "context_id": context["context_id"],
+                "claimed_criteria": [],
+                "evidence_refs": [evidence],
+                "result_summary": "artifact available",
+                "unresolved_items": [],
+            }
+        return {"type": "abort", "context_id": context["context_id"], "reason": "not complete", "category": "policy"}
+
+    class CountingEvaluator(SharedTaskEvaluator):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def evaluate(self, task, observation):
+            self.calls += 1
+            return await super().evaluate(task, observation)
+
+    async def scenario() -> None:
+        observation = _world("artifact", False)
+        source = SurfaceObservation(
+            observation.observation_id,
+            "dom",
+            "revision:artifact",
+            ObservationSourceProfile.dom(),
+            artifacts={"receipt": {"path": "/private/receipt", "value": "raw-secret"}},
+        )
+        observation = replace(observation, sources=(source,))
+        evaluator = CountingEvaluator()
+        port = ScriptedStructuredDecisionPort(script)
+
+        result = await AgentEpisodeRunner(
+            AgentLoop(ModelBackedAgentPolicy(port), SharedActionEvaluator(), evaluator)
+        ).run(StaticEnvironment([observation]), _task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert evaluator.calls == 3
+        assert result.execution_count == 0
+        request = port.requests[0].serialized_context
+        assert "artifact:artifact:receipt" in request
+        assert "/private/receipt" not in request and "raw-secret" not in request
 
     asyncio.run(scenario())
 

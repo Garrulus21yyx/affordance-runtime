@@ -16,7 +16,7 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
-from affordance_runtime.agent.policy import AgentPolicy, TaskEvaluator
+from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.result import build_result, observation_budget_result
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus, Turn
@@ -64,8 +64,19 @@ async def run_policy_turn(
         context_generation=session.next_context_generation(),
     )
     session.current_context_snapshot = context
-    decision = await policy.decide(context)
+    outcome = await policy.decide(context)
     state.remaining_turns -= 1
+    if isinstance(outcome, PolicyFailure):
+        return build_result(
+            AgentLoopStatus.FAILED,
+            task,
+            state,
+            0,
+            0,
+            outcome.reason,
+            policy_failure=outcome,
+        )
+    decision = outcome
     if not accept_current_decision(session, decision):
         return None
     if isinstance(decision, AskUser):

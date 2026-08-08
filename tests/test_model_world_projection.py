@@ -10,6 +10,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.budgets import ContextProjectionBudget, serialized_size
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_boundary.world_projection import project_model_world
@@ -21,8 +22,10 @@ from affordance_runtime.world import (
     ActionSpaceBuilder,
     CoverageState,
     ObservationConflict,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
+    SurfaceObservation,
     WorldObservation,
 )
 
@@ -96,6 +99,40 @@ def test_progress_verified_facts_require_evaluation_evidence() -> None:
 
     assert tuple(item.fact_ref for item in context.progress.verified_public_facts) == ("fact:verified",)
     assert context.budgets.remaining_wait_ms == 120_000
+
+
+def test_model_artifact_view_exposes_resolvable_identity_but_not_private_value() -> None:
+    source = SurfaceObservation(
+        "surface:artifact",
+        "visual",
+        "revision:1",
+        ObservationSourceProfile.visual(),
+        artifacts={"receipt": {"path": "/private/receipt.pdf", "credential": "secret"}},
+    )
+    observation = WorldObservation(
+        "world:artifact",
+        (),
+        (),
+        (),
+        {"visual": CoverageState.COMPLETE},
+        sources=(source,),
+    )
+    task = TaskGoal("artifact", "Inspect receipt")
+    evaluation = TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.INCOMPLETE, "pending")
+
+    context = ContextBuilder().build(
+        task,
+        AgentLoopState(observation),
+        ActionSpace(observation.observation_id, ()),
+        evaluation,
+    )
+
+    artifact = context.world.artifact_summaries.items[0]
+    assert artifact.evidence_ref == "artifact:surface:artifact:receipt"
+    assert WorldEvidenceIndex.from_observation(observation).resolve(artifact.evidence_ref)
+    assert artifact.kind == "receipt"
+    assert "/private/receipt.pdf" not in repr(context)
+    assert "secret" not in repr(context)
 
 
 def test_target_state_filters_private_fields_before_applying_public_limit() -> None:

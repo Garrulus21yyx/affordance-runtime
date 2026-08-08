@@ -9,7 +9,7 @@ from typing import Any
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.evidence_refs import canonical_fact_ref
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 
 _MAX_STRING = 240
 _MAX_STATE_FIELDS = 8
@@ -84,11 +84,18 @@ class ObservationCapabilityView:
 
 
 @dataclass(frozen=True)
+class ModelArtifactView:
+    evidence_ref: str
+    kind: str
+    summary: str
+
+
+@dataclass(frozen=True)
 class ModelWorldView:
     targets: BoundedSection[ModelTargetView]
     facts: BoundedSection[PublicFactView]
     conflicts: BoundedSection[ConflictSummary]
-    artifact_summaries: BoundedSection[str]
+    artifact_summaries: BoundedSection[ModelArtifactView]
     sources: tuple[ObservationSourceSummary, ...] = ()
     observation_capabilities: tuple[ObservationCapabilityView, ...] = ()
 
@@ -125,13 +132,17 @@ def project_model_world(
         ConflictSummary(item.subject_id, _text(item.predicate), _text(item.summary))
         for item in observation.conflicts[: budget.max_conflicts]
     )
-    artifact_names = tuple(
-        _text(str(key))
+    artifacts = tuple(
+        ModelArtifactView(
+            canonical_artifact_ref(source.observation_id, str(key)),
+            _text(str(key)),
+            _text(f"{key} artifact available"),
+        )
         for source in observation.sources
         for key in source.artifacts
         if not _private_key(str(key))
     )
-    shown_artifacts = artifact_names[: budget.max_artifact_summaries]
+    shown_artifacts = artifacts[: budget.max_artifact_summaries]
     capabilities = tuple(
         sorted(_capabilities(observation))
     )
@@ -153,7 +164,7 @@ def project_model_world(
         _section(targets, len(observation.targets)),
         _section(tuple(projected_facts), len(observation.facts)),
         _section(conflicts, len(observation.conflicts)),
-        _section(shown_artifacts, len(artifact_names)),
+        _section(shown_artifacts, len(artifacts)),
         sources=source_summaries,
         observation_capabilities=tuple(
             ObservationCapabilityView(modality, assurance) for modality, assurance in capabilities

@@ -4,7 +4,8 @@ from dataclasses import dataclass, replace
 
 from test_agent_loop import SharedTaskEvaluator, _task, _world
 
-from affordance_runtime.agent import Abort, SelectAction
+from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy import (
@@ -13,6 +14,7 @@ from affordance_runtime.model_policy import (
     ModelMetadata,
     serialize_agent_context,
 )
+from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import ActionSpaceBuilder
 
 
@@ -120,7 +122,7 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
     asyncio.run(scenario())
 
 
-def test_invalid_provider_outputs_and_failures_map_to_bounded_internal_abort_without_retry() -> None:
+def test_provider_outputs_and_failures_are_distinct_from_model_authored_abort() -> None:
     outcomes = (
         ModelDecisionResponse("not-json"),
         ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False),
@@ -134,10 +136,42 @@ def test_invalid_provider_outputs_and_failures_map_to_bounded_internal_abort_wit
             port = ScriptedPort(outcome)
             decision = await ModelBackedAgentPolicy(port).decide(context)
 
-            assert isinstance(decision, Abort)
-            assert decision.context_id == context.context_id
-            assert decision.category == "internal"
+            assert isinstance(decision, PolicyFailure)
             assert port.calls == 1
             assert "credential" not in decision.reason
+
+    asyncio.run(scenario())
+
+
+def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("before", False)])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                ModelBackedAgentPolicy(ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))),
+                object(),
+                SharedTaskEvaluator(),
+            )
+        ).run(environment, _task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert result.policy_failure is not None
+        assert result.policy_failure.kind == ModelFailureKind.TIMEOUT
+        assert result.turns == ()
+        assert environment.executed_requests == []
+
+    asyncio.run(scenario())
+
+
+def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
+    async def scenario() -> None:
+        context = await _context()
+        raw = json.dumps(
+            {"type": "abort", "context_id": context.context_id, "reason": "stop", "category": "policy"}
+        )
+
+        decision = await ModelBackedAgentPolicy(ScriptedPort(ModelDecisionResponse(raw))).decide(context)
+
+        assert isinstance(decision, Abort)
 
     asyncio.run(scenario())

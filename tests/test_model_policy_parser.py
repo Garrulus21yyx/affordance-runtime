@@ -73,7 +73,7 @@ def test_strict_parser_returns_only_typed_decisions(payload, decision_type) -> N
     ("payload", "kind"),
     (
         ("not json", ModelFailureKind.INVALID_RESPONSE),
-        (json.dumps(["select_action"]), ModelFailureKind.SCHEMA_ERROR),
+        (json.dumps(["select_action"]), ModelFailureKind.INVALID_RESPONSE),
         (json.dumps({"type": "unknown", "context_id": "context:1"}), ModelFailureKind.SCHEMA_ERROR),
         (
             json.dumps({"type": "select_action", "context_id": "context:1", "action_id": "action:1", "parameters": {}}),

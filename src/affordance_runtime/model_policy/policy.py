@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from affordance_runtime.agent.decisions import Abort, AgentDecision
+from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse
@@ -28,7 +28,7 @@ _PUBLIC_FAILURES = {
 class ModelBackedAgentPolicy:
     port: StructuredDecisionModelPort
 
-    async def decide(self, context: AgentContext) -> AgentDecision:
+    async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
         try:
             request = _build_request(context)
             outcome = await self.port.generate(request)
@@ -37,13 +37,13 @@ class ModelBackedAgentPolicy:
         except Exception:
             outcome = ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "provider call failed", False)
         if isinstance(outcome, ModelFailure):
-            return _failure_abort(context.context_id, outcome)
+            return _policy_failure(outcome)
         if not isinstance(outcome, ModelDecisionResponse):
             failure = ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
-            return _failure_abort(context.context_id, failure)
+            return _policy_failure(failure)
         decision = parse_agent_decision(outcome.raw_payload, context.context_id)
         if isinstance(decision, ModelFailure):
-            return _failure_abort(context.context_id, decision)
+            return _policy_failure(decision)
         return decision
 
 
@@ -58,5 +58,5 @@ def _build_request(context: AgentContext) -> ModelDecisionRequest:
     )
 
 
-def _failure_abort(context_id: str, failure: ModelFailure) -> Abort:
-    return Abort(context_id, _PUBLIC_FAILURES[failure.kind], "internal")
+def _policy_failure(failure: ModelFailure) -> PolicyFailure:
+    return PolicyFailure(failure.kind, _PUBLIC_FAILURES[failure.kind], failure.retryable)
