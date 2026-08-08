@@ -31,3 +31,16 @@ def test_intent_context_is_context_only_and_bounded_for_model() -> None:
 def test_intent_excerpt_requires_stable_source_and_digest() -> None:
     with pytest.raises(ValueError):
         IntentExcerpt("text", IntentSourceKind.USER, "", "sha256:" + "a" * 64)
+
+
+def test_model_intent_source_metadata_is_opaque_and_canonical() -> None:
+    private_ref = "/home/user/private/request.txt?credential=secret"
+    intent = IntentContext(
+        (IntentExcerpt("bounded intent", IntentSourceKind.USER, private_ref, "internal-digest"),)
+    )
+
+    excerpt = project_intent_context(intent, ContextProjectionBudget()).excerpts.items[0]
+
+    assert excerpt.source_ref.startswith("source:")
+    assert private_ref not in repr(excerpt)
+    assert excerpt.digest.startswith("sha256:") and len(excerpt.digest) == 71

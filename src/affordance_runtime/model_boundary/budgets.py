@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
+DEFAULT_MAX_TOTAL_WAIT_MS = 120_000
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class ContextProjectionBudget:
     max_destinations_per_option: int = 16
     max_history_turns: int = 12
     max_artifact_summaries: int = 16
+    max_unresolved_items: int = 32
     max_total_serialized_bytes: int = 64 * 1024
 
     def __post_init__(self) -> None:

@@ -41,9 +41,15 @@ class AgentTaskView:
     material_bindings: BoundedSection[AgentMaterialBindingView] = field(
         default_factory=lambda: BoundedSection((), 0, False)
     )
+    public_inputs_total_count: int = 0
+    public_inputs_truncated: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
+        if self.public_inputs_total_count < len(self.public_inputs):
+            raise ValueError("public input total cannot be smaller than its projection")
+        if self.public_inputs_truncated != (self.public_inputs_total_count > len(self.public_inputs)):
+            raise ValueError("public input truncation metadata is untruthful")
 
 
 @dataclass(frozen=True)

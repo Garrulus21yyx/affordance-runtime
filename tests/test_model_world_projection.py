@@ -1,8 +1,15 @@
 from dataclasses import replace
 
+import pytest
+
 from affordance_runtime.agent import Abort
 from affordance_runtime.agent.state import AgentLoopState, Turn
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.model_boundary.budgets import ContextProjectionBudget, serialized_size
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_boundary.world_projection import project_model_world
@@ -49,6 +56,46 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
     representation = repr(view)
     for private in ("world:private-observation", "source:private", "selector", "#private", "conflict:private"):
         assert private not in representation
+
+
+def test_progress_verified_facts_require_evaluation_evidence() -> None:
+    observation = WorldObservation(
+        "world:progress",
+        (SemanticTarget("target:1", "status", "Status"),),
+        (
+            StateFact("fact:weak", "target:1", "weak", True, "source:1"),
+            StateFact("fact:verified", "target:1", "verified", True, "source:1"),
+        ),
+        (),
+        {"dom": CoverageState.COMPLETE},
+    )
+    criterion = {"criterion_id": "criterion:verified", "target_id": "target:1"}
+    task = TaskGoal("progress", "Inspect verified state", success_criteria=(criterion,))
+    evaluation = TaskEvaluation(
+        task.task_id,
+        observation.observation_id,
+        TaskEvaluationStatus.COMPLETE,
+        "validated",
+        criteria=(
+            CriterionEvaluation(
+                "criterion:verified",
+                CriterionEvaluationStatus.SATISFIED,
+                ("fact:verified",),
+                "supported",
+            ),
+        ),
+        completion_evidence_refs=("fact:verified",),
+    )
+
+    context = ContextBuilder().build(
+        task,
+        AgentLoopState(observation),
+        ActionSpace(observation.observation_id, ()),
+        evaluation,
+    )
+
+    assert tuple(item.fact_ref for item in context.progress.verified_public_facts) == ("fact:verified",)
+    assert context.budgets.remaining_wait_ms == 120_000
 
 
 def test_target_state_filters_private_fields_before_applying_public_limit() -> None:
@@ -201,7 +248,7 @@ def test_context_budget_limits_actions_and_destinations_truthfully() -> None:
     assert destinations.total_count == 7 and destinations.truncated
 
 
-def test_hidden_malformed_schema_does_not_break_current_page_projection() -> None:
+def test_malformed_schema_is_rejected_before_action_page_projection() -> None:
     observation = WorldObservation(
         "world:schema-page",
         (SemanticTarget("target:0", "button", "Target"),),
@@ -220,23 +267,8 @@ def test_hidden_malformed_schema_does_not_break_current_page_projection() -> Non
         ("binding:valid",),
         "valid",
     )
-    malformed = replace(valid, action_id="action:hidden", parameter_schema={"type": "array"})
-    task = TaskGoal("schema-page", "Inspect current page")
-    evaluation = TaskEvaluation(
-        task.task_id,
-        observation.observation_id,
-        TaskEvaluationStatus.INCOMPLETE,
-        "not complete",
-    )
-
-    context = ContextBuilder(ContextProjectionBudget(max_action_options=1)).build(
-        task,
-        AgentLoopState(observation),
-        ActionSpace(observation.observation_id, (valid, malformed)),
-        evaluation,
-    )
-
-    assert tuple(item.action_id for item in context.actions.options) == ("action:valid",)
+    with pytest.raises(ValueError, match="unsupported schema type"):
+        replace(valid, action_id="action:hidden", parameter_schema={"type": "array"})
 
 
 def test_current_page_targets_are_pinned_into_bounded_model_world() -> None:

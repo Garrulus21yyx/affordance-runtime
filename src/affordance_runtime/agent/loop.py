@@ -50,9 +50,7 @@ class AgentLoop:
     ) -> AgentRunSession:
         current = await environment.observe("initial task grounding")
         state = AgentLoopState(
-            current,
-            remaining_turns=task.loop_budget.max_turns,
-            recent_turn_limit=self.recent_turn_limit,
+            current, remaining_turns=task.loop_budget.max_turns, recent_turn_limit=self.recent_turn_limit
         )
         return AgentRunSession(self, task, environment, state, intent_context)
 
@@ -68,9 +66,7 @@ class AgentLoop:
         task, state = session.task, session.state
         while state.remaining_turns > 0:
             try:
-                task_evaluation = await validated_task_evaluation(
-                    self.task_evaluator, task, state.current_observation
-                )
+                task_evaluation = await validated_task_evaluation(self.task_evaluator, task, state.current_observation)
             except ValueError as exc:
                 return self._result(session, AgentLoopStatus.FAILED, str(exc))
             task_status = task_evaluation_loop_status(task_evaluation)
@@ -126,14 +122,23 @@ class AgentLoop:
         exact = next((item for item in candidates if item[1].subject_id == confirmed.subject_id), None)
         if exact is not None:
             selection = exact[0]
+            execution_page = self.context_builder.execution_page(
+                action_space,
+                session.state,
+                selection.action_id,
+                selection.destination_id,
+            )
+            session.current_action_space = action_space
+            session.current_action_page = execution_page
             context = self.context_builder.build(
                 session.task,
                 session.state,
                 action_space,
                 task_evaluation,
                 session.intent_context,
-                session.current_action_page,
+                execution_page,
                 observation_count=session.observation_count,
+                waited_ms=session.waited_ms,
                 context_generation=session.next_context_generation(),
             )
             session.current_context_snapshot = context

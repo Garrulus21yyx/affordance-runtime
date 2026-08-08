@@ -36,6 +36,7 @@ def project_task(task: TaskGoal) -> AgentTaskView:
         AgentSuccessCriterionView(criterion_id(item), _project_task_value(item))
         for item in task.success_criteria[:_MAX_ITEMS]
     )
+    public_inputs, public_input_count = _project_public_inputs(task.inputs)
     return AgentTaskView(
         task.task_id,
         _bounded_string(task.instruction, _MAX_INSTRUCTION),
@@ -45,8 +46,10 @@ def project_task(task: TaskGoal) -> AgentTaskView:
         _section(criteria, len(task.success_criteria)),
         _strings(task.requested_outputs),
         task.risk_profile,
-        _project_task_value(task.inputs),
+        public_inputs,
         _section(tuple(materials), len(task.material_bindings)),
+        public_input_count,
+        public_input_count > len(public_inputs),
     )
 
 
@@ -73,6 +76,15 @@ def _project_task_value(value: Any, depth: int = 0) -> Any:
             return "[TRUNCATED]"
         return [_project_task_value(item, depth + 1) for item in list(value)[:_MAX_ITEMS]]
     return project_public_value(value, depth)
+
+
+def _project_public_inputs(value: Mapping[str, object]) -> tuple[dict[str, object], int]:
+    safe_items = tuple((str(key), item) for key, item in value.items() if not _model_private_key(str(key)))
+    projected = {
+        key: _project_task_value(item, 1)
+        for key, item in safe_items[:_MAX_ITEMS]
+    }
+    return projected, len(safe_items)
 
 
 def _safe_public_reference(value: str) -> bool:

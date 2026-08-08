@@ -65,6 +65,37 @@ def test_destination_admission_requires_one_current_offered_semantic_id() -> Non
         )
 
 
+def test_nested_runtime_private_parameter_is_rejected() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "object",
+                "properties": {"body": {"type": "string"}},
+                "additionalProperties": True,
+            }
+        },
+        "additionalProperties": False,
+    }
+    option = _option(parameter_schema=schema, schema_digest=schema_digest(schema))
+
+    with pytest.raises(ValueError, match="runtime-private"):
+        ActionSpaceBuilder().admit(option, {"message": {"body": "ok", "href": "/private"}}, "person:alice")
+
+
+@pytest.mark.parametrize(
+    "schema",
+    (
+        {"type": "object", "properties": {}, "required": ["selector"], "additionalProperties": False},
+        {"type": "object", "properties": {"name": {"type": "array"}}, "additionalProperties": False},
+        {"type": "array"},
+    ),
+)
+def test_parameter_schema_contract_fails_closed_at_option_construction(schema) -> None:
+    with pytest.raises(ValueError):
+        _option(parameter_schema=schema, schema_digest="schema:invalid")
+
+
 def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None:
     option = _option()
     decision = SelectAction("context:test", option.action_id, {}, destination_id="person:alice")

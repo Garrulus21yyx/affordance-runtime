@@ -2,24 +2,100 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 _PRIVATE_PARAMETER_PARTS = frozenset(
     {"selector", "coordinate", "bbox", "point", "href", "method", "backend", "executor", "credential", "security"}
 )
+_SCHEMA_TYPES = frozenset({"object", "string", "boolean", "integer", "number"})
+_SCHEMA_KEYS = frozenset(
+    {"type", "properties", "required", "additionalProperties", "enum", "minimum", "maximum", "description"}
+)
+_MAX_DESCRIPTION = 240
+_MAX_ENUM_ITEMS = 12
+
+
+def validate_parameter_schema_contract(schema: Mapping[str, Any]) -> None:
+    """Validate the exact finite schema subset accepted at the action boundary."""
+
+    _validate_schema_node(schema, path="parameters", root=True)
 
 
 def validate_parameter_schema_names(schema: Mapping[str, Any], *, path: str = "parameters") -> None:
+    """Compatibility alias for the now-complete schema contract validation."""
+
+    _validate_schema_node(schema, path=path, root=path == "parameters")
+
+
+def reject_private_parameter_values(value: Any, *, path: str = "parameters") -> None:
+    if isinstance(value, Mapping):
+        for name, child in value.items():
+            if _private_name(str(name)):
+                raise ValueError(f"{path} contains a runtime-private execution field: {name}")
+            reject_private_parameter_values(child, path=f"{path}.{name}")
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        for index, child in enumerate(value):
+            reject_private_parameter_values(child, path=f"{path}[{index}]")
+
+
+def _validate_schema_node(schema: Mapping[str, Any], *, path: str, root: bool) -> None:
+    if not isinstance(schema, Mapping) or set(schema) - _SCHEMA_KEYS:
+        raise ValueError(f"{path} uses an unsupported schema shape")
+    schema_type = schema.get("type")
+    if schema_type not in _SCHEMA_TYPES or (root and schema_type != "object"):
+        raise ValueError(f"{path} uses unsupported schema type: {schema_type}")
+    description = schema.get("description")
+    if description is not None and (not isinstance(description, str) or len(description) > _MAX_DESCRIPTION):
+        raise ValueError(f"{path} description must be a bounded string")
+    if schema_type == "object":
+        _validate_object_schema(schema, path)
+    else:
+        _validate_primitive_schema(schema, path)
+
+
+def _validate_object_schema(schema: Mapping[str, Any], path: str) -> None:
     properties = schema.get("properties", {})
+    required = schema.get("required", ())
+    additional = schema.get("additionalProperties", False)
     if not isinstance(properties, Mapping):
-        return
+        raise ValueError(f"{path} properties must be an object")
+    if not isinstance(required, Sequence) or isinstance(required, str | bytes):
+        raise ValueError(f"{path} required must be a string array")
+    if any(not isinstance(item, str) for item in required) or len(set(required)) != len(required):
+        raise ValueError(f"{path} required must contain unique strings")
+    if not set(required).issubset(properties):
+        raise ValueError(f"{path} required must reference declared properties")
+    if not isinstance(additional, bool):
+        raise ValueError(f"{path} additionalProperties must be boolean")
     for name, child in properties.items():
-        normalized = str(name).casefold().replace("-", "_")
-        if _PRIVATE_PARAMETER_PARTS.intersection(normalized.split("_")):
+        if not isinstance(name, str) or not name or _private_name(name):
             raise ValueError(f"{path} contains a runtime-private parameter name: {name}")
-        if isinstance(child, Mapping):
-            validate_parameter_schema_names(child, path=f"{path}.{name}")
+        _validate_schema_node(child, path=f"{path}.{name}", root=False)
+
+
+def _validate_primitive_schema(schema: Mapping[str, Any], path: str) -> None:
+    if any(key in schema for key in ("properties", "required", "additionalProperties")):
+        raise ValueError(f"{path} primitive schema contains object fields")
+    enum = schema.get("enum")
+    if enum is not None:
+        if (
+            not isinstance(enum, Sequence)
+            or isinstance(enum, str | bytes)
+            or not 1 <= len(enum) <= _MAX_ENUM_ITEMS
+            or any(not isinstance(item, str | bool | int | float) for item in enum)
+        ):
+            raise ValueError(f"{path} enum must be a bounded scalar array")
+    for key in ("minimum", "maximum"):
+        if key in schema and (not isinstance(schema[key], int | float) or isinstance(schema[key], bool)):
+            raise ValueError(f"{path} {key} must be numeric")
+    if "minimum" in schema and "maximum" in schema and schema["minimum"] > schema["maximum"]:
+        raise ValueError(f"{path} numeric bounds are inconsistent")
+
+
+def _private_name(name: str) -> bool:
+    normalized = name.casefold().replace("-", "_")
+    return bool(_PRIVATE_PARAMETER_PARTS.intersection(normalized.split("_")))
 
 
 def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parameters") -> None:

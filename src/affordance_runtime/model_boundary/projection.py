@@ -92,6 +92,7 @@ def project_action_page(
             world,
             dict(page.relevance),
             max_destinations_per_option,
+            dict(page.visible_destinations),
         )
     )
 
@@ -102,6 +103,7 @@ def _project_action_options(
     world: AgentWorldView,
     relevance: Mapping[str, ActionRelevance],
     max_destinations_per_option: int,
+    visible_destinations: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[AgentActionOptionView, ...]:
     labels = {target.target_id: target.label for target in world.targets}
     by_id = {option.action_id: option for option in action_space.options}
@@ -115,7 +117,11 @@ def _project_action_options(
                 BoundedSection(
                     tuple(
                         AgentDestinationView(item, labels.get(item, item))
-                        for item in option.eligible_destination_ids[:max_destinations_per_option]
+                        for item in (
+                            visible_destinations.get(option.action_id, ())
+                            if visible_destinations is not None
+                            else option.eligible_destination_ids[:max_destinations_per_option]
+                        )
                     ),
                     len(option.eligible_destination_ids),
                     len(option.eligible_destination_ids) > max_destinations_per_option,

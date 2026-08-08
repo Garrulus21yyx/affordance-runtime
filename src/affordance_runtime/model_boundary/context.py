@@ -75,8 +75,8 @@ class AgentProgressView:
     active_objective: str
     validated_task_status: str
     verified_public_facts: tuple[PublicFactView, ...]
-    unresolved_criteria: tuple[str, ...]
-    unresolved_outputs: tuple[str, ...]
+    unresolved_criteria: BoundedSection[str]
+    unresolved_outputs: BoundedSection[str]
     truncated: bool = False
 
 
@@ -91,6 +91,7 @@ class AgentPendingView:
 class AgentBudgetView:
     remaining_turns: int
     remaining_observations: int
+    remaining_wait_ms: int
     section_truncation: Mapping[str, bool] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

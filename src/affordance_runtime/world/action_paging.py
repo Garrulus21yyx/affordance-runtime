@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.world.contracts import ActionOption, ActionSpace
+from affordance_runtime.world.page_cursor import cursor_fingerprint, decode_cursor, encode_cursor
 from affordance_runtime.world.relevance import ActionRelevance, ActionRelevancePolicy, ActionRelevanceRole
 
 _ROLE_ORDER = {
@@ -26,6 +26,7 @@ class InternalActionPage:
     page_id: str
     action_space_id: str
     visible_action_ids: tuple[str, ...]
+    visible_destinations: tuple[tuple[str, tuple[str, ...]], ...]
     total_count: int
     has_more: bool
     cursor: str = ""
@@ -39,6 +40,8 @@ class InternalActionPage:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "visible_action_ids", tuple(self.visible_action_ids))
+        destinations = tuple((action_id, tuple(items)) for action_id, items in self.visible_destinations)
+        object.__setattr__(self, "visible_destinations", destinations)
         object.__setattr__(self, "relevance", tuple(self.relevance))
         if self.offset < 0 or self.total_count < self.offset + len(self.visible_action_ids):
             raise ValueError("internal action page counts are inconsistent")
@@ -48,9 +51,14 @@ class InternalActionPage:
             raise ValueError("has_more requires a usable next cursor")
         if len(set(self.visible_action_ids)) != len(self.visible_action_ids):
             raise ValueError("internal action page IDs must be unique")
+        if tuple(action_id for action_id, _ in destinations) != self.visible_action_ids:
+            raise ValueError("internal action page destinations must bind every visible action")
+        if any(len(set(items)) != len(items) for _, items in destinations):
+            raise ValueError("internal action page destination IDs must be unique")
         if self.page_id != _page_id(
             self.action_space_id,
             self.visible_action_ids,
+            destinations,
             self.cursor,
             self.offset,
             self.query,
@@ -62,6 +70,9 @@ class InternalActionPage:
 
     def relevance_for(self, action_id: str) -> ActionRelevance | None:
         return next((item for candidate, item in self.relevance if candidate == action_id), None)
+
+    def visible_destination_ids(self, action_id: str) -> tuple[str, ...]:
+        return next((items for candidate, items in self.visible_destinations if candidate == action_id), ())
 
 
 @dataclass(frozen=True)
@@ -97,7 +108,7 @@ class ActionPager:
         if limit <= 0 or max_destinations_per_option <= 0 or max_targets <= 0:
             raise ValueError("paging limits must be positive")
         objective_digest = _objective_digest(objective)
-        fingerprint = _cursor_fingerprint(
+        fingerprint = cursor_fingerprint(
             action_space.action_space_id,
             query,
             target_id,
@@ -107,7 +118,7 @@ class ActionPager:
             max_destinations_per_option,
             max_targets,
         )
-        offset = _decode_cursor(cursor, fingerprint) if cursor else 0
+        offset = decode_cursor(cursor, fingerprint) if cursor else 0
         ranked = _ranked_options(action_space, objective, self.relevance_policy, query, target_id, role, labels)
         if offset > len(ranked):
             raise ValueError("action page cursor is outside the filtered result")
@@ -120,14 +131,19 @@ class ActionPager:
             self.max_projected_bytes,
         )
         visible_ids = tuple(item[1].action_id for item in visible)
+        visible_destinations = tuple(
+            (item[1].action_id, item[1].eligible_destination_ids[:max_destinations_per_option])
+            for item in visible
+        )
         next_offset = offset + len(visible)
         has_more = next_offset < len(ranked)
         if has_more and not visible:
             raise ValueError("action page budgets cannot represent the next option")
-        next_cursor = _encode_cursor(next_offset, fingerprint) if has_more else ""
+        next_cursor = encode_cursor(next_offset, fingerprint) if has_more else ""
         page_id = _page_id(
             action_space.action_space_id,
             visible_ids,
+            visible_destinations,
             cursor,
             offset,
             query,
@@ -136,25 +152,71 @@ class ActionPager:
             objective_digest,
         )
         return InternalActionPage(
-            page_id,
+            page_id=page_id,
+            action_space_id=action_space.action_space_id,
+            visible_action_ids=visible_ids,
+            visible_destinations=visible_destinations,
+            total_count=len(ranked),
+            has_more=has_more,
+            cursor=cursor,
+            next_cursor=next_cursor,
+            offset=offset,
+            query=query,
+            target_id=target_id,
+            relevance_role=role,
+            relevance=tuple((item[1].action_id, item[2]) for item in visible),
+            objective_digest=objective_digest,
+        )
+
+    def single_action_page(
+        self,
+        action_space: ActionSpace,
+        objective: LocalObjective | None,
+        action_id: str,
+        destination_id: str = "",
+        *,
+        max_destinations_per_option: int = 16,
+    ) -> InternalActionPage:
+        option = action_space.find(action_id)
+        if option is None:
+            raise ValueError("execution page action is absent from the current ActionSpace")
+        if destination_id and destination_id not in option.eligible_destination_ids:
+            raise ValueError("execution page destination is absent from the current ActionSpace")
+        visible_destinations = (
+            (destination_id,)
+            if destination_id
+            else option.eligible_destination_ids[:max_destinations_per_option]
+        )
+        objective_digest = _objective_digest(objective)
+        destinations = ((action_id, visible_destinations),)
+        relevance = self.relevance_policy.classify(option, objective)
+        page_id = _page_id(
             action_space.action_space_id,
-            visible_ids,
-            len(ranked),
-            has_more,
-            cursor,
-            next_cursor,
-            offset,
-            query,
-            target_id,
-            role,
-            tuple((item[1].action_id, item[2]) for item in visible),
+            (action_id,),
+            destinations,
+            "",
+            0,
+            "",
+            "",
+            None,
             objective_digest,
+        )
+        return InternalActionPage(
+            page_id=page_id,
+            action_space_id=action_space.action_space_id,
+            visible_action_ids=(action_id,),
+            visible_destinations=destinations,
+            total_count=1,
+            has_more=False,
+            relevance=((action_id, relevance),),
+            objective_digest=objective_digest,
         )
 
 
 def _page_id(
     action_space_id: str,
     visible_ids: tuple[str, ...],
+    visible_destinations: tuple[tuple[str, tuple[str, ...]], ...],
     cursor: str,
     offset: int,
     query: str,
@@ -167,6 +229,7 @@ def _page_id(
         cursor,
         offset,
         visible_ids,
+        visible_destinations,
         query.casefold(),
         target_id,
         role.value if role else "",
@@ -216,7 +279,7 @@ def _select_page_slice(
     projected_bytes = 0
     pinned_targets: set[str] = set()
     for item in ranked[offset : offset + limit]:
-        option_bytes = _projected_option_weight(item[1])
+        option_bytes = _projected_option_weight(item[1], max_destinations)
         if option_bytes > max_bytes:
             raise ValueError("single action option exceeds the page byte budget")
         option_targets = {item[1].target_id, *item[1].eligible_destination_ids[:max_destinations]}
@@ -228,7 +291,7 @@ def _select_page_slice(
     return visible
 
 
-def _projected_option_weight(option) -> int:
+def _projected_option_weight(option: ActionOption, max_destinations: int) -> int:
     payload = (
         option.action_id,
         option.semantic_action,
@@ -239,7 +302,7 @@ def _projected_option_weight(option) -> int:
         option.semantic_effects,
         option.risk,
         option.destination_required,
-        option.eligible_destination_ids,
+        option.eligible_destination_ids[:max_destinations],
         option.observation_barrier,
     )
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
@@ -251,45 +314,3 @@ def _objective_digest(objective: LocalObjective | None) -> str:
     payload = to_json_compatible(objective)
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return f"objective:{digest}"
-
-
-def _cursor_fingerprint(
-    action_space_id: str,
-    query: str,
-    target_id: str,
-    role: ActionRelevanceRole | None,
-    objective_digest: str,
-    limit: int,
-    max_destinations: int,
-    max_targets: int,
-) -> str:
-    payload = (
-        action_space_id,
-        query.casefold(),
-        target_id,
-        role.value if role else "",
-        objective_digest,
-        limit,
-        max_destinations,
-        max_targets,
-    )
-    return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()[:24]
-
-
-def _encode_cursor(offset: int, fingerprint: str) -> str:
-    payload = json.dumps((offset, fingerprint), separators=(",", ":")).encode()
-    return "cursor:" + urlsafe_b64encode(payload).decode().rstrip("=")
-
-
-def _decode_cursor(cursor: str, expected_fingerprint: str) -> int:
-    if not cursor.startswith("cursor:"):
-        raise ValueError("action page cursor is malformed")
-    encoded = cursor.removeprefix("cursor:")
-    try:
-        payload = urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
-        offset, fingerprint = json.loads(payload)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("action page cursor is malformed") from exc
-    if not isinstance(offset, int) or offset < 0 or fingerprint != expected_fingerprint:
-        raise ValueError("action page cursor does not match the active filter")
-    return offset

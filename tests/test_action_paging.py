@@ -13,6 +13,7 @@ from affordance_runtime.agent import (
     SelectAction,
 )
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task import LocalObjective, LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
@@ -105,6 +106,23 @@ def test_single_oversized_option_fails_closed_instead_of_bypassing_byte_budget()
         ActionPager(max_projected_bytes=100).page(ActionSpace("obs:1", (option,)))
 
 
+def test_page_weight_counts_only_model_visible_destination_slice() -> None:
+    destinations = tuple(f"destination:{index:04}" for index in range(500))
+    option = replace(
+        _option(0),
+        destination_required=True,
+        eligible_destination_ids=destinations,
+    )
+
+    page = ActionPager(max_projected_bytes=600).page(
+        ActionSpace("obs:1", (option,)),
+        max_destinations_per_option=1,
+    )
+
+    assert page.visible_action_ids == (option.action_id,)
+    assert page.visible_destination_ids(option.action_id) == (destinations[0],)
+
+
 def test_empty_filtered_page_is_not_a_truncated_page() -> None:
     page = ActionPager(page_size=1).page(
         ActionSpace("obs:1", (_option(0),)),
@@ -130,7 +148,11 @@ def test_action_page_filters_are_exact_and_page_identity_binds_visible_membershi
     assert info_page.visible_action_ids == ("action:01",)
     assert len({target_page.page_id, query_page.page_id, info_page.page_id}) == 3
     with pytest.raises(ValueError, match="identity"):
-        replace(target_page, visible_action_ids=("action:00",))
+        replace(
+            target_page,
+            visible_action_ids=("action:00",),
+            visible_destinations=(("action:00", ()),),
+        )
 
 
 def test_default_page_ranks_direct_enabling_information_then_other() -> None:
@@ -325,6 +347,44 @@ def test_next_page_action_is_selectable_and_model_sees_active_cursor_state() -> 
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("mode", ("forged", "filter_change", "previous"))
+def test_page_cursor_requires_exact_current_continuation(mode: str) -> None:
+    before = _two_action_world("before", False)
+
+    class Policy:
+        calls = 0
+        first_cursor = ""
+
+        async def decide(self, context):
+            self.calls += 1
+            cursor = context.actions.next_cursor
+            if self.calls == 1:
+                self.first_cursor = cursor
+                if mode == "forged":
+                    return RequestActionPage(context.context_id, cursor=cursor + "forged")
+                if mode == "filter_change":
+                    return RequestActionPage(context.context_id, query="other", cursor=cursor)
+                return RequestActionPage(context.context_id, cursor=cursor)
+            return RequestActionPage(context.context_id, cursor=self.first_cursor)
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([before])
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                context_builder=ContextBuilder(pager=ActionPager(page_size=1)),
+            )
+        ).run(environment, _paging_task())
+
+        assert result.status == AgentLoopStatus.BLOCKED
+        assert result.execution_count == 0
+        assert environment.executed_requests == []
+
+    asyncio.run(scenario())
+
+
 def test_previous_page_action_is_rejected_even_with_current_context_id() -> None:
     before = _two_action_world("before", False)
 
@@ -376,5 +436,50 @@ def test_objective_change_rebuilds_relevance_page_and_context_identity() -> None
         assert before_context.context_id != after_context.context_id
         assert after_page.visible_action_ids[0] == space.options[1].action_id
         assert after_page.relevance_for(space.options[1].action_id).role == ActionRelevanceRole.DIRECT
+
+    asyncio.run(scenario())
+
+
+def test_confirmed_hidden_action_gets_a_coherent_private_execution_page() -> None:
+    def medium_world(identity: str, enabled: bool):
+        world = _two_action_world(identity, enabled)
+        return replace(world, bindings=tuple(replace(item, risk=ActionRisk.MEDIUM) for item in world.bindings))
+
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if self.calls == 1:
+                return RequestActionPage(context.context_id, target_id="z-other-toggle")
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    async def scenario() -> None:
+        task = replace(_paging_task(), risk_profile=RiskProfile.MEDIUM)
+        environment = StaticEnvironment(
+            [medium_world("before", False), medium_world("fresh", False), medium_world("after", True)],
+            [_sent()],
+        )
+        session = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                context_builder=ContextBuilder(pager=ActionPager(page_size=1)),
+            )
+        ).start(environment, task)
+        paused = await session.run_until_pause()
+        request = paused.confirmation_request
+        assert request is not None
+
+        completed = await session.resolve_confirmation(
+            ConfirmationDecision(request.confirmation_id, request.subject_id, ConfirmationDecisionKind.CONFIRM)
+        )
+
+        assert completed.status == AgentLoopStatus.DONE
+        executed = environment.executed_requests[0]
+        assert executed.context_id == session.current_context_snapshot.context_id
+        assert executed.selection.action_id in session.current_action_page.visible_action_ids
+        assert session.current_action_page.total_count == 1
 
     asyncio.run(scenario())

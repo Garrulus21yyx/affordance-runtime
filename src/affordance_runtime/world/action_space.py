@@ -22,7 +22,7 @@ from affordance_runtime.world.contracts import (
     WorldObservation,
     validate_selected_destination,
 )
-from affordance_runtime.world.schema_validation import validate_value
+from affordance_runtime.world.schema_validation import reject_private_parameter_values, validate_value
 
 _FORBIDDEN_PARAMETER_KEYS = frozenset(
     {
@@ -119,6 +119,7 @@ class ActionSpaceBuilder:
     def validate_parameters(self, option: ActionOption, parameters: dict[str, Any]) -> None:
         if _FORBIDDEN_PARAMETER_KEYS.intersection(parameters):
             raise ValueError("policy parameters contain runtime-private execution fields")
+        reject_private_parameter_values(parameters)
         validate_value(parameters, option.parameter_schema)
 
     def admit(

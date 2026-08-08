@@ -217,13 +217,11 @@ def test_unsupported_schema_type_fails_closed() -> None:
         TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW),
         _world(),
     ).options[0]
-    unsupported = replace(
-        option,
-        parameter_schema={"type": "object", "properties": {"items": {"type": "array"}}},
-    )
-
     with pytest.raises(ValueError, match="unsupported schema type"):
-        ActionSpaceBuilder().validate_parameters(unsupported, {"items": []})
+        replace(
+            option,
+            parameter_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+        )
 
 
 def test_page_metadata_cannot_grant_effect_or_lower_runtime_risk() -> None:

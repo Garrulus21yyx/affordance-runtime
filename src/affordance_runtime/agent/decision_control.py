@@ -21,7 +21,7 @@ from affordance_runtime.agent.result import build_result, observation_budget_res
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus, Turn
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
-from affordance_runtime.agent.waiting import WaitController
+from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
@@ -60,6 +60,7 @@ async def run_policy_turn(
         session.intent_context,
         session.current_action_page,
         observation_count=session.observation_count,
+        waited_ms=session.waited_ms,
         context_generation=session.next_context_generation(),
     )
     session.current_context_snapshot = context
@@ -88,38 +89,17 @@ async def run_policy_turn(
     if isinstance(decision, Wait):
         if not _can_observe(session):
             return observation_budget_result(task, state, 0, 0)
-        if session.waited_ms + decision.max_wait_ms > 120_000:
+        if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
             state.append_turn(Turn(state.current_observation.observation_id, decision, decision_result="wait_budget_exceeded"))
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "total wait budget exhausted")
         await waiter.wait(decision.max_wait_ms)
         session.waited_ms += decision.max_wait_ms
         return await _fresh_observation(session, decision, "fresh observation after wait")
     if isinstance(decision, RequestActionPage):
-        previous_page_id = session.current_action_page.page_id if session.current_action_page else ""
-        try:
-            session.current_action_page = context_builder.page(
-                action_space,
-                state,
-                query=decision.query,
-                target_id=decision.target_id,
-                relevance_role=decision.relevance_role,
-                cursor=decision.cursor,
-            )
-        except ValueError:
-            return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "invalid action page request")
-        result = "page_unchanged" if session.current_action_page.page_id == previous_page_id else "page_changed"
-        state.append_turn(Turn(state.current_observation.observation_id, decision, decision_result=result))
-        return None
-    page = session.current_action_page
-    if page is None or decision.action_id not in page.visible_action_ids:
-        return build_result(
-            AgentLoopStatus.BLOCKED,
-            task,
-            state,
-            0,
-            0,
-            "policy selected outside the current action page",
-        )
+        return _request_action_page(session, action_space, context_builder, decision)
+    rejection = _current_page_selection_rejection(session, decision)
+    if rejection:
+        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, rejection)
     return await execute_selection(session, action_space, decision)
 
 
@@ -172,3 +152,53 @@ async def _propose_done(
 
 def _can_observe(session: AgentRunSession) -> bool:
     return session.observation_count < session.task.loop_budget.max_observations
+
+
+def _valid_page_request(session: AgentRunSession, decision: RequestActionPage) -> bool:
+    if not decision.cursor:
+        return True
+    page = session.current_action_page
+    if page is None or decision.cursor != page.next_cursor:
+        return False
+    role = page.relevance_role.value if page.relevance_role else ""
+    return (
+        decision.query == page.query
+        and decision.target_id == page.target_id
+        and decision.relevance_role == role
+    )
+
+
+def _request_action_page(
+    session: AgentRunSession,
+    action_space: ActionSpace,
+    context_builder: ContextBuilder,
+    decision: RequestActionPage,
+) -> object | None:
+    if not _valid_page_request(session, decision):
+        return build_result(AgentLoopStatus.BLOCKED, session.task, session.state, 0, 0, "invalid action page request")
+    previous_page_id = session.current_action_page.page_id if session.current_action_page else ""
+    try:
+        session.current_action_page = context_builder.page(
+            action_space,
+            session.state,
+            query=decision.query,
+            target_id=decision.target_id,
+            relevance_role=decision.relevance_role,
+            cursor=decision.cursor,
+        )
+    except ValueError:
+        return build_result(AgentLoopStatus.BLOCKED, session.task, session.state, 0, 0, "invalid action page request")
+    result = "page_unchanged" if session.current_action_page.page_id == previous_page_id else "page_changed"
+    session.state.append_turn(
+        Turn(session.state.current_observation.observation_id, decision, decision_result=result)
+    )
+    return None
+
+
+def _current_page_selection_rejection(session: AgentRunSession, decision: SelectAction) -> str:
+    page = session.current_action_page
+    if page is None or decision.action_id not in page.visible_action_ids:
+        return "policy selected outside the current action page"
+    if decision.destination_id and decision.destination_id not in page.visible_destination_ids(decision.action_id):
+        return "policy selected a destination outside the current action page"
+    return ""

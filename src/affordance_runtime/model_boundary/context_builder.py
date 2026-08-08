@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
-from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.model_boundary.budgets import (
+    DEFAULT_MAX_TOTAL_WAIT_MS,
+    BoundedSection,
+    ContextProjectionBudget,
+    serialized_size,
+)
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
@@ -50,6 +57,7 @@ class ContextBuilder:
         intent_context: IntentContext | None = None,
         action_page: InternalActionPage | None = None,
         observation_count: int = 1,
+        waited_ms: int = 0,
         context_generation: int = 0,
     ) -> AgentContext:
         default_page = self.page(action_space, state)
@@ -97,7 +105,7 @@ class ContextBuilder:
             identity.context_id,
             project_task(task),
             project_intent_context(intent_context, self.budget),
-            _progress_view(task, state, task_evaluation, world.facts.items),
+            _progress_view(task, state, task_evaluation, world.facts.items, self.budget.max_unresolved_items),
             world,
             actions,
             BoundedSection(history_items, len(state.recent_turns), truncation["history"]),
@@ -105,6 +113,7 @@ class ContextBuilder:
             AgentBudgetView(
                 state.remaining_turns,
                 max(0, task.loop_budget.max_observations - observation_count),
+                max(0, DEFAULT_MAX_TOTAL_WAIT_MS - waited_ms),
                 truncation,
             ),
             DecisionMode.ACT,
@@ -135,6 +144,21 @@ class ContextBuilder:
             max_targets=self.budget.max_targets,
         )
 
+    def execution_page(
+        self,
+        action_space: ActionSpace,
+        state: AgentLoopState,
+        action_id: str,
+        destination_id: str = "",
+    ) -> InternalActionPage:
+        return self.pager.single_action_page(
+            action_space,
+            state.active_objective,
+            action_id,
+            destination_id,
+            max_destinations_per_option=self.budget.max_destinations_per_option,
+        )
+
 
 def project_intent_context(
     intent: IntentContext | None,
@@ -146,7 +170,11 @@ def project_intent_context(
     items = []
     for excerpt in excerpts[: budget.max_intent_excerpts]:
         text = excerpt.text[:per_excerpt]
-        items.append(IntentExcerptView(text, excerpt.source_kind, excerpt.source_ref[:240], excerpt.digest[:240]))
+        source_id = f"source:{hashlib.sha256(excerpt.source_ref.encode()).hexdigest()}"
+        digest = excerpt.digest.casefold()
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+            digest = f"sha256:{hashlib.sha256(excerpt.text.encode()).hexdigest()}"
+        items.append(IntentExcerptView(text, excerpt.source_kind, source_id, digest))
     return IntentContextView(BoundedSection(tuple(items), len(excerpts), len(items) < len(excerpts)))
 
 
@@ -177,7 +205,7 @@ def _pinned_targets(actions, state, limit: int) -> tuple[str, ...]:
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
 
-def _progress_view(task, state, evaluation, facts) -> AgentProgressView:
+def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> AgentProgressView:
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}
     unresolved = tuple(
         criterion_id(item)
@@ -187,14 +215,29 @@ def _progress_view(task, state, evaluation, facts) -> AgentProgressView:
     objective = ""
     if state.active_objective is not None:
         objective = str(project_public_value(state.active_objective.desired_state))[:240]
+    unresolved_outputs = tuple(
+        item for item in task.requested_outputs if item not in {output.output_id for output in evaluation.outputs}
+    )
+    evidence_refs = {
+        *evaluation.completion_evidence_refs,
+        *(ref for item in evaluation.criteria for ref in item.evidence_refs),
+        *(ref for item in evaluation.outputs for ref in item.evidence_refs),
+    }
+    verified = tuple(item for item in facts if item.fact_ref in evidence_refs)
     return AgentProgressView(
-        project_plan(state.plan),
-        objective,
-        evaluation.status,
-        tuple(facts),
-        unresolved,
-        tuple(item for item in task.requested_outputs if item not in {output.output_id for output in evaluation.outputs}),
-        False,
+        plan_summary=project_plan(state.plan),
+        active_objective=objective,
+        validated_task_status=evaluation.status,
+        verified_public_facts=verified,
+        unresolved_criteria=BoundedSection(
+            unresolved[:max_unresolved], len(unresolved), len(unresolved) > max_unresolved
+        ),
+        unresolved_outputs=BoundedSection(
+            unresolved_outputs[:max_unresolved],
+            len(unresolved_outputs),
+            len(unresolved_outputs) > max_unresolved,
+        ),
+        truncated=len(unresolved) > max_unresolved or len(unresolved_outputs) > max_unresolved,
     )
 
 
