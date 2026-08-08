@@ -111,12 +111,16 @@ reference:
     lifecycle: current
   - role: world_interaction_migration_review_snapshot
     path: docs/reviews/2026-08-08-world-interaction-migration-review.md
-    lifecycle: current
+    lifecycle: immutable_record
+    superseded_by: docs/reviews/2026-08-08-p5-c1-2-exact-selection-closure.md
   - role: p5_dom_vertical_implementation_record
     path: docs/reviews/2026-08-08-p5-dom-vertical-slice.md
     lifecycle: current
   - role: p5_c1_1_correctness_closure
     path: docs/reviews/2026-08-08-p5-c1-1-correctness-closure.md
+    lifecycle: current
+  - role: p5_c1_2_exact_selection_closure
+    path: docs/reviews/2026-08-08-p5-c1-2-exact-selection-closure.md
     lifecycle: current
 
 immutable_records:

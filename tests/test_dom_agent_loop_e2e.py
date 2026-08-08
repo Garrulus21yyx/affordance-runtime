@@ -55,8 +55,7 @@ def _run_immediate(coroutine):
 def test_real_browser_dom_short_loop_completes_with_one_semantic_action() -> None:
     html = """
     <!doctype html><html><body><main>
-      <button id="shared" data-runtime-effect-class="shared_state_enabled"
-              onclick="this.textContent='Shared state enabled'">Enable shared state</button>
+      <button id="shared" onclick="this.textContent='Shared state enabled'">Enable shared state</button>
     </main></body></html>
     """
     session = BrowserSession.launch("data:text/html," + quote(html), lease_ttl_ms=30_000)
@@ -76,6 +75,7 @@ def test_real_browser_dom_short_loop_completes_with_one_semantic_action() -> Non
         assert result.status == AgentLoopStatus.DONE
         assert result.observation_count == 2
         assert result.execution_count == 1
+        assert result.currentness_probe_count == 1
         assert len(result.turns) == 1
         assert result.turns[0].before_observation_id != result.turns[0].after_observation_id
         assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE

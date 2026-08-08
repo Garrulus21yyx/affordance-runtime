@@ -7,8 +7,10 @@
 
 ## Result
 
-The single-DOM vertical remains non-default, but its contracts are now ready
-for the next single-surface adapters. No Visual or WoT SurfaceAdapter was added.
+The single-DOM vertical remains non-default. This record closed source/world
+identity but did not yet close exact option-to-binding fidelity or Runtime-owned
+effect/risk classification; those follow in the C1.2/B1.2 record. No Visual or
+WoT SurfaceAdapter was added.
 
 - ActionBinding retains world observation, source observation, source revision,
   and target fingerprint identities. Multi-adapter currentness never rewrites a
@@ -46,7 +48,7 @@ with `--runxfail` so a future marker cannot conceal failure.
 
 ```text
 single_DOM_minimum: CLOSED
-task_aware_legality: CLOSED_FOR_CURRENT_EFFECT_METADATA
+task_aware_legality: PARTIAL_AT_THIS_REVISION
 multi_source_identity_currentness: CLOSED
 Visual_surface_vertical: NOT_STARTED
 WoT_surface_vertical: NOT_STARTED

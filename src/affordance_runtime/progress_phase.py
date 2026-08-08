@@ -334,6 +334,7 @@ class ProgressStage:
             verification_passed=report.passed,
             effect_satisfied=verification_satisfies_effect(report),
             post_page_revision=post_snapshot.observation.page_revision,
+            attempt_id=action.execution_attempt.attempt_id,
         )
         verification_ref = self._write_verification(stage_input.envelope.task_id, state.step_count, report)
         if verification_ref is not None:

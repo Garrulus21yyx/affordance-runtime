@@ -8,6 +8,8 @@ from typing import Any
 
 def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parameters") -> None:
     expected = schema.get("type")
+    if expected is not None and expected not in {"object", "string", "boolean", "integer", "number"}:
+        raise ValueError(f"{path} uses unsupported schema type: {expected}")
     if expected == "object":
         if not isinstance(value, Mapping):
             raise ValueError(f"{path} must be an object")

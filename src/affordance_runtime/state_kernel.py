@@ -103,6 +103,7 @@ class RecentActionOutcomeRecord(NamedTuple):
     verification_passed: bool
     effect_satisfied: bool
     post_page_revision: str
+    attempt_id: str
 
 
 @dataclass
@@ -124,10 +125,16 @@ class RecentActionOutcomeIndex:
         verification_passed: bool,
         effect_satisfied: bool,
         post_page_revision: str = "",
+        attempt_id: str = "",
     ) -> None:
         self.records.append(
             RecentActionOutcomeRecord(
-                key, post_environment_revision, verification_passed, effect_satisfied, post_page_revision
+                key,
+                post_environment_revision,
+                verification_passed,
+                effect_satisfied,
+                post_page_revision,
+                attempt_id,
             )
         )
         if len(self.records) > self.capacity:
@@ -215,6 +222,7 @@ class StateKernel:
         verification_passed: bool,
         effect_satisfied: bool | None = None,
         post_page_revision: str = "",
+        attempt_id: str = "",
     ) -> None:
         self.recent_action_outcomes.record(
             ActionKey.from_signature(signature),
@@ -222,6 +230,7 @@ class StateKernel:
             verification_passed=verification_passed,
             effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
             post_page_revision=post_page_revision,
+            attempt_id=attempt_id,
         )
         self.version += 1
 
@@ -239,6 +248,8 @@ class StateKernel:
         verified_absence = bool(
             self.latest_effect_settlement
             and self.latest_effect_settlement.status.value == "not_occurred"
+            and previous.attempt_id
+            and self.latest_effect_settlement.attempt_id == previous.attempt_id
         )
         if (
             not previous.verification_passed

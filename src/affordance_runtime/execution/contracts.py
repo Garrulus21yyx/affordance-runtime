@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from affordance_runtime.immutable import freeze_json
 
 if TYPE_CHECKING:
-    from affordance_runtime.world.contracts import ActionBinding
+    from affordance_runtime.world.contracts import ActionBinding, AdmittedActionSelection
 
 
 class DispatchStatus(StrEnum):
@@ -45,6 +45,7 @@ class BoundActionRequest:
     request_id: str
     world_observation_id: str
     intent: ActionIntent
+    selection: AdmittedActionSelection
     binding: ActionBinding
     timeout_ms: int = 5_000
 
@@ -53,6 +54,16 @@ class BoundActionRequest:
             raise ValueError("bound request must identify its binding observation")
         if self.intent.target_id != self.binding.target_id:
             raise ValueError("intent target does not match binding target")
+        if (
+            self.selection.observation_id != self.world_observation_id
+            or self.selection.action_id.strip() == ""
+            or self.binding.binding_id not in self.selection.eligible_binding_ids
+            or self.selection.semantic_action != self.binding.semantic_action
+            or self.selection.target_id != self.binding.target_id
+            or self.selection.effect_category != self.binding.effect_category
+            or self.selection.semantic_effects != self.binding.semantic_effects
+        ):
+            raise ValueError("bound request must retain its admitted option and binding group")
         if self.timeout_ms <= 0:
             raise ValueError("timeout must be positive")
 

@@ -23,8 +23,8 @@ The target path now has:
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
 | TaskPlan / Milestone / LocalObjective contracts | `INTEGRATED_NON_DEFAULT` (no model planner) |
-| WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; task-aware legality and source/world currentness closed |
-| ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT` |
+| WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
+| ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded Turn state | `INTEGRATED_NON_DEFAULT` |
 | SurfaceAdapter / UnifiedWorldEnvironment | complete for single-DOM minimum; multi-source identity/currentness closed, semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
@@ -38,7 +38,8 @@ The target path now has:
 | default product cutover | `NOT_STARTED` |
 
 The live DOM proof uses one `TaskGoal`, a deterministic policy selecting an
-offered action ID, a selector-private DOM binding, one execution, a fresh
+offered action ID, an exact eligible-binding group, a selector-private DOM
+binding, one execution, one measured live currentness probe, a fresh
 observation, and an independent `TaskEvaluator` completion decision. The new
 loop does not import or call the old Coordinator, StateKernel, RuntimeCommitter,
 ActionContract, or ExecutionReceipt.
@@ -60,12 +61,16 @@ ActionContract, or ExecutionReceipt.
 ## Proof and remaining gates
 
 Focused target tests cover source/world/fingerprint stale zero-call, task-forbidden
-effect filtering, result lineage, schema values, observation budget, unknown
+effect filtering, higher-confidence forbidden-route exclusion, distinct schema
+route identity, Runtime-owned risk floors, result lineage, schema values and
+unsupported-type rejection, observation/probe budgets, unknown
 no-retry, initial zero-op
 completion, finish-proposal rejection, receipt/effect separation, private
 parameter rejection, observation identity freshness, low-risk-only admission,
 bounded turns, and real Chromium DOM completion.
 
-The new-loop DOM/Visual/WoT positive matrix is not complete. Semantic fusion and
-route selection across simultaneous sources remain future work. External full-agent
+The instrumented and plain-DOM minimum is closed; generic business-effect
+classification beyond the current coarse categories remains future work. The
+new-loop DOM/Visual/WoT positive matrix is not complete. Semantic fusion across
+simultaneous sources remains future work. External full-agent
 benchmarks remain blocked. Old-core deletion is not admitted.

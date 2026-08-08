@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field
 
-from affordance_runtime.execution import ActionIntent, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.execution import ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ActionBinder,
@@ -41,10 +41,12 @@ class SequencedAdapter:
             source_revision=revision,
             target_fingerprint=f"{source_id}:fingerprint",
             target_id=target_id,
+            source_target_id=target_id,
             surface=self.surface,
             executor_id=self.surface,
             semantic_action="activate",
             primitive_action="click",
+            effect_category="local_reversible",
             semantic_effects=("shared_state_enabled",),
             parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
             payload={"private": source_id},
@@ -81,7 +83,7 @@ def test_multi_adapter_old_binding_cannot_be_relabelled_as_current() -> None:
         await environment.reset(task)
         old = await environment.observe("old")
         option = ActionSpaceBuilder().build(task, old).options[0]
-        request = ActionBinder().bind(ActionIntent(option.semantic_action, option.target_id), old)
+        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old)
 
         await environment.observe("new")
         result = await environment.execute(request)
@@ -90,5 +92,31 @@ def test_multi_adapter_old_binding_cannot_be_relabelled_as_current() -> None:
         assert result.dispatch_status == DispatchStatus.NOT_SENT
         assert dom.executions == [] and wot.executions == []
         assert request.binding.source_observation_id.endswith(":obs:1")
+
+    asyncio.run(scenario())
+
+
+def test_reset_invalidates_old_world_identity_before_next_observation() -> None:
+    async def scenario() -> None:
+        adapter = SequencedAdapter("dom")
+        environment = UnifiedWorldEnvironment((adapter,))
+        task = TaskGoal(
+            "shared",
+            "Enable shared state",
+            allowed_effects=("shared_state_enabled",),
+            risk_profile=RiskProfile.LOW,
+        )
+        await environment.reset(task)
+        old = await environment.observe("old")
+        builder = ActionSpaceBuilder()
+        option = builder.build(task, old).options[0]
+        request = ActionBinder().bind(builder.admit(option, {}), old)
+
+        await environment.reset(task)
+        result = await environment.execute(request)
+
+        assert not environment.is_current(request)
+        assert result.dispatch_status == DispatchStatus.NOT_SENT
+        assert adapter.executions == []
 
     asyncio.run(scenario())

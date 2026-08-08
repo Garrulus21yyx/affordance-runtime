@@ -69,10 +69,12 @@ class ActionBinding:
     source_revision: str
     target_fingerprint: str
     target_id: str
+    source_target_id: str
     surface: str
     executor_id: str
     semantic_action: str
     primitive_action: str
+    effect_category: str
     semantic_effects: tuple[str, ...]
     parameter_schema: dict[str, Any]
     payload: dict[str, Any]
@@ -90,10 +92,12 @@ class ActionBinding:
             self.source_revision,
             self.target_fingerprint,
             self.target_id,
+            self.source_target_id,
             self.surface,
             self.executor_id,
             self.semantic_action,
             self.primitive_action,
+            self.effect_category,
         )
         if not all(value.strip() for value in required):
             raise ValueError("action binding requires world/source identity, fingerprint, and route")
@@ -166,7 +170,10 @@ class ActionOption:
     observation_id: str
     semantic_action: str
     target_id: str
+    effect_category: str
     parameter_schema: dict[str, Any]
+    schema_digest: str
+    eligible_binding_ids: tuple[str, ...]
     description: str
     semantic_effects: tuple[str, ...] = ()
     risk: ActionRisk = ActionRisk.LOW
@@ -175,10 +182,51 @@ class ActionOption:
     observation_barrier: bool = True
 
     def __post_init__(self) -> None:
-        if not all(value.strip() for value in (self.action_id, self.observation_id, self.semantic_action, self.target_id)):
+        if not all(
+            value.strip()
+            for value in (
+                self.action_id,
+                self.observation_id,
+                self.semantic_action,
+                self.target_id,
+                self.effect_category,
+                self.schema_digest,
+            )
+        ) or not self.eligible_binding_ids:
             raise ValueError("action option requires current semantic identity")
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
+        object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+
+
+@dataclass(frozen=True)
+class AdmittedActionSelection:
+    action_id: str
+    observation_id: str
+    semantic_action: str
+    target_id: str
+    effect_category: str
+    semantic_effects: tuple[str, ...]
+    schema_digest: str
+    eligible_binding_ids: tuple[str, ...]
+    risk: ActionRisk
+    observation_barrier: bool
+    parameters: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        required = (
+            self.action_id,
+            self.observation_id,
+            self.semantic_action,
+            self.target_id,
+            self.effect_category,
+            self.schema_digest,
+        )
+        if not all(value.strip() for value in required) or not self.eligible_binding_ids:
+            raise ValueError("admitted selection requires exact option and binding-group identity")
+        object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
+        object.__setattr__(self, "parameters", freeze_json(self.parameters))
 
 
 @dataclass(frozen=True)

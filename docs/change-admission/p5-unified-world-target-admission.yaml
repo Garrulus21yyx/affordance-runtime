@@ -3,8 +3,8 @@ decision_date: 2026-08-08
 base_revision: 1336d6c5ac3c2c585ad9b885d0a0e0a2d4d8ea90
 change_type: architecture_direction_and_non_default_vertical
 agent_mode: single_agent
-production_behavior_change: false
-default_path_change: none
+production_behavior_change: baseline_bug_fix_only
+default_path_change: attempt_bound_verified_absence_progress_guard
 
 target_architecture:
   document: docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md
@@ -25,6 +25,9 @@ included:
   - symmetric SurfaceAdapter contract
   - non-default real DOM positive vertical
   - source/world identity and fingerprint currentness closure
+  - exact ActionOption to eligible ActionBinding selection
+  - runtime-owned coarse effect and risk classification
+  - single-probe DOM currentness and explicit probe metrics
 
 excluded:
   - Visual or WoT target vertical implementation

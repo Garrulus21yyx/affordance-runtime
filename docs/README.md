@@ -81,9 +81,10 @@ differently from Implementation Status, Implementation Status wins.
 - [Approval-gated export baseline scenario](scenarios/approval-gated-report-export.md)
 - [Legacy ActionContract digest threat model](security/action-contract-digest-threat-model.md)
 - [P5-0 entry-hardening baseline review](reviews/2026-08-07-p5-entry-hardening.md)
-- [World-Interaction migration latest review](reviews/2026-08-08-world-interaction-migration-review.md)
+- [World-Interaction migration review snapshot](reviews/2026-08-08-world-interaction-migration-review.md)
 - [P5-A/B/C1 Unified World and DOM implementation record](reviews/2026-08-08-p5-dom-vertical-slice.md)
 - [P5-C1.1/B1.1 correctness closure](reviews/2026-08-08-p5-c1-1-correctness-closure.md)
+- [P5-C1.2/B1.2 exact-selection closure](reviews/2026-08-08-p5-c1-2-exact-selection-closure.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

@@ -1,4 +1,5 @@
-from dataclasses import fields
+from dataclasses import fields, replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -6,13 +7,16 @@ from affordance_runtime.agent.decisions import Finish
 from affordance_runtime.execution.contracts import ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
+    ActionBinder,
     ActionBinding,
+    ActionRisk,
     ActionSpaceBuilder,
     CoverageState,
     SemanticTarget,
     WorldObservation,
     build_agent_world_view,
 )
+from affordance_runtime.world.action_classification import classify_dom_action
 from affordance_runtime.world.action_vocabulary import action_metadata
 
 
@@ -24,10 +28,12 @@ def _world() -> WorldObservation:
         source_revision="rev-1",
         target_fingerprint="fp-1",
         target_id="share-toggle",
+        source_target_id="share-toggle",
         surface="dom",
         executor_id="dom",
         semantic_action="activate",
         primitive_action="click",
+        effect_category="local_reversible",
         semantic_effects=("shared_state_enabled",),
         parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
         payload={"selector": "#shared", "credential": "never-policy-visible"},
@@ -110,14 +116,106 @@ def test_parameter_schema_validates_type_and_range(value: object) -> None:
         option.observation_id,
         "set_value",
         option.target_id,
+        option.effect_category,
         {
             "type": "object",
             "properties": {"value": {"type": "number", "minimum": 16, "maximum": 30}},
             "required": ["value"],
         },
+        option.schema_digest,
+        option.eligible_binding_ids,
         option.description,
         option.semantic_effects,
     )
 
     with pytest.raises(ValueError):
         ActionSpaceBuilder().validate_parameters(ranged, {"value": value})
+
+
+def test_selected_option_only_binds_its_exact_allowed_group() -> None:
+    allowed = replace(_world().bindings[0], binding_id="allowed", confidence=0.5)
+    forbidden = replace(
+        allowed,
+        binding_id="forbidden",
+        semantic_effects=("message_sent",),
+        confidence=0.99,
+    )
+    world = replace(_world(), bindings=(allowed, forbidden))
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        forbidden_effects=("message_sent",),
+        risk_profile=RiskProfile.LOW,
+    )
+    builder = ActionSpaceBuilder()
+    option = builder.build(task, world).options[0]
+
+    request = ActionBinder().bind(builder.admit(option, {}), world)
+
+    assert option.eligible_binding_ids == ("allowed",)
+    assert request.binding.binding_id == "allowed"
+
+
+def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
+    first = replace(
+        _world().bindings[0],
+        binding_id="string-route",
+        parameter_schema={
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+        },
+    )
+    second = replace(
+        first,
+        binding_id="number-route",
+        parameter_schema={
+            "type": "object",
+            "properties": {"value": {"type": "number"}},
+            "required": ["value"],
+        },
+    )
+    world = replace(_world(), bindings=(first, second))
+    task = TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW)
+    builder = ActionSpaceBuilder()
+    options = builder.build(task, world).options
+
+    assert len(options) == 2
+    assert len({option.action_id for option in options}) == 2
+    for option in options:
+        value = 1 if option.parameter_schema["properties"]["value"]["type"] == "number" else "one"
+        request = ActionBinder().bind(builder.admit(option, {"value": value}), world)
+        assert request.binding.binding_id == option.eligible_binding_ids[0]
+
+
+def test_unsupported_schema_type_fails_closed() -> None:
+    option = ActionSpaceBuilder().build(
+        TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW),
+        _world(),
+    ).options[0]
+    unsupported = replace(
+        option,
+        parameter_schema={"type": "object", "properties": {"items": {"type": "array"}}},
+    )
+
+    with pytest.raises(ValueError, match="unsupported schema type"):
+        ActionSpaceBuilder().validate_parameters(unsupported, {"items": []})
+
+
+def test_page_metadata_cannot_grant_effect_or_lower_runtime_risk() -> None:
+    task = TaskGoal("safe", "Perform safe update", allowed_effects=("safe_update",), risk_profile=RiskProfile.LOW)
+    claimed = SimpleNamespace(
+        role="link",
+        externality="external_system",
+        reversibility="reversible",
+        operation_ref="external.commit@v1",
+        effect_class="ungranted_effect",
+        risk=SimpleNamespace(value="low"),
+        risk_asserted=True,
+    )
+
+    classification = classify_dom_action(task, claimed, "activate")
+
+    assert classification.semantic_effects == ("safe_update",)
+    assert classification.risk == ActionRisk.HIGH

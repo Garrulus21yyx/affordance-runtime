@@ -25,6 +25,8 @@ class UnifiedWorldEnvironment:
             raise ValueError("surface adapter names must be unique")
 
     async def reset(self, task: TaskGoal) -> None:
+        self._source_observation_ids.clear()
+        self._world_observation_id = ""
         for adapter in self.adapters:
             await adapter.reset(task)
 
@@ -52,15 +54,11 @@ class UnifiedWorldEnvironment:
         )
 
     def is_current(self, request: BoundActionRequest) -> bool:
-        adapter = self._adapter(request.binding.surface)
-        if adapter is None:
-            return False
-        return (
+        return self._adapter(request.binding.surface) is not None and (
             request.world_observation_id == self._world_observation_id
             and request.binding.world_observation_id == self._world_observation_id
             and request.binding.source_observation_id
             == self._source_observation_ids.get(request.binding.surface, "")
-            and adapter.is_current(request)
         )
 
     async def execute(self, request: BoundActionRequest) -> ActionResult:

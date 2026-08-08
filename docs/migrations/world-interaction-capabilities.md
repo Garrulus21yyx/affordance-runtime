@@ -47,6 +47,14 @@ state authoritative in the current Runtime.
   remain distinct and immutable across multi-adapter currentness checks.
 - Unresolved WoT security produces unavailable source metadata and no
   executable write/invoke affordance; explicit `nosec` remains supported.
+- Every offered action names an opaque eligible-binding group and schema
+  digest; the Binder cannot escape that admitted group when ranking routes.
+- DOM page metadata is a hint only. Runtime-owned classification supplies the
+  effect category, risk floor, and observation barrier from TaskGoal and
+  surface semantics; authored values can only raise restrictions.
+- World identity is checked without physical acquisition, while DOM dispatch
+  owns one live target probe whose count is reported separately from full
+  observations.
 
 The older state-kernel/coordinator implementation remains temporarily available
 for compatibility and its existing benchmark evidence. The migrated AgentLoop

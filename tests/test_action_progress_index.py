@@ -4,6 +4,11 @@ import pytest
 
 import affordance_runtime.state_kernel as state_kernel
 from affordance_runtime.contracts import Observation
+from affordance_runtime.simplified_runtime_contracts import (
+    CollateralSettlementStatus,
+    EffectSettlement,
+    EffectSettlementStatus,
+)
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from runtime_test_support import remember_observation
 
@@ -69,3 +74,45 @@ def test_action_key_rejects_unstructured_legacy_signature() -> None:
     ActionKey = state_kernel.ActionKey
     with pytest.raises(ValueError, match="action progress signature"):
         ActionKey.from_signature("activate:checkbox-a")
+
+
+def test_unrelated_verified_absence_does_not_release_progress_guard() -> None:
+    state = StateKernel(task_id="task", goal="Click target")
+    remember_observation(state, Observation("env-1", snapshot_id="snapshot-1", page_revision="page-1"))
+    signature = _signature("activate", "target-a", {})
+    state.record_action_progress(
+        signature,
+        "env-1",
+        verification_passed=False,
+        effect_satisfied=False,
+        attempt_id="attempt-a",
+    )
+    state.latest_effect_settlement = EffectSettlement(
+        "attempt-b",
+        EffectSettlementStatus.NOT_OCCURRED,
+        ("evidence-b",),
+        CollateralSettlementStatus.UNRESOLVED,
+    )
+
+    assert state.check_progress_guard(signature) == ProgressGuardReason.NO_PROGRESS_REPEAT
+
+
+def test_matching_verified_absence_releases_progress_guard() -> None:
+    state = StateKernel(task_id="task", goal="Click target")
+    remember_observation(state, Observation("env-1", snapshot_id="snapshot-1", page_revision="page-1"))
+    signature = _signature("activate", "target-a", {})
+    state.record_action_progress(
+        signature,
+        "env-1",
+        verification_passed=False,
+        effect_satisfied=False,
+        attempt_id="attempt-a",
+    )
+    state.latest_effect_settlement = EffectSettlement(
+        "attempt-a",
+        EffectSettlementStatus.NOT_OCCURRED,
+        ("evidence-a",),
+        CollateralSettlementStatus.UNRESOLVED,
+    )
+
+    assert state.check_progress_guard(signature) is None

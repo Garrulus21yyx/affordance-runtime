@@ -1246,6 +1246,24 @@ class BrowserSession:
             task_instruction=profile.task_instruction,
         )
 
+    def probe_dom_target(self, source_target_id: str) -> tuple[str, str] | None:
+        """Return live DOM revision/fingerprint without a full observation capture."""
+
+        html = self._page.content()
+        url = self.url
+        dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
+        environment_revision = hashlib.sha256(f"{url}\0{dom_hash}".encode()).hexdigest()
+        model = self._dom.transduce(
+            html,
+            environment_revision=environment_revision,
+            page_id="agent-loop",
+            url=url,
+            snapshot_id="currentness-probe",
+            allow_offscreen=True,
+        )
+        target = next((item for item in model.affordances if item.id == source_target_id), None)
+        return (model.page_revision, target.target_fingerprint) if target is not None else None
+
     def screenshot(self, path: str | None = None) -> bytes:
         return self._page.screenshot(path=path) if path else self._page.screenshot()
 

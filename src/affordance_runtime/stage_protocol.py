@@ -111,7 +111,12 @@ class RuntimeStateSnapshot:
             return "effect_already_satisfied"
         settlement = getattr(self, "latest_effect_settlement", None)
         settlement_status = getattr(getattr(settlement, "status", None), "value", "")
-        verified_absence = settlement_status == "not_occurred"
+        settlement_attempt_id = str(getattr(settlement, "attempt_id", ""))
+        verified_absence = bool(
+            settlement_status == "not_occurred"
+            and previous.attempt_id
+            and settlement_attempt_id == previous.attempt_id
+        )
         if (
             not previous.verification_passed
             and previous.post_environment_revision == current_revision
@@ -159,6 +164,7 @@ class ProgressWorkingState:
         verification_passed: bool,
         effect_satisfied: bool | None = None,
         post_page_revision: str = "",
+        attempt_id: str = "",
     ) -> None:
         from affordance_runtime.state_kernel import ActionKey
 
@@ -169,6 +175,7 @@ class ProgressWorkingState:
             verification_passed=verification_passed,
             effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
             post_page_revision=post_page_revision,
+            attempt_id=attempt_id,
         )
 
     def transition(self, next_phase: str) -> None:

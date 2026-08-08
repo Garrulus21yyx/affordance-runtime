@@ -11,7 +11,14 @@ from typing import Any
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.task.planning_contracts import LocalObjective
-from affordance_runtime.world.contracts import ActionBinding, ActionOption, ActionRisk, ActionSpace, WorldObservation
+from affordance_runtime.world.contracts import (
+    ActionBinding,
+    ActionOption,
+    ActionRisk,
+    ActionSpace,
+    AdmittedActionSelection,
+    WorldObservation,
+)
 from affordance_runtime.world.schema_validation import validate_value
 
 _FORBIDDEN_PARAMETER_KEYS = frozenset({"selector", "coordinate", "coordinates", "backend", "endpoint", "href"})
@@ -27,20 +34,39 @@ class ActionSpaceBuilder:
     ) -> ActionSpace:
         del objective  # Reserved for desired-state narrowing; it never grants effects.
         conflicted_targets = {conflict.subject_id for conflict in observation.conflicts}
-        grouped: dict[tuple[str, str, tuple[str, ...], str], list[ActionBinding]] = {}
+        grouped: dict[tuple[str, str, str, tuple[str, ...], str], list[ActionBinding]] = {}
         for binding in observation.bindings:
             if binding.target_id in conflicted_targets:
                 continue
             if not _binding_is_current(binding, observation) or not _effects_allowed(task, binding):
                 continue
             schema_key = json.dumps(to_json_compatible(binding.parameter_schema), sort_keys=True, separators=(",", ":"))
-            key = (binding.target_id, binding.semantic_action, binding.semantic_effects, schema_key)
+            key = (
+                binding.target_id,
+                binding.semantic_action,
+                binding.effect_category,
+                binding.semantic_effects,
+                schema_key,
+            )
             grouped.setdefault(key, []).append(binding)
         options = []
-        for (target_id, action, effects, _), bindings in sorted(grouped.items()):
+        for (target_id, action, category, effects, schema_key), bindings in sorted(grouped.items()):
             risk = max((binding.risk for binding in bindings), key=_risk_rank)
+            schema_digest = "sha256:" + hashlib.sha256(schema_key.encode()).hexdigest()
+            eligible_binding_ids = tuple(sorted(binding.binding_id for binding in bindings))
             digest = hashlib.sha256(
-                json.dumps([observation.observation_id, target_id, action, effects], separators=(",", ":")).encode()
+                json.dumps(
+                    [
+                        observation.observation_id,
+                        target_id,
+                        action,
+                        category,
+                        effects,
+                        schema_digest,
+                        eligible_binding_ids,
+                    ],
+                    separators=(",", ":"),
+                ).encode()
             ).hexdigest()[:16]
             options.append(
                 ActionOption(
@@ -48,7 +74,10 @@ class ActionSpaceBuilder:
                     observation_id=observation.observation_id,
                     semantic_action=action,
                     target_id=target_id,
+                    effect_category=category,
                     parameter_schema=to_json_compatible(bindings[0].parameter_schema),
+                    schema_digest=schema_digest,
+                    eligible_binding_ids=eligible_binding_ids,
                     description=f"{action} {target_id}",
                     semantic_effects=effects,
                     risk=risk,
@@ -61,6 +90,22 @@ class ActionSpaceBuilder:
         if _FORBIDDEN_PARAMETER_KEYS.intersection(parameters):
             raise ValueError("policy parameters contain runtime-private execution fields")
         validate_value(parameters, option.parameter_schema)
+
+    def admit(self, option: ActionOption, parameters: dict[str, Any]) -> AdmittedActionSelection:
+        self.validate_parameters(option, parameters)
+        return AdmittedActionSelection(
+            option.action_id,
+            option.observation_id,
+            option.semantic_action,
+            option.target_id,
+            option.effect_category,
+            option.semantic_effects,
+            option.schema_digest,
+            option.eligible_binding_ids,
+            option.risk,
+            option.observation_barrier,
+            parameters,
+        )
 
 
 def _binding_is_current(binding: ActionBinding, observation: WorldObservation) -> bool:

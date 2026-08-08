@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
+from affordance_runtime.execution.contracts import (
+    ActionError,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+)
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -61,7 +66,13 @@ class StaticEnvironment:
 
     async def execute(self, request: BoundActionRequest) -> ActionResult:
         if not self.is_current(request):
-            raise StaleEnvironmentBinding("bound request is not current")
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                request.binding.executor_id,
+                False,
+                ActionError.STALE_BINDING,
+            )
         assert self._current_observation is not None
         self.executed_requests.append(request)
         if self.execute_fn is not None:
