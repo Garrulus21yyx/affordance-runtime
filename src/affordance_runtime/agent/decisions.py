@@ -10,6 +10,7 @@ from affordance_runtime.immutable import freeze_json
 class SelectAction:
     action_id: str
     parameters: dict[str, Any] = field(default_factory=dict)
+    destination_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.action_id.strip():

@@ -131,6 +131,9 @@ reference:
   - role: p5_d_semantic_confirmation_and_effect_certainty
     path: docs/reviews/2026-08-08-p5-d-semantic-confirmation.md
     lifecycle: current
+  - role: p5_d6_1_confirmation_and_evaluation_contract_completion
+    path: docs/reviews/2026-08-08-p5-d6-1-contract-completion.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

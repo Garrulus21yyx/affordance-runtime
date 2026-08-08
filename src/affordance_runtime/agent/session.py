@@ -35,6 +35,9 @@ class AgentRunSession:
         return self.last_result
 
     async def resolve_confirmation(self, decision: ConfirmationDecision) -> AgentResult:
+        if self.is_terminal:
+            assert self.last_result is not None
+            return self.last_result
         self.last_result = await self.agent_loop._resolve_confirmation(self, decision)
         return self.last_result
 

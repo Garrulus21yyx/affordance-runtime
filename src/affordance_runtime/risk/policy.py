@@ -15,26 +15,29 @@ class RiskPolicy:
         self,
         task: TaskGoal,
         selection: AdmittedActionSelection,
-        *,
-        destination_id: str = "",
     ) -> RiskAssessment:
         consequences = _consequences(selection)
-        decision, reason = _decision(task, selection)
+        effective_risk = _effective_risk(task.risk_profile, selection.risk)
+        decision, reason = _decision(task, selection, effective_risk)
         return RiskAssessment(
             decision,
-            selection.risk,
+            effective_risk,
             tuple(sorted(selection.semantic_effects)),
             consequences,
             semantic_subject_id(
                 selection,
-                destination_id=destination_id,
                 consequences=consequences,
+                effective_risk=effective_risk,
             ),
             reason,
         )
 
 
-def _decision(task: TaskGoal, selection: AdmittedActionSelection) -> tuple[RiskDecisionKind, str]:
+def _decision(
+    task: TaskGoal,
+    selection: AdmittedActionSelection,
+    effective_risk: ActionRisk,
+) -> tuple[RiskDecisionKind, str]:
     effects = set(selection.semantic_effects)
     if effects.intersection(task.forbidden_effects):
         return RiskDecisionKind.BLOCK, "semantic effect is explicitly forbidden by the task"
@@ -42,11 +45,7 @@ def _decision(task: TaskGoal, selection: AdmittedActionSelection) -> tuple[RiskD
         return RiskDecisionKind.BLOCK, "semantic effect is outside the task's allowed effects"
     if task.risk_profile == RiskProfile.READ_ONLY and selection.semantic_action != "read":
         return RiskDecisionKind.BLOCK, "read-only task cannot execute effects"
-    if selection.risk not in set(ActionRisk):
-        return RiskDecisionKind.BLOCK, "unsupported action risk cannot be allowed"
-    if task.risk_profile in {RiskProfile.MEDIUM, RiskProfile.HIGH}:
-        return RiskDecisionKind.NEEDS_CONFIRMATION, "task risk requires semantic confirmation"
-    if selection.risk in {ActionRisk.MEDIUM, ActionRisk.HIGH, ActionRisk.IRREVERSIBLE}:
+    if effective_risk in {ActionRisk.MEDIUM, ActionRisk.HIGH, ActionRisk.IRREVERSIBLE}:
         return RiskDecisionKind.NEEDS_CONFIRMATION, "action risk requires semantic confirmation"
     return RiskDecisionKind.ALLOW, "semantic action is allowed at the current risk level"
 
@@ -59,3 +58,14 @@ def _consequences(selection: AdmittedActionSelection) -> tuple[str, ...]:
         "irreversible": "cause an irreversible effect",
     }
     return (categories.get(selection.effect_category, "cause the declared semantic effects"),)
+
+
+def _effective_risk(task_risk: RiskProfile, action_risk: ActionRisk) -> ActionRisk:
+    floor = {
+        RiskProfile.READ_ONLY: ActionRisk.LOW,
+        RiskProfile.LOW: ActionRisk.LOW,
+        RiskProfile.MEDIUM: ActionRisk.MEDIUM,
+        RiskProfile.HIGH: ActionRisk.HIGH,
+    }[task_risk]
+    order = (ActionRisk.LOW, ActionRisk.MEDIUM, ActionRisk.HIGH, ActionRisk.IRREVERSIBLE)
+    return max((floor, action_risk), key=order.index)

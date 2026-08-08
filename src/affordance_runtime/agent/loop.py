@@ -10,9 +10,10 @@ from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.result import AgentResult, add_counts, build_result, observation_budget_result
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
+from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
-from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
+from affordance_runtime.evaluation.lineage import evaluation_matches_execution
 from affordance_runtime.execution.contracts import ActionError, ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
@@ -50,8 +51,9 @@ class AgentLoop:
         task, state = session.task, session.state
         while state.remaining_turns > 0:
             task_evaluation = await self.task_evaluator.evaluate(task, state.current_observation)
-            if task_evaluation.status == TaskEvaluationStatus.COMPLETE:
-                return self._result(session, AgentLoopStatus.DONE, task_evaluation.reason)
+            task_status = task_evaluation_loop_status(task_evaluation)
+            if task_status is not None:
+                return self._result(session, task_status, task_evaluation.reason)
             action_space = self.action_space_builder.build(task, state.current_observation)
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space)
@@ -108,36 +110,25 @@ class AgentLoop:
             if option.semantic_action != confirmed.intent.semantic_action or option.target_id != confirmed.intent.target_id:
                 continue
             try:
-                selection = self.action_space_builder.admit(option, dict(confirmed.intent.parameters))
+                selection = self.action_space_builder.admit(
+                    option,
+                    dict(confirmed.intent.parameters),
+                    confirmed.intent.destination_id,
+                )
             except ValueError:
                 continue
             candidates.append((selection, self.risk_policy.assess(session.task, selection)))
         exact = next((item for item in candidates if item[1].subject_id == confirmed.subject_id), None)
         if exact is not None:
             selection = exact[0]
-            decision = SelectAction(selection.action_id, dict(selection.parameters))
+            decision = SelectAction(
+                selection.action_id,
+                dict(selection.parameters),
+                selection.destination_id,
+            )
             return await self._execute_admitted(session, selection, decision)
         session.approved_confirmation = None
-        if candidates:
-            selection, assessment = candidates[0]
-            intent = ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters))
-            session.state.pending_confirmation = build_confirmation_request(intent, assessment)
-            return build_result(
-                AgentLoopStatus.WAITING_CONFIRMATION,
-                session.task,
-                session.state,
-                0,
-                0,
-                "semantic confirmation subject changed after fresh observation",
-            )
-        return build_result(
-            AgentLoopStatus.BLOCKED,
-            session.task,
-            session.state,
-            0,
-            0,
-            "confirmed semantic action is unavailable after fresh observation",
-        )
+        return None
 
     async def _execute_admitted(
         self,
@@ -173,6 +164,27 @@ class AgentLoop:
             terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "post-action identity was reused")
             return state, 1, 1, probed, terminal
         action_evaluation = await self.action_evaluator.evaluate(task, before, request, result, after)
+        if not evaluation_matches_execution(action_evaluation, request, before, after):
+            state.append_turn(
+                Turn(
+                    before.observation_id,
+                    decision,
+                    request.intent,
+                    request.request_id,
+                    result,
+                    after.observation_id,
+                )
+            )
+            state.current_observation = after
+            terminal = build_result(
+                AgentLoopStatus.FAILED,
+                task,
+                state,
+                0,
+                0,
+                "action evaluation lineage mismatch",
+            )
+            return state, 1, 1, probed, terminal
         task_evaluation = await self.task_evaluator.evaluate(task, after)
         state.append_turn(
             Turn(
@@ -201,15 +213,28 @@ class AgentLoop:
         if option is None:
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "policy selected outside ActionSpace")
         try:
-            selection = self.action_space_builder.admit(option, dict(decision.parameters))
+            selection = self.action_space_builder.admit(
+                option,
+                dict(decision.parameters),
+                decision.destination_id,
+            )
         except ValueError as exc:
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, str(exc))
         assessment = self.risk_policy.assess(task, selection)
         if assessment.decision == RiskDecisionKind.BLOCK:
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, assessment.reason)
         if assessment.decision == RiskDecisionKind.NEEDS_CONFIRMATION:
-            intent = ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters))
-            state.pending_confirmation = build_confirmation_request(intent, assessment)
+            intent = ActionIntent(
+                selection.semantic_action,
+                selection.target_id,
+                dict(selection.parameters),
+                selection.destination_id,
+            )
+            state.pending_confirmation = build_confirmation_request(
+                intent,
+                assessment,
+                build_agent_world_view(state.current_observation),
+            )
             return build_result(AgentLoopStatus.WAITING_CONFIRMATION, task, state, 0, 0, assessment.reason)
         return selection
 

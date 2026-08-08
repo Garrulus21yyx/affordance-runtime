@@ -72,6 +72,10 @@ no-replay are closed. A model-backed target AgentPolicy is next but not yet
 implemented; external full-agent benchmarks remain blocked and default cutover
 remains pending.
 
+P5-D6.1 is complete on the non-default path: effective risk, semantic
+destination identity, confirmation presentation, immutable terminal sessions,
+and evidence-bound evaluation are closed. It did not start model-backed policy.
+
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)

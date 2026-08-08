@@ -40,7 +40,7 @@ class SharedStateTaskEvaluator:
 
 class SharedStateActionEvaluator:
     async def evaluate(self, task, before, request, result, after):
-        del task, request, result
+        del task, result
         was_expanded = any(target.state.get("expanded") is True for target in before.targets)
         is_expanded = any(target.state.get("expanded") is True for target in after.targets)
         changed = not was_expanded and is_expanded
@@ -49,14 +49,21 @@ class SharedStateActionEvaluator:
         )
         if not changed and not coverage_complete:
             return ActionEvaluation(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
                 ActionEvaluationStatus.UNKNOWN,
                 "fresh observation does not establish authoritative effect absence",
             )
         return ActionEvaluation(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
             ActionEvaluationStatus.EFFECT_CONFIRMED
             if changed
             else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "shared state changed" if changed else "shared state did not change",
+            (f"world:{after.observation_id}:target:shared-state:expanded",),
         )
 
 

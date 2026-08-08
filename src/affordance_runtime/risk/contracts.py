@@ -36,16 +36,16 @@ class RiskAssessment:
 def semantic_subject_id(
     selection: AdmittedActionSelection,
     *,
-    destination_id: str = "",
     consequences: tuple[str, ...],
+    effective_risk: ActionRisk | None = None,
 ) -> str:
     canonical = {
         "semantic_action": selection.semantic_action,
         "semantic_target_id": selection.target_id,
-        "destination_id": destination_id,
+        "destination_id": selection.destination_id,
         "parameters": to_json_compatible(selection.parameters),
         "semantic_effects": sorted(selection.semantic_effects),
-        "risk": selection.risk.value,
+        "risk": (effective_risk or selection.risk).value,
         "consequences": sorted(consequences),
     }
     digest = hashlib.sha256(

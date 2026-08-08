@@ -8,6 +8,12 @@ DOCS = ROOT / "docs"
 MANIFEST = DOCS / "documentation-manifest.yaml"
 DOCS_INDEX = DOCS / "README.md"
 ROOT_INDEX = ROOT / "README.md"
+EVOLUTION_PLAN = (
+    DOCS
+    / "superpowers"
+    / "plans"
+    / "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md"
+)
 
 VALID_LIFECYCLES = {
     "current",
@@ -50,6 +56,18 @@ def test_manifest_declares_one_current_architecture_and_evolution_plan() -> None
     authoritative_paths = _paths(_section("authoritative"))
     assert len(authoritative_paths) == 2
     assert all("/archive/" not in path for path in authoritative_paths)
+
+
+def test_evolution_plan_has_one_current_phase_truth() -> None:
+    text = EVOLUTION_PLAN.read_text(encoding="utf-8")
+
+    assert "`A1–A4` 尚未开始代码实现" not in text
+    assert "尚未证明相同\nTaskGoal/AgentPolicy/evaluator" not in text
+    assert "P5-A1–A4: COMPLETE_NON_DEFAULT" in text
+    assert "P5-B1–B4: COMPLETE_FOR_DECLARED_MINIMUM_PROFILES" in text
+    assert "P5-C1–C3: COMPLETE_FOR_SHARED_STATE_DETERMINISTIC_MATRIX" in text
+    assert "P5-D: COMPLETE_FOR_CURRENT_SINGLE_TARGET_PROFILE" in text
+    assert "P5-D6.1: COMPLETE" in text
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

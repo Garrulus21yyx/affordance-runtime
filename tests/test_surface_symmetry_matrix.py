@@ -23,6 +23,7 @@ from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.transport import HttpWotTransport
 from affordance_runtime.task import RiskProfile
+from affordance_runtime.world import ActionRisk
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 
@@ -174,6 +175,9 @@ def test_dom_visual_wot_confirmation_uses_fresh_private_binding(profile: str) ->
         assert paused.execution_count == 0
         confirmation = paused.confirmation_request
         assert confirmation is not None
+        assert confirmation.risk == ActionRisk.MEDIUM
+        assert "Risk: medium" in confirmation.summary
+        assert confirmation.intent.destination_id == ""
         assert metrics["actions"]() == 0
         old_private_representation = repr(confirmation)
 
@@ -189,6 +193,12 @@ def test_dom_visual_wot_confirmation_uses_fresh_private_binding(profile: str) ->
         assert result.execution_count == 1
         assert metrics["actions"]() == 1
         assert metrics["private"]()
+        evaluation = result.turns[-1].action_evaluation
+        assert evaluation is not None
+        assert evaluation.request_id == result.turns[-1].request_id
+        assert evaluation.before_observation_id == result.turns[-1].before_observation_id
+        assert evaluation.after_observation_id == result.turns[-1].after_observation_id
+        assert evaluation.evidence_refs
         assert all(
             private not in old_private_representation
             for private in ("selector", "action_point", "bbox", "href", "method", "credential")

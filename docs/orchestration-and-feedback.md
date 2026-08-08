@@ -52,6 +52,12 @@ allowed; action/target/destination/parameters/effects/risk/consequences changes
 require a new confirmation. DENY clears the request and returns CANCELLED with
 zero execution.
 
+If the confirmed subject is absent after the fresh observation, Runtime clears
+that approval and returns the already-fresh ActionSpace to the ordinary policy
+turn. It does not choose the first or a similar candidate. A terminal session
+is immutable: repeated run or resolve calls return its original DONE,
+CANCELLED, FAILED, or BLOCKED result without observing or executing again.
+
 ## 5. Serial execution
 
 The core executes one primitive request at a time by default. It has no
@@ -72,3 +78,9 @@ restored or replayed.
 The current Coordinator/stage/delta/committer sequence remains baseline code.
 It is not the target sequencing contract and receives no new platform features
 during migration.
+
+Task evaluation has explicit control semantics at initial observation,
+pre-policy, confirmation reobservation, and post-action evaluation:
+`COMPLETE` returns DONE, `INCOMPLETE` permits a policy turn, `UNKNOWN` returns
+WAITING_USER with the evaluator reason, and `BLOCKED` returns BLOCKED. UNKNOWN
+is not automatically reobserved in this profile.

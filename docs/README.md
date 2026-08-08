@@ -53,7 +53,8 @@ The unified DOM, Visual full-digest, and WoT local HTTP JSON paths are integrate
 non-default, and their shared-state adapter-only matrix is proven. The older
 baseline remains the default product path. P5-D semantic confirmation, fresh
 rebind, and effect certainty are integrated non-default. Model-backed target
-policy/evaluator composition is the next migration slice.
+policy/evaluator composition remains next; P5-D6.1 contract completion is
+closed on the non-default path.
 
 ## 3. Maintained policies and contracts
 
@@ -91,6 +92,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5 Visual single-surface vertical](reviews/2026-08-08-p5-visual-single-surface-vertical.md)
 - [P5 WoT single-surface and three-surface matrix](reviews/2026-08-08-p5-wot-single-surface-and-matrix.md)
 - [P5-D semantic confirmation and effect certainty](reviews/2026-08-08-p5-d-semantic-confirmation.md)
+- [P5-D6.1 confirmation and evaluation contract completion](reviews/2026-08-08-p5-d6-1-contract-completion.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

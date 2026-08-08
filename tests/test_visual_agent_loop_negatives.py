@@ -80,8 +80,14 @@ class FirstPolicy:
 
 class UnknownActionEvaluator:
     async def evaluate(self, task, before, request, result, after):
-        del task, before, request, result, after
-        return ActionEvaluation(ActionEvaluationStatus.UNKNOWN, "visual outcome remains unknown")
+        del task, result
+        return ActionEvaluation(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
+            ActionEvaluationStatus.UNKNOWN,
+            "visual outcome remains unknown",
+        )
 
 
 def _run(session, proposer, task, policy, action_evaluator=None):

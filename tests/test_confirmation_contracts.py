@@ -6,7 +6,12 @@ from affordance_runtime.confirmation import (
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import ActionRisk, AdmittedActionSelection
+from affordance_runtime.world import (
+    ActionRisk,
+    AdmittedActionSelection,
+    AgentTargetView,
+    AgentWorldView,
+)
 
 
 def _selection() -> AdmittedActionSelection:
@@ -35,7 +40,13 @@ def _request():
     )
     assessment = RiskPolicy().assess(task, selection)
     intent = ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters))
-    return build_confirmation_request(intent, assessment)
+    world = AgentWorldView(
+        "observation:display",
+        (AgentTargetView(selection.target_id, "button", "Shared state"),),
+        (),
+        {"dom": "complete"},
+    )
+    return build_confirmation_request(intent, assessment, world)
 
 
 def test_confirmation_request_contains_only_semantic_confirmation_subject() -> None:

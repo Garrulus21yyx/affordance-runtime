@@ -61,6 +61,7 @@ class BoundActionRequest:
             or self.intent.semantic_action != self.selection.semantic_action
             or self.intent.target_id != self.selection.target_id
             or self.intent.parameters != self.selection.parameters
+            or self.intent.destination_id != self.selection.destination_id
             or self.binding.binding_id not in self.selection.eligible_binding_ids
             or self.selection.semantic_action != self.binding.semantic_action
             or self.selection.target_id != self.binding.target_id
@@ -69,6 +70,8 @@ class BoundActionRequest:
             or self.selection.schema_digest != schema_digest(self.binding.parameter_schema)
             or _risk_rank(self.binding.risk) > _risk_rank(self.selection.risk)
             or self.binding.observation_barrier != self.selection.observation_barrier
+            or self.binding.destination_required != self.selection.destination_required
+            or self.binding.eligible_destination_ids != self.selection.eligible_destination_ids
         ):
             raise ValueError("bound request must retain its admitted option and binding group")
         if self.timeout_ms <= 0:

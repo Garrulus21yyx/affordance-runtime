@@ -29,14 +29,25 @@ user, and never enters ordinary execution for that intent. `REJECTED` fails or
 stops according to loop policy. Evidence must concern the requested target and
 effect and come from the fresh observation or an authoritative external check.
 
+Every target-path `ActionEvaluation` binds a non-empty request ID and distinct,
+non-empty before/after observation IDs. `EFFECT_CONFIRMED` and
+`NO_EFFECT_CONFIRMED` additionally require at least one authoritative evidence
+reference; explanatory text is not evidence. AgentLoop rejects any request or
+observation lineage mismatch before TaskEvaluator can treat the evaluation as
+trusted.
+
 Evaluation prefers environment-native/API/WoT state, then DOM/AX structured
 state, filesystem/artifact state, visual/VLM evidence, and finally human input.
 This is a default strength order, not a ban on cross-source fusion.
 
 ## 3. Task evaluation
 
-Statuses are COMPLETE, INCOMPLETE, and BLOCKED. Plan exhaustion, a successful
+Statuses are COMPLETE, INCOMPLETE, UNKNOWN, and BLOCKED. Plan exhaustion, a successful
 receipt, a trace event, or model confidence cannot produce COMPLETE.
+
+`UNKNOWN` waits for user direction with zero execution. `BLOCKED` terminates
+the run as BLOCKED with zero further execution. Neither status is treated as
+ordinary INCOMPLETE.
 
 MilestoneEvaluator uses observation/evidence to judge optional milestones.
 Planner output cannot mark a milestone satisfied. Agent `Finish` is only a

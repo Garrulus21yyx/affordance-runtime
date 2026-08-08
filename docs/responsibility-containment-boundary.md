@@ -22,7 +22,9 @@
 | `AgentRunSession` | one in-memory run, pending confirmation, consumption and continuation counts | persistence, global lookup, cross-process resume |
 | `Executor` | one BoundActionRequest → ActionResult | effect/task success judgment |
 | `ActionEvaluator` | before/request/result/after → effect status | task completion |
+| `evaluation/lineage.py` | exact request and before/after observation lineage validation | effect inference or task completion |
 | `TaskEvaluator` | TaskGoal/EvaluationSpec + world/turns → task status | action dispatch |
+| `task_evaluation_policy.py` | COMPLETE/INCOMPLETE/UNKNOWN/BLOCKED → loop control | task inference, observation, or execution |
 | `LoopPolicy` | continue/reobserve/ask/stop | domain observation or execution |
 | `TurnRecorder` | optional telemetry | admission, execution, state authority |
 | `BindingCache` / Skill sidecars | currentness-checked hints and offline-evaluated templates | bypassing ActionSpace/RiskPolicy/evaluation or online publication |
@@ -100,3 +102,10 @@ effect-certainty continuation in `agent/post_action_policy.py`. `AgentLoop`
 sequences these owners. Target core, risk, confirmation, Visual, and WoT files
 remain below 350 lines with functions below 80 lines; dependency tests reject
 surface imports from risk/confirmation/agent and AgentLoop imports from adapters.
+
+P5-D6.1 keeps the task-risk floor and semantic subject in `risk/`, destination
+admission in `world/action_space.py`, bounded secret-free presentation in
+`confirmation/summary.py`, terminal immutability in `agent/session.py`, exact
+execution lineage in `evaluation/lineage.py`, and task-status control in
+`agent/task_evaluation_policy.py`. Confirmation presentation reads semantic
+world labels only; it never reads an `ActionBinding` payload.

@@ -28,16 +28,18 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | C3/B4 WoT | complete, non-default | real local HTTP TD/read/invoke, private transport binding, deployment scope, one-probe execution |
 | DOM/Visual/WoT matrix | proven for shared-state task | same TaskGoal/policy/evaluators; adapter-only variation, no fusion |
 | P5-D | complete, non-default | semantic confirmation, fresh rebind, single-send consumption, explicit effect certainty |
+| P5-D6.1 | complete, non-default | effective risk, destination, presentation, terminal immutability, policy reselection, evaluation lineage/evidence, task-evaluation control |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
 ## Next admitted slice
 
-The three-surface single-adapter matrix and P5-D are complete. The next admitted
-slice should implement a model-backed target AgentPolicy and production target
-evaluator composition without adding semantic fusion, ActionBatch, long-horizon
-planning, external full-agent benchmarks, default cutover, or old-core deletion.
+The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
+complete. The next admitted slice should implement a model-backed target
+AgentPolicy and production target evaluator composition
+without adding semantic fusion, ActionBatch, long-horizon planning, external
+full-agent benchmarks, default cutover, or old-core deletion.
 
 ## Frozen work
 

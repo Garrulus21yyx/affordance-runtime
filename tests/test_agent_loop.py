@@ -98,15 +98,25 @@ class SharedTaskEvaluator:
 
 class SharedActionEvaluator:
     async def evaluate(self, task, before, request, result, after):
-        del task, request
+        del task
         changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN and not changed:
-            return ActionEvaluation(ActionEvaluationStatus.UNKNOWN, "effect remains unknown")
+            return ActionEvaluation(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ActionEvaluationStatus.UNKNOWN,
+                "effect remains unknown",
+            )
         return ActionEvaluation(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
             ActionEvaluationStatus.EFFECT_CONFIRMED
             if changed
             else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "state changed" if changed else "state did not change",
+            (f"world:{after.observation_id}:target:shared-toggle:enabled",),
         )
 
 

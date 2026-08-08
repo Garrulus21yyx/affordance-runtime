@@ -49,8 +49,11 @@ def _task() -> TaskGoal:
 
 @dataclass
 class FirstPolicy:
+    calls: int = 0
+
     async def decide(self, task, world, action_space, recent_turns, optional_plan):
         del task, world, recent_turns, optional_plan
+        self.calls += 1
         return SelectAction(action_space.options[0].action_id)
 
 
@@ -66,13 +69,17 @@ class TaskEvaluator:
 
 class ActionEvaluator:
     async def evaluate(self, task, before, request, result, after):
-        del task, request, result
+        del task, result
         changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
         return ActionEvaluation(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
             ActionEvaluationStatus.EFFECT_CONFIRMED
             if changed
             else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "changed" if changed else "authoritatively unchanged",
+            (f"world:{after.observation_id}:target:shared:enabled",),
         )
 
 
@@ -92,7 +99,8 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
             [_world("old", False, "#old"), _world("fresh", False, "#fresh"), _world("after", True, "#after")],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        runner = AgentEpisodeRunner(_loop())
+        policy = FirstPolicy()
+        runner = AgentEpisodeRunner(AgentLoop(policy, ActionEvaluator(), TaskEvaluator()))
         session = await runner.start(environment, _task())
         paused = await session.run_until_pause()
 
@@ -106,6 +114,7 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
         assert completed.execution_count == 1
         assert len(environment.executed_requests) == 1
         assert environment.executed_requests[0].binding.payload["selector"] == "#fresh"
+        assert policy.calls == 1
         assert "#old" not in repr(paused.confirmation_request)
         assert "#fresh" not in repr(paused.confirmation_request)
 
@@ -142,7 +151,9 @@ def test_confirmation_subject_change_requires_new_confirmation() -> None:
         environment = StaticEnvironment(
             [_world("old", False, "#old"), _world("fresh", False, "#fresh", risk=ActionRisk.HIGH)]
         )
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        policy = FirstPolicy()
+        loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
+        session = await AgentEpisodeRunner(loop).start(environment, _task())
         paused = await session.run_until_pause()
 
         changed = await session.resolve_confirmation(_decision(paused))
@@ -151,6 +162,7 @@ def test_confirmation_subject_change_requires_new_confirmation() -> None:
         assert changed.confirmation_request is not None
         assert changed.confirmation_request.subject_id != paused.confirmation_request.subject_id
         assert environment.executed_requests == []
+        assert policy.calls == 2
 
     asyncio.run(scenario())
 
@@ -233,8 +245,14 @@ def test_sent_unknown_no_effect_consumes_confirmation_and_requires_a_new_one() -
 def test_sent_unknown_unknown_waits_for_user_and_never_replays() -> None:
     class UnknownEvaluator:
         async def evaluate(self, task, before, request, result, after):
-            del task, before, request, result, after
-            return ActionEvaluation(ActionEvaluationStatus.UNKNOWN, "coverage is insufficient")
+            del task, result
+            return ActionEvaluation(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ActionEvaluationStatus.UNKNOWN,
+                "coverage is insufficient",
+            )
 
     async def scenario() -> None:
         environment = StaticEnvironment(
@@ -282,7 +300,8 @@ def test_confirmation_decision_cannot_be_reused_after_effectful_send() -> None:
 
         reused = await session.resolve_confirmation(decision)
 
-        assert reused.status == AgentLoopStatus.BLOCKED
+        assert reused is completed
+        assert reused.status == AgentLoopStatus.DONE
         assert len(environment.executed_requests) == 1
 
     asyncio.run(scenario())

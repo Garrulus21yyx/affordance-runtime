@@ -1,8 +1,8 @@
 # Affordance Runtime：统一世界接口与 E2E AgentLoop 演进计划
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
-> **Updated:** 2026-08-07
-> **Baseline:** `agent/migrate-runtime-components@8d7cfd6b7d43c72f9b45bb4144a62553d90c23a8`
+> **Updated:** 2026-08-08
+> **Reviewed baseline:** `codex/migrate-world-interaction-capabilities@e22c519cebd185abcb9c173bffeef8af80b0f18d`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -46,7 +46,7 @@ freeze target contracts
 7. confirmation 绑定语义 intent/risk/consequences，不绑定 selector/coordinate；执行 request 仍绑定 current observation/binding。
 8. receipt/effect/task completion 分离，UNKNOWN 不盲重试。
 9. memory/skill/route hint 必须离线评测后发布，不在线自改。
-10. 本轮仍是文档切片；任何代码变更或删除进入后续独立切片。
+10. 每个实现切片必须保持新路径 non-default，直到 P5-H 明确完成默认切换。
 
 ## 2. 基线资产与主要债务
 
@@ -74,11 +74,24 @@ freeze target contracts
 
 ### 首要验证缺口
 
-当前测试更多证明不同 surface 进入同一旧 contract/trace 管线，尚未证明相同
-TaskGoal/AgentPolicy/evaluator 仅更换 adapter 就在 DOM、Visual、WoT 等 surface
-正向完成。所有新阶段以 completed behavior 为主证据。
+DOM、Visual full-digest 与 WoT local HTTP JSON 已用相同 TaskGoal、确定性
+AgentPolicy 和 evaluators 证明 shared-state adapter-only matrix，通用
+confirmation/evaluation contracts 也已闭合。当前首要缺口是 model-backed
+target policy/evaluator composition。所有阶段继续以 completed behavior 为主证据。
 
 ## 3. P5 阶段与切片
+
+```text
+P5-A1–A4: COMPLETE_NON_DEFAULT
+P5-B1–B4: COMPLETE_FOR_DECLARED_MINIMUM_PROFILES
+P5-C1–C3: COMPLETE_FOR_SHARED_STATE_DETERMINISTIC_MATRIX
+P5-C4 semantic fusion: DEFERRED; not prerequisite for P5-D or D6.1
+P5-C5: small AgentLoopState complete; distinct LoopPolicy / optional TurnRecorder pending
+P5-D: COMPLETE_FOR_CURRENT_SINGLE_TARGET_PROFILE
+P5-D6.1: COMPLETE
+model-backed target policy/evaluator composition: NEXT
+external benchmark: BLOCKED
+```
 
 ### P5-A — Target contracts
 
@@ -90,7 +103,7 @@ TaskGoal/AgentPolicy/evaluator 仅更换 adapter 就在 DOM、Visual、WoT 等 s
 | `A3` | `SurfaceObservation`, `WorldObservation`, `AgentWorldView`, `ActionBinding`, `ActionSpace` | contracts do not import StateKernel/delta/committer |
 | `A4` | `ActionIntent`, `BoundActionRequest`, `ActionResult`, evaluations, Turn, `AgentLoopState` | intent/request identities separated; one-way legacy projectors only |
 
-`A0` 已在当前工作树完成；`A1–A4` 尚未开始代码实现。
+`A0–A4` 已完成并集成在 non-default target path；legacy projector 仍仅是单向边界。
 
 ### P5-B — Unified SurfaceAdapter and observation
 
@@ -104,6 +117,8 @@ TaskGoal/AgentPolicy/evaluator 仅更换 adapter 就在 DOM、Visual、WoT 等 s
 
 结构化 source 优先但不独占；coverage gap/conflict/layout need 触发 targeted Visual/
 SoM/SVG。Not-acquired、failed、truncated、stale 与 complete absence 必须区分。
+`B1–B4` 已对当前声明的 DOM、Visual full-digest、WoT local HTTP JSON minimum
+profiles 完成；`B5` breadth 尚未开始。
 
 ### P5-C — Minimal short AgentLoop vertical slice
 
@@ -122,6 +137,9 @@ observe → build ActionSpace → select ActionIntent → bind
 | `C4` | same target with DOM+WoT bindings | one route executes; no effectful auto-fallback |
 | `C5` | small `AgentLoopState`, LoopPolicy, optional TurnRecorder | no StateKernel/RuntimeDelta; recorder failure is behavior-neutral |
 
+`C1–C3` shared-state deterministic matrix 已完成；`C4` semantic fusion 延后且不是
+P5-D/D6.1 前置条件；`C5` 仅 small AgentLoopState 已完成。
+
 ### P5-D — Human confirmation and unknown effect
 
 | Slice | Deliverable | Exit gate |
@@ -134,6 +152,8 @@ observe → build ActionSpace → select ActionIntent → bind
 
 旧 exact ActionContract hash equality remains baseline evidence only until this semantic-confirmation
 path becomes default; it is not copied into the target as binding-sensitive human confirmation.
+`D1–D5` 已对当前 single-target profile 完成；`D6.1` 已补齐 effective risk、
+destination、presentation、session terminal、evaluation lineage/evidence 与 task-evaluation control。
 
 ### P5-E — Long-horizon planning
 
@@ -222,6 +242,7 @@ DONE: P5-C1–C3 shared-state deterministic-policy DOM/Visual/WoT matrix
 DEFERRED: P5-C4 semantic fusion; it is not a prerequisite for P5-D
 PARTIAL: P5-C5 small AgentLoopState complete; LoopPolicy and optional TurnRecorder remain
 DONE: P5-D semantic confirmation, fresh rebind, and effect-certainty continuation
+DONE: P5-D6.1 confirmation and evaluation contract completion
 NEXT: model-backed target AgentPolicy and production evaluator composition
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch

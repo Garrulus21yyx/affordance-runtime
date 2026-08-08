@@ -83,6 +83,8 @@ class ActionBinding:
     confidence: float = 1.0
     cost: float = 0.0
     risk: ActionRisk = ActionRisk.LOW
+    destination_required: bool = False
+    eligible_destination_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         required = (
@@ -104,6 +106,9 @@ class ActionBinding:
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "payload", freeze_json(self.payload))
+        object.__setattr__(self, "eligible_destination_ids", tuple(self.eligible_destination_ids))
+        if self.destination_required and not self.eligible_destination_ids:
+            raise ValueError("destination-required binding must offer semantic destination IDs")
 
     @property
     def observation_id(self) -> str:
@@ -178,6 +183,7 @@ class ActionOption:
     semantic_effects: tuple[str, ...] = ()
     risk: ActionRisk = ActionRisk.LOW
     destination_required: bool = False
+    eligible_destination_ids: tuple[str, ...] = ()
     batchable: bool = False
     observation_barrier: bool = True
 
@@ -197,6 +203,9 @@ class ActionOption:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        object.__setattr__(self, "eligible_destination_ids", tuple(self.eligible_destination_ids))
+        if self.destination_required and not self.eligible_destination_ids:
+            raise ValueError("destination-required action must offer semantic destination IDs")
 
 
 @dataclass(frozen=True)
@@ -212,6 +221,9 @@ class AdmittedActionSelection:
     risk: ActionRisk
     observation_barrier: bool
     parameters: dict[str, Any] = field(default_factory=dict)
+    destination_id: str = ""
+    destination_required: bool = False
+    eligible_destination_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         required = (
@@ -227,6 +239,7 @@ class AdmittedActionSelection:
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        object.__setattr__(self, "eligible_destination_ids", tuple(self.eligible_destination_ids))
 
 
 @dataclass(frozen=True)

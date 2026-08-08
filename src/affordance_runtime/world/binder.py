@@ -35,12 +35,19 @@ class ActionBinder:
             and schema_digest(binding.parameter_schema) == selection.schema_digest
             and _risk_rank(binding.risk) <= _risk_rank(selection.risk)
             and binding.observation_barrier == selection.observation_barrier
+            and binding.destination_required == selection.destination_required
+            and binding.eligible_destination_ids == selection.eligible_destination_ids
             and _binding_current(binding, observation)
         ]
         if not bindings:
             raise BindingError("no current binding belongs to the admitted action option")
         binding = max(bindings, key=lambda item: (item.confidence, -item.cost))
-        intent = ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters))
+        intent = ActionIntent(
+            selection.semantic_action,
+            selection.target_id,
+            dict(selection.parameters),
+            selection.destination_id,
+        )
         return BoundActionRequest(
             f"request:{uuid.uuid4().hex}",
             observation.observation_id,

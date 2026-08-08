@@ -1,8 +1,17 @@
 from dataclasses import replace
 
+import pytest
+
+from affordance_runtime.confirmation import build_confirmation_request
+from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskDecisionKind, RiskPolicy, semantic_subject_id
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import ActionRisk, AdmittedActionSelection
+from affordance_runtime.world import (
+    ActionRisk,
+    AdmittedActionSelection,
+    AgentTargetView,
+    AgentWorldView,
+)
 
 
 def _selection(**changes) -> AdmittedActionSelection:
@@ -56,7 +65,9 @@ def test_semantic_subject_changes_for_each_confirmed_semantic_field() -> None:
         replace(original, risk=ActionRisk.HIGH),
     )
     assert all(semantic_subject_id(item, consequences=consequences) != baseline for item in variants)
-    assert semantic_subject_id(original, destination_id="destination:other", consequences=consequences) != baseline
+    assert semantic_subject_id(
+        replace(original, destination_id="destination:other"), consequences=consequences
+    ) != baseline
     assert semantic_subject_id(original, consequences=("affect an external system",)) != baseline
 
 
@@ -76,6 +87,49 @@ def test_risk_policy_enforces_runtime_floor_and_forbidden_effects() -> None:
         _selection(),
     )
     assert blocked.decision == RiskDecisionKind.BLOCK
+
+
+@pytest.mark.parametrize(
+    ("task_risk", "option_risk", "effective_risk"),
+    (
+        (RiskProfile.MEDIUM, ActionRisk.LOW, ActionRisk.MEDIUM),
+        (RiskProfile.HIGH, ActionRisk.LOW, ActionRisk.HIGH),
+        (RiskProfile.LOW, ActionRisk.HIGH, ActionRisk.HIGH),
+        (RiskProfile.HIGH, ActionRisk.IRREVERSIBLE, ActionRisk.IRREVERSIBLE),
+    ),
+)
+def test_risk_assessment_uses_one_effective_risk(
+    task_risk: RiskProfile,
+    option_risk: ActionRisk,
+    effective_risk: ActionRisk,
+) -> None:
+    selection = _selection(risk=option_risk)
+    assessment = RiskPolicy().assess(_task(risk_profile=task_risk), selection)
+    request = build_confirmation_request(
+        ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters)),
+        assessment,
+        AgentWorldView(
+            "observation:display",
+            (AgentTargetView(selection.target_id, "button", "Shared state"),),
+            (),
+            {"fixture": "complete"},
+        ),
+    )
+
+    assert assessment.decision == RiskDecisionKind.NEEDS_CONFIRMATION
+    assert assessment.risk == effective_risk
+    assert request.risk == effective_risk
+    assert f"Risk: {effective_risk.value}" in request.summary
+
+
+def test_task_risk_floor_participates_in_semantic_subject() -> None:
+    selection = _selection(risk=ActionRisk.LOW)
+    low = RiskPolicy().assess(_task(risk_profile=RiskProfile.LOW), selection)
+    high = RiskPolicy().assess(_task(risk_profile=RiskProfile.HIGH), selection)
+
+    assert low.risk == ActionRisk.LOW
+    assert high.risk == ActionRisk.HIGH
+    assert low.subject_id != high.subject_id
 
 
 def test_low_read_and_low_allowed_effect_are_allowed() -> None:

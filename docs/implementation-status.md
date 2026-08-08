@@ -32,6 +32,7 @@ The target path now has:
 | Visual new-loop vertical | `INTEGRATED_NON_DEFAULT`, positive C2 proof |
 | WoT new-loop vertical | `INTEGRATED_NON_DEFAULT`, local-simulation positive C3 proof |
 | semantic confirmation continuation | `INTEGRATED_NON_DEFAULT`; typed request/decision, run-scoped session, fresh semantic rebind, single-send consumption |
+| P5-D6.1 confirmation/evaluation contract completion | `INTEGRATED_NON_DEFAULT`; effective risk, destination identity, bounded presentation, terminal immutability, policy reselection, evidence lineage, explicit task control |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
 | ActionBatch | helper implemented; not AgentLoop-integrated |
@@ -96,6 +97,16 @@ distinguishes `EFFECT_CONFIRMED`, `NO_EFFECT_CONFIRMED`, `UNKNOWN`, and
 from a fresh observation, matches the semantic subject, binds the current
 private route, and consumes confirmation only after `SENT`/`SENT_UNKNOWN`.
 Unknown effect waits for the user and never replays automatically.
+
+D6.1 applies the TaskGoal risk floor to the displayed and hashed effective
+risk. Semantic destination identity now flows from SelectAction through
+ActionSpace admission, ActionIntent and confirmation subject, while current
+adapters correctly offer no destination. Confirmation summaries use only the
+secret-free world view and bounded/redacted semantic parameters. Terminal
+sessions return their original result. A missing exact confirmed subject returns
+to policy rather than selecting a Runtime candidate. Confirmed action effects
+require exact request/before/after lineage and evidence references;
+TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
 Semantic fusion remains deliberately deferred. The small `AgentLoopState` is
 complete; a distinct LoopPolicy and optional TurnRecorder remain future work.

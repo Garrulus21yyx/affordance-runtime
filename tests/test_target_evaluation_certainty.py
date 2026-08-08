@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 from target_agent_loop_support import SharedStateActionEvaluator, shared_state_task
 
@@ -30,19 +31,23 @@ def test_shared_state_evaluator_distinguishes_effect_absence_from_unknown() -> N
     async def scenario() -> None:
         evaluator = SharedStateActionEvaluator()
         before = _observation("before", False, CoverageState.COMPLETE)
+        request = SimpleNamespace(request_id="request:certainty")
 
         changed = await evaluator.evaluate(
-            shared_state_task(), before, None, None, _observation("changed", True, CoverageState.COMPLETE)
+            shared_state_task(), before, request, None, _observation("changed", True, CoverageState.COMPLETE)
         )
         absent = await evaluator.evaluate(
-            shared_state_task(), before, None, None, _observation("absent", False, CoverageState.COMPLETE)
+            shared_state_task(), before, request, None, _observation("absent", False, CoverageState.COMPLETE)
         )
         unknown = await evaluator.evaluate(
-            shared_state_task(), before, None, None, _observation("unknown", False, CoverageState.FAILED)
+            shared_state_task(), before, request, None, _observation("unknown", False, CoverageState.FAILED)
         )
 
         assert changed.status == ActionEvaluationStatus.EFFECT_CONFIRMED
         assert absent.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED
         assert unknown.status == ActionEvaluationStatus.UNKNOWN
+        assert changed.evidence_refs
+        assert absent.evidence_refs
+        assert unknown.evidence_refs == ()
 
     asyncio.run(scenario())

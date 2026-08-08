@@ -40,6 +40,8 @@ _FORBIDDEN_PARAMETER_KEYS = frozenset(
         "y",
     }
 )
+_PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
+_GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
@@ -52,24 +54,27 @@ class ActionSpaceBuilder:
     ) -> ActionSpace:
         del objective  # Reserved for desired-state narrowing; it never grants effects.
         conflicted_targets = {conflict.subject_id for conflict in observation.conflicts}
-        grouped: dict[tuple[str, str, str, tuple[str, ...], str, bool], list[ActionBinding]] = {}
+        grouped: dict[_GroupKey, list[ActionBinding]] = {}
         for binding in observation.bindings:
             if binding.target_id in conflicted_targets:
                 continue
             if not _binding_is_current(binding, observation) or not _effects_allowed(task, binding):
                 continue
             schema_key = json.dumps(to_json_compatible(binding.parameter_schema), sort_keys=True, separators=(",", ":"))
-            key = (
+            group_key = (
                 binding.target_id,
                 binding.semantic_action,
                 binding.effect_category,
                 binding.semantic_effects,
                 schema_key,
                 binding.observation_barrier,
+                binding.destination_required,
+                binding.eligible_destination_ids,
             )
-            grouped.setdefault(key, []).append(binding)
+            grouped.setdefault(group_key, []).append(binding)
         options = []
-        for (target_id, action, category, effects, schema_key, barrier), bindings in sorted(grouped.items()):
+        for group_key, bindings in sorted(grouped.items()):
+            target_id, action, category, effects, schema_key, barrier, destination_required, destinations = group_key
             risk = max((binding.risk for binding in bindings), key=_risk_rank)
             parameter_schema_digest = schema_digest(bindings[0].parameter_schema)
             eligible_binding_ids = tuple(sorted(binding.binding_id for binding in bindings))
@@ -84,6 +89,8 @@ class ActionSpaceBuilder:
                         parameter_schema_digest,
                         eligible_binding_ids,
                         barrier,
+                        destination_required,
+                        destinations,
                     ],
                     separators=(",", ":"),
                 ).encode()
@@ -101,6 +108,8 @@ class ActionSpaceBuilder:
                     description=f"{action} {target_id}",
                     semantic_effects=effects,
                     risk=risk,
+                    destination_required=bool(destination_required),
+                    eligible_destination_ids=tuple(str(item) for item in destinations),
                     observation_barrier=barrier,
                 )
             )
@@ -111,8 +120,14 @@ class ActionSpaceBuilder:
             raise ValueError("policy parameters contain runtime-private execution fields")
         validate_value(parameters, option.parameter_schema)
 
-    def admit(self, option: ActionOption, parameters: dict[str, Any]) -> AdmittedActionSelection:
+    def admit(
+        self,
+        option: ActionOption,
+        parameters: dict[str, Any],
+        destination_id: str = "",
+    ) -> AdmittedActionSelection:
         self.validate_parameters(option, parameters)
+        _validate_destination(option, destination_id)
         return AdmittedActionSelection(
             option.action_id,
             option.observation_id,
@@ -125,6 +140,9 @@ class ActionSpaceBuilder:
             option.risk,
             option.observation_barrier,
             parameters,
+            destination_id,
+            option.destination_required,
+            option.eligible_destination_ids,
         )
 
 
@@ -154,3 +172,15 @@ def _effects_allowed(task: TaskGoal, binding: ActionBinding) -> bool:
 
 def _risk_rank(risk: ActionRisk) -> int:
     return (ActionRisk.LOW, ActionRisk.MEDIUM, ActionRisk.HIGH, ActionRisk.IRREVERSIBLE).index(risk)
+
+
+def _validate_destination(option: ActionOption, destination_id: str) -> None:
+    lowered = destination_id.casefold()
+    if destination_id and any(marker in lowered for marker in _PRIVATE_DESTINATION_MARKERS):
+        raise ValueError("destination contains runtime-private execution fields")
+    if option.destination_required and not destination_id:
+        raise ValueError("semantic destination is required")
+    if destination_id and not option.eligible_destination_ids:
+        raise ValueError("action does not accept a semantic destination")
+    if destination_id and destination_id not in option.eligible_destination_ids:
+        raise ValueError("semantic destination was not offered by the current ActionSpace")

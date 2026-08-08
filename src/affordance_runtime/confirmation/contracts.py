@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.execution.contracts import ActionIntent
@@ -13,7 +13,7 @@ from affordance_runtime.world.contracts import ActionRisk
 class ConfirmationRequest:
     confirmation_id: str
     subject_id: str
-    intent: ActionIntent
+    intent: ActionIntent = field(repr=False)
     semantic_effects: tuple[str, ...]
     risk: ActionRisk
     consequences: tuple[str, ...]
