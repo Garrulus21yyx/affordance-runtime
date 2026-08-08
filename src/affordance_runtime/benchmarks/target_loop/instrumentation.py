@@ -10,6 +10,7 @@ from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.contracts import ModelMetadata
 
 
 @dataclass
@@ -27,6 +28,7 @@ class BenchmarkInstrumentation:
     forbidden_effect_attempts: int = 0
     duplicate_unknown_attempts: int = 0
     custom_metrics: dict[str, int] = field(default_factory=dict)
+    model_metadata: ModelMetadata | None = None
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
@@ -40,7 +42,11 @@ class CountingPolicy:
 
     async def decide(self, context):
         self.instrumentation.policy_calls += 1
-        return await self.wrapped.decide(context)
+        outcome = await self.wrapped.decide(context)
+        metadata = getattr(self.wrapped, "last_metadata", None)
+        if isinstance(metadata, ModelMetadata):
+            self.instrumentation.model_metadata = metadata
+        return outcome
 
 
 @dataclass

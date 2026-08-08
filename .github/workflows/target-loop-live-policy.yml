@@ -1,0 +1,46 @@
+name: Target-loop live model policy attestation
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_live_policy:
+        description: Run one live provider call on the internal safe real-DOM task
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  live-model-policy:
+    if: inputs.run_live_policy
+    runs-on: ubuntu-latest
+    environment: live-model-policy
+    env:
+      RUN_LIVE_MODEL_POLICY_ATTESTATION: "1"
+      LLM_ACTIVE_PROFILE: ${{ vars.LLM_ACTIVE_PROFILE }}
+      LLM_PROFILE_FALLBACK_TO_LOCAL: "false"
+      LLM_MISTRAL_BASE_URL: ${{ vars.LLM_MISTRAL_BASE_URL }}
+      LLM_MISTRAL_MODEL: ${{ vars.LLM_MISTRAL_MODEL }}
+      LLM_MISTRAL_API_KEY: ${{ secrets.LLM_MISTRAL_API_KEY }}
+      LLM_GEMINI_BASE_URL: ${{ vars.LLM_GEMINI_BASE_URL }}
+      LLM_GEMINI_MODEL: ${{ vars.LLM_GEMINI_MODEL }}
+      LLM_GEMINI_API_KEY: ${{ secrets.LLM_GEMINI_API_KEY }}
+      LLM_ZHIPU_BASE_URL: ${{ vars.LLM_ZHIPU_BASE_URL }}
+      LLM_ZHIPU_MODEL: ${{ vars.LLM_ZHIPU_MODEL }}
+      LLM_ZHIPU_API_KEY: ${{ secrets.LLM_ZHIPU_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev,web,visual]'
+      - run: python -m playwright install --with-deps chromium
+      - name: Run one exact-profile live policy attestation
+        run: >-
+          python -m affordance_runtime.benchmarks.target_loop.live_policy
+          --output /tmp/live-model-policy/live-model-policy.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: target-loop-live-model-policy-${{ github.sha }}
+          path: /tmp/live-model-policy
+          if-no-files-found: error

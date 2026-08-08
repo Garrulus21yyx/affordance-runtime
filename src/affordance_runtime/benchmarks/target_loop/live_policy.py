@@ -1,0 +1,207 @@
+"""Opt-in exact-profile live model-policy attestation on one safe real DOM task."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass
+from enum import StrEnum
+from pathlib import Path
+
+from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.benchmarks.target_loop.contracts import (
+    BenchmarkCase,
+    BenchmarkComposition,
+    BenchmarkManifest,
+    MetricExpectation,
+    MetricExpectationOperator,
+)
+from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
+    real_adapter_task,
+    real_dom_environment,
+)
+from affordance_runtime.benchmarks.target_loop.runner import run_suite
+from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
+from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.model_policy import ModelBackedAgentPolicy, model_policy_from_environment
+
+LIVE_ATTESTATION_SCHEMA_VERSION = "target-loop-live-model-policy.v1"
+
+
+class LiveModelPolicyStatus(StrEnum):
+    ATTESTED = "attested"
+    UNAVAILABLE = "unavailable"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class LiveModelPolicyAttestation:
+    attestation_schema_version: str
+    git_sha: str
+    git_dirty: bool
+    status: LiveModelPolicyStatus
+    provider_id: str = ""
+    model_id: str = ""
+    endpoint_class: str = ""
+    prompt_version: str = ""
+    schema_version: str = ""
+    terminal_status: str = ""
+    observations: int = 0
+    executions: int = 0
+    policy_calls: int = 0
+    provider_attempts: int = 0
+    forbidden_effect_attempts: int = 0
+    duplicate_unknown_attempts: int = 0
+    stale_zero_call_violations: int = 0
+    rate_limit_retry_count: int = 0
+    transient_retry_count: int = 0
+    latency_ms: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    accepted: bool = False
+    acceptance_errors: tuple[str, ...] = ()
+
+
+async def run_live_model_policy_attestation(
+    output: Path,
+    *,
+    environment: Mapping[str, str] | None = None,
+    policy_factory: Callable[[Mapping[str, str]], ModelBackedAgentPolicy] = model_policy_from_environment,
+) -> LiveModelPolicyAttestation:
+    env = os.environ if environment is None else environment
+    sha = _git("rev-parse", "HEAD")
+    dirty = bool(_git("status", "--short"))
+    if env.get("RUN_LIVE_MODEL_POLICY_ATTESTATION") != "1":
+        return _write(output, LiveModelPolicyAttestation(
+            LIVE_ATTESTATION_SCHEMA_VERSION, sha, dirty, LiveModelPolicyStatus.UNAVAILABLE,
+            acceptance_errors=("live model policy attestation was not enabled",),
+        ))
+    if dirty:
+        return _write(output, LiveModelPolicyAttestation(
+            LIVE_ATTESTATION_SCHEMA_VERSION, sha, dirty, LiveModelPolicyStatus.FAILED,
+            acceptance_errors=("live model policy attestation requires a clean exact tree",),
+        ))
+    try:
+        policy = policy_factory(env)
+    except Exception as exc:
+        return _failed(output, sha, f"model policy construction failed: {type(exc).__name__}")
+    holder: dict[str, object] = {}
+
+    def environment_factory(instrumentation):
+        holder["instrumentation"] = instrumentation
+        return real_dom_environment(instrumentation)
+
+    case = BenchmarkCase(
+        "live-real-dom-policy", "live-internal-policy",
+        "live existing-ModelPort policy on the safe internal real DOM task",
+        real_adapter_task, environment_factory,
+        lambda _metrics: BenchmarkComposition(
+            policy, CurrentFactActionEvaluator(), ProductionTaskEvaluator(),
+        ),
+        (AgentLoopStatus.DONE,), 120.0, 7,
+        ("observations", "executions", "policy_calls", "provider_attempts"),
+        tuple(
+            MetricExpectation(name, MetricExpectationOperator.EQ, value)
+            for name, value in {
+                "observations": 2, "executions": 1, "policy_calls": 1,
+                "provider_attempts": 1,
+            }.items()
+        ),
+    )
+    try:
+        result = await run_suite(BenchmarkManifest(
+            "target-loop-manifest.v1", "live-internal-policy", "live-model-policy", 7, (case,),
+        ))
+    except Exception as exc:
+        return _failed(output, sha, f"live target-loop run failed: {type(exc).__name__}")
+    return _write(output, evaluate_live_policy_suite(
+        sha, result, holder.get("instrumentation"),
+        live_origin=policy_factory is model_policy_from_environment,
+    ))
+
+
+def evaluate_live_policy_suite(
+    sha: str,
+    suite,
+    instrumentation,
+    *,
+    live_origin: bool,
+) -> LiveModelPolicyAttestation:
+    case = suite.cases[0]
+    metric = lambda name: int(case.measurements[name].value or 0)  # noqa: E731
+    metadata = getattr(instrumentation, "model_metadata", None)
+    errors = list(suite.acceptance.acceptance_errors)
+    if not live_origin:
+        errors.append("injected policy evidence is test-only and cannot attest a live profile")
+    if metadata is None:
+        errors.append("live provider call did not produce model metadata")
+    if metric("provider_attempts") != metric("policy_calls"):
+        errors.append("provider attempts must equal policy calls")
+    if any(metric(name) for name in (
+        "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",
+    )):
+        errors.append("live policy run violated a safety metric")
+    retries = (
+        getattr(metadata, "rate_limit_retry_count", 0),
+        getattr(metadata, "transient_retry_count", 0),
+    )
+    if any(retries):
+        errors.append("live policy profile used a provider retry")
+    accepted = not errors and case.status == str(AgentLoopStatus.DONE)
+    return LiveModelPolicyAttestation(
+        LIVE_ATTESTATION_SCHEMA_VERSION, sha, False,
+        LiveModelPolicyStatus.ATTESTED if accepted else LiveModelPolicyStatus.FAILED,
+        provider_id=getattr(metadata, "provider_id", ""),
+        model_id=getattr(metadata, "model_id", ""),
+        endpoint_class=getattr(metadata, "endpoint_class", ""),
+        prompt_version=getattr(metadata, "prompt_version", ""),
+        schema_version=getattr(metadata, "schema_version", ""),
+        terminal_status=case.status,
+        observations=metric("observations"), executions=metric("executions"),
+        policy_calls=metric("policy_calls"), provider_attempts=metric("provider_attempts"),
+        forbidden_effect_attempts=metric("forbidden_effect_attempts"),
+        duplicate_unknown_attempts=metric("duplicate_unknown_attempts"),
+        stale_zero_call_violations=metric("stale_zero_call_violations"),
+        rate_limit_retry_count=retries[0], transient_retry_count=retries[1],
+        latency_ms=getattr(metadata, "latency_ms", 0.0),
+        prompt_tokens=getattr(metadata, "prompt_tokens", 0),
+        completion_tokens=getattr(metadata, "completion_tokens", 0),
+        total_tokens=getattr(metadata, "total_tokens", 0),
+        accepted=accepted, acceptance_errors=tuple(errors),
+    )
+
+
+def _failed(output: Path, sha: str, reason: str) -> LiveModelPolicyAttestation:
+    return _write(output, LiveModelPolicyAttestation(
+        LIVE_ATTESTATION_SCHEMA_VERSION, sha, False, LiveModelPolicyStatus.FAILED,
+        acceptance_errors=(reason,),
+    ))
+
+
+def _write(output: Path, result: LiveModelPolicyAttestation) -> LiveModelPolicyAttestation:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(asdict(result), sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def _git(*args: str) -> str:
+    result = subprocess.run(("git", *args), check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+    import asyncio
+
+    result = asyncio.run(run_live_model_policy_attestation(Path(args.output)))
+    return 0 if result.accepted else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
