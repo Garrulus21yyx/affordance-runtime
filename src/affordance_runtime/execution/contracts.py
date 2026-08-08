@@ -22,6 +22,7 @@ class DispatchStatus(StrEnum):
 class ActionError(StrEnum):
     STALE_BINDING = "stale_binding"
     CURRENTNESS_UNAVAILABLE = "currentness_unavailable"
+    RATE_LIMITED = "rate_limited"
     INVALID_PARAMETERS = "invalid_parameters"
     EXECUTION_FAILED = "execution_failed"
     UNSUPPORTED_ACTION = "unsupported_action"

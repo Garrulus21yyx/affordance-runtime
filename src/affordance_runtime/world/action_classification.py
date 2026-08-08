@@ -55,6 +55,36 @@ def classify_surface_action(task: TaskGoal, role: str, semantic_action: str) -> 
     )
 
 
+def classify_wot_action(
+    task: TaskGoal,
+    role: str,
+    semantic_action: str,
+    deployment_scope: object,
+    *,
+    authored_risk: str = "",
+) -> ActionClassification:
+    """Classify WoT actions from Runtime deployment scope, never TD trust."""
+
+    if semantic_action == "read":
+        category = EffectCategory.OBSERVATION
+    elif str(deployment_scope) == "local_simulation":
+        category = EffectCategory.LOCAL_REVERSIBLE
+    else:
+        category = EffectCategory.EXTERNAL
+    risk = _category_risk(category)
+    if authored_risk:
+        try:
+            risk = max((risk, ActionRisk(authored_risk)), key=_risk_rank)
+        except ValueError:
+            pass
+    return ActionClassification(
+        category,
+        _business_effects(task, "", category),
+        risk,
+        category != EffectCategory.OBSERVATION,
+    )
+
+
 def _base_category(semantic_action: str, role: str) -> EffectCategory:
     if semantic_action == "read":
         return EffectCategory.OBSERVATION

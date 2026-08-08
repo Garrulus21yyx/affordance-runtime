@@ -71,7 +71,23 @@ def test_action_space_is_current_and_schema_is_immutable() -> None:
         space.options[0].parameter_schema["type"] = "array"  # type: ignore[index]
 
 
-@pytest.mark.parametrize("private_key", ["x", "y", "bbox", "coordinate", "backend", "selector", "point"])
+@pytest.mark.parametrize(
+    "private_key",
+    [
+        "x",
+        "y",
+        "bbox",
+        "coordinate",
+        "backend",
+        "selector",
+        "point",
+        "href",
+        "endpoint",
+        "method",
+        "security",
+        "credential",
+    ],
+)
 def test_policy_cannot_inject_execution_payload(private_key: str) -> None:
     task = TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW)
     option = ActionSpaceBuilder().build(task, _world()).options[0]
