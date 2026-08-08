@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy.grounding import (
+    build_compact_decision_guide,
+    serialize_compact_decision_guide,
+)
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
 from affordance_runtime.model_port import (
@@ -26,12 +31,15 @@ from affordance_runtime.model_port import (
 class ModelPortDecisionAdapter:
     port: ModelPort
     config: ModelConfig
+    grounding_variant: str = "format-only"
 
     def __post_init__(self) -> None:
         if isinstance(self.port, FallbackModelPort):
             raise ValueError("model policy bridge does not admit provider fallback")
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("model policy bridge requires a zero retry configuration")
+        if self.grounding_variant not in {"format-only", "compact-contract"}:
+            raise ValueError("production bridge admits only format-only or compact-contract grounding")
 
     @property
     def transport_timeout_s(self) -> float:
@@ -41,8 +49,8 @@ class ModelPortDecisionAdapter:
         if request.schema_version != SCHEMA_VERSION or dict(request.decision_schema) != decision_response_schema():
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
         messages = (
-            ModelMessage(role="system", content=MODEL_POLICY_INSTRUCTIONS),
-            ModelMessage(role="user", content=request.serialized_context),
+            ModelMessage(role="system", content=_system_message(self.grounding_variant)),
+            ModelMessage(role="user", content=_user_message(request, self.grounding_variant)),
         )
         try:
             payload = await self.port.generate_structured(messages, AgentDecisionPayload, self.config)
@@ -96,3 +104,25 @@ def _public_id(value: str) -> str:
 
 def _failure(kind: ModelFailureKind, reason: str, *, retryable: bool = False) -> ModelFailure:
     return ModelFailure(kind, reason, retryable)
+
+
+def _user_message(request: ModelDecisionRequest, variant: str) -> str:
+    if variant == "format-only":
+        return request.serialized_context
+    context = json.loads(request.serialized_context)
+    guide = json.loads(serialize_compact_decision_guide(
+        build_compact_decision_guide(request.serialized_context)
+    ))
+    return json.dumps(
+        {"agent_context": context, "decision_guide": guide},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+
+
+def _system_message(variant: str) -> str:
+    if variant == "format-only":
+        return MODEL_POLICY_INSTRUCTIONS
+    return MODEL_POLICY_INSTRUCTIONS + (
+        "\nThe provider enforces a JSON schema. The user message also contains a compact "
+        "decision guide. Copy the current context_id and one currently visible action_id exactly."
+    )

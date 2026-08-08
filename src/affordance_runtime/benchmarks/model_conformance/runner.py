@@ -7,13 +7,13 @@ from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
-from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 from affordance_runtime.model_policy.spec import AgentDecisionPayload
 from affordance_runtime.model_port import ModelPort
 
 from .attempts import run_structured_attempt
 from .classification import classify_support
 from .contracts import ModelProfileConformanceResult, ModelProfileIdentity
+from .grounding import GroundingVariant, build_grounded_input, diagnostic_schema_model
 from .levels import Level0Payload, Level1SelectActionPayload, minimal_select_context, minimal_union_context
 from .loop_attempt import run_level_four_attempt
 from .scenario import LiveDomScenario, build_live_dom_scenario
@@ -31,12 +31,10 @@ async def run_profile(
 ) -> ModelProfileConformanceResult:
     if repetitions < 1 or repetitions > 20:
         raise ValueError("conformance repetitions must be in [1, 20]")
-    unsupported = set(grounding_variants) - {"format-only"}
-    if unsupported:
-        raise ValueError(f"grounding variants are not yet available: {sorted(unsupported)}")
+    variants = tuple(GroundingVariant(item) for item in grounding_variants)
     scenario = await build_live_dom_scenario() if set(levels) - {"0"} else None
     attempts = []
-    for grounding in grounding_variants:
+    for grounding in variants:
         for level in levels:
             for number in range(1, repetitions + 1):
                 port = port_factory()
@@ -67,11 +65,11 @@ async def run_profile(
     return result
 
 
-async def _run_level(port, scenario, level, grounding, number):
+async def _run_level(port, scenario, level, grounding: GroundingVariant, number):
     if level == "0":
         return await run_structured_attempt(
             port, Level0Payload, ("Return the required JSON object.", "{}"),
-            level=level, grounding_variant=grounding, attempt_number=number,
+            level=level, grounding_variant=grounding.value, attempt_number=number,
         )
     if scenario is None:
         raise ValueError("levels 1-4 require the live DOM scenario")
@@ -79,12 +77,24 @@ async def _run_level(port, scenario, level, grounding, number):
     destination = option.destinations.items[0].destination_id if option.destination_required else ""
     destinations = tuple(["", *(item.destination_id for item in option.destinations.items)])
     if level == "4":
-        return await run_level_four_attempt(port, grounding_variant=grounding, attempt_number=number)
+        if grounding not in {GroundingVariant.FORMAT_ONLY, GroundingVariant.COMPACT_CONTRACT}:
+            raise ValueError("level 4 admits only production format-only or compact-contract variants")
+        return await run_level_four_attempt(
+            port, grounding_variant=grounding.value, attempt_number=number,
+        )
     user = _level_user(scenario, level, destination)
     schema = Level1SelectActionPayload if level == "1" else AgentDecisionPayload
+    base_schema = schema.model_json_schema()
+    grounded = build_grounded_input(
+        user, base_schema, grounding, guide_context=scenario.serialized_context,
+    )
+    output_schema = (
+        diagnostic_schema_model(schema, grounded.provider_schema)
+        if grounded.provider_schema != base_schema else schema
+    )
     return await run_structured_attempt(
-        port, schema, (MODEL_POLICY_INSTRUCTIONS, user), level=level,
-        grounding_variant=grounding, attempt_number=number,
+        port, output_schema, (grounded.system_message, grounded.user_message), level=level,
+        grounding_variant=grounding.value, attempt_number=number,
         expected_context_id=scenario.context.context_id,
         visible_action_ids=(option.action_id,), visible_destinations={option.action_id: destinations},
         context_bytes=len(scenario.serialized_context.encode()),
@@ -109,4 +119,3 @@ def _level_user(scenario: LiveDomScenario, level: str, destination: str) -> str:
 __all__ = [
     "LiveDomScenario", "build_live_dom_scenario", "run_profile", "run_structured_attempt",
 ]
-

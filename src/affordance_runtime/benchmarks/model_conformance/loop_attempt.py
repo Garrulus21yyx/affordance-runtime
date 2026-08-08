@@ -46,7 +46,9 @@ async def run_level_four_attempt(
     config = ModelConfig(
         timeout_s=89, rate_limit_retries=0, transient_retries=0, prompt_version="p5-m1.1",
     )
-    capturing = CapturingDecisionPort(ModelPortDecisionAdapter(port, config))
+    capturing = CapturingDecisionPort(ModelPortDecisionAdapter(
+        port, config, grounding_variant=grounding_variant,
+    ))
     policy = ModelBackedAgentPolicy(capturing, call_timeout_s=90)
     instrumentation = BenchmarkInstrumentation()
     environment = real_dom_environment(instrumentation)
@@ -88,6 +90,8 @@ def _attributed(outcome, user):
     if not isinstance(outcome, ModelDecisionResponse):
         return attribute_decision_payload("{", "", (), {})
     value = json.loads(user)
+    if isinstance(value, dict) and isinstance(value.get("agent_context"), dict):
+        value = value["agent_context"]
     options = value.get("actions", {}).get("options", ())
     action_ids = tuple(str(item.get("action_id") or "") for item in options)
     destinations = {
@@ -105,6 +109,9 @@ def _count(user: str, key: str) -> int:
 
 def _history(user: str) -> int:
     try:
-        return len(json.loads(user).get("history", {}).get("items", ()))
+        value = json.loads(user)
+        if isinstance(value, dict) and isinstance(value.get("agent_context"), dict):
+            value = value["agent_context"]
+        return len(value.get("history", {}).get("items", ()))
     except (AttributeError, json.JSONDecodeError):
         return 0
