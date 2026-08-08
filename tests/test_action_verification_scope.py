@@ -72,6 +72,7 @@ def test_exact_criterion_progress_supports_effect_only_when_newly_satisfied() ->
     obligations = derive_action_verification_obligations(task, _request(), false_world)
     assert len(obligations) == 1
     assert obligations[0].kind == VerificationObligationKind.CRITERION_PROGRESS
+    assert derive_action_verification_obligations(task, _request(), already_true) == ()
     assert _apply(
         task, _request(), false_world, true_world, ActionEvaluationStatus.EFFECT_CONFIRMED,
         ("fact:after:target:1:enabled",),
@@ -141,6 +142,41 @@ def test_no_effect_requires_every_fact_obligation_strong_complete_and_referenced
     assert one_ref.status == ActionEvaluationStatus.UNKNOWN
     assert all_refs.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED
     assert weak.status == ActionEvaluationStatus.UNKNOWN
+
+
+def test_no_effect_requires_all_current_sources_to_agree_and_be_referenced() -> None:
+    task = _task({"id": "enabled", "subject_id": "target:1", "predicate": "enabled", "value": True})
+    before = _world("before", (("target:1", "enabled", False),))
+    dom_fact = StateFact("fact:after:dom", "target:1", "enabled", False, "source:dom")
+    wot_fact = StateFact("fact:after:wot", "target:1", "enabled", False, "source:wot")
+    sources = (
+        SurfaceObservation("source:dom", "dom", "r:dom", ObservationSourceProfile.dom(), facts=(dom_fact,)),
+        SurfaceObservation("source:wot", "wot", "r:wot", ObservationSourceProfile.wot(), facts=(wot_fact,)),
+    )
+    after = WorldObservation(
+        "after", (), (dom_fact, wot_fact), (),
+        {"dom": CoverageState.COMPLETE, "wot": CoverageState.COMPLETE}, sources=sources,
+    )
+    partial = _apply(
+        task, _request(), before, after, ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+        ("fact:after:dom",),
+    )
+    complete = _apply(
+        task, _request(), before, after, ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+        ("fact:after:dom", "fact:after:wot"),
+    )
+    changed = StateFact("fact:after:wot", "target:1", "enabled", True, "source:wot")
+    disagreement = WorldObservation(
+        "after", (), (dom_fact, changed), (), after.coverage,
+        sources=(sources[0], SurfaceObservation("source:wot", "wot", "r:wot", ObservationSourceProfile.wot(), facts=(changed,))),
+    )
+    disputed = _apply(
+        task, _request(), before, disagreement, ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+        ("fact:after:dom", "fact:after:wot"),
+    )
+    assert partial.status == ActionEvaluationStatus.UNKNOWN
+    assert complete.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+    assert disputed.status == ActionEvaluationStatus.UNKNOWN
 
 
 def test_artifact_absence_cannot_prove_no_effect_without_inventory_contract() -> None:

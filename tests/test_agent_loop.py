@@ -28,8 +28,10 @@ from affordance_runtime.world import (
     ActionBinding,
     ActionRisk,
     CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
+    SurfaceObservation,
     WorldObservation,
 )
 
@@ -59,12 +61,18 @@ def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.
         payload={"selector": "#shared"},
         risk=risk,
     )
+    fact = StateFact(f"fact:{observation_id}:enabled", target.target_id, "enabled", enabled, observation_id)
+    source = SurfaceObservation(
+        observation_id, "dom", f"revision:{observation_id}", ObservationSourceProfile.dom(),
+        (target,), (fact,), (binding,),
+    )
     return WorldObservation(
         observation_id,
         (target,),
-        (StateFact(f"fact:{observation_id}:enabled", target.target_id, "enabled", enabled, observation_id),),
+        (fact,),
         (binding,),
         {"dom": CoverageState.COMPLETE},
+        sources=(source,),
     )
 
 

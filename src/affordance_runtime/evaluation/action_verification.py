@@ -62,6 +62,8 @@ def derive_action_verification_obligations(
         subject = criterion.subject_id or _unique_subject(before, predicate, subjects)
         if not predicate or subject not in subjects:
             continue
+        if _already_satisfied(before, subject, predicate, criterion.expected_value):
+            continue
         kind = (
             VerificationObligationKind.FACT_TRANSITION_TO
             if criterion.kind == "target_state_equals"
@@ -82,3 +84,11 @@ def derive_action_verification_obligations(
 def _unique_subject(before: WorldObservation, predicate: str, allowed: set[str]) -> str:
     matches = {fact.subject_id for fact in before.facts if fact.predicate == predicate}
     return next(iter(matches)) if len(matches) == 1 and matches.issubset(allowed) else ""
+
+
+def _already_satisfied(before: WorldObservation, subject: str, predicate: str, expected: object) -> bool:
+    values = tuple(
+        fact.value for fact in before.facts
+        if fact.subject_id == subject and fact.predicate == predicate
+    )
+    return len(values) == 1 and values[0] == expected

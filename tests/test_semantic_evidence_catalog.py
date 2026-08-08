@@ -1,12 +1,15 @@
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from affordance_runtime.evaluation import CriterionEvaluation, CriterionEvaluationStatus
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_applicability import EvidenceApplicability, assess_semantic_evidence
 from affordance_runtime.evaluation.semantic_readiness import SemanticReadiness, assess_semantic_readiness
-from affordance_runtime.model_boundary.budgets import ContextProjectionBudget
-from affordance_runtime.model_boundary.evaluator_views import build_semantic_judge_request
+from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.model_boundary.evaluator_views import (
+    ModelCriterionEvidenceWindow,
+    build_semantic_judge_request,
+)
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     CoverageState,
@@ -78,6 +81,12 @@ def test_only_presented_catalog_refs_can_support_semantic_proposal() -> None:
     accepted = CriterionEvaluation("quality", CriterionEvaluationStatus.SATISFIED, (visible[0],), "visible")
     rejected = CriterionEvaluation("quality", CriterionEvaluationStatus.SATISFIED, (hidden,), "hidden")
     assert request.evidence_catalog.truncated is True
+    window = request.evidence_windows[0]
+    assert window.criterion_id == "quality"
+    assert window.eligible_count == 2
+    assert window.visible_count == 1
+    assert window.truncated is True
+    assert assess_semantic_readiness(criterion, request, world) == SemanticReadiness.READY
     assert assess_semantic_evidence(criterion, accepted, index, visible) == EvidenceApplicability.ACCEPTED
     assert assess_semantic_evidence(criterion, rejected, index, visible) == EvidenceApplicability.REJECTED
 
@@ -119,3 +128,20 @@ def test_semantic_readiness_distinguishes_present_absent_and_inconclusive_scope(
     assert assess_semantic_readiness(criterion, present_request, present) == SemanticReadiness.READY
     assert assess_semantic_readiness(criterion, absent_request, absent) == SemanticReadiness.NOT_READY
     assert assess_semantic_readiness(criterion, truncated_request, truncated) == SemanticReadiness.INCONCLUSIVE
+
+
+def test_scoped_evidence_fully_hidden_by_budget_is_inconclusive() -> None:
+    task = _task()
+    criterion = normalize_task_criteria(task)[0]
+    world = _world()
+    request = build_semantic_judge_request(
+        task, (criterion,), world, WorldEvidenceIndex.from_observation(world)
+    )
+    request = replace(
+        request,
+        evidence_catalog=BoundedSection((), 2, True),
+        evidence_windows=(ModelCriterionEvidenceWindow("quality", 2, 0, True),),
+    )
+    assert request.evidence_windows[0].eligible_count == 2
+    assert request.evidence_windows[0].visible_count == 0
+    assert assess_semantic_readiness(criterion, request, world) == SemanticReadiness.INCONCLUSIVE

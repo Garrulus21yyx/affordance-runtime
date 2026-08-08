@@ -24,7 +24,7 @@ def assess_criterion_evidence(
     if not evaluation.evidence_refs:
         return EvidenceApplicability.UNKNOWN if evaluation.status == CriterionEvaluationStatus.UNKNOWN else EvidenceApplicability.REJECTED
     records = tuple(evidence_index.resolve_record(ref) for ref in evaluation.evidence_refs)
-    if any(record is None for record in records):
+    if any(record is None or not record.has_typed_source for record in records):
         return EvidenceApplicability.REJECTED
     if any(not _record_applies(criterion, record) for record in records if record is not None):
         return EvidenceApplicability.REJECTED
@@ -44,7 +44,7 @@ def assess_semantic_evidence(
     if not evaluation.evidence_refs:
         return EvidenceApplicability.UNKNOWN if evaluation.status == CriterionEvaluationStatus.UNKNOWN else EvidenceApplicability.REJECTED
     records = tuple(evidence_index.resolve_record(ref) for ref in evaluation.evidence_refs)
-    if any(record is None or not _semantic_record_applies(criterion, record) for record in records):
+    if any(record is None or not record.has_typed_source or not _semantic_record_applies(criterion, record) for record in records):
         return EvidenceApplicability.REJECTED
     return EvidenceApplicability.ACCEPTED
 

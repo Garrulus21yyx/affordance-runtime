@@ -23,6 +23,16 @@ def post_action_result(
     task_status = task_evaluation_loop_status(task_evaluation)
     if task_status is not None:
         return build_result(task_status, task, state, 0, 0, task_evaluation.reason)
+    if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
+        state.set_pending_unknown_effect(request)
+        return build_result(
+            AgentLoopStatus.WAITING_USER,
+            task,
+            state,
+            0,
+            0,
+            "effect remains unknown after transport uncertainty; request will not be replayed",
+        )
     if action_evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
         return None
     if action_evaluation.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED:

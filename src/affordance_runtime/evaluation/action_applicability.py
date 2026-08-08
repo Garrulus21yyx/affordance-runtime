@@ -8,8 +8,9 @@ from affordance_runtime.evaluation.action_verification import (
 )
 from affordance_runtime.evaluation.contracts import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
-from affordance_runtime.world.source_profile import assurance_satisfies
+from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 
 def apply_action_evidence_profile(
@@ -25,15 +26,17 @@ def apply_action_evidence_profile(
     if evaluation.status not in {ActionEvaluationStatus.EFFECT_CONFIRMED, ActionEvaluationStatus.NO_EFFECT_CONFIRMED}:
         return evaluation
     records = tuple(after_index.resolve_record(ref) for ref in evaluation.evidence_refs)
-    if any(record is None for record in records):
+    if any(record is None or not evidence_source_is_current(record, after) for record in records):
         return _unknown(evaluation, "action evidence is not current")
     if not obligations or not after.sources:
         return _unknown(evaluation, "action verification scope or source profile is unavailable")
     if evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
-        supported = any(_effect_supported(item, records, before) for item in obligations)
+        supported = any(_effect_supported(item, records, before, after) for item in obligations)
         return evaluation if supported else _unknown(evaluation, "current evidence does not satisfy a verification obligation")
     complete = bool(after.coverage) and all(value == CoverageState.COMPLETE for value in after.coverage.values())
-    checkable = all(_no_effect_supported(item, records, before) for item in obligations)
+    checkable = not _has_relevant_conflict(after, obligations) and all(
+        _no_effect_supported(item, records, before, after, after_index) for item in obligations
+    )
     return evaluation if complete and checkable else _unknown(evaluation, "current evidence cannot close every no-effect obligation")
 
 
@@ -42,11 +45,12 @@ def _before_values(observation: WorldObservation, subject_id: str, predicate: st
     return matches
 
 
-def _effect_supported(obligation, records, before) -> bool:
+def _effect_supported(obligation, records, before, after) -> bool:
     if obligation.kind == VerificationObligationKind.ARTIFACT_CREATED:
         before_kinds = {str(key) for source in before.sources for key in source.artifacts}
         return obligation.output_id not in before_kinds and any(
-            item is not None and item.kind == "artifact" and item.artifact_kind == obligation.output_id
+            item is not None and evidence_source_is_current(item, after)
+            and item.kind == "artifact" and item.artifact_kind == obligation.output_id
             for item in records
         )
     before_values = _before_values(before, obligation.subject_id, obligation.predicate)
@@ -58,16 +62,43 @@ def _effect_supported(obligation, records, before) -> bool:
     )
 
 
-def _no_effect_supported(obligation, records, before) -> bool:
+def _no_effect_supported(obligation, records, before, after, index) -> bool:
     if obligation.kind == VerificationObligationKind.ARTIFACT_CREATED:
         return False
     before_values = _before_values(before, obligation.subject_id, obligation.predicate)
-    return len(before_values) == 1 and any(
-        item is not None and item.kind == "fact" and item.subject_id == obligation.subject_id
-        and item.predicate == obligation.predicate and item.value == before_values[0]
-        and _assurance(item.source_assurance, obligation.required_assurance or "structural")
-        for item in records
+    relevant = tuple(
+        item for item in index.records
+        if item.kind == "fact" and item.subject_id == obligation.subject_id
+        and item.predicate == obligation.predicate and evidence_source_is_current(item, after)
     )
+    submitted = {item.evidence_ref for item in records if item is not None}
+    values = {repr(item.value) for item in relevant}
+    required = no_effect_assurance_floor(obligation.required_assurance)
+    return (
+        len(before_values) == 1 and bool(relevant) and len(values) == 1
+        and all(item.value == before_values[0] for item in relevant)
+        and all(item.evidence_ref in submitted for item in relevant)
+        and any(_assurance(item.source_assurance, required) for item in relevant)
+    )
+
+
+def no_effect_assurance_floor(required: str) -> ObservationAssurance:
+    if not required:
+        return ObservationAssurance.STRUCTURAL
+    value = ObservationAssurance(required)
+    return (
+        ObservationAssurance.AUTHORITATIVE
+        if value == ObservationAssurance.AUTHORITATIVE
+        else ObservationAssurance.STRUCTURAL
+    )
+
+
+def _has_relevant_conflict(after, obligations) -> bool:
+    keys = {
+        (item.subject_id, item.predicate) for item in obligations
+        if item.kind != VerificationObligationKind.ARTIFACT_CREATED
+    }
+    return any((item.subject_id, item.predicate) in keys for item in after.conflicts)
 
 
 def _assurance(actual: str, required: str) -> bool:

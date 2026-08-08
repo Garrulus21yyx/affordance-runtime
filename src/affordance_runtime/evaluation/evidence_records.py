@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 
 @dataclass(frozen=True)
@@ -27,3 +28,20 @@ class EvidenceRecord:
         if len(self.output_id) > 240 or len(self.public_summary) > 500:
             raise ValueError("evidence record public artifact fields exceed their bounds")
         object.__setattr__(self, "value", freeze_json(self.value))
+
+    @property
+    def has_typed_source(self) -> bool:
+        if not self.source_observation_id:
+            return False
+        try:
+            ObservationModality(self.source_modality)
+            ObservationAssurance(self.source_assurance)
+        except ValueError:
+            return False
+        return True
+
+
+def evidence_source_is_current(record: EvidenceRecord, observation) -> bool:
+    return record.has_typed_source and any(
+        source.observation_id == record.source_observation_id for source in observation.sources
+    )

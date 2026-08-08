@@ -272,6 +272,39 @@ def test_authoritative_checks_and_strict_current_source_lineage() -> None:
     assert orphan.status == TaskEvaluationStatus.UNKNOWN
 
 
+def test_authoritative_or_strict_semantic_absence_without_evidence_is_unknown() -> None:
+    criterion = {
+        "id": "quality", "adjudicator": "semantic", "kind": "semantic_rubric",
+        "rubric": "A report exists", "evidence_scope_target_ids": ["report:1"],
+    }
+    absent = WorldObservation("absent", (), (), (), {"dom": CoverageState.COMPLETE})
+    authoritative = TaskGoal(
+        "authoritative", "Create report", success_criteria=(criterion,),
+        evaluation_spec=EvaluationSpec({"criterion": "quality"}, authoritative_checks=("quality",)),
+    )
+    strict = TaskGoal(
+        "strict", "Create report", success_criteria=(criterion,),
+        evaluation_spec=EvaluationSpec({"criterion": "quality"}, strict_source_lineage=True),
+    )
+    assert asyncio.run(ProductionTaskEvaluator().evaluate(authoritative, absent)).status == TaskEvaluationStatus.UNKNOWN
+    assert asyncio.run(ProductionTaskEvaluator().evaluate(strict, absent)).status == TaskEvaluationStatus.UNKNOWN
+
+
+def test_missing_required_output_is_incomplete_when_inventory_is_complete() -> None:
+    task = TaskGoal(
+        "output-later", "Export report",
+        success_criteria=({"id": "ready", "predicate": "ready", "value": True},),
+        requested_outputs=("report",),
+    )
+    complete_inventory = _world(True)
+    truncated = WorldObservation(
+        complete_inventory.observation_id, complete_inventory.targets, complete_inventory.facts,
+        (), {"dom": CoverageState.TRUNCATED}, sources=complete_inventory.sources,
+    )
+    assert asyncio.run(ProductionTaskEvaluator().evaluate(task, complete_inventory)).status == TaskEvaluationStatus.INCOMPLETE
+    assert asyncio.run(ProductionTaskEvaluator().evaluate(task, truncated)).status == TaskEvaluationStatus.UNKNOWN
+
+
 def test_output_value_path_sha_file_and_current_artifact_are_bound(tmp_path) -> None:
     output = tmp_path / "report.txt"
     output.write_text("complete report", encoding="utf-8")

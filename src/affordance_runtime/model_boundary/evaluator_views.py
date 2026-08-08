@@ -71,6 +71,14 @@ class ModelCriterionView:
 
 
 @dataclass(frozen=True)
+class ModelCriterionEvidenceWindow:
+    criterion_id: str
+    eligible_count: int
+    visible_count: int
+    truncated: bool
+
+
+@dataclass(frozen=True)
 class ModelEvidenceRecordView:
     evidence_ref: str
     kind: str
@@ -92,6 +100,7 @@ class SemanticJudgeRequest:
     criteria: tuple[ModelCriterionView, ...]
     world: ModelWorldView
     evidence_catalog: BoundedSection[ModelEvidenceRecordView]
+    evidence_windows: tuple[ModelCriterionEvidenceWindow, ...] = ()
 
     @property
     def visible_evidence_refs(self) -> tuple[str, ...]:
@@ -153,9 +162,11 @@ def build_semantic_judge_request(
     eligible = tuple(
         record for record in evidence_index.records
         if _semantic_record_in_scope(record, target_scope, output_scope)
+        and record.has_typed_source
     )
     shown = tuple(_model_evidence(record) for record in eligible if record.evidence_ref in visible_refs)
     task_view = replace(project_task(task), success_criteria=BoundedSection((), 0, False))
+    windows = tuple(_evidence_window(item, eligible, shown) for item in criteria)
     return SemanticJudgeRequest(
         task_view,
         tuple(
@@ -167,7 +178,21 @@ def build_semantic_judge_request(
             for item in criteria
         ),
         projected_world,
-        BoundedSection(shown, len(eligible), len(eligible) > len(shown)),
+        BoundedSection(shown, len(eligible), len(eligible) > len(shown)), windows,
+    )
+
+
+def _evidence_window(criterion, eligible, shown) -> ModelCriterionEvidenceWindow:
+    scoped = tuple(
+        item for item in eligible
+        if _semantic_record_in_scope(
+            item, criterion.evidence_scope_target_ids, criterion.evidence_scope_output_ids
+        )
+    )
+    shown_refs = {item.evidence_ref for item in shown}
+    visible = sum(item.evidence_ref in shown_refs for item in scoped)
+    return ModelCriterionEvidenceWindow(
+        criterion.criterion_id, len(scoped), visible, len(scoped) > visible
     )
 
 

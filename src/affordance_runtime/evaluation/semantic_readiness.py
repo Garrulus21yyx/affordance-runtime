@@ -19,6 +19,10 @@ def assess_semantic_readiness(
     request: SemanticJudgeRequest,
     observation: WorldObservation,
 ) -> SemanticReadiness:
+    window = next(
+        (item for item in request.evidence_windows if item.criterion_id == criterion.criterion_id),
+        None,
+    )
     relevant = tuple(
         item for item in request.evidence_catalog.items
         if (
@@ -32,6 +36,8 @@ def assess_semantic_readiness(
     )
     if relevant:
         return SemanticReadiness.READY
+    if window is not None and window.eligible_count > window.visible_count:
+        return SemanticReadiness.INCONCLUSIVE
     complete = bool(observation.coverage) and all(
         item == CoverageState.COMPLETE for item in observation.coverage.values()
     )

@@ -24,7 +24,7 @@ from affordance_runtime.evaluation.user_acceptance import UserAcceptanceCriterio
 from affordance_runtime.model_boundary.evaluator_views import build_semantic_judge_request
 from affordance_runtime.model_boundary.failures import ModelFailure
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.contracts import CoverageState, WorldObservation
 
 
 @dataclass(frozen=True)
@@ -57,11 +57,16 @@ class ProductionTaskEvaluator:
             expression = task.evaluation_spec.success_expression if task.evaluation_spec else None
             success = evaluate_success_expression(expression, {item.criterion_id: item.status for item in evaluations})
             status = _status(success, evaluations)
+            if task.requested_outputs and len(outputs) != len(task.requested_outputs):
+                complete_inventory = bool(observation.coverage) and all(
+                    value == CoverageState.COMPLETE for value in observation.coverage.values()
+                )
+                output_status = TaskEvaluationStatus.INCOMPLETE if complete_inventory else TaskEvaluationStatus.UNKNOWN
+                if status != TaskEvaluationStatus.BLOCKED:
+                    return _task(task, observation, output_status, evaluations, outputs, "required outputs are not yet available")
             candidate = _task(task, observation, status, evaluations, outputs, "Runtime composed criterion status")
             if status == TaskEvaluationStatus.COMPLETE:
                 validate_required_outputs(task, candidate, index)
-            elif task.requested_outputs and len(outputs) != len(task.requested_outputs):
-                return _task(task, observation, TaskEvaluationStatus.UNKNOWN, evaluations, outputs, "required outputs are unavailable")
             return candidate
         except ValueError:
             return _task(task, observation, TaskEvaluationStatus.BLOCKED, evaluations, outputs, "evaluation contract is unsupported or violated")
@@ -73,13 +78,23 @@ class ProductionTaskEvaluator:
             or spec.adjudicator == CriterionAdjudicator.HYBRID
             and mechanical[spec.criterion_id].status == CriterionEvaluationStatus.SATISFIED
         )
-        initial = build_semantic_judge_request(task, candidates, observation, index)
+        try:
+            initial = build_semantic_judge_request(task, candidates, observation, index)
+        except (TypeError, ValueError):
+            return _SemanticBatch({}, {
+                item.criterion_id: SemanticReadiness.INCONCLUSIVE for item in candidates
+            }, ())
         readiness = {
             spec.criterion_id: assess_semantic_readiness(spec, initial, observation)
             for spec in candidates
         }
         ready = tuple(spec for spec in candidates if readiness[spec.criterion_id] == SemanticReadiness.READY)
-        request = build_semantic_judge_request(task, ready, observation, index)
+        try:
+            request = build_semantic_judge_request(task, ready, observation, index)
+        except (TypeError, ValueError):
+            return _SemanticBatch({}, {
+                **readiness, **{item.criterion_id: SemanticReadiness.INCONCLUSIVE for item in ready}
+            }, ())
         if not ready or self.semantic_judge is None:
             return _SemanticBatch({}, readiness, request.visible_evidence_refs)
         try:
@@ -157,16 +172,21 @@ def _apply_authority_and_lineage(task, observation, index, evaluations):
     result = []
     for evaluation in evaluations:
         records = tuple(index.resolve_record(ref) for ref in evaluation.evidence_refs)
-        invalid_lineage = bool(spec and spec.strict_source_lineage) and any(
+        resolved = evaluation.status in {
+            CriterionEvaluationStatus.SATISFIED, CriterionEvaluationStatus.UNSATISFIED
+        }
+        invalid_lineage = bool(spec and spec.strict_source_lineage) and (
+            not records or any(
             record is None or record.observation_id != observation.observation_id
             or not record.source_observation_id
             or all(source.observation_id != record.source_observation_id for source in observation.sources)
             for record in records
-        )
-        insufficient = evaluation.criterion_id in required and any(
+        ))
+        insufficient = evaluation.criterion_id in required and (
+            not records or any(
             record is None or record.source_assurance != "authoritative" for record in records
-        )
-        if evaluation.status in {CriterionEvaluationStatus.SATISFIED, CriterionEvaluationStatus.UNSATISFIED} and (invalid_lineage or insufficient):
+        ))
+        if resolved and (invalid_lineage or insufficient):
             evaluation = CriterionEvaluation(evaluation.criterion_id, CriterionEvaluationStatus.UNKNOWN, (), "criterion assurance or lineage is insufficient")
         result.append(evaluation)
     return tuple(result)

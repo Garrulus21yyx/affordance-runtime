@@ -32,7 +32,7 @@ def _world(identity: str, *, report: bool) -> WorldObservation:
     facts = []
     if report:
         targets.append(SemanticTarget("report:1", "content", "report"))
-        facts.append(StateFact(f"fact:{identity}:report", "report:1", "content", "Clear conclusion", f"source:{identity}"))
+        facts.append(StateFact(f"fact:{identity}:report", "report:1", "content", "Clear conclusion", identity))
     binding = ActionBinding(
         f"binding:{identity}", identity, identity, f"revision:{identity}", f"fingerprint:{identity}",
         "generator:1", "generator:1", "static", "static", "activate", "click",
