@@ -161,6 +161,9 @@ reference:
   - role: p5_m3_target_loop_internal_benchmark_harness
     path: docs/reviews/2026-08-08-p5-m3-target-loop-benchmark-harness.md
     lifecycle: current
+  - role: p5_m3_1_harness_measurement_real_adapters
+    path: docs/reviews/2026-08-08-p5-m3-1-harness-measurement-real-adapters.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

@@ -137,3 +137,8 @@ The P5-M3 internal runner preserves the same pause semantics: `SENT_UNKNOWN`
 terminates at `WAITING_USER` without replay, confirmation continuation supplies
 only a typed `ConfirmationDecision`, and stale binding yields zero effectful
 dispatch. Harness counters observe these outcomes but never modify them.
+M3.1 counts confirmation exactly where the typed decision is submitted and
+counts provider/judge attempts at their call ports. Stale zero-call compares a
+stale opportunity with actual effectful dispatch, while canonical unknown-attempt
+identity excludes bindings/routes and includes semantic parameters, effects and
+effective risk.

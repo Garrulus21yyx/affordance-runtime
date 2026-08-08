@@ -92,6 +92,13 @@ effects, duplicate unknown attempts, or stale zero-call violations. No
 BrowserGym, MiniWoB, WebArena, WorkArena, or OSWorld run was performed; external
 admission still requires an exact live profile and exact-head remote CI.
 
+P5-M3.1 makes that acceptance machine-verifiable: safety-critical metrics carry
+measured/unmeasured state and typed expectations, lifecycle failures are
+contained per case, and the fixed `internal-real-adapters` suite runs actual DOM,
+Visual-only, and WoT production adapters. Secret-free reports can be hashed into
+an exact-tree local attestation. Synthetic protocol cases remain explicitly
+labelled synthetic; no external benchmark or default cutover is admitted.
+
 P5-D6.1 is complete on the non-default path: effective risk, semantic
 destination identity, confirmation presentation, immutable terminal sessions,
 and evidence-lineage fields are closed. P5-M0 now resolves evidence against the

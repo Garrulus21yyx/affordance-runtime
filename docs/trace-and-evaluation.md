@@ -126,3 +126,7 @@ obligations, treats truncated semantic windows as inconclusive, contains
 projection failures as unknown, and distinguishes missing outputs (incomplete)
 from invalid outputs (blocked). The harness records only bounded public metrics;
 raw provider responses and private routes are excluded.
+M3.1 additionally treats semantic evidence below required assurance as
+inconclusive and preserves criterion UNKNOWN over a merely missing output.
+Benchmark measurements record whether a value was measured and its opportunity
+denominator; zero opportunities render rates as `N/A`, never 100%.

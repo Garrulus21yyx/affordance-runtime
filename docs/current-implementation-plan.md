@@ -37,6 +37,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M2 production evaluator composition | `CLOSED_FOR_DECLARED_MINIMUM` | Runtime-composed mechanical/semantic/user/hybrid criteria and output binding |
 | P5-M2.1 evidence semantics closure | `CLOSED_FOR_DECLARED_PROFILES` | relevance-bound effects, strong no-effect scope, presented evidence only, dynamic readiness |
 | P5-M3 new-loop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` | internal core/safety/evaluation accepted; external suites not run |
+| P5-M3.1 measurement/real adapters | `CLOSED_LOCALLY` | typed expectations, actual safety counters, real DOM/Visual/WoT suite, exact-head attestation command |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |

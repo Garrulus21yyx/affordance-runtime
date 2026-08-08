@@ -69,6 +69,7 @@ core contracts for every GUI task.
 | P5-M2 | Production evaluator composition and criterion adjudicators | complete for declared minimum profiles; general entailment partial |
 | P5-M2.1 | Evidence semantics and dynamic evaluation closure | complete for Runtime-derived obligation and presented-evidence profiles |
 | P5-M3 | New-AgentLoop internal fixed-manifest harness | complete locally; external BrowserGym/MiniWoB not run and admission blocked |
+| P5-M3.1 | Harness measurement and real-adapter attestation | complete locally; remote exact-head artifact and live profiles remain unavailable |
 | P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |

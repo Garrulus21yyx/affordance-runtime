@@ -106,6 +106,7 @@ live provider profile: UNAVAILABLE
 P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM
 P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT
 P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST
+P5-M3.1 measurement and real-adapter attestation: COMPLETE_LOCALLY; remote exact-head artifact unavailable until workflow completion
 external benchmark: BLOCKED
 ```
 

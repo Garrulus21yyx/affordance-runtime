@@ -159,3 +159,7 @@ fresh target-loop composition, count forwarded calls, compare post-run oracles,
 and serialize secret-free reports. It may not execute actions, import the old
 Coordinator, expose private bindings, or influence policy/evaluator inputs.
 Target production core and surface adapters do not import this package.
+P5-M3.1 keeps mutable counters in harness-only `instrumentation.py`, declarative
+oracles in immutable manifests, and report hashing in `attestation.py`.
+`real_adapter_support.py` composes existing public adapters and owns only fixture
+resource lifecycle; it does not copy adapters or execute around Runtime.

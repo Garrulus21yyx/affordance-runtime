@@ -64,6 +64,10 @@ The target path now has:
 | dynamic semantic readiness | `CLOSED_FOR_TARGET_FACT_AND_OUTPUT_PROFILE` |
 | artifact deterministic absence | `DEFERRED`; absence remains UNKNOWN without complete inventory |
 | new-AgentLoop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` |
+| M3.1 machine acceptance | `MEASURED_AND_FAIL_CLOSED` |
+| real DOM/Visual/WoT adapter harness | `ATTESTED_LOCALLY` |
+| local exact-head report attestation | `AVAILABLE_AFTER_FINAL_CLEAN_HEAD_RUN` |
+| remote exact-head CI artifact | `UNAVAILABLE` until exact-SHA workflow completion |
 | internal deterministic profile | `ATTESTED` |
 | internal scripted-model profile | `ATTESTED` |
 | local HTTP model-policy harness profile | `ATTESTED` |
@@ -208,3 +212,10 @@ composition/environment/session state, and applies the manifest oracle only
 after Runtime termination. Local runs at `637063ccd924` accepted internal core,
 safety, and evaluation profiles. This is protocol evidence, not live-model or
 cross-platform generalization evidence. External benchmarks remain blocked.
+
+P5-M3.1 replaces heuristic safety counters with call-boundary instrumentation,
+typed measurements and manifest expectations. It also adds actual Chromium DOM,
+Chromium Visual-only and local-HTTP WoT adapter cases; the older shared-state
+matrix remains synthetic protocol evidence. Report attestation binds exact SHA,
+dirty state, manifest digests and report hashes without serializing private
+routes, credentials or raw provider payloads.

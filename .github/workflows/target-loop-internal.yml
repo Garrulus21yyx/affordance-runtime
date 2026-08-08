@@ -1,0 +1,46 @@
+name: Target-loop internal attestation
+
+on:
+  push:
+    branches:
+      - codex/migrate-world-interaction-capabilities
+  workflow_dispatch:
+
+jobs:
+  fixed-internal-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev,web,visual]'
+      - run: python -m playwright install --with-deps chromium
+      - name: Focused harness tests
+        run: >-
+          python -m pytest -q
+          tests/test_target_loop_metric_measurements.py
+          tests/test_target_loop_manifest_identity.py
+          tests/test_target_loop_lifecycle_failures.py
+          tests/test_target_loop_real_adapters.py
+          tests/test_target_loop_report_privacy.py
+          tests/test_target_loop_attestation.py
+      - name: Run fixed internal manifests
+        run: |
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-core --profile deterministic --seed 7 --output-dir /tmp/target-loop/core-deterministic
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-core --profile scripted-model --seed 7 --output-dir /tmp/target-loop/core-scripted
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-safety --profile scripted-model --seed 7 --output-dir /tmp/target-loop/safety
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-evaluation --profile local-http-semantic-judge --seed 7 --output-dir /tmp/target-loop/evaluation
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-real-adapters --profile deterministic --seed 7 --output-dir /tmp/target-loop/real-adapters
+      - name: Generate exact-head attestation
+        run: >-
+          python -m affordance_runtime.benchmarks.target_loop.attestation
+          --input-dir /tmp/target-loop
+          --output /tmp/target-loop/attestation.json
+      - if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: target-loop-internal-${{ github.sha }}
+          path: /tmp/target-loop
+          if-no-files-found: error

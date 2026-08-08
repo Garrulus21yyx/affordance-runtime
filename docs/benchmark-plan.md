@@ -128,4 +128,10 @@ expected terminal states outside all product inputs, record denominator-aware
 rates (`N/A` for zero opportunities), and fail closed on forbidden effects,
 duplicate unknown attempts, stale dispatch violations, cleanup failure, or
 missing metrics. Their local acceptance does not admit an external run.
+
+P5-M3.1 adds `internal-real-adapters`, whose deterministic cases use actual DOM,
+Visual-only and WoT production adapters. `MetricMeasurement` distinguishes zero
+from unmeasured, manifest expectations are digest-bound, and attestation hashes
+exact-head report files. These are internal adapter and protocol proofs, not
+BrowserGym/MiniWoB runs or model-generalization evidence.
 Semantic fusion remains deferred and is not an M1 prerequisite.
