@@ -10,6 +10,7 @@ from affordance_runtime.world import (
     VerificationStrength,
     WorldObservation,
 )
+from affordance_runtime.world.source_profile import assurance_satisfies
 
 
 def test_dom_visual_wot_source_profiles_are_truthful_and_distinct() -> None:
@@ -68,3 +69,27 @@ def test_model_source_summary_excludes_debug_source_and_private_payload() -> Non
     assert "private-dom-backend" not in repr(view)
     assert "#private" not in repr(view)
     assert "private-value" not in repr(view)
+    assert view.sources[0].freshness == "current"
+    assert view.sources[0].conflict_status == "clear"
+
+
+def test_failed_source_remains_an_acquisition_capability() -> None:
+    source = SurfaceObservation(
+        "source:failed",
+        "visual",
+        "revision:1",
+        ObservationSourceProfile.visual(),
+        coverage=CoverageState.FAILED,
+    )
+    world = WorldObservation("world:failed", (), (), (), {"visual": CoverageState.FAILED}, sources=(source,))
+
+    view = project_model_world(world, ContextProjectionBudget())
+
+    assert tuple((item.modality, item.assurance) for item in view.observation_capabilities) == (
+        (ObservationModality.VISUAL, ObservationAssurance.WEAK),
+    )
+
+
+def test_assurance_dominance_allows_authoritative_for_structural_request() -> None:
+    assert assurance_satisfies(ObservationAssurance.AUTHORITATIVE, ObservationAssurance.STRUCTURAL)
+    assert not assurance_satisfies(ObservationAssurance.WEAK, ObservationAssurance.STRUCTURAL)

@@ -31,23 +31,19 @@ class AgentMaterialBindingView:
 class AgentTaskView:
     task_id: str
     instruction: str
-    constraints: tuple[str, ...]
-    allowed_effects: tuple[str, ...]
-    forbidden_effects: tuple[str, ...]
-    success_criteria: tuple[AgentSuccessCriterionView, ...]
-    requested_output_ids: tuple[str, ...]
+    constraints: BoundedSection[str]
+    allowed_effects: BoundedSection[str]
+    forbidden_effects: BoundedSection[str]
+    success_criteria: BoundedSection[AgentSuccessCriterionView]
+    requested_output_ids: BoundedSection[str]
     risk_profile: RiskProfile
     public_inputs: Mapping[str, object] = field(default_factory=dict)
-    material_bindings: tuple[AgentMaterialBindingView, ...] = ()
+    material_bindings: BoundedSection[AgentMaterialBindingView] = field(
+        default_factory=lambda: BoundedSection((), 0, False)
+    )
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "constraints", tuple(self.constraints))
-        object.__setattr__(self, "allowed_effects", tuple(self.allowed_effects))
-        object.__setattr__(self, "forbidden_effects", tuple(self.forbidden_effects))
-        object.__setattr__(self, "success_criteria", tuple(self.success_criteria))
-        object.__setattr__(self, "requested_output_ids", tuple(self.requested_output_ids))
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
-        object.__setattr__(self, "material_bindings", tuple(self.material_bindings))
 
 
 @dataclass(frozen=True)
@@ -125,9 +121,11 @@ class AgentTurnView:
     action_evaluation_status: str = ""
     task_evaluation_status: str = ""
     reason: str = ""
+    semantic_summary: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_parameters", freeze_json(self.public_parameters))
+        object.__setattr__(self, "semantic_summary", freeze_json(self.semantic_summary))
 
 
 @dataclass(frozen=True)

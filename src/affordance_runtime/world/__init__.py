@@ -27,6 +27,7 @@ from affordance_runtime.world.source_profile import (
     ObservationModality,
     ObservationSourceProfile,
     VerificationStrength,
+    assurance_satisfies,
 )
 from affordance_runtime.world.view import AgentTargetView, AgentWorldView, build_agent_world_view
 
@@ -58,4 +59,5 @@ __all__ = [
     "WorldObservation",
     "VerificationStrength",
     "build_agent_world_view",
+    "assurance_satisfies",
 ]

@@ -9,6 +9,7 @@ from typing import Any
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.evidence_refs import canonical_fact_ref
 
 _MAX_STRING = 240
 _MAX_STATE_FIELDS = 8
@@ -27,6 +28,7 @@ _PRIVATE_KEYS = (
     "selector",
     "token",
 )
+_ROUTE_KEYS = frozenset({"backend", "bbox", "coordinate", "executor", "href", "method", "path", "point", "selector"})
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,10 @@ class ModelTargetView:
     label: str
     state: Mapping[str, object] = field(default_factory=dict)
     relations: Mapping[str, object] = field(default_factory=dict)
+    state_total_count: int = 0
+    state_truncated: bool = False
+    relations_total_count: int = 0
+    relations_truncated: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", freeze_json(self.state))
@@ -67,6 +73,8 @@ class ObservationSourceSummary:
     verification_strength: str
     acquisition_cost: str
     coverage: str
+    freshness: str
+    conflict_status: str
 
 
 @dataclass(frozen=True)
@@ -95,13 +103,7 @@ def project_model_world(
         item for item in observation.targets if item.target_id not in pinned
     )
     targets = tuple(
-        ModelTargetView(
-            item.target_id,
-            _text(item.role),
-            _text(item.label),
-            _public_mapping(item.state, _MAX_STATE_FIELDS),
-            _public_mapping(item.relations, budget.max_relations_per_target),
-        )
+        _project_target(item, budget.max_relations_per_target)
         for item in ordered_targets[: budget.max_targets]
     )
     target_ids = {item.target_id for item in targets}
@@ -115,7 +117,9 @@ def project_model_world(
         count = fact_counts.get(fact.subject_id, 0)
         if count >= budget.max_facts_per_target:
             continue
-        projected_facts.append(PublicFactView(fact.fact_id, fact.subject_id, _text(fact.predicate), _public_value(fact.value)))
+        projected_facts.append(
+            PublicFactView(canonical_fact_ref(fact.fact_id), fact.subject_id, _text(fact.predicate), _public_value(fact.value))
+        )
         fact_counts[fact.subject_id] = count + 1
     conflicts = tuple(
         ConflictSummary(item.subject_id, _text(item.predicate), _text(item.summary))
@@ -138,6 +142,10 @@ def project_model_world(
             source.source_profile.verification_strength,
             source.source_profile.acquisition_cost,
             observation.coverage.get(source.surface, source.coverage),
+            "stale"
+            if str(observation.coverage.get(source.surface, source.coverage)) == "stale"
+            else "current",
+            "conflicted" if observation.conflicts else "clear",
         )
         for source in observation.sources
     )
@@ -151,32 +159,34 @@ def project_model_world(
             ObservationCapabilityView(modality, assurance) for modality, assurance in capabilities
         ),
     )
-    return fit_model_world(view, budget.max_total_serialized_bytes // 2)
+    return fit_model_world(view, budget.max_total_serialized_bytes // 2, pinned_target_ids)
 
 
-def fit_model_world(view: ModelWorldView, max_bytes: int) -> ModelWorldView:
+def fit_model_world(
+    view: ModelWorldView,
+    max_bytes: int,
+    pinned_target_ids: tuple[str, ...] = (),
+) -> ModelWorldView:
+    pinned = set(pinned_target_ids)
     while serialized_size(view) > max_bytes:
-        if view.targets.items:
-            targets = view.targets.items[:-1]
-            visible = {item.target_id for item in targets}
-            facts = tuple(item for item in view.facts.items if item.subject_id in visible)
-            view = replace(
-                view,
-                targets=_resize(view.targets, targets),
-                facts=_resize(view.facts, facts),
-            )
-            continue
-        if view.facts.items:
-            view = replace(view, facts=_resize(view.facts, view.facts.items[:-1]))
-            continue
-        if view.conflicts.items:
-            view = replace(view, conflicts=_resize(view.conflicts, view.conflicts.items[:-1]))
-            continue
         if view.artifact_summaries.items:
             view = replace(
                 view,
                 artifact_summaries=_resize(view.artifact_summaries, view.artifact_summaries.items[:-1]),
             )
+            continue
+        if view.conflicts.items:
+            view = replace(view, conflicts=_resize(view.conflicts, view.conflicts.items[:-1]))
+            continue
+        if view.facts.items:
+            view = replace(view, facts=_resize(view.facts, view.facts.items[:-1]))
+            continue
+        removable = next((item for item in reversed(view.targets.items) if item.target_id not in pinned), None)
+        if removable is not None:
+            targets = tuple(item for item in view.targets.items if item.target_id != removable.target_id)
+            visible = {item.target_id for item in targets}
+            facts = tuple(item for item in view.facts.items if item.subject_id in visible)
+            view = replace(view, targets=_resize(view.targets, targets), facts=_resize(view.facts, facts))
             continue
         raise ValueError("model world fixed metadata exceeds its byte budget")
     return view
@@ -190,12 +200,34 @@ def _resize(section: BoundedSection[Any], items: tuple[Any, ...]) -> BoundedSect
     return BoundedSection(items, section.total_count, section.total_count > len(items))
 
 
-def _public_mapping(value: Mapping[str, Any], limit: int) -> dict[str, object]:
-    return {
-        str(key): _public_value(item)
-        for key, item in list(value.items())[:limit]
+def _project_target(target, relation_limit: int) -> ModelTargetView:
+    public_state = _public_items(target.state)
+    public_relations = _public_items(target.relations)
+    state = dict(public_state[:_MAX_STATE_FIELDS])
+    relations = dict(public_relations[:relation_limit])
+    return ModelTargetView(
+        target.target_id,
+        _text(target.role),
+        _text(target.label),
+        state,
+        relations,
+        len(public_state),
+        len(public_state) > len(state),
+        len(public_relations),
+        len(public_relations) > len(relations),
+    )
+
+
+def _public_items(value: Mapping[str, Any]) -> list[tuple[str, object]]:
+    return [
+        (str(key), _public_value(item))
+        for key, item in value.items()
         if not _private_key(str(key))
-    }
+    ]
+
+
+def _public_mapping(value: Mapping[str, Any], limit: int) -> dict[str, object]:
+    return dict(_public_items(value)[:limit])
 
 
 def _public_value(value: Any, depth: int = 0) -> Any:
@@ -214,7 +246,9 @@ def _public_value(value: Any, depth: int = 0) -> Any:
 
 def _private_key(key: str) -> bool:
     normalized = key.casefold().replace("-", "_")
-    return any(marker in normalized for marker in _PRIVATE_KEYS)
+    return normalized in _PRIVATE_KEYS or any(
+        normalized.endswith(f"_{marker}") for marker in _PRIVATE_KEYS
+    ) or any(normalized.startswith(f"{marker}_") for marker in _ROUTE_KEYS)
 
 
 def _text(value: str) -> str:
@@ -235,8 +269,6 @@ def _capabilities(observation: WorldObservation) -> set[tuple[str, str]]:
         return {
             (source.source_profile.modality, source.source_profile.assurance)
             for source in observation.sources
-            if str(observation.coverage.get(source.surface, source.coverage))
-            not in {"failed", "not_acquired", "stale"}
         }
     return {
         _legacy_capability(source)

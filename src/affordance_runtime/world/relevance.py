@@ -31,12 +31,6 @@ class ActionRelevancePolicy:
         option: ActionOption,
         objective: LocalObjective | None,
     ) -> ActionRelevance:
-        if (
-            option.semantic_action == "read"
-            and option.effect_category == EffectCategory.OBSERVATION
-            and not option.semantic_effects
-        ):
-            return ActionRelevance(ActionRelevanceRole.INFORMATION, 0.5, ("observation_action",))
         if objective is not None and (
             option.target_id in objective.direct_target_ids
             or bool(set(option.semantic_effects).intersection(objective.direct_effects))
@@ -57,4 +51,10 @@ class ActionRelevancePolicy:
             if option.semantic_action in objective.enabling_action_hints:
                 reasons.append("explicit_enabling_action")
             return ActionRelevance(ActionRelevanceRole.ENABLING, 0.75, tuple(reasons))
+        if (
+            option.semantic_action == "read"
+            and option.effect_category == EffectCategory.OBSERVATION
+            and not option.semantic_effects
+        ):
+            return ActionRelevance(ActionRelevanceRole.INFORMATION, 0.5, ("observation_action",))
         return ActionRelevance(ActionRelevanceRole.OTHER, 0.0, ("no_explicit_match",))

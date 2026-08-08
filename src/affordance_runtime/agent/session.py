@@ -37,6 +37,7 @@ class AgentRunSession:
     context_generation: int = field(default=0, repr=False)
     current_action_space: ActionSpace | None = field(default=None, repr=False)
     current_action_page: InternalActionPage | None = field(default=None, repr=False)
+    waited_ms: int = 0
 
     def next_context_generation(self) -> int:
         self.context_generation += 1

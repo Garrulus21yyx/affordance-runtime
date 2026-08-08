@@ -9,7 +9,8 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution.contracts import ActionError, ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.contracts import AgentTaskView
-from affordance_runtime.model_boundary.projection import project_public_value, project_task
+from affordance_runtime.model_boundary.projection import project_public_value
+from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.view import AgentWorldView
 

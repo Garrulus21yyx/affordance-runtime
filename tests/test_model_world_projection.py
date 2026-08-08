@@ -1,6 +1,7 @@
 from dataclasses import replace
 
-from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.agent import Abort
+from affordance_runtime.agent.state import AgentLoopState, Turn
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary.budgets import ContextProjectionBudget, serialized_size
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
@@ -48,6 +49,25 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
     representation = repr(view)
     for private in ("world:private-observation", "source:private", "selector", "#private", "conflict:private"):
         assert private not in representation
+
+
+def test_target_state_filters_private_fields_before_applying_public_limit() -> None:
+    private = {f"selector_{index}": f"#{index}" for index in range(8)}
+    public = {"api_token_enabled": True, "public_after_private": "visible"}
+    observation = WorldObservation(
+        "world:filter-order",
+        (SemanticTarget("target:1", "region", "Target", {**private, **public}),),
+        (),
+        (),
+        {"dom": CoverageState.COMPLETE},
+    )
+
+    target = project_model_world(observation, ContextProjectionBudget()).targets.items[0]
+
+    assert target.state["api_token_enabled"] is True
+    assert target.state["public_after_private"] == "visible"
+    assert target.state_total_count == 2
+    assert not target.state_truncated
 
 
 def test_complete_agent_context_respects_total_serialized_byte_budget() -> None:
@@ -250,3 +270,64 @@ def test_current_page_targets_are_pinned_into_bounded_model_world() -> None:
 
     assert context.actions.options[0].target_id == "target:4"
     assert tuple(item.target_id for item in context.world.targets.items) == ("target:4",)
+
+
+def test_history_bound_keeps_newest_semantic_turns() -> None:
+    observation = WorldObservation("world:history", (), (), (), {"dom": CoverageState.COMPLETE})
+    task = TaskGoal("history", "Keep newest history")
+    evaluation = TaskEvaluation(
+        task.task_id,
+        observation.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "not complete",
+    )
+    state = AgentLoopState(
+        observation,
+        recent_turns=tuple(
+            Turn(observation.observation_id, Abort("context:1", reason, "policy"))
+            for reason in ("oldest", "middle", "newest")
+        ),
+    )
+
+    context = ContextBuilder(ContextProjectionBudget(max_history_turns=2)).build(
+        task,
+        state,
+        ActionSpace(observation.observation_id, ()),
+        evaluation,
+    )
+
+    assert tuple(item.semantic_summary["reason"] for item in context.history.items) == (
+        "middle",
+        "newest",
+    )
+    assert context.history.total_count == 3 and context.history.truncated
+
+
+def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
+    observation = WorldObservation("world:history-bytes", (), (), (), {"dom": CoverageState.COMPLETE})
+    task = TaskGoal("history-bytes", "Keep the newest turn during byte compaction")
+    evaluation = TaskEvaluation(
+        task.task_id,
+        observation.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "not complete",
+    )
+    reasons = tuple(f"turn-{index}-" + "x" * 400 for index in range(6))
+    state = AgentLoopState(
+        observation,
+        recent_turns=tuple(
+            Turn(observation.observation_id, Abort("context:1", reason, "policy"))
+            for reason in reasons
+        ),
+    )
+    budget = ContextProjectionBudget(max_history_turns=6, max_total_serialized_bytes=3_000)
+
+    context = ContextBuilder(budget).build(
+        task,
+        state,
+        ActionSpace(observation.observation_id, ()),
+        evaluation,
+    )
+
+    assert context.history.truncated
+    assert context.history.items[-1].semantic_summary["reason"] == reasons[-1]

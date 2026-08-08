@@ -1,6 +1,14 @@
 import pytest
 
-from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent import (
+    Abort,
+    AskUser,
+    ProposeDone,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+    Wait,
+)
 from affordance_runtime.agent.state import Turn
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
@@ -12,7 +20,14 @@ from affordance_runtime.model_boundary import (
     project_turns,
 )
 from affordance_runtime.task import MaterialBinding, Milestone, RiskProfile, TaskGoal, TaskPlan
-from affordance_runtime.world import ActionOption, ActionRisk, ActionSpace, AgentTargetView, AgentWorldView
+from affordance_runtime.world import (
+    ActionBinding,
+    ActionOption,
+    ActionRisk,
+    ActionSpace,
+    AgentTargetView,
+    AgentWorldView,
+)
 
 
 def _task() -> TaskGoal:
@@ -58,7 +73,6 @@ def _space() -> ActionSpace:
                     "type": "object",
                     "properties": {
                         "text": {"type": "string"},
-                        "selector": {"type": "string", "default": "#private"},
                     },
                 },
                 "private-schema-digest",
@@ -80,9 +94,9 @@ def test_task_projection_is_bounded_and_secret_safe() -> None:
     assert view.public_inputs["text"] == "Quarterly report"
     assert "api_token" not in view.public_inputs
     assert "local_path" not in view.public_inputs
-    assert view.success_criteria[0].criterion_id == "sent"
-    assert view.requested_output_ids == ("receipt",)
-    assert view.material_bindings[0].public_reference == "report-input"
+    assert view.success_criteria.items[0].criterion_id == "sent"
+    assert view.requested_output_ids.items == ("receipt",)
+    assert view.material_bindings.items[0].public_reference == "report-input"
     assert "raw-secret" not in repr(view)
     assert "/private/report" not in repr(view)
 
@@ -138,16 +152,58 @@ def test_task_criteria_projection_retains_semantics_but_excludes_private_fields(
     view = project_task(task)
 
     assert len(view.instruction) <= 1_024
-    assert len(view.constraints) == 12
-    assert all(len(item) <= 240 for item in view.constraints)
-    definition = view.success_criteria[0].definition
+    assert len(view.constraints.items) == 12
+    assert view.constraints.total_count == 30 and view.constraints.truncated
+    assert all(len(item) <= 240 for item in view.constraints.items)
+    definition = view.success_criteria.items[0].definition
     assert definition["predicate"] == "api-token-enabled"
     assert definition["value"] is True
     assert "selector" not in definition
     assert "credential" not in definition
     assert "local_path" not in definition
-    assert tuple(item.name for item in view.material_bindings) == ("sha",)
-    assert view.material_bindings[0].public_reference == "sha256:" + "a" * 64
+    assert tuple(item.name for item in view.material_bindings.items) == ("sha",)
+    assert view.material_bindings.total_count == 2 and view.material_bindings.truncated
+    assert view.material_bindings.items[0].public_reference == "sha256:" + "a" * 64
+
+
+def test_all_task_collections_have_truthful_truncation_metadata() -> None:
+    task = TaskGoal(
+        "many",
+        "Project bounded task sections",
+        constraints=tuple(f"constraint-{index}" for index in range(15)),
+        allowed_effects=tuple(f"allowed-{index}" for index in range(15)),
+        forbidden_effects=tuple(f"forbidden-{index}" for index in range(15)),
+        success_criteria=tuple({"id": f"criterion-{index}", "value": index} for index in range(15)),
+        requested_outputs=tuple(f"output-{index}" for index in range(15)),
+    )
+
+    view = project_task(task)
+
+    for section in (
+        view.constraints,
+        view.allowed_effects,
+        view.forbidden_effects,
+        view.success_criteria,
+        view.requested_output_ids,
+    ):
+        assert len(section.items) == 12
+        assert section.total_count == 15 and section.truncated
+
+
+def test_material_public_reference_rejects_private_path_or_url() -> None:
+    task = TaskGoal(
+        "private-material",
+        "Do not expose private material routes",
+        material_bindings=(
+            MaterialBinding("path", "internal", public_reference="/private/report.pdf"),
+            MaterialBinding("url", "internal", public_reference="https://private.invalid/report"),
+        ),
+    )
+
+    materials = project_task(task).material_bindings
+
+    assert materials.items == ()
+    assert materials.total_count == 2 and materials.truncated
 
 
 def test_parameter_schema_projection_is_consistent_after_private_fields_are_removed() -> None:
@@ -167,6 +223,47 @@ def test_parameter_schema_projection_is_consistent_after_private_fields_are_remo
     assert tuple(projected["properties"]) == ("text",)
     assert projected["required"] == ["text"]
     assert len(projected["description"]) <= 240
+
+
+@pytest.mark.parametrize("contract", ("option", "binding"))
+def test_internal_action_contract_rejects_private_parameter_names(contract: str) -> None:
+    schema = {
+        "type": "object",
+        "properties": {"selector": {"type": "string"}},
+        "required": ["selector"],
+        "additionalProperties": False,
+    }
+    with pytest.raises(ValueError, match="private parameter"):
+        if contract == "option":
+            ActionOption(
+                "action:private-schema",
+                "obs:1",
+                "activate",
+                "target:1",
+                "local_reversible",
+                schema,
+                "schema:1",
+                ("binding:1",),
+                "invalid private schema",
+            )
+        else:
+            ActionBinding(
+                "binding:1",
+                "obs:1",
+                "obs:1",
+                "revision:1",
+                "fingerprint:1",
+                "target:1",
+                "target:1",
+                "dom",
+                "dom",
+                "activate",
+                "click",
+                "local_reversible",
+                (),
+                schema,
+                {"selector": "#private-route"},
+            )
 
 
 @pytest.mark.parametrize(
@@ -228,6 +325,26 @@ def test_recent_turn_projection_is_semantic_and_private_payload_free() -> None:
         "raw-secret",
     ):
         assert private not in representation
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected"),
+    (
+        (RequestObservation("context:1", "target:1", "visual", "weak", "inspect"), "subject_id"),
+        (RequestActionPage("context:1", query="find"), "query"),
+        (AskUser("context:1", "Which account?", ("account",)), "question"),
+        (ProposeDone("context:1", ("criterion:1",), ("fact:1",), "done", ()), "claimed_criteria"),
+        (Wait("context:1", "settle", 25), "max_wait_ms"),
+        (Abort("context:1", "stop", "policy"), "category"),
+    ),
+)
+def test_non_action_turn_projection_has_bounded_semantic_summary(decision, expected: str) -> None:
+    view = project_turns((Turn("before", decision, decision_result="page_changed"),))[0]
+
+    assert expected in view.semantic_summary
+    representation = repr(view)
+    assert "context:1" not in representation
+    assert "selector" not in representation
 
 
 def test_plan_projection_contains_only_semantic_milestones() -> None:

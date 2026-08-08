@@ -97,6 +97,7 @@ P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM
 P5-D6.1: COMPLETE
 P5-M0: COMPLETE
 P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT
+P5-M0.1.1 context operational closure: COMPLETE_NON_DEFAULT
 model-backed AgentPolicy: NEXT
 P5-M1 model-backed AgentPolicy: NOT_STARTED
 P5-M2 production evaluator composition: NOT_STARTED
@@ -119,6 +120,18 @@ bounded context-only intent/world/progress/pending/budgets, opaque recurrent
 identity, typed decisions, deterministic paging/relevance and DOM/Visual/WoT
 source summaries. Targeted acquisition optimization and confirmation dominance
 remain deferred; M0 projections remain `INTEGRATED_NON_DEFAULT`.
+
+### P5-M0.1.1 — Context operational closure
+
+| Slice | Deliverable | Exit gate |
+|---|---|---|
+| `M0.1.1a` | monotonic one-shot context generation and shared fresh-observation identity guard | page cycles/replay are zero-call; reused acquisition identity fails closed |
+| `M0.1.1b` | Runtime-issued opaque cursor paging and page/world pinning | `has_more` has usable continuation; only current page is projected/admitted |
+| `M0.1.1c` | truthful task/world/action budgets, objective/source/history/evidence coherence | explicit hints only; capability separate from result; bounded semantic history |
+
+This closure remains non-default and provider-neutral. It adds no durable
+context/page store, model policy/evaluator, targeted acquisition provider,
+confirmation dominance, semantic fusion, benchmark admission or cutover.
 
 ### P5-M1–M3 — First model loop and evaluation gate
 

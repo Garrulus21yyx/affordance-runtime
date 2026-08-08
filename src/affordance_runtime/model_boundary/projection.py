@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -11,14 +10,10 @@ from affordance_runtime.model_boundary.contracts import (
     AgentActionOptionView,
     AgentActionSpaceView,
     AgentDestinationView,
-    AgentMaterialBindingView,
     AgentMilestoneView,
     AgentPlanView,
-    AgentSuccessCriterionView,
-    AgentTaskView,
     AgentTurnView,
 )
-from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.planning_contracts import TaskPlan
 from affordance_runtime.world.action_paging import InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
@@ -27,6 +22,8 @@ from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.state import Turn
+    from affordance_runtime.model_boundary.contracts import AgentTaskView
+    from affordance_runtime.task.contracts import TaskGoal
 
 _SECRET_MARKERS = ("password", "secret", "token", "credential", "authorization", "api_key", "apikey")
 _PRIVATE_PATH_MARKERS = ("path", "local_file", "file_name")
@@ -47,8 +44,6 @@ _PRIVATE_ROUTE_MARKERS = (
 _MAX_ITEMS = 12
 _MAX_DEPTH = 3
 _MAX_STRING = 240
-_MAX_INSTRUCTION = 1_024
-_SHA256_REFERENCE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 _SCHEMA_TYPES = frozenset({"object", "string", "number", "integer", "boolean"})
 _SCHEMA_KEYS = frozenset(
     {"type", "properties", "required", "additionalProperties", "enum", "minimum", "maximum", "description"}
@@ -56,26 +51,11 @@ _SCHEMA_KEYS = frozenset(
 
 
 def project_task(task: TaskGoal) -> AgentTaskView:
-    materials = []
-    for item in task.material_bindings[:_MAX_ITEMS]:
-        reference = item.public_reference or (item.digest if _SHA256_REFERENCE.fullmatch(item.digest) else "")
-        if reference:
-            materials.append(AgentMaterialBindingView(item.name[:_MAX_STRING], item.media_type[:_MAX_STRING], reference))
-    return AgentTaskView(
-        task.task_id,
-        _bounded_string(task.instruction, _MAX_INSTRUCTION),
-        tuple(_bounded_string(item, _MAX_STRING) for item in task.constraints[:_MAX_ITEMS]),
-        task.allowed_effects,
-        task.forbidden_effects,
-        tuple(
-            AgentSuccessCriterionView(criterion_id(item), _project_task_value(item))
-            for item in task.success_criteria[:_MAX_ITEMS]
-        ),
-        task.requested_outputs,
-        task.risk_profile,
-        _project_task_value(task.inputs),
-        tuple(materials),
-    )
+    """Compatibility import edge; canonical owner is task_projection."""
+
+    from affordance_runtime.model_boundary.task_projection import project_task as project
+
+    return project(task)
 
 
 def project_action_space(
@@ -262,22 +242,6 @@ def _project_schema_node(schema: Mapping[str, object], *, root: bool = False) ->
     return result
 
 
-def _project_task_value(value: Any, depth: int = 0) -> Any:
-    if isinstance(value, Mapping):
-        if depth >= _MAX_DEPTH:
-            return "[TRUNCATED]"
-        return {
-            str(key): _project_task_value(item, depth + 1)
-            for key, item in list(value.items())[:_MAX_ITEMS]
-            if not _model_private_key(str(key))
-        }
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        if depth >= _MAX_DEPTH:
-            return "[TRUNCATED]"
-        return [_project_task_value(item, depth + 1) for item in list(value)[:_MAX_ITEMS]]
-    return project_public_value(value, depth)
-
-
 def _model_private_key(key: str) -> bool:
     return _private_key(key) or _route_key(key)
 
@@ -300,7 +264,49 @@ def _project_turn(turn: Turn) -> AgentTurnView:
         turn.action_evaluation.status if turn.action_evaluation is not None else "",
         turn.task_evaluation.status if turn.task_evaluation is not None else "",
         (task_reason or action_reason)[:_MAX_STRING],
+        _decision_summary(turn),
     )
+
+
+def _decision_summary(turn: Turn) -> Mapping[str, object]:
+    from affordance_runtime.agent.decisions import (
+        Abort,
+        AskUser,
+        ProposeDone,
+        RequestActionPage,
+        RequestObservation,
+        Wait,
+    )
+
+    decision = turn.decision
+    if isinstance(decision, RequestObservation):
+        return {
+            "subject_id": _bounded_string(decision.subject_id, _MAX_STRING),
+            "modality": decision.modality,
+            "required_assurance": decision.required_assurance,
+            "reason": _bounded_string(decision.reason, _MAX_STRING),
+        }
+    if isinstance(decision, RequestActionPage):
+        return {
+            "query": _bounded_string(decision.query, 120),
+            "target_id": _bounded_string(decision.target_id, _MAX_STRING),
+            "relevance_role": decision.relevance_role,
+            "cursor_requested": bool(decision.cursor),
+            "result": turn.decision_result,
+        }
+    if isinstance(decision, AskUser):
+        return {"question": decision.question, "requested_fields": decision.requested_fields}
+    if isinstance(decision, ProposeDone):
+        return {
+            "claimed_criteria": decision.claimed_criteria,
+            "result_summary": decision.result_summary,
+            "unresolved_items": decision.unresolved_items,
+        }
+    if isinstance(decision, Wait):
+        return {"reason": decision.reason, "max_wait_ms": decision.max_wait_ms, "result": turn.decision_result}
+    if isinstance(decision, Abort):
+        return {"category": decision.category, "reason": decision.reason}
+    return {}
 
 
 def _private_key(key: str) -> bool:

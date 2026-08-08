@@ -5,6 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+_PRIVATE_PARAMETER_PARTS = frozenset(
+    {"selector", "coordinate", "bbox", "point", "href", "method", "backend", "executor", "credential", "security"}
+)
+
+
+def validate_parameter_schema_names(schema: Mapping[str, Any], *, path: str = "parameters") -> None:
+    properties = schema.get("properties", {})
+    if not isinstance(properties, Mapping):
+        return
+    for name, child in properties.items():
+        normalized = str(name).casefold().replace("-", "_")
+        if _PRIVATE_PARAMETER_PARTS.intersection(normalized.split("_")):
+            raise ValueError(f"{path} contains a runtime-private parameter name: {name}")
+        if isinstance(child, Mapping):
+            validate_parameter_schema_names(child, path=f"{path}.{name}")
+
 
 def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parameters") -> None:
     expected = schema.get("type")

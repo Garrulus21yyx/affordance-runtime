@@ -24,6 +24,15 @@ class BoundedSection(Generic[T]):
         if self.truncated != (self.total_count > len(self.items)):
             raise ValueError("bounded section truncation metadata is untruthful")
 
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __getitem__(self, index):
+        return self.items[index]
+
 
 @dataclass(frozen=True)
 class ContextProjectionBudget:

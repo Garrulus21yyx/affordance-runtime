@@ -12,6 +12,7 @@ from affordance_runtime.agent import (
     RequestActionPage,
     SelectAction,
 )
+from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task import LocalObjective, LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
@@ -350,5 +351,30 @@ def test_previous_page_action_is_rejected_even_with_current_context_id() -> None
         assert result.status == AgentLoopStatus.BLOCKED
         assert result.execution_count == 0
         assert environment.executed_requests == []
+
+    asyncio.run(scenario())
+
+
+def test_objective_change_rebuilds_relevance_page_and_context_identity() -> None:
+    observation = _two_action_world("before", False)
+    task = _paging_task()
+    state = AgentLoopState(observation)
+    space = ActionSpaceBuilder().build(task, observation)
+
+    async def scenario() -> None:
+        evaluation = await SharedTaskEvaluator().evaluate(task, observation)
+        builder = ContextBuilder(pager=ActionPager(page_size=2))
+        before_page = builder.page(space, state)
+        before_context = builder.build(task, state, space, evaluation, action_page=before_page)
+        state.set_active_objective(
+            LocalObjective({"enabled": True}, direct_target_ids=("z-other-toggle",))
+        )
+        after_page = builder.page(space, state)
+        after_context = builder.build(task, state, space, evaluation, action_page=after_page)
+
+        assert before_page.page_id != after_page.page_id
+        assert before_context.context_id != after_context.context_id
+        assert after_page.visible_action_ids[0] == space.options[1].action_id
+        assert after_page.relevance_for(space.options[1].action_id).role == ActionRelevanceRole.DIRECT
 
     asyncio.run(scenario())

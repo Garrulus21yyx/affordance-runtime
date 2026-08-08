@@ -55,6 +55,29 @@ def test_semantic_evidence_ids_may_contain_security_vocabulary() -> None:
     assert index.resolve("fact:api-token-enabled")
 
 
+def test_unicode_fact_and_artifact_identity_is_canonicalized_without_failure() -> None:
+    source = SurfaceObservation(
+        "surface:视觉",
+        "visual",
+        "revision:1",
+        ObservationSourceProfile.visual(),
+        artifacts={"截图 摘要": {"private": "value"}},
+    )
+    observation = WorldObservation(
+        "world:unicode",
+        (),
+        (StateFact("状态 已启用", "设备 一", "已启用", True, "surface:视觉"),),
+        (),
+        {"visual": CoverageState.COMPLETE},
+        sources=(source,),
+    )
+
+    index = WorldEvidenceIndex.from_observation(observation)
+
+    assert len(index.refs) == 2
+    assert all(item.startswith(("fact:", "artifact:")) and item.isascii() for item in index.refs)
+
+
 @pytest.mark.parametrize("refs", (("",), ("fact:after", "fact:after")))
 def test_action_evaluation_rejects_blank_or_duplicate_evidence_refs(refs) -> None:
     with pytest.raises(ValueError, match="evidence"):

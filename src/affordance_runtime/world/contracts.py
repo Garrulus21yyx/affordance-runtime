@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.world.schema_validation import validate_parameter_schema_names
 from affordance_runtime.world.source_profile import ObservationSourceProfile
 
 _PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
@@ -110,6 +111,7 @@ class ActionBinding:
         )
         if not all(value.strip() for value in required):
             raise ValueError("action binding requires world/source identity, fingerprint, and route")
+        validate_parameter_schema_names(self.parameter_schema)
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "payload", freeze_json(self.payload))
@@ -215,6 +217,7 @@ class ActionOption:
             )
         ) or not self.eligible_binding_ids:
             raise ValueError("action option requires current semantic identity")
+        validate_parameter_schema_names(self.parameter_schema)
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))

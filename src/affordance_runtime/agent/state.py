@@ -33,6 +33,7 @@ class Turn:
     after_observation_id: str = ""
     action_evaluation: ActionEvaluation | None = None
     task_evaluation: TaskEvaluation | None = None
+    decision_result: str = ""
 
 
 @dataclass

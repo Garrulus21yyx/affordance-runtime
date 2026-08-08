@@ -44,6 +44,23 @@ def test_blank_context_id_fails_closed(factory) -> None:
         factory()
 
 
+@pytest.mark.parametrize(
+    "factory",
+    (
+        lambda: RequestObservation("context:1", "target", "audio", "weak", "reason"),
+        lambda: RequestObservation("context:1", "target", "visual", "absolute", "reason"),
+        lambda: RequestActionPage("context:1", "q" * 121),
+        lambda: AskUser("context:1", "q" * 1_001),
+        lambda: AskUser("context:1", "question", tuple(str(index) for index in range(33))),
+        lambda: ProposeDone("context:1", tuple(str(index) for index in range(33)), (), "done", ()),
+        lambda: Abort("context:1", "abort", "invented-category"),
+    ),
+)
+def test_decision_fields_are_bounded_and_typed(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()
+
+
 class _FakeWaiter:
     def __init__(self) -> None:
         self.waits: list[int] = []
@@ -311,7 +328,7 @@ def test_intent_context_cannot_expand_task_effect_authority() -> None:
     class Policy:
         async def decide(self, context):
             assert context.intent.authority == "context_only"
-            assert context.task.allowed_effects == ()
+            assert context.task.allowed_effects.items == ()
             assert context.actions.options == ()
             return AskUser(context.context_id, "Need an authoritative task revision", ("allowed_effect",))
 
@@ -334,5 +351,72 @@ def test_intent_context_cannot_expand_task_effect_authority() -> None:
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.task.allowed_effects == ()
         assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_non_action_decisions_are_projected_into_recurrent_semantic_history() -> None:
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if self.calls == 1:
+                capability = context.world.observation_capabilities[0]
+                return RequestObservation(
+                    context.context_id,
+                    "shared-toggle",
+                    capability.modality,
+                    capability.assurance,
+                    "refresh public state",
+                )
+            if self.calls == 2:
+                observed = context.history.items[-1]
+                assert observed.decision_kind == "requestobservation"
+                assert observed.semantic_summary["subject_id"] == "shared-toggle"
+                assert observed.semantic_summary["reason"] == "refresh public state"
+                return RequestActionPage(context.context_id, query="enable")
+            paged = context.history.items[-1]
+            assert paged.decision_kind == "requestactionpage"
+            assert paged.semantic_summary["query"] == "enable"
+            assert paged.semantic_summary["result"] in {"page_changed", "page_unchanged"}
+            return Abort(context.context_id, "history verified", "policy")
+
+    async def scenario() -> None:
+        result = await AgentEpisodeRunner(
+            AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(
+            StaticEnvironment([_world("before", False), _world("after", False)]),
+            _task(),
+        )
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_total_wait_budget_is_enforced_without_real_delay() -> None:
+    class Policy:
+        async def decide(self, context):
+            return Wait(context.context_id, "settle", 60_000)
+
+    async def scenario() -> None:
+        waiter = _FakeWaiter()
+        environment = StaticEnvironment(
+            [_world("one", False), _world("two", False), _world("three", False)]
+        )
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                Policy(),
+                SharedActionEvaluator(),
+                SharedTaskEvaluator(),
+                wait_controller=waiter,
+            )
+        ).run(environment, _task())
+
+        assert result.status == AgentLoopStatus.BLOCKED
+        assert waiter.waits == [60_000, 60_000]
+        assert result.observation_count == 3
 
     asyncio.run(scenario())

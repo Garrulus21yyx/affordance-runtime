@@ -143,6 +143,9 @@ reference:
   - role: p5_m0_1_agent_context_implementation
     path: docs/reviews/2026-08-08-p5-m0-1-agent-context-implementation.md
     lifecycle: current
+  - role: p5_m0_1_1_context_operational_closure
+    path: docs/reviews/2026-08-08-p5-m0-1-1-context-operational-closure.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

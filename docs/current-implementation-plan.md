@@ -31,6 +31,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-D6.1 | complete, non-default | effective risk, destination, presentation, terminal immutability, policy reselection, evaluation lineage/evidence, task-evaluation control |
 | P5-M0 | complete, non-default | model-safe policy projections, evidence-resolved evaluations, target output integrity |
 | P5-M0.1 AgentContext architecture | `COMPLETE_NON_DEFAULT` | disposable unified context, bounded intent/world/history, current context identity, relevance, paging, source assurance, typed decisions |
+| P5-M0.1.1 operational closure | `COMPLETE_NON_DEFAULT` | one-shot epochs, fresh acquisition identity, cursor paging, projection coherence, recurrent decision history |
 | P5-M1 model-backed AgentPolicy | `NOT_STARTED / NEXT` | provider-neutral context contract is ready; no provider SDK admitted |
 | P5-M2 production evaluator composition | `NOT_STARTED` | criterion adjudicators and semantic evidence applicability |
 | P5-M3 new-loop benchmark harness | `NOT_STARTED` | fixed BrowserGym/MiniWoB smoke only after M0.1–M2 |
@@ -41,7 +42,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 ## Next admitted slice
 
 The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
-complete. P5-M0 and P5-M0.1 are also complete on the non-default path. The next
+complete. P5-M0, P5-M0.1 and P5-M0.1.1 are also complete on the non-default path. The next
 admitted slice is P5-M1 model-backed policy; P5-M2 evaluator composition and
 P5-M3 harness follow in that order, without
 adding semantic fusion, ActionBatch, long-horizon planning, external full-agent

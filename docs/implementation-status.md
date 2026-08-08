@@ -35,10 +35,11 @@ The target path now has:
 | P5-D6.1 confirmation/evaluation contract completion | `INTEGRATED_NON_DEFAULT`; effective risk, destination identity, bounded presentation, terminal immutability, policy reselection, evidence lineage, explicit task control |
 | P5-M0 model/evaluator boundary | `INTEGRATED_NON_DEFAULT`; model-safe projections, current-world evidence resolution, structured completion and target output integrity |
 | AgentContext architecture | `INTEGRATED_NON_DEFAULT / CLOSED_P5_M0_1` |
-| ContextIdentity | `CLOSED`; current task/observation/action-space/page/progress/pending digest, stale/replay zero-call |
+| P5-M0.1.1 one-shot context epoch | `CLOSED`; monotonic per-session policy generation, stale/page-cycle/replay zero-call |
+| ContextIdentity | `CLOSED`; task/observation/action-space/page/progress/pending/generation digest |
 | IntentContextView | `CLOSED_FOR_BOUNDED_CONTEXT_ONLY`; always `context_only`, never TaskGoal authority |
 | LocalObjective relevance | `CLOSED_FOR_CURRENT_EXPLICIT_HINT_PROFILE`; legality and risk unchanged |
-| action paging | `CLOSED_FOR_DETERMINISTIC_PAGER`; only current-page IDs admitted |
+| action paging | `CLOSED_FOR_DETERMINISTIC_CURSOR_PAGER`; traversable Runtime-issued cursor; only current-page IDs admitted |
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `TARGET_DOCUMENTED / NOT_IMPLEMENTED` |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
@@ -138,3 +139,11 @@ source-assurance summaries. Criterion adjudication, targeted observation
 provider selection, model-backed target policy/evaluator composition and the new-loop
 benchmark harness have not begun. WoT effectful rate limiting is implemented; property
 read-side scheduling/rate limiting is not implemented.
+
+P5-M0.1.1 closes the operational profile: every actual policy call advances a
+one-shot context generation; fresh observation is accepted only with a new
+acquisition identity; page continuation is traversable and filter/objective
+bound; page projection uses the configured action/destination/world budgets;
+task and per-target sections report truthful truncation; failed acquisition
+results do not erase adapter capability; and non-action decisions enter bounded
+semantic recurrent history. Targeted provider selection remains deferred.

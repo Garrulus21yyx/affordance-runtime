@@ -71,3 +71,18 @@ class ObservationSourceProfile:
             AcquisitionCost.MEDIUM,
             "wot",
         )
+
+
+def assurance_satisfies(
+    offered: ObservationAssurance | str,
+    required: ObservationAssurance | str,
+) -> bool:
+    rank = {
+        ObservationAssurance.WEAK: 0,
+        ObservationAssurance.STRUCTURAL: 1,
+        ObservationAssurance.AUTHORITATIVE: 2,
+    }
+    try:
+        return rank[ObservationAssurance(offered)] >= rank[ObservationAssurance(required)]
+    except ValueError:
+        return False

@@ -86,6 +86,14 @@ an opaque current context ID, stale/replayed decisions are zero-call, and
 deterministic relevance/paging plus DOM/Visual/WoT source summaries are live.
 Criterion adjudicators remain unimplemented and belong to P5-M2.
 
+P5-M0.1.1 closes the ordinary Runtime correctness gaps on the same non-default
+path: every policy call receives a monotonic one-shot context epoch; every
+fresh-observation path rejects acquisition-identity reuse; deterministic pages
+are traversable through Runtime-issued cursors; action/destination/task/world
+budgets are enforced coherently; and non-action decisions recur as bounded
+semantic history. This does not start P5-M1, change the default path, or weaken
+exact-subject confirmation.
+
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)

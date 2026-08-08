@@ -63,6 +63,7 @@ core contracts for every GUI task.
 | P5-D6.1 | General semantic confirmation and evidence-bound evaluation contracts | complete, non-default |
 | P5-M0 | Model-safe policy views and evidence-validated evaluator boundary | complete, non-default |
 | P5-M0.1 | Unified disposable AgentContext, ContextIdentity, bounded intent/world/history, relevance, paging, source assurance and typed decisions | complete, non-default |
+| P5-M0.1.1 | One-shot context epochs, fresh observation identity, traversable cursor paging and coherent bounded projections/history | complete, non-default |
 | P5-M1 | Model-backed target AgentPolicy using deterministic evaluators | not started |
 | P5-M2 | Production evaluator composition and criterion adjudicators | not started |
 | P5-M3 | New-AgentLoop harness and fixed BrowserGym/MiniWoB smoke | not started; external admission blocked |
@@ -101,6 +102,9 @@ integrity, and benchmark neutrality.
 AgentContext remains a one-way disposable projection; every decision binds the
 current context ID, LocalObjective changes relevance only, and source assurance
 never grants execution authority.
+Each policy call receives a new one-shot generation even when its public
+projection is otherwise identical. Runtime-issued paging cursors bind filters,
+objective identity and exact membership; they are not durable state.
 
 ## 6. Non-goals
 

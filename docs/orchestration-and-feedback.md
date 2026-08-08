@@ -108,3 +108,9 @@ proposals fail the run and are not recorded as trusted evaluations.
 P5-M0.1 is implemented on the non-default target loop. ProposeDone remains
 advisory, must reference current evidence, and re-enters validated TaskEvaluator
 control; criterion-specific production adjudicators remain future P5-M2 work.
+
+P5-M0.1.1 makes every policy invocation a new one-shot epoch, including stale
+decision recovery and no-op page cycles. RequestObservation, Wait, stale/currentness
+refresh, confirmation refresh and post-action observation share the same
+new-acquisition-identity check. Page requests record `page_changed` or
+`page_unchanged` in bounded semantic history; they never execute an action.

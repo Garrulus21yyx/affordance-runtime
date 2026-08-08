@@ -58,6 +58,10 @@ model policy/evaluator composition has not started.
 P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
 is implemented on the non-default target path. P5-M1 model-backed policy is
 next; no provider-backed policy or evaluator has started.
+P5-M0.1.1 operational closure adds one-shot context generations, fresh
+acquisition-identity enforcement, traversable opaque-cursor paging, coherent
+task/world/action budgets, objective-aware page invalidation, capability/result
+separation and recurrent semantic history. The default Coordinator path is unchanged.
 
 ## 3. Maintained policies and contracts
 
@@ -99,6 +103,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M0 model-safe policy and evaluator boundary](reviews/2026-08-08-p5-m0-model-evaluator-boundary.md)
 - [AgentContext architecture refinement](reviews/2026-08-08-agent-context-architecture-refinement.md)
 - [P5-M0.1 AgentContext implementation](reviews/2026-08-08-p5-m0-1-agent-context-implementation.md)
+- [P5-M0.1.1 context operational closure](reviews/2026-08-08-p5-m0-1-1-context-operational-closure.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

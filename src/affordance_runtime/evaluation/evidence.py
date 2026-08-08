@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 
 _MAX_REFS = 4096
 _MAX_REF_LENGTH = 512
@@ -20,9 +21,9 @@ class WorldEvidenceIndex:
 
     @classmethod
     def from_observation(cls, observation: WorldObservation) -> WorldEvidenceIndex:
-        refs = [fact.fact_id for fact in observation.facts]
+        refs = [canonical_fact_ref(fact.fact_id) for fact in observation.facts]
         refs.extend(
-            f"artifact:{source.observation_id}:{key}"
+            canonical_artifact_ref(source.observation_id, str(key))
             for source in observation.sources
             for key in source.artifacts
         )

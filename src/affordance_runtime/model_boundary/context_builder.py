@@ -22,9 +22,9 @@ from affordance_runtime.model_boundary.projection import (
     project_action_page,
     project_plan,
     project_public_value,
-    project_task,
     project_turns,
 )
+from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
@@ -52,9 +52,12 @@ class ContextBuilder:
         observation_count: int = 1,
         context_generation: int = 0,
     ) -> AgentContext:
-        page = action_page or self.page(action_space, state)
+        default_page = self.page(action_space, state)
+        page = action_page or default_page
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
+        if page.objective_digest != default_page.objective_digest:
+            raise ValueError("action page relevance belongs to a previous LocalObjective")
         projected_actions = project_action_page(
             action_space,
             page,
@@ -62,13 +65,7 @@ class ContextBuilder:
             self.budget.max_destinations_per_option,
         )
         shown_actions = projected_actions.options
-        pinned_targets = tuple(
-            dict.fromkeys(
-                target_id
-                for option in shown_actions
-                for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
-            )
-        )
+        pinned_targets = _pinned_targets(shown_actions, state, self.budget.max_targets)
         world = project_model_world(state.current_observation, self.budget, pinned_targets)
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
@@ -86,15 +83,7 @@ class ContextBuilder:
             page.next_cursor,
         )
         history_items = project_turns(state.recent_turns)[-self.budget.max_history_turns :]
-        identity = ContextIdentity(
-            state.task_revision,
-            state.current_observation.observation_id,
-            action_space.action_space_id,
-            page.page_id,
-            state.progress_revision,
-            state.pending_revision,
-            context_generation,
-        )
+        identity = _context_identity(state, action_space, page, context_generation)
         truncation = {
             "intent": project_intent_context(intent_context, self.budget).excerpts.truncated,
             "targets": world.targets.truncated,
@@ -120,7 +109,7 @@ class ContextBuilder:
             ),
             DecisionMode.ACT,
         )
-        return _fit_context(context, self.budget.max_total_serialized_bytes)
+        return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
     def page(
         self,
@@ -161,6 +150,33 @@ def project_intent_context(
     return IntentContextView(BoundedSection(tuple(items), len(excerpts), len(items) < len(excerpts)))
 
 
+def _context_identity(state, action_space, page, generation: int) -> ContextIdentity:
+    return ContextIdentity(
+        state.task_revision,
+        state.current_observation.observation_id,
+        action_space.action_space_id,
+        page.page_id,
+        state.progress_revision,
+        state.pending_revision,
+        generation,
+    )
+
+
+def _pinned_targets(actions, state, limit: int) -> tuple[str, ...]:
+    values = [
+        target_id
+        for option in actions
+        for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
+    ]
+    objective = state.active_objective
+    if objective is not None:
+        values.extend((*objective.direct_target_ids, *objective.enabling_target_ids))
+    if state.pending_confirmation is not None:
+        values.append(state.pending_confirmation.intent.target_id)
+    current = {item.target_id for item in state.current_observation.targets}
+    return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
+
+
 def _progress_view(task, state, evaluation, facts) -> AgentProgressView:
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}
     unresolved = tuple(
@@ -193,15 +209,30 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
     )
 
 
-def _fit_context(context: AgentContext, max_bytes: int) -> AgentContext:
+def _fit_context(
+    context: AgentContext,
+    max_bytes: int,
+    pinned_target_ids: tuple[str, ...],
+) -> AgentContext:
     while serialized_size(context) > max_bytes:
+        try:
+            smaller_world = fit_model_world(
+                context.world,
+                max(1, serialized_size(context.world) - 1),
+                pinned_target_ids,
+            )
+        except ValueError:
+            smaller_world = context.world
+        if smaller_world != context.world:
+            context = replace(context, world=smaller_world)
+            continue
         if context.progress.verified_public_facts:
             progress = replace(context.progress, verified_public_facts=(), truncated=True)
             context = replace(context, progress=progress)
             continue
         if context.history.items:
             history = BoundedSection(
-                context.history.items[:-1],
+                context.history.items[1:],
                 context.history.total_count,
                 context.history.total_count > len(context.history.items) - 1,
             )
@@ -209,15 +240,11 @@ def _fit_context(context: AgentContext, max_bytes: int) -> AgentContext:
             continue
         if context.intent.excerpts.items:
             excerpts = BoundedSection(
-                context.intent.excerpts.items[:-1],
+                context.intent.excerpts.items[1:],
                 context.intent.excerpts.total_count,
                 context.intent.excerpts.total_count > len(context.intent.excerpts.items) - 1,
             )
             context = replace(context, intent=replace(context.intent, excerpts=excerpts))
-            continue
-        smaller_world = fit_model_world(context.world, max(1, serialized_size(context.world) - 1))
-        if smaller_world != context.world:
-            context = replace(context, world=smaller_world)
             continue
         raise ValueError("AgentContext fixed sections exceed the total serialized byte budget")
     flags = dict(context.budgets.section_truncation)

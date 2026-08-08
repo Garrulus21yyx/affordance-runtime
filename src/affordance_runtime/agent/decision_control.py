@@ -26,6 +26,7 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.world.contracts import ActionSpace
+from affordance_runtime.world.source_profile import assurance_satisfies
 
 SelectionExecutor = Callable[[AgentRunSession, ActionSpace, SelectAction], Awaitable[object]]
 
@@ -67,23 +68,34 @@ async def run_policy_turn(
     if not accept_current_decision(session, decision):
         return None
     if isinstance(decision, AskUser):
+        state.append_turn(Turn(state.current_observation.observation_id, decision))
         state.set_pending_question(decision.question)
         return build_result(AgentLoopStatus.WAITING_USER, task, state, 0, 0, decision.question)
     if isinstance(decision, Abort):
+        state.append_turn(Turn(state.current_observation.observation_id, decision))
         return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, decision.reason)
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator)
     if isinstance(decision, RequestObservation):
-        capabilities = {(item.modality, item.assurance) for item in context.world.observation_capabilities}
-        if (decision.modality, decision.required_assurance) not in capabilities:
+        capabilities = tuple(context.world.observation_capabilities)
+        if not any(
+            item.modality == decision.modality
+            and assurance_satisfies(item.assurance, decision.required_assurance)
+            for item in capabilities
+        ):
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "observation capability was not offered")
         return await _fresh_observation(session, decision, decision.reason)
     if isinstance(decision, Wait):
         if not _can_observe(session):
             return observation_budget_result(task, state, 0, 0)
+        if session.waited_ms + decision.max_wait_ms > 120_000:
+            state.append_turn(Turn(state.current_observation.observation_id, decision, decision_result="wait_budget_exceeded"))
+            return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "total wait budget exhausted")
         await waiter.wait(decision.max_wait_ms)
+        session.waited_ms += decision.max_wait_ms
         return await _fresh_observation(session, decision, "fresh observation after wait")
     if isinstance(decision, RequestActionPage):
+        previous_page_id = session.current_action_page.page_id if session.current_action_page else ""
         try:
             session.current_action_page = context_builder.page(
                 action_space,
@@ -95,6 +107,8 @@ async def run_policy_turn(
             )
         except ValueError:
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "invalid action page request")
+        result = "page_unchanged" if session.current_action_page.page_id == previous_page_id else "page_changed"
+        state.append_turn(Turn(state.current_observation.observation_id, decision, decision_result=result))
         return None
     page = session.current_action_page
     if page is None or decision.action_id not in page.visible_action_ids:
@@ -114,10 +128,16 @@ def ensure_current_action_page(
     action_space: ActionSpace,
     context_builder: ContextBuilder,
 ) -> None:
-    if session.current_action_space is not None and session.current_action_space.action_space_id == action_space.action_space_id:
+    candidate = context_builder.page(action_space, session.state)
+    if (
+        session.current_action_space is not None
+        and session.current_action_space.action_space_id == action_space.action_space_id
+        and session.current_action_page is not None
+        and session.current_action_page.objective_digest == candidate.objective_digest
+    ):
         return
     session.current_action_space = action_space
-    session.current_action_page = context_builder.page(action_space, session.state)
+    session.current_action_page = candidate
 
 
 async def _fresh_observation(session: AgentRunSession, decision: AgentDecision, reason: str) -> None | object:
