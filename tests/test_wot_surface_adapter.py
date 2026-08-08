@@ -58,6 +58,8 @@ class FakeWotTransport:
         self.probe_failure = False
         self.action_result = WotTransportResult(WotTransportStatus.SENT, True)
         self.apply_effect = True
+        self.raise_on_execute = False
+        self.property_value = None
 
     def reset(self) -> None:
         self.expanded = False
@@ -75,11 +77,14 @@ class FakeWotTransport:
     def read_property(self, route, scheme):
         del route, scheme
         self.reads += 1
-        return WotTransportResult(WotTransportStatus.SENT, True, value=self.expanded)
+        value = self.expanded if self.property_value is None else self.property_value
+        return WotTransportResult(WotTransportStatus.SENT, True, value=value)
 
     def execute_affordance(self, route, scheme, parameters):
         del route, scheme, parameters
         self.action_port_calls += 1
+        if self.raise_on_execute:
+            raise RuntimeError("unclassified transport failure")
         if self.action_result.status != WotTransportStatus.NOT_SENT:
             self.action_endpoint_calls += 1
         if self.apply_effect and self.action_result.status != WotTransportStatus.NOT_SENT:
@@ -229,6 +234,21 @@ def test_wot_transport_pre_send_and_unknown_map_without_retry() -> None:
     asyncio.run(scenario(WotTransportStatus.SENT_UNKNOWN, "execution_failed", 1))
 
 
+def test_wot_effectful_transport_exception_is_sent_unknown_without_retry() -> None:
+    async def scenario() -> None:
+        transport = FakeWotTransport()
+        transport.raise_on_execute = True
+        _, world, _, request = await _bound(transport)
+
+        result = await world.execute(request)
+
+        assert result.dispatch_status.value == "sent_unknown"
+        assert transport.action_port_calls == 1
+        assert transport.action_endpoint_calls == 0
+
+    asyncio.run(scenario())
+
+
 def test_wot_malformed_parameters_are_rejected_before_transport() -> None:
     async def scenario() -> None:
         td = shared_td()
@@ -276,6 +296,42 @@ def test_wot_partial_property_read_reports_truncated_coverage() -> None:
         assert observed.coverage.value == "truncated"
         assert len(observed.targets) >= 2  # one property, one action, plus the event description
         assert observed.artifacts["read_errors"] == ("unavailable:read_failed",)
+
+    asyncio.run(scenario())
+
+
+def test_wot_wrong_property_type_is_not_published_as_world_fact() -> None:
+    async def scenario() -> None:
+        transport = FakeWotTransport()
+        transport.property_value = {"credential": "must-not-leak"}
+        adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
+        await adapter.reset(_task())
+
+        observed = await adapter.observe("invalid property")
+
+        assert observed.coverage.value == "failed"
+        assert not any(fact.key == "expanded" for fact in observed.facts)
+        assert observed.artifacts["read_errors"] == ("expanded:schema_mismatch",)
+        assert "must-not-leak" not in repr(observed)
+
+    asyncio.run(scenario())
+
+
+def test_wot_property_action_event_names_have_source_local_identity() -> None:
+    async def scenario() -> None:
+        td = shared_td()
+        td["properties"]["enable"] = td["properties"].pop("expanded")
+        td["events"] = {"enable": td["events"].pop("changed")}
+        transport = FakeWotTransport(td)
+        adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
+        await adapter.reset(_task())
+
+        observed = await adapter.observe("same names")
+        target_ids = {target.target_id for target in observed.targets}
+
+        assert "wot:shared-state:property:enable" in target_ids
+        assert "wot:shared-state:action:enable" in target_ids
+        assert "wot:shared-state:event:enable" in target_ids
 
     asyncio.run(scenario())
 

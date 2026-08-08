@@ -97,4 +97,11 @@ class ActionResult:
     def __post_init__(self) -> None:
         if not self.request_id.strip() or not self.backend.strip():
             raise ValueError("action result requires request and backend identity")
+        inconsistent = (
+            (self.dispatch_status in {DispatchStatus.NOT_SENT, DispatchStatus.SENT_UNKNOWN} and self.transport_success)
+            or (self.transport_success and self.error is not None)
+            or (not self.transport_success and self.error is None)
+        )
+        if inconsistent:
+            raise ValueError("action result dispatch status, transport success, and error are inconsistent")
         object.__setattr__(self, "adapter_evidence", freeze_json(self.adapter_evidence))

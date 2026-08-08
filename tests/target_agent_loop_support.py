@@ -6,6 +6,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.world import CoverageState
 
 
 def shared_state_task() -> TaskGoal:
@@ -43,8 +44,18 @@ class SharedStateActionEvaluator:
         was_expanded = any(target.state.get("expanded") is True for target in before.targets)
         is_expanded = any(target.state.get("expanded") is True for target in after.targets)
         changed = not was_expanded and is_expanded
+        coverage_complete = bool(after.coverage) and all(
+            item == CoverageState.COMPLETE for item in after.coverage.values()
+        )
+        if not changed and not coverage_complete:
+            return ActionEvaluation(
+                ActionEvaluationStatus.UNKNOWN,
+                "fresh observation does not establish authoritative effect absence",
+            )
         return ActionEvaluation(
-            ActionEvaluationStatus.VERIFIED if changed else ActionEvaluationStatus.NOT_VERIFIED,
+            ActionEvaluationStatus.EFFECT_CONFIRMED
+            if changed
+            else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "shared state changed" if changed else "shared state did not change",
         )
 

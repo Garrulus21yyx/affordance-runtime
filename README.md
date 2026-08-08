@@ -64,16 +64,18 @@ or act across environments more effectively.
 
 The older TaskSpec/TaskPlan/ActionContract/StateKernel/RuntimeCommitter control
 path remains the default baseline. A non-default target path now implements the
-strong TaskGoal and world/action/evaluation contracts, a minimum Unified World
-Interface, and one real-browser DOM short loop. Visual/WoT target verticals and
-default cutover remain pending. The repository also retains valuable grounding,
-fusion, routing, active-perception, and independent-evaluation foundations.
+strong TaskGoal and world/action/evaluation contracts and integrated DOM,
+Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
+three-surface adapter-only shared-state matrix is proven with one deterministic
+policy. P5-D semantic confirmation and effect certainty is next. A model-backed
+target AgentPolicy is not implemented, external full-agent benchmarks remain
+blocked, and default cutover remains pending.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is
 built in vertical slices. See [Implementation Status](docs/implementation-status.md)
 for exact code truth and [Current Implementation Plan](docs/current-implementation-plan.md)
-for exact slice status and the next Visual/WoT vertical work.
+for exact slice status and the P5-D work queue.
 
 ## Correctness invariants retained during simplification
 
@@ -95,15 +97,11 @@ Affordance Runtime—not BrowserGym or another benchmark—is the product.
 Benchmarks evaluate the Runtime and may not provide task IDs, expected answers,
 selectors, coordinates, or fixture semantics to production policy.
 
-The next internal proof is a positive cross-surface matrix: the same TaskGoal,
-AgentPolicy, semantic action vocabulary, and evaluator must succeed against
-DOM, AX, Visual, SVG, and WoT implementations where only the adapter differs.
-It records task success, steps, observations, model/visual calls, latency,
-fallbacks, route mistakes, confirmations, long-horizon constraint retention,
-batch utilization, and cache-currentness rejection.
-
-Full external agent benchmarks remain blocked until the internal DOM/Visual/WoT
-matrix and P5-D confirmation/unknown-effect gates pass.
+The DOM/Visual/WoT adapter-only shared-state matrix is complete for the current
+declared single-surface profiles. Full external agent benchmarks remain blocked
+until P5-D, a model-backed target AgentPolicy and production evaluator
+composition, a new-AgentLoop benchmark harness, and exact-head remote CI
+evidence are all complete.
 
 ## Documentation
 

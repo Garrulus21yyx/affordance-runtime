@@ -241,8 +241,8 @@ class AgentLoop:
             return build_result(AgentLoopStatus.DONE, task, state, 0, 0, task_evaluation.reason)
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
             if action_evaluation.status in {
-                ActionEvaluationStatus.VERIFIED,
-                ActionEvaluationStatus.NOT_VERIFIED,
+                ActionEvaluationStatus.EFFECT_CONFIRMED,
+                ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             }:
                 return None
             if action_evaluation.status == ActionEvaluationStatus.REJECTED:

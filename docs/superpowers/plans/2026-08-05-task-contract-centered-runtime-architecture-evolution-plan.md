@@ -216,11 +216,12 @@ retention boundary and product metrics; it cannot silently return as GUI core wo
 
 ```text
 DONE: P5-A0 documentation consolidation and target refinement
-NOW: no code slice active
-NEXT: P5-A1–A4 target contracts
-THEN: P5-B1 + DOM/Visual/WoT adapters
-THEN: P5-C minimal positive short loops
-THEN: P5-D semantic confirmation and unknown-effect cutover
+DONE: P5-A1–A4 target contracts, integrated non-default
+DONE: P5-B1–B4 for DOM, Visual full-digest, and WoT local HTTP JSON simulation minimums
+DONE: P5-C1–C3 shared-state deterministic-policy DOM/Visual/WoT matrix
+DEFERRED: P5-C4 semantic fusion; it is not a prerequisite for P5-D
+PARTIAL: P5-C5 small AgentLoopState complete; LoopPolicy and optional TurnRecorder remain
+NOW: P5-D semantic confirmation and effect-certainty continuation
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars

@@ -30,6 +30,8 @@ class WotTransportPort(Protocol):
 
     def probe_thing_revision(self) -> dict[str, Any]: ...
 
+    def supports(self, route: WotAffordanceBinding) -> bool: ...
+
     def read_property(
         self,
         route: WotAffordanceBinding,
@@ -70,6 +72,13 @@ class HttpWotTransport:
     def probe_thing_revision(self) -> dict[str, Any]:
         return self.fetch_thing_description()
 
+    def supports(self, route: WotAffordanceBinding) -> bool:
+        return (
+            urlsplit(route.href).scheme.lower() in {"http", "https"}
+            and route.method.upper() in {"GET", "POST", "PUT", "PATCH", "DELETE"}
+            and route.content_type.lower().split(";", maxsplit=1)[0].strip() == "application/json"
+        )
+
     def read_property(
         self,
         route: WotAffordanceBinding,
@@ -83,6 +92,8 @@ class HttpWotTransport:
         scheme: SecurityScheme,
         parameters: dict[str, Any],
     ) -> WotTransportResult:
+        if not self.supports(route):
+            return WotTransportResult(WotTransportStatus.NOT_SENT, False, "unsupported_route")
         payload: object | None = parameters
         if route.primitive_action == "write_property":
             payload = parameters.get("value")
@@ -103,7 +114,10 @@ class HttpWotTransport:
             return WotTransportResult(WotTransportStatus.NOT_SENT, False, "credential_unavailable")
         headers, query = build_auth(scheme, credential)
         request_url = _with_query(url, query)
-        body = None if payload is None else json.dumps(payload).encode()
+        try:
+            body = None if payload is None else json.dumps(payload).encode()
+        except (TypeError, ValueError):
+            return WotTransportResult(WotTransportStatus.NOT_SENT, False, "payload_not_json")
         if body is not None:
             headers = {**headers, "Content-Type": route.content_type if route else "application/json"}
         request = Request(request_url, data=body, headers=headers, method=method)

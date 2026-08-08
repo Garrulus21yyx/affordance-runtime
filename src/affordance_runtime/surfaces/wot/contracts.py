@@ -37,6 +37,14 @@ class WotTransportResult:
     evidence: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        inconsistent = (
+            (self.status in {WotTransportStatus.NOT_SENT, WotTransportStatus.SENT_UNKNOWN} and self.transport_success)
+            or (self.transport_success and self.status != WotTransportStatus.SENT)
+            or (self.transport_success and bool(self.error_type))
+            or (not self.transport_success and not self.error_type)
+        )
+        if inconsistent:
+            raise ValueError("WoT transport status, success, and error type are inconsistent")
         if _contains_sensitive_key(self.evidence):
             raise ValueError("WoT transport evidence contains sensitive fields")
         object.__setattr__(self, "value", freeze_json(self.value))

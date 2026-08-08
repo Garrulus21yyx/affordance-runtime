@@ -10,6 +10,12 @@ TARGET_CORE = (
     PACKAGE / "world",
     PACKAGE / "execution" / "contracts.py",
     PACKAGE / "evaluation",
+    PACKAGE / "risk",
+    PACKAGE / "confirmation",
+)
+SIZE_GATED = TARGET_CORE + (
+    PACKAGE / "surfaces" / "visual",
+    PACKAGE / "surfaces" / "wot",
 )
 FORBIDDEN = {
     "affordance_runtime.contracts",
@@ -60,6 +66,15 @@ def test_agent_and_surface_dependency_directions_are_one_way() -> None:
     assert "affordance_runtime.agent.loop" not in surface_imports
 
 
+def test_risk_and_confirmation_keep_surface_private_dependencies_out() -> None:
+    risk_imports = set().union(*(_imports(path) for path in _files(PACKAGE / "risk")))
+    confirmation_imports = set().union(*(_imports(path) for path in _files(PACKAGE / "confirmation")))
+
+    assert not any(name.startswith("affordance_runtime.surfaces") for name in risk_imports)
+    assert not any(name.startswith("affordance_runtime.surfaces") for name in confirmation_imports)
+    assert "affordance_runtime.browser_session" not in confirmation_imports
+
+
 def test_policy_and_evaluators_do_not_import_concrete_execution_owners() -> None:
     policy_imports = _imports(PACKAGE / "agent" / "policy.py")
 
@@ -83,7 +98,7 @@ def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() 
 
 def test_target_core_size_review_gates_remain_closed() -> None:
     violations = []
-    for root in TARGET_CORE:
+    for root in SIZE_GATED:
         for path in _files(root):
             text = path.read_text(encoding="utf-8")
             line_count = len(text.splitlines())

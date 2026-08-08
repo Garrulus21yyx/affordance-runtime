@@ -18,7 +18,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
+from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
@@ -103,7 +103,9 @@ class SharedActionEvaluator:
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN and not changed:
             return ActionEvaluation(ActionEvaluationStatus.UNKNOWN, "effect remains unknown")
         return ActionEvaluation(
-            ActionEvaluationStatus.VERIFIED if changed else ActionEvaluationStatus.NOT_VERIFIED,
+            ActionEvaluationStatus.EFFECT_CONFIRMED
+            if changed
+            else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "state changed" if changed else "state did not change",
         )
 
@@ -113,7 +115,8 @@ def _loop(policy) -> AgentLoop:
 
 
 def _sent(status: DispatchStatus = DispatchStatus.SENT, success: bool = True) -> ActionResult:
-    return ActionResult("*", status, "dom", success)
+    error = None if success else ActionError.EXECUTION_FAILED
+    return ActionResult("*", status, "dom", success, error)
 
 
 def test_initial_satisfaction_is_zero_execution_done() -> None:
@@ -359,7 +362,15 @@ def test_not_sent_wrong_lineage_fails_before_evaluation(request_id: str, backend
     async def scenario() -> None:
         environment = StaticEnvironment(
             [_world("obs-1", False)],
-            [ActionResult(request_id, DispatchStatus.NOT_SENT, backend, False)],
+            [
+                ActionResult(
+                    request_id,
+                    DispatchStatus.NOT_SENT,
+                    backend,
+                    False,
+                    ActionError.EXECUTION_FAILED,
+                )
+            ],
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), FailIfEvaluated(), SharedTaskEvaluator())
         result = await AgentEpisodeRunner(loop).run(environment, _task())

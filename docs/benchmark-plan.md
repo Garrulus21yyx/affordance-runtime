@@ -95,11 +95,14 @@ single-surface adapter-only activation matrix is complete, but admission still r
 3. runtime-owned ActionSpace and evaluator-owned completion;
 4. stale zero-call, fresh observation, and SENT_UNKNOWN no-retry;
 5. P5-D confirmation/unknown-effect core;
-6. exact-head CI evidence with zero forbidden side effects and duplicate unknown attempts.
+6. model-backed target AgentPolicy and production target evaluator composition;
+7. a benchmark harness that runs the new AgentLoop rather than the retained baseline;
+8. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
 
 The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
 for harness and loop-contract validation, not a generalization claim.
 WebArena/WorkArena wait for an internal 20–50 turn case. OSWorld waits for
 AX/Visual/CLI/app-switch contracts. Component tests and the local DOM, Visual,
-and WoT verticals continue to run before this admission gate. P5-D remains the
-blocking core; this slice ran no external benchmark.
+and WoT verticals continue to run before this admission gate. Completing P5-D
+alone does not admit an external run; the model-backed target policy/evaluators,
+new-loop harness, and exact-head remote CI evidence remain mandatory.

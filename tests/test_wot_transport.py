@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 from affordance_runtime.adapters.wot_security import SecurityScheme
 from affordance_runtime.surfaces.wot.contracts import WotAffordanceBinding, WotTransportStatus
@@ -100,3 +101,49 @@ def test_http_wot_transport_fetch_and_probe_td_without_old_action_contract(monke
     assert transport.fetch_thing_description() == {"id": "shared-state"}
     assert transport.probe_thing_revision() == {"id": "shared-state"}
     assert [request.full_url for request in requests] == ["http://fixture/td", "http://fixture/td"]
+
+
+def test_http_wot_transport_rejects_unsupported_route_without_send(monkeypatch) -> None:
+    calls = 0
+
+    def urlopen(request, timeout):
+        del request, timeout
+        nonlocal calls
+        calls += 1
+        return Response({})
+
+    monkeypatch.setattr("affordance_runtime.surfaces.wot.transport.urlopen", urlopen)
+    transport = HttpWotTransport("http://fixture/td")
+    scheme = SecurityScheme("api", "nosec", "", "")
+
+    for route in (
+        replace(_route("api"), href="mqtt://fixture/actions/enable"),
+        replace(_route("api"), method="TRACE"),
+        replace(_route("api"), content_type="text/plain"),
+    ):
+        assert not transport.supports(route)
+        result = transport.execute_affordance(route, scheme, {})
+        assert result.status == WotTransportStatus.NOT_SENT
+        assert result.error_type == "unsupported_route"
+
+    assert calls == 0
+
+
+def test_http_wot_transport_unencodable_payload_is_not_sent(monkeypatch) -> None:
+    calls = 0
+
+    def urlopen(request, timeout):
+        del request, timeout
+        nonlocal calls
+        calls += 1
+        return Response({})
+
+    monkeypatch.setattr("affordance_runtime.surfaces.wot.transport.urlopen", urlopen)
+    transport = HttpWotTransport("http://fixture/td")
+    scheme = SecurityScheme("api", "nosec", "", "")
+
+    result = transport.execute_affordance(_route("api"), scheme, {"bad": object()})
+
+    assert result.status == WotTransportStatus.NOT_SENT
+    assert result.error_type == "payload_not_json"
+    assert calls == 0

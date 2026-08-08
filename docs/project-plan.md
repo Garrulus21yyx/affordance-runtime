@@ -56,7 +56,7 @@ core contracts for every GUI task.
 | P5-A | Documentation reset; strong TaskGoal/risk profiles and minimal world/action contracts | target contracts integrated non-default |
 | P5-B | Symmetric SurfaceAdapter interface across DOM/AX/Visual/SVG/WoT/API/Device/CLI | DOM, Visual-only, and WoT local-simulation minimums integrated non-default; other surfaces pending |
 | P5-C | Positive DOM, Visual, and WoT vertical loops using the same policy/evaluator | shared-state adapter-only matrix proven for DOM, Visual, and WoT; no fusion claim |
-| P5-D | Semantic human confirmation, current rebind, unknown-effect and evaluator cutover | not started |
+| P5-D | Semantic human confirmation, current rebind, unknown-effect and evaluator cutover | active next slice |
 | P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |

@@ -71,7 +71,7 @@ class WotSurfaceAdapter:
         property_targets, facts, read_errors = self._read_state(model, observation_id, td_digest)
         action_targets, candidate_bindings, routes = self._actions(model, observation_id, td_digest)
         event_targets = tuple(
-            SemanticTarget(f"wot:{model.thing_id}:{name}", "event", name)
+            SemanticTarget(f"wot:{model.thing_id}:event:{name}", "event", name)
             for name in model.events
         )
         self._observation_id = observation_id
@@ -131,7 +131,14 @@ class WotSurfaceAdapter:
                 dict(request.intent.parameters),
             )
         except Exception as exc:
-            return self._not_sent(request, ActionError.EXECUTION_FAILED, 1, type(exc).__name__)
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.SENT_UNKNOWN,
+                self.surface,
+                False,
+                ActionError.EXECUTION_FAILED,
+                {"currentness_probe_count": 1, "error_type": type(exc).__name__},
+            )
         if transport_result.status != WotTransportStatus.NOT_SENT:
             self._last_sent_at[route.source_affordance_id] = self.clock()
         return self._action_result(request, transport_result)
@@ -160,7 +167,12 @@ class WotSurfaceAdapter:
             if not result.transport_success:
                 errors.append(f"{name}:{result.error_type or 'read_failed'}")
                 continue
-            target_id = f"wot:{model.thing_id}:{name}"
+            try:
+                validate_value(result.value, route.input_schema, path=name)
+            except ValueError:
+                errors.append(f"{name}:schema_mismatch")
+                continue
+            target_id = f"wot:{model.thing_id}:property:{name}"
             targets.append(SemanticTarget(target_id, "property", name, {name: result.value}))
             facts.append(StateFact(f"{observation_id}:{target_id}:{name}", target_id, name, result.value, observation_id))
         return tuple(targets), tuple(facts), tuple(errors)
@@ -175,7 +187,7 @@ class WotSurfaceAdapter:
         bindings: list[ActionBinding] = []
         routes: dict[str, tuple[WotAffordanceBinding, SecurityScheme]] = {}
         for affordance in model.affordances:
-            target_id = f"wot:{model.thing_id}:{affordance.label}"
+            target_id = f"wot:{model.thing_id}:{affordance.role}:{affordance.label}"
             targets.append(SemanticTarget(target_id, affordance.role, affordance.label))
             try:
                 route = WotAffordanceBinding.from_affordance(observation_id, td_digest, model, affordance)
@@ -183,6 +195,9 @@ class WotSurfaceAdapter:
                 continue
             scheme = model.security_schemes.get(route.security_scheme_ref)
             if scheme is None or affordance.action not in {"invoke", "write_property"}:
+                continue
+            supports = getattr(self.transport, "supports", None)
+            if supports is not None and not supports(route):
                 continue
             binding = self._binding(affordance, route, target_id)
             bindings.append(binding)

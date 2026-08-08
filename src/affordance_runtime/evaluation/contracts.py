@@ -10,8 +10,8 @@ from affordance_runtime.immutable import freeze_json
 
 
 class ActionEvaluationStatus(StrEnum):
-    VERIFIED = "verified"
-    NOT_VERIFIED = "not_verified"
+    EFFECT_CONFIRMED = "effect_confirmed"
+    NO_EFFECT_CONFIRMED = "no_effect_confirmed"
     UNKNOWN = "unknown"
     REJECTED = "rejected"
 

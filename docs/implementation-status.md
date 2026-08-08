@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-08
-> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@0ace7d7d6a34ced4ac4679707eae786f56896cbb`
+> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@d435250e25f1d1c07ffd0f2558affcbdba4983a3`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -89,3 +89,8 @@ new-loop DOM/Visual/WoT adapter-only symmetry is proven for the shared-state
 task. This does not prove semantic fusion or physical-device confirmation. Semantic fusion across
 simultaneous sources remains future work. External full-agent
 benchmarks remain blocked. Old-core deletion is not admitted.
+
+P5-D is the next admitted slice. Semantic fusion is deliberately deferred and
+is not a P5-D prerequisite. The small `AgentLoopState` is complete; a distinct
+LoopPolicy and optional TurnRecorder remain future work. Model-backed target
+policy/evaluator composition and the new-loop benchmark harness have not begun.

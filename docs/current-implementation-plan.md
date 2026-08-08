@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-08
-> **Start baseline:** `codex/migrate-world-interaction-capabilities@0ace7d7d6a34ced4ac4679707eae786f56896cbb`
+> **Start baseline:** `codex/migrate-world-interaction-capabilities@d435250e25f1d1c07ffd0f2558affcbdba4983a3`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -27,14 +27,14 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | C2/B3 Visual | complete, non-default | screenshot-only proposer, private coordinates, one-probe pointer execution, real Chromium loop |
 | C3/B4 WoT | complete, non-default | real local HTTP TD/read/invoke, private transport binding, deployment scope, one-probe execution |
 | DOM/Visual/WoT matrix | proven for shared-state task | same TaskGoal/policy/evaluators; adapter-only variation, no fusion |
-| P5-D | `NOT_STARTED` | full semantic confirmation continuation |
+| P5-D | `ACTIVE` | semantic confirmation, fresh rebind, and effect-certainty continuation |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
 ## Next admitted slice
 
-Stop after the three-surface single-adapter matrix. The next admitted slice is
+The three-surface single-adapter matrix is complete. The admitted slice is
 P5-D semantic confirmation continuation, including current rebinding and
 unknown-effect closure. Do not add batch, semantic fusion, long-horizon
 planning, external full-agent benchmarks, or old-core deletion to that slice.
