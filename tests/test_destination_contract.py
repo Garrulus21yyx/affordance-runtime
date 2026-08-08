@@ -67,7 +67,7 @@ def test_destination_admission_requires_one_current_offered_semantic_id() -> Non
 
 def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None:
     option = _option()
-    decision = SelectAction(option.action_id, {}, destination_id="person:alice")
+    decision = SelectAction("context:test", option.action_id, {}, destination_id="person:alice")
     selection = ActionSpaceBuilder().admit(option, dict(decision.parameters), decision.destination_id)
     binding = ActionBinding(
         "binding:send",
@@ -101,7 +101,7 @@ def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None
         {"dom": CoverageState.COMPLETE},
     )
 
-    request = ActionBinder().bind(selection, observation)
+    request = ActionBinder().bind(selection, observation, "context:test")
     assessment = RiskPolicy().assess(_task(), selection)
     bob = replace(selection, destination_id="person:bob")
 
@@ -192,6 +192,7 @@ def test_direct_selection_and_request_revalidate_destination_membership() -> Non
     with pytest.raises(ValueError, match="admitted option"):
         BoundActionRequest(
             "request:1",
+            "context:test",
             "observation:1",
             ActionIntent("send", "message:quarterly", destination_id="person:bob"),
             selection,

@@ -69,7 +69,7 @@ async def _bound(session: VisualSession, proposer: Proposer):
     await world.reset(task)
     observed = await world.observe("initial")
     option = ActionSpaceBuilder().build(task, observed).options[0]
-    request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed)
+    request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
     return adapter, world, observed, request
 
 

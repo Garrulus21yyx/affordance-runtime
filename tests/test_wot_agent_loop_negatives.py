@@ -29,15 +29,19 @@ class FirstPolicy:
     def __init__(self, parameters=None) -> None:
         self.parameters = parameters or {}
 
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, recent_turns, optional_plan
-        return SelectAction(action_space.options[0].action_id, self.parameters)
+        return SelectAction(context.context_id, action_space.options[0].action_id, self.parameters)
 
 
 class MissingPolicy:
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, action_space, recent_turns, optional_plan
-        return SelectAction("missing-wot-action")
+        return SelectAction(context.context_id, "missing-wot-action")
 
 
 class UnknownEvaluator:
@@ -174,7 +178,9 @@ def test_wot_effect_legality_and_exact_binding_prevent_route_escape() -> None:
         )
         space = ActionSpaceBuilder().build(constrained, observed)
         assert len(space.options) == 1
-        request = ActionBinder().bind(ActionSpaceBuilder().admit(space.options[0], {}), observed)
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(space.options[0], {}), observed, "context:test"
+        )
         assert request.binding.binding_id == allowed.binding_id
 
         unrelated = TaskGoal(

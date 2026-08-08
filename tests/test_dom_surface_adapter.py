@@ -58,7 +58,7 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
         view = build_agent_world_view(before)
         space = ActionSpaceBuilder().build(task, before)
         option = space.options[0]
-        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), before)
+        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), before, "context:test")
 
         assert before.observation_id
         assert "selector" not in repr(view)
@@ -90,7 +90,7 @@ def test_stale_dom_binding_makes_zero_executor_calls() -> None:
         await world.reset(effectful)
         old = await world.observe("old")
         option = ActionSpaceBuilder().build(effectful, old).options[0]
-        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old)
+        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old, "context:test")
         await world.observe("new")
 
         assert not world.is_current(request)
@@ -112,7 +112,7 @@ def test_async_dom_fingerprint_change_makes_zero_executor_calls() -> None:
         await world.reset(task)
         observed = await world.observe("initial")
         option = ActionSpaceBuilder().build(task, observed).options[0]
-        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed)
+        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
 
         page.enabled = True  # DOM changes after observation, before execute.
 

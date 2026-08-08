@@ -199,7 +199,7 @@ def test_recent_turn_projection_is_semantic_and_private_payload_free() -> None:
     )
     turn = Turn(
         "before-private",
-        SelectAction("action:opaque", {"text": "hello", "password": "private"}, "alice"),
+        SelectAction("context:test", "action:opaque", {"text": "hello", "password": "private"}, "alice"),
         ActionIntent("send", "message", {"text": "hello", "password": "private"}, "alice"),
         "request:private",
         result,

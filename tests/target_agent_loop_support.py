@@ -23,12 +23,14 @@ def shared_state_task() -> TaskGoal:
 
 
 class FirstOfferedActionPolicy:
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, recent_turns, optional_plan
         representation = repr(world)
         assert "selector" not in representation
         assert "action_point" not in representation
-        return SelectAction(action_space.options[0].action_id)
+        return SelectAction(context.context_id, action_space.options[0].action_id)
 
 
 class SharedStateTaskEvaluator:

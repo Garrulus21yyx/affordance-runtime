@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from affordance_runtime.immutable import freeze_json
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 _PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
 
@@ -262,6 +264,7 @@ class AdmittedActionSelection:
 class ActionSpace:
     observation_id: str
     options: tuple[ActionOption, ...]
+    action_space_id: str = field(init=False)
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip():
@@ -271,6 +274,25 @@ class ActionSpace:
         if len({option.action_id for option in self.options}) != len(self.options):
             raise ValueError("action ids must be unique within an action space")
         object.__setattr__(self, "options", tuple(self.options))
+        semantic_membership = tuple(
+            (
+                option.action_id,
+                option.semantic_action,
+                option.target_id,
+                option.effect_category,
+                option.schema_digest,
+                option.description,
+                option.semantic_effects,
+                option.risk,
+                option.destination_required,
+                option.eligible_destination_ids,
+                option.observation_barrier,
+                to_json_compatible(option.parameter_schema),
+            )
+            for option in self.options
+        )
+        encoded = json.dumps((self.observation_id, semantic_membership), sort_keys=True, separators=(",", ":"))
+        object.__setattr__(self, "action_space_id", f"action-space:{hashlib.sha256(encoded.encode()).hexdigest()}")
 
     def find(self, action_id: str) -> ActionOption | None:
         return next((option for option in self.options if option.action_id == action_id), None)

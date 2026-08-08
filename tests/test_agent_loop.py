@@ -4,13 +4,13 @@ from dataclasses import dataclass, replace
 import pytest
 
 from affordance_runtime.agent import (
+    Abort,
     AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
-    Finish,
-    Reobserve,
+    ProposeDone,
+    RequestObservation,
     SelectAction,
-    Stop,
 )
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -82,11 +82,15 @@ def _task() -> TaskGoal:
 class ScriptedPolicy:
     decisions: list[object]
 
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, recent_turns, optional_plan
         decision = self.decisions.pop(0)
         if decision == "first":
-            return SelectAction(action_space.options[0].action_id)
+            return SelectAction(context.context_id, action_space.options[0].action_id)
+        if isinstance(decision, (SelectAction, RequestObservation, ProposeDone, Abort)):
+            return replace(decision, context_id=context.context_id)
         return decision
 
 
@@ -194,15 +198,20 @@ def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> 
         assert result.execution_count == 0
         return result.status
 
-    assert asyncio.run(scenario(SelectAction("not-offered"))) == AgentLoopStatus.BLOCKED
-    assert asyncio.run(scenario(SelectAction("not-offered", {"selector": "#other"}))) == AgentLoopStatus.BLOCKED
+    assert asyncio.run(scenario(SelectAction("context:test", "not-offered"))) == AgentLoopStatus.BLOCKED
+    assert (
+        asyncio.run(scenario(SelectAction("context:test", "not-offered", {"selector": "#other"})))
+        == AgentLoopStatus.BLOCKED
+    )
 
 
 def test_selector_injection_on_offered_action_is_rejected() -> None:
     class InjectingPolicy:
-        async def decide(self, task, world, action_space, recent_turns, optional_plan):
+        async def decide(self, context):
+            task, world, action_space = context.task, context.world, context.actions
+            recent_turns, optional_plan = context.history.items, context.progress.plan_summary
             del task, world, recent_turns, optional_plan
-            return SelectAction(action_space.options[0].action_id, {"selector": "#other"})
+            return SelectAction(context.context_id, action_space.options[0].action_id, {"selector": "#other"})
 
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
@@ -217,12 +226,13 @@ def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", True)], [_sent()])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([Finish({"claim": "done"}), "first"]))).run(
+        proposal = ProposeDone("context:test", (), (), "claim done", ())
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([proposal, "first"]))).run(
             environment, _task()
         )
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1
-        assert isinstance(result.turns[0].decision, Finish)
+        assert isinstance(result.turns[0].decision, ProposeDone)
 
     asyncio.run(scenario())
 
@@ -233,9 +243,8 @@ def test_transport_success_without_state_change_is_not_done() -> None:
             [_world("obs-1", False), _world("obs-2", False)],
             [_sent()],
         )
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", Stop("no progress")]))).run(
-            environment, _task()
-        )
+        abort = Abort("context:test", "no progress", "policy")
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 1
         assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.INCOMPLETE
@@ -284,7 +293,7 @@ def test_read_only_task_cannot_select_an_effectful_option() -> None:
         task = TaskGoal("inspect", "Inspect shared state")
         environment = StaticEnvironment([world])
         result = await AgentEpisodeRunner(
-            _loop(ScriptedPolicy([SelectAction(effectful_option.action_id)]))
+            _loop(ScriptedPolicy([SelectAction("context:test", effectful_option.action_id)]))
         ).run(environment, task)
 
         assert result.status == AgentLoopStatus.BLOCKED
@@ -301,9 +310,8 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
 
     async def scenario() -> None:
         environment = StaleEnvironment([_world("obs-1", False), _world("obs-2", False)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", Stop("still stale")]))).run(
-            environment, _task()
-        )
+        abort = Abort("context:test", "still stale", "policy")
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 0
         assert environment.executed_requests == []
@@ -315,7 +323,10 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
 def test_recent_turns_are_bounded() -> None:
     async def scenario() -> None:
         observations = [_world(f"obs-{index}", False) for index in range(20)]
-        decisions = [Reobserve("refresh") for _ in range(15)] + [Stop("enough")]
+        decisions = [
+            RequestObservation("context:test", "world", "structural", "structural", "refresh")
+            for _ in range(15)
+        ] + [Abort("context:test", "enough", "policy")]
         result = await AgentEpisodeRunner(_loop(ScriptedPolicy(decisions))).run(
             StaticEnvironment(observations),
             _task(),
@@ -340,7 +351,8 @@ def test_sent_unknown_verified_effect_continues_when_task_is_incomplete() -> Non
             [_world("obs-1", False), _world("obs-2", True)],
             [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
-        loop = AgentLoop(ScriptedPolicy(["first", Stop("next objective unavailable")]), SharedActionEvaluator(), IncompleteTaskEvaluator())
+        abort = Abort("context:test", "next objective unavailable", "policy")
+        loop = AgentLoop(ScriptedPolicy(["first", abort]), SharedActionEvaluator(), IncompleteTaskEvaluator())
         result = await AgentEpisodeRunner(loop).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 1
@@ -359,9 +371,8 @@ def test_observation_budget_is_reserved_before_execution() -> None:
             loop_budget=LoopBudget(max_turns=2, max_observations=2),
         )
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", False)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([Reobserve("refresh"), "first"]))).run(
-            environment, task
-        )
+        request = RequestObservation("context:test", "world", "structural", "structural", "refresh")
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([request, "first"]))).run(environment, task)
         assert result.status == AgentLoopStatus.FAILED
         assert "observation budget" in result.message
         assert result.execution_count == 0

@@ -31,10 +31,13 @@ async def execute_cycle(
         return observation_budget_result(task, state, 0, 0)
     before = state.current_observation
     try:
-        request = binder.bind(selection, before)
+        request = binder.bind(selection, before, decision.context_id)
     except BindingError:
         state.current_observation = await environment.observe("binding unavailable; refresh world")
         return state, 1, 0, 0, None
+    current = session.current_context_snapshot
+    if current is None or request.context_id != current.context_id or session.consumed_context_id != request.context_id:
+        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "bound request context is not current")
     result = await environment.execute(request)
     probed = _probe_count(result)
     if result.request_id != request.request_id or result.backend != request.binding.executor_id:

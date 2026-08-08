@@ -47,7 +47,9 @@ class SequencedTaskEvaluator:
 
 
 class FailIfCalledPolicy:
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, action_space, recent_turns, optional_plan
         raise AssertionError("policy must not run for UNKNOWN/BLOCKED task evaluation")
 

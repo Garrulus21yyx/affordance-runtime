@@ -209,9 +209,11 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
     captured = []
 
     class CapturePolicy:
-        async def decide(self, task, world, action_space, recent_turns, optional_plan):
+        async def decide(self, context):
+            task, action_space = context.task, context.actions
+            recent_turns, optional_plan = context.history.items, context.progress.plan_summary
             captured.append((task, action_space, recent_turns, optional_plan))
-            return SelectAction(action_space.options[0].action_id)
+            return SelectAction(context.context_id, action_space.options[0].action_id)
 
     for profile in ("dom", "visual", "wot"):
         with profile_environment(profile) as (environment, _metrics):

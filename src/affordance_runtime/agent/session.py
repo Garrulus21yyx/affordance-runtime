@@ -9,10 +9,12 @@ from affordance_runtime.agent.result import AgentResult
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.loop import AgentLoop
+    from affordance_runtime.model_boundary.context import AgentContext
 
 
 @dataclass
@@ -21,12 +23,15 @@ class AgentRunSession:
     task: TaskGoal
     environment: WorldEnvironment
     state: AgentLoopState
+    intent_context: IntentContext | None = None
     observation_count: int = 1
     execution_count: int = 0
     currentness_probe_count: int = 0
     approved_confirmation: ConfirmationRequest | None = field(default=None, repr=False)
     resolved_confirmation_ids: set[str] = field(default_factory=set, repr=False)
     last_result: AgentResult | None = field(default=None, repr=False)
+    current_context_snapshot: AgentContext | None = field(default=None, repr=False)
+    consumed_context_id: str = field(default="", repr=False)
 
     async def run_until_pause(self) -> AgentResult:
         if self.last_result is not None:

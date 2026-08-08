@@ -84,6 +84,24 @@ class AgentActionSpaceView:
 
 
 @dataclass(frozen=True)
+class AgentActionPageView:
+    options: tuple[AgentActionOptionView, ...]
+    total_count: int
+    page_size: int
+    truncated: bool
+    has_more: bool
+    available_filters: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "options", tuple(self.options))
+        object.__setattr__(self, "available_filters", tuple(self.available_filters))
+        if self.total_count < len(self.options) or self.page_size != len(self.options):
+            raise ValueError("action page counts are inconsistent")
+        if self.truncated != (self.total_count > len(self.options)) or self.has_more != self.truncated:
+            raise ValueError("action page truncation metadata is untruthful")
+
+
+@dataclass(frozen=True)
 class AgentTurnView:
     decision_kind: str
     semantic_action: str = ""

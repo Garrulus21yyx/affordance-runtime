@@ -4,21 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from affordance_runtime.agent.decisions import AskUser, Finish, Reobserve, SelectAction, Stop
+from affordance_runtime.agent.decision_control import run_policy_turn
+from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
-from affordance_runtime.agent.result import AgentResult, add_counts, build_result, observation_budget_result
+from affordance_runtime.agent.result import AgentResult, add_counts, build_result
 from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
+from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
+from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
 from affordance_runtime.execution.contracts import ActionIntent
-from affordance_runtime.model_boundary.projection import project_action_space, project_plan, project_task, project_turns
+from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.binder import ActionBinder
 from affordance_runtime.world.contracts import ActionSpace, AdmittedActionSelection
@@ -34,19 +37,31 @@ class AgentLoop:
     action_space_builder: ActionSpaceBuilder = field(default_factory=ActionSpaceBuilder)
     binder: ActionBinder = field(default_factory=ActionBinder)
     risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
+    context_builder: ContextBuilder = field(default_factory=ContextBuilder)
+    wait_controller: WaitController = field(default_factory=SystemWaitController)
     recent_turn_limit: int = 12
 
-    async def start(self, task: TaskGoal, environment: WorldEnvironment) -> AgentRunSession:
+    async def start(
+        self,
+        task: TaskGoal,
+        environment: WorldEnvironment,
+        intent_context: IntentContext | None = None,
+    ) -> AgentRunSession:
         current = await environment.observe("initial task grounding")
         state = AgentLoopState(
             current,
             remaining_turns=task.loop_budget.max_turns,
             recent_turn_limit=self.recent_turn_limit,
         )
-        return AgentRunSession(self, task, environment, state)
+        return AgentRunSession(self, task, environment, state, intent_context)
 
-    async def run(self, task: TaskGoal, environment: WorldEnvironment) -> AgentResult:
-        return await (await self.start(task, environment)).run_until_pause()
+    async def run(
+        self,
+        task: TaskGoal,
+        environment: WorldEnvironment,
+        intent_context: IntentContext | None = None,
+    ) -> AgentResult:
+        return await (await self.start(task, environment, intent_context)).run_until_pause()
 
     async def _run_session(self, session: AgentRunSession) -> AgentResult:
         task, state = session.task, session.state
@@ -62,41 +77,22 @@ class AgentLoop:
                 return self._result(session, task_status, task_evaluation.reason)
             action_space = self.action_space_builder.build(task, state.current_observation)
             if session.approved_confirmation is not None:
-                outcome = await self._execute_confirmed(session, action_space)
+                outcome = await self._execute_confirmed(session, action_space, task_evaluation)
             else:
-                outcome = await self._policy_turn(session, action_space, task_evaluation)
+                outcome = await run_policy_turn(
+                    session,
+                    action_space,
+                    task_evaluation,
+                    self.policy,
+                    self.context_builder,
+                    self.task_evaluator,
+                    self.wait_controller,
+                    self._execute_selection,
+                )
             result = self._apply_outcome(session, outcome)
             if result is not None:
                 return result
         return self._result(session, AgentLoopStatus.FAILED, "agent loop turn budget exhausted")
-
-    async def _policy_turn(self, session: AgentRunSession, action_space: ActionSpace, task_evaluation):
-        task, state = session.task, session.state
-        world_view = build_agent_world_view(state.current_observation)
-        decision = await self.policy.decide(
-            project_task(task),
-            world_view,
-            project_action_space(action_space, world_view),
-            project_turns(state.recent_turns),
-            project_plan(state.plan),
-        )
-        state.remaining_turns -= 1
-        if isinstance(decision, AskUser):
-            state.pending_user_question = decision.question
-            return build_result(AgentLoopStatus.WAITING_USER, task, state, 0, 0, decision.question)
-        if isinstance(decision, Stop):
-            return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, decision.reason)
-        if isinstance(decision, Finish):
-            state.append_turn(Turn(state.current_observation.observation_id, decision, task_evaluation=task_evaluation))
-            return None
-        if isinstance(decision, Reobserve):
-            if not self._can_observe(session):
-                return observation_budget_result(task, state, 0, 0)
-            state.append_turn(Turn(state.current_observation.observation_id, decision))
-            state.current_observation = await session.environment.observe(decision.reason)
-            session.observation_count += 1
-            return None
-        return await self._execute_selection(session, action_space, decision)
 
     async def _execute_selection(
         self,
@@ -109,7 +105,7 @@ class AgentLoop:
             return admitted
         return await self._execute_admitted(session, admitted, decision)
 
-    async def _execute_confirmed(self, session: AgentRunSession, action_space: ActionSpace):
+    async def _execute_confirmed(self, session: AgentRunSession, action_space: ActionSpace, task_evaluation):
         confirmed = session.approved_confirmation
         assert confirmed is not None
         candidates = []
@@ -128,7 +124,18 @@ class AgentLoop:
         exact = next((item for item in candidates if item[1].subject_id == confirmed.subject_id), None)
         if exact is not None:
             selection = exact[0]
+            context = self.context_builder.build(
+                session.task,
+                session.state,
+                action_space,
+                task_evaluation,
+                session.intent_context,
+                observation_count=session.observation_count,
+            )
+            session.current_context_snapshot = context
+            session.consumed_context_id = context.context_id
             decision = SelectAction(
+                context.context_id,
                 selection.action_id,
                 dict(selection.parameters),
                 selection.destination_id,
@@ -185,6 +192,7 @@ class AgentLoop:
                 assessment,
                 build_agent_world_view(state.current_observation),
             )
+            state.pending_revision += 1
             return build_result(AgentLoopStatus.WAITING_CONFIRMATION, task, state, 0, 0, assessment.reason)
         return selection
 
@@ -200,6 +208,7 @@ class AgentLoop:
             return self._result(session, AgentLoopStatus.BLOCKED, "confirmation decision identity mismatch")
         session.resolved_confirmation_ids.add(decision.confirmation_id)
         session.state.pending_confirmation = None
+        session.state.pending_revision += 1
         if decision.decision == ConfirmationDecisionKind.DENY:
             session.approved_confirmation = None
             return self._result(session, AgentLoopStatus.CANCELLED, "user denied the semantic action")
@@ -262,9 +271,19 @@ class AgentLoop:
 class AgentEpisodeRunner:
     agent_loop: AgentLoop
 
-    async def start(self, environment: WorldEnvironment, task: TaskGoal) -> AgentRunSession:
+    async def start(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        intent_context: IntentContext | None = None,
+    ) -> AgentRunSession:
         await environment.reset(task)
-        return await self.agent_loop.start(task, environment)
+        return await self.agent_loop.start(task, environment, intent_context)
 
-    async def run(self, environment: WorldEnvironment, task: TaskGoal) -> AgentResult:
-        return await (await self.start(environment, task)).run_until_pause()
+    async def run(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        intent_context: IntentContext | None = None,
+    ) -> AgentResult:
+        return await (await self.start(environment, task, intent_context)).run_until_pause()

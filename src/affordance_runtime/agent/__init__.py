@@ -1,6 +1,14 @@
 """Target short-loop API."""
 
-from affordance_runtime.agent.decisions import AskUser, Finish, Reobserve, SelectAction, Stop
+from affordance_runtime.agent.decisions import (
+    Abort,
+    AskUser,
+    ProposeDone,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+    Wait,
+)
 from affordance_runtime.agent.loop import AgentEpisodeRunner, AgentLoop
 from affordance_runtime.agent.result import AgentResult
 from affordance_runtime.agent.session import AgentRunSession
@@ -14,11 +22,13 @@ __all__ = [
     "AgentLoopStatus",
     "AgentResult",
     "AgentRunSession",
+    "Abort",
     "AskUser",
-    "Finish",
-    "Reobserve",
+    "ProposeDone",
+    "RequestActionPage",
+    "RequestObservation",
     "SelectAction",
-    "Stop",
+    "Wait",
     "TaskGoal",
     "Turn",
 ]

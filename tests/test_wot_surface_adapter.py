@@ -108,7 +108,7 @@ async def _bound(transport, scope=WotDeploymentScope.LOCAL_SIMULATION, clock=lam
     await world.reset(task)
     observed = await world.observe("initial")
     option = ActionSpaceBuilder().build(task, observed).options[0]
-    request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed)
+    request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
     return adapter, world, observed, request
 
 
@@ -261,10 +261,11 @@ def test_wot_malformed_parameters_are_rejected_before_transport() -> None:
         observed = await world.observe("initial")
         option = next(item for item in ActionSpaceBuilder().build(_task(), observed).options if item.semantic_action == "set_value")
         valid = ActionSpaceBuilder().admit(option, {"value": True})
-        request = ActionBinder().bind(valid, observed)
+        request = ActionBinder().bind(valid, observed, "context:test")
         invalid_selection = replace(valid, parameters={"value": "not-a-boolean"})
         invalid = BoundActionRequest(
             request.request_id,
+            request.context_id,
             request.world_observation_id,
             ActionIntent("set_value", request.intent.target_id, {"value": "not-a-boolean"}),
             invalid_selection,

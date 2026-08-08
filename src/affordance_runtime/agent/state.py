@@ -9,7 +9,7 @@ from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionIntent, ActionResult, BoundActionRequest
-from affordance_runtime.task.planning_contracts import TaskPlan
+from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
 
@@ -40,6 +40,10 @@ class AgentLoopState:
     current_observation: WorldObservation
     recent_turns: tuple[Turn, ...] = ()
     plan: TaskPlan | None = None
+    active_objective: LocalObjective | None = None
+    task_revision: int = 1
+    progress_revision: int = 0
+    pending_revision: int = 0
     pending_user_question: str = ""
     pending_confirmation: ConfirmationRequest | None = None
     pending_unknown_request: BoundActionRequest | None = None
@@ -49,3 +53,4 @@ class AgentLoopState:
 
     def append_turn(self, turn: Turn) -> None:
         self.recent_turns = (*self.recent_turns, turn)[-self.recent_turn_limit :]
+        self.progress_revision += 1

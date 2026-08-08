@@ -83,7 +83,7 @@ def test_multi_adapter_old_binding_cannot_be_relabelled_as_current() -> None:
         await environment.reset(task)
         old = await environment.observe("old")
         option = ActionSpaceBuilder().build(task, old).options[0]
-        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old)
+        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old, "context:test")
 
         await environment.observe("new")
         result = await environment.execute(request)
@@ -110,7 +110,7 @@ def test_reset_invalidates_old_world_identity_before_next_observation() -> None:
         old = await environment.observe("old")
         builder = ActionSpaceBuilder()
         option = builder.build(task, old).options[0]
-        request = ActionBinder().bind(builder.admit(option, {}), old)
+        request = ActionBinder().bind(builder.admit(option, {}), old, "context:test")
 
         await environment.reset(task)
         result = await environment.execute(request)

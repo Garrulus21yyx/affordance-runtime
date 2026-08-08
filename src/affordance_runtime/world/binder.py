@@ -21,7 +21,10 @@ class ActionBinder:
         self,
         selection: AdmittedActionSelection,
         observation: WorldObservation,
+        context_id: str,
     ) -> BoundActionRequest:
+        if not context_id.strip():
+            raise BindingError("binding requires the accepted context identity")
         if selection.observation_id != observation.observation_id:
             raise BindingError("selected option belongs to another observation")
         bindings = [
@@ -50,6 +53,7 @@ class ActionBinder:
         )
         return BoundActionRequest(
             f"request:{uuid.uuid4().hex}",
+            context_id,
             observation.observation_id,
             intent,
             selection,

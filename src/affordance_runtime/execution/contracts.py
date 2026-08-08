@@ -46,6 +46,7 @@ class ActionIntent:
 @dataclass(frozen=True)
 class BoundActionRequest:
     request_id: str
+    context_id: str
     world_observation_id: str
     intent: ActionIntent
     selection: AdmittedActionSelection
@@ -53,7 +54,11 @@ class BoundActionRequest:
     timeout_ms: int = 5_000
 
     def __post_init__(self) -> None:
-        if not self.request_id.strip() or self.world_observation_id != self.binding.world_observation_id:
+        if (
+            not self.request_id.strip()
+            or not self.context_id.strip()
+            or self.world_observation_id != self.binding.world_observation_id
+        ):
             raise ValueError("bound request must identify its binding observation")
         if (
             self.selection.observation_id != self.world_observation_id

@@ -16,16 +16,18 @@ class ReselectPolicy:
         self.second = second
         self.selected_effects = ()
 
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, recent_turns, optional_plan
         self.calls += 1
         if self.calls == 1:
-            return SelectAction(action_space.options[0].action_id)
+            return SelectAction(context.context_id, action_space.options[0].action_id)
         if self.second == "ask":
-            return AskUser("The confirmed action changed; what should I do?")
+            return AskUser(context.context_id, "The confirmed action changed; what should I do?")
         option = action_space.options[-1]
         self.selected_effects = option.semantic_effects
-        return SelectAction(option.action_id)
+        return SelectAction(context.context_id, option.action_id)
 
 
 def _decision(paused):

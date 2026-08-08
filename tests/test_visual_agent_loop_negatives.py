@@ -9,7 +9,7 @@ from affordance_runtime.agent import (
     AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
-    Finish,
+    ProposeDone,
     SelectAction,
 )
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
@@ -54,28 +54,38 @@ class FailOnceCurrentnessSession(VisualSession):
 
 
 class MissingActionPolicy:
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, action_space, recent_turns, optional_plan
-        return SelectAction("missing-visual-action")
+        return SelectAction(context.context_id, "missing-visual-action")
 
 
 class FinishThenSelectPolicy:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, recent_turns, optional_plan
         self.calls += 1
-        return Finish() if self.calls == 1 else SelectAction(action_space.options[0].action_id)
+        return (
+            ProposeDone(context.context_id, (), (), "claim done", ())
+            if self.calls == 1
+            else SelectAction(context.context_id, action_space.options[0].action_id)
+        )
 
 
 class FirstPolicy:
     def __init__(self, parameters=None) -> None:
         self.parameters = parameters or {}
 
-    async def decide(self, task, world, action_space, recent_turns, optional_plan):
+    async def decide(self, context):
+        task, world, action_space = context.task, context.world, context.actions
+        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
         del task, world, recent_turns, optional_plan
-        return SelectAction(action_space.options[0].action_id, self.parameters)
+        return SelectAction(context.context_id, action_space.options[0].action_id, self.parameters)
 
 
 class UnknownActionEvaluator:
@@ -210,7 +220,9 @@ def test_visual_effect_legality_and_exact_binding_prevent_route_escape() -> None
         space = ActionSpaceBuilder().build(task, observed)
 
         assert len(space.options) == 1
-        request = ActionBinder().bind(ActionSpaceBuilder().admit(space.options[0], {}), observed)
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(space.options[0], {}), observed, "context:test"
+        )
         assert request.binding.binding_id == allowed.binding_id
 
         unrelated = TaskGoal(

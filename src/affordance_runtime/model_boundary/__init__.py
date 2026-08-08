@@ -1,7 +1,19 @@
 """Typed, provider-neutral model boundary contracts and projections."""
 
+from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.model_boundary.context import (
+    AgentBudgetView,
+    AgentContext,
+    AgentPendingView,
+    AgentProgressView,
+    ContextIdentity,
+    DecisionMode,
+    IntentContextView,
+)
+from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_boundary.contracts import (
     AgentActionOptionView,
+    AgentActionPageView,
     AgentActionSpaceView,
     AgentDestinationView,
     AgentMaterialBindingView,
@@ -22,6 +34,7 @@ from affordance_runtime.model_boundary.projection import (
 
 __all__ = [
     "AgentActionOptionView",
+    "AgentActionPageView",
     "AgentActionSpaceView",
     "AgentDestinationView",
     "AgentMaterialBindingView",
@@ -30,6 +43,16 @@ __all__ = [
     "AgentSuccessCriterionView",
     "AgentTaskView",
     "AgentTurnView",
+    "AgentBudgetView",
+    "AgentContext",
+    "AgentPendingView",
+    "AgentProgressView",
+    "BoundedSection",
+    "ContextBuilder",
+    "ContextIdentity",
+    "ContextProjectionBudget",
+    "DecisionMode",
+    "IntentContextView",
     "ModelFailure",
     "ModelFailureKind",
     "project_action_space",

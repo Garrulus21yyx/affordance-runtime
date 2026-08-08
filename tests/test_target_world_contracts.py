@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from affordance_runtime.agent.decisions import Finish
+from affordance_runtime.agent.decisions import ProposeDone
 from affordance_runtime.execution.contracts import (
     ActionIntent,
     ActionResult,
@@ -99,7 +99,8 @@ def test_action_and_result_contracts_do_not_mix_binding_or_completion() -> None:
     assert "binding" not in {item.name for item in fields(ActionIntent)}
     assert "task_complete" not in {item.name for item in fields(ActionResult)}
     assert ActionResult("r1", DispatchStatus.SENT, "dom", True).transport_success
-    assert isinstance(Finish({"suggested": True}), Finish)
+    proposal = ProposeDone("context:test", (), (), "suggested", ())
+    assert isinstance(proposal, ProposeDone)
 
 
 def test_surface_primitives_share_canonical_semantic_vocabulary() -> None:
@@ -173,7 +174,7 @@ def test_selected_option_only_binds_its_exact_allowed_group() -> None:
     builder = ActionSpaceBuilder()
     option = builder.build(task, world).options[0]
 
-    request = ActionBinder().bind(builder.admit(option, {}), world)
+    request = ActionBinder().bind(builder.admit(option, {}), world, "context:test")
 
     assert option.eligible_binding_ids == ("allowed",)
     assert request.binding.binding_id == "allowed"
@@ -207,7 +208,7 @@ def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
     assert len({option.action_id for option in options}) == 2
     for option in options:
         value = 1 if option.parameter_schema["properties"]["value"]["type"] == "number" else "one"
-        request = ActionBinder().bind(builder.admit(option, {"value": value}), world)
+        request = ActionBinder().bind(builder.admit(option, {"value": value}), world, "context:test")
         assert request.binding.binding_id == option.eligible_binding_ids[0]
 
 
@@ -281,4 +282,4 @@ def test_bound_request_rejects_mismatched_selection_invariants(mutation: str) ->
         binding = replace(binding, observation_barrier=False)
 
     with pytest.raises(ValueError, match="bound request"):
-        BoundActionRequest("request-1", world.observation_id, intent, selection, binding)
+        BoundActionRequest("request-1", "context:test", world.observation_id, intent, selection, binding)
