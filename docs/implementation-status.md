@@ -56,7 +56,14 @@ The target path now has:
 | success expression | `CLOSED_FOR_BOUNDED_BOOLEAN_PROFILE` |
 | output semantic binding | `CLOSED_FOR_PATH_SHA_ARTIFACT_PROFILE` |
 | semantic evidence entailment | `PARTIAL`; model proposals remain evidence-scoped, not general proof |
-| new-AgentLoop benchmark harness | `NOT_STARTED` |
+| P5-M2.1 action verification scope | `CLOSED_FOR_RUNTIME_DERIVED_CRITERION_AND_ARTIFACT_PROFILE` |
+| low-risk inconclusive continuation | `CLOSED`; fresh-world continuation, never request replay |
+| no-effect verification | `CLOSED_FOR_DECLARED_OBLIGATION_PROFILE` |
+| semantic evidence presentation | `CLOSED`; proposal refs equal actually presented catalog refs |
+| hybrid component separation | `CLOSED` |
+| dynamic semantic readiness | `CLOSED_FOR_TARGET_FACT_AND_OUTPUT_PROFILE` |
+| artifact deterministic absence | `DEFERRED`; absence remains UNKNOWN without complete inventory |
+| new-AgentLoop benchmark harness | `ADMITTED / NOT_STARTED` |
 | external benchmark | `BLOCKED` |
 | default cutover | `NOT_READY` |
 | RoutePolicy | implemented, post-hard-gate only |
@@ -178,3 +185,13 @@ success expressions, assurance and current lineage, and binds requested outputs
 to path/SHA/current artifacts. The local HTTP semantic judge proof is transport
 and composition evidence only. Live evaluator attestation is unavailable;
 general semantic entailment remains partial and P5-M3 has not started.
+
+P5-M2.1 closes the evidence-semantic entry gates for P5-M3. Action effect
+claims now require progress against Runtime-derived criterion/output scope;
+no-effect requires complete strong evidence for every declared fact obligation.
+Semantic judges can cite only bounded records actually present in their request,
+hybrid evidence components are separated, and complete observations with a
+not-yet-created semantic scope remain INCOMPLETE so policy may act. Exact future
+state prediction and general causal attribution are neither required nor
+implemented. P5-M3 is admitted but was not started; external benchmarks remain
+blocked.

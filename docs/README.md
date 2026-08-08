@@ -60,6 +60,8 @@ failures, metadata and a local HTTP transport proof. Live-provider attestation
 is unavailable. P5-M2 production evaluation is closed for declared-minimum
 criterion profiles: Runtime composes mechanical, evidence-scoped semantic,
 explicit-user and hybrid results; general semantic entailment remains partial.
+P5-M2.1 closes relevance-bound action verification, semantic evidence catalog
+visibility, hybrid component separation and dynamic semantic readiness.
 P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
 is implemented on the non-default target path. P5-M1 uses the same non-default
 loop and retained deterministic evaluators.
@@ -112,6 +114,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M1 model-backed policy](reviews/2026-08-08-p5-m1-model-backed-policy.md)
 - [P5-M1.1 provider bridge hardening](reviews/2026-08-08-p5-m1-1-provider-bridge-hardening.md)
 - [P5-M2 production evaluator composition](reviews/2026-08-08-p5-m2-production-evaluator-composition.md)
+- [P5-M2.1 evidence semantics closure](reviews/2026-08-08-p5-m2-1-evidence-semantics-closure.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

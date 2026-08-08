@@ -155,6 +155,9 @@ reference:
   - role: p5_m2_production_evaluator_composition
     path: docs/reviews/2026-08-08-p5-m2-production-evaluator-composition.md
     lifecycle: current
+  - role: p5_m2_1_evidence_semantics_closure
+    path: docs/reviews/2026-08-08-p5-m2-1-evidence-semantics-closure.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

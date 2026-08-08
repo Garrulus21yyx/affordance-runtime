@@ -51,7 +51,7 @@ def _validate_file_requirement(output_id: str, requirement: object, output, evid
     if not any(record is not None and record.kind == "artifact" and record.artifact_kind == output_id for record in records):
         raise ValueError("evaluated output evidence is not the corresponding current artifact")
     path = Path(path_value)
-    if not path.is_file():
+    if path.is_symlink() or not path.is_file():
         raise ValueError("required output path is not a regular file")
     actual = hashlib.sha256()
     with path.open("rb") as handle:

@@ -147,6 +147,10 @@ P5-M2 keeps criterion normalization, current evidence records, mechanical
 checking, applicability and final status composition in `evaluation/`.
 `model_evaluator/` owns only the strict semantic proposal schema and its thin
 existing-ModelPort bridge; it cannot execute actions or emit task status.
+P5-M2.1 adds `evaluation/action_verification.py` as the sole Runtime-derived
+post-action obligation owner. `model_boundary/evaluator_views.py` owns the
+semantic criterion/evidence request projection; its visible catalog is the
+complete allowed-ref set for that judge call.
 The target dependency gates additionally forbid AgentPolicy→binder/executor/
 surface, model_boundary→concrete surface, confirmation→private binding,
 evaluation→execution, telemetry→decision and production core→benchmark imports.

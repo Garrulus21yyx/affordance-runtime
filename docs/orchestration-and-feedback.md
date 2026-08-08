@@ -129,3 +129,7 @@ never enters AgentContext or changes Runtime behavior.
 P5-M2 semantic evaluation is likewise one bounded zero-retry provider attempt
 covering all current semantic/hybrid criteria. Failure yields UNKNOWN criterion
 proposals; Runtime evidence applicability and success composition remain final.
+P5-M2.1 permits a `SENT`, LOW-risk observation/local-reversible action with an
+inconclusive action evaluation to continue from its fresh observation. It never
+replays the request. `SENT_UNKNOWN`, elevated risk and external/irreversible
+effects still wait for user direction unless task evaluation already completes.

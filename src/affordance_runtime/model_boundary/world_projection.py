@@ -139,7 +139,7 @@ def project_model_world(
             canonical_artifact_ref(source.observation_id, str(key)),
             _text(str(key)),
             _text(str(key)),
-            _text(f"{key} artifact available"),
+            _artifact_summary(str(key), source.artifacts[key]),
         )
         for source in observation.sources
         for key in source.artifacts
@@ -223,6 +223,14 @@ def fit_model_world(
 
 def _section(items: tuple[Any, ...], total: int) -> BoundedSection[Any]:
     return BoundedSection(items, total, total > len(items))
+
+
+def _artifact_summary(key: str, value: object) -> str:
+    if isinstance(value, Mapping):
+        summary = value.get("public_summary")
+        if isinstance(summary, str) and summary.strip():
+            return _text(summary)
+    return _text(f"{key} artifact available")
 
 
 def _resize(section: BoundedSection[Any], items: tuple[Any, ...]) -> BoundedSection[Any]:

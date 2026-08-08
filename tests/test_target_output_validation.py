@@ -93,6 +93,19 @@ def test_matching_file_integrity_and_current_evidence_allows_complete(tmp_path) 
     _validate(_task(str(path), digest), _proposal((output,)), artifact=value)
 
 
+def test_symlink_to_regular_file_is_not_the_regular_output_profile(tmp_path) -> None:
+    target = tmp_path / "target.txt"
+    target.write_text("report", encoding="utf-8")
+    link = tmp_path / "report.txt"
+    link.symlink_to(target)
+    digest = hashlib.sha256(b"report").hexdigest()
+    value = {"path": str(link), "sha256": digest}
+    output = EvaluatedOutput("report", value, ("artifact:source:output:report",))
+
+    with pytest.raises(ValueError, match="regular file"):
+        _validate(_task(str(link), digest), _proposal((output,)), artifact=value)
+
+
 def test_successful_receipt_cannot_replace_requested_output(tmp_path) -> None:
     path = tmp_path / "report.txt"
     path.write_text("report", encoding="utf-8")

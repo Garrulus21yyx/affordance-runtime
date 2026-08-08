@@ -80,6 +80,9 @@ existing ModelPort transport with one bounded, zero-retry/no-fallback attempt.
 P5-M2 now composes criterion-specific production evaluation: mechanical checks
 are deterministic, semantic judges can only propose current evidence, explicit
 user evidence is isolated, and Runtime alone computes task completion.
+P5-M2.1 binds action evidence to Runtime-derived criterion/output obligations,
+lets low-risk local inconclusive actions continue from fresh state, and limits
+semantic judges to evidence records actually presented in their request.
 External full-agent benchmarks remain blocked and default cutover remains pending.
 
 P5-D6.1 is complete on the non-default path: effective risk, semantic
@@ -93,6 +96,8 @@ deterministic relevance/paging plus DOM/Visual/WoT source summaries are live.
 Criterion adjudicators are closed for the declared mechanical, semantic,
 explicit-user, hybrid, bounded-expression, current-lineage and path/SHA/artifact
 profiles. General semantic entailment remains partial.
+Agents are not required to predict complete future state, and effect support is
+an evidence-backed Runtime claim rather than general causal proof.
 
 P5-M0.1.1 closes the ordinary Runtime correctness gaps on the same non-default
 path: every policy call receives a monotonic one-shot context epoch; every

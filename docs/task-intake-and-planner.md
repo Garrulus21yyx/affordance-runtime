@@ -195,3 +195,8 @@ bridge while Runtime retains completion authority; no general semantic
 entailment or benchmark harness is present. AgentContext/ContextIdentity/current-page admission and
 explicit-hint relevance are implemented; clarification continuation and
 targeted observation provider selection remain deferred.
+
+P5-M2.1 does not ask AgentPolicy to predict complete future state. Exact
+verification obligations exist only when Runtime can derive them from relevant
+mechanical criteria or explicit output identity; generic low-risk preparation
+may remain inconclusive and continue from fresh state.

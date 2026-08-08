@@ -38,6 +38,14 @@ artifact values. AgentLoop rejects lineage mismatch or any ref not resolvable
 in the fresh after observation before TaskEvaluator can treat the evaluation
 as trusted.
 
+P5-M2.1 derives narrow post-action verification obligations only from relevant
+mechanical criteria or explicit Runtime-owned output IDs. A changed fact supports
+effect only when it newly satisfies that obligation. No-effect requires every
+declared fact obligation to remain unchanged under complete, sufficiently strong
+coverage; artifact absence is UNKNOWN without an explicit complete inventory.
+This is evidence-supported effect validation, not general causal attribution,
+and no complete future-state prediction is required.
+
 Evaluation prefers environment-native/API/WoT state, then DOM/AX structured
 state, filesystem/artifact state, visual/VLM evidence, and finally human input.
 This is a default strength order, not a ban on cross-source fusion.
@@ -86,6 +94,10 @@ receipt is insufficient; unsupported integrity structures fail closed.
 
 The core uses only a per-observation WorldEvidenceIndex. It does not require a
 global EvidenceIndex, proof graph, artifact store, or event-sourced ledger.
+Semantic judges receive bounded public evidence records, not an opaque superset
+of the Runtime index. Hybrid mechanical and semantic evidence are evaluated
+separately, and complete coverage with a not-yet-created semantic scope yields
+INCOMPLETE rather than an immediate WAITING_USER.
 
 ## 5. TurnRecorder
 
