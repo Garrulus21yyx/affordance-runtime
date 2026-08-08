@@ -203,7 +203,7 @@ class ThreadBoundBrowserSession:
 
     def close(self) -> None:
         self._commands.put(None)
-        self._thread.join(timeout=30)
+        require_thread_stopped(self._thread, timeout=30)
 
 
 def real_adapter_task() -> TaskGoal:
@@ -277,7 +277,7 @@ def real_wot_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvi
     def close() -> None:
         server.shutdown()
         server.server_close()
-        thread.join(timeout=2)
+        require_thread_stopped(thread, timeout=2)
 
     return ManagedRealEnvironment(
         UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)), close, instrumentation, state,
@@ -319,6 +319,13 @@ def _start_wot_server() -> tuple[WotFixtureState, ThreadingHTTPServer, threading
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return state, server, thread
+
+
+def require_thread_stopped(thread, *, timeout: float) -> None:
+    """Join one owned resource thread and fail if cleanup did not stop it."""
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        raise RuntimeError("benchmark owner thread remained alive after cleanup")
 
 
 def _thing_description(port: int) -> dict[str, object]:

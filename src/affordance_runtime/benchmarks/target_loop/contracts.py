@@ -83,7 +83,6 @@ class BenchmarkCase:
     timeout_s: float
     seed: int
     required_measurements: tuple[str, ...]
-    acceptance_profile: str
     metric_expectations: tuple[MetricExpectation, ...] = ()
     auto_confirm: bool = False
 
@@ -145,23 +144,6 @@ class BenchmarkCaseResult:
     status: str
     execution_completed: bool
     failure_reason: str
-    observations: int
-    executions: int
-    currentness_probes: int
-    turns: int
-    policy_calls: int
-    semantic_judge_calls: int
-    provider_attempts: int
-    confirmations: int
-    ask_user_count: int
-    wait_count: int
-    page_request_count: int
-    sent_unknown_count: int
-    duplicate_unknown_attempts: int
-    forbidden_effect_attempts: int
-    stale_opportunities: int
-    stale_zero_call_violations: int
-    effectful_dispatches: int
     latency_ms: float
     measurements: dict[str, MetricMeasurement] = field(default_factory=dict)
 

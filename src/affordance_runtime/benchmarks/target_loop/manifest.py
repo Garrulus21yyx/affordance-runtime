@@ -20,9 +20,9 @@ def manifest_digest(manifest: BenchmarkManifest) -> str:
                 "description": item.description,
                 "expected_terminal_statuses": [str(status) for status in item.expected_terminal_statuses],
                 "timeout_s": item.timeout_s,
-                "acceptance_profile": item.acceptance_profile,
                 "required_measurements": item.required_measurements,
                 "metric_expectations": [asdict(expectation) for expectation in item.metric_expectations],
+                "auto_confirm": item.auto_confirm,
             }
             for item in manifest.cases
         ],

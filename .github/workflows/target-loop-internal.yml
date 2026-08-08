@@ -26,6 +26,8 @@ jobs:
           tests/test_target_loop_real_adapters.py
           tests/test_target_loop_report_privacy.py
           tests/test_target_loop_attestation.py
+          tests/test_target_loop_result_consistency.py
+          tests/test_target_loop_cleanup_ownership.py
       - name: Run fixed internal manifests
         run: |
           python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-core --profile deterministic --seed 7 --output-dir /tmp/target-loop/core-deterministic
@@ -38,6 +40,11 @@ jobs:
           python -m affordance_runtime.benchmarks.target_loop.attestation
           --input-dir /tmp/target-loop
           --output /tmp/target-loop/attestation.json
+          --expected-run internal-core:deterministic:7
+          --expected-run internal-core:scripted-model:7
+          --expected-run internal-safety:scripted-model:7
+          --expected-run internal-evaluation:local-http-semantic-judge:7
+          --expected-run internal-real-adapters:deterministic:7
       - if: success()
         uses: actions/upload-artifact@v4
         with:

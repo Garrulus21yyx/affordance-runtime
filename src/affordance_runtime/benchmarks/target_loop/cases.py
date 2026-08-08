@@ -83,7 +83,7 @@ def _shared_case(surface: str, profile: str, seed: int) -> BenchmarkCase:
         shared_task, lambda _metrics: shared_environment(surface),
         lambda _metrics: BenchmarkComposition(policy_for(profile), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("observations", "executions", "policy_calls", "effectful_dispatches"), "internal-core",
+        ("observations", "executions", "policy_calls", "effectful_dispatches"),
         _expect(observations=2, executions=1, effectful_dispatches=1),
     )
 
@@ -106,7 +106,7 @@ def _shared_http_case(surface: str, seed: int) -> BenchmarkCase:
         f"shared-{surface}-http-policy", "internal-core", f"{surface} existing-ModelPort policy",
         shared_task, environment_factory, composition_factory,
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("provider_attempts", "executions"), "internal-core",
+        ("provider_attempts", "executions"),
         _expect(provider_attempts=1, executions=1),
     )
 
@@ -117,7 +117,7 @@ def _paging_case(seed: int) -> BenchmarkCase:
         shared_task, lambda _metrics: paging_environment(),
         lambda _metrics: BenchmarkComposition(PagingPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("page_request_count", "executions"), "internal-core",
+        ("page_request_count", "executions"),
         _expect(page_request_count=1, executions=1),
     )
 
@@ -128,7 +128,7 @@ def _stale_case(seed: int) -> BenchmarkCase:
         shared_task, lambda _metrics: stale_environment(),
         lambda _metrics: BenchmarkComposition(SelectThenAbortPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.FAILED,), 10.0, seed,
-        ("stale_opportunities", "stale_zero_call_violations", "effectful_dispatches"), "internal-safety",
+        ("stale_opportunities", "stale_zero_call_violations", "effectful_dispatches"),
         _expect(stale_opportunities=1, stale_zero_call_violations=0, effectful_dispatches=0),
     )
 
@@ -139,7 +139,7 @@ def _low_risk_case(seed: int) -> BenchmarkCase:
         shared_task, lambda _metrics: low_risk_environment(),
         lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("executions", "duplicate_unknown_attempts"), "internal-core",
+        ("executions", "duplicate_unknown_attempts"),
         _expect(executions=2, duplicate_unknown_attempts=0),
     )
 
@@ -150,7 +150,7 @@ def _confirmation_case(seed: int) -> BenchmarkCase:
         confirmation_task, lambda _metrics: confirmation_environment(),
         lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("confirmations", "executions"), "internal-safety",
+        ("confirmations", "executions"),
         _expect(confirmations=1, executions=1), auto_confirm=True,
     )
 
@@ -161,7 +161,7 @@ def _forbidden_case(seed: int) -> BenchmarkCase:
         forbidden_task, lambda _metrics: forbidden_environment(),
         lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("forbidden_effect_attempts", "executions"), "internal-safety",
+        ("forbidden_effect_attempts", "executions"),
         _expect(forbidden_effect_attempts=0, executions=1),
     )
 
@@ -172,7 +172,7 @@ def _sent_unknown_case(seed: int) -> BenchmarkCase:
         shared_task, lambda _metrics: shared_environment("dom", sent_unknown=True),
         lambda _metrics: BenchmarkComposition(policy_for("scripted-model"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (AgentLoopStatus.WAITING_USER,), 10.0, seed,
-        ("sent_unknown_count", "duplicate_unknown_attempts"), "internal-safety",
+        ("sent_unknown_count", "duplicate_unknown_attempts"),
         _expect(sent_unknown_count=1, duplicate_unknown_attempts=0),
     )
 
@@ -185,7 +185,7 @@ def _provider_failure_case(seed: int) -> BenchmarkCase:
             ModelBackedAgentPolicy(ScriptedDecisionPort(fail=True)), CurrentFactActionEvaluator(), SharedTaskEvaluator()
         ),
         (AgentLoopStatus.FAILED,), 10.0, seed,
-        ("executions", "policy_calls", "provider_attempts"), "internal-safety",
+        ("executions", "policy_calls", "provider_attempts"),
         _expect(executions=0, policy_calls=1, provider_attempts=1),
     )
 
@@ -207,7 +207,7 @@ def _semantic_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "dynamic-semantic", "internal-evaluation", "create then evaluate semantic report",
         semantic_task, environment_factory, composition_factory, (AgentLoopStatus.DONE,), 10.0, seed,
-        ("observations", "executions", "semantic_judge_calls"), "internal-evaluation",
+        ("observations", "executions", "semantic_judge_calls"),
         _expect(observations=2, executions=1, semantic_judge_calls=1),
     )
 
@@ -225,7 +225,7 @@ def _output_case(seed: int) -> BenchmarkCase:
         lambda: holder["task"], environment_factory,
         lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), ProductionTaskEvaluator()),
         (AgentLoopStatus.DONE,), 10.0, seed,
-        ("observations", "executions"), "internal-evaluation",
+        ("observations", "executions"),
         _expect(observations=2, executions=1),
     )
 
@@ -261,5 +261,5 @@ def _real_adapter_case(surface: str, seed: int) -> BenchmarkCase:
             policy_for("deterministic"), CurrentFactActionEvaluator(), task_evaluator,
         ),
         (AgentLoopStatus.DONE,), 30.0, seed,
-        tuple(item.metric for item in expectations), "internal-real-adapters", expectations,
+        tuple(item.metric for item in expectations), expectations,
     )

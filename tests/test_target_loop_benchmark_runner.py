@@ -46,7 +46,7 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
             lambda: TaskGoal(identity, "Already complete"),
             lambda _metrics: Environment([WorldObservation(identity, (), (), (), {"static": CoverageState.COMPLETE})]),
             lambda _metrics: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
-            (AgentLoopStatus.BLOCKED,), 2.0, 7, ("observations",), "internal",
+            (AgentLoopStatus.BLOCKED,), 2.0, 7, ("observations",),
         )
 
     from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
