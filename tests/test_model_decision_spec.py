@@ -38,8 +38,10 @@ def test_provider_schema_encodes_runtime_enums_and_forbids_extra_fields() -> Non
         "enabling",
         "information",
         "other",
-        "internal",
         "safety",
+        "unsupported",
+        "no_progress",
+        "user_request",
     ):
         assert f'"{value}"' in encoded
     assert '"additionalProperties": false' in encoded

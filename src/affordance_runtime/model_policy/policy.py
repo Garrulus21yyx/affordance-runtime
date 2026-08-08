@@ -35,8 +35,12 @@ class ModelBackedAgentPolicy:
     def __post_init__(self) -> None:
         if not 0 < self.call_timeout_s <= 300:
             raise ValueError("model policy call timeout must be in (0, 300]")
+        transport_timeout = getattr(self.port, "transport_timeout_s", None)
+        if transport_timeout is not None and transport_timeout >= self.call_timeout_s:
+            raise ValueError("model transport timeout must be strictly below the policy deadline")
 
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
+        object.__setattr__(self, "last_metadata", None)
         try:
             request = _build_request(context)
         except Exception:

@@ -28,7 +28,7 @@ def strict_json_loads(raw_payload: str) -> dict[str, Any]:
             object_pairs_hook=_unique_object,
             parse_constant=_reject_constant,
         )
-    except (json.JSONDecodeError, UnicodeError, RecursionError, OverflowError, StrictJsonError) as exc:
+    except (ValueError, UnicodeError, RecursionError, OverflowError) as exc:
         raise StrictJsonError("structured JSON is invalid") from exc
     if not isinstance(value, dict):
         raise StrictJsonError("structured JSON top level must be an object")

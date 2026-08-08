@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StringConstraints, field_validator
 
 from affordance_runtime.agent.decisions import (
     Abort,
-    AbortCategory,
     AgentDecision,
     AskUser,
     ProposeDone,
@@ -91,13 +90,13 @@ class ProposeDonePayload(_Payload):
 class WaitPayload(_Payload):
     type: Literal["wait"]
     reason: Reason500
-    max_wait_ms: Annotated[int, Field(ge=1, le=60_000)]
+    max_wait_ms: Annotated[StrictInt, Field(ge=1, le=60_000)]
 
 
 class AbortPayload(_Payload):
     type: Literal["abort"]
     reason: Reason500
-    category: AbortCategory
+    category: Literal["policy", "safety", "unsupported", "no_progress", "user_request"]
 
 
 DecisionPayload: TypeAlias = Annotated[

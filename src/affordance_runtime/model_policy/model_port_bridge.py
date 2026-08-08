@@ -33,6 +33,10 @@ class ModelPortDecisionAdapter:
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("model policy bridge requires a zero retry configuration")
 
+    @property
+    def transport_timeout_s(self) -> float:
+        return self.config.timeout_s
+
     async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
         if request.schema_version != SCHEMA_VERSION or dict(request.decision_schema) != decision_response_schema():
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
