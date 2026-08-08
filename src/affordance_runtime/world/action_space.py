@@ -9,6 +9,7 @@ from time import time
 from typing import Any
 
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.world.contracts import (
@@ -21,7 +22,20 @@ from affordance_runtime.world.contracts import (
 )
 from affordance_runtime.world.schema_validation import validate_value
 
-_FORBIDDEN_PARAMETER_KEYS = frozenset({"selector", "coordinate", "coordinates", "backend", "endpoint", "href"})
+_FORBIDDEN_PARAMETER_KEYS = frozenset(
+    {
+        "backend",
+        "bbox",
+        "coordinate",
+        "coordinates",
+        "endpoint",
+        "href",
+        "point",
+        "selector",
+        "x",
+        "y",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -34,7 +48,7 @@ class ActionSpaceBuilder:
     ) -> ActionSpace:
         del objective  # Reserved for desired-state narrowing; it never grants effects.
         conflicted_targets = {conflict.subject_id for conflict in observation.conflicts}
-        grouped: dict[tuple[str, str, str, tuple[str, ...], str], list[ActionBinding]] = {}
+        grouped: dict[tuple[str, str, str, tuple[str, ...], str, bool], list[ActionBinding]] = {}
         for binding in observation.bindings:
             if binding.target_id in conflicted_targets:
                 continue
@@ -47,12 +61,13 @@ class ActionSpaceBuilder:
                 binding.effect_category,
                 binding.semantic_effects,
                 schema_key,
+                binding.observation_barrier,
             )
             grouped.setdefault(key, []).append(binding)
         options = []
-        for (target_id, action, category, effects, schema_key), bindings in sorted(grouped.items()):
+        for (target_id, action, category, effects, schema_key, barrier), bindings in sorted(grouped.items()):
             risk = max((binding.risk for binding in bindings), key=_risk_rank)
-            schema_digest = "sha256:" + hashlib.sha256(schema_key.encode()).hexdigest()
+            parameter_schema_digest = schema_digest(bindings[0].parameter_schema)
             eligible_binding_ids = tuple(sorted(binding.binding_id for binding in bindings))
             digest = hashlib.sha256(
                 json.dumps(
@@ -62,8 +77,9 @@ class ActionSpaceBuilder:
                         action,
                         category,
                         effects,
-                        schema_digest,
+                        parameter_schema_digest,
                         eligible_binding_ids,
+                        barrier,
                     ],
                     separators=(",", ":"),
                 ).encode()
@@ -76,12 +92,12 @@ class ActionSpaceBuilder:
                     target_id=target_id,
                     effect_category=category,
                     parameter_schema=to_json_compatible(bindings[0].parameter_schema),
-                    schema_digest=schema_digest,
+                    schema_digest=parameter_schema_digest,
                     eligible_binding_ids=eligible_binding_ids,
                     description=f"{action} {target_id}",
                     semantic_effects=effects,
                     risk=risk,
-                    observation_barrier=any(binding.observation_barrier for binding in bindings),
+                    observation_barrier=barrier,
                 )
             )
         return ActionSpace(observation.observation_id, tuple(options))

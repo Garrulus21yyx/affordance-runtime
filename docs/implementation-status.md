@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-08
-> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@1336d6c5ac3c2c585ad9b885d0a0e0a2d4d8ea90`
+> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@b14e6fbbafc83f4e163bdada4a4e3750010f6a84`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -26,16 +26,23 @@ The target path now has:
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded Turn state | `INTEGRATED_NON_DEFAULT` |
-| SurfaceAdapter / UnifiedWorldEnvironment | complete for single-DOM minimum; multi-source identity/currentness closed, semantic fusion pending |
+| SurfaceAdapter / UnifiedWorldEnvironment | complete for single-DOM and Visual-only minimums; multi-source identity/currentness closed, semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
 | real-browser DOM short loop | `INTEGRATED_NON_DEFAULT`, positive C1 proof |
-| Visual and WoT new-loop verticals | `NOT_STARTED` |
+| Visual new-loop vertical | `INTEGRATED_NON_DEFAULT`, positive C2 proof |
+| WoT new-loop vertical | `NOT_STARTED` |
 | semantic confirmation continuation | `NOT_STARTED` (typed waiting placeholder only) |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
 | ActionBatch | helper implemented; not AgentLoop-integrated |
 | long-horizon TaskPlan execution | `NOT_STARTED` |
 | default product cutover | `NOT_STARTED` |
+
+The live DOM and Visual-only proofs use the same `TaskGoal` factory,
+deterministic policy, semantic evaluators, and `activate` vocabulary. Each uses
+an offered action ID, exact binding group, one execution, one measured surface
+probe, a fresh observation, and evaluator-owned completion. DOM selectors and
+Visual screenshot/region/viewport/point data stay inside private bindings.
 
 The live DOM proof uses one `TaskGoal`, a deterministic policy selecting an
 offered action ID, an exact eligible-binding group, a selector-private DOM
@@ -60,7 +67,9 @@ ActionContract, or ExecutionReceipt.
 
 ## Proof and remaining gates
 
-Focused target tests cover source/world/fingerprint stale zero-call, task-forbidden
+Focused target tests cover source/world/fingerprint stale zero-call, Visual
+screenshot/viewport/scroll/DPR/zoom/orientation/region staleness, coordinate
+isolation, task-forbidden
 effect filtering, higher-confidence forbidden-route exclusion, distinct schema
 route identity, Runtime-owned risk floors, result lineage, schema values and
 unsupported-type rejection, observation/probe budgets, unknown
@@ -69,8 +78,9 @@ completion, finish-proposal rejection, receipt/effect separation, private
 parameter rejection, observation identity freshness, low-risk-only admission,
 bounded turns, and real Chromium DOM completion.
 
-The instrumented and plain-DOM minimum is closed; generic business-effect
+The instrumented/plain-DOM and Visual-only minimums are closed; generic business-effect
 classification beyond the current coarse categories remains future work. The
-new-loop DOM/Visual/WoT positive matrix is not complete. Semantic fusion across
+new-loop DOM/Visual adapter-only equivalence is proven for the shared-state
+task, but the DOM/Visual/WoT positive matrix is not complete. Semantic fusion across
 simultaneous sources remains future work. External full-agent
 benchmarks remain blocked. Old-core deletion is not admitted.

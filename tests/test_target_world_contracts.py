@@ -4,7 +4,12 @@ from types import SimpleNamespace
 import pytest
 
 from affordance_runtime.agent.decisions import Finish
-from affordance_runtime.execution.contracts import ActionIntent, ActionResult, DispatchStatus
+from affordance_runtime.execution.contracts import (
+    ActionIntent,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ActionBinder,
@@ -66,11 +71,12 @@ def test_action_space_is_current_and_schema_is_immutable() -> None:
         space.options[0].parameter_schema["type"] = "array"  # type: ignore[index]
 
 
-def test_policy_cannot_inject_execution_payload() -> None:
+@pytest.mark.parametrize("private_key", ["x", "y", "bbox", "coordinate", "backend", "selector", "point"])
+def test_policy_cannot_inject_execution_payload(private_key: str) -> None:
     task = TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW)
     option = ActionSpaceBuilder().build(task, _world()).options[0]
     with pytest.raises(ValueError, match="runtime-private"):
-        ActionSpaceBuilder().validate_parameters(option, {"selector": "#other"})
+        ActionSpaceBuilder().validate_parameters(option, {private_key: "injected"})
 
 
 def test_action_and_result_contracts_do_not_mix_binding_or_completion() -> None:
@@ -219,3 +225,44 @@ def test_page_metadata_cannot_grant_effect_or_lower_runtime_risk() -> None:
 
     assert classification.semantic_effects == ("safe_update",)
     assert classification.risk == ActionRisk.HIGH
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "semantic_action",
+        "target_id",
+        "parameters",
+        "schema_digest",
+        "higher_risk",
+        "observation_barrier",
+    ],
+)
+def test_bound_request_rejects_mismatched_selection_invariants(mutation: str) -> None:
+    world = _world()
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        risk_profile=RiskProfile.LOW,
+    )
+    builder = ActionSpaceBuilder()
+    option = builder.build(task, world).options[0]
+    selection = builder.admit(option, {})
+    intent = ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters))
+    binding = world.bindings[0]
+    if mutation == "semantic_action":
+        intent = replace(intent, semantic_action="read")
+    elif mutation == "target_id":
+        intent = replace(intent, target_id="other-target")
+    elif mutation == "parameters":
+        intent = replace(intent, parameters={"unexpected": True})
+    elif mutation == "schema_digest":
+        selection = replace(selection, schema_digest="sha256:wrong")
+    elif mutation == "higher_risk":
+        binding = replace(binding, risk=ActionRisk.MEDIUM)
+    elif mutation == "observation_barrier":
+        binding = replace(binding, observation_barrier=False)
+
+    with pytest.raises(ValueError, match="bound request"):
+        BoundActionRequest("request-1", world.observation_id, intent, selection, binding)

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 from dataclasses import dataclass
 from time import time
 
 from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
-from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.world.contracts import ActionBinding, AdmittedActionSelection, WorldObservation
 
 
@@ -34,8 +32,9 @@ class ActionBinder:
             and selection.semantic_action == binding.semantic_action
             and binding.effect_category == selection.effect_category
             and binding.semantic_effects == selection.semantic_effects
-            and _schema_digest(binding.parameter_schema) == selection.schema_digest
+            and schema_digest(binding.parameter_schema) == selection.schema_digest
             and _risk_rank(binding.risk) <= _risk_rank(selection.risk)
+            and binding.observation_barrier == selection.observation_barrier
             and _binding_current(binding, observation)
         ]
         if not bindings:
@@ -49,11 +48,6 @@ class ActionBinder:
             selection,
             binding,
         )
-
-
-def _schema_digest(schema: object) -> str:
-    encoded = json.dumps(to_json_compatible(schema), sort_keys=True, separators=(",", ":")).encode()
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 def _risk_rank(risk: object) -> int:

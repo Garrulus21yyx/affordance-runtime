@@ -1,5 +1,7 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+import pytest
 
 from affordance_runtime.agent import (
     AgentEpisodeRunner,
@@ -229,6 +231,36 @@ def test_non_low_risk_action_waits_for_confirmation_with_zero_execution() -> Non
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("risk_profile", [RiskProfile.MEDIUM, RiskProfile.HIGH])
+def test_medium_or_high_task_waits_even_for_low_risk_option(risk_profile: RiskProfile) -> None:
+    async def scenario() -> None:
+        task = replace(_task(), risk_profile=risk_profile)
+        environment = StaticEnvironment([_world("obs-1", False)])
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, task)
+
+        assert result.status == AgentLoopStatus.WAITING_CONFIRMATION
+        assert result.execution_count == 0
+        assert environment.executed_requests == []
+
+    asyncio.run(scenario())
+
+
+def test_read_only_task_cannot_select_an_effectful_option() -> None:
+    async def scenario() -> None:
+        world = _world("obs-1", False)
+        effectful_option = _loop(ScriptedPolicy([])).action_space_builder.build(_task(), world).options[0]
+        task = TaskGoal("inspect", "Inspect shared state")
+        environment = StaticEnvironment([world])
+        result = await AgentEpisodeRunner(
+            _loop(ScriptedPolicy([SelectAction(effectful_option.action_id)]))
+        ).run(environment, task)
+
+        assert result.status == AgentLoopStatus.BLOCKED
+        assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
 def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
     class StaleEnvironment(StaticEnvironment):
         def is_current(self, request):
@@ -311,5 +343,29 @@ def test_wrong_action_result_lineage_is_rejected_before_evaluation() -> None:
         assert result.status == AgentLoopStatus.FAILED
         assert "lineage" in result.message
         assert result.turns[0].action_evaluation is None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("request_id", "backend"),
+    [("wrong-request", "dom"), ("*", "wrong-backend")],
+)
+def test_not_sent_wrong_lineage_fails_before_evaluation(request_id: str, backend: str) -> None:
+    class FailIfEvaluated(SharedActionEvaluator):
+        async def evaluate(self, task, before, request, result, after):
+            raise AssertionError("ActionEvaluator must not run for wrong NOT_SENT lineage")
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [_world("obs-1", False)],
+            [ActionResult(request_id, DispatchStatus.NOT_SENT, backend, False)],
+        )
+        loop = AgentLoop(ScriptedPolicy(["first"]), FailIfEvaluated(), SharedTaskEvaluator())
+        result = await AgentEpisodeRunner(loop).run(environment, _task())
+
+        assert result.status == AgentLoopStatus.FAILED
+        assert "lineage" in result.message
+        assert len(environment.executed_requests) == 1
 
     asyncio.run(scenario())

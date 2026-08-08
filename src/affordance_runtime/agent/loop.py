@@ -135,6 +135,11 @@ class AgentLoop:
         intent = request.intent
         result = await environment.execute(request)
         probed = _probe_count(result)
+        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+            state.append_turn(Turn(before.observation_id, decision, intent, request.request_id, result))
+            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch")
+            executed = int(result.dispatch_status != DispatchStatus.NOT_SENT)
+            return state, 0, executed, probed, terminal
         if result.dispatch_status == DispatchStatus.NOT_SENT:
             state.append_turn(
                 Turn(before.observation_id, decision, intent=intent, request_id=request.request_id, result=result)
@@ -150,11 +155,6 @@ class AgentLoop:
                 Turn(before.observation_id, decision, intent, request.request_id, result, after.observation_id)
             )
             terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "post-action identity was reused")
-            return state, 1, 1, probed, terminal
-        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
-            state.append_turn(Turn(before.observation_id, decision, intent, request.request_id, result, after.observation_id))
-            state.current_observation = after
-            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch")
             return state, 1, 1, probed, terminal
         action_evaluation = await self.action_evaluator.evaluate(task, before, request, result, after)
         task_evaluation = await self.task_evaluator.evaluate(task, after)
@@ -201,7 +201,7 @@ class AgentLoop:
             selection = self.action_space_builder.admit(option, dict(decision.parameters))
         except ValueError as exc:
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, str(exc))
-        if option.risk != ActionRisk.LOW:
+        if task.risk_profile in {RiskProfile.MEDIUM, RiskProfile.HIGH} or option.risk != ActionRisk.LOW:
             state.pending_confirmation = ActionIntent(
                 selection.semantic_action,
                 selection.target_id,

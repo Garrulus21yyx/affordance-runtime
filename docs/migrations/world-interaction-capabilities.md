@@ -14,6 +14,8 @@ state authoritative in the current Runtime.
 | DOM transduction | Existing `adapters/dom.py` and `BrowserSession` |
 | WoT TD/security/rate/events | `adapters/wot.py`, `adapters/wot_security.py` |
 | Visual SoM/overlay | `adapters/som.py` |
+| Visual screenshot/region contracts | `surfaces/visual/contracts.py` |
+| Visual acquisition/currentness/pointer execution | `surfaces/visual/adapter.py`, `currentness.py`, `execution.py` |
 | Unified world boundary | `surfaces/base.py`, `world/environment.py`, `world/orchestrator.py` |
 | Deterministic target fixture | `testing/static_environment.py` |
 | Edge-only old fixture | `testing/legacy_static_environment.py` |
@@ -55,11 +57,16 @@ state authoritative in the current Runtime.
 - World identity is checked without physical acquisition, while DOM dispatch
   owns one live target probe whose count is reported separately from full
   observations.
+- Visual policy input contains only semantic state and action IDs. Screenshot,
+  region, bbox/point, viewport, scroll, DPR, zoom, orientation, and pointer
+  data remain Runtime-private. Visual dispatch owns one live capture, re-grounds
+  through the same typed proposer, and never falls back to DOM.
 
 The older state-kernel/coordinator implementation remains temporarily available
 for compatibility and its existing benchmark evidence. The migrated AgentLoop
 does not import it; boundary tests enforce that separation.
 
-The current positive matrix status is DOM complete, Visual not started, WoT not
-started. RoutePolicy is implemented only after hard gates. BindingCache remains
+The current positive matrix status is DOM complete, Visual-only complete for
+the same shared-state task/policy/evaluators, and WoT not started. Semantic
+fusion is not started. RoutePolicy is implemented only after hard gates. BindingCache remains
 a not-admitted prototype. Cross-surface claims and default cutover are blocked.

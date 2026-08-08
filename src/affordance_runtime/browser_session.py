@@ -32,6 +32,7 @@ from affordance_runtime.grounding import (
 )
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.perception import PerceptionOrchestratorPort
+from affordance_runtime.surfaces.visual.contracts import VisualFrame, VisualViewport
 from affordance_runtime.svg_geometry import (
     SelectiveSvgGeometryObserver,
     SvgGeometryObservation,
@@ -1266,6 +1267,48 @@ class BrowserSession:
 
     def screenshot(self, path: str | None = None) -> bytes:
         return self._page.screenshot(path=path) if path else self._page.screenshot()
+
+    def capture_visual_frame(self, observation_id: str) -> VisualFrame:
+        """Capture screenshot bytes and the coordinate facts needed to bind them."""
+
+        evaluator = getattr(self._page, "evaluate", None)
+        if not callable(evaluator):
+            raise RuntimeError("page does not expose visual viewport facts")
+        raw = evaluator(
+            """() => ({
+              width: window.innerWidth, height: window.innerHeight,
+              scrollX: window.scrollX, scrollY: window.scrollY,
+              dpr: window.devicePixelRatio,
+              zoom: window.visualViewport?.scale || 1,
+              orientation: screen.orientation?.type ||
+                (window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait')
+            })"""
+        )
+        if not isinstance(raw, dict):
+            raise RuntimeError("page returned invalid visual viewport facts")
+        image_bytes = self.screenshot()
+        image_size = _image_size(image_bytes, None)
+        if image_size is None:
+            raise RuntimeError("visual screenshot dimensions are unavailable")
+        digest = "sha256:" + hashlib.sha256(image_bytes).hexdigest()
+        viewport = VisualViewport(
+            int(raw["width"]),
+            int(raw["height"]),
+            float(raw["scrollX"]),
+            float(raw["scrollY"]),
+            float(raw["dpr"]),
+            float(raw["zoom"]),
+            str(raw["orientation"]),
+        )
+        return VisualFrame(
+            observation_id,
+            digest,
+            digest,
+            image_size[0],
+            image_size[1],
+            viewport,
+            image_bytes,
+        )
 
     def bounding_boxes_for_selectors(
         self,

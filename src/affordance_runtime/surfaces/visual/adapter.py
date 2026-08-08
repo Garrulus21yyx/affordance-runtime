@@ -1,0 +1,188 @@
+"""Visual-only acquisition and dispatch behind one surface adapter."""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.surfaces.visual.contracts import VisualFrame, VisualRegionBinding
+from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
+from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, point_is_in_viewport
+from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.visual_grounding import VisualRegionProposalRequest, VisualRegionProposerPort
+from affordance_runtime.world.action_classification import classify_surface_action
+from affordance_runtime.world.action_vocabulary import action_metadata
+from affordance_runtime.world.contracts import (
+    ActionBinding,
+    CoverageState,
+    SemanticTarget,
+    StateFact,
+    SurfaceObservation,
+)
+
+if TYPE_CHECKING:
+    from affordance_runtime.browser_session import BrowserSession
+
+
+@dataclass
+class VisualSurfaceAdapter:
+    session: BrowserSession
+    proposer: VisualRegionProposerPort
+    surface: str = field(default="visual", init=False)
+    _task: TaskGoal | None = field(default=None, init=False, repr=False)
+    _observation_id: str = field(default="", init=False)
+    _source_revision: str = field(default="", init=False)
+    _regions: dict[str, VisualRegionBinding] = field(default_factory=dict, init=False, repr=False)
+
+    async def reset(self, task: TaskGoal) -> None:
+        self._task = task
+        self.session.reset()
+        self._observation_id = ""
+        self._source_revision = ""
+        self._regions.clear()
+
+    async def observe(self, reason: str) -> SurfaceObservation:
+        del reason
+        if self._task is None:
+            raise RuntimeError("Visual surface adapter must be reset before observation")
+        observation_id = f"visual:{uuid.uuid4().hex}"
+        frame = self.session.capture_visual_frame(observation_id)
+        proposed = self.proposer.propose(
+            VisualRegionProposalRequest(
+                observation_id,
+                None,
+                frame.image_bytes,
+                (frame.image_width, frame.image_height),
+                self._task.instruction,
+            )
+        )
+        regions = tuple(
+            VisualRegionBinding.from_region(frame, f"region:{index}", region)
+            for index, region in enumerate(proposed)
+        )
+        targets = tuple(SemanticTarget(region.region_id, region.role, region.label, dict(region.state)) for region in regions)
+        candidate_bindings = tuple(self._binding(self._task, frame.source_revision, region) for region in regions)
+        bindings = tuple(binding for binding in candidate_bindings if binding is not None)
+        self._regions = {
+            binding.binding_id: region
+            for binding, region in zip(candidate_bindings, regions, strict=True)
+            if binding is not None
+        }
+        self._observation_id = observation_id
+        self._source_revision = frame.source_revision
+        facts = tuple(
+            StateFact(f"{observation_id}:{target.target_id}:{key}", target.target_id, key, value, observation_id)
+            for target in targets
+            for key, value in target.state.items()
+        )
+        unsupported = tuple(region.primitive_action for region, binding in zip(regions, candidate_bindings, strict=True) if binding is None)
+        return SurfaceObservation(
+            observation_id,
+            self.surface,
+            frame.source_revision,
+            targets,
+            facts,
+            bindings,
+            CoverageState.COMPLETE,
+            {"screenshot_ref": frame.screenshot_ref, "unsupported_actions": unsupported},
+        )
+
+    def is_current(self, request: BoundActionRequest) -> bool:
+        binding = request.binding
+        return (
+            binding.surface == self.surface
+            and binding.source_observation_id == self._observation_id
+            and binding.source_revision == self._source_revision
+            and binding.binding_id in self._regions
+        )
+
+    async def execute(self, request: BoundActionRequest) -> ActionResult:
+        if not self.is_current(request):
+            return self._not_sent(request, ActionError.STALE_BINDING, 0)
+        region = self._regions[request.binding.binding_id]
+        live = self.session.capture_visual_frame(f"probe:{uuid.uuid4().hex}")
+        live_region = self._live_region(region, live)
+        if not visual_binding_is_current(region, live, live_region):
+            return self._not_sent(request, ActionError.STALE_BINDING, 1)
+        if not point_is_in_viewport(region):
+            return self._not_sent(request, ActionError.INVALID_PARAMETERS, 1)
+        if request.binding.primitive_action != "point_activate":
+            return self._not_sent(request, ActionError.UNSUPPORTED_ACTION, 1)
+        try:
+            dispatch_point_activate(self.session, region)
+        except Exception as exc:
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.SENT_UNKNOWN,
+                self.surface,
+                False,
+                ActionError.EXECUTION_FAILED,
+                {"error_type": type(exc).__name__, "currentness_probe_count": 1},
+            )
+        return ActionResult(
+            request.request_id,
+            DispatchStatus.SENT,
+            self.surface,
+            True,
+            adapter_evidence={"dispatched_action": request.intent.semantic_action, "currentness_probe_count": 1},
+        )
+
+    def _live_region(self, bound: VisualRegionBinding, live: VisualFrame) -> VisualRegionBinding | None:
+        if self._task is None:
+            return None
+        proposals = self.proposer.propose(
+            VisualRegionProposalRequest(
+                live.observation_id,
+                None,
+                live.image_bytes,
+                (live.image_width, live.image_height),
+                self._task.instruction,
+            )
+        )
+        try:
+            index = int(bound.region_id.rsplit(":", 1)[1])
+            return VisualRegionBinding.from_region(live, bound.region_id, proposals[index])
+        except (IndexError, ValueError):
+            return None
+
+    def _binding(self, task: TaskGoal, revision: str, region: VisualRegionBinding) -> ActionBinding | None:
+        if region.primitive_action != "point_activate":
+            return None
+        try:
+            metadata = action_metadata(self.surface, region.primitive_action)
+        except ValueError:
+            return None
+        classification = classify_surface_action(task, region.role, metadata.semantic_action)
+        binding_id = f"{region.source_observation_id}:{region.region_id}:{region.primitive_action}"
+        return ActionBinding(
+            binding_id,
+            region.source_observation_id,
+            region.source_observation_id,
+            revision,
+            region.region_fingerprint,
+            region.region_id,
+            region.region_id,
+            self.surface,
+            self.surface,
+            metadata.semantic_action,
+            metadata.primitive_action,
+            classification.category.value,
+            classification.semantic_effects,
+            dict(metadata.parameter_schema),
+            region.private_payload(),
+            classification.observation_barrier,
+            confidence=region.confidence,
+            risk=classification.risk,
+        )
+
+    def _not_sent(self, request: BoundActionRequest, error: ActionError, probes: int) -> ActionResult:
+        return ActionResult(
+            request.request_id,
+            DispatchStatus.NOT_SENT,
+            self.surface,
+            False,
+            error,
+            {"currentness_probe_count": probes},
+        )

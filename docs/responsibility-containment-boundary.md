@@ -73,3 +73,12 @@ The current DOM target path follows this boundary: `DomSurfaceAdapter` owns
 binding; and `TaskEvaluator` alone returns COMPLETE. `agent/` has no adapter or
 browser import. The old ActionBatch helper remains an explicit compatibility
 edge and is not part of this target call path.
+
+The Visual-only target path follows the same boundary. `VisualSurfaceAdapter`
+orchestrates screenshot acquisition and typed region proposals;
+`surfaces/visual/contracts.py` owns immutable screenshot/viewport/region
+identity; `currentness.py` owns pure comparison; and `execution.py` owns the
+single point primitive. `BrowserSession` supplies only a narrow screenshot plus
+viewport capture and pointer call. Visual modules do not import `agent/`, DOM
+adapters, benchmark task definitions, or legacy transaction owners. Current
+Visual files are below 350 lines and contain no function above 80 lines.

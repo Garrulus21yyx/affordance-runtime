@@ -87,9 +87,10 @@ pipeline is not success evidence.
 
 ## 6. External benchmark admission
 
-Full external agent benchmarks are currently **BLOCKED**. Admission requires:
+Full external agent benchmarks remain **BLOCKED**. The same-task DOM/Visual
+adapter-only activation proof is complete, but admission still requires:
 
-1. positive new-loop DOM, Visual, and WoT verticals;
+1. positive new-loop DOM, Visual, and WoT verticals (WoT remains missing);
 2. the same TaskGoal, policy, evaluators, and semantic actions with adapter-only variation;
 3. runtime-owned ActionSpace and evaluator-owned completion;
 4. stale zero-call, fresh observation, and SENT_UNKNOWN no-retry;
@@ -99,5 +100,6 @@ Full external agent benchmarks are currently **BLOCKED**. Admission requires:
 The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
 for harness and loop-contract validation, not a generalization claim.
 WebArena/WorkArena wait for an internal 20–50 turn case. OSWorld waits for
-AX/Visual/CLI/app-switch contracts. Component tests and the real local DOM
-vertical continue to run before this admission gate.
+AX/Visual/CLI/app-switch contracts. Component tests and the real local DOM and
+Visual-only verticals continue to run before this admission gate. This slice
+ran no external benchmark.

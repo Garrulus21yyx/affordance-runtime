@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_port import StructuredModelError, _post_json, _structured_json_content
 
 
@@ -51,6 +52,16 @@ class VisualRegion:
     label: str = ""
     confidence: float = 0.0
     normalized: bool = True
+    role: str = "button"
+    primitive_action: str = "point_activate"
+    state: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.role.strip() or not self.primitive_action.strip():
+            raise ValueError("visual region requires role and primitive action")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError("visual region confidence must be within [0, 1]")
+        object.__setattr__(self, "state", freeze_json(self.state))
 
     def pixel_bbox(self, image_size: tuple[int, int]) -> tuple[float, float, float, float]:
         x, y, width, height = self.bbox_xywh

@@ -29,7 +29,8 @@ def classify_dom_action(task: TaskGoal, affordance: object, semantic_action: str
     externality = str(getattr(affordance, "externality", "")).casefold()
     reversibility = str(getattr(affordance, "reversibility", "")).casefold()
     operation_ref = str(getattr(affordance, "operation_ref", "")).casefold()
-    category = _base_category(semantic_action, role)
+    classification = classify_surface_action(task, role, semantic_action)
+    category = classification.category
     if externality in {"external", "external_system", "remote"} or operation_ref.startswith("external."):
         category = EffectCategory.EXTERNAL
     if reversibility in {"irreversible", "none"}:
@@ -40,6 +41,18 @@ def classify_dom_action(task: TaskGoal, affordance: object, semantic_action: str
         risk = max((risk, ActionRisk(authored_risk)), key=_risk_rank)
     effects = _business_effects(task, str(getattr(affordance, "effect_class", "")).strip(), category)
     return ActionClassification(category, effects, risk, category != EffectCategory.OBSERVATION)
+
+
+def classify_surface_action(task: TaskGoal, role: str, semantic_action: str) -> ActionClassification:
+    """Classify an action from semantic facts shared by every surface."""
+
+    category = _base_category(semantic_action, role.casefold())
+    return ActionClassification(
+        category,
+        _business_effects(task, "", category),
+        _category_risk(category),
+        category != EffectCategory.OBSERVATION,
+    )
 
 
 def _base_category(semantic_action: str, role: str) -> EffectCategory:

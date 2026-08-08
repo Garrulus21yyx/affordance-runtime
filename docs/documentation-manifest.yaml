@@ -122,6 +122,9 @@ reference:
   - role: p5_c1_2_exact_selection_closure
     path: docs/reviews/2026-08-08-p5-c1-2-exact-selection-closure.md
     lifecycle: current
+  - role: p5_visual_single_surface_vertical
+    path: docs/reviews/2026-08-08-p5-visual-single-surface-vertical.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

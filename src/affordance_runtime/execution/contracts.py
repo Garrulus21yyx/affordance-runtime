@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.schema_digest import schema_digest
 
 if TYPE_CHECKING:
     from affordance_runtime.world.contracts import ActionBinding, AdmittedActionSelection
@@ -52,16 +53,20 @@ class BoundActionRequest:
     def __post_init__(self) -> None:
         if not self.request_id.strip() or self.world_observation_id != self.binding.world_observation_id:
             raise ValueError("bound request must identify its binding observation")
-        if self.intent.target_id != self.binding.target_id:
-            raise ValueError("intent target does not match binding target")
         if (
             self.selection.observation_id != self.world_observation_id
             or self.selection.action_id.strip() == ""
+            or self.intent.semantic_action != self.selection.semantic_action
+            or self.intent.target_id != self.selection.target_id
+            or self.intent.parameters != self.selection.parameters
             or self.binding.binding_id not in self.selection.eligible_binding_ids
             or self.selection.semantic_action != self.binding.semantic_action
             or self.selection.target_id != self.binding.target_id
             or self.selection.effect_category != self.binding.effect_category
             or self.selection.semantic_effects != self.binding.semantic_effects
+            or self.selection.schema_digest != schema_digest(self.binding.parameter_schema)
+            or _risk_rank(self.binding.risk) > _risk_rank(self.selection.risk)
+            or self.binding.observation_barrier != self.selection.observation_barrier
         ):
             raise ValueError("bound request must retain its admitted option and binding group")
         if self.timeout_ms <= 0:
@@ -72,6 +77,10 @@ class BoundActionRequest:
         """Compatibility read; world identity is canonical."""
 
         return self.world_observation_id
+
+
+def _risk_rank(risk: object) -> int:
+    return ("low", "medium", "high", "irreversible").index(str(risk))
 
 
 @dataclass(frozen=True)

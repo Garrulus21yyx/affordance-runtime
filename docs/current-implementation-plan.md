@@ -2,14 +2,14 @@
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-08
-> **Start baseline:** `codex/migrate-world-interaction-capabilities@1336d6c5ac3c2c585ad9b885d0a0e0a2d4d8ea90`
+> **Start baseline:** `codex/migrate-world-interaction-capabilities@b14e6fbbafc83f4e163bdada4a4e3750010f6a84`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
 
 The transaction-platform queue remains stopped. P5-A/B1/C1 has established the
-target contracts, minimum Unified World Interface, and first real DOM short
-loop without changing the default product path.
+target contracts, minimum Unified World Interface, and real DOM plus
+Visual-only short loops without changing the default product path.
 
 ## Slice status
 
@@ -24,7 +24,8 @@ loop without changing the default product path.
 | C1 | complete, non-default | real Chromium positive loop plus negative matrix |
 | C1.1/B1.1 | complete | task-aware ActionSpace, source/world/fingerprint currentness, lineage, schema, budget, Finish/unknown closure |
 | C1.2/B1.2 | complete | exact option/binding groups, Runtime-owned coarse effect/risk, single-probe currentness, reset/schema/attempt lineage |
-| Visual/WoT verticals | `NOT_STARTED` | next slice; reuse the same TaskGoal/policy/evaluators |
+| C2/B3 Visual | complete, non-default | screenshot-only proposer, private coordinates, one-probe pointer execution, real Chromium loop |
+| WoT vertical | `NOT_STARTED` | next candidate slice; reuse the same TaskGoal/policy/evaluators |
 | P5-D | `NOT_STARTED` | full semantic confirmation continuation |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -32,9 +33,9 @@ loop without changing the default product path.
 
 ## Next admitted slice
 
-Implement a single-surface Visual adapter/positive loop, then the WoT adapter,
-using the exact admitted-selection contract, Runtime-owned categories, and the
-same task, policy, semantic ActionSpace, and evaluators. Do not add batch,
+Stop after the Visual closure. The next independently admitted slice may add a
+single-surface WoT adapter/positive loop using the exact admitted-selection
+contract and the same task, policy, semantic ActionSpace, and evaluators. Do not add batch,
 long-horizon planning, global confirmation registries, external full-agent
 benchmarks, or old-core deletion to that slice.
 
