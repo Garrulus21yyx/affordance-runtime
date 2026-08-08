@@ -34,14 +34,13 @@ async def validated_action_evaluation(
     after: WorldObservation,
 ) -> ActionEvaluation:
     proposal = await evaluator.evaluate(task, before, request, result, after)
-    validate_action_evaluation(
+    return validate_action_evaluation(
         proposal,
         request,
         before,
         after,
         WorldEvidenceIndex.from_observation(after),
     )
-    return proposal
 
 
 def untrusted_evaluation_turn(

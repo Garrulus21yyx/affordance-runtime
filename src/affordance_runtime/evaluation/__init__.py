@@ -10,6 +10,7 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 
 __all__ = [
     "ActionEvaluation",
@@ -17,6 +18,7 @@ __all__ = [
     "CriterionEvaluation",
     "CriterionEvaluationStatus",
     "EvaluatedOutput",
+    "EvidenceRecord",
     "TaskEvaluation",
     "TaskEvaluationStatus",
     "WorldEvidenceIndex",

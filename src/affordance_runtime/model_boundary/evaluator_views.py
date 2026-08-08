@@ -8,11 +8,13 @@ from dataclasses import dataclass, field
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution.contracts import ActionError, ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.model_boundary.budgets import ContextProjectionBudget
 from affordance_runtime.model_boundary.contracts import AgentTaskView
 from affordance_runtime.model_boundary.projection import project_public_value
 from affordance_runtime.model_boundary.task_projection import project_task
+from affordance_runtime.model_boundary.world_projection import ModelWorldView, project_model_world
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.view import AgentWorldView
+from affordance_runtime.world.contracts import WorldObservation
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,8 @@ class ModelActionResultView:
 @dataclass(frozen=True)
 class ModelActionEvaluationView:
     task: AgentTaskView
-    world: AgentWorldView
+    before: ModelWorldView
+    after: ModelWorldView
     intent: ModelActionIntentView
     result: ModelActionResultView
     available_evidence_refs: tuple[str, ...]
@@ -47,7 +50,7 @@ class ModelActionEvaluationView:
 @dataclass(frozen=True)
 class ModelTaskEvaluationView:
     task: AgentTaskView
-    world: AgentWorldView
+    world: ModelWorldView
     requested_output_ids: tuple[str, ...]
     available_evidence_refs: tuple[str, ...]
 
@@ -58,14 +61,17 @@ class ModelTaskEvaluationView:
 
 def build_model_action_evaluation_view(
     task: TaskGoal,
-    world: AgentWorldView,
+    before: WorldObservation,
+    after: WorldObservation,
     intent: ActionIntent,
     result: ActionResult,
     evidence_index: WorldEvidenceIndex,
+    budget: ContextProjectionBudget = ContextProjectionBudget(),
 ) -> ModelActionEvaluationView:
     return ModelActionEvaluationView(
         project_task(task),
-        world,
+        project_model_world(before, budget),
+        project_model_world(after, budget),
         ModelActionIntentView(
             intent.semantic_action,
             intent.target_id,
@@ -79,12 +85,13 @@ def build_model_action_evaluation_view(
 
 def build_model_task_evaluation_view(
     task: TaskGoal,
-    world: AgentWorldView,
+    world: WorldObservation,
     evidence_index: WorldEvidenceIndex,
+    budget: ContextProjectionBudget = ContextProjectionBudget(),
 ) -> ModelTaskEvaluationView:
     return ModelTaskEvaluationView(
         project_task(task),
-        world,
+        project_model_world(world, budget),
         task.requested_outputs,
         evidence_index.refs,
     )

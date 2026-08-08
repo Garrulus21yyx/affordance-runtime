@@ -8,13 +8,13 @@ from affordance_runtime.model_boundary.evaluator_views import (
 )
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import CoverageState, StateFact, WorldObservation, build_agent_world_view
+from affordance_runtime.world import CoverageState, SemanticTarget, StateFact, WorldObservation
 
 
 def _world() -> WorldObservation:
     return WorldObservation(
         "world:1",
-        (),
+        (SemanticTarget("target:1", "control", "Target"),),
         (StateFact("fact:1", "target:1", "enabled", True, "world:1"),),
         (),
         {"dom": CoverageState.COMPLETE},
@@ -53,7 +53,8 @@ def test_model_evaluator_views_exclude_bound_route_backend_and_adapter_evidence(
     )
     view = build_model_action_evaluation_view(
         _task(),
-        build_agent_world_view(world),
+        world,
+        world,
         ActionIntent("activate", "target:1", {"mode": "on"}),
         result,
         WorldEvidenceIndex.from_observation(world),
@@ -63,6 +64,8 @@ def test_model_evaluator_views_exclude_bound_route_backend_and_adapter_evidence(
     assert view.result.dispatch_status == DispatchStatus.NOT_SENT
     assert view.result.public_error_category == ActionError.STALE_BINDING
     assert view.available_evidence_refs == ("fact:1",)
+    assert view.before.facts.items[0].fact_ref == "fact:1"
+    assert view.after.facts.items[0].fact_ref == "fact:1"
     representation = repr(view)
     for private in ("request:private", "dom-private-backend", "#private", "raw-secret", "adapter_evidence"):
         assert private not in representation
@@ -72,7 +75,7 @@ def test_model_task_evaluation_view_contains_public_criteria_outputs_and_evidenc
     world = _world()
     view = build_model_task_evaluation_view(
         _task(),
-        build_agent_world_view(world),
+        world,
         WorldEvidenceIndex.from_observation(world),
     )
 

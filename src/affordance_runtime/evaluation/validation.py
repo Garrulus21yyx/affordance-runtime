@@ -1,5 +1,6 @@
 """Deterministic validation of evaluator proposals against Runtime authority."""
 
+from affordance_runtime.evaluation.action_applicability import apply_action_evidence_profile
 from affordance_runtime.evaluation.contracts import (
     ActionEvaluation,
     CriterionEvaluationStatus,
@@ -19,7 +20,7 @@ def validate_action_evaluation(
     before: WorldObservation,
     after: WorldObservation,
     evidence_index: WorldEvidenceIndex,
-) -> None:
+) -> ActionEvaluation:
     if (
         evaluation.request_id != request.request_id
         or evaluation.before_observation_id != before.observation_id
@@ -31,6 +32,9 @@ def validate_action_evaluation(
     unresolved = tuple(item for item in evaluation.evidence_refs if not evidence_index.resolve(item))
     if unresolved:
         raise ValueError("action evaluation evidence does not resolve in the after observation")
+    if after.sources:
+        return apply_action_evidence_profile(evaluation, request, before, after, evidence_index)
+    return evaluation
 
 
 def validate_task_evaluation(
