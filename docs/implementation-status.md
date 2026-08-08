@@ -1,7 +1,7 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-08
+> **Updated:** 2026-08-09
 > **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
@@ -223,3 +223,15 @@ Chromium Visual-only and local-HTTP WoT adapter cases; the older shared-state
 matrix remains synthetic protocol evidence. Report attestation binds exact SHA,
 dirty state, manifest digests and report hashes without serializing private
 routes, credentials or raw provider payloads.
+
+P5-M3.3 is closed for tested exact-profile diagnostics. The real-DOM
+AgentContext is 4,972 bytes (`SMALL`); the canonical provider schema is 5,194
+bytes with ten definitions and seven variants. Exact installed Ollama
+`qwen2.5:7b` and `llama3.1:8b` profiles pass Levels 0/1 and fail at the full
+union structured-output boundary from Level 2 under format-only, compact,
+full-schema-text and context-bound variants. They are
+`UNSUPPORTED_FOR_AGENT_POLICY` only for the recorded tags/digests/runtime.
+Mistral `mistral-medium-3-5` passed one Level-4 call under format-only and one
+under compact grounding, so remains `SINGLE_RUN_ATTESTED`, not stable support.
+Compact grounding is `DIAGNOSTIC_ONLY`; parser, Runtime admission, retries,
+fallback, external benchmark status and the default Coordinator path are unchanged.

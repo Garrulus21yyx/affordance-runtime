@@ -11,6 +11,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_adapter_task, real_dom_environment
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import ModelFailure
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelDecisionResponse
@@ -63,7 +64,9 @@ async def run_level_four_attempt(
     request = capturing.request
     user = getattr(request, "serialized_context", "")
     schema = getattr(request, "decision_schema", {})
-    schema_bytes = len(json.dumps(schema, sort_keys=True, separators=(",", ":")).encode())
+    schema_bytes = len(json.dumps(
+        to_json_compatible(schema), sort_keys=True, separators=(",", ":"),
+    ).encode())
     output = capturing.outcome.raw_payload if isinstance(capturing.outcome, ModelDecisionResponse) else ""
     attributed = _attributed(capturing.outcome, user)
     stage = attributed.stage

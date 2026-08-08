@@ -12,7 +12,7 @@ from affordance_runtime.model_port import ModelPort
 
 from .attempts import run_structured_attempt
 from .classification import classify_support
-from .contracts import ModelProfileConformanceResult, ModelProfileIdentity
+from .contracts import ModelInputComplexity, ModelProfileConformanceResult, ModelProfileIdentity
 from .grounding import GroundingVariant, build_grounded_input, diagnostic_schema_model
 from .levels import Level0Payload, Level1SelectActionPayload, minimal_select_context, minimal_union_context
 from .loop_attempt import run_level_four_attempt
@@ -57,6 +57,9 @@ async def run_profile(
         tuple(level for level, (passed, total) in counts.items() if passed == total and total),
         tuple(level for level, (passed, total) in counts.items() if passed < total),
         status.value, tuple(f"level {level}: {passed}/{total}" for level, (passed, total) in counts.items()),
+        scenario.complexity if scenario is not None else ModelInputComplexity(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "result.json").write_text(

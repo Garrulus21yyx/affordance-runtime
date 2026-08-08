@@ -202,3 +202,14 @@ AFFORDANCE_WOT_PROOF=1 ./scripts/reproduce_container.sh
 
 Affordance Runtime gives agents one semantic observe–act–observe interface for
 acting effectively across heterogeneous digital and physical surfaces.
+
+## Exact model-profile diagnostics
+
+P5-M3.3 measures the current real-DOM AgentContext as `SMALL`: 4,972 serialized
+bytes, one action and no history. The canonical seven-variant provider schema
+is 5,194 bytes with ten definitions and seven variants. Exact installed Ollama
+Qwen/Llama profiles pass minimal JSON and SelectAction-only levels but the
+Ollama runtime rejects the full union schema before AgentContext density becomes
+the first failure. Compact grounding remains diagnostic-only. Parser, Runtime
+admission, retry/fallback behavior, default Coordinator path and external
+benchmark admission are unchanged.

@@ -350,3 +350,7 @@ Semantic fusion 继续 deferred，且不是 M0.1/M1 前置。不得先做 Batch/
 8. StateKernel/RuntimeDelta/RuntimeCommitter/recovery transaction are absent from default imports/call path.
 9. Strict profiles remain explicit and do not tax ordinary GUI tasks.
 10. README, authority, status and current queue agree.
+
+P5-M3.3 exact model-profile conformance is complete for the tested profiles.
+The Runtime parser/admission boundary remains unchanged; compact grounding is
+diagnostic-only, and external benchmark execution remains separately gated.

@@ -147,3 +147,14 @@ a closed target-loop environment wrapper. The last wrapper is not yet closed;
 therefore preflight is expected to reject execution and no external benchmark
 is run.
 Semantic fusion remains deferred and is not an M1 prerequisite.
+
+## Exact model conformance ladder
+
+The diagnostic ladder covers minimal structured JSON, SelectAction-only actual
+IDs, full union/minimal context, full union/current AgentContext, and the real
+DOM AgentLoop. Grounding variants are format-only, compact contract, full schema
+text and context-bound schema. Each attempt makes one provider call and retains
+only typed stage, sizes, hash and secret-free usage metadata. The measured exact
+Ollama profiles fail when the full union is supplied; no grounding variant
+improved that boundary. This does not block a separately selected Mistral
+external profile and does not admit BrowserGym/MiniWoB execution.

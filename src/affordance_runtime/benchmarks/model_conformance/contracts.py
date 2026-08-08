@@ -113,4 +113,4 @@ class ModelProfileConformanceResult:
     failed_levels: tuple[str, ...]
     classification: str
     classification_reasons: tuple[str, ...]
-
+    input_complexity: ModelInputComplexity

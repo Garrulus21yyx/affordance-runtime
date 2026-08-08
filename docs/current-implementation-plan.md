@@ -70,3 +70,12 @@ old-core deletion remain unauthorized.
 Every target slice runs focused pytest, Ruff, mypy on affected modules,
 `git diff --check`, then the full suite. Evidence is exact-revision/profile
 scoped; benchmark oracles never drive product behavior.
+
+## P5-M3.3 closure
+
+Exact model input/schema complexity is measured and installed Ollama failures
+are stage-attributed. Compact grounding remains diagnostic-only because neither
+tested exact Ollama profile improved beyond the SelectAction-only level. The
+production default stays format-only. External execution remains blocked by
+the optional BrowserGym dependency, target-loop external environment adapter
+and admission package; M3.3 does not authorize that run or a default cutover.

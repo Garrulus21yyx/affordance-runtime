@@ -140,3 +140,12 @@ An architecture change updates together:
 4. root README, this index, and the manifest;
 5. archive or compatibility notes for superseded material;
 6. documentation and architecture governance checks.
+
+## P5-M3.3 exact model-profile diagnostics
+
+P5-M3.3 measures the current real-DOM model input and runs an explicit five-level
+conformance ladder without changing Runtime authority. The installed exact
+`qwen2.5:7b` and `llama3.1:8b` profiles pass Levels 0/1 but are incompatible
+with the current full seven-variant Ollama schema from Level 2. The existing
+Mistral profile has one successful Level-4 run for format-only and compact
+grounding. See the [review record](reviews/2026-08-09-p5-m3-3-model-profile-conformance.md).

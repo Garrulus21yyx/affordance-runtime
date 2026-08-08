@@ -10,6 +10,7 @@ from pathlib import Path
 
 from affordance_runtime.model_port import ModelPort, OllamaModelPort, model_port_from_environment
 
+from .attestation import attest_results, write_attestation
 from .profile_identity import (
     identity_from_ollama_inventory,
     ollama_inventory,
@@ -29,7 +30,22 @@ def main() -> int:
     run.add_argument("--repetitions", type=int)
     run.add_argument("--support-attestation", action="store_true")
     run.add_argument("--output-dir", required=True)
+    attest = sub.add_parser("attest")
+    attest.add_argument("--result", action="append", required=True)
+    attest.add_argument("--output", required=True)
     args = parser.parse_args()
+    if args.command == "attest":
+        import subprocess
+
+        sha = subprocess.run(
+            ("git", "rev-parse", "HEAD"), check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        dirty = bool(subprocess.run(
+            ("git", "status", "--short"), check=True, capture_output=True, text=True,
+        ).stdout.strip())
+        value = attest_results(tuple(Path(item) for item in args.result), git_sha=sha, git_dirty=dirty)
+        write_attestation(Path(args.output), value)
+        return 0 if value.accepted else 1
     if args.profile == "environment" and os.environ.get("RUN_MODEL_PROFILE_CONFORMANCE") != "1":
         parser.error("remote environment profile requires RUN_MODEL_PROFILE_CONFORMANCE=1")
     levels = tuple(item.strip() for item in args.levels.split(",") if item.strip())

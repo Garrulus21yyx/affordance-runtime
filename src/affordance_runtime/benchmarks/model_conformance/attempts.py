@@ -15,6 +15,7 @@ from affordance_runtime.model_port import (
     ModelMessage,
     ModelPort,
     ProviderModelError,
+    StructuredModelError,
     StructuredOutputError,
 )
 
@@ -60,6 +61,8 @@ async def run_structured_attempt(
         stage, failure = ModelConformanceStage.TRANSPORT, exc.kind.value
     except StructuredOutputError:
         stage, failure = ModelConformanceStage.STRUCTURED_OUTPUT, "structured_output"
+    except StructuredModelError:
+        stage, failure = ModelConformanceStage.STRUCTURED_OUTPUT, "provider_schema_or_envelope"
     except Exception as exc:
         stage, failure = ModelConformanceStage.TRANSPORT, type(exc).__name__
     elapsed = (perf_counter() - started) * 1_000

@@ -126,3 +126,13 @@ world contracts and short AgentLoop, the DOM/AX/Visual/SVG/WoT positive matrix
 succeeds with only adapter variation, the local correctness invariants remain
 verified, a long-horizon task and bounded Batch/Skill gates pass, and the old StateKernel/delta/committer/recovery-transaction chain no
 longer appears in the default import or call path.
+
+## 8. Exact model-profile conformance
+
+P5-M3.3 is complete for the tested exact profiles. Input complexity is measured
+rather than inferred from budget limits, and structured-output failures are
+located before policy/runtime compatibility conclusions are drawn. Weak-model
+compatibility is not a core requirement: an exact profile may be explicitly
+unsupported without adding parser repair, retry, fallback or model-specific
+Runtime behavior. The next admitted work remains the separately reviewed
+external adapter/dependency gate; no external run is authorized here.

@@ -147,3 +147,8 @@ requires both `RUN_EXTERNAL_SMOKE=1` and explicit `--execute`; absent any gate,
 no external environment or provider is constructed. Environment-native reward
 or completion is consumed only by the benchmark-only mechanical TaskEvaluator
 and post-run acceptance, never by policy routing.
+Model conformance is also outside orchestration. Levels 0–3 stop before
+execution; Level 4 enters the unchanged AgentEpisodeRunner and Runtime
+admission. A diagnostic failure cannot trigger retry/fallback, repair output,
+change a Runtime turn, or enter AgentContext/Turn history. Compact grounding is
+explicit per diagnostic call; the ordinary policy composition stays format-only.

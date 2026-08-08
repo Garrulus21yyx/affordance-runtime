@@ -170,3 +170,10 @@ It is not imported by target production core or surfaces, cannot call Binder or
 Executor directly, and cannot place benchmark oracle material in AgentContext.
 The existing BrowserGym package remains isolated; its target-loop
 `WorldEnvironment` lifecycle wrapper is explicitly partial and blocks admission.
+P5-M3.3 adds `benchmarks/model_conformance/` as a diagnostic-only owner for
+exact profile identity, levels, grounding variants, complexity, classification
+and secret-free attestation. It may call the existing ModelPort and target-loop
+public composition but cannot change ActionSpace, parser, admission, risk or
+evaluation. `model_policy/grounding.py` derives a bounded guide only from
+already-public serialized AgentContext; the default bridge does not enable it.
+Production core never imports model-conformance diagnostics.

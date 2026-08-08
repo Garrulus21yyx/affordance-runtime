@@ -168,6 +168,10 @@ reference:
     path: docs/reviews/2026-08-08-p5-m3-2-external-benchmark-admission-package.md
     lifecycle: current
 
+  - role: p5_m3_3_exact_model_profile_conformance
+    path: docs/reviews/2026-08-09-p5-m3-3-model-profile-conformance.md
+    lifecycle: current
+
 immutable_records:
   - path: docs/evidence/
     lifecycle: immutable_record
