@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-08
-> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@b14e6fbbafc83f4e163bdada4a4e3750010f6a84`
+> **Reviewed start baseline:** `codex/migrate-world-interaction-capabilities@0ace7d7d6a34ced4ac4679707eae786f56896cbb`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -26,11 +26,11 @@ The target path now has:
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded Turn state | `INTEGRATED_NON_DEFAULT` |
-| SurfaceAdapter / UnifiedWorldEnvironment | complete for single-DOM and Visual-only minimums; multi-source identity/currentness closed, semantic fusion pending |
+| SurfaceAdapter / UnifiedWorldEnvironment | complete for DOM, Visual-only, and WoT single-surface minimums; semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
 | real-browser DOM short loop | `INTEGRATED_NON_DEFAULT`, positive C1 proof |
 | Visual new-loop vertical | `INTEGRATED_NON_DEFAULT`, positive C2 proof |
-| WoT new-loop vertical | `NOT_STARTED` |
+| WoT new-loop vertical | `INTEGRATED_NON_DEFAULT`, local-simulation positive C3 proof |
 | semantic confirmation continuation | `NOT_STARTED` (typed waiting placeholder only) |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
@@ -38,11 +38,13 @@ The target path now has:
 | long-horizon TaskPlan execution | `NOT_STARTED` |
 | default product cutover | `NOT_STARTED` |
 
-The live DOM and Visual-only proofs use the same `TaskGoal` factory,
+The live DOM, Visual-only, and WoT local-simulation proofs use the same `TaskGoal` factory,
 deterministic policy, semantic evaluators, and `activate` vocabulary. Each uses
 an offered action ID, exact binding group, one execution, one measured surface
 probe, a fresh observation, and evaluator-owned completion. DOM selectors and
 Visual screenshot/region/viewport/point data stay inside private bindings.
+WoT href, method, security reference, schema, rate metadata, and TD identity
+also stay private. Credentials are resolved only inside the HTTP transport.
 
 The live DOM proof uses one `TaskGoal`, a deterministic policy selecting an
 offered action ID, an exact eligible-binding group, a selector-private DOM
@@ -53,13 +55,15 @@ ActionContract, or ExecutionReceipt.
 
 ## Migrated foundations
 
-- WoT TD security/rate/schema/event-description parsing is implemented.
+- WoT TD security/rate/schema/event-description parsing and the non-default
+  target-loop HTTP transport/SurfaceAdapter are implemented.
   Event subscription execution is not implemented and events are not offered
   as executable options.
 - WoT read state sources carry public security-scheme, minimum-interval,
   content-type, and property-schema metadata. An unselected scheme is reported
   unavailable without transport fields, and related write/invoke affordances
-  are withheld. Only an explicitly referenced `nosec` scheme is executable.
+  are withheld. The proof uses explicitly referenced `nosec` and Runtime
+  `LOCAL_SIMULATION`; remote/physical scopes remain HIGH risk.
 - SoM utilities and smart-room/mock-web assets are implemented.
 - Smart-room images use committed lockfiles and `npm ci`. Audit debt remains:
   node-wot 4 vulnerabilities (2 moderate, 2 high); dashboard 2 (1 moderate,
@@ -69,18 +73,19 @@ ActionContract, or ExecutionReceipt.
 
 Focused target tests cover source/world/fingerprint stale zero-call, Visual
 screenshot/viewport/scroll/DPR/zoom/orientation/region staleness, coordinate
-isolation, task-forbidden
+isolation, WoT TD/form/security stale checks, one-probe/one-send, rate limits,
+credential isolation, task-forbidden
 effect filtering, higher-confidence forbidden-route exclusion, distinct schema
 route identity, Runtime-owned risk floors, result lineage, schema values and
 unsupported-type rejection, observation/probe budgets, unknown
 no-retry, initial zero-op
 completion, finish-proposal rejection, receipt/effect separation, private
 parameter rejection, observation identity freshness, low-risk-only admission,
-bounded turns, and real Chromium DOM completion.
+bounded turns, real Chromium DOM/Visual completion, and real local HTTP WoT completion.
 
-The instrumented/plain-DOM and Visual-only minimums are closed; generic business-effect
+The instrumented/plain-DOM, Visual-only, and WoT local-simulation minimums are closed; generic business-effect
 classification beyond the current coarse categories remains future work. The
-new-loop DOM/Visual adapter-only equivalence is proven for the shared-state
-task, but the DOM/Visual/WoT positive matrix is not complete. Semantic fusion across
+new-loop DOM/Visual/WoT adapter-only symmetry is proven for the shared-state
+task. This does not prove semantic fusion or physical-device confirmation. Semantic fusion across
 simultaneous sources remains future work. External full-agent
 benchmarks remain blocked. Old-core deletion is not admitted.

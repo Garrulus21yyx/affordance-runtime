@@ -125,6 +125,9 @@ reference:
   - role: p5_visual_single_surface_vertical
     path: docs/reviews/2026-08-08-p5-visual-single-surface-vertical.md
     lifecycle: current
+  - role: p5_wot_single_surface_and_matrix
+    path: docs/reviews/2026-08-08-p5-wot-single-surface-and-matrix.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

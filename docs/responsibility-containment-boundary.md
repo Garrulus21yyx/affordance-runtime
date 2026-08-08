@@ -82,3 +82,12 @@ single point primitive. `BrowserSession` supplies only a narrow screenshot plus
 viewport capture and pointer call. Visual modules do not import `agent/`, DOM
 adapters, benchmark task definitions, or legacy transaction owners. Current
 Visual files are below 350 lines and contain no function above 80 lines.
+
+The WoT target path retains the existing TD/security parser as its sole
+description authority. `surfaces/wot/contracts.py` owns immutable private route
+identity and deployment scope; `transport.py` owns HTTP and credential
+late-binding; `currentness.py` owns pure TD/affordance comparison; and
+`adapter.py` owns SurfaceObservation/ActionResult orchestration and run-local
+rate timestamps. It does not import AgentLoop, DOM/Visual adapters, benchmark
+tasks, old ActionContract, or transaction owners. Physical/remote risk is
+Runtime configuration, not TD authority.

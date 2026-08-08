@@ -13,6 +13,8 @@ state authoritative in the current Runtime.
 |---|---|
 | DOM transduction | Existing `adapters/dom.py` and `BrowserSession` |
 | WoT TD/security/rate/events | `adapters/wot.py`, `adapters/wot_security.py` |
+| WoT target-loop contracts/HTTP transport | `surfaces/wot/contracts.py`, `transport.py` |
+| WoT target-loop currentness/orchestration | `surfaces/wot/currentness.py`, `adapter.py` |
 | Visual SoM/overlay | `adapters/som.py` |
 | Visual screenshot/region contracts | `surfaces/visual/contracts.py` |
 | Visual acquisition/currentness/pointer execution | `surfaces/visual/adapter.py`, `currentness.py`, `execution.py` |
@@ -35,6 +37,9 @@ state authoritative in the current Runtime.
   source, executor, and target fingerprint.
 - WoT credentials are resolved at the transport boundary and redacted from
   receipts and errors.
+- WoT deployment scope is Runtime configuration. Local simulation permits LOW
+  local-reversible invoke; remote service and physical device remain HIGH and
+  cannot be downgraded by TD metadata.
 - Every single action is followed by a fresh observation before evaluation.
 - `SENT_UNKNOWN` never causes an implicit retry.
 - Batches contain at most three low-risk actions on one backend and stop on
@@ -59,14 +64,19 @@ state authoritative in the current Runtime.
   observations.
 - Visual policy input contains only semantic state and action IDs. Screenshot,
   region, bbox/point, viewport, scroll, DPR, zoom, orientation, and pointer
-  data remain Runtime-private. Visual dispatch owns one live capture, re-grounds
-  through the same typed proposer, and never falls back to DOM.
+  data remain Runtime-private. In the current full-digest profile, Visual
+  dispatch owns one coherent live capture, does not re-run the proposer, and
+  never falls back to DOM.
+- WoT policy input contains semantic targets, facts, schemas, and offered action
+  IDs only. TD digest, href, method, security reference, content type, and rate
+  metadata remain private. Execute performs one TD/affordance probe and one
+  transport call without retry or cross-surface fallback.
 
 The older state-kernel/coordinator implementation remains temporarily available
 for compatibility and its existing benchmark evidence. The migrated AgentLoop
 does not import it; boundary tests enforce that separation.
 
-The current positive matrix status is DOM complete, Visual-only complete for
-the same shared-state task/policy/evaluators, and WoT not started. Semantic
-fusion is not started. RoutePolicy is implemented only after hard gates. BindingCache remains
+The current positive matrix status is DOM, Visual-only, and WoT local-simulation
+complete for the same shared-state task/policy/evaluators. This proves only
+single-surface adapter symmetry. Semantic fusion is not started. RoutePolicy is implemented only after hard gates. BindingCache remains
 a not-admitted prototype. Cross-surface claims and default cutover are blocked.

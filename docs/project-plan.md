@@ -54,8 +54,8 @@ core contracts for every GUI task.
 |---|---|---|
 | P4 baseline | Existing serial path preserves final-request identity, stale zero-call, receipt/effect separation, output integrity, and unknown no-retry | retained baseline |
 | P5-A | Documentation reset; strong TaskGoal/risk profiles and minimal world/action contracts | target contracts integrated non-default |
-| P5-B | Symmetric SurfaceAdapter interface across DOM/AX/Visual/SVG/WoT/API/Device/CLI | DOM and Visual-only exact-selection/currentness minimums integrated non-default; other surfaces pending |
-| P5-C | Positive DOM, Visual, and WoT vertical loops using the same policy/evaluator | plain/instrumented DOM and Visual-only complete; WoT not started |
+| P5-B | Symmetric SurfaceAdapter interface across DOM/AX/Visual/SVG/WoT/API/Device/CLI | DOM, Visual-only, and WoT local-simulation minimums integrated non-default; other surfaces pending |
+| P5-C | Positive DOM, Visual, and WoT vertical loops using the same policy/evaluator | shared-state adapter-only matrix proven for DOM, Visual, and WoT; no fusion claim |
 | P5-D | Semantic human confirmation, current rebind, unknown-effect and evaluator cutover | not started |
 | P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
