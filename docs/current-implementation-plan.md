@@ -36,7 +36,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M1.1 ModelPort bridge/hardening | `CLOSED` | hostile JSON, deadline, typed failures/metadata, zero retry/fallback, local HTTP proof; live unavailable |
 | P5-M2 production evaluator composition | `CLOSED_FOR_DECLARED_MINIMUM` | Runtime-composed mechanical/semantic/user/hybrid criteria and output binding |
 | P5-M2.1 evidence semantics closure | `CLOSED_FOR_DECLARED_PROFILES` | relevance-bound effects, strong no-effect scope, presented evidence only, dynamic readiness |
-| P5-M3 new-loop benchmark harness | `ADMITTED / NOT_STARTED / NEXT` | fixed BrowserGym/MiniWoB smoke; this slice did not start it |
+| P5-M3 new-loop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` | internal core/safety/evaluation accepted; external suites not run |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
@@ -47,9 +47,10 @@ The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
 complete. P5-M0, P5-M0.1, P5-M0.1.1, P5-M1 and the P5-M1.1 existing-transport bridge are
 complete on the non-default path. P5-M2 criterion-specific composition is also
 complete for its declared minimum, and M2.1 closes its evidence-semantic entry
-gates. The next admitted slice is P5-M3 harness work, without
-adding semantic fusion, ActionBatch, long-horizon planning, external full-agent
-benchmarks, default cutover, or old-core deletion.
+gates. P5-M3 now closes the internal fixed-manifest harness. External benchmark
+admission remains blocked by an exact live model profile, exact-head remote CI,
+and separate reviewed external manifests; default cutover and old-core deletion
+remain unauthorized.
 
 ## Frozen work
 

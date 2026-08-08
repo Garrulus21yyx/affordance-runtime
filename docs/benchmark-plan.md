@@ -103,7 +103,7 @@ single-surface adapter-only activation matrix is complete, but admission still r
 11. P5-M1.1 strict existing-ModelPort bridge (closed locally; no live-provider generalization claim);
 12. P5-M2 minimum production evaluator composition and criterion adjudicators (closed locally);
 13. P5-M2.1 evidence-semantic/dynamic-readiness entry gates (closed locally);
-14. P5-M3 benchmark harness that runs the new AgentLoop rather than the retained baseline;
+14. P5-M3 fixed internal benchmark harness that runs the new AgentLoop rather than the retained baseline (closed locally);
 15. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
 
 The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
@@ -121,4 +121,11 @@ P5-M2 completion likewise does not admit an external run: P5-M3 harness, an
 exact live model-policy profile, and exact-head remote CI still block it.
 P5-M2.1 admits work on the internal P5-M3 harness only; it does not admit an
 external benchmark run.
+
+The P5-M3 internal manifests are `internal-core`, `internal-safety`, and
+`internal-evaluation`. They run sequentially through `AgentEpisodeRunner`, keep
+expected terminal states outside all product inputs, record denominator-aware
+rates (`N/A` for zero opportunities), and fail closed on forbidden effects,
+duplicate unknown attempts, stale dispatch violations, cleanup failure, or
+missing metrics. Their local acceptance does not admit an external run.
 Semantic fusion remains deferred and is not an M1 prerequisite.

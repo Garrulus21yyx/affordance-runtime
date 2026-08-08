@@ -105,7 +105,7 @@ local HTTP provider transport proof: COMPLETE
 live provider profile: UNAVAILABLE
 P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM
 P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT
-P5-M3 new-AgentLoop benchmark harness: ADMITTED / NOT_STARTED / NEXT
+P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST
 external benchmark: BLOCKED
 ```
 
@@ -326,7 +326,7 @@ DONE: P5-M1 model-backed target AgentPolicy core
 DONE: P5-M1.1 strict decision boundary and existing ModelPort bridge
 DONE: P5-M2 production evaluator composition and criterion adjudicators
 DONE: P5-M2.1 evidence semantics and dynamic evaluation closure
-NEXT: P5-M3 new-AgentLoop benchmark harness and fixed BrowserGym/MiniWoB smoke
+DONE: P5-M3 new-AgentLoop internal fixed-manifest harness; external smoke remains separately gated
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars

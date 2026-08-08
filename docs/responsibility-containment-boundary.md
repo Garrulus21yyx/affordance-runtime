@@ -154,3 +154,8 @@ complete allowed-ref set for that judge call.
 The target dependency gates additionally forbid AgentPolicy→binder/executor/
 surface, model_boundary→concrete surface, confirmation→private binding,
 evaluation→execution, telemetry→decision and production core→benchmark imports.
+P5-M3 adds `benchmarks/target_loop/` as a harness-only owner. It may construct
+fresh target-loop composition, count forwarded calls, compare post-run oracles,
+and serialize secret-free reports. It may not execute actions, import the old
+Coordinator, expose private bindings, or influence policy/evaluator inputs.
+Target production core and surface adapters do not import this package.

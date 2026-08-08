@@ -120,3 +120,9 @@ success. Published claims bind revision and profile.
 Current TraceDag ordering and RuntimeCommitter coupling remain implementation
 facts. Their target replacement is best-effort TurnRecorder plus direct loop
 state update after domain evaluation.
+P5-M3 entry closure floors no-effect assurance at structural, rejects orphan
+source evidence, requires current multi-source agreement, prunes already-met
+obligations, treats truncated semantic windows as inconclusive, contains
+projection failures as unknown, and distinguishes missing outputs (incomplete)
+from invalid outputs (blocked). The harness records only bounded public metrics;
+raw provider responses and private routes are excluded.

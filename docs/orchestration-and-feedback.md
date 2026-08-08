@@ -133,3 +133,7 @@ P5-M2.1 permits a `SENT`, LOW-risk observation/local-reversible action with an
 inconclusive action evaluation to continue from its fresh observation. It never
 replays the request. `SENT_UNKNOWN`, elevated risk and external/irreversible
 effects still wait for user direction unless task evaluation already completes.
+The P5-M3 internal runner preserves the same pause semantics: `SENT_UNKNOWN`
+terminates at `WAITING_USER` without replay, confirmation continuation supplies
+only a typed `ConfirmationDecision`, and stale binding yields zero effectful
+dispatch. Harness counters observe these outcomes but never modify them.

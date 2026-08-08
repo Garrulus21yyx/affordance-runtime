@@ -158,6 +158,9 @@ reference:
   - role: p5_m2_1_evidence_semantics_closure
     path: docs/reviews/2026-08-08-p5-m2-1-evidence-semantics-closure.md
     lifecycle: current
+  - role: p5_m3_target_loop_internal_benchmark_harness
+    path: docs/reviews/2026-08-08-p5-m3-target-loop-benchmark-harness.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

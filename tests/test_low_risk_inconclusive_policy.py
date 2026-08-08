@@ -76,7 +76,7 @@ def test_validated_task_completion_precedes_action_inconclusive_policy() -> None
 
 def test_source_less_confirmed_action_claim_is_downgraded() -> None:
     before, request = _request()
-    after = _world("after", True)
+    after = replace(_world("after", True), sources=())
     proposal = ActionEvaluation(
         request.request_id, before.observation_id, after.observation_id,
         ActionEvaluationStatus.EFFECT_CONFIRMED, "claimed", (after.facts[0].fact_id,),

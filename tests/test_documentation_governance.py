@@ -78,7 +78,7 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "live provider profile: UNAVAILABLE" in text
     assert "P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM" in text
     assert "P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT" in text
-    assert "P5-M3 new-AgentLoop benchmark harness: ADMITTED / NOT_STARTED / NEXT" in text
+    assert "P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST" in text
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

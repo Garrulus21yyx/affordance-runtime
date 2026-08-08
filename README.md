@@ -85,6 +85,13 @@ lets low-risk local inconclusive actions continue from fresh state, and limits
 semantic judges to evidence records actually presented in their request.
 External full-agent benchmarks remain blocked and default cutover remains pending.
 
+P5-M3 now provides a separate fixed-manifest internal harness for the non-default
+`AgentEpisodeRunner`/`AgentLoop`. Its deterministic, scripted structured-policy,
+and local-HTTP semantic-judge profiles are locally accepted with zero forbidden
+effects, duplicate unknown attempts, or stale zero-call violations. No
+BrowserGym, MiniWoB, WebArena, WorkArena, or OSWorld run was performed; external
+admission still requires an exact live profile and exact-head remote CI.
+
 P5-D6.1 is complete on the non-default path: effective risk, semantic
 destination identity, confirmation presentation, immutable terminal sessions,
 and evidence-lineage fields are closed. P5-M0 now resolves evidence against the

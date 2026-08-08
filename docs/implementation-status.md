@@ -63,7 +63,12 @@ The target path now has:
 | hybrid component separation | `CLOSED` |
 | dynamic semantic readiness | `CLOSED_FOR_TARGET_FACT_AND_OUTPUT_PROFILE` |
 | artifact deterministic absence | `DEFERRED`; absence remains UNKNOWN without complete inventory |
-| new-AgentLoop benchmark harness | `ADMITTED / NOT_STARTED` |
+| new-AgentLoop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` |
+| internal deterministic profile | `ATTESTED` |
+| internal scripted-model profile | `ATTESTED` |
+| local HTTP model-policy harness profile | `ATTESTED` |
+| local HTTP semantic-judge profile | `ATTESTED` |
+| live internal profile | `UNAVAILABLE`; opt-in profile not configured |
 | external benchmark | `BLOCKED` |
 | default cutover | `NOT_READY` |
 | RoutePolicy | implemented, post-hard-gate only |
@@ -184,7 +189,8 @@ computes mechanical/user/hybrid results, validates semantic proposals, bounded
 success expressions, assurance and current lineage, and binds requested outputs
 to path/SHA/current artifacts. The local HTTP semantic judge proof is transport
 and composition evidence only. Live evaluator attestation is unavailable;
-general semantic entailment remains partial and P5-M3 has not started.
+general semantic entailment remains partial; P5-M3 is closed only for its fixed
+internal manifests.
 
 P5-M2.1 closes the evidence-semantic entry gates for P5-M3. Action effect
 claims now require progress against Runtime-derived criterion/output scope;
@@ -193,5 +199,12 @@ Semantic judges can cite only bounded records actually present in their request,
 hybrid evidence components are separated, and complete observations with a
 not-yet-created semantic scope remain INCOMPLETE so policy may act. Exact future
 state prediction and general causal attribution are neither required nor
-implemented. P5-M3 is admitted but was not started; external benchmarks remain
-blocked.
+implemented. P5-M3 internal harness work is locally attested; external
+benchmarks remain blocked and were not run.
+
+P5-M3 is now closed for its fixed internal manifest. The harness calls only the
+target `AgentEpisodeRunner`/`AgentLoop`, runs cases sequentially with fresh
+composition/environment/session state, and applies the manifest oracle only
+after Runtime termination. Local runs at `637063ccd924` accepted internal core,
+safety, and evaluation profiles. This is protocol evidence, not live-model or
+cross-platform generalization evidence. External benchmarks remain blocked.
