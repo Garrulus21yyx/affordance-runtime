@@ -12,6 +12,7 @@ TARGET_CORE = (
     PACKAGE / "evaluation",
     PACKAGE / "risk",
     PACKAGE / "confirmation",
+    PACKAGE / "model_boundary",
 )
 SIZE_GATED = TARGET_CORE + (
     PACKAGE / "surfaces" / "visual",
@@ -77,10 +78,22 @@ def test_risk_and_confirmation_keep_surface_private_dependencies_out() -> None:
 
 def test_policy_and_evaluators_do_not_import_concrete_execution_owners() -> None:
     policy_imports = _imports(PACKAGE / "agent" / "policy.py")
+    policy_text = (PACKAGE / "agent" / "policy.py").read_text(encoding="utf-8")
 
     assert not any(name.startswith(POLICY_FORBIDDEN_PREFIXES) for name in policy_imports)
     assert "affordance_runtime.world.binder" not in policy_imports
     assert "affordance_runtime.world.orchestrator" not in policy_imports
+    assert "ActionSpace" not in policy_text.replace("AgentActionSpaceView", "")
+    assert "Turn" not in policy_text.replace("AgentTurnView", "")
+
+
+def test_model_boundary_has_no_concrete_surface_execution_or_fixture_dependencies() -> None:
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_boundary")))
+
+    assert not any(name.startswith("affordance_runtime.surfaces") for name in imports)
+    assert not any(name.startswith("affordance_runtime.executors") for name in imports)
+    assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
+    assert "affordance_runtime.world.binder" not in imports
 
 
 def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() -> None:

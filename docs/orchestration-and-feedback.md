@@ -24,6 +24,12 @@ observe
 AgentLoop sequences collaborators; it does not parse surfaces, choose policy
 internals, evaluate effects, or persist telemetry.
 
+Before policy invocation, Runtime projects TaskGoal, AgentWorldView, internal
+ActionSpace, bounded Turns, and optional TaskPlan into model-safe typed views.
+The policy never receives the internal ActionSpace or Turn objects. Its opaque
+action ID is resolved and admitted only against the still-current internal
+ActionSpace.
+
 ## 2. Loop state
 
 The serial MVP state contains current observation ref, bounded recent turns,
@@ -84,3 +90,9 @@ pre-policy, confirmation reobservation, and post-action evaluation:
 `COMPLETE` returns DONE, `INCOMPLETE` permits a policy turn, `UNKNOWN` returns
 WAITING_USER with the evaluator reason, and `BLOCKED` returns BLOCKED. UNKNOWN
 is not automatically reobserved in this profile.
+
+Every evaluator response is a proposal. Action evaluation must resolve every
+evidence ref in the fresh after observation. Task evaluation must match the
+task/current observation and pass criterion, evidence, requested-output, and
+declared integrity validation before its status controls the loop. Invalid
+proposals fail the run and are not recorded as trusted evaluations.

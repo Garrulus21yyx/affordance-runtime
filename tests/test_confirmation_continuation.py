@@ -12,7 +12,14 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionBinding, ActionRisk, CoverageState, SemanticTarget, WorldObservation
+from affordance_runtime.world import (
+    ActionBinding,
+    ActionRisk,
+    CoverageState,
+    SemanticTarget,
+    StateFact,
+    WorldObservation,
+)
 
 
 def _world(identity: str, enabled: bool, selector: str, *, risk: ActionRisk = ActionRisk.MEDIUM) -> WorldObservation:
@@ -35,7 +42,8 @@ def _world(identity: str, enabled: bool, selector: str, *, risk: ActionRisk = Ac
         {"selector": selector},
         risk=risk,
     )
-    return WorldObservation(identity, (target,), (), (binding,), {"dom": CoverageState.COMPLETE})
+    fact = StateFact(f"fact:{identity}:enabled", target.target_id, "enabled", enabled, identity)
+    return WorldObservation(identity, (target,), (fact,), (binding,), {"dom": CoverageState.COMPLETE})
 
 
 def _task() -> TaskGoal:
@@ -59,11 +67,13 @@ class FirstPolicy:
 
 class TaskEvaluator:
     async def evaluate(self, task, observation):
-        del task
         done = bool(observation.targets[0].state.get("enabled"))
         return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
             TaskEvaluationStatus.COMPLETE if done else TaskEvaluationStatus.INCOMPLETE,
             "done" if done else "not done",
+            completion_evidence_refs=(observation.facts[0].fact_id,) if done else (),
         )
 
 
@@ -79,7 +89,7 @@ class ActionEvaluator:
             if changed
             else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "changed" if changed else "authoritatively unchanged",
-            (f"world:{after.observation_id}:target:shared:enabled",),
+            (after.facts[0].fact_id,),
         )
 
 

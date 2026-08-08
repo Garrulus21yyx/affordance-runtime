@@ -72,6 +72,11 @@ class BoundActionRequest:
             or self.binding.observation_barrier != self.selection.observation_barrier
             or self.binding.destination_required != self.selection.destination_required
             or self.binding.eligible_destination_ids != self.selection.eligible_destination_ids
+            or (
+                self.selection.destination_id
+                and self.selection.destination_id not in self.selection.eligible_destination_ids
+            )
+            or (self.selection.destination_required and not self.selection.destination_id)
         ):
             raise ValueError("bound request must retain its admitted option and binding group")
         if self.timeout_ms <= 0:

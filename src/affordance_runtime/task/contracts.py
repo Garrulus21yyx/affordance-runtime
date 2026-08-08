@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from affordance_runtime.immutable import freeze_json
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 
 class RiskProfile(StrEnum):
@@ -83,5 +86,17 @@ class TaskGoal:
         object.__setattr__(self, "forbidden_effects", tuple(self.forbidden_effects))
         object.__setattr__(self, "inputs", freeze_json(self.inputs))
         object.__setattr__(self, "success_criteria", tuple(freeze_json(item) for item in self.success_criteria))
+        if any(not item.strip() for item in self.requested_outputs) or len(set(self.requested_outputs)) != len(
+            self.requested_outputs
+        ):
+            raise ValueError("requested output IDs must be nonblank and unique")
         object.__setattr__(self, "requested_outputs", tuple(self.requested_outputs))
         object.__setattr__(self, "material_bindings", tuple(self.material_bindings))
+
+
+def criterion_id(criterion: Mapping[str, Any]) -> str:
+    explicit = criterion.get("criterion_id") or criterion.get("id")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit
+    normalized = json.dumps(to_json_compatible(criterion), sort_keys=True, separators=(",", ":"))
+    return f"criterion:{hashlib.sha256(normalized.encode()).hexdigest()[:16]}"

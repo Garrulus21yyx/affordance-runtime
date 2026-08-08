@@ -22,12 +22,15 @@
 | `AgentRunSession` | one in-memory run, pending confirmation, consumption and continuation counts | persistence, global lookup, cross-process resume |
 | `Executor` | one BoundActionRequest → ActionResult | effect/task success judgment |
 | `ActionEvaluator` | before/request/result/after → effect status | task completion |
-| `evaluation/lineage.py` | exact request and before/after observation lineage validation | effect inference or task completion |
+| `WorldEvidenceIndex` | current fact IDs and controlled artifact refs for one observation | artifact values, global provenance, or persistence |
+| `evaluation/validation.py` | exact action/task lineage, criterion, and current evidence validation | effect inference, action execution, or model calls |
+| `evaluation/output_validation.py` | requested-output membership and declared path/SHA-256 integrity | artifact storage, receipts, or legacy TaskSpec |
 | `TaskEvaluator` | TaskGoal/EvaluationSpec + world/turns → task status | action dispatch |
 | `task_evaluation_policy.py` | COMPLETE/INCOMPLETE/UNKNOWN/BLOCKED → loop control | task inference, observation, or execution |
 | `LoopPolicy` | continue/reobserve/ask/stop | domain observation or execution |
 | `TurnRecorder` | optional telemetry | admission, execution, state authority |
 | `BindingCache` / Skill sidecars | currentness-checked hints and offline-evaluated templates | bypassing ActionSpace/RiskPolicy/evaluation or online publication |
+| `model_boundary/` | bounded policy/evaluator views and typed future provider failures | concrete adapters, binders/executors, provider SDKs, fixtures, or Runtime authority |
 
 ## 2. Dependency direction
 
@@ -109,3 +112,9 @@ admission in `world/action_space.py`, bounded secret-free presentation in
 execution lineage in `evaluation/lineage.py`, and task-status control in
 `agent/task_evaluation_policy.py`. Confirmation presentation reads semantic
 world labels only; it never reads an `ActionBinding` payload.
+
+P5-M0 places model-safe values and projections in `model_boundary/`, current
+evidence indexing and proposal validation in `evaluation/`, and only the
+sequencing calls in AgentLoop. Source-local target IDs remain source-local;
+the three-surface policy-view test proves shared semantic action vocabulary and
+private-route isolation, not semantic fusion or cross-surface target identity.

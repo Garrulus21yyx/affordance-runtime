@@ -15,17 +15,21 @@ from affordance_runtime.agent import (
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     ActionBinding,
     ActionRisk,
     CoverageState,
     SemanticTarget,
+    StateFact,
     WorldObservation,
 )
 
@@ -58,7 +62,7 @@ def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.
     return WorldObservation(
         observation_id,
         (target,),
-        (),
+        (StateFact(f"fact:{observation_id}:enabled", target.target_id, "enabled", enabled, observation_id),),
         (binding,),
         {"dom": CoverageState.COMPLETE},
     )
@@ -88,11 +92,26 @@ class ScriptedPolicy:
 
 class SharedTaskEvaluator:
     async def evaluate(self, task, observation):
-        del task
         enabled = bool(observation.targets[0].state.get("enabled"))
+        fact_ref = observation.facts[0].fact_id
+        criteria = tuple(
+            CriterionEvaluation(
+                criterion_id(item),
+                CriterionEvaluationStatus.SATISFIED
+                if enabled
+                else CriterionEvaluationStatus.UNSATISFIED,
+                (fact_ref,),
+                "criterion satisfied" if enabled else "criterion unsatisfied",
+            )
+            for item in task.success_criteria
+        )
         return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
             TaskEvaluationStatus.COMPLETE if enabled else TaskEvaluationStatus.INCOMPLETE,
             "shared state is enabled" if enabled else "shared state is disabled",
+            criteria,
+            (fact_ref,) if enabled else (),
         )
 
 
@@ -116,7 +135,7 @@ class SharedActionEvaluator:
             if changed
             else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "state changed" if changed else "state did not change",
-            (f"world:{after.observation_id}:target:shared-toggle:enabled",),
+            (after.facts[0].fact_id,),
         )
 
 
@@ -309,8 +328,12 @@ def test_recent_turns_are_bounded() -> None:
 def test_sent_unknown_verified_effect_continues_when_task_is_incomplete() -> None:
     class IncompleteTaskEvaluator:
         async def evaluate(self, task, observation):
-            del task, observation
-            return TaskEvaluation(TaskEvaluationStatus.INCOMPLETE, "more work remains")
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "more work remains",
+            )
 
     async def scenario() -> None:
         environment = StaticEnvironment(

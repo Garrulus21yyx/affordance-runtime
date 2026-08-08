@@ -111,12 +111,11 @@ the next nearby world state for one to several turns; it is not a StepPlan.
 Input:
 
 ```text
-TaskGoal
-LocalObjective
+AgentTaskView
 AgentWorldView
-observation-bound ActionSpace
-bounded recent Turns
-optional TaskPlan
+AgentActionSpaceView
+bounded AgentTurnView tuple
+optional AgentPlanView
 ```
 
 Output:
@@ -129,9 +128,15 @@ Reobserve(reason)
 Finish(result)
 ```
 
-The policy selects only offered action IDs and supplies schema-valid semantic
-parameters. It cannot invent target identity, binding, selector, coordinate,
-backend payload, confirmation, or completion truth.
+The policy selects only offered opaque action IDs and supplies schema-valid
+semantic parameters plus an offered semantic destination ID. Runtime retains
+the internal ActionSpace for membership, schema, destination, binding-group,
+and current-route admission. The model views exclude binding/schema digests,
+backend/surface/executor identity, request and observation lineage, adapter
+evidence, selector/coordinate/bbox/href/method, credentials, and private paths.
+Secret-like TaskGoal inputs are display-redacted without changing Runtime
+authority. The policy cannot invent target identity, binding, backend payload,
+confirmation, or completion truth.
 
 ## 7. Planning semantics
 
@@ -168,3 +173,6 @@ external effect, app/page change, or cross-surface dependency.
 Current code still requires admitted TaskSpec, mandatory planning flows, and
 ActionChoiceCatalog authority objects. Those remain baseline behavior until
 P5-A/P5-E/P5-H cutover and are not target contracts.
+
+P5-M0 model-boundary contracts are integrated only on the non-default target
+loop. No provider SDK, model-backed AgentPolicy, or model evaluator is present.

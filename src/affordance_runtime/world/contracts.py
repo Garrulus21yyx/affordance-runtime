@@ -8,6 +8,8 @@ from typing import Any
 
 from affordance_runtime.immutable import freeze_json
 
+_PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
+
 
 class CoverageState(StrEnum):
     COMPLETE = "complete"
@@ -106,7 +108,7 @@ class ActionBinding:
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "payload", freeze_json(self.payload))
-        object.__setattr__(self, "eligible_destination_ids", tuple(self.eligible_destination_ids))
+        object.__setattr__(self, "eligible_destination_ids", canonical_destination_ids(self.eligible_destination_ids))
         if self.destination_required and not self.eligible_destination_ids:
             raise ValueError("destination-required binding must offer semantic destination IDs")
 
@@ -161,6 +163,13 @@ class WorldObservation:
             raise ValueError("world observation requires non-empty identity")
         if any(binding.world_observation_id != self.observation_id for binding in self.bindings):
             raise ValueError("world binding must reference the current observation")
+        target_ids = {target.target_id for target in self.targets}
+        if any(
+            destination_id not in target_ids
+            for binding in self.bindings
+            for destination_id in binding.eligible_destination_ids
+        ):
+            raise ValueError("binding destination target must exist in the current world observation")
         object.__setattr__(self, "targets", tuple(self.targets))
         object.__setattr__(self, "facts", tuple(self.facts))
         object.__setattr__(self, "bindings", tuple(self.bindings))
@@ -203,7 +212,7 @@ class ActionOption:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
-        object.__setattr__(self, "eligible_destination_ids", tuple(self.eligible_destination_ids))
+        object.__setattr__(self, "eligible_destination_ids", canonical_destination_ids(self.eligible_destination_ids))
         if self.destination_required and not self.eligible_destination_ids:
             raise ValueError("destination-required action must offer semantic destination IDs")
 
@@ -239,7 +248,12 @@ class AdmittedActionSelection:
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
-        object.__setattr__(self, "eligible_destination_ids", tuple(self.eligible_destination_ids))
+        object.__setattr__(self, "eligible_destination_ids", canonical_destination_ids(self.eligible_destination_ids))
+        validate_selected_destination(
+            self.destination_id,
+            self.destination_required,
+            self.eligible_destination_ids,
+        )
 
 
 @dataclass(frozen=True)
@@ -258,3 +272,32 @@ class ActionSpace:
 
     def find(self, action_id: str) -> ActionOption | None:
         return next((option for option in self.options if option.action_id == action_id), None)
+
+
+def canonical_destination_ids(values: tuple[str, ...]) -> tuple[str, ...]:
+    destinations = tuple(values)
+    if any(not item.strip() for item in destinations):
+        raise ValueError("destination IDs cannot be blank")
+    if len(set(destinations)) != len(destinations):
+        raise ValueError("destination IDs must be unique")
+    if any(_destination_is_private(item) for item in destinations):
+        raise ValueError("destination contains runtime-private route identity")
+    return tuple(sorted(destinations))
+
+
+def validate_selected_destination(
+    destination_id: str,
+    destination_required: bool,
+    eligible_destination_ids: tuple[str, ...],
+) -> None:
+    if destination_id and _destination_is_private(destination_id):
+        raise ValueError("destination contains runtime-private route identity")
+    if destination_required and not destination_id:
+        raise ValueError("semantic destination is required")
+    if destination_id and destination_id not in eligible_destination_ids:
+        raise ValueError("semantic destination was not offered by the current ActionSpace")
+
+
+def _destination_is_private(destination_id: str) -> bool:
+    lowered = destination_id.casefold()
+    return any(marker in lowered for marker in _PRIVATE_DESTINATION_MARKERS)

@@ -66,8 +66,12 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "P5-A1–A4: COMPLETE_NON_DEFAULT" in text
     assert "P5-B1–B4: COMPLETE_FOR_DECLARED_MINIMUM_PROFILES" in text
     assert "P5-C1–C3: COMPLETE_FOR_SHARED_STATE_DETERMINISTIC_MATRIX" in text
-    assert "P5-D: COMPLETE_FOR_CURRENT_SINGLE_TARGET_PROFILE" in text
+    assert "P5-D1–D4: COMPLETE_NON_DEFAULT" in text
+    assert "P5-D5 evaluator control: COMPLETE_FOR_CURRENT_NO_REQUIRED_OUTPUT_PROFILE" in text
+    assert "P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM" in text
     assert "P5-D6.1: COMPLETE" in text
+    assert "P5-M0: COMPLETE" in text
+    assert "model-backed AgentPolicy: NEXT_AFTER_M0" in text
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

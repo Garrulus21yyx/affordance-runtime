@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent.decisions import AskUser, Finish, Reobserve, SelectAction, Stop
+from affordance_runtime.agent.evaluation_control import (
+    untrusted_evaluation_turn,
+    validated_action_evaluation,
+    validated_task_evaluation,
+)
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.result import AgentResult, add_counts, build_result, observation_budget_result
@@ -13,8 +18,8 @@ from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
-from affordance_runtime.evaluation.lineage import evaluation_matches_execution
 from affordance_runtime.execution.contracts import ActionError, ActionIntent, ActionResult, DispatchStatus
+from affordance_runtime.model_boundary.projection import project_action_space, project_plan, project_task, project_turns
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
@@ -50,7 +55,12 @@ class AgentLoop:
     async def _run_session(self, session: AgentRunSession) -> AgentResult:
         task, state = session.task, session.state
         while state.remaining_turns > 0:
-            task_evaluation = await self.task_evaluator.evaluate(task, state.current_observation)
+            try:
+                task_evaluation = await validated_task_evaluation(
+                    self.task_evaluator, task, state.current_observation
+                )
+            except ValueError as exc:
+                return self._result(session, AgentLoopStatus.FAILED, str(exc))
             task_status = task_evaluation_loop_status(task_evaluation)
             if task_status is not None:
                 return self._result(session, task_status, task_evaluation.reason)
@@ -66,12 +76,13 @@ class AgentLoop:
 
     async def _policy_turn(self, session: AgentRunSession, action_space: ActionSpace, task_evaluation):
         task, state = session.task, session.state
+        world_view = build_agent_world_view(state.current_observation)
         decision = await self.policy.decide(
-            task,
-            build_agent_world_view(state.current_observation),
-            action_space,
-            state.recent_turns,
-            state.plan,
+            project_task(task),
+            world_view,
+            project_action_space(action_space, world_view),
+            project_turns(state.recent_turns),
+            project_plan(state.plan),
         )
         state.remaining_turns -= 1
         if isinstance(decision, AskUser):
@@ -163,18 +174,12 @@ class AgentLoop:
             state.append_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result, after.observation_id))
             terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, "post-action identity was reused")
             return state, 1, 1, probed, terminal
-        action_evaluation = await self.action_evaluator.evaluate(task, before, request, result, after)
-        if not evaluation_matches_execution(action_evaluation, request, before, after):
-            state.append_turn(
-                Turn(
-                    before.observation_id,
-                    decision,
-                    request.intent,
-                    request.request_id,
-                    result,
-                    after.observation_id,
-                )
+        try:
+            action_evaluation = await validated_action_evaluation(
+                self.action_evaluator, task, before, request, result, after
             )
+        except ValueError as exc:
+            state.append_turn(untrusted_evaluation_turn(before.observation_id, decision, request, result, after.observation_id))
             state.current_observation = after
             terminal = build_result(
                 AgentLoopStatus.FAILED,
@@ -182,10 +187,25 @@ class AgentLoop:
                 state,
                 0,
                 0,
-                "action evaluation lineage mismatch",
+                str(exc),
             )
             return state, 1, 1, probed, terminal
-        task_evaluation = await self.task_evaluator.evaluate(task, after)
+        try:
+            task_evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
+        except ValueError as exc:
+            state.append_turn(
+                untrusted_evaluation_turn(
+                    before.observation_id,
+                    decision,
+                    request,
+                    result,
+                    after.observation_id,
+                    action_evaluation,
+                )
+            )
+            state.current_observation = after
+            terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
+            return state, 1, 1, probed, terminal
         state.append_turn(
             Turn(
                 before.observation_id,

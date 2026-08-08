@@ -29,6 +29,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | DOM/Visual/WoT matrix | proven for shared-state task | same TaskGoal/policy/evaluators; adapter-only variation, no fusion |
 | P5-D | complete, non-default | semantic confirmation, fresh rebind, single-send consumption, explicit effect certainty |
 | P5-D6.1 | complete, non-default | effective risk, destination, presentation, terminal immutability, policy reselection, evaluation lineage/evidence, task-evaluation control |
+| P5-M0 | complete, non-default | model-safe policy projections, evidence-resolved evaluations, target output integrity |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
@@ -36,8 +37,8 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 ## Next admitted slice
 
 The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
-complete. The next admitted slice should implement a model-backed target
-AgentPolicy and production target evaluator composition
+complete. P5-M0 is also complete. Model-backed target AgentPolicy is next;
+production model evaluator composition follows the policy minimum,
 without adding semantic fusion, ActionBatch, long-horizon planning, external
 full-agent benchmarks, default cutover, or old-core deletion.
 

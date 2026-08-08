@@ -2,10 +2,13 @@ from affordance_runtime.agent import SelectAction
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import CoverageState
 
 
@@ -30,11 +33,26 @@ class FirstOfferedActionPolicy:
 
 class SharedStateTaskEvaluator:
     async def evaluate(self, task, observation):
-        del task
         expanded = any(target.state.get("expanded") is True for target in observation.targets)
+        fact_ref = next(fact.fact_id for fact in observation.facts if fact.predicate == "expanded")
+        criteria = tuple(
+            CriterionEvaluation(
+                criterion_id(item),
+                CriterionEvaluationStatus.SATISFIED
+                if expanded
+                else CriterionEvaluationStatus.UNSATISFIED,
+                (fact_ref,),
+                "shared state matches criterion" if expanded else "shared state does not match criterion",
+            )
+            for item in task.success_criteria
+        )
         return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
             TaskEvaluationStatus.COMPLETE if expanded else TaskEvaluationStatus.INCOMPLETE,
             "shared state is enabled" if expanded else "shared state remains disabled",
+            criteria,
+            (fact_ref,) if expanded else (),
         )
 
 
@@ -63,7 +81,7 @@ class SharedStateActionEvaluator:
             if changed
             else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "shared state changed" if changed else "shared state did not change",
-            (f"world:{after.observation_id}:target:shared-state:expanded",),
+            (next(fact.fact_id for fact in after.facts if fact.predicate == "expanded"),),
         )
 
 

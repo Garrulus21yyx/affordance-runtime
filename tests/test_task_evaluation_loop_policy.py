@@ -8,8 +8,14 @@ from test_confirmation_continuation import _world as confirmation_world
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
 
 
@@ -18,9 +24,26 @@ class SequencedTaskEvaluator:
         self.statuses = list(statuses)
 
     async def evaluate(self, task, observation):
-        del task, observation
         status = self.statuses.pop(0)
-        return TaskEvaluation(status, f"task evaluation is {status.value}")
+        complete = status == TaskEvaluationStatus.COMPLETE
+        fact_ref = observation.facts[0].fact_id
+        criteria = tuple(
+            CriterionEvaluation(
+                criterion_id(item),
+                CriterionEvaluationStatus.SATISFIED,
+                (fact_ref,),
+                "criterion satisfied",
+            )
+            for item in task.success_criteria
+        ) if complete else ()
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            status,
+            f"task evaluation is {status.value}",
+            criteria,
+            (fact_ref,) if complete else (),
+        )
 
 
 class FailIfCalledPolicy:

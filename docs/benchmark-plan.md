@@ -96,9 +96,10 @@ single-surface adapter-only activation matrix is complete, but admission still r
 4. stale zero-call, fresh observation, and SENT_UNKNOWN no-retry;
 5. P5-D confirmation/unknown-effect core (closed on the non-default target path);
 6. P5-D6.1 general confirmation/evaluation contract completion (closed non-default);
-7. model-backed target AgentPolicy and production target evaluator composition;
-8. a benchmark harness that runs the new AgentLoop rather than the retained baseline;
-9. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
+7. P5-M0 model-safe policy/evaluator trust boundary (closed non-default);
+8. model-backed target AgentPolicy and production target evaluator composition;
+9. a benchmark harness that runs the new AgentLoop rather than the retained baseline;
+10. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
 
 The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
 for harness and loop-contract validation, not a generalization claim.
@@ -108,3 +109,4 @@ and WoT verticals continue to run before this admission gate. Completing P5-D
 alone does not admit an external run; the model-backed target policy/evaluators,
 new-loop harness, and exact-head remote CI evidence remain mandatory.
 P5-D6.1 completion likewise does not independently admit an external run.
+P5-M0 completion likewise does not independently admit an external run.

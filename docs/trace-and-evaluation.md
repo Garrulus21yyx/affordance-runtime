@@ -32,9 +32,11 @@ effect and come from the fresh observation or an authoritative external check.
 Every target-path `ActionEvaluation` binds a non-empty request ID and distinct,
 non-empty before/after observation IDs. `EFFECT_CONFIRMED` and
 `NO_EFFECT_CONFIRMED` additionally require at least one authoritative evidence
-reference; explanatory text is not evidence. AgentLoop rejects any request or
-observation lineage mismatch before TaskEvaluator can treat the evaluation as
-trusted.
+reference; explanatory text is not evidence. A bounded WorldEvidenceIndex
+contains current StateFact IDs and controlled surface artifact refs, never
+artifact values. AgentLoop rejects lineage mismatch or any ref not resolvable
+in the fresh after observation before TaskEvaluator can treat the evaluation
+as trusted.
 
 Evaluation prefers environment-native/API/WoT state, then DOM/AX structured
 state, filesystem/artifact state, visual/VLM evidence, and finally human input.
@@ -56,8 +58,17 @@ proposal and must be confirmed by TaskEvaluator.
 TaskEvaluator checks all success criteria, task constraints, forbidden effects,
 required outputs/materialization, and any required current final recheck.
 
+TaskEvaluation binds task ID, current observation ID, stable criterion IDs,
+criterion statuses/evidence, completion evidence, and evaluated outputs.
+COMPLETE requires all task criteria satisfied, current resolvable evidence,
+every requested output, and supported EvaluationSpec integrity. INCOMPLETE
+cannot simultaneously claim every required criterion satisfied.
+
 When an EvaluationSpec requires an artifact, the artifact must exist and match
-the required content/integrity check. Declaration metadata is insufficient.
+the required content/integrity check. The declared minimum accepts an explicit
+output path plus SHA-256, requires a regular file, and streams the digest.
+Declaration metadata or an execution receipt is insufficient; unsupported
+integrity structures fail closed.
 
 ## 4. Evidence lifetime
 
@@ -65,7 +76,8 @@ the required content/integrity check. Declaration metadata is insufficient.
 - recent action evidence binds request ID and before/after observations;
 - durable business evidence exists only when an explicit strict profile needs it.
 
-The core does not require a global EvidenceIndex or event-sourced ledger.
+The core uses only a per-observation WorldEvidenceIndex. It does not require a
+global EvidenceIndex, proof graph, artifact store, or event-sourced ledger.
 
 ## 5. TurnRecorder
 

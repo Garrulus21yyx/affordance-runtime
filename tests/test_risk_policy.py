@@ -66,7 +66,12 @@ def test_semantic_subject_changes_for_each_confirmed_semantic_field() -> None:
     )
     assert all(semantic_subject_id(item, consequences=consequences) != baseline for item in variants)
     assert semantic_subject_id(
-        replace(original, destination_id="destination:other"), consequences=consequences
+        replace(
+            original,
+            destination_id="destination:other",
+            eligible_destination_ids=("destination:other",),
+        ),
+        consequences=consequences,
     ) != baseline
     assert semantic_subject_id(original, consequences=("affect an external system",)) != baseline
 

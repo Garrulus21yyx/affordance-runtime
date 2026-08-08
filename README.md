@@ -68,13 +68,15 @@ strong TaskGoal and world/action/evaluation contracts and integrated DOM,
 Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
 three-surface adapter-only shared-state matrix is proven with one deterministic
 policy. P5-D semantic confirmation, fresh semantic rebind, and unknown-effect
-no-replay are closed. A model-backed target AgentPolicy is next but not yet
-implemented; external full-agent benchmarks remain blocked and default cutover
-remains pending.
+no-replay are closed. P5-M0 model-safe policy inputs and evaluator trust
+validation are complete; a model-backed target AgentPolicy remains unimplemented.
+External full-agent benchmarks remain blocked and default cutover remains pending.
 
 P5-D6.1 is complete on the non-default path: effective risk, semantic
 destination identity, confirmation presentation, immutable terminal sessions,
-and evidence-bound evaluation are closed. It did not start model-backed policy.
+and evidence-lineage fields are closed. P5-M0 now resolves evidence against the
+current world and validates declared-minimum target outputs; no model-backed
+policy has started.
 
 The baseline is retained, not rolled back. Transaction/commit/recovery
 machinery is frozen against further expansion while a new short-loop path is

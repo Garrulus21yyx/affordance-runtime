@@ -13,7 +13,7 @@ from target_agent_loop_support import (
 from test_visual_agent_loop_e2e import ScreenshotOnlySharedStateProposer
 from test_wot_agent_loop_e2e import shared_state_server
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import TaskEvaluationStatus
@@ -203,3 +203,54 @@ def test_dom_visual_wot_confirmation_uses_fresh_private_binding(profile: str) ->
             private not in old_private_representation
             for private in ("selector", "action_point", "bbox", "href", "method", "credential")
         )
+
+
+def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_routes() -> None:
+    captured = []
+
+    class CapturePolicy:
+        async def decide(self, task, world, action_space, recent_turns, optional_plan):
+            captured.append((task, action_space, recent_turns, optional_plan))
+            return SelectAction(action_space.options[0].action_id)
+
+    for profile in ("dom", "visual", "wot"):
+        with profile_environment(profile) as (environment, _metrics):
+            result = run_immediate(
+                AgentEpisodeRunner(
+                    AgentLoop(CapturePolicy(), SharedStateActionEvaluator(), SharedStateTaskEvaluator())
+                ).run(environment, shared_state_task())
+            )
+            assert result.status == AgentLoopStatus.DONE
+
+    task_views = [item[0] for item in captured]
+    semantic_options = [
+        tuple(
+            (
+                option.semantic_action,
+                option.destination_required,
+                option.semantic_effects,
+                option.risk,
+            )
+            for option in item[1].options
+        )
+        for item in captured
+    ]
+    assert task_views[0] == task_views[1] == task_views[2]
+    assert semantic_options[0] == semantic_options[1] == semantic_options[2]
+    assert all(option.target_id for item in captured for option in item[1].options)
+    representation = repr(captured)
+    assert all(
+        private not in representation
+        for private in (
+            "eligible_binding_ids",
+            "schema_digest",
+            "selector",
+            "action_point",
+            "bbox",
+            "href",
+            "method",
+            "credential",
+            "executor_id",
+            "backend",
+        )
+    )

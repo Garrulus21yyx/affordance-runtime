@@ -33,6 +33,7 @@ The target path now has:
 | WoT new-loop vertical | `INTEGRATED_NON_DEFAULT`, local-simulation positive C3 proof |
 | semantic confirmation continuation | `INTEGRATED_NON_DEFAULT`; typed request/decision, run-scoped session, fresh semantic rebind, single-send consumption |
 | P5-D6.1 confirmation/evaluation contract completion | `INTEGRATED_NON_DEFAULT`; effective risk, destination identity, bounded presentation, terminal immutability, policy reselection, evidence lineage, explicit task control |
+| P5-M0 model/evaluator boundary | `INTEGRATED_NON_DEFAULT`; model-safe projections, current-world evidence resolution, structured completion and target output integrity |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
 | ActionBatch | helper implemented; not AgentLoop-integrated |
@@ -105,7 +106,16 @@ adapters correctly offer no destination. Confirmation summaries use only the
 secret-free world view and bounded/redacted semantic parameters. Terminal
 sessions return their original result. A missing exact confirmed subject returns
 to policy rather than selecting a Runtime candidate. Confirmed action effects
-require exact request/before/after lineage and evidence references;
+require exact request/before/after lineage and evidence-ref fields; resolution
+against the current WorldObservation is completed in P5-M0.
+
+P5-M0 projects TaskGoal, internal ActionSpace, bounded Turns, and optional Plan
+into private-payload-free model views while retaining internal ActionSpace as
+the sole admission authority. Per-observation evidence indexes resolve action
+and task evidence. COMPLETE is deterministically bound to task, observation,
+criteria, current evidence, requested outputs, and declared path/SHA-256 checks.
+Only typed future model failure/evaluator-input contracts exist; no provider or
+model-backed policy/evaluator is implemented.
 TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
 Semantic fusion remains deliberately deferred. The small `AgentLoopState` is

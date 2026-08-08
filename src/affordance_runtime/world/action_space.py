@@ -12,6 +12,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.task.planning_contracts import LocalObjective
+from affordance_runtime.world.action_classification import EffectCategory
 from affordance_runtime.world.contracts import (
     ActionBinding,
     ActionOption,
@@ -19,6 +20,7 @@ from affordance_runtime.world.contracts import (
     ActionSpace,
     AdmittedActionSelection,
     WorldObservation,
+    validate_selected_destination,
 )
 from affordance_runtime.world.schema_validation import validate_value
 
@@ -40,7 +42,6 @@ _FORBIDDEN_PARAMETER_KEYS = frozenset(
         "y",
     }
 )
-_PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
 _GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...]]
 
 
@@ -165,9 +166,17 @@ def _effects_allowed(task: TaskGoal, binding: ActionBinding) -> bool:
     effects = set(binding.semantic_effects)
     if effects.intersection(task.forbidden_effects):
         return False
+    observation_action = (
+        binding.effect_category == EffectCategory.OBSERVATION
+        and binding.semantic_action == "read"
+        and not effects
+        and binding.risk == ActionRisk.LOW
+    )
+    if binding.semantic_action == "read" and not observation_action:
+        return False
     if task.risk_profile == RiskProfile.READ_ONLY:
-        return binding.semantic_action == "read" and not effects
-    return bool(effects) and effects.issubset(task.allowed_effects)
+        return observation_action
+    return observation_action or bool(effects) and effects.issubset(task.allowed_effects)
 
 
 def _risk_rank(risk: ActionRisk) -> int:
@@ -175,12 +184,6 @@ def _risk_rank(risk: ActionRisk) -> int:
 
 
 def _validate_destination(option: ActionOption, destination_id: str) -> None:
-    lowered = destination_id.casefold()
-    if destination_id and any(marker in lowered for marker in _PRIVATE_DESTINATION_MARKERS):
-        raise ValueError("destination contains runtime-private execution fields")
-    if option.destination_required and not destination_id:
-        raise ValueError("semantic destination is required")
     if destination_id and not option.eligible_destination_ids:
         raise ValueError("action does not accept a semantic destination")
-    if destination_id and destination_id not in option.eligible_destination_ids:
-        raise ValueError("semantic destination was not offered by the current ActionSpace")
+    validate_selected_destination(destination_id, option.destination_required, option.eligible_destination_ids)

@@ -76,8 +76,9 @@ freeze target contracts
 
 DOM、Visual full-digest 与 WoT local HTTP JSON 已用相同 TaskGoal、确定性
 AgentPolicy 和 evaluators 证明 shared-state adapter-only matrix，通用
-confirmation/evaluation contracts 也已闭合。当前首要缺口是 model-backed
-target policy/evaluator composition。所有阶段继续以 completed behavior 为主证据。
+confirmation/evaluation 信任边界与声明的 target output minimum 已闭合。
+当前下一切片是 model-backed AgentPolicy；production model evaluator
+composition 在 policy minimum 之后。所有阶段继续以 completed behavior 为主证据。
 
 ## 3. P5 阶段与切片
 
@@ -87,9 +88,13 @@ P5-B1–B4: COMPLETE_FOR_DECLARED_MINIMUM_PROFILES
 P5-C1–C3: COMPLETE_FOR_SHARED_STATE_DETERMINISTIC_MATRIX
 P5-C4 semantic fusion: DEFERRED; not prerequisite for P5-D or D6.1
 P5-C5: small AgentLoopState complete; distinct LoopPolicy / optional TurnRecorder pending
-P5-D: COMPLETE_FOR_CURRENT_SINGLE_TARGET_PROFILE
+P5-D1–D4: COMPLETE_NON_DEFAULT
+P5-D5 evaluator control: COMPLETE_FOR_CURRENT_NO_REQUIRED_OUTPUT_PROFILE
+P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM
 P5-D6.1: COMPLETE
-model-backed target policy/evaluator composition: NEXT
+P5-M0: COMPLETE
+model-backed AgentPolicy: NEXT_AFTER_M0
+production model evaluator composition: AFTER_MODEL_POLICY_MINIMUM
 external benchmark: BLOCKED
 ```
 
@@ -148,12 +153,16 @@ P5-D/D6.1 前置条件；`C5` 仅 small AgentLoopState 已完成。
 | `D2` | `ConfirmationRequest` over ActionIntent + consequences | semantic changes re-confirm; pure fresh binding changes do not |
 | `D3` | reobserve/rebind continuation | executor receives current BoundActionRequest; stale is zero-call |
 | `D4` | `SENT_UNKNOWN` handling | fresh observe/evaluate; no automatic replay |
-| `D5` | `ActionEvaluator + TaskEvaluator + OutputMaterializer` | receipt/Finish/plan exhaustion/trace cannot complete |
+| `D5` | `ActionEvaluator + TaskEvaluator + target output validation` | evaluator control complete for no-required-output profile; output integrity pending M0 |
 
 旧 exact ActionContract hash equality remains baseline evidence only until this semantic-confirmation
 path becomes default; it is not copied into the target as binding-sensitive human confirmation.
-`D1–D5` 已对当前 single-target profile 完成；`D6.1` 已补齐 effective risk、
-destination、presentation、session terminal、evaluation lineage/evidence 与 task-evaluation control。
+`D1–D4` 已在 non-default path 完成；`D5` evaluator control 仅对当前
+no-required-output profile 完成，target output validation 已在 M0 对声明的
+path/SHA-256 minimum 闭合。`D6.1`
+已补齐 effective risk、destination、presentation、session terminal、evaluation
+lineage/evidence-ref fields 和 task-evaluation control。Evidence-ref fields 已强制；
+对 current WorldObservation 的解析已由 M0 完成。
 
 ### P5-E — Long-horizon planning
 
@@ -241,9 +250,12 @@ DONE: P5-B1–B4 for DOM, Visual full-digest, and WoT local HTTP JSON simulation
 DONE: P5-C1–C3 shared-state deterministic-policy DOM/Visual/WoT matrix
 DEFERRED: P5-C4 semantic fusion; it is not a prerequisite for P5-D
 PARTIAL: P5-C5 small AgentLoopState complete; LoopPolicy and optional TurnRecorder remain
-DONE: P5-D semantic confirmation, fresh rebind, and effect-certainty continuation
+DONE: P5-D1–D4 semantic confirmation, fresh rebind, and effect-certainty continuation
+DONE: P5-D5 evaluator control and declared-minimum target output validation
 DONE: P5-D6.1 confirmation and evaluation contract completion
-NEXT: model-backed target AgentPolicy and production evaluator composition
+DONE: P5-M0 model-safe policy views and evidence-validated evaluation boundary
+NEXT: model-backed target AgentPolicy
+AFTER: production model evaluator composition
 THEN: P5-E long-horizon planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars

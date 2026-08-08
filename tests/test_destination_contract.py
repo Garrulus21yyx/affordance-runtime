@@ -3,6 +3,7 @@ from dataclasses import replace
 import pytest
 
 from affordance_runtime.agent import SelectAction
+from affordance_runtime.execution import ActionIntent, BoundActionRequest
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
@@ -12,6 +13,7 @@ from affordance_runtime.world import (
     ActionOption,
     ActionRisk,
     ActionSpaceBuilder,
+    AdmittedActionSelection,
     CoverageState,
     SemanticTarget,
     WorldObservation,
@@ -92,6 +94,7 @@ def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None
         (
             SemanticTarget("message:quarterly", "message", "Quarterly report"),
             SemanticTarget("person:alice", "person", "Alice"),
+            SemanticTarget("person:bob", "person", "Bob"),
         ),
         (),
         (binding,),
@@ -112,7 +115,115 @@ def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None
     ("selector:#alice", "coordinate:10,20", "https://private.example/alice", "href:/alice"),
 )
 def test_destination_private_route_injection_is_rejected(private_destination: str) -> None:
-    option = _option(eligible_destination_ids=(private_destination,))
-
     with pytest.raises(ValueError, match="runtime-private"):
-        ActionSpaceBuilder().admit(option, {}, private_destination)
+        _option(eligible_destination_ids=(private_destination,))
+
+
+@pytest.mark.parametrize(
+    "destinations",
+    (("",), ("person:alice", "person:alice"), ("href:/alice",)),
+)
+def test_destination_ids_fail_closed_in_direct_binding_and_option_construction(destinations) -> None:
+    with pytest.raises(ValueError, match="destination"):
+        _option(eligible_destination_ids=destinations)
+    with pytest.raises(ValueError, match="destination"):
+        ActionBinding(
+            "binding:send",
+            "observation:1",
+            "observation:1",
+            "revision:1",
+            "fingerprint:send",
+            "message:quarterly",
+            "message:quarterly",
+            "dom",
+            "dom",
+            "send",
+            "click",
+            "external",
+            ("message_sent",),
+            SCHEMA,
+            {},
+            destination_required=True,
+            eligible_destination_ids=destinations,
+        )
+
+
+def test_direct_selection_and_request_revalidate_destination_membership() -> None:
+    values = dict(
+        action_id="action:send",
+        observation_id="observation:1",
+        semantic_action="send",
+        target_id="message:quarterly",
+        effect_category="external",
+        semantic_effects=("message_sent",),
+        schema_digest=schema_digest(SCHEMA),
+        eligible_binding_ids=("binding:send",),
+        risk=ActionRisk.HIGH,
+        observation_barrier=True,
+        destination_required=True,
+        eligible_destination_ids=("person:alice",),
+    )
+    with pytest.raises(ValueError, match="destination is required"):
+        AdmittedActionSelection(**values)
+    with pytest.raises(ValueError, match="not offered"):
+        AdmittedActionSelection(**values, destination_id="person:bob")
+
+    selection = AdmittedActionSelection(**values, destination_id="person:alice")
+    binding = ActionBinding(
+        "binding:send",
+        "observation:1",
+        "observation:1",
+        "revision:1",
+        "fingerprint:send",
+        "message:quarterly",
+        "message:quarterly",
+        "dom",
+        "dom",
+        "send",
+        "click",
+        "external",
+        ("message_sent",),
+        SCHEMA,
+        {},
+        risk=ActionRisk.HIGH,
+        destination_required=True,
+        eligible_destination_ids=("person:alice",),
+    )
+    with pytest.raises(ValueError, match="admitted option"):
+        BoundActionRequest(
+            "request:1",
+            "observation:1",
+            ActionIntent("send", "message:quarterly", destination_id="person:bob"),
+            selection,
+            binding,
+        )
+
+
+def test_world_observation_requires_destination_targets_in_current_world() -> None:
+    binding = ActionBinding(
+        "binding:send",
+        "observation:1",
+        "observation:1",
+        "revision:1",
+        "fingerprint:send",
+        "message:quarterly",
+        "message:quarterly",
+        "dom",
+        "dom",
+        "send",
+        "click",
+        "external",
+        ("message_sent",),
+        SCHEMA,
+        {},
+        destination_required=True,
+        eligible_destination_ids=("person:alice",),
+    )
+    with pytest.raises(ValueError, match="destination target"):
+        WorldObservation(
+            "observation:1",
+            (SemanticTarget("message:quarterly", "message", "Quarterly report"),),
+            (),
+            (binding,),
+            {"dom": CoverageState.COMPLETE},
+        )

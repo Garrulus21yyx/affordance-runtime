@@ -134,6 +134,9 @@ reference:
   - role: p5_d6_1_confirmation_and_evaluation_contract_completion
     path: docs/reviews/2026-08-08-p5-d6-1-contract-completion.md
     lifecycle: current
+  - role: p5_m0_model_safe_policy_and_evaluator_boundary
+    path: docs/reviews/2026-08-08-p5-m0-model-evaluator-boundary.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/
