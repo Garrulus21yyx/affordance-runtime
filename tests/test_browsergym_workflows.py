@@ -20,3 +20,16 @@ def test_manual_fixed_smoke_is_protected_explicit_and_exact_profile() -> None:
         "Exact-head live Mistral attestation", "--execute", "github.sha",
     ):
         assert required in text
+
+
+def test_manual_fixed_smoke_isolates_incompatible_playwright_profiles() -> None:
+    text = Path(".github/workflows/browsergym-fixed-external-smoke.yml").read_text()
+    assert ".[dev,web,visual,parent,external-smoke]" not in text
+    assert "python -m pip install -e '.[dev,web,visual,parent]'" in text
+    assert "python -m venv /tmp/browsergym-fixed-venv" in text
+    assert "/tmp/browsergym-fixed-venv/bin/python -m pip install -e '.[dev,external-smoke]'" in text
+    for command in (
+        "adapter-conformance", "external_smoke.cli preflight", "external_smoke.cli run",
+    ):
+        line = next(item for item in text.splitlines() if command in item)
+        assert "/tmp/browsergym-fixed-venv/bin/python" in line

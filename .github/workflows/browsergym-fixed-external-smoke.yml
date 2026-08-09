@@ -30,8 +30,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -m pip install -e '.[dev,web,visual,parent,external-smoke]'
-      - run: python -m playwright install --with-deps chromium
+      - name: Install internal validation dependencies
+        run: python -m pip install -e '.[dev,web,visual,parent]'
+      - name: Install internal Chromium profile
+        run: python -m playwright install --with-deps chromium
+      - name: Create isolated pinned BrowserGym environment
+        run: |
+          python -m venv /tmp/browsergym-fixed-venv
+          /tmp/browsergym-fixed-venv/bin/python -m pip install -e '.[dev,external-smoke]'
+          /tmp/browsergym-fixed-venv/bin/python -m playwright install chromium
       - name: Install exact MiniWoB source fixture
         run: |
           git clone https://github.com/Farama-Foundation/miniwob-plusplus.git /tmp/miniwob-plusplus
@@ -65,7 +72,7 @@ jobs:
           python -m affordance_runtime.benchmarks.target_loop.attestation --input-dir /tmp/target-loop --output /tmp/target-loop/attestation.json --expected-run internal-core:deterministic:7 --expected-run internal-core:scripted-model:7 --expected-run internal-safety:scripted-model:7 --expected-run internal-evaluation:local-http-semantic-judge:7 --expected-run internal-real-adapters:deterministic:7
       - name: Exact-head BrowserGym adapter dependency
         run: >-
-          python -m affordance_runtime.benchmarks.external_smoke.cli adapter-conformance
+          /tmp/browsergym-fixed-venv/bin/python -m affordance_runtime.benchmarks.external_smoke.cli adapter-conformance
           --manifest external-smoke-v1 --seed 7 --output-dir /tmp/browsergym-fixed/adapter
       - name: Exact-head live Mistral attestation
         run: >-
@@ -75,7 +82,7 @@ jobs:
           --output-dir /tmp/browsergym-fixed/live
       - name: External preflight
         run: >-
-          python -m affordance_runtime.benchmarks.external_smoke.cli preflight
+          /tmp/browsergym-fixed-venv/bin/python -m affordance_runtime.benchmarks.external_smoke.cli preflight
           --manifest external-smoke-v1
           --internal-attestation /tmp/target-loop/attestation.json
           --full-ci-attestation /tmp/browsergym-fixed/full.json
@@ -84,7 +91,7 @@ jobs:
           --output /tmp/browsergym-fixed/preflight.json
       - name: Run admitted fixed manifest once
         run: >-
-          python -m affordance_runtime.benchmarks.external_smoke.cli run
+          /tmp/browsergym-fixed-venv/bin/python -m affordance_runtime.benchmarks.external_smoke.cli run
           --manifest external-smoke-v1 --profile mistral-format-only-mechanical --execute
           --internal-attestation /tmp/target-loop/attestation.json
           --full-ci-attestation /tmp/browsergym-fixed/full.json
