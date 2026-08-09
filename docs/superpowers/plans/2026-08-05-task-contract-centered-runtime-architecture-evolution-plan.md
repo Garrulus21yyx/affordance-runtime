@@ -352,5 +352,7 @@ Semantic fusion 继续 deferred，且不是 M0.1/M1 前置。不得先做 Batch/
 10. README, authority, status and current queue agree.
 
 P5-M3.3 exact model-profile conformance is complete for the tested profiles.
-The Runtime parser/admission boundary remains unchanged; compact grounding is
-diagnostic-only, and external benchmark execution remains separately gated.
+The Runtime parser/admission boundary remains unchanged. Exact Qwen 2.5 7B and
+Llama 3.1 8B profiles pass the compact-contract L0–L4 support gate at 20/20 per
+level, while the production grounding default remains format-only. External
+benchmark execution remains separately gated.

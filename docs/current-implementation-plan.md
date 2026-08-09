@@ -77,12 +77,15 @@ Exact model input/schema complexity is measured and installed Ollama failures
 are stage-attributed. A canonical 1,024-character completion-summary budget
 closes the observed full-union grammar-initialization blocker: exact Qwen and
 Llama diagnostic reruns each pass Level 2, then fail current-page destination
-admission at Levels 3/4. Stable profile support remains open and compact
-grounding remains diagnostic-only. D0–D4 destination diagnostics isolate the
+admission at Levels 3/4 under format-only. D0–D4 destination diagnostics isolate the
 next boundary: Qwen fails only when the complete context makes `target_id`
 salient, while Llama first fails on the real nested action-page and also copies
 `target_id` in the complete context. No destination auto-repair is admitted.
-The production default stays format-only.
+The post-repair compact-contract gate then passed L0–L4 at 20/20 for each exact
+profile on clean HEAD, producing accepted per-profile `supported`
+attestations. Mistral also passed one fresh Level-4 no-regression call for each
+grounding. The production default stays format-only; adopting compact grounding
+is a separate provider-neutral product decision.
 External execution remains blocked by
 the optional BrowserGym dependency, target-loop external environment adapter
 and admission package; M3.3 does not authorize that run or a default cutover.

@@ -162,6 +162,13 @@ declared single-surface profiles. Full external agent benchmarks remain blocked
 until a new-AgentLoop benchmark harness, exact live model-policy profile, and exact-head remote CI
 evidence are all complete. P5-D/M0 do not by themselves admit an external run.
 
+Exact local Ollama `qwen2.5:7b` and `llama3.1:8b` profiles are supported for
+the tested `compact-contract` AgentPolicy profile: each passed L0--L4 at 20/20
+on Ollama 0.32.0 with zero retry, fallback, response repair or Runtime
+admission bypass. This is exact-profile/internal-DOM evidence, not external
+benchmark admission or cross-platform model generalization. The production
+grounding default remains `format-only` pending a separate adoption decision.
+
 ## Documentation
 
 Start with [docs/README.md](docs/README.md). The

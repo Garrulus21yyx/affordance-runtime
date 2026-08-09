@@ -232,12 +232,16 @@ at full-union grammar initialization with a 2,000-character completion-summary
 bound. The canonical bound is now 1,024. One format-only rerun per profile
 passed Level 2; Levels 3/4 generated typed selections and were rejected by
 current-page destination admission. The provider compatibility blocker is
-closed for these diagnostic calls, while stable AgentPolicy support remains
-unattested. A full-union destination ladder records secret-free typed shapes:
+closed. A full-union destination ladder records secret-free typed shapes:
 Qwen passes D0–D3 and fails D4 with `equals_target_id`; Llama passes D0–D2,
 fails D3 with `nonempty_when_forbidden`, and fails D4 with
 `equals_target_id`. Runtime does not repair or admit those selections.
-Mistral `mistral-medium-3-5` passed one Level-4 call under format-only and one
-under compact grounding, so remains `SINGLE_RUN_ATTESTED`, not stable support.
-Compact grounding is `DIAGNOSTIC_ONLY`; parser, Runtime admission, retries,
-fallback, external benchmark status and the default Coordinator path are unchanged.
+After that format-only attribution, exact clean-head GPU runs under
+`compact-contract` passed L0–L4 at 20/20 for each listed Qwen/Llama digest.
+Both per-profile attestations are accepted with status `supported`; provider
+calls had zero retry/fallback and all decisions passed real Runtime admission.
+Mistral `mistral-medium-3-5` passed a fresh Level-4 call under format-only and
+one under compact grounding, so its narrow no-regression gate remains green
+without claiming stable support. Compact grounding is supported for the two
+exact local profiles but is not the production default. Parser, Runtime
+admission, external benchmark status and the default Coordinator path are unchanged.

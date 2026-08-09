@@ -136,3 +136,9 @@ compatibility is not a core requirement: an exact profile may be explicitly
 unsupported without adding parser repair, retry, fallback or model-specific
 Runtime behavior. The next admitted work remains the separately reviewed
 external adapter/dependency gate; no external run is authorized here.
+
+The exact installed Qwen 2.5 7B and Llama 3.1 8B digests now pass the complete
+L0–L4 compact-contract support gate at 20/20 per level. This closes their tested
+local AgentPolicy profile without changing the format-only production default.
+It does not close external adapter, remote CI, live-profile or default-cutover
+gates.

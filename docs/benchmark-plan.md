@@ -167,3 +167,10 @@ progressing from a forbidden destination (D0), through one/two offered nested
 destinations (D1/D2), the real nested action page (D3), and the complete current
 AgentContext (D4). Failure reports retain only a typed shape—never the emitted
 ID or raw response—and Runtime membership remains unchanged.
+
+After the 1,024-character grammar correction, the compact-contract candidate
+was rerun against D3/D4 and then the complete support ladder. Exact Qwen 2.5 7B
+and Llama 3.1 8B profiles each passed L0–L4 at 20/20 on clean HEAD `b4c04d6`;
+their separate attestation files are accepted as `supported`. The corresponding
+format-only D4 destination failures remain part of the diagnosis. These are
+internal real-DOM policy/runtime proofs, not BrowserGym/MiniWoB execution.

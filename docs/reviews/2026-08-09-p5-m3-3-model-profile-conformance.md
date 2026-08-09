@@ -135,3 +135,35 @@ Qwen understands the real nested action page until the complete context is
 added; Llama handles the synthetic nested domain but not the exact real page.
 Runtime continues to reject both D4 selections and performs no destination
 repair. Single attempts are diagnostic evidence, not stable profile support.
+
+## Follow-up: compact destination grounding support gate
+
+The grammar-corrected compact contract was first compared against format-only
+on D3/D4, five repetitions per cell. Both exact profiles passed compact D3 and
+D4 at 5/5. Format-only D3 passed at 5/5 for both; format-only D4 reproduced the
+destination failure at 0/5 (Qwen: five `equals_target_id`; Llama: four
+`equals_target_id`, one `nonempty_when_forbidden`). Because compact closed the
+candidate gate, no context-salience ablation or production prompt change was
+needed.
+
+The complete clean-head support gate then produced:
+
+| Exact profile | Grounding | L0 | L1 | L2 | L3 | L4 | Classification |
+|---|---|---:|---:|---:|---:|---:|---|
+| `ollama:qwen2.5:7b` / `845dbd…b697e` | compact-contract | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | `SUPPORTED` |
+| `ollama:llama3.1:8b` / `46e0c1…ca666e` | compact-contract | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | `SUPPORTED` |
+
+Both ran through Ollama 0.32.0 on an RTX 3080 and the real Level-4 DOM loop.
+Each report contains 100 successful `select_action` attempts, zero typed
+failure shapes and an accepted exact-profile attestation at clean HEAD
+`b4c04d644bf532b0593bfe07ce039bdc4df79076`. Qwen report/attestation SHA-256
+values are `035936dc…242cb1` / `6c16377f…0a64e`; Llama values are
+`2b55adad…aa56` / `3ca89b3a…5f86`. The reports remain revision-scoped `/tmp`
+evidence and contain no raw response or destination value.
+
+A fresh Mistral no-regression check passed Level 4 once under format-only and
+once under compact-contract. That two-cell result is not a complete Mistral
+support attestation. There were no retries, fallback, Runtime repairs or model
+name branches in any support run. Compact grounding is supported for these two
+exact local profiles but remains non-default pending a separate adoption
+decision. External benchmarks remain blocked and were not run.
