@@ -33,3 +33,14 @@ def test_manual_fixed_smoke_isolates_incompatible_playwright_profiles() -> None:
     ):
         line = next(item for item in text.splitlines() if command in item)
         assert "/tmp/browsergym-fixed-venv/bin/python" in line
+
+
+def test_manual_fixed_smoke_scopes_external_fixture_and_propagates_pytest_failures() -> None:
+    text = Path(".github/workflows/browsergym-fixed-external-smoke.yml").read_text()
+    job_env = text.split("    steps:", maxsplit=1)[0]
+    assert "MINIWOB_URL" not in job_env
+    assert text.count("MINIWOB_URL: file:///tmp/miniwob-plusplus/miniwob/html/miniwob/") == 2
+    full_validation_step = text.split(
+        "      - name: Full exact-head CI dependency", maxsplit=1,
+    )[1].split("      - name: Attest full exact-head CI", maxsplit=1)[0]
+    assert "set -o pipefail" in full_validation_step

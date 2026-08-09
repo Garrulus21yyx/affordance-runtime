@@ -17,7 +17,6 @@ jobs:
     env:
       RUN_EXTERNAL_SMOKE: "1"
       RUN_LIVE_MODEL_POLICY_ATTESTATION: "1"
-      MINIWOB_URL: file:///tmp/miniwob-plusplus/miniwob/html/miniwob/
       LLM_ACTIVE_PROFILE: mistral
       LLM_PROFILE_FALLBACK_TO_LOCAL: "false"
       LLM_DECISION_GROUNDING: format-only
@@ -45,6 +44,7 @@ jobs:
           git -C /tmp/miniwob-plusplus checkout 7fd85d71a4b60325c6585396ec4f48377d049838
       - name: Full exact-head CI dependency
         run: |
+          set -o pipefail
           python -m pytest --collect-only -q | tee /tmp/target-loop-collection.txt
           python -m pytest -q | tee /tmp/target-loop-pytest.txt
           ruff check src tests
@@ -71,6 +71,8 @@ jobs:
           python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-real-adapters --profile deterministic --seed 7 --output-dir /tmp/target-loop/real-adapters
           python -m affordance_runtime.benchmarks.target_loop.attestation --input-dir /tmp/target-loop --output /tmp/target-loop/attestation.json --expected-run internal-core:deterministic:7 --expected-run internal-core:scripted-model:7 --expected-run internal-safety:scripted-model:7 --expected-run internal-evaluation:local-http-semantic-judge:7 --expected-run internal-real-adapters:deterministic:7
       - name: Exact-head BrowserGym adapter dependency
+        env:
+          MINIWOB_URL: file:///tmp/miniwob-plusplus/miniwob/html/miniwob/
         run: >-
           /tmp/browsergym-fixed-venv/bin/python -m affordance_runtime.benchmarks.external_smoke.cli adapter-conformance
           --manifest external-smoke-v1 --seed 7 --output-dir /tmp/browsergym-fixed/adapter
@@ -90,6 +92,8 @@ jobs:
           --adapter-attestation /tmp/browsergym-fixed/adapter/attestation.json
           --output /tmp/browsergym-fixed/preflight.json
       - name: Run admitted fixed manifest once
+        env:
+          MINIWOB_URL: file:///tmp/miniwob-plusplus/miniwob/html/miniwob/
         run: >-
           /tmp/browsergym-fixed-venv/bin/python -m affordance_runtime.benchmarks.external_smoke.cli run
           --manifest external-smoke-v1 --profile mistral-format-only-mechanical --execute
