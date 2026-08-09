@@ -26,6 +26,7 @@ def test_progress_atomically_records_each_stage_without_private_data(tmp_path: P
         write_two_stage_progress(
             path, run_id="run:1", pacing=PacingConfiguration(1.5, 2.5),
             attempts=tuple(attempts), planned_attempt_count=1,
+            completed_attempt_count=int(stage is TwoStageProgressStage.RUNTIME_COMPLETED),
             complete=stage is TwoStageProgressStage.RUNTIME_COMPLETED,
         )
         report = json.loads(path.read_text())

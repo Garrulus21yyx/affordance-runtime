@@ -73,6 +73,55 @@ class PacingConfiguration:
             raise ValueError("inter-attempt delay must be in [0, 120]")
 
 
+class TwoStageRunMode(StrEnum):
+    ROUTING_ONLY = "routing_only"
+    PAYLOAD_ONLY = "payload_only"
+    END_TO_END = "end_to_end"
+
+
+@dataclass(frozen=True)
+class TwoStageAttemptResult:
+    logical_decision_id: str
+    case_id: str
+    mode: TwoStageRunMode
+    expected_kind: DecisionKind
+    routed_kind: DecisionKind | None
+    routing_correct: bool
+    payload_correct: bool
+    runtime_correct: bool
+    success: bool
+    failure_category: str
+    routing_provider_attempts: int
+    payload_provider_attempts: int
+    provider_calls: int
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: float
+
+
+@dataclass(frozen=True)
+class TwoStageMatrixResult:
+    schema_version: str
+    run_id: str
+    mode: TwoStageRunMode
+    repetitions: int
+    pacing: PacingConfiguration
+    attempts: tuple[TwoStageAttemptResult, ...]
+    success_count: int
+    provider_calls: int
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: float
+    retry_count: int
+    fallback_count: int
+    runtime_control_success_count: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mode", TwoStageRunMode(self.mode))
+        if self.retry_count or self.fallback_count:
+            raise ValueError("two-stage result cannot admit retry or fallback")
+
+
 def _require_public_id(value: str, name: str) -> None:
     if _PUBLIC_ID.fullmatch(value) is None or "://" in value:
         raise ValueError(f"{name} must be a bounded public identifier")

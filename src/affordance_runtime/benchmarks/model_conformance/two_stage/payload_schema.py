@@ -19,6 +19,7 @@ from affordance_runtime.model_policy.spec import (
     WaitPayload,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads
+from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 from .contracts import DecisionKind
 
@@ -61,9 +62,7 @@ def payload_output_model(decision_kind: DecisionKind, serialized_context: str) -
         @classmethod
         def model_validate_json(cls, raw: str | bytes | bytearray) -> BaseModel:
             value = strict_json_loads(raw.decode() if isinstance(raw, bytes | bytearray) else raw)
-            payload = branch_model.model_validate(value)
-            _validate_bound_properties(payload.model_dump(), cast(dict[str, Any], schema["properties"]))
-            return payload
+            return branch_model.model_validate(value)
 
     BoundVariantPayload.__name__ = f"Bound{branch_model.__name__}"
     return BoundVariantPayload
@@ -86,7 +85,11 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
         properties["subject_id"] = _enum(_subject_ids(context))
         capabilities = world["observation_capabilities"]
         properties["modality"] = _enum(item["modality"] for item in capabilities)
-        properties["required_assurance"] = _enum(item["assurance"] for item in capabilities)
+        offered = tuple(item["assurance"] for item in capabilities)
+        properties["required_assurance"] = _enum(
+            item.value for item in ObservationAssurance
+            if any(assurance_satisfies(candidate, item) for candidate in offered)
+        )
     elif kind is DecisionKind.REQUEST_ACTION_PAGE:
         properties["cursor"] = _const(actions["next_cursor"])
         properties["query"] = _const(actions["active_query"])
@@ -100,7 +103,13 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
         criteria = [item["criterion_id"] for item in context["task"]["success_criteria"]["items"]]
         properties["claimed_criteria"]["items"] = _enum(criteria)
         properties["evidence_refs"]["items"] = _enum(_evidence_refs(context))
-        properties["unresolved_items"]["items"] = _enum(_unresolved_items(context))
+        unresolved = _unresolved_items(context)
+        if unresolved:
+            properties["unresolved_items"]["items"] = _enum(unresolved)
+        else:
+            properties["unresolved_items"] = {
+                "type": "array", "maxItems": 0, "items": {"type": "string"},
+            }
     elif kind is DecisionKind.WAIT:
         maximum = min(60_000, int(context["budgets"]["remaining_wait_ms"]))
         properties["max_wait_ms"] = {"type": "integer", "minimum": 1, "maximum": maximum}
@@ -131,23 +140,3 @@ def _enum(values) -> dict[str, object]:
 
 def _const(value: object) -> dict[str, object]:
     return {"type": "string", "const": value}
-
-
-def _validate_bound_properties(payload: dict[str, Any], properties: dict[str, Any]) -> None:
-    for name, rule in properties.items():
-        if name not in payload:
-            continue
-        value = payload[name]
-        if "const" in rule and value != rule["const"]:
-            raise ValueError(f"{name} differs from the bound public value")
-        if "enum" in rule and value not in rule["enum"]:
-            raise ValueError(f"{name} is outside the bound public domain")
-        if isinstance(value, list) and isinstance(rule.get("items"), dict):
-            allowed = rule["items"].get("enum")
-            if allowed is not None and any(item not in allowed for item in value):
-                raise ValueError(f"{name} contains an item outside the bound public domain")
-        if isinstance(value, int):
-            if "minimum" in rule and value < rule["minimum"]:
-                raise ValueError(f"{name} is below the bound minimum")
-            if "maximum" in rule and value > rule["maximum"]:
-                raise ValueError(f"{name} exceeds the bound maximum")

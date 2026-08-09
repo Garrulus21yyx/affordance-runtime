@@ -1,7 +1,9 @@
 import asyncio
 import json
 
+from affordance_runtime.benchmarks.model_conformance.critical_cases import build_cross_action_destination_case
 from affordance_runtime.benchmarks.model_conformance.decision_matrix import build_seven_decision_cases
+from affordance_runtime.benchmarks.model_conformance.runtime_decision_matrix import replay_runtime_decision
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
 from affordance_runtime.benchmarks.model_conformance.two_stage.contracts import DecisionKind
 from affordance_runtime.benchmarks.model_conformance.two_stage.payload_schema import (
@@ -9,6 +11,9 @@ from affordance_runtime.benchmarks.model_conformance.two_stage.payload_schema im
     build_variant_payload_schema,
 )
 from affordance_runtime.benchmarks.model_conformance.two_stage.route_schema import build_route_schema
+from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model_boundary.failures import ModelFailure
+from affordance_runtime.model_policy.parser import parse_agent_decision
 
 
 def _cases():
@@ -43,7 +48,7 @@ def test_page_observation_done_wait_and_abort_domains_are_exact() -> None:
     assert page["properties"]["cursor"]["const"] == page_context["actions"]["next_cursor"]
     observation = build_variant_payload_schema(DecisionKind.REQUEST_OBSERVATION, cases["observe"].serialized_context)
     assert observation["properties"]["modality"]["enum"] == ["structural"]
-    assert observation["properties"]["required_assurance"]["enum"] == ["structural"]
+    assert observation["properties"]["required_assurance"]["enum"] == ["weak", "structural"]
     done_context = json.loads(cases["done"].serialized_context)
     done = build_variant_payload_schema(DecisionKind.PROPOSE_DONE, cases["done"].serialized_context)
     criteria = [item["criterion_id"] for item in done_context["task"]["success_criteria"]["items"]]
@@ -53,3 +58,15 @@ def test_page_observation_done_wait_and_abort_domains_are_exact() -> None:
     assert wait["properties"]["max_wait_ms"] == {"type": "integer", "minimum": 1, "maximum": 60_000}
     abort = build_variant_payload_schema(DecisionKind.ABORT, cases["abort"].serialized_context)
     assert "internal" not in json.dumps(abort)
+
+
+def test_dynamic_schema_never_replaces_canonical_parser_or_runtime_membership() -> None:
+    scenario = asyncio.run(build_live_dom_scenario())
+    case = build_cross_action_destination_case(scenario.serialized_context)
+    payload = to_json_compatible(case.expected_payload)
+    payload["destination_id"] = "destination:action-1"
+    decision = parse_agent_decision(json.dumps(payload), json.loads(case.serialized_context)["context_id"])
+    assert not isinstance(decision, ModelFailure)
+    replay = asyncio.run(replay_runtime_decision(case, decision))
+    assert replay.success is False
+    assert replay.execution_count == 0

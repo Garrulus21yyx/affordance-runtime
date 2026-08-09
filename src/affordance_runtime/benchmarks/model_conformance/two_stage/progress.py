@@ -40,6 +40,7 @@ def write_two_stage_progress(
     pacing: PacingConfiguration,
     attempts: tuple[TwoStageProgressAttempt, ...],
     planned_attempt_count: int,
+    completed_attempt_count: int,
     complete: bool,
 ) -> None:
     write_json_report(path, {
@@ -47,9 +48,7 @@ def write_two_stage_progress(
         "run_id": run_id,
         "pacing": asdict(pacing),
         "planned_attempt_count": planned_attempt_count,
-        "completed_attempt_count": sum(
-            item.stage is TwoStageProgressStage.RUNTIME_COMPLETED for item in attempts
-        ),
+        "completed_attempt_count": completed_attempt_count,
         "complete": complete,
         "attempts": [asdict(item) for item in attempts],
     })
