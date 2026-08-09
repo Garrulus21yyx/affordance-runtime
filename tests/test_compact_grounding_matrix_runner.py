@@ -87,9 +87,9 @@ def test_matrix_runner_records_complete_secret_free_behavior(tmp_path: Path) -> 
     result = asyncio.run(run_decision_matrix(
         identity, ContextFollowingPort, repetitions=1, output_dir=tmp_path,
     ))
-    assert result.success_count == 14
+    assert result.success_count == 15
     assert result.nonfirst_case_first_action_count == 0
-    assert result.nonfirst_case_count == 3
+    assert result.nonfirst_case_count == 4
     assert all(item.provider_attempts == 1 for item in result.attempts)
     encoded = (tmp_path / "matrix.json").read_text().casefold()
     for forbidden in ("raw_response", "selector", "credential", "destination:first"):

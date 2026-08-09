@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
+from typing import cast
 
 from affordance_runtime.agent import (
     Abort,
@@ -16,6 +19,9 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.decision_control import run_policy_turn
+from affordance_runtime.agent.session import AgentRunSession
+from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.support import (
     CurrentFactActionEvaluator,
     SharedTaskEvaluator,
@@ -27,7 +33,8 @@ from affordance_runtime.benchmarks.target_loop.support import (
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionPager
+from affordance_runtime.world import ActionPager, StateFact, SurfaceObservation
+from affordance_runtime.world.contracts import ActionSpace, WorldObservation
 
 from .decision_matrix import DECISION_VARIANTS
 
@@ -174,3 +181,157 @@ def runtime_outcome_matches(outcome: RuntimeDecisionOutcome) -> bool:
     if outcome.decision_variant == "wait":
         return common and outcome.waited_ms == 10 and outcome.wait_budget_decreased and outcome.context_ids_unique
     return common and outcome.status == AgentLoopStatus.FAILED
+
+
+@dataclass(frozen=True)
+class ReplayedRuntimeOutcome:
+    success: bool
+    status: str
+    execution_count: int
+    observation_count: int
+    page_changed: bool
+    task_evaluation_calls: int
+    waited_ms: int
+    policy_failure: bool
+
+
+@dataclass
+class _ReplayPolicy:
+    decision: object
+
+    async def decide(self, context):
+        del context
+        return self.decision
+
+
+@dataclass
+class _ReplayPage:
+    page_id: str
+    visible_action_ids: tuple[str, ...]
+    destinations: dict[str, tuple[str, ...]]
+    next_cursor: str
+    query: str
+    target_id: str
+    relevance_role: object = None
+
+    def visible_destination_ids(self, action_id: str) -> tuple[str, ...]:
+        return self.destinations.get(action_id, ())
+
+
+@dataclass
+class _ReplayContextBuilder:
+    context: object
+
+    def build(self, *args, **kwargs):
+        del args, kwargs
+        return self.context
+
+    def page(self, *args, **kwargs):
+        del args, kwargs
+        return _ReplayPage("page:replayed", (), {}, "", "", "")
+
+
+async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
+    value = json.loads(case.serialized_context)
+    before = _evidence_world("replay:before", getattr(decision, "evidence_refs", ()))
+    fresh = _evidence_world("replay:fresh", ())
+    environment = StaticEnvironment((before, fresh))
+    task = shared_task()
+    await environment.reset(task)
+    state = AgentLoopState(await environment.observe("runtime replay"), remaining_turns=3)
+    evaluator, waiter = _CountingTaskEvaluator(), _Waiter()
+    session = AgentRunSession(cast(AgentLoop, SimpleNamespace()), task, environment, state)
+    options = value.get("actions", {}).get("options", ())
+    visible = tuple(str(item.get("action_id") or "") for item in options)
+    destinations = {
+        str(item.get("action_id") or ""): tuple(
+            str(destination.get("destination_id") or "")
+            for destination in item.get("destinations", {}).get("items", ())
+        )
+        for item in options
+    }
+    actions = value.get("actions", {})
+    role = actions.get("active_relevance_filter") or None
+    page = _ReplayPage(
+        "page:current", visible, destinations, str(actions.get("next_cursor") or ""),
+        str(actions.get("active_query") or ""), str(actions.get("active_target_filter") or ""),
+        SimpleNamespace(value=role) if role else None,
+    )
+    session.current_action_page = page  # type: ignore[assignment]
+    capabilities = tuple(
+        SimpleNamespace(modality=item["modality"], assurance=item["assurance"])
+        for item in value.get("world", {}).get("observation_capabilities", ())
+    )
+    context = SimpleNamespace(
+        context_id=value["context_id"], world=SimpleNamespace(observation_capabilities=capabilities),
+    )
+    executions = 0
+
+    async def dry_run(*args):
+        nonlocal executions
+        del args
+        executions += 1
+        return "dry-run-admitted"
+
+    outcome = await run_policy_turn(
+        session, ActionSpace(before.observation_id, ()),
+        await evaluator.evaluate(task, before), _ReplayPolicy(decision),
+        cast(ContextBuilder, _ReplayContextBuilder(context)), evaluator, waiter, dry_run,
+    )
+    status = outcome.status.value if hasattr(outcome, "status") else "continued"
+    policy_failure = bool(getattr(outcome, "policy_failure", None))
+    page_changed = getattr(session.current_action_page, "page_id", "") != "page:current"
+    replayed = ReplayedRuntimeOutcome(
+        False, status, executions, session.observation_count, page_changed,
+        evaluator.calls, waiter.waited_ms, policy_failure,
+    )
+    return replace(replayed, success=_replay_matches(_variant_name(decision), replayed))
+
+
+def _replay_matches(variant: str, outcome: ReplayedRuntimeOutcome) -> bool:
+    if variant == "select_action":
+        return outcome.execution_count == 1 and outcome.status == "continued"
+    if variant == "request_observation":
+        return outcome.execution_count == 0 and outcome.observation_count == 2
+    if variant == "request_action_page":
+        return outcome.execution_count == 0 and outcome.page_changed
+    if variant == "ask_user":
+        return outcome.execution_count == 0 and outcome.status == "waiting_user"
+    if variant == "propose_done":
+        return outcome.execution_count == 0 and outcome.task_evaluation_calls >= 2
+    if variant == "wait":
+        return outcome.execution_count == 0 and outcome.waited_ms > 0 and outcome.observation_count == 2
+    return outcome.execution_count == 0 and outcome.status == "failed" and not outcome.policy_failure
+
+
+def _variant_name(decision) -> str:
+    return {
+        "SelectAction": "select_action", "RequestObservation": "request_observation",
+        "RequestActionPage": "request_action_page", "AskUser": "ask_user",
+        "ProposeDone": "propose_done", "Wait": "wait", "Abort": "abort",
+    }.get(type(decision).__name__, "")
+
+
+def _evidence_world(identity: str, refs) -> WorldObservation:
+    base = shared_world(identity, False, "dom")
+    fact_refs = tuple(ref for ref in refs if str(ref).startswith("fact:"))
+    facts = tuple(
+        StateFact(ref, base.targets[0].target_id, "expanded", False, identity)
+        for ref in (fact_refs or (base.facts[0].fact_id,))
+    )
+    artifact_sources = []
+    for ref in refs:
+        if str(ref).startswith("artifact:"):
+            _, source_id, key = str(ref).rsplit(":", 2)
+            artifact_sources.append(SurfaceObservation(
+                source_id, "dom", f"revision:{source_id}", base.sources[0].source_profile,
+                artifacts={key: {"public_summary": "current benchmark evidence"}},
+            ))
+    source = SurfaceObservation(
+        identity, "dom", f"revision:{identity}", base.sources[0].source_profile,
+        base.targets, facts, base.bindings,
+    )
+    return WorldObservation(
+        identity, base.targets, facts, base.bindings, base.coverage,
+        sources=(source, *artifact_sources),
+    )

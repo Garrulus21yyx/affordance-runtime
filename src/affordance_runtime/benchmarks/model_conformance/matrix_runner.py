@@ -19,6 +19,7 @@ from affordance_runtime.model_policy.spec import SCHEMA_VERSION, decision_respon
 from affordance_runtime.model_port import ModelConfig, ModelPort, OllamaModelPort
 
 from .contracts import ModelProfileIdentity
+from .critical_cases import build_cross_action_destination_case, build_nonfirst_direct_case
 from .decision_matrix import (
     DecisionMatrixCase,
     build_destination_case,
@@ -28,7 +29,9 @@ from .decision_matrix import (
 )
 from .profile_identity import identity_from_ollama_inventory, ollama_inventory
 from .runtime_decision_matrix import (
+    ReplayedRuntimeOutcome,
     RuntimeDecisionOutcome,
+    replay_runtime_decision,
     run_scripted_runtime_decision_matrix,
     runtime_outcome_matches,
 )
@@ -47,6 +50,11 @@ class DecisionMatrixAttempt:
     latency_ms: float
     selected_first_action: bool
     provider_attempts: int
+    runtime_status: str = ""
+    execution_count: int = 0
+    observation_count: int = 0
+    guide_schema_version: str = ""
+    guide_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,20 +82,21 @@ async def run_decision_matrix(
     grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.COMPACT_CONTRACT,
     case_ids: tuple[str, ...] = (),
 ) -> DecisionMatrixResult:
-    if not 1 <= repetitions <= 5:
-        raise ValueError("decision matrix repetitions must be in [1, 5]")
+    if not 1 <= repetitions <= 20:
+        raise ValueError("decision matrix repetitions must be in [1, 20]")
     scenario = await build_live_dom_scenario()
     cases = (
         *build_seven_decision_cases(scenario.serialized_context),
         build_multi_action_case(scenario.serialized_context, action_count=8, correct_index=7),
         build_multi_action_case(scenario.serialized_context, action_count=16, correct_index=7),
-        build_multi_action_case(scenario.serialized_context, action_count=8, correct_index=4),
+        build_nonfirst_direct_case(scenario.serialized_context),
         build_destination_case(scenario.serialized_context, destinations=0),
         build_destination_case(scenario.serialized_context, destinations=1),
         build_destination_case(scenario.serialized_context, destinations=2, correct_index=1),
         build_destination_case(
             scenario.serialized_context, destinations=2, correct_index=1, similar_ids=True,
         ),
+        build_cross_action_destination_case(scenario.serialized_context),
     )
     if case_ids:
         cases = tuple(case for case in cases if case.case_id in case_ids)
@@ -161,14 +170,39 @@ async def _attempt(
     if isinstance(decision, ModelFailure | PolicyFailure):
         return _result(case, "", False, "schema_error", record)
     actual = _variant(decision)
+    guide_identity = (
+        outcome.metadata.grounding_guide_schema_version,
+        outcome.metadata.grounding_guide_digest,
+    )
     if actual != case.expected_variant:
-        return _result(case, actual, False, "wrong_variant", record, decision=decision)
+        return _result(
+            case, actual, False, "wrong_variant", record, decision=decision,
+            guide_identity=guide_identity,
+        )
     success = decision_matches_expectation(decision, case.expectation)
-    stage = "" if success else "wrong_field_domain"
-    return _result(case, actual, success, stage, record, decision=decision)
+    if not success:
+        return _result(
+            case, actual, False, "wrong_field_domain", record, decision=decision,
+            guide_identity=guide_identity,
+        )
+    replay = await replay_runtime_decision(case, decision)
+    if not replay.success:
+        stage = "runtime_rejected" if replay.status == "blocked" else "runtime_outcome_mismatch"
+        return _result(
+            case, actual, False, stage, record, decision=decision, replay=replay,
+            guide_identity=guide_identity,
+        )
+    return _result(
+        case, actual, True, "", record, decision=decision, replay=replay,
+        guide_identity=guide_identity,
+    )
 
 
-def _result(case, actual, success, stage, record, *, decision=None) -> DecisionMatrixAttempt:
+def _result(
+    case, actual, success, stage, record, *, decision=None,
+    replay: ReplayedRuntimeOutcome | None = None,
+    guide_identity: tuple[str, str] = ("", ""),
+) -> DecisionMatrixAttempt:
     first = False
     if decision is not None and hasattr(decision, "action_id"):
         options = json.loads(case.serialized_context)["actions"]["options"]
@@ -184,6 +218,11 @@ def _result(case, actual, success, stage, record, *, decision=None) -> DecisionM
         record.latency_ms if record else 0.0,
         first,
         1,
+        replay.status if replay else "",
+        replay.execution_count if replay else 0,
+        replay.observation_count if replay else 0,
+        guide_identity[0],
+        guide_identity[1],
     )
 
 
