@@ -356,3 +356,9 @@ The Runtime parser/admission boundary remains unchanged. Exact Qwen 2.5 7B and
 Llama 3.1 8B profiles pass the compact-contract L0–L4 support gate at 20/20 per
 level, while the production grounding default remains format-only. External
 benchmark execution remains separately gated.
+
+P5-M3.4 admits `compact-contract.v1` as an explicit production profile while
+retaining format-only as the global default and rollback setting. The pure
+cutover gate is blocked by incomplete seven-decision behavior, compact Mistral
+no-regression and unavailable exact-head CI. No default or external benchmark
+cutover is authorized.

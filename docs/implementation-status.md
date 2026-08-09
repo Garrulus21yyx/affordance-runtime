@@ -245,3 +245,21 @@ one under compact grounding, so its narrow no-regression gate remains green
 without claiming stable support. Compact grounding is supported for the two
 exact local profiles but is not the production default. Parser, Runtime
 admission, external benchmark status and the default Coordinator path are unchanged.
+
+P5-M3.4 closes `compact-contract.v1` as an explicit
+`PRODUCTION_SUPPORTED_PROFILE`. `model_policy_from_environment()` admits only
+`format-only` and `compact-contract`, with explicit argument precedence over
+`LLM_DECISION_GROUNDING`; unknown values fail closed and the default remains
+format-only. Metadata and exact-profile attestations bind schema digest
+`sha256:187ef82e1205e863c2cd1e1688e92979da6439412fb1ff1541195fede955bf0f`,
+summary limit 1,024 and grounding profile version.
+
+Global compact-default cutover is `BLOCKED_WITH_EXPLICIT_ERRORS`. Complete
+Qwen GPU matrices ranged from 45/70 to 60/70: Observation, AskUser and Done
+were unstable, while Wait and Abort remained 0/5. Llama ranged from 35/70 to
+40/70: all six non-SelectAction alternatives failed, while the 16-action middle
+case was unstable. Neither profile showed first-action anchoring in the 15
+non-first opportunities. Mistral format-only passed 12/12; two compact runs
+completed 2/12 and 3/12 and returned typed provider-unavailable failures for
+the other calls under the mandatory zero-retry profile. Exact-head remote CI is also unavailable.
+No external benchmark or default Coordinator cutover was run.

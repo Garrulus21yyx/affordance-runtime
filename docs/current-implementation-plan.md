@@ -89,3 +89,13 @@ is a separate provider-neutral product decision.
 External execution remains blocked by
 the optional BrowserGym dependency, target-loop external environment adapter
 and admission package; M3.3 does not authorize that run or a default cutover.
+
+## P5-M3.4 closure
+
+Compact grounding is production-supported as an explicit configuration, with
+`compact-contract.v1` and actual canonical schema digest in secret-free model
+metadata and exact-profile identity. Format-only remains the current default
+and explicit rollback configuration. The pure cutover checker is currently
+blocked by incomplete seven-decision live-local behavior, failed compact
+strong-provider no-regression and unavailable exact-head CI. The next action is
+review/remediation of those measured blockers, not a default flip.

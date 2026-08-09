@@ -169,6 +169,14 @@ admission bypass. This is exact-profile/internal-DOM evidence, not external
 benchmark admission or cross-platform model generalization. The production
 grounding default remains `format-only` pending a separate adoption decision.
 
+P5-M3.4 exposes `compact-contract` as an explicit, versioned production
+grounding profile selected by argument or `LLM_DECISION_GROUNDING`. It does not
+select by provider/model and never retries or falls back between groundings.
+The global default remains `format-only`: exact GPU matrices found incomplete
+Wait/Abort behavior for Qwen and broad non-SelectAction bias for Llama, while a
+zero-retry Mistral compact matrices encountered provider unavailability. Default
+cutover is therefore blocked, not executed.
+
 ## Documentation
 
 Start with [docs/README.md](docs/README.md). The

@@ -152,3 +152,8 @@ execution; Level 4 enters the unchanged AgentEpisodeRunner and Runtime
 admission. A diagnostic failure cannot trigger retry/fallback, repair output,
 change a Runtime turn, or enter AgentContext/Turn history. Compact grounding is
 explicit per diagnostic call; the ordinary policy composition stays format-only.
+P5-M3.4 makes format-only and compact-contract explicit production composition
+choices. Selection occurs once at factory construction; it is not a runtime
+router. Grounding construction failure returns typed internal failure before a
+provider attempt and never falls back. Matrix/cutover evidence is offline
+feedback only and cannot alter active policy or evaluation.

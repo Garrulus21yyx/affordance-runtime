@@ -167,7 +167,10 @@ def build_destination_case(
         "action_id": option["action_id"], "parameters": {}, "destination_id": destination_id,
     }
     return DecisionMatrixCase(
-        f"destinations-{destinations}-correct-{correct_index + 1 if items else 0}",
+        (
+            f"destinations-{destinations}-correct-{correct_index + 1 if items else 0}"
+            f"{'-similar-ids' if similar_ids else ''}"
+        ),
         "select_action",
         _serialize(context),
         payload,

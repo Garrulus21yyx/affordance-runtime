@@ -142,3 +142,12 @@ L0–L4 compact-contract support gate at 20/20 per level. This closes their test
 local AgentPolicy profile without changing the format-only production default.
 It does not close external adapter, remote CI, live-profile or default-cutover
 gates.
+
+## 9. Compact grounding production profile
+
+P5-M3.4 makes compact grounding explicitly configurable without provider/model
+routing, retry, fallback or Runtime repair. Exact identity includes grounding
+version and schema digest. The default-cutover checker is evidence-only and has
+no Runtime dependency. Current readiness is blocked by the live decision matrix,
+Mistral compact provider availability and exact-head remote CI; format-only
+remains default and external benchmark execution remains separately blocked.

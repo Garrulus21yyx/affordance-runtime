@@ -174,3 +174,18 @@ and Llama 3.1 8B profiles each passed L0–L4 at 20/20 on clean HEAD `b4c04d6`;
 their separate attestation files are accepted as `supported`. The corresponding
 format-only D4 destination failures remain part of the diagnosis. These are
 internal real-DOM policy/runtime proofs, not BrowserGym/MiniWoB execution.
+
+## Compact production-profile cutover matrix
+
+M3.4 adds a fixed seven-decision plus 8/16-action and destination-domain matrix.
+The oracle remains post-response benchmark data and is absent from AgentContext
+and compact guide. Complete Qwen GPU runs ranged from 45/70 to 60/70;
+Observation, AskUser and Done were unstable, and Wait/Abort were 0/5. Llama
+ranged from 35/70 to 40/70, selecting SelectAction for all six
+alternative-decision cases while the 16-action middle choice was unstable.
+Both passed all tested
+destination domains, and neither selected the first action in 15 non-first
+opportunities. Mistral format-only passed its four-case 12/12 no-regression
+matrix; two compact runs were 2/12 and 3/12 with typed provider-unavailable
+outcomes and no retry. These results block a global default change and do not run or admit an
+external benchmark.

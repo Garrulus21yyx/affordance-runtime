@@ -177,3 +177,10 @@ public composition but cannot change ActionSpace, parser, admission, risk or
 evaluation. `model_policy/grounding.py` derives a bounded guide only from
 already-public serialized AgentContext; the default bridge does not enable it.
 Production core never imports model-conformance diagnostics.
+
+P5-M3.4 moves the two production grounding variants and their profile versions
+into `model_policy/grounding.py`; benchmark diagnostic variants remain in
+`benchmarks/model_conformance/grounding.py`. `schema_identity.py` owns only the
+canonical deterministic schema digest. The decision matrix and cutover checker
+remain benchmark-only: they cannot select production grounding, repair model
+output, modify ActionSpace/admission, or influence AgentLoop behavior.

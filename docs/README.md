@@ -162,3 +162,14 @@ forbidden nonempty destination at D3 and copies `target_id` at D4.
 Those format-only failures remain diagnostic facts; Runtime was not relaxed or
 given destination repair. Compact grounding remains opt-in rather than the
 production default, and the support evidence does not admit an external run.
+
+## P5-M3.4 production compact grounding profile
+
+`compact-contract.v1` is a normal explicit production profile. Factory
+precedence is explicit argument, then `LLM_DECISION_GROUNDING`, then the
+unchanged `format-only` default. Exact identity now binds grounding/version,
+canonical schema digest, the 1,024-character summary limit, context budget and
+execution profile. The seven-decision and multi-action GPU matrix blocks a
+global default change: local profiles retain L0–L4 support, but compact.v1 does
+not reliably choose all seven decision variants. See the
+[M3.4 review](reviews/2026-08-09-p5-m3-4-compact-grounding-production-profile.md).

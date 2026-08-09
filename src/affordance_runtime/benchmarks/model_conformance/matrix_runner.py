@@ -63,6 +63,8 @@ async def run_decision_matrix(
     *,
     repetitions: int,
     output_dir: Path,
+    grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.COMPACT_CONTRACT,
+    case_ids: tuple[str, ...] = (),
 ) -> DecisionMatrixResult:
     if not 1 <= repetitions <= 5:
         raise ValueError("decision matrix repetitions must be in [1, 5]")
@@ -79,10 +81,14 @@ async def run_decision_matrix(
             scenario.serialized_context, destinations=2, correct_index=1, similar_ids=True,
         ),
     )
+    if case_ids:
+        cases = tuple(case for case in cases if case.case_id in case_ids)
+        if {case.case_id for case in cases} != set(case_ids):
+            raise ValueError("decision matrix case selection contains an unknown case")
     attempts = []
     for case in cases:
         for _ in range(repetitions):
-            attempts.append(await _attempt(case, port_factory()))
+            attempts.append(await _attempt(case, port_factory(), grounding_variant))
     result = DecisionMatrixResult(
         "compact-decision-matrix.v1",
         identity,
@@ -111,7 +117,11 @@ async def run_decision_matrix(
     return result
 
 
-async def _attempt(case: DecisionMatrixCase, port: ModelPort) -> DecisionMatrixAttempt:
+async def _attempt(
+    case: DecisionMatrixCase,
+    port: ModelPort,
+    grounding_variant: DecisionGroundingVariant,
+) -> DecisionMatrixAttempt:
     adapter = ModelPortDecisionAdapter(
         port,
         ModelConfig(
@@ -120,7 +130,7 @@ async def _attempt(case: DecisionMatrixCase, port: ModelPort) -> DecisionMatrixA
             transient_retries=0,
             prompt_version="p5-m1.1",
         ),
-        grounding_variant=DecisionGroundingVariant.COMPACT_CONTRACT,
+        grounding_variant=grounding_variant,
     )
     request = ModelDecisionRequest(
         f"matrix:{case.case_id}",
@@ -201,6 +211,11 @@ def main() -> int:
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--execution-profile", default="")
     parser.add_argument("--repetitions", type=int, default=5)
+    parser.add_argument(
+        "--grounding",
+        choices=tuple(item.value for item in DecisionGroundingVariant),
+        default=DecisionGroundingVariant.COMPACT_CONTRACT.value,
+    )
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     version, models = ollama_inventory(args.ollama_base_url)
@@ -208,7 +223,7 @@ def main() -> int:
         args.model,
         runtime_version=version,
         models=models,
-        grounding_variant="compact-contract",
+        grounding_variant=args.grounding,
         execution_profile=args.execution_profile,
     )
     asyncio.run(run_decision_matrix(
@@ -216,6 +231,7 @@ def main() -> int:
         lambda: OllamaModelPort(model=args.model, base_url=args.ollama_base_url),
         repetitions=args.repetitions,
         output_dir=Path(args.output_dir),
+        grounding_variant=DecisionGroundingVariant(args.grounding),
     ))
     return 0
 
