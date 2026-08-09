@@ -46,3 +46,23 @@ def test_dirty_tree_fails_attestation(tmp_path: Path) -> None:
     result = attest_results((path,), git_sha="abc123", git_dirty=True)
     assert not result.accepted
     assert "clean" in result.errors[0]
+
+
+def test_attestation_accepts_destination_ladder_level_names(tmp_path: Path) -> None:
+    value = _result()
+    attempt = value.attempts[0]
+    destination_result = ModelProfileConformanceResult(
+        value.identity,
+        (type(attempt)(**{**asdict(attempt), "level": "D4"}),),
+        (),
+        ("D4",),
+        "context_following_incompatible",
+        ("level D4: 0/1",),
+        value.input_complexity,
+    )
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps(asdict(destination_result), sort_keys=True), encoding="utf-8")
+
+    attestation = attest_results((path,), git_sha="abc123", git_dirty=False)
+
+    assert attestation.levels == ("D4",)

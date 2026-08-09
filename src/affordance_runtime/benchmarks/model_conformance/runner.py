@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -12,7 +13,13 @@ from affordance_runtime.model_port import ModelPort
 
 from .attempts import run_structured_attempt
 from .classification import classify_support
-from .contracts import ModelInputComplexity, ModelProfileConformanceResult, ModelProfileIdentity
+from .contracts import (
+    ConformanceAttempt,
+    ConformanceCellSummary,
+    ModelInputComplexity,
+    ModelProfileConformanceResult,
+    ModelProfileIdentity,
+)
 from .destination_ladder import build_destination_case
 from .grounding import GroundingVariant, build_grounded_input, diagnostic_schema_model
 from .levels import Level0Payload, Level1SelectActionPayload, minimal_select_context, minimal_union_context
@@ -61,12 +68,37 @@ async def run_profile(
         scenario.complexity if scenario is not None else ModelInputComplexity(
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ),
+        _cell_summaries(tuple(attempts)),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "result.json").write_text(
         json.dumps(asdict(result), sort_keys=True, indent=2) + "\n", encoding="utf-8",
     )
     return result
+
+
+def _cell_summaries(attempts: tuple[ConformanceAttempt, ...]) -> tuple[ConformanceCellSummary, ...]:
+    cells = []
+    keys = sorted({(item.grounding_variant, item.level) for item in attempts})
+    for grounding, level in keys:
+        selected = tuple(
+            item for item in attempts
+            if item.grounding_variant == grounding and item.level == level
+        )
+        shapes = Counter(item.destination_failure_shape.value for item in selected if item.destination_failure_shape)
+        variants = Counter(item.decision_variant for item in selected if item.decision_variant)
+        cells.append(ConformanceCellSummary(
+            level,
+            grounding,
+            len(selected),
+            sum(item.success for item in selected),
+            tuple(sorted(shapes.items())),
+            tuple(sorted(variants.items())),
+            tuple(item.prompt_tokens for item in selected),
+            tuple(item.completion_tokens for item in selected),
+            tuple(item.latency_ms for item in selected),
+        ))
+    return tuple(cells)
 
 
 async def _run_level(port, scenario, level, grounding: GroundingVariant, number):

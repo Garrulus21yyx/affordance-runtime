@@ -19,7 +19,7 @@ from affordance_runtime.model_port import (
     StructuredOutputError,
 )
 
-from .contracts import ConformanceAttempt, ModelConformanceStage
+from .contracts import ConformanceAttempt, ModelConformanceStage, SecretFreeSalienceMetrics
 from .stages import attribute_decision_payload
 
 
@@ -71,6 +71,17 @@ async def run_structured_attempt(
     schema_bytes = len(json.dumps(schema, sort_keys=True, separators=(",", ":")).encode())
     output_bytes = len(output.encode())
     digest = f"sha256:{hashlib.sha256(output.encode()).hexdigest()}" if output else ""
+    salience = _salience_metrics(
+        user,
+        visible_action_ids[0] if len(visible_action_ids) == 1 else "",
+        (visible_targets or {}).get(visible_action_ids[0], "") if len(visible_action_ids) == 1 else "",
+        tuple(
+            item
+            for values in (visible_destinations or {}).values()
+            for item in values
+            if item
+        ),
+    )
     attempt = ConformanceAttempt(
         f"attempt:{grounding_variant}:{level}:{attempt_number}", level, grounding_variant,
         stage, stage == ModelConformanceStage.SUCCESS, failure, variant,
@@ -82,6 +93,7 @@ async def run_structured_attempt(
         record.prompt_tokens if record else 0, record.completion_tokens if record else 0,
         record.total_tokens if record else 0, output_bytes, digest,
         record.latency_ms if record else elapsed,
+        salience_metrics=salience,
     )
     if stage != ModelConformanceStage.SUCCESS or not expected_context_id:
         return attempt
@@ -123,3 +135,60 @@ def _history_count(user: str) -> int:
         return len(value.get("history", {}).get("items", ()))
     except (AttributeError, json.JSONDecodeError, TypeError):
         return 0
+
+
+def _salience_metrics(
+    user: str,
+    action_id: str,
+    target_id: str,
+    destination_ids: tuple[str, ...],
+) -> SecretFreeSalienceMetrics:
+    encoded = user.encode()
+    context = _public_context(user)
+    return SecretFreeSalienceMetrics(
+        selected_target_id_occurrences=user.count(target_id) if target_id else 0,
+        allowed_destination_id_occurrences=sum(user.count(item) for item in set(destination_ids)),
+        selected_action_id_occurrences=user.count(action_id) if action_id else 0,
+        last_target_id_distance_from_end_bytes=_distance_from_end(encoded, target_id),
+        last_destination_id_distance_from_end_bytes=_last_destination_distance(encoded, destination_ids),
+        actions_block_distance_from_end_bytes=_distance_from_end(encoded, '"actions"'),
+        context_bytes=len(encoded),
+        facts_count=_visible_count(json.dumps(context), "fact_ref"),
+        artifacts_count=_section_count(context, "artifact_summaries"),
+        target_count=_section_count(context, "targets"),
+    )
+
+
+def _public_context(user: str) -> dict[str, Any]:
+    try:
+        value = json.loads(user)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    nested = value.get("agent_context")
+    return nested if isinstance(nested, dict) else value
+
+
+def _section_count(context: dict[str, Any], name: str) -> int:
+    world = context.get("world", {})
+    section = world.get(name, {}) if isinstance(world, dict) else {}
+    items = section.get("items", ()) if isinstance(section, dict) else ()
+    return len(items) if isinstance(items, list | tuple) else 0
+
+
+def _distance_from_end(encoded: bytes, value: str) -> int | None:
+    if not value:
+        return None
+    token = value.encode()
+    position = encoded.rfind(token)
+    return None if position < 0 else len(encoded) - position - len(token)
+
+
+def _last_destination_distance(encoded: bytes, values: tuple[str, ...]) -> int | None:
+    distances = tuple(
+        distance
+        for item in set(values)
+        if (distance := _distance_from_end(encoded, item)) is not None
+    )
+    return min(distances) if distances else None

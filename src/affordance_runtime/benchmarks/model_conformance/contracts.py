@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 _PUBLIC_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,239}$")
@@ -59,6 +60,40 @@ class ModelProfileIdentity:
 
 
 @dataclass(frozen=True)
+class SecretFreeSalienceMetrics:
+    selected_target_id_occurrences: int = 0
+    allowed_destination_id_occurrences: int = 0
+    selected_action_id_occurrences: int = 0
+    last_target_id_distance_from_end_bytes: int | None = None
+    last_destination_id_distance_from_end_bytes: int | None = None
+    actions_block_distance_from_end_bytes: int | None = None
+    context_bytes: int = 0
+    facts_count: int = 0
+    artifacts_count: int = 0
+    target_count: int = 0
+
+    def __post_init__(self) -> None:
+        counts = (
+            self.selected_target_id_occurrences,
+            self.allowed_destination_id_occurrences,
+            self.selected_action_id_occurrences,
+            self.context_bytes,
+            self.facts_count,
+            self.artifacts_count,
+            self.target_count,
+        )
+        distances = (
+            self.last_target_id_distance_from_end_bytes,
+            self.last_destination_id_distance_from_end_bytes,
+            self.actions_block_distance_from_end_bytes,
+        )
+        if any(value < 0 for value in counts) or any(
+            value is not None and value < 0 for value in distances
+        ):
+            raise ValueError("salience metrics must be nonnegative")
+
+
+@dataclass(frozen=True)
 class ConformanceAttempt:
     attempt_id: str
     level: str
@@ -83,6 +118,7 @@ class ConformanceAttempt:
     output_sha256: str
     latency_ms: float
     destination_failure_shape: DestinationFailureShape = DestinationFailureShape.NONE
+    salience_metrics: SecretFreeSalienceMetrics = field(default_factory=SecretFreeSalienceMetrics)
 
     def __post_init__(self) -> None:
         counters = (
@@ -101,6 +137,34 @@ class ConformanceAttempt:
             "destination_failure_shape",
             DestinationFailureShape(self.destination_failure_shape),
         )
+        if isinstance(self.salience_metrics, Mapping):
+            object.__setattr__(
+                self,
+                "salience_metrics",
+                SecretFreeSalienceMetrics(**self.salience_metrics),
+            )
+
+
+@dataclass(frozen=True)
+class ConformanceCellSummary:
+    level: str
+    grounding_variant: str
+    attempt_count: int
+    success_count: int
+    failure_shape_counts: tuple[tuple[str, int], ...]
+    decision_variant_counts: tuple[tuple[str, int], ...]
+    prompt_tokens: tuple[int, ...]
+    completion_tokens: tuple[int, ...]
+    latency_ms: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "failure_shape_counts", tuple(map(tuple, self.failure_shape_counts)))
+        object.__setattr__(self, "decision_variant_counts", tuple(map(tuple, self.decision_variant_counts)))
+        object.__setattr__(self, "prompt_tokens", tuple(self.prompt_tokens))
+        object.__setattr__(self, "completion_tokens", tuple(self.completion_tokens))
+        object.__setattr__(self, "latency_ms", tuple(self.latency_ms))
+        if not 0 <= self.success_count <= self.attempt_count:
+            raise ValueError("cell success count exceeds attempts")
 
 
 @dataclass(frozen=True)
@@ -130,3 +194,4 @@ class ModelProfileConformanceResult:
     classification: str
     classification_reasons: tuple[str, ...]
     input_complexity: ModelInputComplexity
+    cell_summaries: tuple[ConformanceCellSummary, ...] = ()

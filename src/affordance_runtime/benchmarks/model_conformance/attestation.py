@@ -14,6 +14,7 @@ from affordance_runtime.immutable import freeze_json, to_json_compatible
 from .classification import ModelProfileSupportStatus
 from .contracts import (
     ConformanceAttempt,
+    ConformanceCellSummary,
     ModelConformanceStage,
     ModelInputComplexity,
     ModelProfileConformanceResult,
@@ -69,7 +70,7 @@ def attest_results(
         errors.append("conformance reports do not share one exact profile identity")
     attempts = tuple(item for result in results for item in result.attempts)
     variants = tuple(sorted({item.grounding_variant for item in attempts}))
-    levels = tuple(sorted({item.level for item in attempts}, key=int))
+    levels = tuple(sorted({item.level for item in attempts}, key=_level_sort_key))
     repetitions = max(Counter((item.grounding_variant, item.level) for item in attempts).values())
     success = Counter(f"{item.grounding_variant}:L{item.level}" for item in attempts if item.success)
     failures = Counter(item.stage.value for item in attempts if not item.success)
@@ -103,7 +104,12 @@ def _load_result(path: Path) -> ModelProfileConformanceResult:
         identity, attempts, tuple(value["passed_levels"]), tuple(value["failed_levels"]),
         value["classification"], tuple(value["classification_reasons"]),
         ModelInputComplexity(**value["input_complexity"]),
+        tuple(ConformanceCellSummary(**item) for item in value.get("cell_summaries", ())),
     )
+
+
+def _level_sort_key(level: str) -> tuple[int, int]:
+    return (int(level[1:]) if level.startswith("D") else int(level), int(level.startswith("D")))
 
 
 def _status(results, attempts) -> ModelProfileSupportStatus:
