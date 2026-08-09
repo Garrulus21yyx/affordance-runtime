@@ -6,8 +6,11 @@ import json
 import urllib.request
 from collections.abc import Mapping, Sequence
 
+from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelProfileIdentity
+from affordance_runtime.model_policy.grounding import grounding_profile_version
 from affordance_runtime.model_policy.prompt import SCHEMA_VERSION
+from affordance_runtime.model_policy.schema_identity import decision_schema_digest
 
 PROMPT_VERSION = "p5-m1.1"
 CONTEXT_BUDGET_PROFILE = "default-64k"
@@ -18,6 +21,8 @@ def identity_from_ollama_inventory(
     *,
     runtime_version: str,
     models: Sequence[Mapping[str, object]],
+    grounding_variant: str = "",
+    execution_profile: str = "",
 ) -> ModelProfileIdentity:
     record = next(
         (item for item in models if str(item.get("name") or item.get("model") or "") == model),
@@ -32,13 +37,26 @@ def identity_from_ollama_inventory(
         str(details.get("parameter_size") or ""),
         str(details.get("quantization_level") or ""),
         PROMPT_VERSION, SCHEMA_VERSION, CONTEXT_BUDGET_PROFILE,
+        decision_schema_digest(), MAX_RESULT_SUMMARY_CHARS, grounding_variant,
+        grounding_profile_version(grounding_variant) if grounding_variant else "",
+        execution_profile,
     )
 
 
-def remote_profile_identity(provider: str, model: str, endpoint_class: str) -> ModelProfileIdentity:
+def remote_profile_identity(
+    provider: str,
+    model: str,
+    endpoint_class: str,
+    *,
+    grounding_variant: str = "",
+    execution_profile: str = "provider-managed",
+) -> ModelProfileIdentity:
     return ModelProfileIdentity(
         provider, model, endpoint_class, "provider-managed", "", "", "", "", "",
         PROMPT_VERSION, SCHEMA_VERSION, CONTEXT_BUDGET_PROFILE,
+        decision_schema_digest(), MAX_RESULT_SUMMARY_CHARS, grounding_variant,
+        grounding_profile_version(grounding_variant) if grounding_variant else "",
+        execution_profile,
     )
 
 

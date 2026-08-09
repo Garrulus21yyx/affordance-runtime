@@ -105,6 +105,10 @@ def test_bridge_reuses_model_port_once_with_separate_system_and_user_messages() 
         assert response.metadata.prompt_tokens == 20
         assert response.metadata.total_tokens == 28
         assert response.metadata.rate_limit_retry_count == 0
+        assert response.metadata.grounding_variant == "format-only"
+        assert response.metadata.grounding_profile_version == "format-only.v1"
+        assert response.metadata.decision_schema_digest.startswith("sha256:")
+        assert response.metadata.result_summary_max_chars == 1_024
 
     asyncio.run(scenario())
 

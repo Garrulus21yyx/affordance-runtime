@@ -17,6 +17,7 @@ def _result() -> ModelProfileConformanceResult:
     identity = ModelProfileIdentity(
         "ollama", "qwen2.5:7b", "local", "ollama", "0.32.0", "digest", "qwen2",
         "7.6B", "Q4_K_M", "p5-m1.1", "agent-decision.v1", "default-64k",
+        "sha256:schema", 1_024, "format-only", "format-only.v1", "gpu",
     )
     attempt = ConformanceAttempt(
         "attempt:format-only:0:1", "0", "format-only", ModelConformanceStage.SUCCESS,
@@ -46,6 +47,24 @@ def test_dirty_tree_fails_attestation(tmp_path: Path) -> None:
     result = attest_results((path,), git_sha="abc123", git_dirty=True)
     assert not result.accepted
     assert "clean" in result.errors[0]
+
+
+def test_attestation_rejects_legacy_identity_without_grounding_or_schema_digest(tmp_path: Path) -> None:
+    value = _result()
+    legacy = ModelProfileConformanceResult(
+        ModelProfileIdentity(*tuple(value.identity.__dict__.values())[:12]),
+        value.attempts,
+        value.passed_levels,
+        value.failed_levels,
+        value.classification,
+        value.classification_reasons,
+        value.input_complexity,
+    )
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps(asdict(legacy), sort_keys=True), encoding="utf-8")
+    result = attest_results((path,), git_sha="abc123", git_dirty=False)
+    assert not result.accepted
+    assert any("identity" in error for error in result.errors)
 
 
 def test_attestation_accepts_destination_ladder_level_names(tmp_path: Path) -> None:

@@ -5,15 +5,30 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 
 MAX_COMPACT_GUIDE_BYTES = 4 * 1024
+FORMAT_ONLY_PROFILE_VERSION = "format-only.v1"
+COMPACT_CONTRACT_PROFILE_VERSION = "compact-contract.v1"
 _DECISION_TYPES = (
     "select_action", "request_observation", "request_action_page", "ask_user",
     "propose_done", "wait", "abort",
 )
+
+
+class DecisionGroundingVariant(StrEnum):
+    FORMAT_ONLY = "format-only"
+    COMPACT_CONTRACT = "compact-contract"
+
+
+def grounding_profile_version(variant: DecisionGroundingVariant | str) -> str:
+    selected = DecisionGroundingVariant(variant)
+    if selected is DecisionGroundingVariant.FORMAT_ONLY:
+        return FORMAT_ONLY_PROFILE_VERSION
+    return COMPACT_CONTRACT_PROFILE_VERSION
 
 
 @dataclass(frozen=True)
@@ -100,4 +115,3 @@ def _action_guide(option: dict[str, object]) -> CompactActionGuide:
         ),
         tuple(str(item) for item in required) if isinstance(required, list) else (),
     )
-

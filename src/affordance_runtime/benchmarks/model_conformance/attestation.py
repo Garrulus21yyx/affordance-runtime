@@ -68,6 +68,13 @@ def attest_results(
         errors.append("conformance attestation requires a clean exact tree")
     if any(result.identity != identity for result in results[1:]):
         errors.append("conformance reports do not share one exact profile identity")
+    if not (
+        identity.decision_schema_digest
+        and identity.result_summary_max_chars
+        and identity.grounding_variant
+        and identity.grounding_profile_version
+    ):
+        errors.append("conformance report lacks the current exact support identity")
     attempts = tuple(item for result in results for item in result.attempts)
     variants = tuple(sorted({item.grounding_variant for item in attempts}))
     levels = tuple(sorted({item.level for item in attempts}, key=_level_sort_key))

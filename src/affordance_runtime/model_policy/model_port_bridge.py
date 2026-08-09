@@ -6,13 +6,17 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
 from affordance_runtime.model_policy.grounding import (
+    DecisionGroundingVariant,
     build_compact_decision_guide,
+    grounding_profile_version,
     serialize_compact_decision_guide,
 )
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
+from affordance_runtime.model_policy.schema_identity import decision_schema_digest
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
 from affordance_runtime.model_port import (
     FallbackModelPort,
@@ -31,15 +35,18 @@ from affordance_runtime.model_port import (
 class ModelPortDecisionAdapter:
     port: ModelPort
     config: ModelConfig
-    grounding_variant: str = "format-only"
+    grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.FORMAT_ONLY
 
     def __post_init__(self) -> None:
         if isinstance(self.port, FallbackModelPort):
             raise ValueError("model policy bridge does not admit provider fallback")
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("model policy bridge requires a zero retry configuration")
-        if self.grounding_variant not in {"format-only", "compact-contract"}:
-            raise ValueError("production bridge admits only format-only or compact-contract grounding")
+        object.__setattr__(self, "grounding_variant", DecisionGroundingVariant(self.grounding_variant))
+
+    @property
+    def grounding_profile_version(self) -> str:
+        return grounding_profile_version(self.grounding_variant)
 
     @property
     def transport_timeout_s(self) -> float:
@@ -48,10 +55,13 @@ class ModelPortDecisionAdapter:
     async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
         if request.schema_version != SCHEMA_VERSION or dict(request.decision_schema) != decision_response_schema():
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
-        messages = (
-            ModelMessage(role="system", content=_system_message(self.grounding_variant)),
-            ModelMessage(role="user", content=_user_message(request, self.grounding_variant)),
-        )
+        try:
+            messages = (
+                ModelMessage(role="system", content=_system_message(self.grounding_variant)),
+                ModelMessage(role="user", content=_user_message(request, self.grounding_variant)),
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
         try:
             payload = await self.port.generate_structured(messages, AgentDecisionPayload, self.config)
         except TimeoutError:
@@ -65,19 +75,33 @@ class ModelPortDecisionAdapter:
             return _failure(ModelFailureKind.INVALID_RESPONSE, "model provider returned an invalid response")
         except Exception:
             return _failure(ModelFailureKind.PROVIDER_UNAVAILABLE, "model provider adapter failed")
-        metadata = _metadata(self.port.last_call, self.port)
+        metadata = _metadata(
+            self.port.last_call,
+            self.port,
+            self.grounding_variant,
+            self.grounding_profile_version,
+        )
         if metadata.rate_limit_retry_count or metadata.transient_retry_count:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model transport violated the one-attempt profile")
         return ModelDecisionResponse(payload.model_dump_json(), metadata)
 
 
-def _metadata(record: ModelCallRecord | None, port: ModelPort) -> ModelMetadata:
+def _metadata(
+    record: ModelCallRecord | None,
+    port: ModelPort,
+    grounding_variant: DecisionGroundingVariant,
+    profile_version: str,
+) -> ModelMetadata:
     if record is None:
         return ModelMetadata(
             provider_id=_public_id(port.provider),
             model_id=_public_id(port.model),
             endpoint_class=_public_id(port.endpoint_class),
             schema_version=SCHEMA_VERSION,
+            grounding_variant=grounding_variant.value,
+            grounding_profile_version=profile_version,
+            decision_schema_digest=decision_schema_digest(),
+            result_summary_max_chars=MAX_RESULT_SUMMARY_CHARS,
         )
     return ModelMetadata(
         provider_id=_public_id(record.provider),
@@ -92,6 +116,10 @@ def _metadata(record: ModelCallRecord | None, port: ModelPort) -> ModelMetadata:
         total_tokens=record.total_tokens,
         rate_limit_retry_count=record.rate_limit_retry_count,
         transient_retry_count=record.transient_retry_count,
+        grounding_variant=grounding_variant.value,
+        grounding_profile_version=profile_version,
+        decision_schema_digest=decision_schema_digest(),
+        result_summary_max_chars=MAX_RESULT_SUMMARY_CHARS,
     )
 
 
@@ -106,8 +134,8 @@ def _failure(kind: ModelFailureKind, reason: str, *, retryable: bool = False) ->
     return ModelFailure(kind, reason, retryable)
 
 
-def _user_message(request: ModelDecisionRequest, variant: str) -> str:
-    if variant == "format-only":
+def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVariant) -> str:
+    if variant is DecisionGroundingVariant.FORMAT_ONLY:
         return request.serialized_context
     context = json.loads(request.serialized_context)
     guide = json.loads(serialize_compact_decision_guide(
@@ -119,8 +147,8 @@ def _user_message(request: ModelDecisionRequest, variant: str) -> str:
     )
 
 
-def _system_message(variant: str) -> str:
-    if variant == "format-only":
+def _system_message(variant: DecisionGroundingVariant) -> str:
+    if variant is DecisionGroundingVariant.FORMAT_ONLY:
         return MODEL_POLICY_INSTRUCTIONS
     return MODEL_POLICY_INSTRUCTIONS + (
         "\nThe provider enforces a JSON schema. The user message also contains a compact "

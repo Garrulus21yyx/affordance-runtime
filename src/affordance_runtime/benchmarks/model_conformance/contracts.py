@@ -53,9 +53,18 @@ class ModelProfileIdentity:
     prompt_version: str
     schema_version: str
     context_budget_profile: str
+    decision_schema_digest: str = ""
+    result_summary_max_chars: int = 0
+    grounding_variant: str = ""
+    grounding_profile_version: str = ""
+    execution_profile: str = ""
 
     def __post_init__(self) -> None:
-        for value in self.__dict__.values():
+        for name, value in self.__dict__.items():
+            if name == "result_summary_max_chars":
+                if value < 0:
+                    raise ValueError("model profile summary bound must be nonnegative")
+                continue
             if value and (_PUBLIC_ID.fullmatch(value) is None or "://" in value):
                 raise ValueError("model profile identity requires bounded public identifiers")
 

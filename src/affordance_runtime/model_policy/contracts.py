@@ -28,6 +28,10 @@ class ModelMetadata:
     total_tokens: int = 0
     rate_limit_retry_count: int = 0
     transient_retry_count: int = 0
+    grounding_variant: str = ""
+    grounding_profile_version: str = ""
+    decision_schema_digest: str = ""
+    result_summary_max_chars: int = 0
 
     def __post_init__(self) -> None:
         for value in (
@@ -37,6 +41,9 @@ class ModelMetadata:
             self.endpoint_class,
             self.prompt_version,
             self.schema_version,
+            self.grounding_variant,
+            self.grounding_profile_version,
+            self.decision_schema_digest,
         ):
             if value and (_SAFE_METADATA.fullmatch(value) is None or "://" in value):
                 raise ValueError("model metadata must contain only bounded public identifiers")
@@ -46,6 +53,7 @@ class ModelMetadata:
             self.total_tokens,
             self.rate_limit_retry_count,
             self.transient_retry_count,
+            self.result_summary_max_chars,
         )
         if self.latency_ms < 0 or any(value < 0 for value in counters):
             raise ValueError("model metadata counters must be nonnegative")

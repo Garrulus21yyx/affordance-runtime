@@ -25,6 +25,8 @@ def main() -> int:
     run = sub.add_parser("run")
     run.add_argument("--profile", choices=("ollama", "environment"), required=True)
     run.add_argument("--model", default="")
+    run.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    run.add_argument("--execution-profile", default="")
     run.add_argument("--levels", required=True)
     run.add_argument("--grounding", required=True)
     run.add_argument("--repetitions", type=int)
@@ -53,18 +55,34 @@ def main() -> int:
     if set(levels) - admitted_levels:
         parser.error("levels must be selected from 0,1,2,3,4,D0,D1,D2,D3,D4")
     grounding = tuple(item.strip() for item in args.grounding.split(",") if item.strip())
+    identity_grounding = grounding[0] if len(grounding) == 1 else ""
     repetitions = args.repetitions or (5 if args.profile == "ollama" else 1)
     factory: Callable[[], ModelPort]
     if args.profile == "ollama":
-        version, models = ollama_inventory()
-        identity = identity_from_ollama_inventory(args.model, runtime_version=version, models=models)
+        version, models = ollama_inventory(args.ollama_base_url)
+        identity = identity_from_ollama_inventory(
+            args.model,
+            runtime_version=version,
+            models=models,
+            grounding_variant=identity_grounding,
+            execution_profile=args.execution_profile,
+        )
         installed = {str(item.get("name") or item.get("model") or "") for item in models}
         if args.model not in installed:
             parser.error("requested Ollama model is not already installed")
-        factory = lambda: OllamaModelPort(model=args.model)  # noqa: E731
+        factory = lambda: OllamaModelPort(  # noqa: E731
+            model=args.model,
+            base_url=args.ollama_base_url,
+        )
     else:
         configured = model_port_from_environment()
-        identity = remote_profile_identity(configured.provider, configured.model, configured.endpoint_class)
+        identity = remote_profile_identity(
+            configured.provider,
+            configured.model,
+            configured.endpoint_class,
+            grounding_variant=identity_grounding,
+            execution_profile=args.execution_profile or "provider-managed",
+        )
         factory = lambda: model_port_from_environment()  # noqa: E731
     asyncio.run(run_profile(
         identity, factory, levels=levels, grounding_variants=grounding,

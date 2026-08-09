@@ -15,6 +15,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import ModelFailure
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelDecisionResponse
+from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model_port import ModelConfig, ModelPort
 
@@ -48,7 +49,7 @@ async def run_level_four_attempt(
         timeout_s=89, rate_limit_retries=0, transient_retries=0, prompt_version="p5-m1.1",
     )
     capturing = CapturingDecisionPort(ModelPortDecisionAdapter(
-        port, config, grounding_variant=grounding_variant,
+        port, config, grounding_variant=DecisionGroundingVariant(grounding_variant),
     ))
     policy = ModelBackedAgentPolicy(capturing, call_timeout_s=90)
     instrumentation = BenchmarkInstrumentation()
