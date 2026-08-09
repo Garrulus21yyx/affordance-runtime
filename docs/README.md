@@ -195,3 +195,16 @@ both isolate strong payload filling but incomplete routing, so both candidate
 gates fail and no 20/20 support gate runs. Production factory, AgentLoop,
 parser, admission, defaults, and external-benchmark gates are unchanged. See
 the [M3.6 review](reviews/2026-08-09-p5-m3-6-two-stage-decision-decomposition.md).
+
+## P5-M4 BrowserGym target-loop adapter
+
+Local-model compatibility is closed and non-blocking for the current GUI-agent
+scope. The production default remains one-stage `format-only.v1`; compact v1
+is action-selection-only, compact v2 is experimental/not admitted, and
+two-stage remains a closed diagnostic. The pinned BrowserGym/MiniWoB adapter
+uses current structural observations, Runtime-private element bindings,
+single-dispatch execution, fresh post-step observations, and official
+mechanical completion signals. Its fixed three-task conformance passes through
+AgentLoop, the strict canonical parser, and Runtime admission. Live provider
+execution remains separately opt-in and is `NOT_RUN` when unavailable. See the
+[P5-M4 review](reviews/2026-08-09-p5-m4-browsergym-target-loop-adapter.md).

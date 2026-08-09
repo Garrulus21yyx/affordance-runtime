@@ -184,6 +184,10 @@ def _metric_values(result, turns, state, sent_unknown) -> dict[str, int]:
             metadata.rate_limit_retry_count + metadata.transient_retry_count
             if metadata is not None else -1
         ),
+        "prompt_tokens": state.prompt_tokens,
+        "completion_tokens": state.completion_tokens,
+        "total_tokens": state.total_tokens,
+        "model_latency_ms": state.model_latency_ms,
     }
     values.update(state.custom_metrics)
     return values

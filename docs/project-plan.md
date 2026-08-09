@@ -169,3 +169,16 @@ and production Runtime control while keeping route proposals outside Runtime
 state. Exact Qwen and Llama candidates both failed with a routing bottleneck;
 payload-only was 35/35 for each only when the harness fixed the correct route.
 Two-stage production admission remains explicitly out of scope.
+
+## 12. BrowserGym pinned mechanical profile
+
+P5-M4 closes a narrow external-world adapter, not a benchmark campaign. The
+reviewed MiniWoB trio is projected into existing WorldObservation and
+ActionSpace contracts, executed via Runtime-private BrowserGym bindings, and
+evaluated only from current official mechanical status. Adapter conformance is
+3/3 and admits `target_loop_adapter_ready` only from a clean exact-head
+attestation. Live Mistral smoke remains an independently gated deployment
+profile with fixed 7.5-second pacing. Its exact-head internal DOM attestation
+is accepted and external preflight is admitted; the fixed external run remains
+`NOT_RUN` because its separate explicit execution opt-in is absent. No
+generalization or default Coordinator cutover follows from this milestone.

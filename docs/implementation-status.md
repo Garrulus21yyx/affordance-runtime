@@ -293,3 +293,19 @@ canonical schema change, AgentContext change, grounding-contract change, or an
 explicit fully local recurrent-agent product objective. Two-stage remains
 `DIAGNOSTIC_ONLY`; its fixed pacing is a benchmark/deployment profile and is
 not retry, failure backoff, or AgentLoop authority.
+
+P5-M4 closes the BrowserGym target-loop adapter for the pinned mechanical
+profile. `browsergym-miniwob==0.14.3` exposes the reviewed registry IDs
+`browsergym/miniwob.click-button`, `browsergym/miniwob.enter-text`, and
+`browsergym/miniwob.choose-list`; all three pass real adapter conformance
+through AgentContext serialization, the strict decision parser, Runtime
+admission, private binding, one BrowserGym step per dispatch, fresh observation,
+and official reward/termination verification. Bids, selectors, raw reward,
+task IDs and oracle material remain outside model context. The adapter is
+`CLOSED_FOR_PINNED_MINIWOB_MECHANICAL_PROFILE`; this does not attest model
+generalization. The configured Mistral `mistral-medium-3-5` profile passed the
+clean exact-head internal DOM attestation under `format-only.v1`: DONE, two
+observations, one execution and one provider attempt, with zero retry/fallback
+or safety violations. External preflight is admitted. The independent
+`RUN_EXTERNAL_SMOKE=1` execution opt-in is absent, so the fixed external smoke
+remains `NOT_RUN`. The old Coordinator product path is unchanged.

@@ -1,0 +1,100 @@
+name: BrowserGym fixed external smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_external_smoke:
+        description: Run only the reviewed external-smoke-v1 manifest
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  browsergym-fixed-external-smoke:
+    if: inputs.run_external_smoke
+    runs-on: ubuntu-22.04
+    environment: browsergym-fixed-external-smoke
+    env:
+      RUN_EXTERNAL_SMOKE: "1"
+      RUN_LIVE_MODEL_POLICY_ATTESTATION: "1"
+      MINIWOB_URL: file:///tmp/miniwob-plusplus/miniwob/html/miniwob/
+      LLM_ACTIVE_PROFILE: mistral
+      LLM_PROFILE_FALLBACK_TO_LOCAL: "false"
+      LLM_DECISION_GROUNDING: format-only
+      LLM_MISTRAL_BASE_URL: ${{ vars.LLM_MISTRAL_BASE_URL }}
+      LLM_MISTRAL_MODEL: mistral-medium-3-5
+      LLM_MISTRAL_API_KEY: ${{ secrets.LLM_MISTRAL_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev,web,visual,parent,external-smoke]'
+      - run: python -m playwright install --with-deps chromium
+      - name: Install exact MiniWoB source fixture
+        run: |
+          git clone https://github.com/Farama-Foundation/miniwob-plusplus.git /tmp/miniwob-plusplus
+          git -C /tmp/miniwob-plusplus checkout 7fd85d71a4b60325c6585396ec4f48377d049838
+      - name: Full exact-head CI dependency
+        run: |
+          python -m pytest --collect-only -q | tee /tmp/target-loop-collection.txt
+          python -m pytest -q | tee /tmp/target-loop-pytest.txt
+          ruff check src tests
+          mypy src
+          git diff --check
+          docker compose -f environments/smart_room/docker-compose.yml config
+          python -m pytest -q --runxfail tests/test_local_benchmark_mainline.py::test_settings_recovery_blocks_stale_dispatch_then_retries_verified_absence
+          python -m pytest -q tests/test_target_core_boundaries.py tests/architecture/test_runtime_redlines.py
+          python -m pytest -q tests/test_documentation_governance.py
+      - name: Attest full exact-head CI
+        run: >-
+          python -m affordance_runtime.benchmarks.target_loop.full_validation
+          --collection /tmp/target-loop-collection.txt
+          --pytest-log /tmp/target-loop-pytest.txt
+          --output /tmp/browsergym-fixed/full.json
+          --check ruff --check mypy --check diff_check --check compose_config
+          --check legacy_runxfail --check target_boundaries --check docs_governance
+      - name: Exact-head internal harness dependency
+        run: |
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-core --profile deterministic --seed 7 --output-dir /tmp/target-loop/core-deterministic
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-core --profile scripted-model --seed 7 --output-dir /tmp/target-loop/core-scripted
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-safety --profile scripted-model --seed 7 --output-dir /tmp/target-loop/safety
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-evaluation --profile local-http-semantic-judge --seed 7 --output-dir /tmp/target-loop/evaluation
+          python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-real-adapters --profile deterministic --seed 7 --output-dir /tmp/target-loop/real-adapters
+          python -m affordance_runtime.benchmarks.target_loop.attestation --input-dir /tmp/target-loop --output /tmp/target-loop/attestation.json --expected-run internal-core:deterministic:7 --expected-run internal-core:scripted-model:7 --expected-run internal-safety:scripted-model:7 --expected-run internal-evaluation:local-http-semantic-judge:7 --expected-run internal-real-adapters:deterministic:7
+      - name: Exact-head BrowserGym adapter dependency
+        run: >-
+          python -m affordance_runtime.benchmarks.external_smoke.cli adapter-conformance
+          --manifest external-smoke-v1 --seed 7 --output-dir /tmp/browsergym-fixed/adapter
+      - name: Exact-head live Mistral attestation
+        run: >-
+          python -m affordance_runtime.benchmarks.target_loop.live_policy
+          --profile mistral-format-only --grounding format-only
+          --min-policy-call-interval-s 7.5
+          --output-dir /tmp/browsergym-fixed/live
+      - name: External preflight
+        run: >-
+          python -m affordance_runtime.benchmarks.external_smoke.cli preflight
+          --manifest external-smoke-v1
+          --internal-attestation /tmp/target-loop/attestation.json
+          --full-ci-attestation /tmp/browsergym-fixed/full.json
+          --live-policy-attestation /tmp/browsergym-fixed/live/live-policy-attestation.json
+          --adapter-attestation /tmp/browsergym-fixed/adapter/attestation.json
+          --output /tmp/browsergym-fixed/preflight.json
+      - name: Run admitted fixed manifest once
+        run: >-
+          python -m affordance_runtime.benchmarks.external_smoke.cli run
+          --manifest external-smoke-v1 --profile mistral-format-only-mechanical --execute
+          --internal-attestation /tmp/target-loop/attestation.json
+          --full-ci-attestation /tmp/browsergym-fixed/full.json
+          --live-policy-attestation /tmp/browsergym-fixed/live/live-policy-attestation.json
+          --adapter-attestation /tmp/browsergym-fixed/adapter/attestation.json
+          --seed 7 --min-policy-call-interval-s 7.5
+          --output-dir /tmp/browsergym-fixed/final
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browsergym-fixed-external-smoke-${{ github.sha }}
+          path: /tmp/browsergym-fixed
+          if-no-files-found: error

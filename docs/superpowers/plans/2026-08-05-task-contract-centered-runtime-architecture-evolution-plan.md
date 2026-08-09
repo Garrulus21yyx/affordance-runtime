@@ -379,3 +379,13 @@ generation passes 35/35. Both candidate gates fail, so no support gate or
 production adoption is admitted. Parser, Runtime admission, AgentLoop,
 grounding defaults, external benchmark status, and Coordinator cutover remain
 unchanged.
+
+P5-M4 re-enters the GUI-agent mainline and freezes model-compatibility work as
+non-blocking. It closes the BrowserGym/MiniWoB adapter only for version 0.14.3
+and the three reviewed mechanical tasks, using existing one-stage policy,
+strict parser/admission, Runtime-private bindings, fresh observation and
+environment-native evaluation. Compact v2 and two-stage remain not admitted.
+An exact-head live smoke is a separate fixed-manifest gate and remains
+`NOT_RUN/BLOCKED_WITH_REASON` when provider evidence or explicit execution
+authority is absent. This milestone authorizes neither a benchmark campaign
+nor a default Coordinator-path change.

@@ -50,7 +50,7 @@ class BrowserGymMiniWobEnvironment:
     _page_identity: str
     _episode_identity: str
     bindings: BrowserGymBindingStore = field(default_factory=BrowserGymBindingStore)
-    executed_requests: list[str] = field(default_factory=list)
+    dispatched_request_ids: list[str] = field(default_factory=list)
     reset_calls: int = 1
     step_calls: int = 0
     probe_calls: int = 0
@@ -120,7 +120,7 @@ class BrowserGymMiniWobEnvironment:
             raise ValueError("TaskGoal instruction must be the public BrowserGym goal")
         self._task = task
         self.bindings.clear()
-        self.executed_requests.clear()
+        self.dispatched_request_ids.clear()
         self._current_observation_id = ""
         self._current_source_revision = ""
 
@@ -262,7 +262,7 @@ class BrowserGymMiniWobEnvironment:
     def _record_dispatch(self, request: BoundActionRequest) -> None:
         self.step_calls += 1
         self.dom_action_calls += 1
-        self.executed_requests.append(request.request_id)
+        self.dispatched_request_ids.append(request.request_id)
         if request.binding.primitive_action == "fill":
             self.fill_calls += 1
         if request.binding.primitive_action == "select_option":

@@ -59,7 +59,7 @@ class AdapterConformanceOutcome:
 
 
 @dataclass
-class _InstrumentedEnvironment:
+class InstrumentedBrowserGymEnvironment:
     wrapped: BrowserGymMiniWobEnvironment
     instrumentation: object
 
@@ -130,7 +130,7 @@ def _case(external_case, seed: int, ports: list[BrowserGymStructuredDecisionPort
             external_case.benchmark_task_id, seed, max_turns=external_case.max_turns,
         )
         holder.update(environment=environment, task=task)
-        return _InstrumentedEnvironment(environment, instrumentation)
+        return InstrumentedBrowserGymEnvironment(environment, instrumentation)
 
     def task_factory():
         return holder["task"]

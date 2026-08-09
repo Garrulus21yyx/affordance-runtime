@@ -256,4 +256,16 @@ unattested. A D0–D4 destination ladder now distinguishes empty/forbidden,
 target/action confusion, cross-action and unknown public IDs without retaining
 the model value. Qwen passed D0–D3 and confused the target ID at D4; Llama
 passed D0–D2, then failed D3 and confused the target ID at D4. Compact
-grounding remains diagnostic-only.
+grounding v1 remains an explicit action-selection profile.
+
+## BrowserGym target-loop adapter
+
+P5-M4 returns the project to the GUI-agent mainline. The one-stage
+`AgentPolicy.decide(context)` interface with `format-only.v1` remains the
+primary recurrent profile; compact v2 is experimental and fail-closed, and
+two-stage remains diagnostic-only. The pinned `browsergym-miniwob==0.14.3`
+adapter projects structural targets into the existing target loop, keeps bids
+private, and closes the reviewed click-button, enter-text, and choose-list
+tasks with environment-native mechanical verification. This is fixed-profile
+adapter conformance, not a model-generalization claim. Live external smoke is
+separately gated and is not run without an existing explicit opt-in.

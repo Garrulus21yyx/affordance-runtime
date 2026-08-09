@@ -29,6 +29,10 @@ class BenchmarkInstrumentation:
     duplicate_unknown_attempts: int = 0
     custom_metrics: dict[str, int] = field(default_factory=dict)
     model_metadata: ModelMetadata | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    model_latency_ms: float = 0.0
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
@@ -46,6 +50,10 @@ class CountingPolicy:
         metadata = getattr(self.wrapped, "last_metadata", None)
         if isinstance(metadata, ModelMetadata):
             self.instrumentation.model_metadata = metadata
+            self.instrumentation.prompt_tokens += metadata.prompt_tokens
+            self.instrumentation.completion_tokens += metadata.completion_tokens
+            self.instrumentation.total_tokens += metadata.total_tokens
+            self.instrumentation.model_latency_ms += metadata.latency_ms
         return outcome
 
 
@@ -145,6 +153,12 @@ class CountingEnvironment:
 def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):
     if isinstance(policy, ModelBackedAgentPolicy):
         policy = replace(policy, port=CountingDecisionPort(policy.port, instrumentation))
+    elif isinstance(getattr(policy, "wrapped", None), ModelBackedAgentPolicy):
+        inner = policy.wrapped
+        policy = replace(
+            policy,
+            wrapped=replace(inner, port=CountingDecisionPort(inner.port, instrumentation)),
+        )
     return CountingPolicy(policy, instrumentation)
 
 

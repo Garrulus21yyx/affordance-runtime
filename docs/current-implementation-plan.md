@@ -121,3 +121,15 @@ isolation. No support gate, remote Mistral run, production adoption, external
 benchmark, or default change is admitted. A future adoption review would still
 need 20/20 exact evidence plus call-budget, latency, token, rate-limit,
 strong-provider, rollback, and exact-head CI evidence.
+
+## P5-M4 closure
+
+The current mainline owner is the existing target loop. The pinned BrowserGym
+adapter now owns lifecycle/projection/private binding/execution/mechanical
+verification under `benchmarks/external_smoke`, while AgentLoop, parser,
+Runtime admission, target core, and default Coordinator remain unchanged. Real
+fixed-task adapter conformance is closed at 3/3. The remaining activity is
+operational only: generate clean-head attestations, push, and verify exact-head
+CI. A live fixed smoke may run only after exact-head internal/full-CI/live-policy
+evidence admits it and the caller already supplied both explicit execution
+gates; otherwise its durable classification is `NOT_RUN/BLOCKED_WITH_REASON`.

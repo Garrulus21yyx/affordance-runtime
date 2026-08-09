@@ -169,7 +169,8 @@ attestation evidence comparison, execution gates, and secret-free reporting.
 It is not imported by target production core or surfaces, cannot call Binder or
 Executor directly, and cannot place benchmark oracle material in AgentContext.
 The existing BrowserGym package remains isolated; its target-loop
-`WorldEnvironment` lifecycle wrapper is explicitly partial and blocks admission.
+`WorldEnvironment` lifecycle wrapper is now closed only for the pinned,
+reviewed MiniWoB mechanical profile. It cannot itself admit a live run.
 P5-M3.3 adds `benchmarks/model_conformance/` as a diagnostic-only owner for
 exact profile identity, levels, grounding variants, complexity, classification
 and secret-free attestation. It may call the existing ModelPort and target-loop
@@ -200,3 +201,14 @@ into `model_policy/grounding.py`; benchmark diagnostic variants remain in
 canonical deterministic schema digest. The decision matrix and cutover checker
 remain benchmark-only: they cannot select production grounding, repair model
 output, modify ActionSpace/admission, or influence AgentLoop behavior.
+
+P5-M4 keeps six narrow benchmark owners: `browsergym_environment` owns
+lifecycle/cache composition, `browsergym_projection` owns bounded structural
+projection, `browsergym_binding` owns short-lived private handles,
+`browsergym_execution` owns canonical-to-official action conversion,
+`browsergym_verifier` owns current official status, and `composition` owns the
+TaskGoal/evaluator wiring. The BrowserGym page and bids never cross this
+package boundary. Pacing and live execution are benchmark-only; they do not
+enter model-policy core or AgentLoop. The scripted conformance decision port
+uses only serialized public context and cannot read task IDs or expected action
+sequences.

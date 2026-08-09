@@ -174,3 +174,13 @@ failure causes zero payload and Runtime calls; a payload failure causes zero
 effectful Runtime calls. Fixed pacing is recorded but never failure-adaptive,
 and progress is observational rather than resumable. No two-stage branch is
 present in AgentLoop or production factory composition.
+
+P5-M4 adds no BrowserGym branch to orchestration. The existing loop performs
+observe, context construction, one-stage policy, Runtime admission, bind,
+execute once, fresh observe, and TaskEvaluation. Before dispatch the adapter
+performs exactly one read-only currentness probe; stale or unavailable state is
+`NOT_SENT` with zero BrowserGym action calls. A thrown step after dispatch is
+`SENT_UNKNOWN` and is never retried. The cached step result supplies the next
+fresh observation once. Official mechanical status is Runtime-private evaluator
+input and never policy feedback. Fixed 7.5-second pacing wraps only the live
+benchmark policy and cannot alter decisions or recover failures.

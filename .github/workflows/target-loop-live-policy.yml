@@ -16,17 +16,12 @@ jobs:
     environment: live-model-policy
     env:
       RUN_LIVE_MODEL_POLICY_ATTESTATION: "1"
-      LLM_ACTIVE_PROFILE: ${{ vars.LLM_ACTIVE_PROFILE }}
+      LLM_ACTIVE_PROFILE: mistral
       LLM_PROFILE_FALLBACK_TO_LOCAL: "false"
+      LLM_DECISION_GROUNDING: format-only
       LLM_MISTRAL_BASE_URL: ${{ vars.LLM_MISTRAL_BASE_URL }}
-      LLM_MISTRAL_MODEL: ${{ vars.LLM_MISTRAL_MODEL }}
+      LLM_MISTRAL_MODEL: mistral-medium-3-5
       LLM_MISTRAL_API_KEY: ${{ secrets.LLM_MISTRAL_API_KEY }}
-      LLM_GEMINI_BASE_URL: ${{ vars.LLM_GEMINI_BASE_URL }}
-      LLM_GEMINI_MODEL: ${{ vars.LLM_GEMINI_MODEL }}
-      LLM_GEMINI_API_KEY: ${{ secrets.LLM_GEMINI_API_KEY }}
-      LLM_ZHIPU_BASE_URL: ${{ vars.LLM_ZHIPU_BASE_URL }}
-      LLM_ZHIPU_MODEL: ${{ vars.LLM_ZHIPU_MODEL }}
-      LLM_ZHIPU_API_KEY: ${{ secrets.LLM_ZHIPU_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,6 +33,9 @@ jobs:
       - name: Run one exact-profile live policy attestation
         run: >-
           python -m affordance_runtime.benchmarks.target_loop.live_policy
+          --profile mistral-format-only
+          --grounding format-only
+          --min-policy-call-interval-s 7.5
           --output /tmp/live-model-policy/live-model-policy.json
       - uses: actions/upload-artifact@v4
         with:

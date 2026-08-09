@@ -212,3 +212,19 @@ candidates fail, and no 20/20 run is allowed. Mistral two-stage is not run by
 default because two-stage calls increase the rate-limit burden. Progress is
 atomic after each stage, secret-free, inspectable, and never auto-resumed or
 replayed.
+
+## P5-M4 fixed BrowserGym evidence
+
+`browsergym-adapter-conformance` is a real-environment conformance profile, not
+a model benchmark. It runs only the three reviewed MiniWoB IDs, serially and
+with a fresh environment per case, through AgentLoop and official mechanical
+verification. Required measurements include actual reset/step/probe/action,
+policy/provider, observation/turn, verifier and safety counts; missing values
+fail closed. Oracle-isolation scans prohibit task IDs, expected answers,
+reference actions, hidden state, reward, bids and selectors from public model
+artifacts. The fixed live smoke additionally requires exact-head admission,
+one-stage Mistral `format-only.v1`, fixed 7.5-second pacing, zero retry/fallback,
+`RUN_EXTERNAL_SMOKE=1`, and `--execute`. The exact-head Mistral internal-DOM
+attestation and preflight are accepted. The external execution opt-in is not
+configured, so the fixed live smoke remains `NOT_RUN`; adapter CI is not used
+as a substitute.

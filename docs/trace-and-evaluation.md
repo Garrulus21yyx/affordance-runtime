@@ -135,3 +135,13 @@ attests the exact expected run set plus summary/case report equality. The first
 external manifest permits only environment-native mechanical verifier evidence;
 it does not expose reward, hidden state, expected answers, selectors, or
 reference trajectories to AgentContext or model requests.
+
+P5-M4 represents BrowserGym completion as a current, opaque mechanical evidence
+reference bound to the post-step WorldObservation. The reference contains no
+task ID, reward, expected answer, hidden state or private element handle and is
+validated by the existing TaskEvaluationValidator. Adapter/live reports retain
+only bounded counts, profile identity, latency/token aggregates, safety totals
+and hashes; raw prompts/responses, selectors, bids, coordinates, URLs and
+oracle material are forbidden. Adapter attestation and live-smoke attestation
+remain distinct so a mechanical conformance pass cannot be reported as model
+generalization.

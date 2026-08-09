@@ -12,6 +12,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.benchmarks.external_smoke.pacing import PacedAgentPolicy
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCase,
     BenchmarkComposition,
@@ -51,6 +52,8 @@ class LiveModelPolicyAttestation:
     prompt_version: str = ""
     schema_version: str = ""
     task_profile: str = "internal-real-dom-mechanical-v1"
+    grounding_profile: str = "format-only.v1"
+    minimum_policy_call_interval_s: float = 7.5
     terminal_status: str = ""
     observations: int = 0
     executions: int = 0
@@ -74,8 +77,12 @@ async def run_live_model_policy_attestation(
     *,
     environment: Mapping[str, str] | None = None,
     policy_factory: Callable[[Mapping[str, str]], ModelBackedAgentPolicy] = model_policy_from_environment,
+    grounding: str = "format-only",
+    minimum_policy_call_interval_s: float = 7.5,
+    expected_model_id: str = "",
 ) -> LiveModelPolicyAttestation:
-    env = os.environ if environment is None else environment
+    env = dict(os.environ if environment is None else environment)
+    env["LLM_DECISION_GROUNDING"] = grounding
     sha = _git("rev-parse", "HEAD")
     dirty = bool(_git("status", "--short"))
     if env.get("RUN_LIVE_MODEL_POLICY_ATTESTATION") != "1":
@@ -89,10 +96,11 @@ async def run_live_model_policy_attestation(
             acceptance_errors=("live model policy attestation requires a clean exact tree",),
         ))
     try:
-        policy = policy_factory(env)
+        model_policy = policy_factory(env)
     except Exception as exc:
         return _failed(output, sha, f"model policy construction failed: {type(exc).__name__}")
-    holder: dict[str, object] = {"configured_metadata": _configured_metadata(policy)}
+    policy = PacedAgentPolicy(model_policy, minimum_policy_call_interval_s)
+    holder: dict[str, object] = {"configured_metadata": _configured_metadata(model_policy)}
 
     def environment_factory(instrumentation):
         holder["instrumentation"] = instrumentation
@@ -125,6 +133,9 @@ async def run_live_model_policy_attestation(
         sha, result, holder.get("instrumentation"),
         live_origin=policy_factory is model_policy_from_environment,
         configured_metadata=holder["configured_metadata"],
+        grounding_profile=f"{grounding}.v1",
+        minimum_policy_call_interval_s=minimum_policy_call_interval_s,
+        expected_model_id=expected_model_id,
     ))
 
 
@@ -135,6 +146,9 @@ def evaluate_live_policy_suite(
     *,
     live_origin: bool,
     configured_metadata: object = None,
+    grounding_profile: str = "format-only.v1",
+    minimum_policy_call_interval_s: float = 7.5,
+    expected_model_id: str = "",
 ) -> LiveModelPolicyAttestation:
     case = suite.cases[0]
     metric = lambda name: int(case.measurements[name].value or 0)  # noqa: E731
@@ -144,6 +158,12 @@ def evaluate_live_policy_suite(
         errors.append("injected policy evidence is test-only and cannot attest a live profile")
     if metadata is None:
         errors.append("live provider call did not produce model metadata")
+    if grounding_profile != "format-only.v1":
+        errors.append("live external admission requires format-only.v1")
+    if minimum_policy_call_interval_s != 7.5:
+        errors.append("live external admission requires fixed 7.5-second pacing")
+    if expected_model_id and getattr(metadata, "model_id", "") != expected_model_id:
+        errors.append("live policy model identity does not match the fixed profile")
     if metric("provider_attempts") != metric("policy_calls"):
         errors.append("provider attempts must equal policy calls")
     if any(metric(name) for name in (
@@ -165,6 +185,8 @@ def evaluate_live_policy_suite(
         endpoint_class=getattr(metadata, "endpoint_class", ""),
         prompt_version=getattr(metadata, "prompt_version", ""),
         schema_version=getattr(metadata, "schema_version", ""),
+        grounding_profile=grounding_profile,
+        minimum_policy_call_interval_s=minimum_policy_call_interval_s,
         terminal_status=case.status,
         observations=metric("observations"), executions=metric("executions"),
         policy_calls=metric("policy_calls"), provider_attempts=metric("provider_attempts"),
@@ -191,6 +213,8 @@ def _configured_metadata(policy: ModelBackedAgentPolicy) -> ModelMetadata:
             endpoint_class=str(getattr(transport, "endpoint_class", "")),
             prompt_version=str(getattr(config, "prompt_version", "")),
             schema_version=SCHEMA_VERSION,
+            grounding_variant=str(getattr(adapter, "grounding_variant", "")),
+            grounding_profile_version=str(getattr(adapter, "grounding_profile_version", "")),
         )
     except ValueError:
         return ModelMetadata(schema_version=SCHEMA_VERSION)
@@ -216,11 +240,23 @@ def _git(*args: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--profile", choices=("mistral-format-only",), default="mistral-format-only")
+    parser.add_argument("--grounding", choices=("format-only",), default="format-only")
+    parser.add_argument("--min-policy-call-interval-s", type=float, default=7.5)
+    parser.add_argument("--output")
+    parser.add_argument("--output-dir")
     args = parser.parse_args()
     import asyncio
 
-    result = asyncio.run(run_live_model_policy_attestation(Path(args.output)))
+    if not args.output and not args.output_dir:
+        parser.error("--output or --output-dir is required")
+    output = Path(args.output) if args.output else Path(args.output_dir) / "live-policy-attestation.json"
+    result = asyncio.run(run_live_model_policy_attestation(
+        output,
+        grounding=args.grounding,
+        minimum_policy_call_interval_s=args.min_policy_call_interval_s,
+        expected_model_id="mistral-medium-3-5",
+    ))
     return 0 if result.accepted else 1
 
 
