@@ -108,3 +108,30 @@ compatibility, not AgentContext size. Levels 3/4 now exercise actual model outpu
 and Runtime admission; their failures do not weaken current-page authority and
 do not establish stable support or general GUI capability. Reports are retained
 under `/tmp/model-conformance-summary1024/` and contain no raw response.
+
+## Follow-up: destination-domain grounding ladder
+
+The D0–D4 ladder retains the complete `AgentDecisionPayload` schema at every
+level and changes only public decision input:
+
+- D0: destination forbidden, so the only legal value is `""`;
+- D1: one nested public destination;
+- D2: two nested public destinations;
+- D3: the exact current nested action page without the rest of AgentContext;
+- D4: the complete current AgentContext.
+
+One format-only attempt on each exact installed profile produced:
+
+| Profile | D0 | D1 | D2 | D3 | D4 |
+|---|---|---|---|---|---|
+| `ollama:qwen2.5:7b` | pass | pass | pass | pass | `equals_target_id` |
+| `ollama:llama3.1:8b` | pass | pass | pass | `nonempty_when_forbidden` | `equals_target_id` |
+
+The report contract distinguishes `empty_when_required`,
+`nonempty_when_forbidden`, `equals_target_id`, `equals_action_id`,
+`belongs_to_other_action`, and `unknown_public_id`. It never stores the emitted
+destination value. These results isolate a semantic grounding/salience issue:
+Qwen understands the real nested action page until the complete context is
+added; Llama handles the synthetic nested domain but not the exact real page.
+Runtime continues to reject both D4 selections and performs no destination
+repair. Single attempts are diagnostic evidence, not stable profile support.

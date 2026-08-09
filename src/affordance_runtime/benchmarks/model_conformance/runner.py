@@ -13,6 +13,7 @@ from affordance_runtime.model_port import ModelPort
 from .attempts import run_structured_attempt
 from .classification import classify_support
 from .contracts import ModelInputComplexity, ModelProfileConformanceResult, ModelProfileIdentity
+from .destination_ladder import build_destination_case
 from .grounding import GroundingVariant, build_grounded_input, diagnostic_schema_model
 from .levels import Level0Payload, Level1SelectActionPayload, minimal_select_context, minimal_union_context
 from .loop_attempt import run_level_four_attempt
@@ -76,9 +77,15 @@ async def _run_level(port, scenario, level, grounding: GroundingVariant, number)
         )
     if scenario is None:
         raise ValueError("levels 1-4 require the live DOM scenario")
+    if level.startswith("D"):
+        return await _run_destination_level(port, scenario, level, grounding, number)
     option = scenario.context.actions.options[0]
     destination = option.destinations.items[0].destination_id if option.destination_required else ""
-    destinations = tuple(["", *(item.destination_id for item in option.destinations.items)])
+    destinations = (
+        tuple(item.destination_id for item in option.destinations.items)
+        if option.destination_required
+        else ("",)
+    )
     if level == "4":
         if grounding not in {GroundingVariant.FORMAT_ONLY, GroundingVariant.COMPACT_CONTRACT}:
             raise ValueError("level 4 admits only production format-only or compact-contract variants")
@@ -100,7 +107,36 @@ async def _run_level(port, scenario, level, grounding: GroundingVariant, number)
         grounding_variant=grounding.value, attempt_number=number,
         expected_context_id=scenario.context.context_id,
         visible_action_ids=(option.action_id,), visible_destinations={option.action_id: destinations},
+        visible_targets={option.action_id: option.target_id},
         context_bytes=len(scenario.serialized_context.encode()),
+    )
+
+
+async def _run_destination_level(port, scenario, level, grounding, number):
+    case = build_destination_case(level, scenario)
+    base_schema = AgentDecisionPayload.model_json_schema()
+    grounded = build_grounded_input(
+        case.serialized_context,
+        base_schema,
+        grounding,
+        guide_context=case.serialized_context,
+    )
+    output_schema = (
+        diagnostic_schema_model(AgentDecisionPayload, grounded.provider_schema)
+        if grounded.provider_schema != base_schema else AgentDecisionPayload
+    )
+    return await run_structured_attempt(
+        port,
+        output_schema,
+        (grounded.system_message, grounded.user_message),
+        level=level,
+        grounding_variant=grounding.value,
+        attempt_number=number,
+        expected_context_id=scenario.context.context_id,
+        visible_action_ids=(case.action_id,),
+        visible_destinations=dict(case.visible_destinations),
+        visible_targets={case.action_id: case.target_id},
+        context_bytes=len(case.serialized_context.encode()),
     )
 
 

@@ -48,3 +48,37 @@ def test_failure_stage_context_action_destination_and_runtime_admission() -> Non
     assert attribute_decision_payload(
         _payload(), "context:current", *common,
     ).stage == ModelConformanceStage.SUCCESS
+
+
+def test_hidden_destination_has_secret_free_grounding_shape() -> None:
+    actions = ("action:visible", "action:other")
+    destinations = {
+        "action:visible": ("destination:visible",),
+        "action:other": ("destination:other",),
+    }
+    targets = {"action:visible": "target:visible", "action:other": "target:other"}
+    cases = (
+        ("", "empty_when_required"),
+        ("target:visible", "equals_target_id"),
+        ("action:visible", "equals_action_id"),
+        ("destination:other", "belongs_to_other_action"),
+        ("public:unknown", "unknown_public_id"),
+    )
+    for destination_id, expected in cases:
+        attributed = attribute_decision_payload(
+            _payload(destination_id=destination_id),
+            "context:current",
+            actions,
+            destinations,
+            visible_targets=targets,
+        )
+        assert attributed.destination_failure_shape == expected
+
+    forbidden = attribute_decision_payload(
+        _payload(destination_id="public:unknown"),
+        "context:current",
+        ("action:visible",),
+        {"action:visible": ("",)},
+        visible_targets={"action:visible": "target:visible"},
+    )
+    assert forbidden.destination_failure_shape == "nonempty_when_forbidden"

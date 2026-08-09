@@ -30,4 +30,5 @@ def test_attempt_report_retains_only_output_size_and_digest() -> None:
     payload = public_attempt_payload(attempt)
     assert payload["output_bytes"] == 19
     assert payload["output_sha256"] == "sha256:abc"
+    assert payload["destination_failure_shape"] == ""
     assert all("raw" not in key for key in payload)

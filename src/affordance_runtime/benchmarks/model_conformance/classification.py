@@ -52,6 +52,14 @@ def classify_support(
     *,
     support_attestation: bool,
 ) -> ModelProfileSupportStatus:
+    destination_ladder = level_counts and all(level.startswith("D") for level in level_counts)
+    if destination_ladder:
+        complete = all(passed == total > 0 for passed, total in level_counts.values())
+        return (
+            ModelProfileSupportStatus.DIAGNOSTIC_PASS
+            if complete
+            else ModelProfileSupportStatus.CONTEXT_FOLLOWING_INCOMPATIBLE
+        )
     if any(stage == ModelConformanceStage.UNAVAILABLE for stage in failure_stages):
         return ModelProfileSupportStatus.UNAVAILABLE
     complete = all(level_counts.get(str(level), (0, 0))[0] == level_counts.get(str(level), (0, 0))[1] > 0 for level in range(5))
@@ -75,4 +83,3 @@ def classify_support(
         "runtime_policy_or_completion": ModelProfileSupportStatus.RUNTIME_POLICY_INCOMPATIBLE,
     }
     return mapping.get(cause, ModelProfileSupportStatus.UNSUPPORTED)
-

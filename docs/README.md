@@ -152,3 +152,7 @@ destination admission at Levels 3/4. This is a compatibility confirmation, not
 stable model support. The existing Mistral profile has one successful Level-4
 run for format-only and compact grounding. See the
 [review record](reviews/2026-08-09-p5-m3-3-model-profile-conformance.md).
+The follow-up D0–D4 destination ladder uses the same full union and reports only
+typed failure shapes: Qwen passes through the real nested action-page level and
+fails only full context by copying `target_id`; Llama passes D0–D2, supplies a
+forbidden nonempty destination at D3 and copies `target_id` at D4.

@@ -213,4 +213,8 @@ initialized the full union and passed a Level-2 format-only diagnostic; their
 Level-3/4 attempts reached Runtime admission and were rejected for a hidden
 destination. This corrects the former provider-grammar blocker without
 weakening parser or Runtime authority. Stable profile support remains
-unattested; compact grounding remains diagnostic-only.
+unattested. A D0–D4 destination ladder now distinguishes empty/forbidden,
+target/action confusion, cross-action and unknown public IDs without retaining
+the model value. Qwen passed D0–D3 and confused the target ID at D4; Llama
+passed D0–D2, then failed D3 and confused the target ID at D4. Compact
+grounding remains diagnostic-only.

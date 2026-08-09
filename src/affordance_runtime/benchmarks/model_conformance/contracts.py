@@ -27,6 +27,16 @@ class ModelConformanceStage(StrEnum):
     SUCCESS = "success"
 
 
+class DestinationFailureShape(StrEnum):
+    NONE = ""
+    EMPTY_WHEN_REQUIRED = "empty_when_required"
+    NONEMPTY_WHEN_FORBIDDEN = "nonempty_when_forbidden"
+    EQUALS_TARGET_ID = "equals_target_id"
+    EQUALS_ACTION_ID = "equals_action_id"
+    BELONGS_TO_OTHER_ACTION = "belongs_to_other_action"
+    UNKNOWN_PUBLIC_ID = "unknown_public_id"
+
+
 @dataclass(frozen=True)
 class ModelProfileIdentity:
     provider_id: str
@@ -72,6 +82,7 @@ class ConformanceAttempt:
     output_bytes: int
     output_sha256: str
     latency_ms: float
+    destination_failure_shape: DestinationFailureShape = DestinationFailureShape.NONE
 
     def __post_init__(self) -> None:
         counters = (
@@ -85,6 +96,11 @@ class ConformanceAttempt:
             raise ValueError("conformance metrics must be nonnegative")
         if self.output_sha256 and not self.output_sha256.startswith("sha256:"):
             raise ValueError("output identity must use the sha256 namespace")
+        object.__setattr__(
+            self,
+            "destination_failure_shape",
+            DestinationFailureShape(self.destination_failure_shape),
+        )
 
 
 @dataclass(frozen=True)

@@ -161,3 +161,9 @@ completion-summary bound. After narrowing the canonical semantic budget to
 destination admission at Levels 3/4. This removes the measured provider grammar
 blocker but does not establish stable model support. It does not admit
 BrowserGym/MiniWoB execution.
+
+The destination-domain diagnostic ladder keeps the full decision union while
+progressing from a forbidden destination (D0), through one/two offered nested
+destinations (D1/D2), the real nested action page (D3), and the complete current
+AgentContext (D4). Failure reports retain only a typed shape—never the emitted
+ID or raw response—and Runtime membership remains unchanged.

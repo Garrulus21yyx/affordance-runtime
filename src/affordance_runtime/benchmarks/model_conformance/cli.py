@@ -49,8 +49,9 @@ def main() -> int:
     if args.profile == "environment" and os.environ.get("RUN_MODEL_PROFILE_CONFORMANCE") != "1":
         parser.error("remote environment profile requires RUN_MODEL_PROFILE_CONFORMANCE=1")
     levels = tuple(item.strip() for item in args.levels.split(",") if item.strip())
-    if set(levels) - {"0", "1", "2", "3", "4"}:
-        parser.error("levels must be selected from 0,1,2,3,4")
+    admitted_levels = {"0", "1", "2", "3", "4", "D0", "D1", "D2", "D3", "D4"}
+    if set(levels) - admitted_levels:
+        parser.error("levels must be selected from 0,1,2,3,4,D0,D1,D2,D3,D4")
     grounding = tuple(item.strip() for item in args.grounding.split(",") if item.strip())
     repetitions = args.repetitions or (5 if args.profile == "ollama" else 1)
     factory: Callable[[], ModelPort]

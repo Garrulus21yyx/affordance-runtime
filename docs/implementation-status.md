@@ -233,7 +233,10 @@ bound. The canonical bound is now 1,024. One format-only rerun per profile
 passed Level 2; Levels 3/4 generated typed selections and were rejected by
 current-page destination admission. The provider compatibility blocker is
 closed for these diagnostic calls, while stable AgentPolicy support remains
-unattested.
+unattested. A full-union destination ladder records secret-free typed shapes:
+Qwen passes D0–D3 and fails D4 with `equals_target_id`; Llama passes D0–D2,
+fails D3 with `nonempty_when_forbidden`, and fails D4 with
+`equals_target_id`. Runtime does not repair or admit those selections.
 Mistral `mistral-medium-3-5` passed one Level-4 call under format-only and one
 under compact grounding, so remains `SINGLE_RUN_ATTESTED`, not stable support.
 Compact grounding is `DIAGNOSTIC_ONLY`; parser, Runtime admission, retries,

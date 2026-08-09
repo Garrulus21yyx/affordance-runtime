@@ -35,6 +35,7 @@ async def run_structured_attempt(
     expected_context_id: str = "",
     visible_action_ids: tuple[str, ...] = (),
     visible_destinations: dict[str, tuple[str, ...]] | None = None,
+    visible_targets: dict[str, str] | None = None,
     context_bytes: int | None = None,
 ) -> ConformanceAttempt:
     system, user = messages
@@ -85,7 +86,11 @@ async def run_structured_attempt(
     if stage != ModelConformanceStage.SUCCESS or not expected_context_id:
         return attempt
     attributed = attribute_decision_payload(
-        output, expected_context_id, visible_action_ids, visible_destinations or {},
+        output,
+        expected_context_id,
+        visible_action_ids,
+        visible_destinations or {},
+        visible_targets=visible_targets or {},
     )
     return replace(
         attempt,
@@ -93,6 +98,7 @@ async def run_structured_attempt(
         success=attributed.stage == ModelConformanceStage.SUCCESS,
         failure_kind=attributed.failure_kind,
         decision_variant=attributed.decision_variant,
+        destination_failure_shape=attributed.destination_failure_shape,
     )
 
 
