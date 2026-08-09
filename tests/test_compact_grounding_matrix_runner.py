@@ -2,6 +2,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelProfileIdentity
 from affordance_runtime.benchmarks.model_conformance.matrix_runner import run_decision_matrix
@@ -94,6 +95,15 @@ def test_matrix_runner_records_complete_secret_free_behavior(tmp_path: Path) -> 
     encoded = (tmp_path / "matrix.json").read_text().casefold()
     for forbidden in ("raw_response", "selector", "credential", "destination:first"):
         assert forbidden not in encoded
+    progress = json.loads((tmp_path / "matrix-progress.json").read_text())
+    progress_encoded = json.dumps(progress).casefold()
+    for forbidden in ("raw_response", "selector", "credential", "destination:first"):
+        assert forbidden not in progress_encoded
+    assert progress["complete"] is True
+    assert progress["completed_attempt_count"] == 15
+    assert progress["planned_attempt_count"] == 15
+    assert len(progress["attempts"]) == 15
+    assert not (tmp_path / "matrix-progress.json.tmp").exists()
 
 
 @dataclass
@@ -114,6 +124,45 @@ class UnavailablePort(ContextFollowingPort):
     async def generate_structured(self, messages, output_schema, config):
         del messages, output_schema, config
         raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY)
+
+
+@dataclass
+class CheckpointInspectingPort(ContextFollowingPort):
+    calls: ClassVar[int] = 0
+    progress_path: ClassVar[Path]
+    observed_completed: ClassVar[int] = -1
+
+    async def generate_structured(self, messages, output_schema, config):
+        type(self).calls += 1
+        if self.calls == 2:
+            progress = json.loads(self.progress_path.read_text())
+            assert progress["complete"] is False
+            type(self).observed_completed = progress["completed_attempt_count"]
+        return await super().generate_structured(messages, output_schema, config)
+
+
+def test_matrix_runner_checkpoints_each_completed_attempt(tmp_path: Path) -> None:
+    identity = ModelProfileIdentity(
+        "fixture", "model", "local", "fixture", "1", "digest", "family", "1B", "Q4",
+        "p5-m1.1", "agent-decision.v1", "default-64k", "sha256:schema", 1_024,
+        "compact-contract", "compact-contract.v1", "fixture",
+    )
+    CheckpointInspectingPort.calls = 0
+    CheckpointInspectingPort.observed_completed = -1
+    CheckpointInspectingPort.progress_path = tmp_path / "matrix-progress.json"
+    result = asyncio.run(run_decision_matrix(
+        identity, CheckpointInspectingPort, repetitions=2, output_dir=tmp_path,
+        case_ids=("select",),
+    ))
+    assert result.success_count == 2
+    assert CheckpointInspectingPort.observed_completed == 1
+    progress = json.loads((tmp_path / "matrix-progress.json").read_text())
+    assert progress["complete"] is True
+    assert progress["completed_attempt_count"] == 2
+    assert progress["planned_attempt_count"] == 2
+    assert len(progress["attempts"]) == 2
+    assert (tmp_path / "matrix.json").exists()
+    assert not (tmp_path / "matrix-progress.json.tmp").exists()
 
 
 def test_wrong_variant_is_distinct_from_provider_unavailability(tmp_path: Path) -> None:

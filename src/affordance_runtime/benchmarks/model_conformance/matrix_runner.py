@@ -27,6 +27,7 @@ from .decision_matrix import (
     build_seven_decision_cases,
     decision_matches_expectation,
 )
+from .matrix_progress import write_json_report, write_matrix_progress
 from .profile_identity import identity_from_ollama_inventory, ollama_inventory
 from .runtime_decision_matrix import (
     ReplayedRuntimeOutcome,
@@ -102,10 +103,21 @@ async def run_decision_matrix(
         cases = tuple(case for case in cases if case.case_id in case_ids)
         if {case.case_id for case in cases} != set(case_ids):
             raise ValueError("decision matrix case selection contains an unknown case")
-    attempts = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+    progress_path = output_dir / "matrix-progress.json"
+    planned_attempt_count = len(cases) * repetitions
+    attempts: list[DecisionMatrixAttempt] = []
+    write_matrix_progress(
+        progress_path, identity=identity, repetitions=repetitions,
+        planned_attempt_count=planned_attempt_count, attempts=attempts, complete=False,
+    )
     for case in cases:
         for _ in range(repetitions):
             attempts.append(await _attempt(case, port_factory(), grounding_variant))
+            write_matrix_progress(
+                progress_path, identity=identity, repetitions=repetitions,
+                planned_attempt_count=planned_attempt_count, attempts=attempts, complete=False,
+            )
     runtime_outcomes = await run_scripted_runtime_decision_matrix()
     result = DecisionMatrixResult(
         "compact-decision-matrix.v1",
@@ -129,10 +141,10 @@ async def run_decision_matrix(
         runtime_outcomes,
         sum(runtime_outcome_matches(item) for item in runtime_outcomes),
     )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "matrix.json").write_text(
-        json.dumps(asdict(result), sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
+    write_json_report(output_dir / "matrix.json", asdict(result))
+    write_matrix_progress(
+        progress_path, identity=identity, repetitions=repetitions,
+        planned_attempt_count=planned_attempt_count, attempts=attempts, complete=True,
     )
     return result
 
