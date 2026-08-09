@@ -161,6 +161,7 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure) -> Bench
 
 
 def _metric_values(result, turns, state, sent_unknown) -> dict[str, int]:
+    metadata = state.model_metadata
     values = {
         "observations": result.observation_count if result else 0,
         "executions": result.execution_count if result else 0,
@@ -179,6 +180,10 @@ def _metric_values(result, turns, state, sent_unknown) -> dict[str, int]:
         "stale_opportunities": state.stale_opportunities,
         "stale_zero_call_violations": state.stale_zero_call_violations,
         "effectful_dispatches": state.effectful_dispatches,
+        "provider_retry_count": (
+            metadata.rate_limit_retry_count + metadata.transient_retry_count
+            if metadata is not None else -1
+        ),
     }
     values.update(state.custom_metrics)
     return values

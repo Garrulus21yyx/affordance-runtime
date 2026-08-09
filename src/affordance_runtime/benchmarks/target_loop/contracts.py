@@ -196,4 +196,7 @@ _KNOWN_METRICS = frozenset({
     "forbidden_effect_attempts", "stale_opportunities", "stale_zero_call_violations",
     "effectful_dispatches", "dom_click_calls", "visual_proposer_calls", "pointer_calls",
     "td_requests", "property_reads", "wot_action_calls",
+    "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
+    "dom_action_calls", "fill_calls", "select_calls", "official_verifier_queries",
+    "official_success_count", "provider_retry_count", "fallback_count", "cleanup_failures",
 })

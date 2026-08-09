@@ -59,6 +59,7 @@ class BrowserGymMiniWobEnvironment:
     fill_calls: int = 0
     select_calls: int = 0
     verifier_queries: int = 0
+    official_success_count: int = 0
     _observation_serial: int = 0
     _current_observation_id: str = ""
     _current_source_revision: str = ""
@@ -76,6 +77,10 @@ class BrowserGymMiniWobEnvironment:
         gym_factory: Callable[..., BrowserGymPort] | None = None,
         max_turns: int = 20,
     ) -> tuple[BrowserGymMiniWobEnvironment, TaskGoal]:
+        from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
+
+        if benchmark_task_id not in REVIEWED_TASK_IDS:
+            raise ValueError("BrowserGym task ID is outside the reviewed fixed manifest")
         if gym_factory is None:
             from affordance_runtime.benchmarks.external_smoke.browsergym_backend import (
                 ThreadBoundBrowserGym,
@@ -207,7 +212,10 @@ class BrowserGymMiniWobEnvironment:
         if benchmark_task_id != self.benchmark_task_id or self._verifier is None:
             raise ValueError("mechanical verifier request does not match the private task run")
         self.verifier_queries += 1
-        return as_external_result(self._verifier)
+        result = as_external_result(self._verifier)
+        if str(result.status) == "success":
+            self.official_success_count += 1
+        return result
 
     async def close(self) -> None:
         if self._closed:

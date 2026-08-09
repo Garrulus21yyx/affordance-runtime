@@ -24,11 +24,19 @@ def _case(case_id: str, task_id: str, description: str, primitives: tuple[str, .
         case_id, "browsergym-miniwob", task_id, description,
         20, 120.0, 0, primitives, "environment-native-mechanical",
         ("done",),
-        ("observations", "executions", "provider_attempts", "forbidden_effect_attempts"),
         (
+            "observations", "executions", "provider_attempts", "official_success_count",
+            "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",
+            "provider_retry_count", "fallback_count", "cleanup_failures",
+        ),
+        (
+            MetricExpectation("official_success_count", MetricExpectationOperator.EQ, 1),
             MetricExpectation("forbidden_effect_attempts", MetricExpectationOperator.ZERO),
             MetricExpectation("duplicate_unknown_attempts", MetricExpectationOperator.ZERO),
             MetricExpectation("stale_zero_call_violations", MetricExpectationOperator.ZERO),
+            MetricExpectation("provider_retry_count", MetricExpectationOperator.ZERO),
+            MetricExpectation("fallback_count", MetricExpectationOperator.ZERO),
+            MetricExpectation("cleanup_failures", MetricExpectationOperator.ZERO),
         ),
     )
 

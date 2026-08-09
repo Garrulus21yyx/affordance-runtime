@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import subprocess
 from pathlib import Path
 
+from affordance_runtime.benchmarks.external_smoke.adapter_conformance import run_adapter_conformance
+from affordance_runtime.benchmarks.external_smoke.adapter_reporting import write_adapter_conformance
 from affordance_runtime.benchmarks.external_smoke.admission import evaluate_external_admission
 from affordance_runtime.benchmarks.external_smoke.contracts import ExternalBenchmarkAdmissionEvidence
 from affordance_runtime.benchmarks.external_smoke.environment import external_dependency_status
@@ -104,7 +107,15 @@ def main() -> int:
     preflight.add_argument("--live-policy-attestation", type=Path, required=True)
     preflight.add_argument("--output", type=Path, required=True)
     preflight.add_argument("--execute", action="store_true")
+    adapter = subparsers.add_parser("adapter-conformance")
+    adapter.add_argument("--manifest", choices=("external-smoke-v1",), required=True)
+    adapter.add_argument("--seed", type=int, default=7)
+    adapter.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
+    if args.command == "adapter-conformance":
+        outcome = asyncio.run(run_adapter_conformance(args.seed))
+        write_adapter_conformance(outcome, args.output_dir)
+        return 0 if outcome.accepted else 1
     evidence = build_external_admission_evidence(
         args.internal_attestation, args.full_ci_attestation, args.live_policy_attestation,
     )
