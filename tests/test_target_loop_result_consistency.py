@@ -2,14 +2,18 @@ from dataclasses import fields
 
 import pytest
 
-from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkCaseResult, MetricMeasurement
+from affordance_runtime.benchmarks.target_loop.contracts import (
+    BenchmarkCaseResult,
+    MetricMeasurement,
+    TerminalReasonCode,
+)
 
 
 def test_case_result_has_one_metric_authority() -> None:
     names = {item.name for item in fields(BenchmarkCaseResult)}
     assert names == {
         "case_id", "status", "execution_completed", "failure_reason", "latency_ms",
-        "measurements",
+        "measurements", "terminal_reason_code",
     }
 
 
@@ -19,3 +23,12 @@ def test_case_measurements_mapping_is_immutable() -> None:
     )
     with pytest.raises(TypeError, match="immutable"):
         result.measurements["executions"] = MetricMeasurement(2, True)  # type: ignore[index]
+
+
+def test_case_terminal_reason_is_required_exactly_for_blocked_status() -> None:
+    with pytest.raises(ValueError, match="blocked case result"):
+        BenchmarkCaseResult("case", "blocked", True, "", 1.0)
+    with pytest.raises(ValueError, match="non-blocked case result"):
+        BenchmarkCaseResult(
+            "case", "done", True, "", 1.0, {}, TerminalReasonCode.BLOCKED_OTHER,
+        )

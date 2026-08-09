@@ -64,7 +64,7 @@ class ExpectedRunSet:
         return cls(tuple(
             ExpectedBenchmarkRun(
                 item.suite_id, item.profile_id, item.seed, sha, manifest_digest(item),
-                item.schema_version, "target-loop-harness.v2",
+                item.schema_version, "target-loop-harness.v3",
             )
             for item in manifests
         ))

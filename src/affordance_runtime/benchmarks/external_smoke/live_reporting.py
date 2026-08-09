@@ -20,7 +20,7 @@ def write_fixed_external_smoke(outcome: FixedExternalSmokeOutcome, output_dir: P
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / "external-smoke-report.json"
     _atomic_json(report_path, {
-        "schema_version": "external-smoke-report.v1",
+        "schema_version": "external-smoke-report.v2",
         "classification": (
             "EXTERNAL_SMOKE_ATTESTED_FOR_FIXED_MANIFEST"
             if outcome.accepted else "EXTERNAL_SMOKE_FAILED_WITH_RECORDED_REASON"

@@ -45,6 +45,21 @@ class MetricExpectationOperator(StrEnum):
     NONZERO = "nonzero"
 
 
+class TerminalReasonCode(StrEnum):
+    ACTION_OUTSIDE_CURRENT_PAGE = "action_outside_current_page"
+    DESTINATION_OUTSIDE_CURRENT_PAGE = "destination_outside_current_page"
+    ACTION_OUTSIDE_ACTION_SPACE = "action_outside_action_space"
+    INVALID_ACTION_PARAMETERS = "invalid_action_parameters"
+    INVALID_COMPLETION_CLAIM = "invalid_completion_claim"
+    COMPLETION_EVIDENCE_NOT_CURRENT = "completion_evidence_not_current"
+    OBSERVATION_CAPABILITY_NOT_OFFERED = "observation_capability_not_offered"
+    INVALID_ACTION_PAGE_REQUEST = "invalid_action_page_request"
+    WAIT_BUDGET_EXHAUSTED = "wait_budget_exhausted"
+    STALE_BOUND_REQUEST = "stale_bound_request"
+    INVALID_CONFIRMATION_DECISION = "invalid_confirmation_decision"
+    BLOCKED_OTHER = "blocked_other"
+
+
 @dataclass(frozen=True)
 class MetricExpectation:
     metric: str
@@ -127,7 +142,7 @@ class BenchmarkRunIdentity:
     python_version: str
     platform: str
     manifest_schema_version: str = "target-loop-manifest.v1"
-    harness_schema_version: str = "target-loop-harness.v2"
+    harness_schema_version: str = "target-loop-harness.v3"
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:
@@ -146,8 +161,14 @@ class BenchmarkCaseResult:
     failure_reason: str
     latency_ms: float
     measurements: Mapping[str, MetricMeasurement] = field(default_factory=dict)
+    terminal_reason_code: TerminalReasonCode | None = None
 
     def __post_init__(self) -> None:
+        blocked = self.status == str(AgentLoopStatus.BLOCKED)
+        if blocked and self.terminal_reason_code is None:
+            raise ValueError("blocked case result requires a terminal reason code")
+        if not blocked and self.terminal_reason_code is not None:
+            raise ValueError("non-blocked case result cannot carry a terminal reason code")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 

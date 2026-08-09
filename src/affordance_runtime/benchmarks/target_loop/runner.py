@@ -23,6 +23,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
+from affordance_runtime.benchmarks.target_loop.terminal_reasons import project_terminal_reason_code
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.execution import DispatchStatus
 
@@ -157,6 +158,9 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure) -> Bench
         failure_reason=failure,
         latency_ms=latency_ms,
         measurements=measurements,
+        terminal_reason_code=(
+            project_terminal_reason_code(result.status, result.message) if result is not None else None
+        ),
     )
 
 
