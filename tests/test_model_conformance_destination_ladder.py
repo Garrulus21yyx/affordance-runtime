@@ -60,6 +60,26 @@ class CopyingPort:
         })
 
 
+@dataclass
+class DonePort(CopyingPort):
+    async def generate_structured(self, messages, output_schema, config):
+        context = json.loads(messages[1].content)
+        self.last_call = ModelCallRecord(
+            provider="fixture", model="scripted", endpoint_class="local",
+            prompt_version=config.prompt_version, schema_name=output_schema.__name__,
+            schema_version="test", latency_ms=1, prompt_tokens=1,
+            completion_tokens=1, total_tokens=2,
+        )
+        return output_schema.model_validate({
+            "type": "propose_done",
+            "context_id": context["context_id"],
+            "claimed_criteria": [],
+            "evidence_refs": [],
+            "result_summary": "done",
+            "unresolved_items": [],
+        })
+
+
 def test_destination_ladder_runs_with_full_union_and_reports_diagnostic_pass(tmp_path) -> None:
     result = asyncio.run(run_profile(
         _identity(), CopyingPort, levels=("D0", "D1", "D2", "D3", "D4"),
@@ -75,3 +95,16 @@ def test_destination_ladder_runs_with_full_union_and_reports_diagnostic_pass(tmp
     assert result.attempts[-1].salience_metrics.selected_action_id_occurrences > 0
     assert result.attempts[-1].salience_metrics.selected_target_id_occurrences > 0
     assert result.attempts[-1].salience_metrics.actions_block_distance_from_end_bytes is not None
+
+
+def test_destination_ladder_does_not_count_another_union_variant_as_success(tmp_path) -> None:
+    result = asyncio.run(run_profile(
+        _identity(), DonePort, levels=("D4",), grounding_variants=("format-only",),
+        repetitions=1, output_dir=tmp_path,
+    ))
+
+    attempt = result.attempts[0]
+    assert not attempt.success
+    assert attempt.stage.value == "decision_variant"
+    assert attempt.failure_kind == "unexpected_decision_variant"
+    assert attempt.decision_variant == "propose_done"

@@ -169,6 +169,7 @@ async def _run_destination_level(port, scenario, level, grounding, number):
         visible_destinations=dict(case.visible_destinations),
         visible_targets={case.action_id: case.target_id},
         context_bytes=len(case.serialized_context.encode()),
+        required_decision_variant="select_action",
     )
 
 

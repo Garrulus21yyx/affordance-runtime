@@ -18,6 +18,7 @@ class ModelConformanceStage(StrEnum):
     STRICT_JSON = "strict_json"
     PAYLOAD_SCHEMA = "payload_schema"
     CONTEXT_ID = "context_id"
+    DECISION_VARIANT = "decision_variant"
     ACTION_ID = "action_id"
     DESTINATION_ID = "destination_id"
     PARAMETERS = "parameters"

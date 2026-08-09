@@ -37,6 +37,7 @@ async def run_structured_attempt(
     visible_destinations: dict[str, tuple[str, ...]] | None = None,
     visible_targets: dict[str, str] | None = None,
     context_bytes: int | None = None,
+    required_decision_variant: str = "",
 ) -> ConformanceAttempt:
     system, user = messages
     config = config or ModelConfig(
@@ -104,6 +105,16 @@ async def run_structured_attempt(
         visible_destinations or {},
         visible_targets=visible_targets or {},
     )
+    if (
+        attributed.stage == ModelConformanceStage.SUCCESS
+        and required_decision_variant
+        and attributed.decision_variant != required_decision_variant
+    ):
+        attributed = type(attributed)(
+            ModelConformanceStage.DECISION_VARIANT,
+            "unexpected_decision_variant",
+            attributed.decision_variant,
+        )
     return replace(
         attempt,
         stage=attributed.stage,
