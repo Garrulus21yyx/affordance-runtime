@@ -12,11 +12,13 @@ from affordance_runtime.model_policy.contracts import ModelDecisionRequest, Mode
 from affordance_runtime.model_policy.grounding import (
     DecisionGroundingVariant,
     build_compact_decision_guide,
+    build_compact_decision_guide_v2,
     grounding_profile_version,
     serialize_compact_decision_guide,
+    serialize_compact_decision_guide_v2,
 )
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
-from affordance_runtime.model_policy.schema_identity import decision_schema_digest
+from affordance_runtime.model_policy.schema_identity import decision_schema_digest, grounding_guide_digest
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
 from affordance_runtime.model_port import (
     FallbackModelPort,
@@ -56,9 +58,10 @@ class ModelPortDecisionAdapter:
         if request.schema_version != SCHEMA_VERSION or dict(request.decision_schema) != decision_response_schema():
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
         try:
+            user_message = _user_message(request, self.grounding_variant)
             messages = (
                 ModelMessage(role="system", content=_system_message(self.grounding_variant)),
-                ModelMessage(role="user", content=_user_message(request, self.grounding_variant)),
+                ModelMessage(role="user", content=user_message),
             )
         except (TypeError, ValueError, json.JSONDecodeError):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
@@ -80,6 +83,7 @@ class ModelPortDecisionAdapter:
             self.port,
             self.grounding_variant,
             self.grounding_profile_version,
+            *_guide_identity(user_message, self.grounding_variant),
         )
         if metadata.rate_limit_retry_count or metadata.transient_retry_count:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model transport violated the one-attempt profile")
@@ -91,6 +95,8 @@ def _metadata(
     port: ModelPort,
     grounding_variant: DecisionGroundingVariant,
     profile_version: str,
+    guide_schema_version: str,
+    guide_digest: str,
 ) -> ModelMetadata:
     if record is None:
         return ModelMetadata(
@@ -100,6 +106,8 @@ def _metadata(
             schema_version=SCHEMA_VERSION,
             grounding_variant=grounding_variant.value,
             grounding_profile_version=profile_version,
+            grounding_guide_schema_version=guide_schema_version,
+            grounding_guide_digest=guide_digest,
             decision_schema_digest=decision_schema_digest(),
             result_summary_max_chars=MAX_RESULT_SUMMARY_CHARS,
         )
@@ -118,6 +126,8 @@ def _metadata(
         transient_retry_count=record.transient_retry_count,
         grounding_variant=grounding_variant.value,
         grounding_profile_version=profile_version,
+        grounding_guide_schema_version=guide_schema_version,
+        grounding_guide_digest=guide_digest,
         decision_schema_digest=decision_schema_digest(),
         result_summary_max_chars=MAX_RESULT_SUMMARY_CHARS,
     )
@@ -138,9 +148,15 @@ def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVaria
     if variant is DecisionGroundingVariant.FORMAT_ONLY:
         return request.serialized_context
     context = json.loads(request.serialized_context)
-    guide = json.loads(serialize_compact_decision_guide(
-        build_compact_decision_guide(request.serialized_context)
-    ))
+    if variant is DecisionGroundingVariant.COMPACT_CONTRACT:
+        serialized_guide = serialize_compact_decision_guide(
+            build_compact_decision_guide(request.serialized_context)
+        )
+    else:
+        serialized_guide = serialize_compact_decision_guide_v2(
+            build_compact_decision_guide_v2(request.serialized_context)
+        )
+    guide = json.loads(serialized_guide)
     return json.dumps(
         {"agent_context": context, "decision_guide": guide},
         sort_keys=True, separators=(",", ":"), ensure_ascii=False,
@@ -150,7 +166,20 @@ def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVaria
 def _system_message(variant: DecisionGroundingVariant) -> str:
     if variant is DecisionGroundingVariant.FORMAT_ONLY:
         return MODEL_POLICY_INSTRUCTIONS
-    return MODEL_POLICY_INSTRUCTIONS + (
+    if variant is DecisionGroundingVariant.COMPACT_CONTRACT:
+        return MODEL_POLICY_INSTRUCTIONS + (
         "\nThe provider enforces a JSON schema. The user message also contains a compact "
         "decision guide. Copy the current context_id and one currently visible action_id exactly."
+        )
+    return MODEL_POLICY_INSTRUCTIONS + (
+        "\nUse the decision-neutral guide's current public field domains. "
+        "Choose one legal decision; Runtime revalidates every proposal."
     )
+
+
+def _guide_identity(user_message: str, variant: DecisionGroundingVariant) -> tuple[str, str]:
+    if variant is DecisionGroundingVariant.FORMAT_ONLY:
+        return "", ""
+    guide = json.loads(user_message)["decision_guide"]
+    serialized = json.dumps(guide, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return grounding_profile_version(variant), grounding_guide_digest(serialized)

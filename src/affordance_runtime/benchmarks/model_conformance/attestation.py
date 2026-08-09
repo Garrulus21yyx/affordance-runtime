@@ -76,6 +76,7 @@ def attest_results(
         and identity.result_summary_max_chars
         and identity.grounding_variant
         and identity.grounding_profile_version
+        and identity.grounding_guide_schema_version
     ):
         errors.append("conformance report lacks the current exact support identity")
     attempts = tuple(item for result in results for item in result.attempts)

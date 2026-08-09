@@ -18,6 +18,7 @@ def _result() -> ModelProfileConformanceResult:
         "ollama", "qwen2.5:7b", "local", "ollama", "0.32.0", "digest", "qwen2",
         "7.6B", "Q4_K_M", "p5-m1.1", "agent-decision.v1", "default-64k",
         "sha256:schema", 1_024, "format-only", "format-only.v1", "gpu",
+        "format-only.v1", "",
     )
     attempt = ConformanceAttempt(
         "attempt:format-only:0:1", "0", "format-only", ModelConformanceStage.SUCCESS,

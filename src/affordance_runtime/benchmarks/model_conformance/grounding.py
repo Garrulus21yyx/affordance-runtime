@@ -12,7 +12,9 @@ from pydantic import BaseModel
 
 from affordance_runtime.model_policy.grounding import (
     build_compact_decision_guide,
+    build_compact_decision_guide_v2,
     serialize_compact_decision_guide,
+    serialize_compact_decision_guide_v2,
 )
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 
@@ -20,6 +22,7 @@ from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 class GroundingVariant(StrEnum):
     FORMAT_ONLY = "format-only"
     COMPACT_CONTRACT = "compact-contract"
+    COMPACT_CONTRACT_V2 = "compact-contract-v2"
     FULL_SCHEMA_TEXT = "full-schema-text"
     CONTEXT_BOUND_SCHEMA = "context-bound-schema"
 
@@ -57,14 +60,20 @@ def build_grounded_input(
         return GroundedInput(MODEL_POLICY_INSTRUCTIONS, serialized_context, schema, 0)
     context = json.loads(serialized_context)
     public_guide_context = guide_context or serialized_context
-    if variant == GroundingVariant.COMPACT_CONTRACT:
-        guide = json.loads(serialize_compact_decision_guide(
-            build_compact_decision_guide(public_guide_context)
-        ))
+    if variant in {GroundingVariant.COMPACT_CONTRACT, GroundingVariant.COMPACT_CONTRACT_V2}:
+        guide = json.loads(
+            serialize_compact_decision_guide(build_compact_decision_guide(public_guide_context))
+            if variant is GroundingVariant.COMPACT_CONTRACT
+            else serialize_compact_decision_guide_v2(
+                build_compact_decision_guide_v2(public_guide_context)
+            )
+        )
         user = _json({"agent_context": context, "decision_guide": guide})
         system = MODEL_POLICY_INSTRUCTIONS + (
-            "\nThe provider enforces a JSON schema. The user message also contains a compact "
-            "decision guide. Copy the current context_id and one currently visible action_id exactly."
+            "\nThe provider enforces a JSON schema. Use the compact public decision guide."
+            if variant is GroundingVariant.COMPACT_CONTRACT_V2
+            else "\nThe provider enforces a JSON schema. The user message also contains a compact "
+                 "decision guide. Copy the current context_id and one currently visible action_id exactly."
         )
         return GroundedInput(system, user, schema, len(user.encode()) - len(serialized_context.encode()))
     if variant == GroundingVariant.FULL_SCHEMA_TEXT:

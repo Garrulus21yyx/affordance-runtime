@@ -42,3 +42,24 @@ def test_compact_bridge_keeps_ids_out_of_system_message() -> None:
     assert scenario.context.context_id not in port.messages[0].content
     assert scenario.context.context_id in port.messages[1].content
     assert getattr(outcome, "raw_payload", "")
+
+
+def test_compact_v2_bridge_records_distinct_guide_identity() -> None:
+    scenario = asyncio.run(build_live_dom_scenario())
+    port = CapturingPort()
+    adapter = ModelPortDecisionAdapter(
+        port, ModelConfig(rate_limit_retries=0, transient_retries=0),
+        grounding_variant="compact-contract-v2",
+    )
+    request = ModelDecisionRequest(
+        "request:v2", scenario.serialized_context, SCHEMA_VERSION, "instructions",
+        decision_response_schema(),
+    )
+    outcome = asyncio.run(adapter.generate(request))
+    message = json.loads(port.messages[1].content)
+    assert message["decision_guide"]["profile_version"] == "compact-contract.v2"
+    assert scenario.context.context_id not in port.messages[0].content
+    assert outcome.metadata.grounding_variant == "compact-contract-v2"
+    assert outcome.metadata.grounding_profile_version == "compact-contract.v2"
+    assert outcome.metadata.grounding_guide_schema_version == "compact-contract.v2"
+    assert outcome.metadata.grounding_guide_digest.startswith("sha256:")

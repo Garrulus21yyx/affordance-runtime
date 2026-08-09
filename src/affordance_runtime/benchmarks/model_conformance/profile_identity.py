@@ -40,6 +40,8 @@ def identity_from_ollama_inventory(
         decision_schema_digest(), MAX_RESULT_SUMMARY_CHARS, grounding_variant,
         grounding_profile_version(grounding_variant) if grounding_variant else "",
         execution_profile,
+        grounding_profile_version(grounding_variant) if grounding_variant else "",
+        "",
     )
 
 
@@ -57,6 +59,8 @@ def remote_profile_identity(
         decision_schema_digest(), MAX_RESULT_SUMMARY_CHARS, grounding_variant,
         grounding_profile_version(grounding_variant) if grounding_variant else "",
         execution_profile,
+        grounding_profile_version(grounding_variant) if grounding_variant else "",
+        "",
     )
 
 

@@ -8,27 +8,52 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.model_policy.grounding_v2 import (
+    COMPACT_CONTRACT_V2_PROFILE_VERSION,
+    MAX_COMPACT_GUIDE_BYTES,
+    CompactActionDomain,
+    CompactBudgetDomain,
+    CompactCompletionDomain,
+    CompactDecisionContract,
+    CompactDecisionGuideV2,
+    CompactObservationDomain,
+    CompactPagingDomain,
+    build_compact_decision_guide_v2,
+    serialize_compact_decision_guide_v2,
+)
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 
-MAX_COMPACT_GUIDE_BYTES = 4 * 1024
 FORMAT_ONLY_PROFILE_VERSION = "format-only.v1"
 COMPACT_CONTRACT_PROFILE_VERSION = "compact-contract.v1"
 _DECISION_TYPES = (
     "select_action", "request_observation", "request_action_page", "ask_user",
     "propose_done", "wait", "abort",
 )
+__all__ = [
+    "COMPACT_CONTRACT_PROFILE_VERSION", "COMPACT_CONTRACT_V2_PROFILE_VERSION",
+    "FORMAT_ONLY_PROFILE_VERSION", "MAX_COMPACT_GUIDE_BYTES", "CompactActionDomain",
+    "CompactActionGuide", "CompactBudgetDomain", "CompactCompletionDomain",
+    "CompactDecisionContract", "CompactDecisionGuide", "CompactDecisionGuideV2",
+    "CompactObservationDomain", "CompactPagingDomain", "DecisionGroundingVariant",
+    "build_compact_decision_guide", "build_compact_decision_guide_v2",
+    "grounding_profile_version", "serialize_compact_decision_guide",
+    "serialize_compact_decision_guide_v2",
+]
 
 
 class DecisionGroundingVariant(StrEnum):
     FORMAT_ONLY = "format-only"
     COMPACT_CONTRACT = "compact-contract"
+    COMPACT_CONTRACT_V2 = "compact-contract-v2"
 
 
 def grounding_profile_version(variant: DecisionGroundingVariant | str) -> str:
     selected = DecisionGroundingVariant(variant)
     if selected is DecisionGroundingVariant.FORMAT_ONLY:
         return FORMAT_ONLY_PROFILE_VERSION
-    return COMPACT_CONTRACT_PROFILE_VERSION
+    if selected is DecisionGroundingVariant.COMPACT_CONTRACT:
+        return COMPACT_CONTRACT_PROFILE_VERSION
+    return COMPACT_CONTRACT_V2_PROFILE_VERSION
 
 
 @dataclass(frozen=True)

@@ -128,8 +128,12 @@ async def _run_level(port, scenario, level, grounding: GroundingVariant, number)
         else ("",)
     )
     if level == "4":
-        if grounding not in {GroundingVariant.FORMAT_ONLY, GroundingVariant.COMPACT_CONTRACT}:
-            raise ValueError("level 4 admits only production format-only or compact-contract variants")
+        if grounding not in {
+            GroundingVariant.FORMAT_ONLY,
+            GroundingVariant.COMPACT_CONTRACT,
+            GroundingVariant.COMPACT_CONTRACT_V2,
+        }:
+            raise ValueError("level 4 admits only production grounding variants")
         return await run_level_four_attempt(
             port, grounding_variant=grounding.value, attempt_number=number,
         )

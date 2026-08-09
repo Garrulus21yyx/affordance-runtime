@@ -30,6 +30,8 @@ class ModelMetadata:
     transient_retry_count: int = 0
     grounding_variant: str = ""
     grounding_profile_version: str = ""
+    grounding_guide_schema_version: str = ""
+    grounding_guide_digest: str = ""
     decision_schema_digest: str = ""
     result_summary_max_chars: int = 0
 
@@ -43,6 +45,8 @@ class ModelMetadata:
             self.schema_version,
             self.grounding_variant,
             self.grounding_profile_version,
+            self.grounding_guide_schema_version,
+            self.grounding_guide_digest,
             self.decision_schema_digest,
         ):
             if value and (_SAFE_METADATA.fullmatch(value) is None or "://" in value):

@@ -58,6 +58,8 @@ class ModelProfileIdentity:
     grounding_variant: str = ""
     grounding_profile_version: str = ""
     execution_profile: str = ""
+    grounding_guide_schema_version: str = ""
+    grounding_guide_digest: str = ""
 
     def __post_init__(self) -> None:
         for name, value in self.__dict__.items():
