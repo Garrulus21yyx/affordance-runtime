@@ -207,9 +207,10 @@ acting effectively across heterogeneous digital and physical surfaces.
 
 P5-M3.3 measures the current real-DOM AgentContext as `SMALL`: 4,972 serialized
 bytes, one action and no history. The canonical seven-variant provider schema
-is 5,194 bytes with ten definitions and seven variants. Exact installed Ollama
-Qwen/Llama profiles pass minimal JSON and SelectAction-only levels but the
-Ollama runtime rejects the full union schema before AgentContext density becomes
-the first failure. Compact grounding remains diagnostic-only. Parser, Runtime
-admission, retry/fallback behavior, default Coordinator path and external
-benchmark admission are unchanged.
+is 5,194 bytes with ten definitions and seven variants. Its completion summary
+budget is now 1,024 characters. Exact installed Ollama Qwen/Llama profiles both
+initialized the full union and passed a Level-2 format-only diagnostic; their
+Level-3/4 attempts reached Runtime admission and were rejected for a hidden
+destination. This corrects the former provider-grammar blocker without
+weakening parser or Runtime authority. Stable profile support remains
+unattested; compact grounding remains diagnostic-only.

@@ -155,6 +155,9 @@ IDs, full union/minimal context, full union/current AgentContext, and the real
 DOM AgentLoop. Grounding variants are format-only, compact contract, full schema
 text and context-bound schema. Each attempt makes one provider call and retains
 only typed stage, sizes, hash and secret-free usage metadata. The measured exact
-Ollama profiles fail when the full union is supplied; no grounding variant
-improved that boundary. This does not block a separately selected Mistral
-external profile and does not admit BrowserGym/MiniWoB execution.
+Ollama profiles originally failed when the full union carried a 2,000-character
+completion-summary bound. After narrowing the canonical semantic budget to
+1,024, both exact profiles passed one Level-2 format-only diagnostic and reached
+destination admission at Levels 3/4. This removes the measured provider grammar
+blocker but does not establish stable model support. It does not admit
+BrowserGym/MiniWoB execution.

@@ -11,6 +11,7 @@ from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 _MAX_REASON = 500
+MAX_RESULT_SUMMARY_CHARS = 1_024
 _MAX_COLLECTION = 32
 
 
@@ -110,7 +111,7 @@ class ProposeDone:
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
-        _require_bounded(self.result_summary, 2_000, "completion result summary")
+        _require_bounded(self.result_summary, MAX_RESULT_SUMMARY_CHARS, "completion result summary")
         object.__setattr__(self, "claimed_criteria", tuple(self.claimed_criteria))
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
         object.__setattr__(self, "unresolved_items", tuple(self.unresolved_items))

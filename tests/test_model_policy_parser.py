@@ -128,3 +128,25 @@ def test_parser_rejects_runtime_private_parameter_at_any_depth() -> None:
 
     assert isinstance(parsed, ModelFailure)
     assert parsed.kind == ModelFailureKind.SCHEMA_ERROR
+
+
+@pytest.mark.parametrize(("length", "accepted"), ((1_024, True), (1_025, False)))
+def test_propose_done_summary_enforces_canonical_budget(length: int, accepted: bool) -> None:
+    payload = json.dumps(
+        {
+            "type": "propose_done",
+            "context_id": "context:1",
+            "claimed_criteria": [],
+            "evidence_refs": [],
+            "result_summary": "x" * length,
+            "unresolved_items": [],
+        }
+    )
+
+    parsed = parse_agent_decision(payload, "context:1")
+
+    if accepted:
+        assert isinstance(parsed, ProposeDone)
+    else:
+        assert isinstance(parsed, ModelFailure)
+        assert parsed.kind == ModelFailureKind.SCHEMA_ERROR

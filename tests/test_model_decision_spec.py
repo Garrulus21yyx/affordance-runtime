@@ -47,6 +47,14 @@ def test_provider_schema_encodes_runtime_enums_and_forbids_extra_fields() -> Non
     assert '"additionalProperties": false' in encoded
 
 
+def test_propose_done_summary_uses_canonical_1024_character_budget() -> None:
+    schema = decision_response_schema()
+    summary = schema["$defs"]["ProposeDonePayload"]["properties"]["result_summary"]
+
+    assert summary["minLength"] == 1
+    assert summary["maxLength"] == 1_024
+
+
 @pytest.mark.parametrize("value", (float("nan"), float("inf"), float("-inf")))
 def test_canonical_payload_rejects_non_finite_python_parameter_values(value: float) -> None:
     with pytest.raises(ValidationError):

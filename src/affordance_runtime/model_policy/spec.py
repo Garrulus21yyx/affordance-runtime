@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StringConstraints, field_validator
 
 from affordance_runtime.agent.decisions import (
+    MAX_RESULT_SUMMARY_CHARS,
     Abort,
     AgentDecision,
     AskUser,
@@ -30,7 +31,7 @@ Optional240 = Annotated[str, StringConstraints(max_length=240)]
 Optional512 = Annotated[str, StringConstraints(max_length=512)]
 Reason500 = Annotated[str, StringConstraints(min_length=1, max_length=500)]
 Question1000 = Annotated[str, StringConstraints(min_length=1, max_length=1_000)]
-Summary2000 = Annotated[str, StringConstraints(min_length=1, max_length=2_000)]
+Summary1024 = Annotated[str, StringConstraints(min_length=1, max_length=MAX_RESULT_SUMMARY_CHARS)]
 Item120 = Annotated[str, StringConstraints(min_length=1, max_length=120)]
 Item240 = Annotated[str, StringConstraints(min_length=1, max_length=240)]
 Item500 = Annotated[str, StringConstraints(min_length=1, max_length=500)]
@@ -83,7 +84,7 @@ class ProposeDonePayload(_Payload):
     type: Literal["propose_done"]
     claimed_criteria: Annotated[list[Item240], Field(max_length=32)]
     evidence_refs: Annotated[list[Item512], Field(max_length=32)]
-    result_summary: Summary2000
+    result_summary: Summary1024
     unresolved_items: Annotated[list[Item500], Field(max_length=32)]
 
 

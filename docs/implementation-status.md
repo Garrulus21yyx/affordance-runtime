@@ -227,10 +227,13 @@ routes, credentials or raw provider payloads.
 P5-M3.3 is closed for tested exact-profile diagnostics. The real-DOM
 AgentContext is 4,972 bytes (`SMALL`); the canonical provider schema is 5,194
 bytes with ten definitions and seven variants. Exact installed Ollama
-`qwen2.5:7b` and `llama3.1:8b` profiles pass Levels 0/1 and fail at the full
-union structured-output boundary from Level 2 under format-only, compact,
-full-schema-text and context-bound variants. They are
-`UNSUPPORTED_FOR_AGENT_POLICY` only for the recorded tags/digests/runtime.
+`qwen2.5:7b` and `llama3.1:8b` profiles originally passed Levels 0/1 and failed
+at full-union grammar initialization with a 2,000-character completion-summary
+bound. The canonical bound is now 1,024. One format-only rerun per profile
+passed Level 2; Levels 3/4 generated typed selections and were rejected by
+current-page destination admission. The provider compatibility blocker is
+closed for these diagnostic calls, while stable AgentPolicy support remains
+unattested.
 Mistral `mistral-medium-3-5` passed one Level-4 call under format-only and one
 under compact grounding, so remains `SINGLE_RUN_ATTESTED`, not stable support.
 Compact grounding is `DIAGNOSTIC_ONLY`; parser, Runtime admission, retries,

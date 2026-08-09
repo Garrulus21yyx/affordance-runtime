@@ -145,7 +145,10 @@ An architecture change updates together:
 
 P5-M3.3 measures the current real-DOM model input and runs an explicit five-level
 conformance ladder without changing Runtime authority. The installed exact
-`qwen2.5:7b` and `llama3.1:8b` profiles pass Levels 0/1 but are incompatible
-with the current full seven-variant Ollama schema from Level 2. The existing
-Mistral profile has one successful Level-4 run for format-only and compact
-grounding. See the [review record](reviews/2026-08-09-p5-m3-3-model-profile-conformance.md).
+`qwen2.5:7b` and `llama3.1:8b` profiles formerly failed full-union grammar
+initialization with a 2,000-character summary bound. With the canonical bound
+set to 1,024, each passed one Level-2 format-only call and reached Runtime
+destination admission at Levels 3/4. This is a compatibility confirmation, not
+stable model support. The existing Mistral profile has one successful Level-4
+run for format-only and compact grounding. See the
+[review record](reviews/2026-08-09-p5-m3-3-model-profile-conformance.md).

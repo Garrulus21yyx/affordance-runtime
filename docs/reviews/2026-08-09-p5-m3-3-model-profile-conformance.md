@@ -85,3 +85,26 @@ other Qwen/Llama profiles or general GUI reasoning ability.
 Final exact-head reports and attestations are generated only after the fourth
 commit on a clean worktree and remain revision-scoped `/tmp` evidence rather
 than repository authority.
+
+## Follow-up: canonical summary budget compatibility
+
+The original matrix above remains the exact result for its recorded schema.
+The full union contained `ProposeDonePayload.result_summary.maxLength=2000`,
+which blocked grammar initialization in the tested Ollama runtime before model
+sampling. The canonical semantic budget is now 1,024 characters in both the
+provider payload and Runtime `ProposeDone` contract; there is no provider or
+model-name branch and `agent-decision.v1` retains the same JSON shape.
+
+With that single contract change, one format-only diagnostic per exact installed
+profile produced:
+
+| Profile | Level 2 | Level 3 | Level 4 |
+|---|---|---|---|
+| `ollama:qwen2.5:7b` | success / `select_action` | `hidden_destination` | `hidden_destination` |
+| `ollama:llama3.1:8b` | success / `propose_done` | `hidden_destination` | `hidden_destination` |
+
+Thus the former primary incompatibility is confirmed as provider grammar/schema
+compatibility, not AgentContext size. Levels 3/4 now exercise actual model output
+and Runtime admission; their failures do not weaken current-page authority and
+do not establish stable support or general GUI capability. Reports are retained
+under `/tmp/model-conformance-summary1024/` and contain no raw response.

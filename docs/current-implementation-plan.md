@@ -74,8 +74,11 @@ scoped; benchmark oracles never drive product behavior.
 ## P5-M3.3 closure
 
 Exact model input/schema complexity is measured and installed Ollama failures
-are stage-attributed. Compact grounding remains diagnostic-only because neither
-tested exact Ollama profile improved beyond the SelectAction-only level. The
-production default stays format-only. External execution remains blocked by
+are stage-attributed. A canonical 1,024-character completion-summary budget
+closes the observed full-union grammar-initialization blocker: exact Qwen and
+Llama diagnostic reruns each pass Level 2, then fail current-page destination
+admission at Levels 3/4. Stable profile support remains open and compact
+grounding remains diagnostic-only. The production default stays format-only.
+External execution remains blocked by
 the optional BrowserGym dependency, target-loop external environment adapter
 and admission package; M3.3 does not authorize that run or a default cutover.

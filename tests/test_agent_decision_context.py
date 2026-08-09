@@ -61,6 +61,13 @@ def test_decision_fields_are_bounded_and_typed(factory) -> None:
         factory()
 
 
+def test_runtime_propose_done_summary_uses_canonical_budget() -> None:
+    ProposeDone("context:1", (), (), "x" * 1_024, ())
+
+    with pytest.raises(ValueError, match="completion result summary"):
+        ProposeDone("context:1", (), (), "x" * 1_025, ())
+
+
 class _FakeWaiter:
     def __init__(self) -> None:
         self.waits: list[int] = []
