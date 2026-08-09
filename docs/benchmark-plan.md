@@ -171,7 +171,7 @@ ID or raw response—and Runtime membership remains unchanged.
 After the 1,024-character grammar correction, the compact-contract candidate
 was rerun against D3/D4 and then the complete support ladder. Exact Qwen 2.5 7B
 and Llama 3.1 8B profiles each passed L0–L4 at 20/20 on clean HEAD `b4c04d6`;
-their separate attestation files are accepted as `supported`. The corresponding
+their separate attestation files are accepted for action-selection scope. The corresponding
 format-only D4 destination failures remain part of the diagnosis. These are
 internal real-DOM policy/runtime proofs, not BrowserGym/MiniWoB execution.
 
@@ -189,3 +189,14 @@ opportunities. Mistral format-only passed its four-case 12/12 no-regression
 matrix; two compact runs were 2/12 and 3/12 with typed provider-unavailable
 outcomes and no retry. These results block a global default change and do not run or admit an
 external benchmark.
+
+## P5-M3.5 recurrent v2 evidence
+
+The production candidate matrix now validates full payload domains and replays
+parsed decisions through production Runtime control. Scripted v2 closes all 75
+candidate cells. Exact GPU results are Qwen 64/75 and Llama 20/75; both fail
+the candidate gate and therefore have no 20/20 recurrent support evidence.
+Qwen has zero wrong first-action selections across 20 non-first opportunities;
+Llama has five. Mistral v2 is `INCONCLUSIVE_PROVIDER_AVAILABILITY` because this
+run had no explicit strong-provider opt-in. BrowserGym, MiniWoB, WebArena,
+WorkArena and OSWorld were not run.

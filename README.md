@@ -163,11 +163,20 @@ until a new-AgentLoop benchmark harness, exact live model-policy profile, and ex
 evidence are all complete. P5-D/M0 do not by themselves admit an external run.
 
 Exact local Ollama `qwen2.5:7b` and `llama3.1:8b` profiles are supported for
-the tested `compact-contract` AgentPolicy profile: each passed L0--L4 at 20/20
+the tested `compact-contract.v1` **action-selection scope**: each passed L0--L4 at 20/20
 on Ollama 0.32.0 with zero retry, fallback, response repair or Runtime
 admission bypass. This is exact-profile/internal-DOM evidence, not external
 benchmark admission or cross-platform model generalization. The production
 grounding default remains `format-only` pending a separate adoption decision.
+
+P5-M3.5 adds explicit `compact-contract-v2` / `compact-contract.v2`, a
+decision-neutral guide with all seven field/domain contracts and no concrete
+first-action answer. On the exact GPU candidate gate, Qwen passed 64/75 but
+failed Page once and Wait/Abort 5/5 each; Llama passed 20/75 and showed five
+wrong first-action selections. Neither profile qualified for the 20/20 full
+recurrent gate. `compact-contract.v1` is therefore frozen as
+`PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`; v2 remains an explicit
+`PRODUCTION_CANDIDATE_FULL_RECURRENT_PROFILE`. The factory default is unchanged.
 
 P5-M3.4 exposes `compact-contract` as an explicit, versioned production
 grounding profile selected by argument or `LLM_DECISION_GROUNDING`. It does not

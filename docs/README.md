@@ -151,8 +151,9 @@ set to 1,024, each passed one Level-2 format-only call and reached Runtime
 destination admission at Levels 3/4. Re-evaluation then showed that the
 provider-neutral compact contract closes destination salience for both exact
 profiles. On clean HEAD `b4c04d6`, each passed L0--L4 at 20/20 under
-`compact-contract` and received a per-profile accepted `supported`
-attestation. The existing Mistral profile also passed a fresh Level-4
+`compact-contract` and received a per-profile accepted
+`action_selection_supported` attestation. This does not establish full
+recurrent AgentPolicy support. The existing Mistral profile also passed a fresh Level-4
 format-only and compact no-regression cell, one call each. See the
 [review record](reviews/2026-08-09-p5-m3-3-model-profile-conformance.md).
 The follow-up D0–D4 destination ladder uses the same full union and reports only
@@ -173,3 +174,13 @@ execution profile. The seven-decision and multi-action GPU matrix blocks a
 global default change: local profiles retain L0–L4 support, but compact.v1 does
 not reliably choose all seven decision variants. See the
 [M3.4 review](reviews/2026-08-09-p5-m3-4-compact-grounding-production-profile.md).
+
+## P5-M3.5 decision-neutral compact grounding v2
+
+`compact-contract.v1` is frozen for action-selection scope. The new explicit
+`compact-contract.v2` guide is decision-neutral, bounded to 4 KiB, and projects
+all seven public decision domains without embedding a real first-action answer.
+Qwen and Llama exact GPU candidates did not pass the seven-decision 5/5 gate,
+so no 20/20 recurrent support run was admitted. Format-only remains default;
+the global cutover is blocked. See the
+[M3.5 review](reviews/2026-08-09-p5-m3-5-decision-neutral-compact-v2.md).

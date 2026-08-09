@@ -77,8 +77,9 @@ retry or fallback.
 
 ## Cutover result and rollback
 
-`compact-contract` is `PRODUCTION_SUPPORTED_PROFILE` for explicit use by the
-two exact local profiles. `format-only` remains `CURRENT_DEFAULT` and the
+`compact-contract` is `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE` for
+explicit use by the two exact local profiles. Its evidence does not establish
+full recurrent AgentPolicy support. `format-only` remains `CURRENT_DEFAULT` and the
 explicit rollback setting `LLM_DECISION_GROUNDING=format-only`.
 
 Global compact-default readiness is `BLOCKED_WITH_EXPLICIT_ERRORS`:

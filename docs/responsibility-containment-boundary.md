@@ -178,6 +178,14 @@ evaluation. `model_policy/grounding.py` derives a bounded guide only from
 already-public serialized AgentContext; the default bridge does not enable it.
 Production core never imports model-conformance diagnostics.
 
+P5-M3.5 keeps v2 ownership split without creating a second legality system:
+`model_policy/grounding.py` exposes profile selection, `grounding_v2.py`
+projects only serialized public AgentContext, and benchmark recurrent modules
+measure/replay decisions through production control. AgentLoop does not import
+grounding selection; production core does not import conformance; expected
+answers never enter AgentContext; parser, ActionSpace and admission remain
+unchanged.
+
 P5-M3.4 moves the two production grounding variants and their profile versions
 into `model_policy/grounding.py`; benchmark diagnostic variants remain in
 `benchmarks/model_conformance/grounding.py`. `schema_identity.py` owns only the

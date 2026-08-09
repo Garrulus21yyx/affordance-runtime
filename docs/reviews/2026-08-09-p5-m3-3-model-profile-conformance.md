@@ -150,8 +150,8 @@ The complete clean-head support gate then produced:
 
 | Exact profile | Grounding | L0 | L1 | L2 | L3 | L4 | Classification |
 |---|---|---:|---:|---:|---:|---:|---|
-| `ollama:qwen2.5:7b` / `845dbd…b697e` | compact-contract | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | `SUPPORTED` |
-| `ollama:llama3.1:8b` / `46e0c1…ca666e` | compact-contract | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | `SUPPORTED` |
+| `ollama:qwen2.5:7b` / `845dbd…b697e` | compact-contract | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | `ACTION_SELECTION_SUPPORTED` |
+| `ollama:llama3.1:8b` / `46e0c1…ca666e` | compact-contract | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | `ACTION_SELECTION_SUPPORTED` |
 
 Both ran through Ollama 0.32.0 on an RTX 3080 and the real Level-4 DOM loop.
 Each report contains 100 successful `select_action` attempts, zero typed
@@ -160,6 +160,10 @@ failure shapes and an accepted exact-profile attestation at clean HEAD
 values are `035936dc…242cb1` / `6c16377f…0a64e`; Llama values are
 `2b55adad…aa56` / `3ca89b3a…5f86`. The reports remain revision-scoped `/tmp`
 evidence and contain no raw response or destination value.
+
+P5-M3.5 scope correction: these L0–L4 results are SelectAction-centric and do
+not establish full recurrent AgentPolicy support. The original broad
+`SUPPORTED` label is therefore superseded by `ACTION_SELECTION_SUPPORTED`.
 
 A fresh Mistral no-regression check passed Level 4 once under format-only and
 once under compact-contract. That two-cell result is not a complete Mistral

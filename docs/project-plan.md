@@ -139,7 +139,7 @@ external adapter/dependency gate; no external run is authorized here.
 
 The exact installed Qwen 2.5 7B and Llama 3.1 8B digests now pass the complete
 L0–L4 compact-contract support gate at 20/20 per level. This closes their tested
-local AgentPolicy profile without changing the format-only production default.
+local action-selection profile, not full recurrent AgentPolicy, without changing the format-only production default.
 It does not close external adapter, remote CI, live-profile or default-cutover
 gates.
 
@@ -151,3 +151,12 @@ version and schema digest. The default-cutover checker is evidence-only and has
 no Runtime dependency. Current readiness is blocked by the live decision matrix,
 Mistral compact provider availability and exact-head remote CI; format-only
 remains default and external benchmark execution remains separately blocked.
+
+## 10. Decision-neutral recurrent qualification
+
+P5-M3.5 is complete as an implementation/measurement slice. V1 remains the
+explicit action-selection profile. V2 is an explicit full-recurrent candidate,
+but both exact local profiles failed candidate admission and Mistral v2
+availability is unmeasured. Global default cutover therefore remains blocked;
+any future default change must be a separate minimal commit after all hard
+gates pass.

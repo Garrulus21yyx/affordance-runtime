@@ -82,7 +82,7 @@ next boundary: Qwen fails only when the complete context makes `target_id`
 salient, while Llama first fails on the real nested action-page and also copies
 `target_id` in the complete context. No destination auto-repair is admitted.
 The post-repair compact-contract gate then passed L0–L4 at 20/20 for each exact
-profile on clean HEAD, producing accepted per-profile `supported`
+profile on clean HEAD, producing accepted per-profile action-selection
 attestations. Mistral also passed one fresh Level-4 no-regression call for each
 grounding. The production default stays format-only; adopting compact grounding
 is a separate provider-neutral product decision.
@@ -99,3 +99,13 @@ and explicit rollback configuration. The pure cutover checker is currently
 blocked by incomplete seven-decision live-local behavior, failed compact
 strong-provider no-regression and unavailable exact-head CI. The next action is
 review/remediation of those measured blockers, not a default flip.
+
+## P5-M3.5 closure
+
+The v1 guide is frozen and its evidence is scoped to action selection. The new
+decision-neutral v2 profile, complete Runtime replay matrix, recurrent CLI and
+secret-free attestation are implemented. Scripted candidate closure is 75/75.
+Exact Qwen and Llama GPU candidates failed their 5/5 recurrent gates, so their
+20/20 support gates were not run. The next admitted work is evidence review or
+a separately authorized design change; this slice does not tune prompts,
+switch defaults, run external benchmarks, or add repair/retry/fallback.

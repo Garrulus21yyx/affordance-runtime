@@ -238,17 +238,18 @@ fails D3 with `nonempty_when_forbidden`, and fails D4 with
 `equals_target_id`. Runtime does not repair or admit those selections.
 After that format-only attribution, exact clean-head GPU runs under
 `compact-contract` passed L0–L4 at 20/20 for each listed Qwen/Llama digest.
-Both per-profile attestations are accepted with status `supported`; provider
-calls had zero retry/fallback and all decisions passed real Runtime admission.
+Both per-profile attestations are accepted with status
+`action_selection_supported`; provider calls had zero retry/fallback. This
+L0–L4 evidence is SelectAction-centric and does not prove all recurrent decisions.
 Mistral `mistral-medium-3-5` passed a fresh Level-4 call under format-only and
 one under compact grounding, so its narrow no-regression gate remains green
 without claiming stable support. Compact grounding is supported for the two
 exact local profiles but is not the production default. Parser, Runtime
 admission, external benchmark status and the default Coordinator path are unchanged.
 
-P5-M3.4 closes `compact-contract.v1` as an explicit
-`PRODUCTION_SUPPORTED_PROFILE`. `model_policy_from_environment()` admits only
-`format-only` and `compact-contract`, with explicit argument precedence over
+P5-M3.5 freezes `compact-contract.v1` as an explicit
+`PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`. `model_policy_from_environment()` admits
+`format-only`, `compact-contract`, and `compact-contract-v2`, with explicit argument precedence over
 `LLM_DECISION_GROUNDING`; unknown values fail closed and the default remains
 format-only. Metadata and exact-profile attestations bind schema digest
 `sha256:187ef82e1205e863c2cd1e1688e92979da6439412fb1ff1541195fede955bf0f`,
@@ -262,4 +263,12 @@ case was unstable. Neither profile showed first-action anchoring in the 15
 non-first opportunities. Mistral format-only passed 12/12; two compact runs
 completed 2/12 and 3/12 and returned typed provider-unavailable failures for
 the other calls under the mandatory zero-retry profile. Exact-head remote CI is also unavailable.
-No external benchmark or default Coordinator cutover was run.
+`compact-contract.v2` is a `PRODUCTION_CANDIDATE_FULL_RECURRENT_PROFILE`.
+Its 16-action guide is 4,031 bytes with all 16 actions and truthful
+`truncated=false`; privacy, determinism and seven-contract scripted Runtime
+tests pass. Qwen exact v2 candidate passed 64/75, but recurrent Page was 4/5
+and Wait/Abort were 0/5. Llama passed 20/75 and selected the wrong first action
+in 5/20 non-first opportunities. Neither candidate admitted a 20/20 support
+run. Mistral v2 was not run because no explicit strong-provider opt-in was
+configured; availability/no-regression is inconclusive. No external benchmark
+or default Coordinator cutover was run.

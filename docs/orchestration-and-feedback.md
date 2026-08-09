@@ -157,3 +157,9 @@ choices. Selection occurs once at factory construction; it is not a runtime
 router. Grounding construction failure returns typed internal failure before a
 provider attempt and never falls back. Matrix/cutover evidence is offline
 feedback only and cannot alter active policy or evaluation.
+
+P5-M3.5 adds `compact-contract-v2` to the same one-time factory composition.
+The recurrent benchmark passes exact parsed decisions into production
+decision-control owners, but its oracle and qualification status remain
+post-hoc evidence. No case ID, expected decision, retry, fallback or provider
+name can affect production orchestration.

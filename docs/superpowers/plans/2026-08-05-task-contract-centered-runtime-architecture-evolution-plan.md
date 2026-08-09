@@ -362,3 +362,10 @@ retaining format-only as the global default and rollback setting. The pure
 cutover gate is blocked by incomplete seven-decision behavior, compact Mistral
 no-regression and unavailable exact-head CI. No default or external benchmark
 cutover is authorized.
+
+P5-M3.5 freezes v1 as `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE` and adds
+decision-neutral `compact-contract.v2` as an explicit full-recurrent candidate.
+The exact Qwen and Llama GPU candidates failed the seven-decision 5/5 gate, so
+no 20/20 recurrent support upgrade was admitted. Format-only remains the
+global default; strong-provider v2 availability, exact-head CI and full
+recurrent support continue to block any separate default-cutover commit.
