@@ -33,6 +33,11 @@ def model_policy_from_environment(
         selected_grounding = DecisionGroundingVariant(configured_grounding)
     except ValueError as exc:
         raise ValueError("unsupported model decision grounding profile") from exc
+    if (
+        selected_grounding is DecisionGroundingVariant.COMPACT_CONTRACT_V2
+        and not _enabled(env.get("LLM_ENABLE_EXPERIMENTAL_GROUNDING", "false"))
+    ):
+        raise ValueError("experimental compact-contract-v2 grounding is not admitted")
     transport_timeout = max(0.001, call_timeout_s - min(1.0, call_timeout_s * 0.05))
     config = ModelConfig(
         timeout_s=transport_timeout,

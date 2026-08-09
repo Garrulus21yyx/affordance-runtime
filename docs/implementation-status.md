@@ -249,9 +249,10 @@ admission, external benchmark status and the default Coordinator path are unchan
 
 P5-M3.5 freezes `compact-contract.v1` as an explicit
 `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`. `model_policy_from_environment()` admits
-`format-only`, `compact-contract`, and `compact-contract-v2`, with explicit argument precedence over
-`LLM_DECISION_GROUNDING`; unknown values fail closed and the default remains
-format-only. Metadata and exact-profile attestations bind schema digest
+`format-only` and `compact-contract`, with explicit argument precedence over
+`LLM_DECISION_GROUNDING`; `compact-contract-v2` additionally requires the
+explicit `LLM_ENABLE_EXPERIMENTAL_GROUNDING=1` conformance gate. Unknown values
+and ungated v2 fail closed, and the default remains format-only. Metadata and exact-profile attestations bind schema digest
 `sha256:187ef82e1205e863c2cd1e1688e92979da6439412fb1ff1541195fede955bf0f`,
 summary limit 1,024 and grounding profile version.
 
@@ -284,3 +285,11 @@ testing. The fixed-route payload result is not production-policy evidence.
 Mistral two-stage is `NOT_RUN`; its prior formal paced compact-v2 candidate
 remains 70/75 and `INCONCLUSIVE_PROVIDER_AVAILABILITY`, while its independent
 5/5 follow-up remains non-backfilling rate-limit evidence.
+
+Model compatibility investigation is `CLOSED_FOR_CURRENT_SCOPE` and
+`NON_BLOCKING`. It is not rerun during ordinary GUI-agent development. The
+declared triggers are a provider-runtime/version change, model identity change,
+canonical schema change, AgentContext change, grounding-contract change, or an
+explicit fully local recurrent-agent product objective. Two-stage remains
+`DIAGNOSTIC_ONLY`; its fixed pacing is a benchmark/deployment profile and is
+not retry, failure backoff, or AgentLoop authority.

@@ -177,6 +177,9 @@ wrong first-action selections. Neither profile qualified for the 20/20 full
 recurrent gate. `compact-contract.v1` is therefore frozen as
 `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`; v2 remains an explicit
 `EXPERIMENTAL_NOT_ADMITTED`. The factory default is unchanged.
+Ordinary composition fails closed if v2 is selected without
+`LLM_ENABLE_EXPERIMENTAL_GROUNDING=1`; that switch is reserved for explicit
+conformance experiments and does not admit v2 for recurrent production use.
 
 P5-M3.6 keeps that production boundary and decomposes the same public-context
 cases only inside model-conformance diagnostics. On clean exact-profile runs,
@@ -185,6 +188,10 @@ and critical 30/40; Llama scored 5/35, 25/35, 35/35, 25/35, and 0/40. Both are
 `routing_bottleneck` diagnoses and failed the two-stage candidate gate. The
 fixed-route payload-only result is diagnostic isolation, not policy support.
 Two-stage composition is not in the production factory or AgentLoop.
+Local-model compatibility research is closed for the current product scope and
+is non-blocking. The exact local matrix is rerun only after a declared runtime,
+model identity, canonical schema, AgentContext, or grounding-contract change,
+or when a fully local recurrent agent becomes an explicit product objective.
 
 P5-M3.4 exposes `compact-contract` as an explicit, versioned production
 grounding profile selected by argument or `LLM_DECISION_GROUNDING`. It does not

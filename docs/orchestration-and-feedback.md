@@ -159,6 +159,9 @@ provider attempt and never falls back. Matrix/cutover evidence is offline
 feedback only and cannot alter active policy or evaluation.
 
 P5-M3.5 adds `compact-contract-v2` to the same one-time factory composition.
+The ordinary factory admits it only behind the explicit
+`LLM_ENABLE_EXPERIMENTAL_GROUNDING=1` conformance gate; the flag does not make
+the profile production-supported or default.
 The recurrent benchmark passes exact parsed decisions into production
 decision-control owners, but its oracle and qualification status remain
 post-hoc evidence. No case ID, expected decision, retry, fallback or provider

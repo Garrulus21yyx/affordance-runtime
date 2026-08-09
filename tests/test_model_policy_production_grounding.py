@@ -1,6 +1,7 @@
 import asyncio
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -70,17 +71,40 @@ def test_factory_grounding_precedence_and_default(monkeypatch) -> None:
 
     policy, _ = _factory(
         monkeypatch,
-        {"LLM_ACTIVE_PROFILE": "local", "LLM_DECISION_GROUNDING": "compact-contract-v2"},
-    )
-    assert policy.port.grounding_variant is DecisionGroundingVariant.COMPACT_CONTRACT_V2
-    assert policy.port.grounding_profile_version == COMPACT_CONTRACT_V2_PROFILE_VERSION
-
-    policy, _ = _factory(
-        monkeypatch,
         {"LLM_ACTIVE_PROFILE": "local", "LLM_DECISION_GROUNDING": "format-only"},
         grounding_variant="compact-contract",
     )
     assert policy.port.grounding_variant is DecisionGroundingVariant.COMPACT_CONTRACT
+
+
+def test_factory_compact_v2_fails_closed_without_experimental_gate(monkeypatch) -> None:
+    with pytest.raises(ValueError, match="experimental.*not admitted"):
+        _factory(
+            monkeypatch,
+            {"LLM_ACTIVE_PROFILE": "local", "LLM_DECISION_GROUNDING": "compact-contract-v2"},
+        )
+
+
+def test_factory_compact_v2_requires_explicit_experimental_gate(monkeypatch) -> None:
+    policy, _ = _factory(
+        monkeypatch,
+        {
+            "LLM_ACTIVE_PROFILE": "local",
+            "LLM_DECISION_GROUNDING": "compact-contract-v2",
+            "LLM_ENABLE_EXPERIMENTAL_GROUNDING": "1",
+        },
+    )
+    assert policy.port.grounding_variant is DecisionGroundingVariant.COMPACT_CONTRACT_V2
+    assert policy.port.grounding_profile_version == COMPACT_CONTRACT_V2_PROFILE_VERSION
+
+
+def test_factory_explicit_argument_cannot_bypass_compact_v2_gate(monkeypatch) -> None:
+    with pytest.raises(ValueError, match="experimental.*not admitted"):
+        _factory(
+            monkeypatch,
+            {"LLM_ACTIVE_PROFILE": "local"},
+            grounding_variant=DecisionGroundingVariant.COMPACT_CONTRACT_V2,
+        )
 
 
 def test_factory_rejects_unknown_grounding(monkeypatch) -> None:
@@ -162,3 +186,14 @@ def test_provider_schema_and_runtime_keep_summary_limit() -> None:
             "result_summary": "x" * 1_025,
             "unresolved_items": [],
         })
+
+
+def test_production_policy_does_not_import_two_stage_or_branch_on_identity() -> None:
+    package = Path("src/affordance_runtime/model_policy")
+    source = "\n".join(path.read_text() for path in package.glob("*.py"))
+    assert "benchmarks.model_conformance.two_stage" not in source
+    factory_source = (package / "factory.py").read_text()
+    assert "LLM_MODEL" not in factory_source
+    assert "LLM_PROVIDER" not in factory_source
+    assert "port.model" not in factory_source
+    assert "port.provider" not in factory_source
