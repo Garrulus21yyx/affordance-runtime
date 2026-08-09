@@ -73,11 +73,12 @@ The target path now has:
 | internal scripted-model profile | `ATTESTED` |
 | local HTTP model-policy harness profile | `ATTESTED` |
 | local HTTP semantic-judge profile | `ATTESTED` |
-| live model-policy profile | `OPT_IN_IMPLEMENTED`; local Ollama discovered, final exact-head attestation pending |
+| live model-policy profile | `EXACT_HEAD_MISTRAL_ATTESTED`; protected executions remain explicitly gated |
 | live semantic evaluator | `NOT_REQUIRED_FOR_FIRST_MECHANICAL_EXTERNAL_MANIFEST` |
 | external smoke manifest | `REVIEWED_AND_FIXED` for BrowserGym MiniWoB 0.14.3 tasks click-button/enter-text/choose-list |
-| external target-loop adapter | `PARTIAL`; official package/registry pinned, WorldEnvironment lifecycle deferred |
-| external benchmark | `BLOCKED / NOT_RUN` |
+| external target-loop adapter | `CLOSED_FOR_PINNED_MINIWOB_MECHANICAL_PROFILE` |
+| external fixed-smoke workflow | `CONFIGURED_AND_MANUALLY_GATED`; execution status is exact-head artifact-backed |
+| latest formal fixed-smoke run | see the protected `browsergym-fixed-external-smoke` workflow artifact for the target SHA |
 | default cutover | `NOT_READY` |
 | RoutePolicy | implemented, post-hard-gate only |
 | BindingCache | `PROTOTYPE_EXISTS_NOT_ADMITTED` |
@@ -306,6 +307,7 @@ task IDs and oracle material remain outside model context. The adapter is
 generalization. The configured Mistral `mistral-medium-3-5` profile passed the
 clean exact-head internal DOM attestation under `format-only.v1`: DONE, two
 observations, one execution and one provider attempt, with zero retry/fallback
-or safety violations. External preflight is admitted. The independent
-`RUN_EXTERNAL_SMOKE=1` execution opt-in is absent, so the fixed external smoke
-remains `NOT_RUN`. The old Coordinator product path is unchanged.
+or safety violations. External preflight is admitted. Formal fixed-smoke
+execution status is not hard-coded in source: it is determined by the protected
+exact-head GitHub Actions run and its `browsergym-fixed-external-smoke`
+artifact. The old Coordinator product path is unchanged.

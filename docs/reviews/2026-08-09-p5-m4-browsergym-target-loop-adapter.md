@@ -84,10 +84,11 @@ fixed benchmark-only 7.5-second inter-policy-call interval. Pacing is neither
 backoff nor AgentLoop authority. The configured profile passed the clean
 exact-head internal DOM attestation: DONE, two observations, one execution,
 one Mistral provider attempt, and zero retry/fallback or safety violations.
-External preflight is admitted. The independent `RUN_EXTERNAL_SMOKE=1` opt-in
-is absent, so the fixed external smoke remains `NOT_RUN`. Adapter CI does not
-substitute for live smoke; the protected manual workflow retains the explicit
-execution gate.
+External preflight is admitted. At the time of this implementation review the
+independent `RUN_EXTERNAL_SMOKE=1` opt-in was absent, so no formal smoke had
+run. Current execution status is determined by the protected exact-head
+workflow artifact. Adapter CI does not substitute for live smoke; the manual
+workflow retains the explicit execution gate.
 
 BrowserGym adapter status is
 `CLOSED_FOR_PINNED_MINIWOB_MECHANICAL_PROFILE`; each reviewed task is

@@ -143,9 +143,9 @@ This manifest is mechanical-only, so a live semantic evaluator is not a gate.
 The optional SDK is isolated in the `external-smoke` extra. Admission still
 requires one clean exact SHA across the complete internal run set, full CI, and
 live policy attestations, zero safety counters, the exact manifest digest, and
-a closed target-loop environment wrapper. The last wrapper is not yet closed;
-therefore preflight is expected to reject execution and no external benchmark
-is run.
+a closed target-loop environment wrapper. That wrapper was still open when
+P5-M3.2 was recorded; P5-M4 later closed it for the pinned three-task mechanical
+profile without expanding the manifest.
 Semantic fusion remains deferred and is not an M1 prerequisite.
 
 ## Exact model conformance ladder
@@ -225,6 +225,6 @@ reference actions, hidden state, reward, bids and selectors from public model
 artifacts. The fixed live smoke additionally requires exact-head admission,
 one-stage Mistral `format-only.v1`, fixed 7.5-second pacing, zero retry/fallback,
 `RUN_EXTERNAL_SMOKE=1`, and `--execute`. The exact-head Mistral internal-DOM
-attestation and preflight are accepted. The external execution opt-in is not
-configured, so the fixed live smoke remains `NOT_RUN`; adapter CI is not used
-as a substitute.
+attestation and preflight are accepted. The protected fixed-smoke workflow is
+`CONFIGURED_AND_MANUALLY_GATED`; the latest execution result is determined by
+its exact-head artifact. Adapter CI is not used as a substitute.

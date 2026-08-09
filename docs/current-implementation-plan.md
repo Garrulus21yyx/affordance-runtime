@@ -38,7 +38,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M2.1 evidence semantics closure | `CLOSED_FOR_DECLARED_PROFILES` | relevance-bound effects, strong no-effect scope, presented evidence only, dynamic readiness |
 | P5-M3 new-loop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` | internal core/safety/evaluation accepted; external suites not run |
 | P5-M3.1 measurement/real adapters | `CLOSED_LOCALLY` | typed expectations, actual safety counters, real DOM/Visual/WoT suite, exact-head attestation command |
-| P5-M3.2 admission package | `PARTIAL_FAIL_CLOSED` | full-CI/live workflows and fixed external manifest exist; target-loop BrowserGym environment wrapper remains open |
+| P5-M3.2 admission package | `CLOSED_FOR_PINNED_MECHANICAL_PROFILE` | full-CI/live/adapter evidence and fixed manifest feed a protected manual workflow |
 | P5-E | `NOT_STARTED` | long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
@@ -132,4 +132,5 @@ fixed-task adapter conformance is closed at 3/3. The remaining activity is
 operational only: generate clean-head attestations, push, and verify exact-head
 CI. A live fixed smoke may run only after exact-head internal/full-CI/live-policy
 evidence admits it and the caller already supplied both explicit execution
-gates; otherwise its durable classification is `NOT_RUN/BLOCKED_WITH_REASON`.
+gates. Its current result is determined only by the exact-head protected
+workflow and artifact, not by a durable status literal in this plan.
