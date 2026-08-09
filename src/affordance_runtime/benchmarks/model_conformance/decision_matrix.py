@@ -37,18 +37,18 @@ class DecisionMatrixCase:
 
 
 def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixCase, ...]:
-    context = _context(serialized_context)
-    context_id = str(context["context_id"])
-    option = context["actions"]["options"][0]
+    base = _context(serialized_context)
+    context_id = str(base["context_id"])
+    option = base["actions"]["options"][0]
     action_id = str(option["action_id"])
     destinations = option.get("destinations", {}).get("items", [])
     destination_id = str(destinations[0]["destination_id"]) if destinations else ""
-    capability = context["world"]["observation_capabilities"][0]
+    capability = base["world"]["observation_capabilities"][0]
     criterion_ids = tuple(
         str(item["criterion_id"])
-        for item in context["task"].get("criteria", {}).get("items", [])
+        for item in base["task"].get("success_criteria", {}).get("items", [])
     )
-    fact_refs = _fact_refs(context)
+    fact_refs = _fact_refs(base)
     payloads = (
         ("select", "select_action", {
             "type": "select_action", "context_id": context_id,
@@ -83,7 +83,12 @@ def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixC
         }),
     )
     return tuple(
-        DecisionMatrixCase(name, variant, serialized_context, payload)
+        DecisionMatrixCase(
+            name,
+            variant,
+            _serialize(_decision_context(base, variant)),
+            payload,
+        )
         for name, variant, payload in payloads
     )
 
@@ -112,6 +117,9 @@ def build_multi_action_case(
     context["actions"]["options"] = options
     context["actions"]["total_count"] = action_count
     context["actions"]["page_size"] = action_count
+    context["task"]["instruction"] = (
+        f"Choose the only candidate that matches the declared objective: Candidate {correct_index + 1}."
+    )
     selected = options[correct_index]
     destinations = selected.get("destinations", {}).get("items", [])
     destination_id = str(destinations[0]["destination_id"]) if destinations else ""
@@ -149,6 +157,10 @@ def build_destination_case(
     option["destinations"] = {
         "items": items, "total_count": len(items), "truncated": False,
     }
+    context["task"]["instruction"] = (
+        "Activate the target without a destination."
+        if not items else f"Activate the target using Destination {correct_index + 1}."
+    )
     destination_id = str(items[correct_index]["destination_id"]) if items else ""
     payload = {
         "type": "select_action", "context_id": context["context_id"],
@@ -183,3 +195,56 @@ def _fact_refs(context: Mapping[str, object]) -> tuple[str, ...]:
         for target in targets if isinstance(target, dict)
         for fact in target.get("facts", {}).get("items", []) if isinstance(fact, dict)
     )
+
+
+def _decision_context(base: dict[str, Any], variant: str) -> dict[str, Any]:
+    context = copy.deepcopy(base)
+    task = context["task"]
+    actions = context["actions"]
+    progress = context["progress"]
+    if variant == "request_observation":
+        task["instruction"] = "Request a fresh structural observation before taking any action."
+        actions["options"] = []
+        actions["total_count"] = 0
+        actions["page_size"] = 0
+    elif variant == "request_action_page":
+        task["instruction"] = "Retrieve the next action page because the required action is not visible."
+        actions["options"] = []
+        actions["total_count"] = 1
+        actions["page_size"] = 0
+        actions["truncated"] = True
+        actions["has_more"] = True
+        actions["next_cursor"] = "cursor:next"
+    elif variant == "ask_user":
+        task["instruction"] = "A required value is missing. Ask the user for the field named value."
+        task["public_inputs"] = {}
+        actions["options"] = []
+        actions["total_count"] = 0
+        actions["page_size"] = 0
+    elif variant == "propose_done":
+        task["instruction"] = "The current validated evidence satisfies the task; propose completion."
+        progress["validated_task_status"] = "complete"
+        progress["unresolved_criteria"] = {"items": [], "total_count": 0, "truncated": False}
+        actions["options"] = []
+        actions["total_count"] = 0
+        actions["page_size"] = 0
+    elif variant == "wait":
+        task["instruction"] = "Wait briefly for the asynchronous state change before observing again."
+        actions["options"] = []
+        actions["total_count"] = 0
+        actions["page_size"] = 0
+    elif variant == "abort":
+        task["instruction"] = (
+            "This task is explicitly unsupported and cannot be completed by any available "
+            "action, observation, wait, or user input. Terminate safely without claiming completion."
+        )
+        actions["options"] = []
+        actions["total_count"] = 0
+        actions["page_size"] = 0
+        context["world"]["observation_capabilities"] = []
+        context["decision_mode"] = "recover"
+        progress["validated_task_status"] = "blocked"
+        progress["unresolved_criteria"] = {
+            "items": ["unsupported"], "total_count": 1, "truncated": False,
+        }
+    return context
