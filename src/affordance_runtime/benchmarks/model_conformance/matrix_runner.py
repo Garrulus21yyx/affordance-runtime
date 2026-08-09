@@ -82,11 +82,12 @@ async def run_decision_matrix(
     output_dir: Path,
     grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.COMPACT_CONTRACT,
     case_ids: tuple[str, ...] = (),
+    cases_override: tuple[DecisionMatrixCase, ...] = (),
 ) -> DecisionMatrixResult:
     if not 1 <= repetitions <= 20:
         raise ValueError("decision matrix repetitions must be in [1, 20]")
     scenario = await build_live_dom_scenario()
-    cases = (
+    cases = cases_override or (
         *build_seven_decision_cases(scenario.serialized_context),
         build_multi_action_case(scenario.serialized_context, action_count=8, correct_index=7),
         build_multi_action_case(scenario.serialized_context, action_count=16, correct_index=7),
@@ -99,6 +100,8 @@ async def run_decision_matrix(
         ),
         build_cross_action_destination_case(scenario.serialized_context),
     )
+    if cases_override and case_ids:
+        raise ValueError("decision matrix cannot combine explicit cases with case IDs")
     if case_ids:
         cases = tuple(case for case in cases if case.case_id in case_ids)
         if {case.case_id for case in cases} != set(case_ids):

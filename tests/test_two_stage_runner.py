@@ -26,7 +26,7 @@ class SemanticFollowingPort:
     async def generate_structured(self, messages, output_schema, config):
         context = json.loads(messages[1].content)["agent_context"]
         schema = output_schema.model_json_schema()
-        if set(schema["properties"]) == {"context_id", "decision_type"}:
+        if set(schema.get("properties", {})) == {"context_id", "decision_type"}:
             payload = {"context_id": context["context_id"], "decision_type": _kind(context)}
         else:
             payload = _payload(context)
@@ -142,7 +142,7 @@ class WrongRoutePort(SemanticFollowingPort):
 class PayloadFailurePort(SemanticFollowingPort):
     async def generate_structured(self, messages, output_schema, config):
         schema = output_schema.model_json_schema()
-        if set(schema["properties"]) == {"context_id", "decision_type"}:
+        if set(schema.get("properties", {})) == {"context_id", "decision_type"}:
             return await super().generate_structured(messages, output_schema, config)
         raise StructuredOutputError("fixture payload failure")
 
