@@ -42,6 +42,9 @@ class ModelConformanceAttestation:
     repetitions: int
     input_complexity: ModelInputComplexity
     status: ModelProfileSupportStatus
+    structured_output_status: str
+    action_selection_status: str
+    full_recurrent_decision_status: str
     success_counts: Mapping[str, int]
     failure_stage_counts: Mapping[str, int]
     report_files: tuple[AttestedFile, ...]
@@ -85,7 +88,11 @@ def attest_results(
     return ModelConformanceAttestation(
         ATTESTATION_SCHEMA_VERSION, git_sha, git_dirty, identity, variants, levels, repetitions,
         max((item.input_complexity for item in results), key=lambda item: item.total_input_bytes),
-        _status(results, attempts), dict(sorted(success.items())), dict(sorted(failures.items())),
+        _status(results, attempts),
+        _result_status(results, "structured_output_status"),
+        _result_status(results, "action_selection_status"),
+        _result_status(results, "full_recurrent_decision_status"),
+        dict(sorted(success.items())), dict(sorted(failures.items())),
         files, not errors, tuple(errors),
     )
 
@@ -112,6 +119,9 @@ def _load_result(path: Path) -> ModelProfileConformanceResult:
         value["classification"], tuple(value["classification_reasons"]),
         ModelInputComplexity(**value["input_complexity"]),
         tuple(ConformanceCellSummary(**item) for item in value.get("cell_summaries", ())),
+        value.get("structured_output_status", ""),
+        value.get("action_selection_status", ""),
+        value.get("full_recurrent_decision_status", ""),
     )
 
 
@@ -121,8 +131,10 @@ def _level_sort_key(level: str) -> tuple[int, int]:
 
 def _status(results, attempts) -> ModelProfileSupportStatus:
     statuses = tuple(ModelProfileSupportStatus(item.classification) for item in results)
-    if ModelProfileSupportStatus.SUPPORTED in statuses:
-        return ModelProfileSupportStatus.SUPPORTED
+    if ModelProfileSupportStatus.FULL_RECURRENT_POLICY_SUPPORTED in statuses:
+        return ModelProfileSupportStatus.FULL_RECURRENT_POLICY_SUPPORTED
+    if ModelProfileSupportStatus.ACTION_SELECTION_SUPPORTED in statuses:
+        return ModelProfileSupportStatus.ACTION_SELECTION_SUPPORTED
     if attempts and all(item.success for item in attempts):
         count = max(Counter((item.grounding_variant, item.level) for item in attempts).values())
         return ModelProfileSupportStatus.SINGLE_RUN_ATTESTED if count == 1 else ModelProfileSupportStatus.DIAGNOSTIC_PASS
@@ -137,3 +149,8 @@ def _attested_file(path: Path) -> AttestedFile:
     return AttestedFile(
         f"{path.parent.name}/{path.name}", f"sha256:{hashlib.sha256(content).hexdigest()}", len(content),
     )
+
+
+def _result_status(results, field: str) -> str:
+    values = tuple(getattr(item, field) for item in results if getattr(item, field))
+    return values[-1] if values else "not_admitted"

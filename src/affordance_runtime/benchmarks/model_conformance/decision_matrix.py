@@ -8,7 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from affordance_runtime.immutable import freeze_json
+from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 DECISION_VARIANTS = (
     "select_action",
@@ -22,11 +23,27 @@ DECISION_VARIANTS = (
 
 
 @dataclass(frozen=True)
+class DecisionPayloadExpectation:
+    expected_variant: str
+    exact_fields: Mapping[str, object]
+    allowed_domains: Mapping[str, tuple[object, ...]]
+    collection_item_domains: Mapping[str, tuple[object, ...]]
+    numeric_bounds: Mapping[str, tuple[int, int]]
+    required_nonblank_fields: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "exact_fields", freeze_json(self.exact_fields))
+        object.__setattr__(self, "allowed_domains", freeze_json(self.allowed_domains))
+        object.__setattr__(self, "collection_item_domains", freeze_json(self.collection_item_domains))
+        object.__setattr__(self, "numeric_bounds", freeze_json(self.numeric_bounds))
+        object.__setattr__(self, "required_nonblank_fields", tuple(self.required_nonblank_fields))
+@dataclass(frozen=True)
 class DecisionMatrixCase:
     case_id: str
     expected_variant: str
     serialized_context: str
     expected_payload: Mapping[str, object]
+    expectation: DecisionPayloadExpectation
     correct_action_index: int | None = None
     correct_destination_index: int | None = None
 
@@ -34,8 +51,6 @@ class DecisionMatrixCase:
         if self.expected_variant not in DECISION_VARIANTS:
             raise ValueError("matrix case requires a canonical decision variant")
         object.__setattr__(self, "expected_payload", freeze_json(self.expected_payload))
-
-
 def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixCase, ...]:
     base = _context(serialized_context)
     context_id = str(base["context_id"])
@@ -62,7 +77,7 @@ def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixC
         }),
         ("page", "request_action_page", {
             "type": "request_action_page", "context_id": context_id,
-            "query": "", "target_id": "", "relevance_role": "", "cursor": "",
+            "query": "", "target_id": "", "relevance_role": "", "cursor": "cursor:next",
         }),
         ("ask", "ask_user", {
             "type": "ask_user", "context_id": context_id,
@@ -82,17 +97,14 @@ def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixC
             "reason": "the requested operation is unsupported", "category": "unsupported",
         }),
     )
-    return tuple(
-        DecisionMatrixCase(
-            name,
-            variant,
-            _serialize(_decision_context(base, variant)),
-            payload,
-        )
-        for name, variant, payload in payloads
-    )
-
-
+    cases = []
+    for name, variant, payload in payloads:
+        context = _decision_context(base, variant)
+        cases.append(DecisionMatrixCase(
+            name, variant, _serialize(context), payload,
+            _payload_expectation(variant, payload, context),
+        ))
+    return tuple(cases)
 def build_multi_action_case(
     serialized_context: str,
     *,
@@ -133,10 +145,9 @@ def build_multi_action_case(
         "select_action",
         _serialize(context),
         payload,
+        _payload_expectation("select_action", payload, context),
         correct_action_index=correct_index,
     )
-
-
 def build_destination_case(
     serialized_context: str,
     *,
@@ -174,11 +185,10 @@ def build_destination_case(
         "select_action",
         _serialize(context),
         payload,
+        _payload_expectation("select_action", payload, context),
         correct_action_index=0,
         correct_destination_index=correct_index if items else None,
     )
-
-
 def _context(serialized_context: str) -> dict[str, Any]:
     value = json.loads(serialized_context)
     if not isinstance(value, dict):
@@ -193,11 +203,14 @@ def _serialize(value: Mapping[str, object]) -> str:
 def _fact_refs(context: Mapping[str, object]) -> tuple[str, ...]:
     world = context.get("world", {})
     targets = world.get("targets", {}).get("items", []) if isinstance(world, dict) else []
-    return tuple(
+    facts = tuple(
         str(fact["fact_ref"])
         for target in targets if isinstance(target, dict)
         for fact in target.get("facts", {}).get("items", []) if isinstance(fact, dict)
     )
+    global_facts = world.get("facts", {}).get("items", []) if isinstance(world, dict) else []
+    artifacts = world.get("artifact_summaries", {}).get("items", []) if isinstance(world, dict) else []
+    return (*facts, *(str(item["fact_ref"]) for item in global_facts), *(str(item["evidence_ref"]) for item in artifacts))
 
 
 def _decision_context(base: dict[str, Any], variant: str) -> dict[str, Any]:
@@ -251,3 +264,82 @@ def _decision_context(base: dict[str, Any], variant: str) -> dict[str, Any]:
             "items": ["unsupported"], "total_count": 1, "truncated": False,
         }
     return context
+
+
+def decision_matches_expectation(
+    decision: object,
+    expectation: DecisionPayloadExpectation,
+) -> bool:
+    actual = {"type": _decision_variant(decision), **to_json_compatible(vars(decision))}
+    if actual["type"] != expectation.expected_variant:
+        return False
+    for field, expected in expectation.exact_fields.items():
+        if actual.get(field) != to_json_compatible(expected):
+            return False
+    for field, domain in expectation.allowed_domains.items():
+        if actual.get(field) not in to_json_compatible(domain):
+            return False
+    for field, domain in expectation.collection_item_domains.items():
+        value = actual.get(field)
+        if not isinstance(value, list) or any(item not in to_json_compatible(domain) for item in value):
+            return False
+    for field, bounds in expectation.numeric_bounds.items():
+        value = actual.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or not bounds[0] <= value <= bounds[1]:
+            return False
+    return all(
+        isinstance(actual.get(field), str) and bool(actual[field].strip())
+        for field in expectation.required_nonblank_fields
+    )
+
+
+def _payload_expectation(variant, payload, context) -> DecisionPayloadExpectation:
+    exact = {"type": variant, "context_id": payload["context_id"]}
+    allowed: dict[str, tuple[object, ...]] = {}
+    collections: dict[str, tuple[object, ...]] = {}
+    numeric: dict[str, tuple[int, int]] = {}
+    nonblank: tuple[str, ...] = ()
+    if variant == "select_action":
+        exact.update({key: payload[key] for key in ("action_id", "parameters", "destination_id")})
+    elif variant == "request_observation":
+        allowed["subject_id"] = tuple(dict.fromkeys([
+            *(item["target_id"] for item in context["world"]["targets"]["items"]),
+            *(item["target_id"] for item in context["actions"]["options"]),
+        ]))
+        capabilities = tuple(context["world"].get("observation_capabilities", ()))
+        allowed["modality"] = tuple(dict.fromkeys(item["modality"] for item in capabilities))
+        offered = tuple(item["assurance"] for item in capabilities)
+        allowed["required_assurance"] = tuple(
+            item.value for item in ObservationAssurance
+            if any(assurance_satisfies(candidate, item) for candidate in offered)
+        )
+        nonblank = ("reason",)
+    elif variant == "request_action_page":
+        exact.update({key: payload[key] for key in ("query", "target_id", "relevance_role", "cursor")})
+    elif variant == "ask_user":
+        collections["requested_fields"] = tuple(payload["requested_fields"])
+        exact["requested_fields"] = payload["requested_fields"]
+        nonblank = ("question",)
+    elif variant == "propose_done":
+        exact["unresolved_items"] = payload["unresolved_items"]
+        collections["claimed_criteria"] = tuple(
+            item["criterion_id"] for item in context["task"]["success_criteria"]["items"]
+        )
+        collections["evidence_refs"] = _fact_refs(context)
+        nonblank = ("result_summary",)
+    elif variant == "wait":
+        remaining = int(context.get("budgets", {}).get("remaining_wait_ms", 0))
+        numeric["max_wait_ms"] = (1, min(60_000, remaining))
+        nonblank = ("reason",)
+    else:
+        allowed["category"] = ("policy", "safety", "unsupported", "no_progress", "user_request")
+        nonblank = ("reason",)
+    return DecisionPayloadExpectation(variant, exact, allowed, collections, numeric, nonblank)
+
+
+def _decision_variant(decision: object) -> str:
+    return {
+        "SelectAction": "select_action", "RequestObservation": "request_observation",
+        "RequestActionPage": "request_action_page", "AskUser": "ask_user",
+        "ProposeDone": "propose_done", "Wait": "wait", "Abort": "abort",
+    }.get(type(decision).__name__, "")

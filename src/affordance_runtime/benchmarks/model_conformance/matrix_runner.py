@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.model_boundary.failures import ModelFailure
+from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
@@ -24,8 +24,14 @@ from .decision_matrix import (
     build_destination_case,
     build_multi_action_case,
     build_seven_decision_cases,
+    decision_matches_expectation,
 )
 from .profile_identity import identity_from_ollama_inventory, ollama_inventory
+from .runtime_decision_matrix import (
+    RuntimeDecisionOutcome,
+    run_scripted_runtime_decision_matrix,
+    runtime_outcome_matches,
+)
 from .scenario import build_live_dom_scenario
 
 
@@ -55,6 +61,8 @@ class DecisionMatrixResult:
     nonfirst_case_count: int
     retry_count: int
     fallback_count: int
+    runtime_control_outcomes: tuple[RuntimeDecisionOutcome, ...]
+    runtime_control_success_count: int
 
 
 async def run_decision_matrix(
@@ -89,6 +97,7 @@ async def run_decision_matrix(
     for case in cases:
         for _ in range(repetitions):
             attempts.append(await _attempt(case, port_factory(), grounding_variant))
+    runtime_outcomes = await run_scripted_runtime_decision_matrix()
     result = DecisionMatrixResult(
         "compact-decision-matrix.v1",
         identity,
@@ -108,6 +117,8 @@ async def run_decision_matrix(
         ),
         0,
         0,
+        runtime_outcomes,
+        sum(runtime_outcome_matches(item) for item in runtime_outcomes),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "matrix.json").write_text(
@@ -142,16 +153,18 @@ async def _attempt(
     outcome = await adapter.generate(request)
     record = port.last_call
     if isinstance(outcome, ModelFailure):
-        return _result(case, "", False, outcome.kind.value, record)
+        return _result(case, "", False, _provider_failure(outcome.kind), record)
     decision = parse_agent_decision(
         outcome.raw_payload,
         json.loads(case.serialized_context)["context_id"],
     )
     if isinstance(decision, ModelFailure | PolicyFailure):
-        return _result(case, "", False, "parser", record)
+        return _result(case, "", False, "schema_error", record)
     actual = _variant(decision)
-    success = actual == case.expected_variant and _matches_oracle(decision, case)
-    stage = "" if success else "wrong_decision_or_domain"
+    if actual != case.expected_variant:
+        return _result(case, actual, False, "wrong_variant", record, decision=decision)
+    success = decision_matches_expectation(decision, case.expectation)
+    stage = "" if success else "wrong_field_domain"
     return _result(case, actual, success, stage, record, decision=decision)
 
 
@@ -175,13 +188,17 @@ def _result(case, actual, success, stage, record, *, decision=None) -> DecisionM
 
 
 def _matches_oracle(decision, case: DecisionMatrixCase) -> bool:
-    expected = case.expected_payload
-    if case.expected_variant == "select_action":
-        return (
-            decision.action_id == expected["action_id"]
-            and decision.destination_id == expected["destination_id"]
-        )
-    return True
+    return decision_matches_expectation(decision, case.expectation)
+
+
+def _provider_failure(kind: ModelFailureKind) -> str:
+    if kind is ModelFailureKind.PROVIDER_UNAVAILABLE:
+        return "provider_unavailable"
+    if kind is ModelFailureKind.TIMEOUT:
+        return "timeout"
+    if kind in {ModelFailureKind.SCHEMA_ERROR, ModelFailureKind.INVALID_RESPONSE}:
+        return "structured_output"
+    return "schema_error"
 
 
 def _variant(decision) -> str:

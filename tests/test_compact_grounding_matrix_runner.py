@@ -6,7 +6,11 @@ from pathlib import Path
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelProfileIdentity
 from affordance_runtime.benchmarks.model_conformance.matrix_runner import run_decision_matrix
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
-from affordance_runtime.model_port import ModelCallRecord
+from affordance_runtime.model_port import (
+    ModelCallRecord,
+    ProviderFailureKind,
+    ProviderModelError,
+)
 
 
 @dataclass
@@ -90,3 +94,41 @@ def test_matrix_runner_records_complete_secret_free_behavior(tmp_path: Path) -> 
     encoded = (tmp_path / "matrix.json").read_text().casefold()
     for forbidden in ("raw_response", "selector", "credential", "destination:first"):
         assert forbidden not in encoded
+
+
+@dataclass
+class WrongVariantPort(ContextFollowingPort):
+    async def generate_structured(self, messages, output_schema, config):
+        del config
+        context = json.loads(messages[1].content)["agent_context"]
+        return output_schema.model_validate({
+            "type": "abort",
+            "context_id": context["context_id"],
+            "reason": "wrong variant proof",
+            "category": "no_progress",
+        })
+
+
+@dataclass
+class UnavailablePort(ContextFollowingPort):
+    async def generate_structured(self, messages, output_schema, config):
+        del messages, output_schema, config
+        raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY)
+
+
+def test_wrong_variant_is_distinct_from_provider_unavailability(tmp_path: Path) -> None:
+    identity = ModelProfileIdentity(
+        "fixture", "model", "local", "fixture", "1", "digest", "family", "1B", "Q4",
+        "p5-m1.1", "agent-decision.v1", "default-64k", "sha256:schema", 1_024,
+        "compact-contract", "compact-contract.v1", "fixture",
+    )
+    wrong = asyncio.run(run_decision_matrix(
+        identity, WrongVariantPort, repetitions=1, output_dir=tmp_path / "wrong",
+        case_ids=("select",),
+    ))
+    unavailable = asyncio.run(run_decision_matrix(
+        identity, UnavailablePort, repetitions=1, output_dir=tmp_path / "unavailable",
+        case_ids=("select",),
+    ))
+    assert wrong.attempts[0].failure_stage == "wrong_variant"
+    assert unavailable.attempts[0].failure_stage == "provider_unavailable"

@@ -11,6 +11,7 @@ from affordance_runtime.benchmarks.model_conformance.decision_matrix import (
     build_destination_case,
     build_multi_action_case,
     build_seven_decision_cases,
+    decision_matches_expectation,
 )
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
 from affordance_runtime.benchmarks.model_conformance.stages import attribute_decision_payload
@@ -75,6 +76,36 @@ def test_all_seven_decisions_cross_production_bridge_schema_and_parser() -> None
         port, decision = _run(case)
         assert port.calls == 1
         assert type(decision).__name__ == expected_types[case.expected_variant]
+        assert decision_matches_expectation(decision, case.expectation)
+
+
+def test_seven_decision_expectations_validate_complete_payload_domains() -> None:
+    scenario = asyncio.run(build_live_dom_scenario())
+    cases = {case.expected_variant: case for case in build_seven_decision_cases(scenario.serialized_context)}
+    page = cases["request_action_page"]
+    assert page.expected_payload["cursor"] == "cursor:next"
+    assert page.expectation.exact_fields["cursor"] == "cursor:next"
+
+    mutations = {
+        "request_observation": {"subject_id": "hidden-subject"},
+        "request_action_page": {"cursor": ""},
+        "ask_user": {"requested_fields": ["invented"]},
+        "propose_done": {"evidence_refs": ["evidence:hidden"]},
+        "wait": {"max_wait_ms": 120_001},
+        "abort": {"category": "internal"},
+    }
+    for variant, changed in mutations.items():
+        case = cases[variant]
+        payload = dict(case.expected_payload)
+        payload.update(changed)
+        try:
+            decision = type(_run(case)[1])(**{
+                key: tuple(value) if key in {"requested_fields", "claimed_criteria", "evidence_refs", "unresolved_items"} else value
+                for key, value in payload.items() if key != "type"
+            })
+        except ValueError:
+            continue
+        assert not decision_matches_expectation(decision, case.expectation)
 
 
 def test_compact_multi_action_guide_preserves_order_without_oracle_leakage() -> None:

@@ -205,3 +205,6 @@ class ModelProfileConformanceResult:
     classification_reasons: tuple[str, ...]
     input_complexity: ModelInputComplexity
     cell_summaries: tuple[ConformanceCellSummary, ...] = ()
+    structured_output_status: str = ""
+    action_selection_status: str = ""
+    full_recurrent_decision_status: str = ""

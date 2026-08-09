@@ -12,7 +12,7 @@ from affordance_runtime.model_policy.spec import AgentDecisionPayload
 from affordance_runtime.model_port import ModelPort
 
 from .attempts import run_structured_attempt
-from .classification import classify_support
+from .classification import classify_policy_capabilities, classify_support
 from .contracts import (
     ConformanceAttempt,
     ConformanceCellSummary,
@@ -60,6 +60,12 @@ async def run_profile(
         counts, tuple(item.stage for item in attempts if not item.success),
         support_attestation=support_attestation,
     )
+    capabilities = classify_policy_capabilities(
+        counts,
+        tuple(item.stage for item in attempts if not item.success),
+        support_attestation=support_attestation,
+        recurrent_matrix=None,
+    )
     result = ModelProfileConformanceResult(
         identity, tuple(attempts),
         tuple(level for level, (passed, total) in counts.items() if passed == total and total),
@@ -69,6 +75,9 @@ async def run_profile(
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ),
         _cell_summaries(tuple(attempts)),
+        capabilities.structured_output_status.value,
+        capabilities.action_selection_status.value,
+        capabilities.full_recurrent_decision_status.value,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "result.json").write_text(

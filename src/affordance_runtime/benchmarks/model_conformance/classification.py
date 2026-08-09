@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
 
 from .contracts import ModelConformanceStage, ModelInputComplexity
@@ -17,8 +19,72 @@ class ModelProfileSupportStatus(StrEnum):
     SINGLE_RUN_ATTESTED = "single_run_attested"
     DIAGNOSTIC_PASS = "diagnostic_pass"
     SUPPORTED_WITH_COMPACT_GROUNDING = "supported_with_compact_grounding"
-    SUPPORTED = "supported"
+    ACTION_SELECTION_SUPPORTED = "action_selection_supported"
+    FULL_RECURRENT_POLICY_SUPPORTED = "full_recurrent_policy_supported"
     UNSUPPORTED = "unsupported_for_agent_policy"
+
+
+class ModelPolicyCapabilityStatus(StrEnum):
+    SUPPORTED = "supported"
+    PARTIAL = "partial"
+    NOT_ADMITTED = "not_admitted"
+    INCONCLUSIVE_PROVIDER_AVAILABILITY = "inconclusive_provider_availability"
+
+
+@dataclass(frozen=True)
+class ModelPolicyCapabilitySupport:
+    structured_output_status: ModelPolicyCapabilityStatus
+    action_selection_status: ModelPolicyCapabilityStatus
+    full_recurrent_decision_status: ModelPolicyCapabilityStatus
+
+
+def classify_policy_capabilities(
+    level_counts: Mapping[str, tuple[int, int]],
+    failure_stages: tuple[ModelConformanceStage, ...],
+    *,
+    support_attestation: bool,
+    recurrent_matrix: Mapping[str, tuple[int, int]] | None,
+    critical_matrix_passed: bool = False,
+) -> ModelPolicyCapabilitySupport:
+    unavailable = ModelConformanceStage.UNAVAILABLE in failure_stages
+    if unavailable:
+        inconclusive = ModelPolicyCapabilityStatus.INCONCLUSIVE_PROVIDER_AVAILABILITY
+        return ModelPolicyCapabilitySupport(inconclusive, inconclusive, inconclusive)
+    structured = (
+        ModelPolicyCapabilityStatus.SUPPORTED
+        if level_counts.get("0", (0, 0))[0] == level_counts.get("0", (0, 0))[1] > 0
+        else ModelPolicyCapabilityStatus.NOT_ADMITTED
+    )
+    action_gate = support_attestation and all(
+        level_counts.get(str(level)) == (20, 20) for level in range(5)
+    ) and not {
+        ModelConformanceStage.STRICT_JSON,
+        ModelConformanceStage.PAYLOAD_SCHEMA,
+        ModelConformanceStage.ACTION_ID,
+        ModelConformanceStage.DESTINATION_ID,
+        ModelConformanceStage.PARAMETERS,
+        ModelConformanceStage.RUNTIME_ADMISSION,
+    }.intersection(failure_stages)
+    action = (
+        ModelPolicyCapabilityStatus.SUPPORTED
+        if action_gate else ModelPolicyCapabilityStatus.NOT_ADMITTED
+    )
+    if recurrent_matrix is None:
+        recurrent = ModelPolicyCapabilityStatus.NOT_ADMITTED
+    elif action_gate and critical_matrix_passed and all(
+        recurrent_matrix.get(variant) == (20, 20)
+        for variant in _RECURRENT_VARIANTS
+    ):
+        recurrent = ModelPolicyCapabilityStatus.SUPPORTED
+    else:
+        recurrent = ModelPolicyCapabilityStatus.PARTIAL
+    return ModelPolicyCapabilitySupport(structured, action, recurrent)
+
+
+_RECURRENT_VARIANTS = (
+    "select_action", "request_observation", "request_action_page", "ask_user",
+    "propose_done", "wait", "abort",
+)
 
 
 def classify_complexity(value: ModelInputComplexity) -> str:
@@ -70,7 +136,7 @@ def classify_support(
         ModelConformanceStage.PARAMETERS,
     }
     if support_attestation and twenty and not forbidden_failures.intersection(failure_stages):
-        return ModelProfileSupportStatus.SUPPORTED
+        return ModelProfileSupportStatus.ACTION_SELECTION_SUPPORTED
     if complete:
         total = sum(total for _, total in level_counts.values())
         return ModelProfileSupportStatus.SINGLE_RUN_ATTESTED if total == 5 else ModelProfileSupportStatus.DIAGNOSTIC_PASS

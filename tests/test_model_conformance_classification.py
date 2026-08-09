@@ -33,7 +33,10 @@ def test_one_success_is_not_supported_and_twenty_per_level_is_required() -> None
     single = {str(level): (1, 1) for level in range(5)}
     assert classify_support(single, (), support_attestation=False) == ModelProfileSupportStatus.SINGLE_RUN_ATTESTED
     twenty = {str(level): (20, 20) for level in range(5)}
-    assert classify_support(twenty, (), support_attestation=True) == ModelProfileSupportStatus.SUPPORTED
+    assert (
+        classify_support(twenty, (), support_attestation=True)
+        == ModelProfileSupportStatus.ACTION_SELECTION_SUPPORTED
+    )
     assert classify_support(
         twenty, (ModelConformanceStage.PAYLOAD_SCHEMA,), support_attestation=True,
-    ) != ModelProfileSupportStatus.SUPPORTED
+    ) != ModelProfileSupportStatus.ACTION_SELECTION_SUPPORTED
