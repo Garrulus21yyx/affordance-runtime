@@ -263,7 +263,7 @@ case was unstable. Neither profile showed first-action anchoring in the 15
 non-first opportunities. Mistral format-only passed 12/12; two compact runs
 completed 2/12 and 3/12 and returned typed provider-unavailable failures for
 the other calls under the mandatory zero-retry profile. Exact-head remote CI is also unavailable.
-`compact-contract.v2` is a `PRODUCTION_CANDIDATE_FULL_RECURRENT_PROFILE`.
+`compact-contract.v2` is `EXPERIMENTAL_NOT_ADMITTED`.
 Its 16-action guide is 4,031 bytes with all 16 actions and truthful
 `truncated=false`; privacy, determinism and seven-contract scripted Runtime
 tests pass. Qwen exact v2 candidate passed 64/75, but recurrent Page was 4/5
@@ -272,3 +272,15 @@ in 5/20 non-first opportunities. Neither candidate admitted a 20/20 support
 run. Mistral v2 was not run because no explicit strong-provider opt-in was
 configured; availability/no-regression is inconclusive. No external benchmark
 or default Coordinator cutover was run.
+
+P5-M3.6 closes a benchmark-only two-stage diagnostic without admitting a new
+production profile. Scripted, local OpenAI-compatible, and local Ollama-shaped
+transports pass routing, payload, end-to-end Runtime control at 7/7 and all
+eight critical cases. Exact Qwen results are baseline 20/35, routing 26/35,
+fixed-route payload 35/35, end-to-end 25/35, critical 30/40. Exact Llama
+results are 5/35, 25/35, 35/35, 25/35, and 0/40. Each conclusion is
+`routing_bottleneck`; each candidate failed, and neither admitted support
+testing. The fixed-route payload result is not production-policy evidence.
+Mistral two-stage is `NOT_RUN`; its prior formal paced compact-v2 candidate
+remains 70/75 and `INCONCLUSIVE_PROVIDER_AVAILABILITY`, while its independent
+5/5 follow-up remains non-backfilling rate-limit evidence.

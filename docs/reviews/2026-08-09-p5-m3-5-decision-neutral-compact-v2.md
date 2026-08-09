@@ -27,7 +27,7 @@ credentials, benchmark oracle/answers and raw provider responses are excluded.
 - `compact-contract` → `compact-contract.v1` →
   `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`;
 - `compact-contract-v2` → `compact-contract.v2` →
-  `PRODUCTION_CANDIDATE_FULL_RECURRENT_PROFILE`.
+  `EXPERIMENTAL_NOT_ADMITTED` after its candidate gate failed.
 
 V1 serialization, concrete first-action SelectAction example and size semantics
 are unchanged. Its prior Qwen/Llama L0–L4 20/20 evidence is now explicitly

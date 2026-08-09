@@ -184,3 +184,14 @@ Qwen and Llama exact GPU candidates did not pass the seven-decision 5/5 gate,
 so no 20/20 recurrent support run was admitted. Format-only remains default;
 the global cutover is blocked. See the
 [M3.5 review](reviews/2026-08-09-p5-m3-5-decision-neutral-compact-v2.md).
+
+## P5-M3.6 two-stage decision diagnostic
+
+The benchmark-only two-stage harness separately measures routing-only,
+fixed-route payload-only, single-stage compact-v2, and full two-stage Runtime
+outcomes on identical public contexts. Scripted and local HTTP fixtures close
+all seven decisions and all eight critical cases. Exact Qwen and Llama runs
+both isolate strong payload filling but incomplete routing, so both candidate
+gates fail and no 20/20 support gate runs. Production factory, AgentLoop,
+parser, admission, defaults, and external-benchmark gates are unchanged. See
+the [M3.6 review](reviews/2026-08-09-p5-m3-6-two-stage-decision-decomposition.md).

@@ -200,3 +200,15 @@ Qwen has zero wrong first-action selections across 20 non-first opportunities;
 Llama has five. Mistral v2 is `INCONCLUSIVE_PROVIDER_AVAILABILITY` because this
 run had no explicit strong-provider opt-in. BrowserGym, MiniWoB, WebArena,
 WorkArena and OSWorld were not run.
+
+## P5-M3.6 two-stage diagnostic evidence
+
+Scripted, local OpenAI-compatible, and local Ollama-shaped transport gates pass
+routing 7/7, payload 7/7, end-to-end 7/7, Runtime outcomes 7/7, and all eight
+critical cases. Qwen exact candidate cells are baseline 20/35, routing 26/35,
+payload 35/35, end-to-end 25/35, critical 30/40. Llama cells are 5/35, 25/35,
+35/35, 25/35, and 0/40. Both diagnoses are `routing_bottleneck`, both formal
+candidates fail, and no 20/20 run is allowed. Mistral two-stage is not run by
+default because two-stage calls increase the rate-limit burden. Progress is
+atomic after each stage, secret-free, inspectable, and never auto-resumed or
+replayed.

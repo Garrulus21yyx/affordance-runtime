@@ -364,8 +364,18 @@ no-regression and unavailable exact-head CI. No default or external benchmark
 cutover is authorized.
 
 P5-M3.5 freezes v1 as `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE` and adds
-decision-neutral `compact-contract.v2` as an explicit full-recurrent candidate.
+decision-neutral `compact-contract.v2` as an explicit experiment that is not admitted.
 The exact Qwen and Llama GPU candidates failed the seven-decision 5/5 gate, so
 no 20/20 recurrent support upgrade was admitted. Format-only remains the
 global default; strong-provider v2 availability, exact-head CI and full
 recurrent support continue to block any separate default-cutover commit.
+
+P5-M3.6 diagnoses the failed single-stage candidate without changing that
+admission decision. The benchmark-only two-stage path separates routing from
+payload generation, derives payload schemas from canonical branch models, and
+replays complete parsed output through existing Runtime control. Exact Qwen
+and Llama candidates both expose a routing bottleneck while fixed-route payload
+generation passes 35/35. Both candidate gates fail, so no support gate or
+production adoption is admitted. Parser, Runtime admission, AgentLoop,
+grounding defaults, external benchmark status, and Coordinator cutover remain
+unchanged.

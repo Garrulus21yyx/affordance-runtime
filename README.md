@@ -176,7 +176,15 @@ failed Page once and Wait/Abort 5/5 each; Llama passed 20/75 and showed five
 wrong first-action selections. Neither profile qualified for the 20/20 full
 recurrent gate. `compact-contract.v1` is therefore frozen as
 `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`; v2 remains an explicit
-`PRODUCTION_CANDIDATE_FULL_RECURRENT_PROFILE`. The factory default is unchanged.
+`EXPERIMENTAL_NOT_ADMITTED`. The factory default is unchanged.
+
+P5-M3.6 keeps that production boundary and decomposes the same public-context
+cases only inside model-conformance diagnostics. On clean exact-profile runs,
+Qwen scored baseline 20/35, routing 26/35, payload-only 35/35, end-to-end 25/35,
+and critical 30/40; Llama scored 5/35, 25/35, 35/35, 25/35, and 0/40. Both are
+`routing_bottleneck` diagnoses and failed the two-stage candidate gate. The
+fixed-route payload-only result is diagnostic isolation, not policy support.
+Two-stage composition is not in the production factory or AgentLoop.
 
 P5-M3.4 exposes `compact-contract` as an explicit, versioned production
 grounding profile selected by argument or `LLM_DECISION_GROUNDING`. It does not

@@ -163,3 +163,11 @@ The recurrent benchmark passes exact parsed decisions into production
 decision-control owners, but its oracle and qualification status remain
 post-hoc evidence. No case ID, expected decision, retry, fallback or provider
 name can affect production orchestration.
+
+P5-M3.6 retains the same boundary while making two diagnostic provider calls
+with distinct responsibilities: one route proposal and, only after a valid
+route, one complete canonical payload. The second call is not a retry. A route
+failure causes zero payload and Runtime calls; a payload failure causes zero
+effectful Runtime calls. Fixed pacing is recorded but never failure-adaptive,
+and progress is observational rather than resumable. No two-stage branch is
+present in AgentLoop or production factory composition.

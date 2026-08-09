@@ -109,3 +109,15 @@ Exact Qwen and Llama GPU candidates failed their 5/5 recurrent gates, so their
 20/20 support gates were not run. The next admitted work is evidence review or
 a separately authorized design change; this slice does not tune prompts,
 switch defaults, run external benchmarks, or add repair/retry/fallback.
+
+## P5-M3.6 closure
+
+The two-stage decomposition diagnostic is implemented entirely under
+`benchmarks/model_conformance/two_stage`. It measures routing, fixed-route
+payload filling, end-to-end Runtime outcomes, and the original single-stage
+compact-v2 baseline with atomic per-stage progress. Qwen and Llama both failed
+candidate admission because routing remained incomplete despite 35/35 payload
+isolation. No support gate, remote Mistral run, production adoption, external
+benchmark, or default change is admitted. A future adoption review would still
+need 20/20 exact evidence plus call-budget, latency, token, rate-limit,
+strong-provider, rollback, and exact-head CI evidence.

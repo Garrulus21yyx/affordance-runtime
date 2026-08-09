@@ -155,8 +155,17 @@ remains default and external benchmark execution remains separately blocked.
 ## 10. Decision-neutral recurrent qualification
 
 P5-M3.5 is complete as an implementation/measurement slice. V1 remains the
-explicit action-selection profile. V2 is an explicit full-recurrent candidate,
+explicit action-selection profile. V2 is explicit but experimental and not admitted,
 but both exact local profiles failed candidate admission and Mistral v2
 availability is unmeasured. Global default cutover therefore remains blocked;
 any future default change must be a separate minimal commit after all hard
 gates pass.
+
+## 11. Two-stage diagnostic decomposition
+
+P5-M3.6 is complete as a diagnostic implementation and measurement slice.
+The benchmark-only harness reuses canonical payload branches, strict parsing,
+and production Runtime control while keeping route proposals outside Runtime
+state. Exact Qwen and Llama candidates both failed with a routing bottleneck;
+payload-only was 35/35 for each only when the harness fixed the correct route.
+Two-stage production admission remains explicitly out of scope.

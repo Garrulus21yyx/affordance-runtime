@@ -186,6 +186,14 @@ grounding selection; production core does not import conformance; expected
 answers never enter AgentContext; parser, ActionSpace and admission remain
 unchanged.
 
+P5-M3.6 adds no production owner. The two-stage route and dynamically narrowed
+payload schemas live only in model-conformance. A route proposal cannot execute
+or enter AgentLoop state; the complete stage-two object still passes the
+canonical strict parser and existing Runtime control. Production policy,
+factory, AgentLoop, ActionSpace, admission, and target adapters do not import
+the diagnostic package. Dynamic schema narrowing is provider guidance, never a
+second legality authority.
+
 P5-M3.4 moves the two production grounding variants and their profile versions
 into `model_policy/grounding.py`; benchmark diagnostic variants remain in
 `benchmarks/model_conformance/grounding.py`. `schema_identity.py` owns only the
