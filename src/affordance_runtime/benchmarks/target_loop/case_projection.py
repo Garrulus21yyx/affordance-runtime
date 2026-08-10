@@ -57,6 +57,7 @@ def project_case_result(
         values["stale_zero_call_violations"], True, stale_opportunities,
     )
     runtime_reason = _runtime_reason(result, metadata)
+    public_runtime_failure = runtime_reason if _is_failure_result(result) else ""
     case_failure_code = _case_failure_code(
         result, instrumentation, runtime_reason, bool(metric_collisions)
     )
@@ -81,7 +82,7 @@ def project_case_result(
     ) if instrumentation.cleanup_failures else ""
     integrity_code = "metric_name_collision" if metric_collisions else ""
     facts = FailureFacts(
-        runtime_reason,
+        public_runtime_failure,
         agent_failure,
         policy_code,
         component_origin,
@@ -126,7 +127,7 @@ def project_case_result(
         latest_action_evaluation_status=(
             metadata.latest_action_evaluation_status if metadata else ""
         ),
-        runtime_reason_code=runtime_reason,
+        runtime_reason_code=public_runtime_failure,
         agent_failure_code=agent_failure,
         cleanup_failure_code=cleanup_code,
         cleanup_exception_class=_safe_exception_class(
