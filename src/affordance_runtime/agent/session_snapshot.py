@@ -24,6 +24,11 @@ class PartialEpisodeSnapshot:
     no_progress_count: int
     last_progress_event_type: str
     sent_unknown_count: int
+    last_decision_type: str
+    last_action_space_option_count: int
+    last_world_target_count: int
+    last_world_coverage: str
+    pending_kind: str
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
@@ -51,4 +56,20 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         session.progress_controller.no_progress_count,
         latest_event.event_type if latest_event else "",
         sent_unknown,
+        type(state.recent_turns[-1].decision).__name__ if state.recent_turns else "",
+        len(session.current_action_space.options) if session.current_action_space is not None else 0,
+        len(state.current_observation.targets),
+        str(state.current_observation.coverage),
+        _pending_kind(session),
     )
+
+
+def _pending_kind(session: AgentRunSession) -> str:
+    state = session.state
+    if state.pending_unknown_request is not None:
+        return "unknown_effect"
+    if state.pending_user_question:
+        return "user_question"
+    if state.pending_confirmation is not None:
+        return "confirmation"
+    return ""

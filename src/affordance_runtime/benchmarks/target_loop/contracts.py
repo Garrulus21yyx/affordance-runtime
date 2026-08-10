@@ -61,6 +61,29 @@ class TerminalReasonCode(StrEnum):
     BLOCKED_OTHER = "blocked_other"
 
 
+class CaseFailureOrigin(StrEnum):
+    NONE = "none"
+    ENVIRONMENT_FACTORY = "environment_factory"
+    TASK_FACTORY = "task_factory"
+    COMPOSITION_FACTORY = "composition_factory"
+    LOOP_CONSTRUCTION = "loop_construction"
+    SESSION_START = "session_start"
+    ENVIRONMENT_RESET = "environment_reset"
+    INITIAL_OBSERVATION = "initial_observation"
+    OBSERVATION_PROJECTION = "observation_projection"
+    POLICY_DECISION = "policy_decision"
+    DECISION_CONTROL = "decision_control"
+    ACTION_BINDING = "action_binding"
+    CURRENTNESS = "currentness"
+    EXECUTION = "execution"
+    POST_ACTION_OBSERVATION = "post_action_observation"
+    ACTION_EVALUATION = "action_evaluation"
+    TASK_EVALUATION = "task_evaluation"
+    HARNESS_WATCHDOG = "harness_watchdog"
+    CLEANUP = "cleanup"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class MetricExpectation:
     metric: str
@@ -172,6 +195,15 @@ class BenchmarkCaseResult:
     same_attempt_streak: int = 0
     no_progress_count: int = 0
     last_progress_event_type: str = ""
+    failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
+    failure_code: str = ""
+    exception_class: str = ""
+    last_decision_type: str = ""
+    last_policy_failure_code: str = ""
+    last_action_space_option_count: int = 0
+    last_world_target_count: int = 0
+    last_world_coverage: str = ""
+    pending_kind: str = ""
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
@@ -183,6 +215,10 @@ class BenchmarkCaseResult:
         )
         if not blocked and not no_progress and self.terminal_reason_code is not None:
             raise ValueError("non-blocked case result cannot carry a terminal reason code")
+        if self.exception_class and (
+            len(self.exception_class) > 128 or not self.exception_class.replace("_", "").isalnum()
+        ):
+            raise ValueError("benchmark exception metadata must be a bounded class name")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 

@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
-from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkCaseResult, TerminalReasonCode
+from affordance_runtime.benchmarks.target_loop.contracts import (
+    BenchmarkCaseResult,
+    CaseFailureOrigin,
+    TerminalReasonCode,
+)
 
 
 @dataclass(frozen=True)
@@ -32,7 +36,12 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     if policy == "timeout":
         return ClassifiedOutcome(MiniWobTaskOutcome.PROVIDER_TIMEOUT, "typed_policy_failure")
     if policy in {"invalid_response", "schema_error", "refused"}:
-        return ClassifiedOutcome(MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE, "typed_policy_failure")
+        outcome = (
+            MiniWobTaskOutcome.PROVIDER_REFUSED
+            if policy == "refused"
+            else MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE
+        )
+        return ClassifiedOutcome(outcome, "typed_policy_failure")
     reason = result.terminal_reason_code
     if reason is TerminalReasonCode.NO_PROGRESS_REPETITION:
         return ClassifiedOutcome(MiniWobTaskOutcome.NO_PROGRESS_REPETITION, "typed_runtime_reason")
@@ -42,11 +51,55 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.WRONG_DESTINATION, "typed_runtime_reason")
     if reason is TerminalReasonCode.OBSERVATION_CAPABILITY_NOT_OFFERED:
         return ClassifiedOutcome(MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE, "typed_runtime_reason")
+    if (
+        reason is TerminalReasonCode.ACTION_OUTSIDE_ACTION_SPACE
+        and result.last_action_space_option_count == 0
+    ):
+        return ClassifiedOutcome(MiniWobTaskOutcome.NO_ACTION_OFFERED, "typed_runtime_reason")
     if reason is not None:
         return ClassifiedOutcome(MiniWobTaskOutcome.RUNTIME_REJECTED, "typed_runtime_reason")
-    if result.failure_reason:
-        return ClassifiedOutcome(MiniWobTaskOutcome.ENVIRONMENT_FAILURE, "typed_harness_stage")
-    return ClassifiedOutcome(MiniWobTaskOutcome.OTHER_TYPED_FAILURE, "fallback")
+    if result.last_decision_type == "Abort":
+        return ClassifiedOutcome(MiniWobTaskOutcome.POLICY_ABORTED, "typed_last_decision")
+    if result.status == "waiting_user":
+        if result.last_decision_type == "AskUser" or result.pending_kind == "user_question":
+            return ClassifiedOutcome(MiniWobTaskOutcome.ASK_USER_UNRESOLVED, "typed_pending_kind")
+        if result.pending_kind == "unknown_effect":
+            return ClassifiedOutcome(
+                MiniWobTaskOutcome.WAITING_USER_EFFECT_UNKNOWN, "typed_pending_kind",
+            )
+        if result.latest_task_status == "unknown":
+            return ClassifiedOutcome(MiniWobTaskOutcome.WAITING_USER_TASK_UNKNOWN, "typed_task_status")
+    origin = _ORIGIN_OUTCOMES.get(result.failure_origin)
+    if origin is not None:
+        return ClassifiedOutcome(origin, "typed_failure_origin")
+    if result.failure_reason or result.failure_code or result.exception_class:
+        return ClassifiedOutcome(
+            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "bounded_unclassified_failure",
+        )
+    return ClassifiedOutcome(MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "bounded_fallback")
+
+
+_ORIGIN_OUTCOMES = {
+    CaseFailureOrigin.ENVIRONMENT_RESET: MiniWobTaskOutcome.RESET_FAILURE,
+    CaseFailureOrigin.INITIAL_OBSERVATION: MiniWobTaskOutcome.INITIAL_OBSERVATION_FAILURE,
+    CaseFailureOrigin.OBSERVATION_PROJECTION: MiniWobTaskOutcome.PROJECTION_FAILURE,
+    CaseFailureOrigin.POLICY_DECISION: MiniWobTaskOutcome.POLICY_DECISION_FAILURE,
+    CaseFailureOrigin.CURRENTNESS: MiniWobTaskOutcome.CURRENTNESS_FAILURE,
+    CaseFailureOrigin.EXECUTION: MiniWobTaskOutcome.EXECUTION_FAILURE,
+    CaseFailureOrigin.POST_ACTION_OBSERVATION: MiniWobTaskOutcome.POST_OBSERVATION_FAILURE,
+    CaseFailureOrigin.ACTION_EVALUATION: MiniWobTaskOutcome.ACTION_EVALUATOR_FAILURE,
+    CaseFailureOrigin.TASK_EVALUATION: MiniWobTaskOutcome.TASK_EVALUATOR_FAILURE,
+    CaseFailureOrigin.HARNESS_WATCHDOG: MiniWobTaskOutcome.CASE_TIMEOUT,
+    CaseFailureOrigin.CLEANUP: MiniWobTaskOutcome.CLEANUP_FAILURE,
+    CaseFailureOrigin.ENVIRONMENT_FACTORY: MiniWobTaskOutcome.ENVIRONMENT_FAILURE,
+    CaseFailureOrigin.TASK_FACTORY: MiniWobTaskOutcome.ENVIRONMENT_FAILURE,
+    CaseFailureOrigin.COMPOSITION_FACTORY: MiniWobTaskOutcome.ENVIRONMENT_FAILURE,
+    CaseFailureOrigin.LOOP_CONSTRUCTION: MiniWobTaskOutcome.ENVIRONMENT_FAILURE,
+    CaseFailureOrigin.SESSION_START: MiniWobTaskOutcome.INITIAL_OBSERVATION_FAILURE,
+    CaseFailureOrigin.ACTION_BINDING: MiniWobTaskOutcome.RUNTIME_REJECTED,
+    CaseFailureOrigin.DECISION_CONTROL: MiniWobTaskOutcome.RUNTIME_REJECTED,
+    CaseFailureOrigin.UNKNOWN: MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE,
+}
 
 
 def _metric(result: BenchmarkCaseResult, name: str) -> int | float:

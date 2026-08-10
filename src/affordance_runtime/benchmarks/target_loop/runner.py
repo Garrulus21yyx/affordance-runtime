@@ -14,6 +14,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkManifest,
     BenchmarkRunIdentity,
     BenchmarkSuiteResult,
+    CaseFailureOrigin,
     MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import (
@@ -70,6 +71,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
     environment = None
     result = None
     partial = None
+    snapshot = None
     session_holder: dict[str, AgentRunSession] = {}
     failure = ""
     started = time.perf_counter()
@@ -77,11 +79,21 @@ async def _run_case(case) -> BenchmarkCaseResult:
         try:
             environment = case.environment_factory(instrumentation)
         except Exception as exc:
+            instrumentation.record_failure(
+                CaseFailureOrigin.ENVIRONMENT_FACTORY, "environment_factory_exception", exc,
+            )
             raise _CaseStageError("environment factory", exc) from exc
         try:
             task = case.task_factory()
+        except Exception as exc:
+            instrumentation.record_failure(CaseFailureOrigin.TASK_FACTORY, "task_factory_exception", exc)
+            raise _CaseStageError("task factory", exc) from exc
+        try:
             composition = case.composition_factory(instrumentation)
         except Exception as exc:
+            instrumentation.record_failure(
+                CaseFailureOrigin.COMPOSITION_FACTORY, "composition_factory_exception", exc,
+            )
             raise _CaseStageError("composition factory", exc) from exc
         counted_environment = CountingEnvironment(
             environment, instrumentation, frozenset(task.forbidden_effects),
@@ -89,13 +101,17 @@ async def _run_case(case) -> BenchmarkCaseResult:
         try:
             loop = _build_loop(composition, instrumentation)
         except Exception as exc:
+            instrumentation.record_failure(
+                CaseFailureOrigin.LOOP_CONSTRUCTION, "loop_construction_exception", exc,
+            )
             raise _CaseStageError("AgentLoop construction", exc) from exc
         result = await asyncio.wait_for(
             _run_episode(case, loop, counted_environment, task, instrumentation, session_holder),
             timeout=case.timeout_s,
         )
-    except TimeoutError:
+    except TimeoutError as exc:
         failure = "case timeout"
+        instrumentation.record_failure(CaseFailureOrigin.HARNESS_WATCHDOG, "case_timeout", exc)
         session = session_holder.get("session")
         if session is not None:
             partial = session.snapshot_partial_episode()
@@ -107,10 +123,14 @@ async def _run_case(case) -> BenchmarkCaseResult:
         if environment is not None:
             try:
                 await _close(environment)
-            except Exception:
+            except Exception as exc:
+                instrumentation.record_failure(CaseFailureOrigin.CLEANUP, "cleanup_exception", exc)
                 failure = _append_failure(failure, "cleanup failed")
+    session = session_holder.get("session")
+    if session is not None:
+        snapshot = session.snapshot_partial_episode()
     elapsed = (time.perf_counter() - started) * 1000
-    return _case_result(case.case_id, result, instrumentation, elapsed, failure, partial)
+    return _case_result(case.case_id, result, instrumentation, elapsed, failure, partial, snapshot)
 
 
 def _build_loop(composition, instrumentation):
@@ -125,7 +145,11 @@ def _build_loop(composition, instrumentation):
 
 
 async def _run_episode(case, loop, environment, task, instrumentation, session_holder):
-    session = await AgentEpisodeRunner(loop).start(environment, task)
+    try:
+        session = await AgentEpisodeRunner(loop).start(environment, task)
+    except Exception as exc:
+        instrumentation.record_failure(CaseFailureOrigin.SESSION_START, "session_start_exception", exc)
+        raise
     session_holder["session"] = session
     result = await session.run_until_pause()
     if case.auto_confirm and result.status == AgentLoopStatus.WAITING_CONFIRMATION:
@@ -151,7 +175,9 @@ async def _close(environment) -> None:
         return
 
 
-def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=None) -> BenchmarkCaseResult:
+def _case_result(
+    case_id, result, instrumentation, latency_ms, failure, partial=None, snapshot=None,
+) -> BenchmarkCaseResult:
     turns = result.turns if result is not None else ()
     sent_unknown = partial.sent_unknown_count if partial is not None else sum(
         item.result is not None and item.result.dispatch_status == DispatchStatus.SENT_UNKNOWN
@@ -172,6 +198,7 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
         failure_code = "turn_budget_exhausted"
     if result is not None and result.policy_failure is not None:
         failure_code = f"policy_{result.policy_failure.kind}"
+    metadata = snapshot or partial
     return BenchmarkCaseResult(
         case_id=case_id,
         status=str(result.status) if result else str(AgentLoopStatus.FAILED),
@@ -183,19 +210,42 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
             project_terminal_reason_code(result.status, result.message, result.failure_code)
             if result is not None else None
         ),
-        termination_origin="harness_watchdog" if failure == "case timeout" else "",
+        termination_origin=(
+            "harness_watchdog"
+            if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG
+            else "cleanup"
+            if instrumentation.failure_origin is CaseFailureOrigin.CLEANUP
+            else "component"
+            if instrumentation.failure_origin is not CaseFailureOrigin.NONE
+            else "runtime"
+            if result is not None
+            else ""
+        ),
         case_failure_code=failure_code,
         partial_episode_available=partial is not None,
-        latest_task_status=partial.latest_task_status if partial is not None else "",
-        latest_action_evaluation_status=(
-            partial.latest_action_evaluation_status if partial is not None else ""
-        ),
         latest_semantic_attempt_key_digest=(
-            partial.latest_semantic_attempt_key_digest if partial is not None else ""
+            metadata.latest_semantic_attempt_key_digest if metadata is not None else ""
         ),
-        same_attempt_streak=partial.same_attempt_streak if partial is not None else 0,
-        no_progress_count=partial.no_progress_count if partial is not None else 0,
-        last_progress_event_type=partial.last_progress_event_type if partial is not None else "",
+        same_attempt_streak=metadata.same_attempt_streak if metadata is not None else 0,
+        no_progress_count=metadata.no_progress_count if metadata is not None else 0,
+        last_progress_event_type=metadata.last_progress_event_type if metadata is not None else "",
+        failure_origin=instrumentation.failure_origin,
+        failure_code=instrumentation.failure_code,
+        exception_class=instrumentation.exception_class,
+        last_decision_type=metadata.last_decision_type if metadata is not None else "",
+        last_policy_failure_code=(
+            str(result.policy_failure.kind) if result is not None and result.policy_failure is not None else ""
+        ),
+        last_action_space_option_count=(
+            metadata.last_action_space_option_count if metadata is not None else 0
+        ),
+        last_world_target_count=metadata.last_world_target_count if metadata is not None else 0,
+        last_world_coverage=metadata.last_world_coverage if metadata is not None else "",
+        pending_kind=metadata.pending_kind if metadata is not None else "",
+        latest_task_status=metadata.latest_task_status if metadata is not None else "",
+        latest_action_evaluation_status=(
+            metadata.latest_action_evaluation_status if metadata is not None else ""
+        ),
     )
 
 

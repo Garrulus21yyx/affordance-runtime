@@ -30,6 +30,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCase,
     BenchmarkComposition,
     BenchmarkManifest,
+    CaseFailureOrigin,
     MetricMeasurement,
     TerminalReasonCode,
 )
@@ -107,9 +108,13 @@ def _target_case(case, manifest, base_policy, pacing_state, instrumentations) ->
             environment, task = BrowserGymMiniWobEnvironment.open(
                 case.task_id, case.seed, max_turns=case.max_turns, admitted_task_ids=admitted,
             )
-        except BaseException:
+        except BaseException as exc:
             _initialize_custom_metrics(instrumentation)
             instrumentation.custom_metrics["cleanup_failures"] = 1
+            if isinstance(exc, Exception):
+                instrumentation.record_failure(
+                    CaseFailureOrigin.ENVIRONMENT_RESET, "browsergym_open_exception", exc,
+                )
             raise
         holder.update(environment=environment, task=task)
         return _BreadthEnvironment(environment, instrumentation)

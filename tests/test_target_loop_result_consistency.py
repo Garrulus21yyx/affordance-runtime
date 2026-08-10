@@ -15,9 +15,12 @@ def test_case_result_has_one_metric_authority() -> None:
         "case_id", "status", "execution_completed", "failure_reason", "latency_ms",
         "measurements", "terminal_reason_code", "termination_origin", "case_failure_code",
         "partial_episode_available", "latest_task_status",
-        "latest_action_evaluation_status", "latest_semantic_attempt_key_digest",
-        "same_attempt_streak", "no_progress_count", "last_progress_event_type",
-    }
+            "latest_action_evaluation_status", "latest_semantic_attempt_key_digest",
+            "same_attempt_streak", "no_progress_count", "last_progress_event_type",
+            "failure_origin", "failure_code", "exception_class", "last_decision_type",
+            "last_policy_failure_code", "last_action_space_option_count",
+            "last_world_target_count", "last_world_coverage", "pending_kind",
+        }
 
 
 def test_case_measurements_mapping_is_immutable() -> None:

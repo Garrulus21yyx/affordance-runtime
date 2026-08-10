@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, replace
 
+from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
@@ -33,10 +34,20 @@ class BenchmarkInstrumentation:
     completion_tokens: int = 0
     total_tokens: int = 0
     model_latency_ms: float = 0.0
+    failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
+    failure_code: str = ""
+    exception_class: str = ""
+    environment_observe_calls: int = 0
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
         self.custom_metrics[name] = self.custom_metrics.get(name, 0) + value
+
+    def record_failure(self, origin: CaseFailureOrigin, code: str, exception: Exception) -> None:
+        if self.failure_origin is CaseFailureOrigin.NONE:
+            self.failure_origin = origin
+            self.failure_code = code
+            self.exception_class = type(exception).__name__
 
 
 @dataclass
@@ -46,7 +57,11 @@ class CountingPolicy:
 
     async def decide(self, context):
         self.instrumentation.policy_calls += 1
-        outcome = await self.wrapped.decide(context)
+        try:
+            outcome = await self.wrapped.decide(context)
+        except Exception as exc:
+            self.instrumentation.record_failure(CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc)
+            raise
         metadata = getattr(self.wrapped, "last_metadata", None)
         if isinstance(metadata, ModelMetadata):
             self.instrumentation.model_metadata = metadata
@@ -64,7 +79,13 @@ class CountingActionEvaluator:
 
     async def evaluate(self, task, before, request, result, after):
         self.instrumentation.action_evaluator_calls += 1
-        return await self.wrapped.evaluate(task, before, request, result, after)
+        try:
+            return await self.wrapped.evaluate(task, before, request, result, after)
+        except Exception as exc:
+            self.instrumentation.record_failure(
+                CaseFailureOrigin.ACTION_EVALUATION, "action_evaluator_exception", exc,
+            )
+            raise
 
 
 @dataclass
@@ -74,7 +95,13 @@ class CountingTaskEvaluator:
 
     async def evaluate(self, task, observation):
         self.instrumentation.task_evaluator_calls += 1
-        return await self.wrapped.evaluate(task, observation)
+        try:
+            return await self.wrapped.evaluate(task, observation)
+        except Exception as exc:
+            self.instrumentation.record_failure(
+                CaseFailureOrigin.TASK_EVALUATION, "task_evaluator_exception", exc,
+            )
+            raise
 
 
 @dataclass
@@ -124,10 +151,24 @@ class CountingEnvironment:
         return getattr(self.wrapped, name)
 
     async def reset(self, task):
-        return await self.wrapped.reset(task)
+        try:
+            return await self.wrapped.reset(task)
+        except Exception as exc:
+            self.instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, "reset_exception", exc)
+            raise
 
     async def observe(self, reason):
-        return await self.wrapped.observe(reason)
+        origin = (
+            CaseFailureOrigin.INITIAL_OBSERVATION
+            if self.instrumentation.environment_observe_calls == 0
+            else CaseFailureOrigin.POST_ACTION_OBSERVATION
+        )
+        self.instrumentation.environment_observe_calls += 1
+        try:
+            return await self.wrapped.observe(reason)
+        except Exception as exc:
+            self.instrumentation.record_failure(origin, "observation_exception", exc)
+            raise
 
     async def execute(self, request):
         state = self.instrumentation
@@ -136,7 +177,11 @@ class CountingEnvironment:
         identity = _attempt_identity(request)
         if set(request.selection.semantic_effects) & self.forbidden_effects:
             state.forbidden_effect_attempts += 1
-        result = await self.wrapped.execute(request)
+        try:
+            result = await self.wrapped.execute(request)
+        except Exception as exc:
+            state.record_failure(CaseFailureOrigin.EXECUTION, "execution_exception", exc)
+            raise
         dispatches = _dispatch_count(self.wrapped, before, result)
         if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
             state.stale_opportunities += 1
