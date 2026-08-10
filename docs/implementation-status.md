@@ -83,7 +83,7 @@ The target path now has:
 | live semantic evaluator | `NOT_REQUIRED_FOR_FIRST_MECHANICAL_EXTERNAL_MANIFEST` |
 | external smoke manifest | `REVIEWED_AND_FIXED` for BrowserGym MiniWoB 0.14.3 tasks click-button/enter-text/choose-list |
 | external target-loop adapter | `CLOSED_FOR_PINNED_MINIWOB_MECHANICAL_PROFILE` |
-| BrowserGym independent capture | `INTEGRATED_NON_DEFAULT / LOCAL_CONTRACT_ATTESTED`; owner-thread read-only current capture refreshes structure/bindings and page-native verifier status; real dependency conformance skipped locally because BrowserGym is absent |
+| BrowserGym independent capture | `INTEGRATED_NON_DEFAULT / REAL_DEPENDENCY_CONFORMANCE_ATTESTED`; owner-thread read-only current capture refreshes structure/bindings and page-native verifier status; pinned BrowserGym/MiniWoB conformance passes locally |
 | external fixed-smoke workflow | `CONFIGURED_AND_MANUALLY_GATED`; execution status is exact-head artifact-backed |
 | latest formal fixed-smoke run | see the protected `browsergym-fixed-external-smoke` workflow artifact for the target SHA |
 | default cutover | `NOT_READY` |
@@ -386,9 +386,11 @@ step raw inside execute, and implements owner-thread read-only active capture;
 it no longer relays reset/step snapshots through a public cache. Independent
 capture reacquires incomplete page-native verifier state and deliberately marks
 success unavailable when the full official success conjunction cannot be
-proved. Local fake-backed contract tests pass; the pinned BrowserGym package is
-not installed in this development environment, so real conformance remains
-skipped rather than inferred. M4.5-B is now the next admitted correction.
+proved. Local fake-backed contract tests pass. The isolated Python 3.12 runtime
+with `browsergym-miniwob==0.14.3` and `playwright==1.44.0` also passes all nine
+pinned BrowserGym adapter, local-progress, and dependency-inventory tests
+against the reviewed MiniWoB source at commit `7fd85d71a4b60325c6585396ec4f48377d049838`.
+M4.5-B is now the next admitted correction.
 
 ## Control-transition and long-horizon gap status
 
