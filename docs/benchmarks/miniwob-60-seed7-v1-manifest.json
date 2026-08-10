@@ -1,0 +1,1490 @@
+{
+  "campaign_id": "miniwob-60-seed7-v1",
+  "capability_counts": {
+    "current_primitives": 95,
+    "requires_unsupported_primitive": 30
+  },
+  "capability_inventory_digest": "sha256:68c84936598367c4c1eae16b6ab806190101a26e886058885dd92f6260ff6e40",
+  "cases": [
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-01",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "027b57d41b0f49df01194beae68d7d62e17013b5deeb84183269fd6707b491d7",
+      "source_reference": "miniwob/html/miniwob/login-user.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.login-user",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-02",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "08a50c298de0990bade2aaa211895770b86b72c53e5dbe99749960ff59c88824",
+      "source_reference": "miniwob/html/miniwob/stock-market.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.stock-market",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-03",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "098d3c7361ea7089c78015f3f42ed67ec90f00e401896362943a70baa1f0e204",
+      "source_reference": "miniwob/html/miniwob/click-collapsible-nodelay.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-collapsible-nodelay",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-04",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "0a6ac8c0708625e491f2d38d76d7b5a53ff96250e2754cf45d03b573cf73d5a1",
+      "source_reference": "miniwob/html/miniwob/email-inbox-forward-nl.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.email-inbox-forward-nl",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-05",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "0b66ebd8887bfe0ff3330c42cbebdc43e27071061132295000517a792a407172",
+      "source_reference": "miniwob/html/miniwob/grid-coordinate.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.grid-coordinate",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-06",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "seed": 7,
+      "selection_key": "128b2d460e613329d3897c1a9af252893acc7681c8066a3339429232d3013528",
+      "source_reference": "miniwob/html/miniwob/form-sequence-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.form-sequence-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-07",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "14c861327a8ac9e1809b4354f09a1dc0e4420db14bbf3a9fc529cc41f27b2f73",
+      "source_reference": "miniwob/html/miniwob/tic-tac-toe.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.tic-tac-toe",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-08",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "176109c79a6c4f377d9107545087cfafaac16ed9b4ab16702ceeeef939871545",
+      "source_reference": "miniwob/html/miniwob/phone-book.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.phone-book",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-09",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "180df0053b60a44276827465bf19d586c3a90b78bf33c10a57b5ba7278507cef",
+      "source_reference": "miniwob/html/miniwob/click-checkboxes-large.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-checkboxes-large",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-10",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "1af28cd47aec3b7104a4200a4c8e07b60cdc599fbfe61f63ca2b996d7a414d19",
+      "source_reference": "miniwob/html/miniwob/click-button-sequence.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-button-sequence",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-11",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "24ff05e53161210072df9fae4e72e1bfeab8483b93f6479a4e205a7265a4b808",
+      "source_reference": "miniwob/html/miniwob/read-table.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.read-table",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-12",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "2cb1b04eb7292457d22ca37c58e4c826cfb80166dd56a421d4097450d964a1dc",
+      "source_reference": "miniwob/html/miniwob/simple-algebra.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.simple-algebra",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-13",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "3277a51ab3e30512a40673761bd48925576aff40d3d1239a42d505767c882fc5",
+      "source_reference": "miniwob/html/miniwob/text-transform.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.text-transform",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-14",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "seed": 7,
+      "selection_key": "32cf6ad1323b2a7bee0376a53166f6af8d522adb1f161ef04a40916bad7c6dcf",
+      "source_reference": "miniwob/html/miniwob/order-food.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.order-food",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-15",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "32fe185b1cdb63ddbdb10af343c0bf1a2e57b38267bb4e028c1e36c1303e2ebd",
+      "source_reference": "miniwob/html/miniwob/enter-text-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.enter-text-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-16",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "36d3104bd68a35ea4d4b782d5afe21387b53803856d2e2b1bad38f871bae049a",
+      "source_reference": "miniwob/html/miniwob/unicode-test.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.unicode-test",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-17",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "373c0567007a204fe7d85d60de2569018830af46ae5809a73fb2fb105c8f90fd",
+      "source_reference": "miniwob/html/miniwob/social-media-all.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.social-media-all",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-18",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "37ec314834829f290a7b3fce46ffadac9848244af1641b4e4eaad8d94dab3a83",
+      "source_reference": "miniwob/html/miniwob/click-tab.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-tab",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-19",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "3822d6cc70689f1cf04a9e477fc3c358005a4a81373faa1fe5cc09be4df41b0e",
+      "source_reference": "miniwob/html/miniwob/click-test-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-test-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-20",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "382d2c25da9ddd9c29e3e3380dd472896ada5783e523301596197b08760a8eba",
+      "source_reference": "miniwob/html/miniwob/find-greatest.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.find-greatest",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-21",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "3913fbe62736f1f222d24f57f5b4e5d1ebe506c5814263d82003e326691e056f",
+      "source_reference": "miniwob/html/miniwob/click-option.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-option",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-22",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "39a66b4399df2c69329b20afc7df6f1ff583c6dcee14abce54befd4b44c27227",
+      "source_reference": "miniwob/html/miniwob/click-checkboxes-transfer.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-checkboxes-transfer",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-23",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "3a903f9b7c8f72fa2f8c2b80459168022ccaf094ede4951ee1a60bd4be05240f",
+      "source_reference": "miniwob/html/miniwob/click-test.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-test",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-24",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "seed": 7,
+      "selection_key": "3bf579351fa71bdac492d47f787d4c0b42df0081a71d5ee7ce5960588984df05",
+      "source_reference": "miniwob/html/miniwob/buy-ticket.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.buy-ticket",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-25",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "3e18486aef056f88855c78f2104ee1ae554bdb3f7e38e3bccc24b08e9842d11d",
+      "source_reference": "miniwob/html/miniwob/generate-number.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.generate-number",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-26",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "452f9a2574d2907ec49a1527b8db62d39a510e1261ac05cb7a74de4ab627aa0b",
+      "source_reference": "miniwob/html/miniwob/email-inbox-noscroll.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.email-inbox-noscroll",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-27",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "4e9873a617babb09cbeff5c529561d5aa158b731c17c941ae57059ae57c089fa",
+      "source_reference": "miniwob/html/miniwob/copy-paste.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.copy-paste",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-28",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "4fb8c8c4f3a9daed4ea222ea6e063dd979de2d98b499f230cf3c47aedff5428a",
+      "source_reference": "miniwob/html/miniwob/click-link.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-link",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-29",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "4fd4aa74fea3dba5925f0f77ac80b3055859b28ff0397d862fbf56130d4e048d",
+      "source_reference": "miniwob/html/miniwob/enter-text-dynamic.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.enter-text-dynamic",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-30",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "59b2ecfdecf5ba051cc9e989ce1d39f23a80e6e4fab3f56412c157a189743e19",
+      "source_reference": "miniwob/html/miniwob/click-test-transfer.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-test-transfer",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-31",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "59cfe078f28e0c085d9ebe233d7083389dedccb8dc0be06ee8a140e45f7bf5da",
+      "source_reference": "miniwob/html/miniwob/click-button.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-button",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-32",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "5a5beeaeebe6b216130f3df0d3676d9219fdb49f3a77f269a6b14048cfc65b72",
+      "source_reference": "miniwob/html/miniwob/multi-layouts.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.multi-layouts",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-33",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "5ac2a9d36d12662de5b47d0cd7af3894df0190628b6546fed1a5b034d11da35c",
+      "source_reference": "miniwob/html/miniwob/email-inbox.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.email-inbox",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-34",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "5ea82299bf5ad276a15ec80ac863f97a48ba60ec73a9d90f421b34d48cb59a3b",
+      "source_reference": "miniwob/html/miniwob/click-pie-nodelay.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-pie-nodelay",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-35",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "63d7f2edd6c47fc952ebcdb159db706ac12b8cee4bd9dac85ee8e2f057555421",
+      "source_reference": "miniwob/html/miniwob/login-user-popup.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.login-user-popup",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-36",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "682bfb7e31b94e781b3827cf41d75ca09944dc7d54350064cd0f7342908d19e2",
+      "source_reference": "miniwob/html/miniwob/click-menu.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-menu",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-37",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "6c99040505cdee01ff6af66280127a3b72b62a14e711bcd614f4cb302b02bc14",
+      "source_reference": "miniwob/html/miniwob/focus-text-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.focus-text-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-38",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "6cc06dbcfc8dca941abe2e55e4de6c5590832c4ed6c97881fa818630b12a4814",
+      "source_reference": "miniwob/html/miniwob/hot-cold.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.hot-cold",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-39",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "6f01531bd49418f4c8295c5a3ad5669eaf048185e5761109a2ee8e5d85cd66a2",
+      "source_reference": "miniwob/html/miniwob/read-table-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.read-table-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-40",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "select"
+      ],
+      "seed": 7,
+      "selection_key": "70efcb0328adef53ef758230a20c1fc442b2301ca66149f038ed7e9efdfa83ef",
+      "source_reference": "miniwob/html/miniwob/choose-list.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.choose-list",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-41",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "7137b3c78954edb852d7dc9c45011a821e1481b8d65dfd5ba4ce97739929ffa2",
+      "source_reference": "miniwob/html/miniwob/number-checkboxes.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.number-checkboxes",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-42",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "726f2be131919968d2c6639d3e009f75ee65d01e14082a98087a57e2135c85ed",
+      "source_reference": "miniwob/html/miniwob/click-shades.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-shades",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-43",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "77441d38febb763c515146bd893d6ae50c5b2b8e90c7f8376a4e3fa44c0b6240",
+      "source_reference": "miniwob/html/miniwob/social-media-some.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.social-media-some",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-44",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "7cbf501f6d6a2c499b48d41f84f35f8497b91872d0d3e1ed85c2eba61cdda43d",
+      "source_reference": "miniwob/html/miniwob/social-media.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.social-media",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-45",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "7cf108c3fb27e313cb2ba1e898d3fc414271e2cee1484e5f8a71542134bcd6ec",
+      "source_reference": "miniwob/html/miniwob/click-menu-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-menu-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-46",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "seed": 7,
+      "selection_key": "7e01a905a1a3018f393d8bc39603199e8e0f9aa9405919a00599469875b9e59f",
+      "source_reference": "miniwob/html/miniwob/form-sequence-3.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.form-sequence-3",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-47",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "7f324010eda384382f9111df7116748c36e3dcccb61ef9e361c9df3ebfbefc0e",
+      "source_reference": "miniwob/html/miniwob/email-inbox-nl-turk.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.email-inbox-nl-turk",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-48",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "82a77cd680fd33b5203ee88131e1fa52dc54beb77b2e81006cb8b88c41ceb76b",
+      "source_reference": "miniwob/html/miniwob/click-tab-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-tab-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-49",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "846df999d6a1e28bb113538ec042f15318888b397d526443313daef33f874042",
+      "source_reference": "miniwob/html/miniwob/click-pie.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-pie",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-50",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "seed": 7,
+      "selection_key": "86db4c8e8c0b019e6e9a7ebadc48d4dcb211dbb785373acf68de3e69b8de663a",
+      "source_reference": "miniwob/html/miniwob/book-flight.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.book-flight",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-51",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "8ba877effc477eb2699e0c8d99338d69d77f4d611141fc35ecde7feb456238fc",
+      "source_reference": "miniwob/html/miniwob/focus-text.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.focus-text",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-52",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "930c520b6ca5bb458004e63b1246f4738cd5da2812d7b55f7c90344e3ccf2abf",
+      "source_reference": "miniwob/html/miniwob/ascending-numbers.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.ascending-numbers",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-53",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "9586fb21b2cbcc40aedb12f51fc68dba17fb5726612e3e8408786c2cbc58d02d",
+      "source_reference": "miniwob/html/miniwob/copy-paste-2.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.copy-paste-2",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-54",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "96ab30735a6bb542cd714f925b9df84e86e8b0683067f4dec50378d70d42e9f8",
+      "source_reference": "miniwob/html/miniwob/use-spinner.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.use-spinner",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-55",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "98abefd6bbcc116cf5185bba492319e4febcdb96869397fc9a7987650f59a746",
+      "source_reference": "miniwob/html/miniwob/click-tab-2-hard.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-tab-2-hard",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-56",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "9a4037d368257ab18f66e85b1626feb2a419ba9d9b90333d144cde72319ae55c",
+      "source_reference": "miniwob/html/miniwob/choose-date-nodelay.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.choose-date-nodelay",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-57",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "seed": 7,
+      "selection_key": "9d10a7b801e2db410b30df9ff29cdadc075a461710006babc548f5240fa85ca2",
+      "source_reference": "miniwob/html/miniwob/email-inbox-forward-nl-turk.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.email-inbox-forward-nl-turk",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-58",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "a4ee48c18ef274e3f286dc1e93d01bc2acd85029202fea35150e6a3384ca6fd0",
+      "source_reference": "miniwob/html/miniwob/click-tab-2-easy.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-tab-2-easy",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-59",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "a7d7617e8e2e31e6f498e2ef840659d7fe27df6b7e1c17d21fe521471dee4d86",
+      "source_reference": "miniwob/html/miniwob/click-collapsible.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.click-collapsible",
+      "timeout_s": 120.0
+    },
+    {
+      "capability_profile": "current_primitives",
+      "case_id": "miniwob-60-60",
+      "max_turns": 10,
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "seed": 7,
+      "selection_key": "a9bf4cdcf2efbdce44fc0d0fa97f041d9b2b330b30f451e94b25dbcb65cc1c28",
+      "source_reference": "miniwob/html/miniwob/visual-addition.html@7fd85d71a4b6",
+      "task_id": "browsergym/miniwob.visual-addition",
+      "timeout_s": 120.0
+    }
+  ],
+  "core_version": "0.14.3",
+  "excluded_tasks": [
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/bisect-angle.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.bisect-angle"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "source_reference": "miniwob/html/miniwob/book-flight-nodelay.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.book-flight-nodelay"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/choose-date.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.choose-date"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/choose-date-easy.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.choose-date-easy"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/choose-date-medium.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.choose-date-medium"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/circle-center.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.circle-center"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-checkboxes.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-checkboxes"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-checkboxes-soft.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-checkboxes-soft"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-collapsible-2.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-collapsible-2"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-collapsible-2-nodelay.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-collapsible-2-nodelay"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-color.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-color"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-dialog.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-dialog"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-dialog-2.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-dialog-2"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "scroll",
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-scroll-list.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.click-scroll-list"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-shape.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-shape"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-tab-2-medium.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-tab-2-medium"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/click-widget.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.click-widget"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/count-shape.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.count-shape"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/count-sides.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.count-sides"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/daily-calendar.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.daily-calendar"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-box.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-box"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-circle.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-circle"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-cube.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-cube"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-items.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-items"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-items-grid.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-items-grid"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-shapes.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-shapes"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-shapes-2.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-shapes-2"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-single-shape.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-single-shape"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/drag-sort-numbers.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.drag-sort-numbers"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/draw-circle.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.draw-circle"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/draw-line.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.draw-line"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/email-inbox-delete.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.email-inbox-delete"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/email-inbox-forward.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.email-inbox-forward"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/email-inbox-important.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.email-inbox-important"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/email-inbox-reply.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.email-inbox-reply"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/email-inbox-star-reply.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.email-inbox-star-reply"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/enter-date.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.enter-date"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/enter-password.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.enter-password"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/enter-text.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.enter-text"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/enter-time.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.enter-time"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/find-midpoint.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.find-midpoint"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/find-word.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.find-word"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "source_reference": "miniwob/html/miniwob/form-sequence.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.form-sequence"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/guess-number.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.guess-number"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/highlight-text.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.highlight-text"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/highlight-text-2.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.highlight-text-2"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/identify-shape.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.identify-shape"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/multi-orderings.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.multi-orderings"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/navigate-tree.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.navigate-tree"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/odd-or-even.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.odd-or-even"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "drag"
+      ],
+      "source_reference": "miniwob/html/miniwob/resize-textarea.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.resize-textarea"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/right-angle.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.right-angle"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "scroll",
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/scroll-text.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.scroll-text"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "scroll",
+        "activate"
+      ],
+      "source_reference": "miniwob/html/miniwob/scroll-text-2.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.scroll-text-2"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/search-engine.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.search-engine"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/sign-agreement.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.sign-agreement"
+    },
+    {
+      "reason_code": "pinned_source_expressible_with_current_semantic_primitives",
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "source_reference": "miniwob/html/miniwob/simple-arithmetic.html@7fd85d71a4b6",
+      "status": "current_primitives",
+      "task_id": "browsergym/miniwob.simple-arithmetic"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "keypress"
+      ],
+      "source_reference": "miniwob/html/miniwob/terminal.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.terminal"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "keypress"
+      ],
+      "source_reference": "miniwob/html/miniwob/text-editor.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.text-editor"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "fill",
+        "keypress"
+      ],
+      "source_reference": "miniwob/html/miniwob/use-autocomplete.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.use-autocomplete"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "fill",
+        "keypress"
+      ],
+      "source_reference": "miniwob/html/miniwob/use-autocomplete-nodelay.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.use-autocomplete-nodelay"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/use-colorwheel.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.use-colorwheel"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "canvas"
+      ],
+      "source_reference": "miniwob/html/miniwob/use-colorwheel-2.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.use-colorwheel-2"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "slider"
+      ],
+      "source_reference": "miniwob/html/miniwob/use-slider.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.use-slider"
+    },
+    {
+      "reason_code": "pinned_source_requires_unsupported_interaction_family",
+      "required_primitives": [
+        "slider"
+      ],
+      "source_reference": "miniwob/html/miniwob/use-slider-2.html@7fd85d71a4b6",
+      "status": "requires_unsupported_primitive",
+      "task_id": "browsergym/miniwob.use-slider-2"
+    }
+  ],
+  "manifest_digest": "sha256:ae83bb8f0d16fc89f4d47262f921642a8a808eb7e378e5be19f348a6ef0f9d17",
+  "package_name": "browsergym-miniwob",
+  "package_version": "0.14.3",
+  "registry_digest": "sha256:cd8bb164a17e334c88fe59fd05f51f1c6f65ac894122fdc74f23a882e74faf4c",
+  "registry_task_count": 125,
+  "schema_version": "miniwob-breadth-manifest.v1",
+  "selection_namespace": "miniwob-60-seeded-breadth.v1",
+  "source_commit": "7fd85d71a4b60325c6585396ec4f48377d049838",
+  "supported_candidate_pool_size": 95
+}
