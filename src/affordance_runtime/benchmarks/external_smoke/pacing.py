@@ -22,6 +22,7 @@ class PacedAgentPolicy:
     clock: Callable[[], float] = time.monotonic
     sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep
     state: FixedPacingState = field(default_factory=FixedPacingState)
+    context_observer: Callable[[object], None] | None = None
 
     def __post_init__(self) -> None:
         if self.minimum_interval_s < 0:
@@ -40,6 +41,8 @@ class PacedAgentPolicy:
         return self.state.total_wait_s
 
     async def decide(self, context):
+        if self.context_observer is not None:
+            self.context_observer(context)
         now = self.clock()
         if self.state.last_call_started_s is not None:
             delay = max(0.0, self.minimum_interval_s - (now - self.state.last_call_started_s))

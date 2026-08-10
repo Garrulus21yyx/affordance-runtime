@@ -172,6 +172,7 @@ class BenchmarkCaseResult:
     same_attempt_streak: int = 0
     no_progress_count: int = 0
     last_progress_event_type: str = ""
+    policy_failure_kind: str = ""
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
@@ -235,4 +236,5 @@ _KNOWN_METRICS = frozenset({
     "dom_action_calls", "fill_calls", "select_calls", "official_verifier_queries",
     "official_success_count", "provider_retry_count", "fallback_count", "cleanup_failures",
     "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
+    "click_calls", "already_satisfied_suppressions", "no_progress_terminations",
 })

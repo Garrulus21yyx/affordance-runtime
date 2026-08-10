@@ -76,10 +76,12 @@ class BrowserGymMiniWobEnvironment:
         *,
         gym_factory: Callable[..., BrowserGymPort] | None = None,
         max_turns: int = 20,
+        admitted_task_ids: frozenset[str] | None = None,
     ) -> tuple[BrowserGymMiniWobEnvironment, TaskGoal]:
         from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
 
-        if benchmark_task_id not in REVIEWED_TASK_IDS:
+        admitted = frozenset(REVIEWED_TASK_IDS) if admitted_task_ids is None else admitted_task_ids
+        if benchmark_task_id not in admitted:
             raise ValueError("BrowserGym task ID is outside the reviewed fixed manifest")
         if gym_factory is None:
             from affordance_runtime.benchmarks.external_smoke.browsergym_backend import (

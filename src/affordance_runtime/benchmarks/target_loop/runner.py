@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
+from collections.abc import Callable
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, AgentRunSession
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
@@ -28,12 +29,21 @@ from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDe
 from affordance_runtime.execution import DispatchStatus
 
 
-async def run_suite(manifest: BenchmarkManifest) -> BenchmarkSuiteResult:
+async def run_suite(
+    manifest: BenchmarkManifest,
+    case_completed: Callable[[int, BenchmarkCaseResult], None] | None = None,
+) -> BenchmarkSuiteResult:
     digest = manifest_digest(manifest)
     identity = BenchmarkRunIdentity.create(
         manifest.suite_id, digest, manifest.profile_id, manifest.seed,
     )
-    results = tuple([await _run_case(case) for case in manifest.cases])
+    completed = []
+    for index, case in enumerate(manifest.cases, 1):
+        result = await _run_case(case)
+        completed.append(result)
+        if case_completed is not None:
+            case_completed(index, result)
+    results = tuple(completed)
     decisions = tuple(
         accept_case(
             result, case.expected_terminal_statuses, case.required_measurements,
@@ -157,6 +167,9 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
     measurements["stale_zero_call_violations"] = MetricMeasurement(
         values["stale_zero_call_violations"], True, values["stale_opportunities"],
     )
+    failure_code = "case_timeout" if failure == "case timeout" else ""
+    if result is not None and result.message == "agent loop turn budget exhausted":
+        failure_code = "turn_budget_exhausted"
     return BenchmarkCaseResult(
         case_id=case_id,
         status=str(result.status) if result else str(AgentLoopStatus.FAILED),
@@ -169,7 +182,7 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
             if result is not None else None
         ),
         termination_origin="harness_watchdog" if failure == "case timeout" else "",
-        case_failure_code="case_timeout" if failure == "case timeout" else "",
+        case_failure_code=failure_code,
         partial_episode_available=partial is not None,
         latest_task_status=partial.latest_task_status if partial is not None else "",
         latest_action_evaluation_status=(
@@ -181,6 +194,9 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
         same_attempt_streak=partial.same_attempt_streak if partial is not None else 0,
         no_progress_count=partial.no_progress_count if partial is not None else 0,
         last_progress_event_type=partial.last_progress_event_type if partial is not None else "",
+        policy_failure_kind=(
+            str(result.policy_failure.kind) if result is not None and result.policy_failure is not None else ""
+        ),
     )
 
 
