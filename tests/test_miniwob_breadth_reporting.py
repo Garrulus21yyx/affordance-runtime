@@ -185,6 +185,53 @@ def test_tree_validator_binds_progress_to_exact_last_case(tmp_path: Path) -> Non
     )
 
 
+def test_tree_validator_rejects_fractional_count_metric(tmp_path: Path) -> None:
+    output = _write_valid_tree(tmp_path)
+    case_path = output / "cases" / "miniwob-60-01.json"
+    payload = json.loads(case_path.read_text())
+    payload["benchmark_case_evidence"]["measurements"]["observations"]["value"] = 0.5
+    case_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    _rebind_file(output, "miniwob-60-01", case_path)
+    assert any(
+        "required formal metrics" in item
+        for item in validate_campaign_tree(output, _manifest())
+    )
+
+
+def test_tree_validator_rejects_recursive_extra_and_unknown_schema_fields(
+    tmp_path: Path,
+) -> None:
+    output = _write_valid_tree(tmp_path)
+    extra = output / "cases" / "raw_prompt.txt"
+    extra.write_text("Authorization: Bearer PRIVATE-CREDENTIAL", encoding="utf-8")
+    errors = validate_campaign_tree(output, _manifest())
+    assert any("recursive file set" in item for item in errors)
+    assert any("non-JSON evidence" in item for item in errors)
+    extra.unlink()
+
+    attestation_path = output / "attestation.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["unexpected"] = 1
+    attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
+    assert any(
+        "attestation fields" in item
+        for item in validate_campaign_tree(output, _manifest())
+    )
+
+
+def test_tree_validator_rejects_unknown_outer_case_field(tmp_path: Path) -> None:
+    output = _write_valid_tree(tmp_path)
+    case_path = output / "cases" / "miniwob-60-01.json"
+    payload = json.loads(case_path.read_text())
+    payload["unexpected"] = 1
+    case_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    _rebind_file(output, "miniwob-60-01", case_path)
+    assert any(
+        "outer case" in item
+        for item in validate_campaign_tree(output, _manifest())
+    )
+
+
 def _rebind_file(output: Path, case_id: str, case_path: Path) -> None:
     attestation_path = output / "attestation.json"
     attestation = json.loads(attestation_path.read_text())

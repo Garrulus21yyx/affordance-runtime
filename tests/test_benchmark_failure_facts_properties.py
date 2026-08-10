@@ -173,3 +173,4 @@ def test_component_and_watchdog_project_without_erasing_either_fact() -> None:
     assert result.failure_facts.component_origin is CaseFailureOrigin.EXECUTION
     assert result.watchdog_triggered
     assert result.failure_facts.watchdog_code == "case_timeout"
+    assert result.termination_origin == "harness_watchdog"

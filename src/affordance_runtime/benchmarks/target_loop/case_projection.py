@@ -107,7 +107,9 @@ def project_case_result(
             project_terminal_reason_code(result.status, result.reason_code, result.failure_code)
             if result is not None else None
         ),
-        termination_origin=_termination_origin(result, failure_origin),
+        termination_origin=_termination_origin(
+            result, failure_origin, bool(instrumentation.watchdog_code),
+        ),
         case_failure_code=case_failure_code,
         partial_episode_available=result is None and metadata is not None,
         latest_semantic_attempt_key_digest=(
@@ -348,8 +350,8 @@ def _is_failure_result(result) -> bool:
     return bool(result is None or result.status is not AgentLoopStatus.DONE)
 
 
-def _termination_origin(result, origin: CaseFailureOrigin) -> str:
-    if origin is CaseFailureOrigin.HARNESS_WATCHDOG:
+def _termination_origin(result, origin: CaseFailureOrigin, watchdog: bool = False) -> str:
+    if watchdog or origin is CaseFailureOrigin.HARNESS_WATCHDOG:
         return "harness_watchdog"
     if origin is CaseFailureOrigin.CLEANUP:
         return "cleanup"

@@ -311,6 +311,7 @@ class BenchmarkCaseResult:
         if (
             not self.case_id
             or self.status not in {str(item) for item in AgentLoopStatus if item is not AgentLoopStatus.RUNNING}
+            or self.termination_origin not in {"", "runtime", "component", "cleanup", "harness_watchdog"}
             or type(self.execution_completed) is not bool
             or isinstance(self.latency_ms, bool)
             or not isinstance(self.latency_ms, int | float)

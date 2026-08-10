@@ -9,6 +9,7 @@ from affordance_runtime.benchmarks.external_breadth.classification import classi
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
     CaseFailureOrigin,
+    FailureFacts,
     MetricMeasurement,
     TerminalReasonCode,
 )
@@ -47,7 +48,30 @@ def test_component_origins_are_classified_without_exception_text() -> None:
         (CaseFailureOrigin.CLEANUP, MiniWobTaskOutcome.CLEANUP_FAILURE),
     )
     for origin, expected in cases:
-        result = _result(status="failed", failure_origin=origin, exception_class="SentinelError")
+        if origin is CaseFailureOrigin.CLEANUP:
+            result = _result(
+                status="failed",
+                failure_origin=origin,
+                cleanup_failure_code="cleanup_exception",
+                cleanup_exception_class="SentinelError",
+                cleanup_failures=1,
+                failure_facts=FailureFacts(
+                    cleanup_code="cleanup_exception",
+                    cleanup_exception_class="SentinelError",
+                ),
+            )
+        else:
+            result = _result(
+                status="failed",
+                failure_origin=origin,
+                failure_code="component_exception",
+                exception_class="SentinelError",
+                failure_facts=FailureFacts(
+                    component_origin=origin,
+                    component_code="component_exception",
+                    component_exception_class="SentinelError",
+                ),
+            )
         assert classify_case(result).outcome is expected
         assert "secret exception text" not in repr(result)
 

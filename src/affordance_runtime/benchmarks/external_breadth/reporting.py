@@ -128,8 +128,11 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
 
 def privacy_scan(output_dir: Path) -> tuple[str, ...]:
     errors: list[str] = []
-    for path in sorted(output_dir.rglob("*.json")):
+    for path in sorted(item for item in output_dir.rglob("*") if item.is_file()):
         relative = str(path.relative_to(output_dir))
+        if path.suffix != ".json":
+            errors.append(f"{relative} is an unexpected non-JSON evidence file")
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):

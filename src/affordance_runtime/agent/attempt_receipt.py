@@ -27,7 +27,7 @@ def safe_exception_class(error: BaseException) -> str:
 def safe_boundary_identity(actual: str, expected: str, *, kind: str) -> str:
     """Retain equality truth while making a foreign mismatch opaque."""
 
-    if actual == expected:
+    if actual == expected and kind == "request":
         return expected
     digest = hashlib.sha256(
         f"{kind}\0{actual}".encode("utf-8", errors="surrogatepass")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 import pytest
 from test_agent_loop import (
@@ -192,7 +193,7 @@ def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() ->
         assert root.execution is not None
         assert root.execution.expected_request_id == root.request_id
         assert root.execution.request_id.startswith("request_sha256_")
-        assert root.execution.backend == "dom"
+        assert root.execution.backend.startswith("backend_sha256_")
         assert root.attempt_receipts[0].request_lineage_valid is False
         assert "request:wrong" not in repr(root)
         assert root.acquisition is not None and root.acquisition.attempts == 1
@@ -222,6 +223,30 @@ def test_foreign_execution_identity_is_private_across_transition_and_turn() -> N
         assert marker not in repr(session.snapshot_partial_episode())
         assert root.execution is not None
         assert root.execution.request_id.startswith("request_sha256_")
+        assert root.execution.backend.startswith("backend_sha256_")
+
+    asyncio.run(scenario())
+
+
+def test_matching_private_backend_identity_is_always_opaque_in_transition() -> None:
+    marker = "PRIVATE_CREDENTIAL_SELECTOR"
+
+    async def scenario() -> None:
+        before = _world("before", False)
+        after = _world("after", True)
+        binding = replace(before.bindings[0], executor_id=marker)
+        source = replace(before.sources[0], bindings=(binding,))
+        before = replace(before, bindings=(binding,), sources=(source,))
+        result = ActionResult("*", DispatchStatus.SENT, marker, True)
+        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+            StaticEnvironment([before, after], [result]), _task(),
+        )
+        terminal = await session.run_until_pause()
+        root = session.state.recent_control_transitions[0]
+        assert terminal.status is AgentLoopStatus.DONE
+        assert marker not in repr(root)
+        assert marker not in repr(root.as_turn())
+        assert root.execution is not None
         assert root.execution.backend.startswith("backend_sha256_")
 
     asyncio.run(scenario())

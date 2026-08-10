@@ -52,6 +52,20 @@ def validate_campaign_tree(
         errors.append("attestation does not bind exactly the frozen case set")
         return tuple(errors)
     expected_ids = tuple(item.case_id for item in manifest.cases)
+    expected_files = {
+        "attestation.json",
+        "campaign.json",
+        "summary.json",
+        "campaign-progress.json",
+        *(f"cases/{case_id}.json" for case_id in expected_ids),
+    }
+    actual_files = {
+        path.relative_to(output_dir).as_posix()
+        for path in output_dir.rglob("*")
+        if path.is_file()
+    }
+    if actual_files != expected_files:
+        errors.append("formal report recursive file set is incomplete or contains extras")
     campaign_cases = campaign.get("cases")
     campaign_order = tuple(
         item.get("case_id") for item in campaign_cases if isinstance(item, dict)
@@ -95,7 +109,12 @@ def validate_campaign_tree(
             else ()
         )
         expected_outer = (
-            payload.get("schema_version") == "miniwob-breadth-case.v3"
+            set(payload) == {
+                "schema_version", "case_id", "task_family_label", "capability_profile",
+                "required_primitives", "typed_outcome", "classification_source",
+                "benchmark_case_evidence",
+            }
+            and payload.get("schema_version") == "miniwob-breadth-case.v3"
             and payload.get("case_id") == case.case_id
             and payload.get("task_family_label")
             == case.task_id.removeprefix("browsergym/miniwob.")
@@ -183,6 +202,12 @@ def _validate_root_identity(
     }
     if any(attestation.get(name) != value for name, value in expected_attestation.items()):
         errors.append("attestation identity/schema/profile is not the frozen contract")
+    expected_attestation_fields = set(expected_attestation) | {
+        "run_id", "git_sha", "case_report_sha256", "summary_sha256", "campaign_sha256",
+        "progress_sha256", "provider_capacity",
+    }
+    if set(attestation) != expected_attestation_fields:
+        errors.append("attestation fields do not match the formal schema")
     if not isinstance(sha, str) or _SHA.fullmatch(sha) is None:
         errors.append("attestation git SHA is invalid")
     if not isinstance(attestation.get("run_id"), str) or not attestation["run_id"]:
@@ -205,6 +230,8 @@ def _validate_root_identity(
     }
     if any(campaign.get(name) != value for name, value in expected_campaign.items()):
         errors.append("campaign identity/schema/profile is not cross-bound")
+    if set(campaign) != set(expected_campaign) | {"acceptance", "cases"}:
+        errors.append("campaign fields do not match the formal schema")
     if (
         not isinstance(acceptance, dict)
         or acceptance.get("evidence_valid") is not True
@@ -320,13 +347,18 @@ def _validate_formal_case_gates(result, errors) -> None:
 
 
 def _required_metrics_are_measured(result) -> bool:
-    return all(
-        (measurement := result.measurements.get(name)) is not None
-        and measurement.measured
-        and isinstance(measurement.value, int | float)
-        and not isinstance(measurement.value, bool)
-        for name in REQUIRED_METRICS
-    )
+    for name in REQUIRED_METRICS:
+        measurement = result.measurements.get(name)
+        if measurement is None or not measurement.measured:
+            return False
+        if name == "model_latency_ms":
+            if isinstance(measurement.value, bool) or not isinstance(
+                measurement.value, int | float
+            ):
+                return False
+        elif type(measurement.value) is not int:
+            return False
+    return True
 
 
 def _object(path: Path) -> dict[str, object]:

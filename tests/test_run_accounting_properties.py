@@ -78,10 +78,9 @@ def test_foreign_boundary_identity_retains_only_equality_or_opaque_digest(
     actual: str, expected: str, kind: str,
 ) -> None:
     normalized = safe_boundary_identity(actual, expected, kind=kind)
-    if actual == expected:
+    if actual == expected and kind == "request":
         assert normalized == expected
     else:
         assert normalized.startswith(f"{kind}_sha256_")
         assert len(normalized) == len(kind) + 8 + 64
-        if actual:
-            assert actual not in normalized
+        assert normalized != actual
