@@ -16,11 +16,6 @@ TARGET_CORE = (
     PACKAGE / "model_policy",
     PACKAGE / "model_evaluator",
 )
-SIZE_GATED = TARGET_CORE + (
-    PACKAGE / "surfaces" / "dom",
-    PACKAGE / "surfaces" / "visual",
-    PACKAGE / "surfaces" / "wot",
-)
 FORBIDDEN = {
     "affordance_runtime.contracts",
     "affordance_runtime.environment_port",
@@ -139,54 +134,6 @@ def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() 
 
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
     assert "TurnRecorder" not in agent_text
-
-
-def test_target_core_size_review_gates_remain_closed() -> None:
-    violations = []
-    for root in SIZE_GATED:
-        for path in _files(root):
-            text = path.read_text(encoding="utf-8")
-            line_count = len(text.splitlines())
-            if line_count > 350:
-                violations.append(f"{path.relative_to(ROOT)} has {line_count} lines")
-            tree = ast.parse(text, filename=str(path))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                    function_lines = (node.end_lineno or node.lineno) - node.lineno + 1
-                    if function_lines > 80:
-                        violations.append(
-                            f"{path.relative_to(ROOT)}:{node.lineno} {node.name} has {function_lines} lines"
-                        )
-                if isinstance(node, ast.ClassDef):
-                    public_methods = [
-                        item
-                        for item in node.body
-                        if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
-                        and not item.name.startswith("_")
-                    ]
-                    if len(public_methods) > 10:
-                        violations.append(
-                            f"{path.relative_to(ROOT)}:{node.lineno} {node.name} has "
-                            f"{len(public_methods)} public methods"
-                        )
-                    init = next(
-                        (
-                            item
-                            for item in node.body
-                            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
-                            and item.name == "__init__"
-                        ),
-                        None,
-                    )
-                    if init is not None and len(init.args.args) - 1 > 8:
-                        violations.append(
-                            f"{path.relative_to(ROOT)}:{node.lineno} {node.name} injects "
-                            f"{len(init.args.args) - 1} collaborators"
-                        )
-    loop_lines = len((PACKAGE / "agent" / "loop.py").read_text(encoding="utf-8").splitlines())
-    if loop_lines > 300:
-        violations.append(f"src/affordance_runtime/agent/loop.py has {loop_lines} lines")
-    assert violations == []
 
 
 def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:

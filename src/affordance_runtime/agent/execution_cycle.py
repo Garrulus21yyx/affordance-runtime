@@ -9,6 +9,7 @@ from affordance_runtime.agent.evaluation_control import (
     validated_task_evaluation,
 )
 from affordance_runtime.agent.observation_control import (
+    acquisition_attempt_count,
     capture_fresh,
     no_fresh_after_result,
     post_action_observation,
@@ -59,7 +60,8 @@ async def execute_cycle(
         terminal = build_result(
             AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch",
         )
-        return state, 0, int(result.dispatch_status is not DispatchStatus.NOT_SENT), probed, terminal
+        observed = acquisition_attempt_count(outcome.post_acquisition)
+        return state, observed, int(result.dispatch_status is not DispatchStatus.NOT_SENT), probed, terminal
     if result.dispatch_status is DispatchStatus.NOT_SENT:
         return await _not_sent_outcome(session, decision, request, result, probed)
     remaining = task.loop_budget.max_observations - session.observation_count

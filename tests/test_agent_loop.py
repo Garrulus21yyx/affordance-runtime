@@ -6,6 +6,7 @@ import pytest
 from affordance_runtime.agent import (
     Abort,
     AgentEpisodeRunner,
+    AgentFailureCode,
     AgentLoop,
     AgentLoopStatus,
     ProposeDone,
@@ -28,6 +29,7 @@ from affordance_runtime.world import (
     ActionBinding,
     ActionRisk,
     CoverageState,
+    ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
@@ -195,6 +197,7 @@ def test_sent_unknown_unconfirmed_effect_waits_without_replay() -> None:
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.execution_count == 1
         assert len(environment.executed_requests) == 1
+        assert environment.execute_calls == 1
 
     asyncio.run(scenario())
 
@@ -260,12 +263,14 @@ def test_transport_success_without_state_change_is_not_done() -> None:
     asyncio.run(scenario())
 
 
-def test_reused_post_action_observation_is_rejected() -> None:
+def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-1", True)], [_sent()])
         result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
-        assert result.message == "observation_identity_reused"
+        assert result.message == "static_capture_failed"
+        assert result.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
+        assert result.observation_count == 3
         assert result.final_observation.observation_id == "obs-1"
 
     asyncio.run(scenario())
@@ -325,6 +330,10 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
         assert result.execution_count == 0
         assert environment.executed_requests == []
         assert result.observation_count == 2
+        assert environment.capture_calls == 1
+        assert [request.kind for request in environment.capture_requests] == [
+            ObservationRequestKind.CURRENTNESS_REFRESH,
+        ]
 
     asyncio.run(scenario())
 
@@ -399,6 +408,8 @@ def test_wrong_action_result_lineage_is_rejected_before_evaluation() -> None:
         assert result.status == AgentLoopStatus.FAILED
         assert "lineage" in result.message
         assert result.turns[0].action_evaluation is None
+        assert result.observation_count == 2
+        assert result.execution_count == 1
 
     asyncio.run(scenario())
 

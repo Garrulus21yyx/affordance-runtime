@@ -17,9 +17,11 @@ class AgentFailureCode(StrEnum):
     OBSERVATION_CAPABILITY_UNAVAILABLE = "observation_capability_unavailable"
     OBSERVATION_ACQUISITION_FAILED = "observation_acquisition_failed"
     OBSERVATION_FRESHNESS_INVALID = "observation_freshness_invalid"
+    OBSERVATION_ORIGIN_INVALID = "observation_origin_invalid"
     POST_ACTION_CAPABILITY_UNAVAILABLE = "post_action_capability_unavailable"
     POST_ACTION_ACQUISITION_FAILED = "post_action_acquisition_failed"
     POST_ACTION_FRESHNESS_INVALID = "post_action_freshness_invalid"
+    POST_ACTION_ORIGIN_INVALID = "post_action_origin_invalid"
 
 
 @dataclass(frozen=True)

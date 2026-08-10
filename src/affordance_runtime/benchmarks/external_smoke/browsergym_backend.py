@@ -41,6 +41,8 @@ class ThreadBoundBrowserGym:
         ] = queue.Queue()
         self._ready: Future[object] = Future()
         self._thread = threading.Thread(target=self._run, args=(task_id, headless), daemon=True)
+        self.owner_thread_ident: int | None = None
+        self.last_capture_thread_ident: int | None = None
         self._thread.start()
         ready = self._ready.result(timeout=60)
         self.supports_capture_current = bool(ready)
@@ -51,13 +53,17 @@ class ThreadBoundBrowserGym:
 
     def _run(self, task_id: str, headless: bool) -> None:
         try:
+            self.owner_thread_ident = threading.get_ident()
             import browsergym.miniwob  # type: ignore[import-not-found]  # noqa: F401
             import gymnasium as gym  # type: ignore[import-not-found]
 
             environment = gym.make(task_id, headless=headless)
             unwrapped = getattr(environment, "unwrapped", environment)
             getter = getattr(unwrapped, "_get_obs", None)
-            self._ready.set_result(callable(getter) and getattr(unwrapped, "page", None) is not None)
+            # BrowserGym creates its page during reset. Capability inventory happens
+            # before that preparation reset, so the pinned read-only API itself is
+            # the stable capability signal; capture still executes only after reset.
+            self._ready.set_result(callable(getter))
         except BaseException as exc:
             self._ready.set_exception(exc)
             return
@@ -68,6 +74,7 @@ class ThreadBoundBrowserGym:
                     unwrapped = getattr(environment, "unwrapped", environment)
                     value = unwrapped.page.evaluate(_PROBE_SCRIPT, *args)
                 elif name == "capture_current":
+                    self.last_capture_thread_ident = threading.get_ident()
                     unwrapped = getattr(environment, "unwrapped", environment)
                     getter = getattr(unwrapped, "_get_obs", None)
                     if not callable(getter):

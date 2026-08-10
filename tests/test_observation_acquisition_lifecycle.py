@@ -6,9 +6,11 @@ import pytest
 from affordance_runtime.agent import (
     Abort,
     AgentEpisodeRunner,
+    AgentFailureCode,
     AgentLoop,
     AgentSessionStartError,
 )
+from affordance_runtime.agent.observation_control import capture_fresh, post_action_observation
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
@@ -151,5 +153,189 @@ def test_non_acquired_initial_result_raises_typed_start_error() -> None:
         assert captured.value.status is AcquisitionStatus.FAILED
         assert captured.value.origin is AcquisitionOrigin.RESET
         assert captured.value.reason_code == "initial_capture_failed"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("origin", (AcquisitionOrigin.RESET, AcquisitionOrigin.POST_ACTION))
+def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionOrigin) -> None:
+    class WrongOriginEnvironment(StaticEnvironment):
+        async def capture(self, request):
+            self.capture_calls += 1
+            self.capture_requests.append(request)
+            return ObservationAcquisition(
+                AcquisitionStatus.ACQUIRED,
+                origin,
+                _world("wrong-origin"),
+                "static_capture_acquired",
+            )
+
+    async def scenario() -> None:
+        environment = WrongOriginEnvironment(initial_observation=_world("initial"))
+        await environment.reset(_task())
+        acquired = await capture_fresh(
+            environment,
+            "initial",
+            WorldObservationRequest(ObservationRequestKind.WAIT_REFRESH, "refresh"),
+        )
+        assert acquired.observation is None
+        assert acquired.attempts == 1
+        assert acquired.status is AcquisitionStatus.FAILED
+        assert acquired.reason_code == "independent_capture_origin_invalid"
+        assert acquired.failure_code is AgentFailureCode.OBSERVATION_ORIGIN_INVALID
+        assert environment.capture_calls == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("primary_status", "independent", "expected_attempts", "expected_reason"),
+    (
+        (AcquisitionStatus.CAPABILITY_UNAVAILABLE, (_world("after"),), 1, "static_capture_acquired"),
+        (AcquisitionStatus.CAPABILITY_UNAVAILABLE, (), 1, "static_capture_failed"),
+        (AcquisitionStatus.FAILED, (), 2, "static_capture_failed"),
+    ),
+)
+def test_post_action_fallback_reports_last_attempt_truth(
+    primary_status: AcquisitionStatus,
+    independent: tuple[WorldObservation, ...],
+    expected_attempts: int,
+    expected_reason: str,
+) -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            initial_observation=_world("initial"),
+            independent_observations=independent,
+            repeat_last_observation=False,
+        )
+        await environment.reset(_task())
+        primary = ObservationAcquisition(
+            primary_status,
+            AcquisitionOrigin.POST_ACTION,
+            None,
+            "post_action_observation_unavailable"
+            if primary_status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+            else "post_action_projection_failed",
+        )
+        acquired = await post_action_observation(environment, "initial", primary, 2)
+        assert acquired.attempts == expected_attempts
+        assert acquired.reason_code == expected_reason
+        assert environment.capture_calls == 1
+        if independent:
+            assert acquired.status is AcquisitionStatus.ACQUIRED
+            assert acquired.observation is independent[0]
+            assert acquired.failure_code is None
+        else:
+            assert acquired.status is AcquisitionStatus.FAILED
+            assert acquired.observation is None
+            assert acquired.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
+
+    asyncio.run(scenario())
+
+
+def test_post_action_fallback_reused_identity_reports_final_freshness_failure() -> None:
+    async def scenario() -> None:
+        initial = _world("initial")
+        environment = StaticEnvironment(
+            initial_observation=initial,
+            independent_observations=(initial,),
+        )
+        await environment.reset(_task())
+        primary = ObservationAcquisition(
+            AcquisitionStatus.CAPABILITY_UNAVAILABLE,
+            AcquisitionOrigin.POST_ACTION,
+            None,
+            "post_action_observation_unavailable",
+        )
+        acquired = await post_action_observation(environment, "initial", primary, 2)
+        assert acquired.observation is None
+        assert acquired.attempts == 1
+        assert acquired.status is AcquisitionStatus.FAILED
+        assert acquired.reason_code == "observation_identity_reused"
+        assert acquired.failure_code is AgentFailureCode.POST_ACTION_FRESHNESS_INVALID
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "kind",
+    tuple(kind for kind in ObservationRequestKind if kind is not ObservationRequestKind.POLICY_REQUEST),
+)
+def test_internal_refresh_uses_aggregate_capability_without_offer(kind: ObservationRequestKind) -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            initial_observation=_world("initial"),
+            independent_observations=(_world("after"),),
+            observation_capabilities=ObservationCapabilities(True, True, ()),
+        )
+        await environment.reset(_task())
+        acquired = await capture_fresh(
+            environment,
+            "initial",
+            WorldObservationRequest(kind, "internal refresh"),
+        )
+        assert acquired.status is AcquisitionStatus.ACQUIRED
+        assert environment.capture_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_policy_request_requires_explicit_offer_even_when_projection_is_misleading() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            initial_observation=_world("initial"),
+            independent_observations=(_world("after"),),
+            observation_capabilities=ObservationCapabilities(True, True, ()),
+        )
+        await environment.reset(_task())
+        acquired = await capture_fresh(
+            environment,
+            "initial",
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "policy refresh",
+                modality="structural",
+                required_assurance="structural",
+            ),
+        )
+        assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+        assert acquired.reason_code == "observation_capability_not_offered"
+        assert environment.capture_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_forged_model_offer_cannot_override_environment_capture_authority() -> None:
+    forged_projection = project_acquisition_offers(ObservationCapabilities(
+        True,
+        True,
+        (ObservationOffer("forged", "structural", "structural", "low"),),
+    ))
+    assert forged_projection
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            initial_observation=_world("initial"),
+            independent_observations=(_world("after"),),
+            observation_capabilities=ObservationCapabilities(
+                False,
+                True,
+                (ObservationOffer("environment", "structural", "structural", "low"),),
+            ),
+        )
+        await environment.reset(_task())
+        acquired = await capture_fresh(
+            environment,
+            "initial",
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "policy refresh",
+                modality=forged_projection[0].modality,
+                required_assurance=forged_projection[0].assurance,
+            ),
+        )
+        assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+        assert acquired.reason_code == "independent_capture_unsupported"
+        assert environment.capture_calls == 0
 
     asyncio.run(scenario())
