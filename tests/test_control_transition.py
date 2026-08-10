@@ -23,7 +23,6 @@ from affordance_runtime.agent.control_transition import (
     ControlContinuationScope,
     ControlTransitionScope,
     PendingKind,
-    Turn,
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.progress_control import ProgressEvent
@@ -39,18 +38,16 @@ def test_transition_is_frozen_bounded_and_strips_adapter_payload() -> None:
     decision = Abort("context:one", "stop", "policy")
     scope = ControlTransitionScope(state, decision)
     scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
-    scope.record_turn(
-        Turn(
-            "before",
-            decision,
-            result=ActionResult(
-                "request:one",
-                DispatchStatus.SENT,
-                "dom",
-                True,
-                adapter_evidence={"selector": "#private", "raw_payload": "secret"},
-            ),
-        )
+    scope.record_execution(
+        "",
+        None,
+        ActionResult(
+            "request:one",
+            DispatchStatus.SENT,
+            "dom",
+            True,
+            adapter_evidence={"selector": "#private", "raw_payload": "secret"},
+        ),
     )
     transition = scope.finalize(state, None)
 

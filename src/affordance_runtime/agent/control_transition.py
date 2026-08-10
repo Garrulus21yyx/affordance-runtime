@@ -197,12 +197,12 @@ class ControlTransitionScope:
         self._resulting_status: AgentLoopStatus | None = None
         self._finalized = False
 
-    def record_turn(self, turn: Turn) -> None:
-        if turn.decision != self._decision or turn.before_observation_id != self._before_id:
-            raise ValueError("transition facts do not belong to the accepted decision")
-        self._merge_compatibility_turn(turn)
-
-    def record_execution(self, request_id: str, intent: ActionIntent, result: ActionResult) -> None:
+    def record_execution(
+        self,
+        request_id: str,
+        intent: ActionIntent | None,
+        result: ActionResult,
+    ) -> None:
         self._intent = intent
         self._request_id = request_id
         self._result = result
@@ -220,17 +220,6 @@ class ControlTransitionScope:
 
     def record_decision_result(self, value: str) -> None:
         self._decision_result = value
-
-    def _merge_compatibility_turn(self, turn: Turn) -> None:
-        current = self._as_turn()
-        merged = _merge_turn(current, turn)
-        self._intent, self._request_id, self._result = (
-            merged.intent, merged.request_id, merged.result
-        )
-        self._after_id = merged.after_observation_id
-        self._action_evaluation = merged.action_evaluation
-        self._task_evaluation = merged.task_evaluation
-        self._decision_result = merged.decision_result
 
     def _as_turn(self) -> Turn:
         return Turn(
@@ -329,12 +318,12 @@ class ControlContinuationScope:
         self._resulting_status: AgentLoopStatus | None = None
         self._finalized = False
 
-    def record_turn(self, turn: Turn) -> None:
-        # A confirmation continuation may span fresh contexts and rebound worlds;
-        # its immutable root decision remains the accepted policy decision.
-        self._merge_compatibility_turn(turn)
-
-    def record_execution(self, request_id: str, intent: ActionIntent, result: ActionResult) -> None:
+    def record_execution(
+        self,
+        request_id: str,
+        intent: ActionIntent | None,
+        result: ActionResult,
+    ) -> None:
         self._intent = intent
         self._request_id = request_id
         self._result = result
@@ -352,16 +341,6 @@ class ControlContinuationScope:
 
     def record_decision_result(self, value: str) -> None:
         self._decision_result = value
-
-    def _merge_compatibility_turn(self, turn: Turn) -> None:
-        merged = _merge_turn(self._as_turn(), turn)
-        self._intent, self._request_id, self._result = (
-            merged.intent, merged.request_id, merged.result
-        )
-        self._after_id = merged.after_observation_id
-        self._action_evaluation = merged.action_evaluation
-        self._task_evaluation = merged.task_evaluation
-        self._decision_result = merged.decision_result
 
     def _as_turn(self) -> Turn:
         return Turn(
@@ -461,21 +440,6 @@ def _execution_summary(turn: Turn) -> ExecutionSummary | None:
         turn.result.dispatch_status,
         turn.result.transport_success,
         turn.result.error,
-    )
-
-
-def _merge_turn(current: Turn, update: Turn) -> Turn:
-    """Merge staged facts without allowing a later partial update to erase truth."""
-    return Turn(
-        current.before_observation_id,
-        current.decision,
-        update.intent or current.intent,
-        update.request_id or current.request_id,
-        update.result or current.result,
-        update.after_observation_id or current.after_observation_id,
-        update.action_evaluation or current.action_evaluation,
-        update.task_evaluation or current.task_evaluation,
-        update.decision_result or current.decision_result,
     )
 
 

@@ -187,10 +187,10 @@ def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writ
 
 def test_turn_is_only_a_compatibility_projection_not_a_production_fact_writer() -> None:
     for path in _files(PACKAGE / "agent"):
-        if path.name in {"control_transition.py", "state.py", "result.py"}:
-            continue
         source = path.read_text(encoding="utf-8")
         assert "record_turn(" not in source
+        if path.name in {"control_transition.py", "state.py", "result.py"}:
+            continue
         assert "Turn(" not in source
 
 

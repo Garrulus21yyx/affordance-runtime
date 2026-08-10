@@ -6,7 +6,7 @@ import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
 from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop
-from affordance_runtime.agent.control_transition import ControlTransitionScope, Turn
+from affordance_runtime.agent.control_transition import ControlTransitionScope
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.testing import StaticEnvironment
 
@@ -42,7 +42,7 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
             else (),
         )
         scope = ControlTransitionScope(session.state, decision)
-        scope.record_turn(Turn("current", decision, task_evaluation=old))
+        scope.record_evaluations(task=old)
         scope.set_reason("abort_policy")
         scope.finalize(session.state, None)
         session.state.current_task_evaluation = TaskEvaluation(
