@@ -22,7 +22,7 @@ from affordance_runtime.agent.decisions import (
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.observation_control import (
     capture_admission_failure,
-    capture_fresh,
+    capture_for_session,
 )
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.result import (
@@ -190,10 +190,11 @@ async def _wait_refresh(
     if unavailable is not None:
         scope.record_acquisition(
             unavailable.status,
-            AcquisitionOrigin.INDEPENDENT_CAPTURE,
+            unavailable.actual_origin,
             unavailable.reason_code,
             unavailable.attempts,
             request.kind,
+            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
         )
         return build_result(
             AgentLoopStatus.BLOCKED, task, state, 0, 0, unavailable.reason_code,
@@ -238,15 +239,7 @@ async def _fresh_observation(
         scope.set_reason("observation_budget_exhausted")
         return observation_budget_result(session.task, state, 0, 0)
     previous_id = state.current_observation.observation_id
-    acquired = await capture_fresh(session.environment, previous_id, request)
-    scope.record_acquisition(
-        acquired.status,
-        AcquisitionOrigin.INDEPENDENT_CAPTURE,
-        acquired.reason_code,
-        acquired.attempts,
-        request.kind,
-    )
-    session.observation_count += acquired.attempts
+    acquired = await capture_for_session(session, previous_id, request, scope)
     if acquired.observation is None:
         status = (
             AgentLoopStatus.BLOCKED

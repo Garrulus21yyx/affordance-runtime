@@ -326,7 +326,7 @@ def test_propose_done_cannot_bypass_validated_task_evaluator() -> None:
         ).run(StaticEnvironment([_world("before", False)]), _task())
 
         assert result.status == AgentLoopStatus.FAILED
-        assert evaluator.calls == 3
+        assert evaluator.calls == 2
         assert result.execution_count == 0
 
     asyncio.run(scenario())

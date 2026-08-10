@@ -22,7 +22,7 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     value = _metric(result, "official_success_count")
     if result.status == "done" and value == 1:
         return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "mechanical_verifier")
-    if _metric(result, "cleanup_failures"):
+    if result.failure_origin is CaseFailureOrigin.CLEANUP:
         return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")

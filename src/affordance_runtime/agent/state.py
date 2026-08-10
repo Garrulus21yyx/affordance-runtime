@@ -14,6 +14,13 @@ from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
 
+def _current_task_evaluation(continuation, previous, after_observation_id):
+    candidate = continuation or previous
+    if candidate is None or candidate.observation_id != after_observation_id:
+        return None
+    return candidate
+
+
 class AgentLoopStatus(StrEnum):
     RUNNING = "running"
     WAITING_USER = "waiting_user"
@@ -65,20 +72,19 @@ class AgentLoopState:
         self.control_transition_kind_counts[kind] = (
             self.control_transition_kind_counts.get(kind, 0) + 1
         )
-        if (
-            transition.execution is not None
-            and str(transition.execution.dispatch_status) == "sent_unknown"
-        ):
-            self.sent_unknown_total_count += 1
+        self.sent_unknown_total_count += sum(
+            str(item.dispatch_status) == "sent_unknown"
+            for item in transition.execution_attempts
+        )
         self.progress_revision += 1
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:
         for index, transition in enumerate(self.recent_control_transitions):
             if transition.transition_id != continuation.source_transition_id:
                 continue
-            was_sent_unknown = bool(
-                transition.execution is not None
-                and str(transition.execution.dispatch_status) == "sent_unknown"
+            execution_attempts = (
+                *transition.execution_attempts,
+                *continuation.execution_attempts,
             )
             attempts = (
                 *transition.acquisition_attempts,
@@ -94,14 +100,17 @@ class AgentLoopState:
             updated = replace(
                 transition,
                 execution=continuation.execution or transition.execution,
+                execution_attempts=execution_attempts,
                 acquisition=acquisition,
                 acquisition_attempts=attempts,
                 after_observation_id=continuation.after_observation_id,
                 action_evaluation=(
                     continuation.action_evaluation or transition.action_evaluation
                 ),
-                task_evaluation=(
-                    continuation.task_evaluation or transition.task_evaluation
+                task_evaluation=_current_task_evaluation(
+                    continuation.task_evaluation,
+                    transition.task_evaluation,
+                    continuation.after_observation_id,
                 ),
                 progress=type(transition.progress)(
                     transition.progress.event_count + continuation.progress.event_count,
@@ -117,12 +126,10 @@ class AgentLoopState:
             values = list(self.recent_control_transitions)
             values[index] = updated
             self.recent_control_transitions = tuple(values)
-            is_sent_unknown = bool(
-                updated.execution is not None
-                and str(updated.execution.dispatch_status) == "sent_unknown"
+            self.sent_unknown_total_count += sum(
+                str(item.dispatch_status) == "sent_unknown"
+                for item in continuation.execution_attempts
             )
-            if is_sent_unknown and not was_sent_unknown:
-                self.sent_unknown_total_count += 1
             return
         raise ValueError("confirmation continuation root is outside the bounded suffix")
 

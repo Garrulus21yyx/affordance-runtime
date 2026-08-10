@@ -110,7 +110,6 @@ def _target_case(case, manifest, base_policy, pacing_state, instrumentations) ->
             )
         except BaseException as exc:
             _initialize_custom_metrics(instrumentation)
-            instrumentation.custom_metrics["cleanup_failures"] = 1
             if isinstance(exc, Exception):
                 instrumentation.record_failure(
                     CaseFailureOrigin.ENVIRONMENT_RESET, "browsergym_open_exception", exc,
@@ -149,8 +148,10 @@ class _BreadthEnvironment(InstrumentedBrowserGymEnvironment):
         try:
             await super().close()
         finally:
-            metrics = self.instrumentation.custom_metrics
-            metrics["click_calls"] = max(0, self.wrapped.dom_action_calls - self.wrapped.fill_calls - self.wrapped.select_calls)
+            self.instrumentation.set_custom_metric(
+                "click_calls",
+                max(0, self.wrapped.dom_action_calls - self.wrapped.fill_calls - self.wrapped.select_calls),
+            )
 
 
 def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> None:
@@ -158,9 +159,10 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
         "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
         "dom_action_calls", "click_calls", "fill_calls", "select_calls",
         "official_verifier_queries", "official_success_count", "fallback_count",
-        "cleanup_failures", "already_satisfied_suppressions", "no_progress_terminations",
+        "already_satisfied_suppressions", "no_progress_terminations",
     ):
-        instrumentation.custom_metrics.setdefault(name, 0)
+        if name not in instrumentation.custom_metrics:
+            instrumentation.set_custom_metric(name, 0)
 
 
 def _derived_metrics(result):

@@ -183,6 +183,9 @@ def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionO
         assert acquired.status is AcquisitionStatus.FAILED
         assert acquired.reason_code == "independent_capture_origin_invalid"
         assert acquired.failure_code is AgentFailureCode.OBSERVATION_ORIGIN_INVALID
+        assert acquired.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
+        assert acquired.actual_origin is origin
+        assert acquired.request_kind is ObservationRequestKind.WAIT_REFRESH
         assert environment.capture_calls == 1
 
     asyncio.run(scenario())
@@ -220,6 +223,9 @@ def test_post_action_fallback_reports_last_attempt_truth(
         acquired = await post_action_observation(environment, "initial", primary, 2)
         assert acquired.attempts == expected_attempts
         assert acquired.reason_code == expected_reason
+        assert acquired.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
+        assert acquired.actual_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
+        assert acquired.request_kind is ObservationRequestKind.POST_ACTION_FALLBACK
         assert environment.capture_calls == 1
         if independent:
             assert acquired.status is AcquisitionStatus.ACQUIRED

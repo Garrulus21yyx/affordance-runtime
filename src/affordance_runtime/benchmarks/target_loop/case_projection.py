@@ -28,6 +28,7 @@ def project_case_result(
     final_snapshot: PartialEpisodeSnapshot | None = None,
 ) -> BenchmarkCaseResult:
     """Apply one explicit typed precedence; human failure text is display-only."""
+    _record_metric_collision(instrumentation)
     metadata = _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot)
     sent_unknown = (
         result.sent_unknown_count
@@ -48,6 +49,8 @@ def project_case_result(
     )
     runtime_reason = _runtime_reason(result, metadata)
     case_failure_code = _case_failure_code(result, instrumentation, runtime_reason)
+    failure_origin = _failure_origin(result, instrumentation, runtime_reason, metadata)
+    agent_failure = _agent_failure_code(result)
     return BenchmarkCaseResult(
         case_id=case_id,
         status=str(result.status) if result else str(AgentLoopStatus.FAILED),
@@ -59,18 +62,18 @@ def project_case_result(
             project_terminal_reason_code(result.status, result.reason_code, result.failure_code)
             if result is not None else None
         ),
-        termination_origin=_termination_origin(result, instrumentation),
+        termination_origin=_termination_origin(result, failure_origin),
         case_failure_code=case_failure_code,
-        partial_episode_available=timeout_snapshot is not None,
+        partial_episode_available=result is None and metadata is not None,
         latest_semantic_attempt_key_digest=(
             metadata.latest_semantic_attempt_key_digest if metadata else ""
         ),
         same_attempt_streak=metadata.same_attempt_streak if metadata else 0,
         no_progress_count=metadata.no_progress_count if metadata else 0,
         last_progress_event_type=metadata.last_progress_event_type if metadata else "",
-        failure_origin=_failure_origin(result, instrumentation, runtime_reason),
-        failure_code=instrumentation.failure_code or _agent_failure_code(result, runtime_reason),
-        exception_class=instrumentation.exception_class,
+        failure_origin=failure_origin,
+        failure_code=case_failure_code,
+        exception_class=_primary_exception_class(instrumentation, failure_origin),
         last_decision_type=metadata.last_decision_type if metadata else "",
         last_policy_failure_code=(
             str(result.policy_failure.kind)
@@ -84,6 +87,13 @@ def project_case_result(
         latest_action_evaluation_status=(
             metadata.latest_action_evaluation_status if metadata else ""
         ),
+        runtime_reason_code=runtime_reason,
+        agent_failure_code=agent_failure,
+        cleanup_failure_code=_safe_code(
+            instrumentation.cleanup_failure_code, "cleanup_exception"
+        ) if instrumentation.cleanup_failures else "",
+        cleanup_exception_class=instrumentation.cleanup_exception_class,
+        cleanup_failures=instrumentation.cleanup_failures,
     )
 
 
@@ -94,13 +104,15 @@ def _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot):
 
 
 def _runtime_reason(result, snapshot) -> str:
-    candidate = (
-        result.reason_code
-        if result is not None and result.reason_code
-        else snapshot.latest_control_reason_code
-        if snapshot is not None
-        else ""
-    )
+    if result is not None:
+        candidate = result.reason_code
+    elif (
+        snapshot is not None
+        and snapshot.latest_control_status in {"failed", "blocked", "cancelled"}
+    ):
+        candidate = snapshot.latest_control_reason_code
+    else:
+        candidate = ""
     if not candidate:
         return ""
     return candidate if _BOUNDED_CODE.fullmatch(candidate) else "runtime_failure"
@@ -109,42 +121,79 @@ def _runtime_reason(result, snapshot) -> str:
 def _case_failure_code(result, instrumentation, runtime_reason: str) -> str:
     if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG:
         return "case_timeout"
-    if instrumentation.failure_origin is CaseFailureOrigin.CLEANUP:
-        return instrumentation.failure_code or "cleanup_exception"
-    if result is not None and result.policy_failure is not None:
+    if result is not None and result.status is not AgentLoopStatus.DONE and result.policy_failure is not None:
         return f"policy_{result.policy_failure.kind}"
-    if result is not None and result.failure_code is not None:
+    if result is not None and result.status is not AgentLoopStatus.DONE and result.failure_code is not None:
         return str(result.failure_code)
     if runtime_reason and _is_failure_result(result):
         return runtime_reason
-    if instrumentation.failure_code:
-        return instrumentation.failure_code
+    if instrumentation.failure_origin not in {
+        CaseFailureOrigin.NONE, CaseFailureOrigin.CLEANUP,
+    } and instrumentation.failure_code:
+        return _safe_code(instrumentation.failure_code, "runtime_failure")
+    if instrumentation.cleanup_failures:
+        return _safe_code(
+            instrumentation.cleanup_failure_code, "cleanup_exception"
+        )
     return "runtime_failure" if result is None else ""
 
 
-def _agent_failure_code(result, runtime_reason: str) -> str:
+def _agent_failure_code(result) -> str:
     if result is not None and result.failure_code is not None:
         return str(result.failure_code)
-    return runtime_reason if _is_failure_result(result) else ""
+    return ""
 
 
-def _failure_origin(result, instrumentation, runtime_reason) -> CaseFailureOrigin:
-    if instrumentation.failure_origin is not CaseFailureOrigin.NONE:
+def _failure_origin(result, instrumentation, runtime_reason, snapshot) -> CaseFailureOrigin:
+    if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG:
         return instrumentation.failure_origin
+    if result is not None and result.status is not AgentLoopStatus.DONE and result.policy_failure is not None:
+        return CaseFailureOrigin.POLICY_DECISION
     if result is not None and result.failure_code is not None:
-        if str(result.failure_code).startswith("post_action_"):
+        failure_code = str(result.failure_code)
+        if failure_code.startswith("post_action_"):
             return CaseFailureOrigin.POST_ACTION_OBSERVATION
+        request_kind = snapshot.latest_acquisition_request_kind if snapshot else ""
+        if request_kind == "binding_refresh":
+            return CaseFailureOrigin.ACTION_BINDING
+        if request_kind == "currentness_refresh":
+            return CaseFailureOrigin.CURRENTNESS
+        return _runtime_origin(runtime_reason)
+    if instrumentation.failure_origin not in {
+        CaseFailureOrigin.NONE, CaseFailureOrigin.CLEANUP,
+    }:
+        return instrumentation.failure_origin
     if runtime_reason and _is_failure_result(result):
-        return CaseFailureOrigin.DECISION_CONTROL
+        return _runtime_origin(runtime_reason)
+    if instrumentation.cleanup_failures:
+        return CaseFailureOrigin.CLEANUP
     return CaseFailureOrigin.NONE
+
+
+def _runtime_origin(reason: str) -> CaseFailureOrigin:
+    exact = {
+        "action_evaluation_invalid": CaseFailureOrigin.ACTION_EVALUATION,
+        "task_evaluation_invalid": CaseFailureOrigin.TASK_EVALUATION,
+        "action_result_lineage_mismatch": CaseFailureOrigin.EXECUTION,
+        "action_not_dispatched": CaseFailureOrigin.EXECUTION,
+        "stale_bound_request": CaseFailureOrigin.ACTION_BINDING,
+        "binding_refresh_failed": CaseFailureOrigin.ACTION_BINDING,
+        "currentness_refresh_failed": CaseFailureOrigin.CURRENTNESS,
+        "observation_budget_exhausted": CaseFailureOrigin.DECISION_CONTROL,
+        "turn_budget_exhausted": CaseFailureOrigin.DECISION_CONTROL,
+        "abort_policy": CaseFailureOrigin.DECISION_CONTROL,
+        "invalid_confirmation_decision": CaseFailureOrigin.DECISION_CONTROL,
+        "confirmation_subject_unavailable": CaseFailureOrigin.DECISION_CONTROL,
+        "already_satisfied": CaseFailureOrigin.DECISION_CONTROL,
+    }
+    return exact.get(reason, CaseFailureOrigin.UNKNOWN)
 
 
 def _is_failure_result(result) -> bool:
     return bool(result is None or result.status is not AgentLoopStatus.DONE)
 
 
-def _termination_origin(result, instrumentation) -> str:
-    origin = instrumentation.failure_origin
+def _termination_origin(result, origin: CaseFailureOrigin) -> str:
     if origin is CaseFailureOrigin.HARNESS_WATCHDOG:
         return "harness_watchdog"
     if origin is CaseFailureOrigin.CLEANUP:
@@ -182,6 +231,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "completion_tokens": state.completion_tokens,
         "total_tokens": state.total_tokens,
         "model_latency_ms": state.model_latency_ms,
+        "cleanup_failures": state.cleanup_failures,
     }
     kind_counts = dict(
         result.control_transition_kind_counts
@@ -195,5 +245,38 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "wait_count": kind_counts.get("Wait", 0),
         "page_request_count": kind_counts.get("RequestActionPage", 0),
     })
-    values.update(state.custom_metrics)
+    values.update({name: value for name, value in state.custom_metrics.items() if name not in values})
     return values
+
+
+def _record_metric_collision(instrumentation: BenchmarkInstrumentation) -> None:
+    canonical = {
+        "observations", "executions", "currentness_probes", "turns",
+        "policy_calls", "semantic_judge_calls", "provider_attempts",
+        "confirmations", "sent_unknown_count", "duplicate_unknown_attempts",
+        "forbidden_effect_attempts", "stale_opportunities",
+        "stale_zero_call_violations", "effectful_dispatches",
+        "reset_acquisitions", "independent_capture_calls",
+        "post_action_acquisitions", "provider_retry_count", "prompt_tokens",
+        "completion_tokens", "total_tokens", "model_latency_ms",
+        "ask_user_count", "wait_count", "page_request_count", "cleanup_failures",
+    }
+    if canonical.intersection(instrumentation.custom_metrics):
+        instrumentation.record_failure(
+            CaseFailureOrigin.UNKNOWN,
+            "metric_name_collision",
+            ValueError("custom metric collides with canonical metric"),
+        )
+
+
+def _safe_code(value: str, fallback: str) -> str:
+    return value if _BOUNDED_CODE.fullmatch(value) else fallback
+
+
+def _primary_exception_class(
+    instrumentation: BenchmarkInstrumentation,
+    origin: CaseFailureOrigin,
+) -> str:
+    if origin is CaseFailureOrigin.CLEANUP:
+        return instrumentation.cleanup_exception_class
+    return instrumentation.exception_class

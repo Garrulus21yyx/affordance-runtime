@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
@@ -13,6 +14,18 @@ from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
 from affordance_runtime.world import AcquisitionStatus, ObservationRequestKind
+
+_CANONICAL_METRICS = frozenset({
+    "observations", "executions", "currentness_probes", "turns",
+    "policy_calls", "semantic_judge_calls", "provider_attempts",
+    "confirmations", "sent_unknown_count", "duplicate_unknown_attempts",
+    "forbidden_effect_attempts", "stale_opportunities",
+    "stale_zero_call_violations", "effectful_dispatches",
+    "reset_acquisitions", "independent_capture_calls",
+    "post_action_acquisitions", "provider_retry_count", "prompt_tokens",
+    "completion_tokens", "total_tokens", "model_latency_ms",
+    "ask_user_count", "wait_count", "page_request_count", "cleanup_failures",
+})
 
 
 @dataclass
@@ -29,7 +42,7 @@ class BenchmarkInstrumentation:
     stale_zero_call_violations: int = 0
     forbidden_effect_attempts: int = 0
     duplicate_unknown_attempts: int = 0
-    custom_metrics: dict[str, int] = field(default_factory=dict)
+    custom_metrics: dict[str, int | float] = field(default_factory=dict)
     model_metadata: ModelMetadata | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -38,19 +51,42 @@ class BenchmarkInstrumentation:
     failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
     failure_code: str = ""
     exception_class: str = ""
+    cleanup_failure_code: str = ""
+    cleanup_exception_class: str = ""
+    cleanup_failures: int = 0
     environment_reset_acquisitions: int = 0
     environment_capture_calls: int = 0
     environment_post_acquisitions: int = 0
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
+        if name in _CANONICAL_METRICS:
+            raise ValueError("custom metric cannot override a canonical metric")
+        if type(value) is not int or value < 0:
+            raise ValueError("custom metric increments must be non-negative integers")
         self.custom_metrics[name] = self.custom_metrics.get(name, 0) + value
+
+    def set_custom_metric(self, name: str, value: int | float) -> None:
+        if name in _CANONICAL_METRICS:
+            raise ValueError("custom metric cannot override a canonical metric")
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ValueError("custom metrics must be numeric")
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("custom metrics must be finite and non-negative")
+        self.custom_metrics[name] = value
 
     def record_failure(self, origin: CaseFailureOrigin, code: str, exception: Exception) -> None:
         if self.failure_origin is CaseFailureOrigin.NONE:
             self.failure_origin = origin
             self.failure_code = code
             self.exception_class = type(exception).__name__
+
+    def record_cleanup_failure(self, code: str, exception: Exception) -> None:
+        if self.cleanup_failures:
+            return
+        self.cleanup_failures = 1
+        self.cleanup_failure_code = code
+        self.cleanup_exception_class = type(exception).__name__
 
 
 @dataclass
@@ -174,11 +210,12 @@ class CountingEnvironment:
             return await self.wrapped.capture(request)
         except Exception as exc:
             origin = (
-                CaseFailureOrigin.CURRENTNESS
-                if request.kind in {
-                    ObservationRequestKind.BINDING_REFRESH,
-                    ObservationRequestKind.CURRENTNESS_REFRESH,
-                }
+                CaseFailureOrigin.ACTION_BINDING
+                if request.kind is ObservationRequestKind.BINDING_REFRESH
+                else CaseFailureOrigin.CURRENTNESS
+                if request.kind is ObservationRequestKind.CURRENTNESS_REFRESH
+                else CaseFailureOrigin.POST_ACTION_OBSERVATION
+                if request.kind is ObservationRequestKind.POST_ACTION_FALLBACK
                 else CaseFailureOrigin.DECISION_CONTROL
             )
             self.instrumentation.record_failure(origin, "capture_exception", exc)

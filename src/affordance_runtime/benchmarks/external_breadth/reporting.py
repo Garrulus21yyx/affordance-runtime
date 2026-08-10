@@ -128,7 +128,7 @@ def _case_payload(record: MiniWobBreadthCaseRecord) -> dict[str, object]:
         for name, item in sorted(result.measurements.items())
     }
     return {
-        "schema_version": "miniwob-breadth-case.v1",
+        "schema_version": "miniwob-breadth-case.v2",
         "case_id": record.case_id,
         "task_family_label": record.task_family_label,
         "capability_profile": record.capability_profile,
@@ -141,7 +141,12 @@ def _case_payload(record: MiniWobBreadthCaseRecord) -> dict[str, object]:
         "case_failure_code": result.case_failure_code,
         "failure_origin": str(result.failure_origin),
         "failure_code": result.failure_code,
+        "runtime_reason_code": result.runtime_reason_code,
+        "agent_failure_code": result.agent_failure_code,
         "exception_class": result.exception_class,
+        "cleanup_failure_code": result.cleanup_failure_code,
+        "cleanup_exception_class": result.cleanup_exception_class,
+        "cleanup_failures": result.cleanup_failures,
         "termination_origin": result.termination_origin,
         "last_decision_type": result.last_decision_type,
         "last_policy_failure_code": result.last_policy_failure_code,

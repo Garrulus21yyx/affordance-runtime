@@ -166,7 +166,7 @@ class BenchmarkRunIdentity:
     python_version: str
     platform: str
     manifest_schema_version: str = "target-loop-manifest.v1"
-    harness_schema_version: str = "target-loop-harness.v3"
+    harness_schema_version: str = "target-loop-harness.v4"
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:
@@ -204,6 +204,11 @@ class BenchmarkCaseResult:
     last_world_target_count: int = 0
     last_world_coverage: str = ""
     pending_kind: str = ""
+    runtime_reason_code: str = ""
+    agent_failure_code: str = ""
+    cleanup_failure_code: str = ""
+    cleanup_exception_class: str = ""
+    cleanup_failures: int = 0
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
@@ -219,6 +224,13 @@ class BenchmarkCaseResult:
             len(self.exception_class) > 128 or not self.exception_class.replace("_", "").isalnum()
         ):
             raise ValueError("benchmark exception metadata must be a bounded class name")
+        if self.cleanup_exception_class and (
+            len(self.cleanup_exception_class) > 128
+            or not self.cleanup_exception_class.replace("_", "").isalnum()
+        ):
+            raise ValueError("cleanup exception metadata must be a bounded class name")
+        if self.cleanup_failures not in {0, 1}:
+            raise ValueError("cleanup failure count must be zero or one")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 

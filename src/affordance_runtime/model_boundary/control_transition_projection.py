@@ -22,7 +22,7 @@ _MAX_STRING = 240
 def project_control_transitions(
     transitions: tuple[ControlTransition, ...],
 ) -> tuple[AgentTurnView, ...]:
-    return tuple(_project_turn(item.as_turn()) for item in transitions[-12:])
+    return tuple(_project_transition(item) for item in transitions[-12:])
 
 
 def project_turns(turns: tuple[Turn, ...]) -> tuple[AgentTurnView, ...]:
@@ -46,6 +46,39 @@ def _project_turn(turn: Turn) -> AgentTurnView:
         turn.task_evaluation.status if turn.task_evaluation is not None else "",
         (task_reason or action_reason)[:_MAX_STRING],
         _decision_summary(turn),
+    )
+
+
+def _project_transition(transition: ControlTransition) -> AgentTurnView:
+    turn = transition.as_turn()
+    action = transition.action_evaluation
+    if action is not None and action.after_observation_id != transition.after_observation_id:
+        action = None
+    task = transition.task_evaluation
+    if task is not None and task.observation_id != transition.after_observation_id:
+        task = None
+    intent = transition.intent
+    summary = dict(_decision_summary(turn))
+    summary.update({
+        "resulting_status": str(transition.resulting_status or ""),
+        "reason_code": transition.reason_code,
+        "pending_kind": str(transition.pending_kind),
+        "execution_attempt_count": len(transition.execution_attempts),
+        "acquisition_attempt_count": sum(
+            item.attempts for item in transition.acquisition_attempts
+        ),
+    })
+    return AgentTurnView(
+        type(transition.decision).__name__.lower(),
+        intent.semantic_action if intent else "",
+        intent.target_id if intent else "",
+        intent.destination_id if intent else "",
+        project_public_value(intent.parameters) if intent else {},
+        transition.execution.dispatch_status if transition.execution else "",
+        action.status if action else "",
+        task.status if task else "",
+        transition.reason_code,
+        summary,
     )
 
 

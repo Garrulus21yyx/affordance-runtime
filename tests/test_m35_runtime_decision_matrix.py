@@ -22,6 +22,6 @@ def test_runtime_matrix_records_variant_specific_control_results() -> None:
     assert outcomes["request_observation"].observation_count == 2
     assert outcomes["request_action_page"].page_changed
     assert outcomes["ask_user"].pending_question
-    assert outcomes["propose_done"].task_evaluation_calls >= 3
+    assert outcomes["propose_done"].task_evaluation_calls >= 2
     assert outcomes["wait"].wait_budget_decreased
     assert outcomes["abort"].status == "failed" and not outcomes["abort"].policy_failure

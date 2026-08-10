@@ -30,6 +30,7 @@ class PartialEpisodeSnapshot:
     decision_kind_counts: tuple[tuple[str, int], ...] = ()
     latest_control_status: str = ""
     latest_control_reason_code: str = ""
+    latest_acquisition_request_kind: str = ""
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
@@ -82,6 +83,9 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         if latest_control is not None and latest_control.resulting_status is not None
         else "",
         latest_control.reason_code if latest_control is not None else "",
+        latest_control.acquisition.request_kind
+        if latest_control is not None and latest_control.acquisition is not None
+        else "",
     )
 
 

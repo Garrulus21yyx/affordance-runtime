@@ -77,11 +77,12 @@ class ManagedRealEnvironment:
             return
         self._closed = True
         if self.wot_state is not None:
-            self.instrumentation.custom_metrics.update({
+            for name, value in {
                 "td_requests": self.wot_state.td_calls,
                 "property_reads": self.wot_state.property_calls,
                 "wot_action_calls": self.wot_state.action_calls,
-            })
+            }.items():
+                self.instrumentation.set_custom_metric(name, value)
         self.close_callback()
 
 

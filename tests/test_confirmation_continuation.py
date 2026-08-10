@@ -22,10 +22,12 @@ from affordance_runtime.world import (
     CoverageState,
     ObservationAcquisition,
     ObservationCapabilities,
+    ObservationRequestKind,
     SemanticTarget,
     StateFact,
     WorldObservation,
 )
+from affordance_runtime.world.action_space import ActionSpaceBuilder
 
 
 def _world(identity: str, enabled: bool, selector: str, *, risk: ActionRisk = ActionRisk.MEDIUM) -> WorldObservation:
@@ -157,7 +159,8 @@ def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() ->
         wrong = await session.resolve_confirmation(
             ConfirmationDecision("confirmation:wrong", request.subject_id, ConfirmationDecisionKind.CONFIRM)
         )
-        assert wrong.status == AgentLoopStatus.BLOCKED
+        assert wrong.status == AgentLoopStatus.WAITING_CONFIRMATION
+        assert session.state.pending_confirmation is not None
         assert environment.executed_requests == []
 
         denied_environment = StaticEnvironment([_world("old", False, "#old")])
@@ -371,6 +374,10 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
             "#rebound",
         ]
         root = session.state.recent_control_transitions[0]
+        assert [item.dispatch_status for item in root.execution_attempts] == [
+            DispatchStatus.NOT_SENT,
+            DispatchStatus.SENT,
+        ]
         assert len(root.acquisition_attempts) == 3
         assert [item.reason_code for item in root.acquisition_attempts] == [
             "static_capture_acquired",
@@ -537,5 +544,215 @@ def test_confirmation_requires_a_fresh_observation_identity() -> None:
         assert result.status == AgentLoopStatus.FAILED
         assert "identity" in result.message
         assert environment.executed_requests == []
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_continues_after_last_policy_turn_and_executes_once() -> None:
+    async def scenario() -> None:
+        task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=3))
+        policy = FirstPolicy()
+        environment = StaticEnvironment(
+            [
+                _world("initial", False, "#initial"),
+                _world("confirmed", False, "#confirmed"),
+                _world("after", True, "#after"),
+            ],
+            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        )
+        session = await AgentEpisodeRunner(
+            AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
+        ).start(environment, task)
+        paused = await session.run_until_pause()
+
+        completed = await session.resolve_confirmation(_decision(paused))
+
+        assert completed.status is AgentLoopStatus.DONE
+        assert policy.calls == 1
+        assert environment.execute_calls == 1
+        assert session.state.control_transition_total_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_wrong_origin_confirmation_records_expected_and_actual_origin() -> None:
+    class WrongOriginEnvironment(StaticEnvironment):
+        async def capture(self, request):
+            self.capture_calls += 1
+            self.capture_requests.append(request)
+            return ObservationAcquisition(
+                AcquisitionStatus.ACQUIRED,
+                AcquisitionOrigin.RESET,
+                _world("fresh", False, "#fresh"),
+                "static_capture_acquired",
+            )
+
+    async def scenario() -> None:
+        environment = WrongOriginEnvironment([_world("old", False, "#old")])
+        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        await session.resolve_confirmation(_decision(paused))
+
+        attempt = session.state.recent_control_transitions[0].acquisition_attempts[0]
+        assert attempt.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
+        assert attempt.origin is AcquisitionOrigin.RESET
+        assert attempt.request_kind == str(ObservationRequestKind.CONFIRMATION_REFRESH)
+
+    asyncio.run(scenario())
+
+
+def test_confirmed_already_satisfied_closes_root_before_new_policy_decision() -> None:
+    from test_agent_progress_loop import (
+        CountingBinder,
+        IncompleteTaskEvaluator,
+        RepeatedFillPolicy,
+        ValueActionEvaluator,
+    )
+    from test_agent_progress_loop import (
+        _task as fill_task,
+    )
+    from test_agent_progress_loop import (
+        _world as fill_world,
+    )
+
+    async def scenario() -> None:
+        policy = RepeatedFillPolicy()
+        binder = CountingBinder()
+        loop = AgentLoop(policy, ValueActionEvaluator(), IncompleteTaskEvaluator())
+        loop.binder = binder
+        task = replace(fill_task(), risk_profile=RiskProfile.MEDIUM)
+        environment = StaticEnvironment([
+            fill_world("initial", ""),
+            fill_world("confirmed", "desired"),
+        ])
+        session = await AgentEpisodeRunner(loop).start(environment, task)
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        terminal = await session.resolve_confirmation(_decision(paused))
+
+        first = session.state.recent_control_transitions[0]
+        assert terminal.status is AgentLoopStatus.WAITING_CONFIRMATION
+        assert first.transition_id == root_id
+        assert first.reason_code == "already_satisfied"
+        assert first.progress.event_count == 1
+        assert first.execution_attempts == ()
+        assert first.pending_kind.value == "none"
+        assert session.state.control_transition_total_count == 2
+        assert policy.calls == 2
+        assert binder.calls == environment.execute_calls == 0
+        assert session.approved_confirmation is None
+        assert session.confirmation_continuation_scope is None
+        assert session.state.pending_confirmation is not None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("exc", (RuntimeError("capture failed"), asyncio.CancelledError()))
+def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
+    class RaisingCaptureEnvironment(StaticEnvironment):
+        async def capture(self, request):
+            self.capture_calls += 1
+            self.capture_requests.append(request)
+            raise exc
+
+    async def scenario() -> None:
+        environment = RaisingCaptureEnvironment([_world("old", False, "#old")])
+        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        with pytest.raises(type(exc)):
+            await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        attempt = root.acquisition_attempts[0]
+        assert attempt.attempts == 1
+        assert attempt.origin is None
+        assert attempt.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
+        assert session.observation_count == 2
+        assert session.state.control_transition_total_count == 1
+        assert root.reason_code == (
+            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError)
+            else "runtime_exception"
+        )
+        assert session.approved_confirmation is None
+        assert session.confirmation_continuation_scope is None
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_action_space_exception_closes_same_root_after_capture() -> None:
+    class RaisingSecondBuilder(ActionSpaceBuilder):
+        calls = 0
+
+        def build(self, task, observation):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("private action-space detail")
+            return super().build(task, observation)
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([
+            _world("initial", False, "#initial"),
+            _world("fresh", False, "#fresh"),
+        ])
+        loop = _loop()
+        loop.action_space_builder = RaisingSecondBuilder()
+        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        with pytest.raises(RuntimeError, match="private action-space detail"):
+            await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert root.transition_id == root_id
+        assert root.after_observation_id == "fresh"
+        assert root.reason_code == "runtime_exception"
+        assert root.resulting_status is AgentLoopStatus.FAILED
+        assert session.state.control_transition_total_count == 1
+        assert session.approved_confirmation is None
+        assert session.confirmation_continuation_scope is None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("exc", (RuntimeError("task failed"), asyncio.CancelledError()))
+def test_confirmed_task_evaluator_exception_preserves_action_epoch_only(exc) -> None:
+    class RaisingThirdTaskEvaluator(TaskEvaluator):
+        def __init__(self):
+            self.calls = 0
+
+        async def evaluate(self, task, observation):
+            self.calls += 1
+            if self.calls == 3:
+                raise exc
+            return await super().evaluate(task, observation)
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [
+                _world("initial", False, "#initial"),
+                _world("confirmed", False, "#confirmed"),
+                _world("after", True, "#after"),
+            ],
+            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        )
+        session = await AgentEpisodeRunner(
+            AgentLoop(FirstPolicy(), ActionEvaluator(), RaisingThirdTaskEvaluator())
+        ).start(environment, _task())
+        paused = await session.run_until_pause()
+
+        with pytest.raises(type(exc)):
+            await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert root.after_observation_id == "after"
+        assert root.action_evaluation is not None
+        assert root.action_evaluation.after_observation_id == "after"
+        assert root.task_evaluation is None
+        assert root.reason_code == (
+            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError)
+            else "runtime_exception"
+        )
 
     asyncio.run(scenario())

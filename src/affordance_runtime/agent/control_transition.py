@@ -56,20 +56,26 @@ class ExecutionSummary:
     dispatch_status: DispatchStatus
     transport_success: bool
     error: ActionError | None
+    currentness_probe_count: int = 0
+
+    def __post_init__(self) -> None:
+        if type(self.currentness_probe_count) is not int or self.currentness_probe_count < 0:
+            raise ValueError("currentness probe count must be a non-negative integer")
 
 
 @dataclass(frozen=True)
 class AcquisitionSummary:
     status: AcquisitionStatus
-    origin: AcquisitionOrigin
+    origin: AcquisitionOrigin | None
     reason_code: str
     attempts: int
     request_kind: str = ""
+    expected_origin: AcquisitionOrigin | None = None
 
     def __post_init__(self) -> None:
         _require_reason_code(self.reason_code)
-        if self.attempts < 0:
-            raise ValueError("acquisition attempts cannot be negative")
+        if type(self.attempts) is not int or self.attempts < 0:
+            raise ValueError("acquisition attempts must be a non-negative integer")
 
 
 @dataclass(frozen=True)
@@ -105,6 +111,7 @@ class ControlTransition:
     decision: AgentDecision
     admission: AdmissionSummary | None
     execution: ExecutionSummary | None
+    execution_attempts: tuple[ExecutionSummary, ...]
     acquisition: AcquisitionSummary | None
     acquisition_attempts: tuple[AcquisitionSummary, ...]
     after_observation_id: str
@@ -123,6 +130,16 @@ class ControlTransition:
             raise ValueError("control transition identity is invalid")
         if not self.before_observation_id or not self.after_observation_id:
             raise ValueError("control transition requires before/after identity")
+        if (
+            self.action_evaluation is not None
+            and self.action_evaluation.after_observation_id != self.after_observation_id
+        ):
+            raise ValueError("action evaluation must match transition after observation")
+        if (
+            self.task_evaluation is not None
+            and self.task_evaluation.observation_id != self.after_observation_id
+        ):
+            raise ValueError("task evaluation must match transition after observation")
         _require_reason_code(self.reason_code)
 
     def as_turn(self) -> Turn:
@@ -162,6 +179,7 @@ class ControlContinuation:
     acquisition: AcquisitionSummary | None
     acquisition_attempts: tuple[AcquisitionSummary, ...]
     execution: ExecutionSummary | None
+    execution_attempts: tuple[ExecutionSummary, ...]
     intent: ActionIntent | None
     request_id: str
     action_evaluation: ActionEvaluation | None
@@ -187,6 +205,7 @@ class ControlTransitionScope:
         self._intent: ActionIntent | None = None
         self._request_id = ""
         self._result: ActionResult | None = None
+        self._executions: list[ExecutionSummary] = []
         self._after_id = ""
         self._action_evaluation: ActionEvaluation | None = None
         self._task_evaluation: TaskEvaluation | None = None
@@ -202,10 +221,14 @@ class ControlTransitionScope:
         request_id: str,
         intent: ActionIntent | None,
         result: ActionResult,
+        currentness_probe_count: int = 0,
     ) -> None:
         self._intent = intent
         self._request_id = request_id
         self._result = result
+        self._executions.append(_execution_summary_from_result(
+            request_id, result, currentness_probe_count,
+        ))
 
     def record_after(self, observation_id: str) -> None:
         self._after_id = observation_id
@@ -238,10 +261,12 @@ class ControlTransitionScope:
     def record_acquisition(
         self,
         status: AcquisitionStatus,
-        origin: AcquisitionOrigin,
+        origin: AcquisitionOrigin | None,
         reason_code: str,
         attempts: int,
         request_kind: ObservationRequestKind | str = "",
+        *,
+        expected_origin: AcquisitionOrigin | None = None,
     ) -> None:
         self._acquisitions.append(AcquisitionSummary(
             status,
@@ -249,6 +274,7 @@ class ControlTransitionScope:
             reason_code,
             attempts,
             str(request_kind),
+            expected_origin,
         ))
         self._reason_code = reason_code
 
@@ -271,7 +297,8 @@ class ControlTransitionScope:
             self._before_id,
             self._decision,
             self._admission,
-            _execution_summary(turn),
+            self._executions[-1] if self._executions else None,
+            tuple(self._executions),
             _aggregate_acquisition(self._acquisitions),
             tuple(self._acquisitions),
             after_id,
@@ -309,6 +336,7 @@ class ControlContinuationScope:
         self._intent: ActionIntent | None = None
         self._request_id = ""
         self._result: ActionResult | None = None
+        self._executions: list[ExecutionSummary] = []
         self._after_id = ""
         self._action_evaluation: ActionEvaluation | None = None
         self._task_evaluation: TaskEvaluation | None = None
@@ -323,10 +351,14 @@ class ControlContinuationScope:
         request_id: str,
         intent: ActionIntent | None,
         result: ActionResult,
+        currentness_probe_count: int = 0,
     ) -> None:
         self._intent = intent
         self._request_id = request_id
         self._result = result
+        self._executions.append(_execution_summary_from_result(
+            request_id, result, currentness_probe_count,
+        ))
 
     def record_after(self, observation_id: str) -> None:
         self._after_id = observation_id
@@ -374,10 +406,12 @@ class ControlContinuationScope:
     def record_acquisition(
         self,
         status: AcquisitionStatus,
-        origin: AcquisitionOrigin,
+        origin: AcquisitionOrigin | None,
         reason_code: str,
         attempts: int,
         request_kind: ObservationRequestKind | str = "",
+        *,
+        expected_origin: AcquisitionOrigin | None = None,
     ) -> None:
         self._acquisitions.append(AcquisitionSummary(
             status,
@@ -385,6 +419,7 @@ class ControlContinuationScope:
             reason_code,
             attempts,
             str(request_kind),
+            expected_origin,
         ))
         self._reason_code = reason_code
 
@@ -401,7 +436,8 @@ class ControlContinuationScope:
             state.current_observation.observation_id,
             _aggregate_acquisition(self._acquisitions),
             tuple(self._acquisitions),
-            _execution_summary(self._as_turn()),
+            self._executions[-1] if self._executions else None,
+            tuple(self._executions),
             self._intent,
             self._request_id,
             self._action_evaluation,
@@ -433,13 +469,22 @@ def _transition_id(sequence: int, observation_id: str, context_id: str) -> str:
 def _execution_summary(turn: Turn) -> ExecutionSummary | None:
     if turn.result is None:
         return None
+    return _execution_summary_from_result(turn.request_id, turn.result, 0)
+
+
+def _execution_summary_from_result(
+    expected_request_id: str,
+    result: ActionResult,
+    currentness_probe_count: int,
+) -> ExecutionSummary:
     return ExecutionSummary(
-        turn.request_id,
-        turn.result.request_id,
-        turn.result.backend,
-        turn.result.dispatch_status,
-        turn.result.transport_success,
-        turn.result.error,
+        expected_request_id,
+        result.request_id,
+        result.backend,
+        result.dispatch_status,
+        result.transport_success,
+        result.error,
+        currentness_probe_count,
     )
 
 
@@ -455,6 +500,7 @@ def _aggregate_acquisition(
         final.reason_code,
         sum(item.attempts for item in attempts),
         final.request_kind,
+        final.expected_origin,
     )
 
 

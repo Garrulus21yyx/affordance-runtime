@@ -177,7 +177,7 @@ def runtime_outcome_matches(outcome: RuntimeDecisionOutcome) -> bool:
     if outcome.decision_variant == "ask_user":
         return common and outcome.status == AgentLoopStatus.WAITING_USER and bool(outcome.pending_question)
     if outcome.decision_variant == "propose_done":
-        return common and outcome.task_evaluation_calls >= 3
+        return common and outcome.task_evaluation_calls >= 2
     if outcome.decision_variant == "wait":
         return common and outcome.waited_ms == 10 and outcome.wait_budget_decreased and outcome.context_ids_unique
     return common and outcome.status == AgentLoopStatus.FAILED

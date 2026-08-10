@@ -20,6 +20,8 @@ def test_case_result_has_one_metric_authority() -> None:
             "failure_origin", "failure_code", "exception_class", "last_decision_type",
             "last_policy_failure_code", "last_action_space_option_count",
             "last_world_target_count", "last_world_coverage", "pending_kind",
+            "runtime_reason_code", "agent_failure_code", "cleanup_failure_code",
+            "cleanup_exception_class", "cleanup_failures",
         }
 
 

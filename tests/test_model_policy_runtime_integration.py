@@ -145,7 +145,7 @@ def test_model_propose_done_still_requires_the_deterministic_task_evaluator() ->
         ).run(StaticEnvironment([_world("before", False)]), _task())
 
         assert result.status == AgentLoopStatus.FAILED
-        assert evaluator.calls == 3
+        assert evaluator.calls == 2
         assert result.execution_count == 0
 
     asyncio.run(scenario())
@@ -191,7 +191,7 @@ def test_model_propose_done_can_reference_current_artifact_without_bypassing_eva
         ).run(StaticEnvironment([observation]), _task())
 
         assert result.status == AgentLoopStatus.FAILED
-        assert evaluator.calls == 3
+        assert evaluator.calls == 2
         assert result.execution_count == 0
         request = port.requests[0].serialized_context
         assert "artifact:artifact:receipt" in request

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
@@ -27,7 +27,11 @@ from affordance_runtime.agent.control_transition import (
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.model_boundary.control_transition_projection import (
+    project_control_transitions,
+)
 from affordance_runtime.model_boundary.failures import ModelFailureKind
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import ObservationRequestKind
@@ -61,6 +65,32 @@ def test_transition_is_frozen_bounded_and_strips_adapter_payload() -> None:
         transition.reason_code = "changed"  # type: ignore[misc]
     with pytest.raises(RuntimeError, match="already finalized"):
         scope.finalize(state, None)
+
+
+def test_transition_rejects_old_task_evaluation_epoch_before_model_projection() -> None:
+    state = AgentLoopState(_world("before", False))
+    scope = ControlTransitionScope(state, Abort("context:one", "stop", "policy"))
+    scope.set_reason("runtime_exception")
+    transition = scope.finalize(state, None)
+    with pytest.raises(ValueError, match="task evaluation"):
+        replace(
+            transition,
+            after_observation_id="after",
+            task_evaluation=TaskEvaluation(
+                _task().task_id,
+                "before",
+                TaskEvaluationStatus.INCOMPLETE,
+                "old epoch",
+            ),
+        )
+
+    current = replace(transition, after_observation_id="after")
+    view = project_control_transitions((current,))[0]
+
+    assert view.task_evaluation_status == ""
+    assert view.reason == "runtime_exception"
+    assert view.semantic_summary["resulting_status"] == ""
+    assert view.semantic_summary["execution_attempt_count"] == 0
 
 
 @pytest.mark.parametrize("reason_code", ("", "Raw message", "selector:#x", "x" * 97))

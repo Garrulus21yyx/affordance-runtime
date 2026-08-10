@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 
 import affordance_runtime.agent.progress_control as progress_control
 from affordance_runtime.agent.control_transition import (
-    AcquisitionSummary,
     AdmissionStatus,
     ControlContinuationScope,
     ControlTransitionScope,
@@ -15,7 +14,7 @@ from affordance_runtime.agent.decision_control import ensure_current_action_page
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
-from affordance_runtime.agent.observation_control import capture_fresh
+from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import (
     AgentResult,
@@ -37,7 +36,6 @@ from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import (
-    AcquisitionOrigin,
     ObservationRequestKind,
     WorldObservationRequest,
 )
@@ -82,9 +80,17 @@ class AgentLoop:
 
     async def _run_session(self, session: AgentRunSession) -> AgentResult:
         task, state = session.task, session.state
-        while state.remaining_turns > 0:
+        while True:
             try:
-                task_evaluation = await validated_task_evaluation(self.task_evaluator, task, state.current_observation)
+                current = state.current_task_evaluation
+                task_evaluation = (
+                    current
+                    if current is not None
+                    and current.observation_id == state.current_observation.observation_id
+                    else await validated_task_evaluation(
+                        self.task_evaluator, task, state.current_observation
+                    )
+                )
             except ValueError as exc:
                 result = self._result(
                     session,
@@ -95,16 +101,13 @@ class AgentLoop:
                 return self._close_confirmation(
                     session, result, "task_evaluation_invalid"
                 )
-            except BaseException as exc:
-                self._close_confirmation_exception(session, exc)
-                raise
             state.current_task_evaluation = task_evaluation
-            if session.confirmation_continuation_scope is not None:
-                session.confirmation_continuation_scope.record_evaluations(
-                    task=task_evaluation
-                )
             task_status = task_evaluation_loop_status(task_evaluation)
             if task_status is not None:
+                if session.confirmation_continuation_scope is not None:
+                    session.confirmation_continuation_scope.record_evaluations(
+                        task=task_evaluation
+                    )
                 result = self._result(
                     session,
                     task_status,
@@ -113,6 +116,19 @@ class AgentLoop:
                 )
                 return self._close_confirmation(
                     session, result, f"task_{task_evaluation.status}"
+                )
+            if (
+                session.approved_confirmation is None
+                and state.remaining_turns <= 0
+            ):
+                result = self._result(
+                    session,
+                    AgentLoopStatus.FAILED,
+                    "agent loop turn budget exhausted",
+                    "turn_budget_exhausted",
+                )
+                return self._close_confirmation(
+                    session, result, "turn_budget_exhausted"
                 )
             action_space = self.action_space_builder.build(task, state.current_observation)
             ensure_current_action_page(session, action_space, self.context_builder)
@@ -132,13 +148,6 @@ class AgentLoop:
             applied_result = self._apply_outcome(session, outcome)
             if applied_result is not None:
                 return applied_result
-        result = self._result(
-            session,
-            AgentLoopStatus.FAILED,
-            "agent loop turn budget exhausted",
-            "turn_budget_exhausted",
-        )
-        return self._close_confirmation(session, result, "turn_budget_exhausted")
 
     async def _execute_selection(
         self,
@@ -156,7 +165,7 @@ class AgentLoop:
         )
         if isinstance(admitted, AgentResult):
             return admitted
-        return await self._execute_admitted(session, admitted, decision, scope)
+        return (await self._execute_admitted(session, admitted, decision, scope)).routed
 
     async def _execute_confirmed(self, session: AgentRunSession, action_space: ActionSpace, task_evaluation):
         confirmed = session.approved_confirmation
@@ -207,11 +216,18 @@ class AgentLoop:
             )
             scope = session.confirmation_continuation_scope
             assert scope is not None
-            try:
-                outcome = await self._execute_admitted(session, selection, decision, scope)
-            except BaseException as exc:
-                self._close_confirmation_exception(session, exc)
-                raise
+            admitted_outcome = await self._execute_admitted(
+                session, selection, decision, scope
+            )
+            outcome = admitted_outcome.routed
+            if (
+                admitted_outcome.disposition
+                is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
+            ):
+                scope.record_evaluations(task=task_evaluation)
+                return self._close_confirmation(
+                    session, outcome, "already_satisfied"
+                )
             if scope.has_effectful_execution or _terminal_from_outcome(outcome) is not None:
                 return self._close_confirmation(
                     session,
@@ -241,8 +257,8 @@ class AgentLoop:
                 is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
                 else "no_progress_repetition"
             )
-            return progress.terminal_result
-        return await execute_cycle(
+            return _AdmittedOutcome(progress.terminal_result, progress.disposition)
+        routed = await execute_cycle(
             session,
             selection,
             decision,
@@ -251,6 +267,7 @@ class AgentLoop:
             self.task_evaluator,
             scope,
         )
+        return _AdmittedOutcome(routed, progress.disposition)
 
     def _admit_selection(
         self,
@@ -306,14 +323,14 @@ class AgentLoop:
         if session.is_terminal or pending is None or decision.confirmation_id in session.resolved_confirmation_ids:
             return self._result(
                 session,
-                AgentLoopStatus.BLOCKED,
+                AgentLoopStatus.WAITING_CONFIRMATION,
                 "confirmation decision is stale or already resolved",
                 "invalid_confirmation_decision",
             )
         if not decision.matches(pending):
             return self._result(
                 session,
-                AgentLoopStatus.BLOCKED,
+                AgentLoopStatus.WAITING_CONFIRMATION,
                 "confirmation decision identity mismatch",
                 "invalid_confirmation_decision",
             )
@@ -329,6 +346,20 @@ class AgentLoop:
         )
         session.confirmation_continuation_scope = scope
         session.state.clear_pending_confirmation()
+        try:
+            return await self._continue_confirmation(
+                session, decision, pending, source_transition_id, scope
+            )
+        except asyncio.CancelledError as exc:
+            self._close_confirmation_exception(session, exc)
+            raise
+        except Exception as exc:
+            self._close_confirmation_exception(session, exc)
+            raise
+
+    async def _continue_confirmation(
+        self, session, decision, pending, source_transition_id, scope
+    ) -> AgentResult:
         if decision.decision == ConfirmationDecisionKind.DENY:
             session.approved_confirmation = None
             result = self._result(
@@ -351,32 +382,14 @@ class AgentLoop:
         session.approved_confirmation = pending
         session.approved_confirmation_transition_id = source_transition_id
         previous_id = session.state.current_observation.observation_id
-        try:
-            acquired = await capture_fresh(
-                session.environment,
-                previous_id,
-                WorldObservationRequest(
-                    ObservationRequestKind.CONFIRMATION_REFRESH,
-                    "fresh observation after confirmation",
-                ),
-            )
-        except BaseException as exc:
-            self._close_confirmation_exception(session, exc)
-            raise
-        session.observation_count += acquired.attempts
-        acquisition = AcquisitionSummary(
-            acquired.status,
-            AcquisitionOrigin.INDEPENDENT_CAPTURE,
-            acquired.reason_code,
-            acquired.attempts,
-            str(ObservationRequestKind.CONFIRMATION_REFRESH),
-        )
-        scope.record_acquisition(
-            acquisition.status,
-            acquisition.origin,
-            acquisition.reason_code,
-            acquisition.attempts,
-            acquisition.request_kind,
+        acquired = await capture_for_session(
+            session,
+            previous_id,
+            WorldObservationRequest(
+                ObservationRequestKind.CONFIRMATION_REFRESH,
+                "fresh observation after confirmation",
+            ),
+            scope,
         )
         if acquired.observation is None:
             result = build_result(
@@ -436,7 +449,7 @@ class AgentLoop:
             outcome, session.state, continuation.reason_code
         )
 
-    def _close_confirmation_exception(self, session, exc: BaseException) -> None:
+    def _close_confirmation_exception(self, session, exc: Exception | asyncio.CancelledError) -> None:
         scope = session.confirmation_continuation_scope
         if scope is None:
             return
@@ -483,3 +496,9 @@ def _terminal_from_outcome(outcome):
     if isinstance(outcome, tuple) and outcome:
         return outcome[-1]
     return None
+
+
+@dataclass(frozen=True)
+class _AdmittedOutcome:
+    routed: object
+    disposition: progress_control.SelectionProgressDisposition

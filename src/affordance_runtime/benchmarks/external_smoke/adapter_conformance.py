@@ -83,11 +83,9 @@ class InstrumentedBrowserGymEnvironment:
         return self.wrapped.is_current(request)
 
     async def close(self):
-        cleanup = 0
         try:
             await self.wrapped.close()
         except BaseException:
-            cleanup = 1
             raise
         finally:
             metrics = {
@@ -102,9 +100,9 @@ class InstrumentedBrowserGymEnvironment:
                 "official_verifier_queries": self.wrapped.verifier_queries,
                 "official_success_count": self.wrapped.official_success_count,
                 "fallback_count": 0,
-                "cleanup_failures": cleanup,
             }
-            self.instrumentation.custom_metrics.update(metrics)
+            for name, value in metrics.items():
+                self.instrumentation.set_custom_metric(name, value)
 
 
 async def run_adapter_conformance(seed: int = 7) -> AdapterConformanceOutcome:

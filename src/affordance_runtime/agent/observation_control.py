@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from affordance_runtime.agent.control_transition import (
@@ -30,6 +31,9 @@ class FreshAcquisition:
     reason_code: str
     failure_code: AgentFailureCode | None = None
     used_fallback: bool = False
+    expected_origin: AcquisitionOrigin | None = None
+    actual_origin: AcquisitionOrigin | None = None
+    request_kind: ObservationRequestKind | None = None
 
 
 async def capture_fresh(
@@ -41,11 +45,13 @@ async def capture_fresh(
     if unavailable is not None:
         return unavailable
     acquisition = await environment.capture(request)
-    return validate_fresh_acquisition(
+    fresh = validate_fresh_acquisition(
         acquisition,
         previous_id,
         expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        attempts_override=1,
     )
+    return _with_request(fresh, request.kind)
 
 
 def validate_fresh_acquisition(
@@ -54,8 +60,12 @@ def validate_fresh_acquisition(
     *,
     expected_origin: AcquisitionOrigin,
     post_action: bool = False,
+    attempts_override: int | None = None,
 ) -> FreshAcquisition:
-    attempts = acquisition_attempt_count(acquisition)
+    attempts = (
+        acquisition_attempt_count(acquisition)
+        if attempts_override is None else attempts_override
+    )
     if acquisition.origin is not expected_origin:
         return FreshAcquisition(
             None,
@@ -65,6 +75,8 @@ def validate_fresh_acquisition(
             if post_action else "independent_capture_origin_invalid",
             AgentFailureCode.POST_ACTION_ORIGIN_INVALID
             if post_action else AgentFailureCode.OBSERVATION_ORIGIN_INVALID,
+            expected_origin=expected_origin,
+            actual_origin=acquisition.origin,
         )
     if acquisition.status is AcquisitionStatus.ACQUIRED:
         assert acquisition.observation is not None
@@ -75,9 +87,13 @@ def validate_fresh_acquisition(
                 AcquisitionStatus.FAILED,
                 "observation_identity_reused",
                 _failure_code(AcquisitionStatus.ACQUIRED, post_action, freshness=True),
+                expected_origin=expected_origin,
+                actual_origin=acquisition.origin,
             )
         return FreshAcquisition(
             acquisition.observation, attempts, acquisition.status, acquisition.reason_code,
+            expected_origin=expected_origin,
+            actual_origin=acquisition.origin,
         )
     return FreshAcquisition(
         None,
@@ -85,6 +101,8 @@ def validate_fresh_acquisition(
         acquisition.status,
         acquisition.reason_code,
         _failure_code(acquisition.status, post_action),
+        expected_origin=expected_origin,
+        actual_origin=acquisition.origin,
     )
 
 
@@ -122,6 +140,9 @@ async def post_action_observation(
             fallback.status,
             fallback.reason_code,
             used_fallback=True,
+            expected_origin=fallback.expected_origin,
+            actual_origin=fallback.actual_origin,
+            request_kind=fallback.request_kind,
         )
     return _post_action_fallback_failure(primary, fallback)
 
@@ -139,7 +160,6 @@ def no_fresh_after_result(
     scope: ControlTransitionScope | ControlContinuationScope,
 ):
     state = session.state
-    scope.record_execution(request.request_id, request.intent, result)
     state.set_pending_unknown_effect(request)
     return build_result(
         AgentLoopStatus.WAITING_USER,
@@ -176,6 +196,7 @@ def _unavailable(reason_code: str) -> FreshAcquisition:
         AcquisitionStatus.CAPABILITY_UNAVAILABLE,
         reason_code,
         AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE,
+        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
     )
 
 
@@ -218,4 +239,81 @@ def _post_action_fallback_failure(
         fallback.reason_code,
         failure_code,
         True,
+        fallback.expected_origin,
+        fallback.actual_origin,
+        fallback.request_kind,
+    )
+
+
+def post_action_fallback_result(
+    primary: FreshAcquisition,
+    fallback: FreshAcquisition,
+) -> FreshAcquisition:
+    if fallback.observation is not None:
+        return FreshAcquisition(
+            fallback.observation,
+            primary.attempts + fallback.attempts,
+            fallback.status,
+            fallback.reason_code,
+            used_fallback=True,
+            expected_origin=fallback.expected_origin,
+            actual_origin=fallback.actual_origin,
+            request_kind=fallback.request_kind,
+        )
+    return _post_action_fallback_failure(primary, fallback)
+
+
+async def capture_for_session(
+    session,
+    previous_id: str,
+    request: WorldObservationRequest,
+    scope: ControlTransitionScope | ControlContinuationScope,
+) -> FreshAcquisition:
+    """Perform and monotonically account one Runtime-owned capture boundary."""
+    try:
+        acquired = await capture_fresh(session.environment, previous_id, request)
+    except asyncio.CancelledError:
+        _record_capture_exception(session, scope, request, "capture_cancelled")
+        raise
+    except Exception:
+        _record_capture_exception(session, scope, request, "capture_exception")
+        raise
+    session.observation_count += acquired.attempts
+    scope.record_acquisition(
+        acquired.status,
+        acquired.actual_origin,
+        acquired.reason_code,
+        acquired.attempts,
+        request.kind,
+        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+    )
+    return acquired
+
+
+def _record_capture_exception(session, scope, request, reason_code: str) -> None:
+    session.observation_count += 1
+    scope.record_acquisition(
+        AcquisitionStatus.FAILED,
+        None,
+        reason_code,
+        1,
+        request.kind,
+        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+    )
+
+
+def _with_request(
+    acquisition: FreshAcquisition,
+    request_kind: ObservationRequestKind,
+) -> FreshAcquisition:
+    return FreshAcquisition(
+        acquisition.observation,
+        acquisition.attempts,
+        acquisition.status,
+        acquisition.reason_code,
+        acquisition.failure_code,
+        acquisition.used_fallback,
+        acquisition.expected_origin,
+        acquisition.actual_origin,
+        request_kind,
     )

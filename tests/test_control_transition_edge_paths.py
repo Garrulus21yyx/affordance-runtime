@@ -72,6 +72,9 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
         assert root.reason_code == "runtime_exception"
         assert root.execution is not None
         assert root.execution.dispatch_status is DispatchStatus.SENT
+        if stage == "task":
+            assert root.action_evaluation is not None
+            assert root.action_evaluation.after_observation_id == "after"
         assert root.after_observation_id == "after"
         assert root.acquisition is not None and root.acquisition.attempts == 1
         assert session.state.current_observation.observation_id == "after"
@@ -124,5 +127,29 @@ def test_lineage_mismatch_preserves_expected_and_actual_request_identity() -> No
         assert tuple(item.origin for item in root.acquisition_attempts) == (
             AcquisitionOrigin.POST_ACTION,
         )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "invalid", (True, -1, 1.5, float("nan"), float("inf"), "1")
+)
+def test_invalid_probe_metadata_fails_closed_without_polluting_counts(invalid) -> None:
+    async def scenario() -> None:
+        result = ActionResult(
+            "*", DispatchStatus.SENT, "dom", True,
+            adapter_evidence={"currentness_probe_count": invalid},
+        )
+        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+            StaticEnvironment([_world("before", False), _world("after", True)], [result]),
+            _task(),
+        )
+        terminal = await session.run_until_pause()
+        root = session.state.recent_control_transitions[0]
+        assert terminal.status is AgentLoopStatus.FAILED
+        assert terminal.reason_code == "invalid_currentness_probe_count"
+        assert session.currentness_probe_count == 0
+        assert root.execution is not None
+        assert root.execution.currentness_probe_count == 0
 
     asyncio.run(scenario())

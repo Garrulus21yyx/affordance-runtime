@@ -124,12 +124,15 @@ async def _run_case(case) -> BenchmarkCaseResult:
         failure = f"{exc.stage} failed: {type(exc.cause).__name__}"
     except Exception as exc:
         failure = f"case exception: {type(exc).__name__}"
+        instrumentation.record_failure(
+            CaseFailureOrigin.UNKNOWN, "runtime_exception", exc,
+        )
     finally:
         if environment is not None:
             try:
                 await _close(environment)
             except Exception as exc:
-                instrumentation.record_failure(CaseFailureOrigin.CLEANUP, "cleanup_exception", exc)
+                instrumentation.record_cleanup_failure("cleanup_exception", exc)
                 failure = _append_failure(failure, "cleanup failed")
     session = session_holder.get("session")
     if session is not None:

@@ -12,6 +12,7 @@ from affordance_runtime.agent import (
     ProposeDone,
     RequestObservation,
     SelectAction,
+    Wait,
 )
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -405,6 +406,46 @@ def test_observation_budget_is_reserved_before_execution() -> None:
         assert result.status == AgentLoopStatus.FAILED
         assert "observation budget" in result.message
         assert result.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("kind", ("request", "wait"))
+@pytest.mark.parametrize(
+    ("fresh_enabled", "expected"),
+    ((True, AgentLoopStatus.DONE), (False, AgentLoopStatus.FAILED)),
+)
+def test_last_turn_refresh_is_evaluated_before_turn_budget(
+    kind: str, fresh_enabled: bool, expected: AgentLoopStatus,
+) -> None:
+    class OneRefreshPolicy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if kind == "wait":
+                return Wait(context.context_id, "settle", 1)
+            return RequestObservation(
+                context.context_id, "world", "structural", "structural", "refresh"
+            )
+
+    async def scenario() -> None:
+        task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=2))
+        policy = OneRefreshPolicy()
+        environment = StaticEnvironment([
+            _world("initial", False), _world("fresh", fresh_enabled),
+        ])
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, task)
+
+        assert result.status is expected
+        assert policy.calls == 1
+        assert result.observation_count == 2
+        assert result.final_observation.observation_id == "fresh"
+        assert result.reason_code == (
+            "task_complete" if fresh_enabled else "turn_budget_exhausted"
+        )
 
     asyncio.run(scenario())
 
