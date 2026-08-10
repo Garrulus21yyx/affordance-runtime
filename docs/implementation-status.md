@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-10
-> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@9da23daa45b53ca7463eb21fcef16c4ddf4885c8`
+> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@1bce26c0d4ddc796b89740d0d389b5059727b457`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -31,7 +31,7 @@ The target path now has:
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded transition state | `INTEGRATED_NON_DEFAULT`; evaluations are retained on canonical ControlTransition values |
-| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_B`; every accepted decision produces one immutable root; execution/acquisition/evaluation facts are monotonic; confirmation continuation updates that root exactly once |
+| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_B_2`; every accepted decision produces one immutable root; ordered execution/acquisition/probe/evaluation facts are monotonic; confirmation continuation updates that root exactly once |
 | local ProgressController | `CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS`; other semantic actions are not precondition-contained and this owner is not a planner |
 | SurfaceAdapter / UnifiedWorldEnvironment | complete for DOM, Visual-only, and WoT single-surface minimums; semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
@@ -93,7 +93,7 @@ The target path now has:
 | historical MiniWoB-60 seed-7 run | `VALID_NEGATIVE_EVIDENCE`; clean `b3b64a2`, 6/60 |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE`; clean `83dc4fa`, 4/60, kept separate from the historical run |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
-| P5-M4.5-B ControlTransition accounting | `COMPLETE_NON_DEFAULT` |
+| P5-M4.5-B ControlTransition accounting | `COMPLETE_NON_DEFAULT / B_2_CLOSED` |
 | P5-M4.5-C same-profile MiniWoB-60 rerun | `NOT_STARTED / NEXT_ADMITTED` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -398,8 +398,8 @@ The A.1 closure additionally rejects non-independent capture origins, reports
 the final fallback attempt's typed cause and exact attempt count, counts an
 already-performed post acquisition on ActionResult lineage failure, and removes
 package-facade import-order dependence without moving projection authority.
-M4.5-B and B.1 now close decision-scoped accounting; M4.5-C is the next admitted run.
-The reviewed implementation gate passed 1,894 tests with 15 skips, Ruff, mypy
+M4.5-B and B.1/B.2 now close decision-scoped accounting; M4.5-C is the next admitted run.
+The reviewed implementation gate passed 1,919 tests with 15 skips, Ruff, mypy
 over 416 source files and diff-check. The unchanged pinned Python 3.12
 BrowserGym focused gate passed 9 tests and the real active-capture gate passed
 11 tests. These are regression/conformance results only; no formal MiniWoB-60
@@ -413,12 +413,14 @@ SelectAction and post-context/schema action-admission rejection each finalize
 exactly one root after decision acceptance. ActionResult and validated after-world
 facts are recorded before evaluator calls; evaluator exception/cancellation
 therefore cannot erase dispatch, acquisition, probe, lineage, after identity or
-session totals. Admission, ordered acquisition attempts, evaluations, progress,
+session totals. Admission, ordered physical execution/acquisition attempts,
+expected/actual acquisition origins, epoch-matched evaluations, progress,
 pending/status and stable reason code remain on that immutable value.
 Confirmation continuation references the original root, merges facts monotonically
 and does not increment its count. `PartialEpisodeSnapshot` reads current task
 evaluation only from AgentLoopState, while the target benchmark's narrow
-`case_projection.py` applies typed failure and final-snapshot precedence without
+`case_projection.py` applies typed failure/final-snapshot precedence, preserves
+cleanup independently and rejects canonical/custom metric collisions without
 message matching. No raw adapter
 evidence/private binding is retained by ControlTransition, and no ledger,
 replay, event sourcing or state reconstruction was added.

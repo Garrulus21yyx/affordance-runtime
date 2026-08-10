@@ -116,6 +116,12 @@ record that no acquisition/execution occurred. A continuation may reference a
 root transition through a typed source without fabricating a second policy
 decision.
 
+The bounded record retains ordered privacy-safe execution attempts, ordered
+acquisition attempts with expected and actual origin, strict probe totals and
+only evaluations whose observation epoch matches the recorded after identity.
+Benchmark primary attribution and cleanup diagnostics are separate one-way
+facts; neither snapshot nor benchmark history can replace current state.
+
 ControlTransition is not telemetry, a durable ledger, event sourcing, a replay
 source, a global provenance graph, a commit protocol or state-reconstruction
 authority. AgentLoopState remains authoritative current state. AgentContext,

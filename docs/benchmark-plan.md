@@ -288,9 +288,13 @@ M4.5-B closes decision-scoped transition accounting:
    rejection or later failed action paths; pre-decision provider/stale/schema
    failures do not fabricate a transition;
 2. the record retains typed admission, execution/acquisition, before/after,
-   evaluations, progress, pending, resulting status, and Runtime-owned reason;
+   ordered physical attempts, expected/actual acquisition origin, strict probes,
+   epoch-matched evaluations, progress, pending, resulting status, and
+   Runtime-owned reason;
 3. run summaries and partial snapshots project typed data rather than infer a
-   terminal class from messages or differently aged state;
+   terminal class from messages or differently aged state; primary runtime/
+   provider/watchdog attribution and cleanup remain independently visible, and
+   custom metrics cannot override canonical counters;
 4. transition storage reports total count plus a bounded suffix and remains
    in-memory, run-scoped, non-replayable, and non-durable.
 

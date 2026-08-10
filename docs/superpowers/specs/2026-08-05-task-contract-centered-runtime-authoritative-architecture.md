@@ -399,7 +399,9 @@ class ControlTransition:
     decision: AgentDecision
     admission: AdmissionSummary | None
     execution: ExecutionSummary | None
+    execution_attempts: tuple[ExecutionSummary, ...]
     acquisition: AcquisitionSummary | None
+    acquisition_attempts: tuple[AcquisitionSummary, ...]
     after_observation_id: str
     action_evaluation: ActionEvaluation | None
     task_evaluation: TaskEvaluation | None
@@ -428,11 +430,14 @@ replay source、durable ledger、global provenance graph 或 event bus。AgentCo
 BenchmarkCaseResult、PartialEpisodeSnapshot 与 optional TurnRecorder 都是它与 current
 state 的单向、privacy-bounded projection，不能反向参与 admission 或 state reconstruction。
 
-ActionResult 返回后，decision-scoped collector 必须立即单调记录实际 dispatch、expected/
-actual request lineage 与 probe facts；fresh after acquisition 验证后必须立即更新 current
+ActionResult 返回后，decision-scoped collector 必须立即单调记录每次物理 execute 的实际
+dispatch、expected/actual request lineage 与严格非负整数 probe facts；fresh after
+acquisition 验证后必须立即更新 current
 world 并记录 after identity。后续 evaluator exception/cancellation 只能补充同一 root 的
 typed terminal reason/status，不能擦除已发生事实。confirmation continuation 的 ordered
-acquisition attempts、evaluation 与 progress 也只能单调合并到原 root，不能增加 root count。
+execution/acquisition attempts、expected/actual acquisition origin、evaluation 与 progress
+也只能单调合并到原 root，不能增加 root count。TaskEvaluation 只能绑定它实际评价的
+observation epoch；pre-execution evaluation 不能冒充 post-action after evaluation。
 `Turn` 仅是 bounded suffix 的兼容只读投影，不是事实写入容器。
 
 ## 9. Evaluation 与 criterion-specific completion

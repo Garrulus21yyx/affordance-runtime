@@ -237,12 +237,15 @@ consequence as exactly one ControlTransition while still fabricating no
 execution or observation. The controller remains a fill/select local liveness guard; future
 TaskProgressAuditor and planner remain separate P5-E owners.
 
-The B.1 closure records dispatch and physical acquisition/probe totals at their
+The B.1/B.2 closure records ordered dispatch attempts and physical
+acquisition/probe totals at their
 actual boundaries, before evaluator completion. RuntimeError or cancellation
 therefore closes and rethrows from the same accepted-decision root. Confirmation
 refresh, binding/currentness refresh and final post acquisition append once in
 physical order; terminal, denied or externally completed continuations clear
-confirmation state and never create another root.
+confirmation state and never create another root. ALREADY_SATISFIED closes the
+root before a new policy decision, confirmation may finish after the last policy
+turn, and pre-execution evaluation never masquerades as post-action evaluation.
 
 ## Breadth campaign orchestration
 

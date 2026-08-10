@@ -71,6 +71,12 @@ ControlTransition is in-memory run accounting and cannot be replayed to rebuild
 AgentLoopState. VerifiedTaskState, when P5-E adds it, is a specialized field of
 that state rather than another aggregate/store.
 
+The B.2 closure keeps ordered physical execution/acquisition attempts,
+expected/actual acquisition origins, strict probe totals and epoch-matched
+evaluations in that accounting owner. Confirmation lifetime closure stays in
+AgentLoop; benchmark primary/cleanup precedence stays in the target-loop
+projection owner. Neither projection can mutate Runtime authority.
+
 ## 4. Anti-god-object rule
 
 `ActionIntent` and `BoundActionRequest` cannot absorb authorization proof graphs,

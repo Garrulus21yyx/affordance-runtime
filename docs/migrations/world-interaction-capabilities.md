@@ -96,8 +96,10 @@ the pinned backend's read-only current-world API on its owner thread, and
 origin and fresh identity, reports the last real fallback cause and exact
 attempt count, and never derives admission from AgentContext projection.
 
-M4.5-B and B.1 separately close control accounting on top of that lifecycle:
-execution/acquisition truth is recorded before evaluation, confirmation retries
-merge into the original accepted-decision root, AgentLoopState remains current
-evaluation authority, and benchmark mapping lives in its own typed projection.
+M4.5-B and B.1/B.2 separately close control accounting on top of that lifecycle:
+ordered execution/acquisition/probe truth is recorded before evaluation,
+confirmation lifetime exits merge into the original accepted-decision root,
+evaluation epochs remain aligned with after-world identity, AgentLoopState
+remains current evaluation authority, and benchmark primary/cleanup mapping
+lives in its own typed projection with canonical metric collision defense.
 This adds no ledger, replay, event sourcing or state reconstruction.
