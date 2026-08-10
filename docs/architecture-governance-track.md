@@ -57,6 +57,13 @@ Focused tests localize failures. The cross-surface matrix measures product
 behavior. Full pytest/static checks protect integration. Evidence is bound to
 the exact revision/profile and never becomes online authority.
 
+LOC is only a responsibility-review signal. File or function length alone does
+not fail architecture admission and must not trigger mechanical helper
+extraction. Automated gates prioritize dependency direction, forbidden imports,
+cycle-free public facades, single semantic authorities, collaborator boundaries
+and behavior invariants. A split is justified only when it moves a complete,
+independently testable responsibility with a coherent reason to change.
+
 ## 6. Record rule
 
 Large or irreversible architecture changes receive a scoped record under

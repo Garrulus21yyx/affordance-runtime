@@ -83,16 +83,18 @@ default cutover, and broad autonomous GUI competence remain open.
 The BrowserGym breadth evidence now contains two immutable, non-combinable
 exact runs: the historical clean `b3b64a2` run at 6/60 and the later clean
 `83dc4fa` rerun-v3 at 4/60. Neither is a generalization or trend claim.
-Rerun-v3 retains seven post-observation failures, nine unclassified typed
-failures, and eleven Runtime rejections. The observation cases confirm a
-contract mismatch: the public `observe()` surface looks like active capture,
-while the BrowserGym adapter can only consume a reset/step-produced snapshot.
+Rerun-v3 retains seven historical post-observation failures, nine unclassified
+typed failures, and eleven Runtime rejections. The observation cases confirmed
+the P5-M4 mismatch between public active observation and a consume-once
+reset/step snapshot. M4.5-A now replaces that lifecycle with typed reset,
+independent capture and execute-returned post acquisition on the non-default
+target path.
 
 The next target slices are deliberately narrow and separate:
 
 ```text
-P5-M4.5-A typed reset/capture/execute acquisition lifecycle
-→ P5-M4.5-B bounded lossless ControlTransition accounting
+P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
+→ P5-M4.5-B bounded lossless ControlTransition accounting: NEXT
 → same frozen MiniWoB-60 profile rerun
 → supported-subset multi-seed gate
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
@@ -280,7 +282,8 @@ provider call or product behavior change.
 A later separately authorized formal rerun-v3 completed from clean
 `83dc4fa313e49b6c8772052ca44f03564f68aa63` with valid 4/60 evidence. It is a
 separate exact-run record, not a replacement/merge/trend against 6/60. Seven
-post-observation failures confirm the BrowserGym active-capture contract gap;
-nine failures remain unclassified despite typed metadata. M4.5-A acquisition
-lifecycle and M4.5-B ControlTransition accounting now precede another exact-
-profile rerun, a multi-seed supported subset, and P5-E.
+post-observation failures confirmed the historical BrowserGym active-capture
+contract gap; nine failures remain unclassified despite typed metadata. M4.5-A
+acquisition is now closed, including real owner-thread active capture, origin
+validation and final-fallback truth. M4.5-B ControlTransition accounting is
+next before another exact-profile rerun, a multi-seed supported subset, and P5-E.

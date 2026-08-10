@@ -75,8 +75,11 @@ that state rather than another aggregate/store.
 
 `ActionIntent` and `BoundActionRequest` cannot absorb authorization proof graphs,
 plan state, trace, recovery policy, task completion, or audit artifacts. `AgentLoop` cannot absorb
-surface extraction, policy, evaluators, or confirmation UI. A file-size review
-trigger is useful, but split decisions follow responsibility, not class count.
+surface extraction, policy, evaluators, or confirmation UI. File/function LOC
+is a review signal only, never an automatic build failure or split command.
+Split decisions follow semantic authority, cohesive change reasons, dependency
+direction and independent testability. A valid split moves a complete
+responsibility; extracting arbitrary helpers merely to lower LOC is forbidden.
 
 ## 5. Migration containment
 
@@ -99,8 +102,9 @@ orchestrates screenshot acquisition and typed region proposals;
 identity; `currentness.py` owns pure comparison; and `execution.py` owns the
 single point primitive. `BrowserSession` supplies only a narrow screenshot plus
 viewport capture and pointer call. Visual modules do not import `agent/`, DOM
-adapters, benchmark task definitions, or legacy transaction owners. Current
-Visual files are below 350 lines and contain no function above 80 lines.
+adapters, benchmark task definitions, or legacy transaction owners. File length
+may prompt responsibility review but does not determine whether this ownership
+is valid.
 
 The WoT target path retains the existing TD/security parser as its sole
 description authority. `surfaces/wot/contracts.py` owns immutable private route
@@ -114,9 +118,9 @@ Runtime configuration, not TD authority.
 P5-D keeps semantic subject canonicalization in `risk/`, confirmation contracts
 and summaries in `confirmation/`, continuation state in `agent/session.py`, and
 effect-certainty continuation in `agent/post_action_policy.py`. `AgentLoop`
-sequences these owners. Target core, risk, confirmation, Visual, and WoT files
-remain below 350 lines with functions below 80 lines; dependency tests reject
-surface imports from risk/confirmation/agent and AgentLoop imports from adapters.
+sequences these owners. Dependency tests reject surface imports from
+risk/confirmation/agent and AgentLoop imports from adapters; LOC does not
+replace those semantic dependency gates.
 
 P5-D6.1 keeps the task-risk floor and semantic subject in `risk/`, destination
 admission in `world/action_space.py`, bounded secret-free presentation in
@@ -136,8 +140,8 @@ projects only an opaque `context_id`. LocalObjective relevance may rank/page
 already-legal actions but cannot add an action, lower risk or affect completion.
 The implemented split keeps policy routing in `agent/decision_control.py`, the
 single execution cycle in `agent/execution_cycle.py`, bounded projection in
-`model_boundary/`, and relevance/paging in `world/`; AgentLoop remains below
-the 300-line orchestration gate.
+`model_boundary/`, and relevance/paging in `world/`. AgentLoop is reviewed by
+orchestration responsibility and collaborator direction, not a 300-line gate.
 P5-M0.1.1 adds only narrow owners: `agent/observation_control.py` enforces fresh
 acquisition identity, `model_boundary/task_projection.py` owns truthful task
 sections, and `world/evidence_refs.py` canonicalizes value-free public evidence
@@ -212,8 +216,9 @@ canonical deterministic schema digest. The decision matrix and cutover checker
 remain benchmark-only: they cannot select production grounding, repair model
 output, modify ActionSpace/admission, or influence AgentLoop behavior.
 
-P5-M4 keeps six narrow benchmark owners: `browsergym_environment` owns the
-current reset/step cache composition, `browsergym_projection` owns bounded structural
+At the P5-M4 baseline, six narrow benchmark owners split the normal snapshot
+path: `browsergym_environment` owned reset/step cache composition,
+`browsergym_projection` owned bounded structural
 projection, `browsergym_binding` owns short-lived private handles,
 `browsergym_execution` owns canonical-to-official action conversion,
 `browsergym_verifier` owns current official status, and `composition` owns the
@@ -223,12 +228,11 @@ enter model-policy core or AgentLoop. The scripted conformance decision port
 uses only serialized public context and cannot read task IDs or expected action
 sequences.
 
-That ownership closes only the normal BrowserGym reset/step snapshot path. It
-does not implement independent capture: its public observe consumes the cached
-snapshot once. M4.5-A moves generic acquisition semantics into the target
-WorldEnvironment contract while keeping BrowserGym mechanics in the benchmark
-adapter; AgentLoop must not learn task IDs or add a backend-specific recovery
-branch.
+M4.5-A preserves those mechanics owners while replacing the public cache relay.
+`browsergym_environment` now orchestrates prepared logical reset, execute-
+returned post acquisition and independent capture; `browsergym_backend` owns
+the pinned page/thread and read-only current-world operation. AgentLoop learns
+no task IDs and adds no backend-specific recovery branch.
 
 ## P5-M4.2 narrow owners
 

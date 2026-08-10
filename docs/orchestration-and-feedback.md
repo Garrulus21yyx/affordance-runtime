@@ -202,22 +202,21 @@ effectful Runtime calls. Fixed pacing is recorded but never failure-adaptive,
 and progress is observational rather than resumable. No two-stage branch is
 present in AgentLoop or production factory composition.
 
-P5-M4 adds no BrowserGym branch to orchestration. The existing loop performs
-observe, context construction, one-stage policy, Runtime admission, bind,
-execute once, cache consumption as fresh observe, and TaskEvaluation. Before dispatch the adapter
-performs exactly one read-only currentness probe; stale or unavailable state is
-`NOT_SENT` with zero BrowserGym action calls. A thrown step after dispatch is
-`SENT_UNKNOWN` and is never retried. The cached step result supplies the next
-fresh observation once. Official mechanical status is Runtime-private evaluator
-input and never policy feedback. Fixed 7.5-second pacing wraps only the live
-benchmark policy and cannot alter decisions or recover failures.
+At the P5-M4 baseline, BrowserGym added no branch to orchestration: the loop
+performed observe, context construction, policy, admission, bind, execute once,
+one-use cache consumption and TaskEvaluation. That baseline supplied normal
+post-step freshness but raised RuntimeError when RequestObservation, Wait,
+stale/currentness or confirmation refresh reached an empty cache; rerun-v3
+observed seven such failures.
 
-This closes only the normal reset/step snapshot path. BrowserGym `observe()`
-consumes that cache once and raises RuntimeError when RequestObservation, Wait,
-stale/currentness or confirmation refresh asks for a snapshot without a new
-reset/step. Formal rerun-v3 observed seven such failures. M4.5-A replaces this
-overloaded call with typed reset/capture/execute outcomes; it does not add a
-BrowserGym-specific recovery branch to AgentLoop.
+M4.5-A has replaced that lifecycle without adding a BrowserGym branch to
+AgentLoop. Logical reset returns the prepared initial acquisition, execute
+returns the step-derived post acquisition, and capability-admitted refresh uses
+owner-thread read-only `capture()`. Before dispatch the adapter still performs
+exactly one currentness probe; stale/unavailable is `NOT_SENT` with zero action
+calls, and a thrown step remains `SENT_UNKNOWN` with no replay. Official
+mechanical status remains Runtime-private evaluator input. Fixed pacing remains
+benchmark-only and cannot alter decisions or recover failures.
 
 ## Verified-progress selection containment
 

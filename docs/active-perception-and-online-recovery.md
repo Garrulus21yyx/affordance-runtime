@@ -120,8 +120,10 @@ downgraded or replayed because after-acquisition failed.
 
 Existing active perception and canonical observation are retained assets.
 Current PerceptionSession/BrowserSession special-casing and broad recovery
-protocol are migration debt described in Implementation Status. The pinned
-BrowserGym target adapter currently consumes a one-use raw snapshot produced by
-reset/step; it implements the normal post-step path but not independent capture.
-The public `WorldEnvironment.observe()` name therefore overstates that adapter's
-capability, and M4.5-A replaces the mismatch with the typed contract above.
+protocol are migration debt described in Implementation Status. At the P5-M4
+baseline, the pinned BrowserGym adapter consumed a one-use raw snapshot from
+reset/step and its public `observe()` name overstated independent-capture
+capability. M4.5-A replaced that mismatch: logical reset returns the prepared
+initial acquisition, execute returns its post acquisition directly, and
+owner-thread `capture()` performs a fresh read-only current-world acquisition
+with origin/freshness validation and page-native verifier reacquisition.

@@ -56,12 +56,14 @@ BrowserGym adapter for their declared scopes.
 Two exact MiniWoB-60 runs are current immutable evidence and must not be
 combined: historical clean `b3b64a2` at 6/60, and clean `83dc4fa` rerun-v3 at
 4/60. Rerun-v3 records 7 post-observation failures, 9 unclassified typed
-failures and 11 Runtime rejections. It confirms that BrowserGym's consume-once
-reset/step cache does not satisfy the public active-observation meaning.
+failures and 11 Runtime rejections. At the P5-M4 baseline it confirmed that
+BrowserGym's consume-once reset/step cache did not satisfy the public active-
+observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
 
-The active queue is M4.5-A typed acquisition lifecycle, then M4.5-B bounded
-lossless ControlTransition accounting. The same frozen profile is rerun only
-after both, followed by a supported-subset multi-seed gate and then P5-E
+M4.5-A typed acquisition lifecycle is complete, including real owner-thread
+active-capture conformance. The active queue is M4.5-B bounded lossless
+ControlTransition accounting. The same frozen profile is rerun only after B,
+followed by a supported-subset multi-seed gate and then P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
 ProgressController remains fill/select-only and is not a planner. The default
 Coordinator path is unchanged.
@@ -218,10 +220,11 @@ M4.4 added typed attribution/capability inventory, and a later separately
 authorized clean rerun-v3 completed at 4/60. The evidence archives are distinct
 and neither is a general capability estimate.
 
-The seven rerun-v3 observation failures promote independent acquisition from a
-conditional idea to the next admitted contract correction. M4.5-A separates
-reset initial acquisition, capability-aware capture and execute-returned post
-acquisition. M4.5-B records exactly one privacy-bounded root ControlTransition
+The seven rerun-v3 observation failures promoted independent acquisition from a
+conditional idea into the M4.5-A correction. That slice now separates reset
+initial acquisition, capability-aware capture and execute-returned post
+acquisition, validates origin/fallback truth, and has real pinned active-capture
+coverage. M4.5-B next records exactly one privacy-bounded root ControlTransition
 per accepted policy decision without introducing a ledger, replay or second
 state authority. See the [active queue](current-implementation-plan.md) for exit
 gates and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)

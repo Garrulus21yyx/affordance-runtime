@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-10
-> **Reviewed source HEAD:** `codex/migrate-world-interaction-capabilities@2c70557b13ba1f36ea4dd50320681279c48dfb53`
+> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@de448a3151727fb11f2095c91045c28885b7b4b3`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -187,7 +187,8 @@ typed recurrent decisions, current-page paging, explicit-hint relevance and
 source-assurance summaries. Criterion adjudication and production evaluator
 composition are now closed for declared-minimum profiles. The new-loop harness
 and pinned BrowserGym profile have since closed for their declared scopes;
-capability-aware independent acquisition has not. WoT effectful rate limiting is implemented; property
+capability-aware independent acquisition is closed on the non-default target
+path. WoT effectful rate limiting is implemented; property
 read-side scheduling/rate limiting is not implemented.
 
 P5-M0.1.1 closes the operational profile: every actual policy call advances a
@@ -387,9 +388,14 @@ it no longer relays reset/step snapshots through a public cache. Independent
 capture reacquires incomplete page-native verifier state and deliberately marks
 success unavailable when the full official success conjunction cannot be
 proved. Local fake-backed contract tests pass. The isolated Python 3.12 runtime
-with `browsergym-miniwob==0.14.3` and `playwright==1.44.0` also passes all nine
-pinned BrowserGym adapter, local-progress, and dependency-inventory tests
+with `browsergym-miniwob==0.14.3` and `playwright==1.44.0` passes all eleven
+pinned BrowserGym adapter, local-progress, dependency-inventory and real
+active-capture tests
 against the reviewed MiniWoB source at commit `7fd85d71a4b60325c6585396ec4f48377d049838`.
+The A.1 closure additionally rejects non-independent capture origins, reports
+the final fallback attempt's typed cause and exact attempt count, counts an
+already-performed post acquisition on ActionResult lineage failure, and removes
+package-facade import-order dependence without moving projection authority.
 M4.5-B is now the next admitted correction.
 
 ## Control-transition and long-horizon gap status

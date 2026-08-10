@@ -28,7 +28,7 @@ state authoritative in the current Runtime.
 | Fast-path hints | `memory/binding_cache.py` |
 | Target short control loop | `agent/` (`INTEGRATED_NON_DEFAULT`) |
 | Low-risk batches | `execution/batch.py` helper only; not AgentLoop-integrated |
-| Target WorldEnvironment lifecycle | current `reset/observe/is_current/execute` port; M4.5 typed acquisition target not implemented |
+| Target WorldEnvironment lifecycle | typed `reset/capture/is_current/execute` port; M4.5-A origin/fallback/counting closure implemented non-default |
 
 ## Preserved invariants
 
@@ -82,16 +82,16 @@ complete for the same shared-state task/policy/evaluators. This proves only
 single-surface adapter symmetry. Semantic fusion is not started. RoutePolicy is implemented only after hard gates. BindingCache remains
 a not-admitted prototype. Cross-surface claims and default cutover are blocked.
 
-## Current acquisition gap
+## Historical acquisition gap and closure
 
-The pinned BrowserGym adapter implements post-action observation by caching the
-raw snapshot returned from reset/step and consuming it once through
-`observe()`. It does not implement an independent, side-effect-free active
-capture. The generic port name therefore overstates this backend's current
-capability; RequestObservation/Wait/stale/currentness/confirmation refresh can
-reach an empty cache. Formal rerun-v3 records seven such RuntimeError failures.
+At the P5-M4 baseline, the BrowserGym adapter cached reset/step raw snapshots
+and consumed each once through `observe()`. It lacked independent active
+capture, so refresh paths could reach an empty cache; formal rerun-v3 records
+seven such RuntimeError failures.
 
-The authoritative target replaces this mismatch in M4.5-A with reset-returned
-initial `ObservationAcquisition`, capability-aware `capture()`, and
-`ExecutionOutcome` carrying a typed post-action acquisition. This paragraph is
-a migration gap record, not a claim that those contracts are already in code.
+M4.5-A now closes that gap on the non-default target path. Reset returns the
+prepared initial `ObservationAcquisition`, capability-aware `capture()` calls
+the pinned backend's read-only current-world API on its owner thread, and
+`ExecutionOutcome` carries the typed post-action acquisition. Runtime validates
+origin and fresh identity, reports the last real fallback cause and exact
+attempt count, and never derives admission from AgentContext projection.

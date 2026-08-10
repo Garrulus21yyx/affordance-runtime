@@ -9,8 +9,8 @@
 文件路径仅为兼容文档治理检查而保留；文件名中的
 `task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，但实现状态
 仍以 Implementation Status 为准：AgentContext、model policy 与 declared-minimum
-criterion adjudicator 已在 non-default 路径落地；independent observation acquisition、
-lossless control-transition accounting 与长程 verified frontier 尚未落地。
+criterion adjudicator 与 independent observation acquisition 已在 non-default 路径
+落地；lossless control-transition accounting 与长程 verified frontier 尚未落地。
 
 ## 0. 系统定位与计算模型
 
@@ -522,8 +522,10 @@ benchmarks/     offline evaluation only
 
 `agent/loop.py` 只编排，不拥有 prompt construction、provider SDK、model parsing、
 confirmation summary、surface currentness、criterion entailment、output SHA 或 telemetry
-persistence。文件超过 350 行需 fail/review，函数超过 80 行 fail，class 超过 10 个
-public methods 或注入超过 8 collaborators 需 owner review。
+persistence。文件/函数长度只触发 responsibility review，不是 correctness gate：拆分
+必须移动完整 semantic authority 或 cohesive change reason，不能为降低 LOC 抽取随机
+helper。自动化优先检查依赖方向、禁止导入、循环依赖、公共 authority、collaborator
+边界与行为不变量；class public surface 或 collaborator 数量只作为 owner review 信号。
 
 依赖红线：AgentPolicy 不导入 Binder/Executor/concrete surface；model_boundary 不导入
 concrete surface；surface 不导入 AgentLoop；evaluation validator 不执行 action；

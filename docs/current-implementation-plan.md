@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-10
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
-> **Reviewed source HEAD:** `2c70557b13ba1f36ea4dd50320681279c48dfb53`
+> **Reviewed implementation HEAD:** `de448a3151727fb11f2095c91045c28885b7b4b3`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -41,12 +41,12 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M3.1 measurement/real adapters | `CLOSED_LOCALLY` | typed expectations, actual safety counters, real DOM/Visual/WoT suite, exact-head attestation command |
 | P5-M3.2 admission package | `CLOSED_FOR_PINNED_MECHANICAL_PROFILE` | full-CI/live/adapter evidence and fixed manifest feed a protected manual workflow |
 | P5-M3.3–M3.6 model compatibility | `CLOSED_FOR_CURRENT_SCOPE / NON_BLOCKING` | exact-profile diagnostics remain evidence, not Runtime repair authority |
-| P5-M4 BrowserGym pinned profile | `CLOSED_FOR_DECLARED_PROFILE` | reset/step cache lifecycle, projection, private binding, execution and mechanical verification; independent capture not implemented |
+| P5-M4 BrowserGym pinned profile | `CLOSED_FOR_DECLARED_PROFILE` | historical reset/step profile plus current typed lifecycle, private binding, execution, mechanical verification and owner-thread active capture |
 | P5-M4.2 local progress guard | `CLOSED_FOR_FILL_SELECT` | exact local repeated-action containment; not task planning/auditing |
 | P5-M4.3 historical MiniWoB-60 | `VALID_NEGATIVE_EVIDENCE` | clean `b3b64a2`, 6/60; immutable standalone run |
 | P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
-| P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, Runtime admission and BrowserGym active capture |
+| P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control accounting | `NOT_STARTED / NEXT` | bounded lossless ControlTransition, no ledger/replay |
 | P5-E | `NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -59,6 +59,12 @@ observe/cache handshake with typed logical reset, independent capture and
 execute-returned post acquisition; closed Runtime admission against
 environment-owned capabilities; and added BrowserGym owner-thread active
 capture without reusing old verifier evidence.
+
+The A.1 closure makes the public package facades lazy without changing their
+API, validates `INDEPENDENT_CAPTURE` origin, preserves the final fallback
+status/reason with post-action failure semantics, and counts acquisitions that
+already occurred before ActionResult lineage rejection. Real pinned active
+capture is attested separately from the nine-test normal-action gate.
 
 The next admitted work is the separate M4.5-B commit for lossless
 control-transition accounting. Only after it closes do we rerun the unchanged

@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
 > **Updated:** 2026-08-10
-> **Reviewed baseline:** `codex/migrate-world-interaction-capabilities@2c70557b13ba1f36ea4dd50320681279c48dfb53`
+> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@de448a3151727fb11f2095c91045c28885b7b4b3`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -468,9 +468,11 @@ valid 4/60 evidence. The two archives are immutable and cannot be merged or
 reported as a trend.
 
 Rerun-v3 retains 7 `post_observation_failure`, 9 `unclassified_typed_failure`
-and 11 `runtime_rejected` cases. The observation failures prove that the public
-active-observation meaning and BrowserGym's consume-once post-step cache are
-not interchangeable. M4.5-A/B are therefore the next admitted architecture
-repairs. P5-E stays blocked until their same-profile rerun and the supported-
+and 11 `runtime_rejected` cases. At the P5-M4 baseline, those observation
+failures proved that public active-observation meaning and BrowserGym's
+consume-once post-step cache were not interchangeable. M4.5-A and its A.1
+closure now replace that lifecycle with typed, origin-validated acquisition;
+M4.5-B is the next admitted architecture repair. P5-E stays blocked until the
+same-profile rerun and the supported-
 subset multi-seed gate close; provider/model competence remains measured rather
 than repaired by Runtime machinery.
