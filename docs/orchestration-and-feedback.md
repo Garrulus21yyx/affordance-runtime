@@ -237,7 +237,7 @@ consequence as exactly one ControlTransition while still fabricating no
 execution or observation. The controller remains a fill/select local liveness guard; future
 TaskProgressAuditor and planner remain separate P5-E owners.
 
-The B.1/B.2 closure records ordered dispatch attempts and physical
+The B.1/B.2/B.3 closure records ordered dispatch attempts and physical
 acquisition/probe totals at their
 actual boundaries, before evaluator completion. RuntimeError or cancellation
 therefore closes and rethrows from the same accepted-decision root. Confirmation
@@ -246,6 +246,10 @@ physical order; terminal, denied or externally completed continuations clear
 confirmation state and never create another root. ALREADY_SATISFIED closes the
 root before a new policy decision, confirmation may finish after the last policy
 turn, and pre-execution evaluation never masquerades as post-action evaluation.
+An accepted-decision exception or cancellation also latches a privacy-safe terminal
+AgentResult in AgentRunSession before propagating; later session APIs return that
+same result without another policy, capture or dispatch. A fresh risk BLOCK takes
+precedence over an older approval, and invalid confirmation/risk enum values fail closed.
 
 ## Breadth campaign orchestration
 

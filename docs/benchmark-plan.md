@@ -297,6 +297,10 @@ M4.5-B closes decision-scoped transition accounting:
    custom metrics cannot override canonical counters;
 4. transition storage reports total count plus a bounded suffix and remains
    in-memory, run-scoped, non-replayable, and non-durable.
+5. B.3 distinguishes the harness-owned watchdog from component/provider timeouts,
+   keeps Runtime/component/cleanup/integrity facts independent, rejects canonical
+   metric collisions as evidence-integrity failures, and forbids campaign acceptance
+   when any case remains unclassified or violates a frozen safety gate.
 
 M4.5-A and M4.5-B are separate implementation/verification slices so their
 effects remain attributable. Each must pass its focused conformance and safety

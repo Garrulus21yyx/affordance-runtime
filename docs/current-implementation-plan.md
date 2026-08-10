@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-10
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
-> **Reviewed implementation HEAD:** `1bce26c0d4ddc796b89740d0d389b5059727b457`
+> **Reviewed implementation HEAD:** `a8ccaa90991afe64ae85a717e7ecfb77aa7a06fe`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -47,7 +47,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
-| P5-M4.5-B control accounting | `COMPLETE_NON_DEFAULT` | B.1/B.2 closed monotonic facts, full confirmation lifetime, ordered physical attempts, evaluation epochs, state-authoritative snapshot and typed benchmark/cleanup projection |
+| P5-M4.5-B control accounting | `COMPLETE_NON_DEFAULT` | B.1/B.2/B.3 close monotonic facts, terminal re-entry, confirmation/risk fail-closed behavior, physical attempts, evaluation epochs and independent benchmark failure truth |
 | P5-M4.5-C same-profile rerun | `NOT_STARTED / NEXT` | third independent exact MiniWoB-60 seed-7 record; no trend merge or causal claim |
 | P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -68,7 +68,7 @@ already occurred before ActionResult lineage rejection. Real pinned active
 capture is attested separately from the nine-test normal-action gate.
 
 M4.5-B is complete in the separate reviewed implementation commit, including
-B.1 and B.2 residual lifecycle/accounting closure. The next
+B.1, B.2 and B.3 residual lifecycle/accounting closure. The next
 admitted work is M4.5-C: rerun the unchanged MiniWoB-60 seed-7 profile as a
 third independent exact record, then evaluate a supported-subset multi-seed
 gate. P5-E, default cutover and old-core deletion remain unauthorized.
@@ -203,7 +203,7 @@ the pinned environment's read-only current-observation facility, but it cannot
 copy the previous step's verifier outcome under a new observation identity;
 current verifier evidence must be reacquired or explicitly unavailable.
 
-## P5-M4.5-B lossless ControlTransition — complete after B.2 closure
+## P5-M4.5-B lossless ControlTransition — complete after B.3 closure
 
 Delivered one immutable, run-scoped, privacy-bounded root ControlTransition for
 every accepted policy decision. It retains before/after identity, decision,
@@ -226,8 +226,11 @@ existing facts cannot be erased by `None`, and progress is cumulative.
 `PartialEpisodeSnapshot` uses AgentLoopState.current_task_evaluation as the only
 current authority; benchmark case projection has a separate narrow owner and
 typed precedence without message matching or multi-owner epoch ambiguity.
-Runtime, agent, provider/watchdog and cleanup facts remain independently visible;
-canonical metrics reject custom collisions. No raw provider payload/private
+Runtime, component, agent, provider, watchdog, cleanup and harness-integrity facts remain
+independently visible; canonical metrics reject custom collisions. Accepted-decision
+exceptions latch one privacy-safe terminal session result before propagation, so later public
+session calls cannot re-enter policy or dispatch. Fresh risk BLOCK overrides an older approval,
+and only the actual `environment.capture()` boundary increments physical attempts. No raw provider payload/private
 binding is retained. No durable store, replay, event bus,
 transaction commit or state reconstruction is admitted.
 Provider failure before a parsed decision and stale/schema-invalid input before
@@ -239,8 +242,8 @@ projection of that suffix. Confirmation continuation references and updates the
 same root identity without increasing the root count. Model history uses the
 narrow `model_boundary/control_transition_projection.py`; snapshots and target
 benchmark classification consume typed transition/result facts without message
-matching. The reviewed code gate passed 1,919 tests with 15 external/profile
-skips, Ruff, mypy over 416 source files, diff-check, the clean-process import
+matching. The reviewed code gate passed 1,931 tests with 15 external/profile
+skips, Ruff, mypy over 417 source files, diff-check, the clean-process import
 matrix, the pinned Python 3.12 BrowserGym focused gate and the real 11-test
 active-capture gate. No
 formal MiniWoB-60 campaign was run.

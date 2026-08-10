@@ -61,9 +61,9 @@ BrowserGym's consume-once reset/step cache did not satisfy the public active-
 observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
 
 M4.5-A typed acquisition lifecycle and M4.5-B bounded lossless
-ControlTransition accounting, including B.1/B.2 incremental facts, continuation,
+ControlTransition accounting, including B.1/B.2/B.3 incremental facts, terminal-session latch, continuation,
 ordered execution/acquisition attempts, evaluation epochs, snapshot authority and
-benchmark primary/cleanup projection closure, are complete. The active queue is M4.5-C: a third
+benchmark runtime/component/cleanup/integrity projection closure, are complete. The active queue is M4.5-C: a third
 independent rerun of the same frozen profile, followed by a supported-subset
 multi-seed gate and then P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local

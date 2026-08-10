@@ -10,7 +10,8 @@
 `task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，但实现状态
 仍以 Implementation Status 为准：AgentContext、model policy 与 declared-minimum
 criterion adjudicator 与 independent observation acquisition 已在 non-default 路径
-落地；lossless control-transition accounting 也已在 non-default 路径闭合，长程
+落地；lossless control-transition accounting（含 B.3 terminal-session 与
+failure-truth 闭合）也已在 non-default 路径闭合，长程
 verified frontier 尚未落地。
 
 ## 0. 系统定位与计算模型

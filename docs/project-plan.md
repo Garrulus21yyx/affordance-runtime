@@ -76,7 +76,7 @@ core contracts for every GUI task.
 | P5-M4.2–M4.4 | Local fill/select containment, historical MiniWoB-60 breadth and typed attribution/capability evidence | valid clean `b3b64a2` negative run at 6/60; short-loop gaps remain |
 | post-M4.4 separately authorized rerun-v3 | Re-execute the frozen profile with expanded typed evidence | valid clean `83dc4fa` negative run at 4/60; separate from M4.3 |
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
-| P5-M4.5-B | Lossless bounded ControlTransition accounting | complete, non-default after B.2 residual closure; separate from acquisition |
+| P5-M4.5-B | Lossless bounded ControlTransition accounting | complete, non-default after B.3 terminal-session and benchmark failure-truth closure; separate from acquisition |
 | P5-M4.5-C | Same-profile MiniWoB-60 rerun | next; third independent exact record before multi-seed admission |
 | P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.5 and breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
