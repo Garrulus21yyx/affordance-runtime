@@ -13,21 +13,18 @@ from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.benchmarks.target_loop.terminal_reasons import project_terminal_reason_code
 
 
-def test_blocked_runtime_messages_project_to_typed_terminal_reasons() -> None:
+def test_blocked_runtime_reason_codes_project_to_typed_terminal_reasons() -> None:
     expected = {
-        "policy selected outside the current action page": TerminalReasonCode.ACTION_OUTSIDE_CURRENT_PAGE,
-        "policy selected a destination outside the current action page": (
+        "action_outside_current_page": TerminalReasonCode.ACTION_OUTSIDE_CURRENT_PAGE,
+        "destination_outside_current_page": (
             TerminalReasonCode.DESTINATION_OUTSIDE_CURRENT_PAGE
         ),
-        "policy selected outside ActionSpace": TerminalReasonCode.ACTION_OUTSIDE_ACTION_SPACE,
-        "completion claim contains an unknown or duplicate criterion": (
-            TerminalReasonCode.INVALID_COMPLETION_CLAIM
-        ),
-        "completion claim retains unresolved items": TerminalReasonCode.INVALID_COMPLETION_CLAIM,
-        "completion evidence is not current": TerminalReasonCode.COMPLETION_EVIDENCE_NOT_CURRENT,
+        "action_outside_action_space": TerminalReasonCode.ACTION_OUTSIDE_ACTION_SPACE,
+        "invalid_completion_claim": TerminalReasonCode.INVALID_COMPLETION_CLAIM,
+        "completion_evidence_not_current": TerminalReasonCode.COMPLETION_EVIDENCE_NOT_CURRENT,
     }
-    for message, code in expected.items():
-        assert project_terminal_reason_code(AgentLoopStatus.BLOCKED, message) == code
+    for reason_code, code in expected.items():
+        assert project_terminal_reason_code(AgentLoopStatus.BLOCKED, reason_code) == code
 
 
 def test_terminal_reason_projection_never_copies_unknown_runtime_detail() -> None:

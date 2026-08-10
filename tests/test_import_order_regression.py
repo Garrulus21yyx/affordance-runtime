@@ -33,7 +33,13 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_public_packages_import_in_any_supported_order_in_clean_process(
     imports: tuple[str, ...],
 ) -> None:
-    source = "\n".join(f"import {module}" for module in imports)
+    source = "\n".join(
+        [*(f"import {module}" for module in imports), *(
+            f"package = __import__({name!r}, fromlist=['*']); "
+            "[getattr(package, exported) for exported in package.__all__]"
+            for name in ("affordance_runtime.agent", "affordance_runtime.model_boundary")
+        )]
+    )
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT / "src")
     completed = subprocess.run(

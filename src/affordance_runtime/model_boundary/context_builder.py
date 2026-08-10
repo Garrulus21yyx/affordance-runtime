@@ -27,11 +27,13 @@ from affordance_runtime.model_boundary.context import (
     IntentExcerptView,
 )
 from affordance_runtime.model_boundary.contracts import AgentActionPageView
+from affordance_runtime.model_boundary.control_transition_projection import (
+    project_control_transitions,
+)
 from affordance_runtime.model_boundary.projection import (
     project_action_page,
     project_plan,
     project_public_value,
-    project_turns,
 )
 from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
@@ -99,7 +101,9 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        history_items = project_turns(state.recent_turns)[-self.budget.max_history_turns :]
+        history_items = project_control_transitions(state.recent_control_transitions)[
+            -self.budget.max_history_turns :
+        ]
         identity = _context_identity(state, action_space, page, context_generation)
         truncation = {
             "intent": project_intent_context(intent_context, self.budget).excerpts.truncated,
@@ -108,7 +112,7 @@ class ContextBuilder:
             "conflicts": world.conflicts.truncated,
             "artifacts": world.artifact_summaries.truncated,
             "actions": actions.truncated,
-            "history": len(state.recent_turns) > len(history_items),
+            "history": state.control_transition_total_count > len(history_items),
         }
         context = AgentContext(
             identity.context_id,
@@ -117,7 +121,11 @@ class ContextBuilder:
             _progress_view(task, state, task_evaluation, world.facts.items, self.budget.max_unresolved_items),
             world,
             actions,
-            BoundedSection(history_items, len(state.recent_turns), truncation["history"]),
+            BoundedSection(
+                history_items,
+                state.control_transition_total_count,
+                truncation["history"],
+            ),
             _pending_view(state),
             AgentBudgetView(
                 state.remaining_turns,

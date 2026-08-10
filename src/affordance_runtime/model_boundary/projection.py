@@ -12,7 +12,6 @@ from affordance_runtime.model_boundary.contracts import (
     AgentDestinationView,
     AgentMilestoneView,
     AgentPlanView,
-    AgentTurnView,
 )
 from affordance_runtime.task.planning_contracts import TaskPlan
 from affordance_runtime.world.action_paging import InternalActionPage
@@ -21,8 +20,8 @@ from affordance_runtime.world.relevance import ActionRelevance
 from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.state import Turn
-    from affordance_runtime.model_boundary.contracts import AgentTaskView
+    from affordance_runtime.agent.control_transition import Turn
+    from affordance_runtime.model_boundary.contracts import AgentTaskView, AgentTurnView
     from affordance_runtime.task.contracts import TaskGoal
 
 _SECRET_MARKERS = ("password", "secret", "token", "credential", "authorization", "api_key", "apikey")
@@ -144,7 +143,11 @@ def _project_action_options(
 
 
 def project_turns(turns: tuple[Turn, ...]) -> tuple[AgentTurnView, ...]:
-    return tuple(_project_turn(turn) for turn in turns[-12:])
+    from affordance_runtime.model_boundary.control_transition_projection import (
+        project_turns as project,
+    )
+
+    return project(turns)
 
 
 def project_plan(plan: TaskPlan | None) -> AgentPlanView | None:
@@ -254,65 +257,6 @@ def _model_private_key(key: str) -> bool:
 
 def _bounded_string(value: str, limit: int) -> str:
     return value if len(value) <= limit else value[: limit - 1] + "…"
-
-
-def _project_turn(turn: Turn) -> AgentTurnView:
-    intent = turn.intent
-    action_reason = turn.action_evaluation.status if turn.action_evaluation is not None else ""
-    task_reason = turn.task_evaluation.status if turn.task_evaluation is not None else ""
-    return AgentTurnView(
-        type(turn.decision).__name__.lower(),
-        intent.semantic_action if intent else "",
-        intent.target_id if intent else "",
-        intent.destination_id if intent else "",
-        project_public_value(intent.parameters) if intent else {},
-        turn.result.dispatch_status if turn.result is not None else "",
-        turn.action_evaluation.status if turn.action_evaluation is not None else "",
-        turn.task_evaluation.status if turn.task_evaluation is not None else "",
-        (task_reason or action_reason)[:_MAX_STRING],
-        _decision_summary(turn),
-    )
-
-
-def _decision_summary(turn: Turn) -> Mapping[str, object]:
-    from affordance_runtime.agent.decisions import (
-        Abort,
-        AskUser,
-        ProposeDone,
-        RequestActionPage,
-        RequestObservation,
-        Wait,
-    )
-
-    decision = turn.decision
-    if isinstance(decision, RequestObservation):
-        return {
-            "subject_id": _bounded_string(decision.subject_id, _MAX_STRING),
-            "modality": decision.modality,
-            "required_assurance": decision.required_assurance,
-            "reason": _bounded_string(decision.reason, _MAX_STRING),
-        }
-    if isinstance(decision, RequestActionPage):
-        return {
-            "query": _bounded_string(decision.query, 120),
-            "target_id": _bounded_string(decision.target_id, _MAX_STRING),
-            "relevance_role": decision.relevance_role,
-            "cursor_requested": bool(decision.cursor),
-            "result": turn.decision_result,
-        }
-    if isinstance(decision, AskUser):
-        return {"question": decision.question, "requested_fields": decision.requested_fields}
-    if isinstance(decision, ProposeDone):
-        return {
-            "claimed_criteria": decision.claimed_criteria,
-            "result_summary": decision.result_summary,
-            "unresolved_items": decision.unresolved_items,
-        }
-    if isinstance(decision, Wait):
-        return {"reason": decision.reason, "max_wait_ms": decision.max_wait_ms, "result": turn.decision_result}
-    if isinstance(decision, Abort):
-        return {"category": decision.category, "reason": decision.reason}
-    return {}
 
 
 def _private_key(key: str) -> bool:

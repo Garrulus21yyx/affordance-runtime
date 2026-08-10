@@ -11,6 +11,7 @@ from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     ActionBinding,
     CoverageState,
+    ObservationCapabilities,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
@@ -137,3 +138,64 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
     assert result.latest_task_status == "incomplete"
     assert result.latest_action_evaluation_status == "unknown"
     assert policy.calls == 2
+
+
+def test_runner_preserves_typed_agent_failure_without_message_matching() -> None:
+    class Policy:
+        async def decide(self, context):
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    class IncompleteEvaluator:
+        async def evaluate(self, task, observation):
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "incomplete",
+            )
+
+    def task():
+        return TaskGoal(
+            "typed-failure",
+            "Preserve typed failure",
+            allowed_effects=("advanced",),
+            risk_profile=RiskProfile.LOW,
+        )
+
+    case = BenchmarkCase(
+        "typed-failure",
+        "suite",
+        "typed failure",
+        task,
+        lambda _metrics: StaticEnvironment(
+            initial_observation=_action_world("observation:one"),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+            observation_capabilities=ObservationCapabilities(False, True),
+        ),
+        lambda _metrics: BenchmarkComposition(
+            Policy(),
+            ActionEvaluator(),
+            IncompleteEvaluator(),
+        ),
+        (AgentLoopStatus.WAITING_USER,),
+        2.0,
+        7,
+        ("observations", "executions", "turns"),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            )
+        )
+    ).cases[0]
+
+    assert result.case_failure_code == "post_action_capability_unavailable"
+    assert result.failure_code == "post_action_capability_unavailable"
+    assert str(result.failure_origin) == "post_action_observation"

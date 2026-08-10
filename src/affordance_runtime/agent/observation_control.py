@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.agent.control_transition import (
+    ControlContinuationScope,
+    ControlTransitionScope,
+    Turn,
+)
 from affordance_runtime.agent.result import AgentFailureCode, build_result
-from affordance_runtime.agent.state import AgentLoopStatus, Turn
+from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -25,6 +30,7 @@ class FreshAcquisition:
     status: AcquisitionStatus
     reason_code: str
     failure_code: AgentFailureCode | None = None
+    used_fallback: bool = False
 
 
 async def capture_fresh(
@@ -116,6 +122,7 @@ async def post_action_observation(
             primary.attempts + fallback.attempts,
             fallback.status,
             fallback.reason_code,
+            used_fallback=True,
         )
     return _post_action_fallback_failure(primary, fallback)
 
@@ -124,9 +131,16 @@ def acquisition_attempt_count(acquisition: ObservationAcquisition) -> int:
     return int(acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED})
 
 
-def no_fresh_after_result(session, decision, request, result, acquisition: FreshAcquisition):
+def no_fresh_after_result(
+    session,
+    decision,
+    request,
+    result,
+    acquisition: FreshAcquisition,
+    scope: ControlTransitionScope | ControlContinuationScope,
+):
     state = session.state
-    state.append_turn(
+    scope.record_turn(
         Turn(
             state.current_observation.observation_id,
             decision,
@@ -212,4 +226,5 @@ def _post_action_fallback_failure(
         fallback.status,
         fallback.reason_code,
         failure_code,
+        True,
     )

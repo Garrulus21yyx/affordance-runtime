@@ -14,8 +14,8 @@ from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.control_transition import AcquisitionSummary
     from affordance_runtime.agent.loop import AgentLoop
-    from affordance_runtime.evaluation.contracts import TaskEvaluation
     from affordance_runtime.model_boundary.context import AgentContext
     from affordance_runtime.world.action_paging import InternalActionPage
     from affordance_runtime.world.contracts import ActionSpace
@@ -32,6 +32,8 @@ class AgentRunSession:
     execution_count: int = 0
     currentness_probe_count: int = 0
     approved_confirmation: ConfirmationRequest | None = field(default=None, repr=False)
+    approved_confirmation_transition_id: str = field(default="", repr=False)
+    approved_confirmation_acquisition: AcquisitionSummary | None = field(default=None, repr=False)
     resolved_confirmation_ids: set[str] = field(default_factory=set, repr=False)
     last_result: AgentResult | None = field(default=None, repr=False)
     current_context_snapshot: AgentContext | None = field(default=None, repr=False)
@@ -41,7 +43,6 @@ class AgentRunSession:
     current_action_page: InternalActionPage | None = field(default=None, repr=False)
     waited_ms: int = 0
     progress_controller: ProgressController = field(default_factory=ProgressController, repr=False)
-    latest_task_evaluation: TaskEvaluation | None = field(default=None, repr=False)
 
     def next_context_generation(self) -> int:
         self.context_generation += 1

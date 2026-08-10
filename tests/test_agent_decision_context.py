@@ -102,6 +102,7 @@ def test_stale_decision_is_zero_execute_and_zero_probe_then_rebuilt() -> None:
         assert result.currentness_probe_count == 0
         assert len(environment.executed_requests) == 1
         assert policy.remaining_turns == [20, 19]
+        assert result.control_transition_total_count == 1
 
     asyncio.run(scenario())
 

@@ -3,7 +3,8 @@ from dataclasses import replace
 import pytest
 
 from affordance_runtime.agent import Abort
-from affordance_runtime.agent.state import AgentLoopState, Turn
+from affordance_runtime.agent.control_transition import ControlTransitionScope
+from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import (
     CriterionEvaluation,
     CriterionEvaluationStatus,
@@ -350,13 +351,8 @@ def test_history_bound_keeps_newest_semantic_turns() -> None:
         TaskEvaluationStatus.INCOMPLETE,
         "not complete",
     )
-    state = AgentLoopState(
-        observation,
-        recent_turns=tuple(
-            Turn(observation.observation_id, Abort("context:1", reason, "policy"))
-            for reason in ("oldest", "middle", "newest")
-        ),
-    )
+    state = AgentLoopState(observation)
+    _append_abort_transitions(state, ("oldest", "middle", "newest"))
 
     context = ContextBuilder(ContextProjectionBudget(max_history_turns=2)).build(
         task,
@@ -382,13 +378,8 @@ def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
         "not complete",
     )
     reasons = tuple(f"turn-{index}-" + "x" * 400 for index in range(6))
-    state = AgentLoopState(
-        observation,
-        recent_turns=tuple(
-            Turn(observation.observation_id, Abort("context:1", reason, "policy"))
-            for reason in reasons
-        ),
-    )
+    state = AgentLoopState(observation)
+    _append_abort_transitions(state, reasons)
     budget = ContextProjectionBudget(max_history_turns=6, max_total_serialized_bytes=3_000)
 
     context = ContextBuilder(budget).build(
@@ -400,3 +391,11 @@ def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
 
     assert context.history.truncated
     assert context.history.items[-1].semantic_summary["reason"] == reasons[-1]
+
+
+def _append_abort_transitions(state: AgentLoopState, reasons: tuple[str, ...]) -> None:
+    for reason in reasons:
+        decision = Abort("context:1", reason, "policy")
+        scope = ControlTransitionScope(state, decision)
+        scope.set_reason("abort_policy")
+        scope.finalize(state, None)

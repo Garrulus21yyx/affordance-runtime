@@ -164,7 +164,7 @@ def apply_selection_progress(
     from affordance_runtime.agent.result import AgentFailureCode, build_result
     from affordance_runtime.agent.state import AgentLoopStatus
 
-    evaluation = session.latest_task_evaluation
+    evaluation = session.state.current_task_evaluation
     if evaluation is None:
         terminal = build_result(
             AgentLoopStatus.FAILED,

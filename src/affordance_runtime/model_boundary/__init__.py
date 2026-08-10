@@ -31,6 +31,9 @@ if TYPE_CHECKING:
         AgentTaskView,
         AgentTurnView,
     )
+    from affordance_runtime.model_boundary.control_transition_projection import (
+        project_control_transitions,
+    )
     from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
     from affordance_runtime.model_boundary.projection import (
         project_action_page,
@@ -66,6 +69,10 @@ _EXPORTS = {
     "ModelFailureKind": ("affordance_runtime.model_boundary.failures", "ModelFailureKind"),
     "project_action_page": ("affordance_runtime.model_boundary.projection", "project_action_page"),
     "project_action_space": ("affordance_runtime.model_boundary.projection", "project_action_space"),
+    "project_control_transitions": (
+        "affordance_runtime.model_boundary.control_transition_projection",
+        "project_control_transitions",
+    ),
     "project_parameter_schema_for_model": (
         "affordance_runtime.model_boundary.projection",
         "project_parameter_schema_for_model",

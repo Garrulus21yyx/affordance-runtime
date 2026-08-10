@@ -26,6 +26,7 @@ from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
+    AcquisitionOrigin,
     ActionBinding,
     ActionRisk,
     CoverageState,
@@ -169,6 +170,7 @@ def test_initial_satisfaction_is_zero_execution_done() -> None:
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 0
         assert result.observation_count == 1
+        assert result.control_transition_total_count == 0
 
     asyncio.run(scenario())
 
@@ -272,6 +274,15 @@ def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None
         assert result.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
         assert result.observation_count == 3
         assert result.final_observation.observation_id == "obs-1"
+        transition = result.control_transitions[0]
+        assert tuple(item.origin for item in transition.acquisition_attempts) == (
+            AcquisitionOrigin.POST_ACTION,
+            AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        )
+        assert tuple(item.reason_code for item in transition.acquisition_attempts) == (
+            "observation_identity_reused",
+            "static_capture_failed",
+        )
 
     asyncio.run(scenario())
 

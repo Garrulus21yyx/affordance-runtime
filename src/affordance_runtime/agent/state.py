@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
-from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
 from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
-from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
-from affordance_runtime.execution.contracts import ActionIntent, ActionResult, BoundActionRequest
+from affordance_runtime.evaluation.contracts import TaskEvaluation
+from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -24,23 +24,13 @@ class AgentLoopStatus(StrEnum):
     FAILED = "failed"
 
 
-@dataclass(frozen=True)
-class Turn:
-    before_observation_id: str
-    decision: AgentDecision
-    intent: ActionIntent | None = None
-    request_id: str = ""
-    result: ActionResult | None = None
-    after_observation_id: str = ""
-    action_evaluation: ActionEvaluation | None = None
-    task_evaluation: TaskEvaluation | None = None
-    decision_result: str = ""
-
-
 @dataclass
 class AgentLoopState:
     current_observation: WorldObservation
-    recent_turns: tuple[Turn, ...] = ()
+    recent_control_transitions: tuple[ControlTransition, ...] = ()
+    control_transition_total_count: int = 0
+    sent_unknown_total_count: int = 0
+    control_transition_kind_counts: dict[str, int] = field(default_factory=dict)
     plan: TaskPlan | None = None
     active_objective: LocalObjective | None = None
     task_revision: int = 1
@@ -49,6 +39,9 @@ class AgentLoopState:
     pending_user_question: str = ""
     pending_confirmation: ConfirmationRequest | None = None
     pending_unknown_request: BoundActionRequest | None = None
+    pending_confirmation_transition_id: str = ""
+    latest_control_continuation: ControlContinuation | None = None
+    current_task_evaluation: TaskEvaluation | None = field(default=None, repr=False)
     remaining_turns: int = 20
     final_result: dict[str, object] = field(default_factory=dict)
     recent_progress_events: tuple[ProgressEvent, ...] = ()
@@ -56,9 +49,65 @@ class AgentLoopState:
     recent_turn_limit: int = 12
     progress_event_limit: int = 3
 
-    def append_turn(self, turn: Turn) -> None:
-        self.recent_turns = (*self.recent_turns, turn)[-self.recent_turn_limit :]
+    @property
+    def recent_turns(self) -> tuple[Turn, ...]:
+        return tuple(item.as_turn() for item in self.recent_control_transitions)
+
+    def _append_control_transition(self, transition: ControlTransition) -> None:
+        if transition.sequence != self.control_transition_total_count + 1:
+            raise ValueError("control transition sequence is not contiguous")
+        self.recent_control_transitions = (
+            *self.recent_control_transitions,
+            transition,
+        )[-self.recent_turn_limit :]
+        self.control_transition_total_count += 1
+        kind = type(transition.decision).__name__
+        self.control_transition_kind_counts[kind] = (
+            self.control_transition_kind_counts.get(kind, 0) + 1
+        )
+        if (
+            transition.execution is not None
+            and str(transition.execution.dispatch_status) == "sent_unknown"
+        ):
+            self.sent_unknown_total_count += 1
         self.progress_revision += 1
+
+    def _apply_control_continuation(self, continuation: ControlContinuation) -> None:
+        for index, transition in enumerate(self.recent_control_transitions):
+            if transition.transition_id != continuation.source_transition_id:
+                continue
+            was_sent_unknown = bool(
+                transition.execution is not None
+                and str(transition.execution.dispatch_status) == "sent_unknown"
+            )
+            updated = replace(
+                transition,
+                execution=continuation.execution or transition.execution,
+                acquisition=continuation.acquisition or transition.acquisition,
+                acquisition_attempts=(
+                    continuation.acquisition_attempts
+                    or transition.acquisition_attempts
+                ),
+                after_observation_id=continuation.after_observation_id,
+                action_evaluation=continuation.action_evaluation,
+                task_evaluation=continuation.task_evaluation,
+                pending_kind=continuation.pending_kind,
+                resulting_status=continuation.resulting_status,
+                reason_code=continuation.reason_code,
+                intent=continuation.intent or transition.intent,
+                request_id=continuation.request_id or transition.request_id,
+            )
+            values = list(self.recent_control_transitions)
+            values[index] = updated
+            self.recent_control_transitions = tuple(values)
+            is_sent_unknown = bool(
+                updated.execution is not None
+                and str(updated.execution.dispatch_status) == "sent_unknown"
+            )
+            if is_sent_unknown and not was_sent_unknown:
+                self.sent_unknown_total_count += 1
+            return
+        raise ValueError("confirmation continuation root is outside the bounded suffix")
 
     def _append_progress_event(self, event: ProgressEvent) -> None:
         self.recent_progress_events = (
@@ -101,6 +150,7 @@ class AgentLoopState:
     def clear_pending_confirmation(self) -> None:
         if self.pending_confirmation is not None:
             self.pending_confirmation = None
+            self.pending_confirmation_transition_id = ""
             self.pending_revision += 1
 
     def set_pending_unknown_effect(self, request: BoundActionRequest) -> None:

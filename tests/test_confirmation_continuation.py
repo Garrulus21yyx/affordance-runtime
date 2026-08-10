@@ -119,6 +119,8 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
         assert paused.status == AgentLoopStatus.WAITING_CONFIRMATION
         assert paused.execution_count == 0
         assert paused.confirmation_request is not None
+        assert session.state.control_transition_total_count == 1
+        root_id = session.state.recent_control_transitions[0].transition_id
 
         completed = await session.resolve_confirmation(_decision(paused))
 
@@ -129,6 +131,11 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
         assert policy.calls == 1
         assert "#old" not in repr(paused.confirmation_request)
         assert "#fresh" not in repr(paused.confirmation_request)
+        assert session.state.control_transition_total_count == 1
+        continuation = session.state.latest_control_continuation
+        assert continuation is not None
+        assert continuation.source_transition_id == root_id
+        assert session.state.recent_control_transitions[0].transition_id == root_id
 
     asyncio.run(scenario())
 

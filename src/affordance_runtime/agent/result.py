@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.agent.control_transition import ControlTransition, Turn
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
+from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
@@ -37,6 +38,11 @@ class AgentResult:
     confirmation_request: ConfirmationRequest | None = None
     policy_failure: PolicyFailure | None = None
     failure_code: AgentFailureCode | None = None
+    control_transitions: tuple[ControlTransition, ...] = ()
+    control_transition_total_count: int = 0
+    reason_code: str = ""
+    control_transition_kind_counts: tuple[tuple[str, int], ...] = ()
+    sent_unknown_count: int = 0
 
 
 def build_result(
@@ -49,6 +55,7 @@ def build_result(
     currentness_probe_count: int = 0,
     policy_failure: PolicyFailure | None = None,
     failure_code: AgentFailureCode | None = None,
+    reason_code: str = "",
 ) -> AgentResult:
     return AgentResult(
         status,
@@ -62,6 +69,11 @@ def build_result(
         state.pending_confirmation if status == AgentLoopStatus.WAITING_CONFIRMATION else None,
         policy_failure,
         failure_code,
+        state.recent_control_transitions,
+        state.control_transition_total_count,
+        reason_code,
+        tuple(sorted(state.control_transition_kind_counts.items())),
+        state.sent_unknown_total_count,
     )
 
 
@@ -94,4 +106,36 @@ def add_counts(result_value: AgentResult, observations: int, executions: int, pr
         result_value.confirmation_request,
         result_value.policy_failure,
         result_value.failure_code,
+        result_value.control_transitions,
+        result_value.control_transition_total_count,
+        result_value.reason_code,
+        result_value.control_transition_kind_counts,
+        result_value.sent_unknown_count,
+    )
+
+
+def refresh_control_projection(
+    result_value: AgentResult,
+    state: AgentLoopState,
+    reason_code: str,
+) -> AgentResult:
+    """Refresh compatibility/result projections after central transition finalization."""
+
+    return AgentResult(
+        result_value.status,
+        result_value.task,
+        result_value.final_observation,
+        state.recent_turns,
+        result_value.observation_count,
+        result_value.execution_count,
+        result_value.currentness_probe_count,
+        result_value.message,
+        result_value.confirmation_request,
+        result_value.policy_failure,
+        result_value.failure_code,
+        state.recent_control_transitions,
+        state.control_transition_total_count,
+        reason_code,
+        tuple(sorted(state.control_transition_kind_counts.items())),
+        state.sent_unknown_total_count,
     )

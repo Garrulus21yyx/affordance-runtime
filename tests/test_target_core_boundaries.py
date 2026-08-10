@@ -148,3 +148,55 @@ def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:
     }
 
     assert len(collaborators) <= 8
+
+
+def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writes() -> None:
+    owner = PACKAGE / "agent" / "control_transition.py"
+    projection = PACKAGE / "model_boundary" / "control_transition_projection.py"
+    owner_imports = _imports(owner)
+    projection_imports = _imports(projection)
+
+    assert not any(
+        name.startswith(
+            (
+                "affordance_runtime.benchmarks",
+                "affordance_runtime.model_boundary",
+                "affordance_runtime.surfaces",
+            )
+        )
+        for name in owner_imports
+    )
+    assert not any(
+        name.startswith(
+            (
+                "affordance_runtime.benchmarks",
+                "affordance_runtime.benchmarks.external_smoke",
+                "affordance_runtime.world.environment",
+            )
+        )
+        for name in projection_imports
+    )
+
+    writes = []
+    for path in _files(PACKAGE / "agent"):
+        text = path.read_text(encoding="utf-8")
+        if "._append_control_transition(" in text:
+            writes.append(path.name)
+    assert writes == ["control_transition.py"]
+
+
+def test_turn_history_is_read_only_projection_not_a_second_write_api() -> None:
+    state_tree = ast.parse((PACKAGE / "agent" / "state.py").read_text(encoding="utf-8"))
+    state = next(
+        node
+        for node in state_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "AgentLoopState"
+    )
+    methods = {
+        node.name
+        for node in state.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+    assert "append_turn" not in methods
+    assert "recent_turns" in methods

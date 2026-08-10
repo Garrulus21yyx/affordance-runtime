@@ -8,6 +8,15 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.control_transition import (
+        AcquisitionSummary,
+        AdmissionStatus,
+        AdmissionSummary,
+        ControlContinuation,
+        ControlTransition,
+        PendingKind,
+        ProgressDelta,
+    )
     from affordance_runtime.agent.decisions import (
         Abort,
         AskUser,
@@ -26,6 +35,9 @@ if TYPE_CHECKING:
     from affordance_runtime.task.contracts import TaskGoal
 
 _EXPORTS = {
+    "AcquisitionSummary": ("affordance_runtime.agent.control_transition", "AcquisitionSummary"),
+    "AdmissionSummary": ("affordance_runtime.agent.control_transition", "AdmissionSummary"),
+    "AdmissionStatus": ("affordance_runtime.agent.control_transition", "AdmissionStatus"),
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
     "AgentEpisodeRunner": ("affordance_runtime.agent.episode_runner", "AgentEpisodeRunner"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
@@ -36,12 +48,16 @@ _EXPORTS = {
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
+    "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),
+    "ControlTransition": ("affordance_runtime.agent.control_transition", "ControlTransition"),
+    "PendingKind": ("affordance_runtime.agent.control_transition", "PendingKind"),
     "ProposeDone": ("affordance_runtime.agent.decisions", "ProposeDone"),
+    "ProgressDelta": ("affordance_runtime.agent.control_transition", "ProgressDelta"),
     "RequestActionPage": ("affordance_runtime.agent.decisions", "RequestActionPage"),
     "RequestObservation": ("affordance_runtime.agent.decisions", "RequestObservation"),
     "SelectAction": ("affordance_runtime.agent.decisions", "SelectAction"),
     "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
-    "Turn": ("affordance_runtime.agent.state", "Turn"),
+    "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
 }
 
