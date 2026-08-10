@@ -77,6 +77,26 @@ def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
     with pytest.raises(ValueError, match="unsupported"):
         decode_public_case_evidence(future)
 
+    wrong_scalars = public_case_evidence(
+        BenchmarkCaseResult(
+            "case:one", "failed", True, "", 1.0,
+            {"observations": MetricMeasurement(1, True)},
+        )
+    )
+    wrong_scalars["measurements"]["observations"] = {
+        "value": "secret",
+        "measured": "yes",
+        "opportunities": None,
+        "unit": "count",
+    }
+    with pytest.raises((TypeError, ValueError)):
+        decode_public_case_evidence(wrong_scalars)
+
+    null_fact = public_case_evidence(BenchmarkCaseResult("case:one", "failed", True, "", 1.0))
+    null_fact["failure_facts"]["runtime_reason_code"] = None
+    with pytest.raises(TypeError, match="strings"):
+        decode_public_case_evidence(null_fact)
+
 
 def test_public_evidence_omits_unrestricted_human_failure_reason() -> None:
     result = BenchmarkCaseResult(
@@ -107,3 +127,21 @@ def test_mechanical_success_cannot_coexist_with_component_failure() -> None:
             exception_class="RuntimeError",
             failure_facts=facts,
         )
+
+
+def test_component_and_watchdog_project_without_erasing_either_fact() -> None:
+    from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
+    from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
+
+    instrumentation = BenchmarkInstrumentation()
+    instrumentation.record_failure(
+        CaseFailureOrigin.EXECUTION,
+        "execution_exception",
+        RuntimeError("private component detail"),
+    )
+    instrumentation.record_watchdog("case_timeout", TimeoutError())
+    result = project_case_result("case:one", None, instrumentation, 1.0, "timeout")
+    assert result.failure_origin is CaseFailureOrigin.EXECUTION
+    assert result.failure_facts.component_origin is CaseFailureOrigin.EXECUTION
+    assert result.watchdog_triggered
+    assert result.failure_facts.watchdog_code == "case_timeout"

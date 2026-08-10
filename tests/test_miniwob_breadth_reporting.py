@@ -16,12 +16,17 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     ProviderCapacityEvidence,
 )
 from affordance_runtime.benchmarks.external_breadth.contracts import MiniWobBreadthCase, MiniWobBreadthManifest
+from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
+from affordance_runtime.benchmarks.external_breadth.progress import CampaignProgressWriter
 from affordance_runtime.benchmarks.external_breadth.reporting import (
     _case_payload,
     privacy_scan,
     write_campaign_reports,
 )
-from affordance_runtime.benchmarks.external_breadth.runner import REQUIRED_METRICS
+from affordance_runtime.benchmarks.external_breadth.runner import (
+    REQUIRED_METRICS,
+    expected_target_manifest_digest,
+)
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkAcceptance,
     BenchmarkCaseResult,
@@ -44,22 +49,23 @@ def test_report_tree_is_complete_private_and_zero_denominators_are_null(tmp_path
         for index, result in enumerate(results, 1)
     )
     outcome = MiniWobBreadthCampaignOutcome(
-        "opaque-run", manifest, "sha256:manifest",
+        "opaque-run", manifest, breadth_manifest_digest(manifest),
         BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(True, ()), {}),
         records, MiniWobBreadthCampaignAcceptance(True, (), 60, 60, 60),
         "mistral", "mistral-medium-3-5", "format-only.v1",
         ProviderCapacityEvidence(
             "provider-capacity-preflight.v1", "mistral", "mistral-medium-3-5",
-            "sha256:manifest", 600, 600, True, "format-only.v1", 0, 0,
+            breadth_manifest_digest(manifest), 600, 600, True, "format-only.v1", 0, 0,
         ),
     )
     output = tmp_path / "reports"
     output.mkdir()
+    _write_progress(output, outcome)
     attestation_path = write_campaign_reports(outcome, output)
     attestation = json.loads(attestation_path.read_text())
     assert attestation["evidence_valid"] is True
     assert len(attestation["case_report_sha256"]) == 60
-    assert validate_campaign_tree(output) == ()
+    assert validate_campaign_tree(output, manifest) == ()
     assert privacy_scan(output) == ()
     serialized = "\n".join(path.read_text().casefold() for path in output.rglob("*.json"))
     assert "browsergym/miniwob." not in serialized
@@ -141,7 +147,10 @@ def test_tree_validator_rejects_coherently_rehashed_case_identity_mutation(
         "sha256:" + hashlib.sha256(case_path.read_bytes()).hexdigest()
     )
     attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
-    assert any("formal case identity" in item for item in validate_campaign_tree(output))
+    assert any(
+        "formal case identity" in item
+        for item in validate_campaign_tree(output, _manifest())
+    )
 
 
 def test_provider_capacity_requires_explicit_zero_retry_fallback_identity() -> None:
@@ -163,20 +172,51 @@ def _write_valid_tree(tmp_path: Path) -> Path:
         for index, result in enumerate(results, 1)
     )
     outcome = MiniWobBreadthCampaignOutcome(
-        "opaque-run", manifest, "sha256:manifest",
+        "opaque-run", manifest, breadth_manifest_digest(manifest),
         BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(True, ()), {}),
         records, MiniWobBreadthCampaignAcceptance(True, (), 60, 60, 60),
         "mistral", "mistral-medium-3-5", "format-only.v1",
         ProviderCapacityEvidence(
             "provider-capacity-preflight.v1", "mistral", "mistral-medium-3-5",
-            "sha256:manifest", 600, 600, True, "format-only.v1", 0, 0,
+            breadth_manifest_digest(manifest), 600, 600, True, "format-only.v1", 0, 0,
         ),
     )
     output = tmp_path / "valid-tree"
     output.mkdir()
+    _write_progress(output, outcome)
     write_campaign_reports(outcome, output)
-    assert validate_campaign_tree(output) == ()
+    assert validate_campaign_tree(output, manifest) == ()
     return output
+
+
+def _write_progress(output: Path, outcome: MiniWobBreadthCampaignOutcome) -> None:
+    counts: dict[str, int] = {}
+    for record in outcome.cases:
+        counts[record.outcome.value] = counts.get(record.outcome.value, 0) + 1
+    writer = CampaignProgressWriter(
+        output / "campaign-progress.json",
+        outcome.manifest.campaign_id,
+        outcome.run_id,
+        outcome.suite.identity.git_sha,
+        outcome.manifest_digest,
+        len(outcome.cases),
+        completed_cases=len(outcome.cases),
+        success_count=sum(record.outcome is MiniWobTaskOutcome.SUCCESS for record in outcome.cases),
+        failure_category_counts=counts,
+        provider_attempts=sum(
+            int(record.result.measurements["provider_attempts"].value or 0)
+            for record in outcome.cases
+        ),
+        total_tokens=sum(
+            int(record.result.measurements["total_tokens"].value or 0)
+            for record in outcome.cases
+        ),
+        model_latency_ms=sum(
+            float(record.result.measurements["model_latency_ms"].value or 0)
+            for record in outcome.cases
+        ),
+    )
+    writer.write(current_case_id=outcome.cases[-1].case_id, complete=True)
 
 
 def _manifest() -> MiniWobBreadthManifest:
@@ -203,13 +243,14 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
         suite_id="miniwob-60-seed7-v1",
         profile_id="mistral-format-only-v1",
         seed=7,
-        manifest_digest="target-digest",
+        manifest_digest=expected_target_manifest_digest(_manifest()),
     )
 
 
 def _identity() -> BenchmarkRunIdentity:
     return BenchmarkRunIdentity(
-        "opaque-run", "0" * 40, False, "miniwob-60-seed7-v1", "target-digest",
+        "opaque-run", "0" * 40, False, "miniwob-60-seed7-v1",
+        expected_target_manifest_digest(_manifest()),
         "mistral-format-only-v1", 7,
         "2026-08-10T00:00:00+00:00", "3.12", "test",
     )

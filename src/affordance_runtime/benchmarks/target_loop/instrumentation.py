@@ -10,12 +10,12 @@ from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigi
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
-from affordance_runtime.world import AcquisitionStatus
+from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
 
 @dataclass
@@ -204,11 +204,14 @@ class CountingEnvironment:
     async def capture(self, request):
         self.instrumentation.environment_capture_calls += 1
         try:
-            return await self.wrapped.capture(request)
+            acquisition = await self.wrapped.capture(request)
         except Exception as exc:
             origin = observation_failure_origin(request.kind)
             self.instrumentation.record_failure(origin, "capture_exception", exc)
             raise
+        if isinstance(acquisition, ObservationAcquisition):
+            return acquisition
+        return acquisition
 
     async def execute(self, request):
         state = self.instrumentation
@@ -222,7 +225,13 @@ class CountingEnvironment:
         except Exception as exc:
             state.record_failure(CaseFailureOrigin.EXECUTION, "execution_exception", exc)
             raise
+        if not isinstance(outcome, ExecutionOutcome):
+            return outcome
         result = outcome.result
+        if not isinstance(result, ActionResult) or not isinstance(
+            outcome.post_acquisition, ObservationAcquisition
+        ):
+            return outcome
         state.environment_post_acquisitions += int(
             outcome.post_acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
         )

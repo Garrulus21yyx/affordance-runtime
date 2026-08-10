@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from affordance_runtime.agent.accounting import RunAccountingSnapshot
@@ -23,12 +24,14 @@ class AgentSessionStartError(Exception):
         origin: AcquisitionOrigin,
         reason_code: str,
         start_evidence: StartBoundaryEvidence,
+        exception_class: str = "",
     ) -> None:
         super().__init__(reason_code)
         self.status = status
         self.origin = origin
         self.reason_code = reason_code
         self.start_evidence = start_evidence
+        self.exception_class = exception_class
 
 
 def require_initial_observation(
@@ -49,10 +52,8 @@ def require_initial_observation(
     raise AgentSessionStartError(acquisition.status, acquisition.origin, code, evidence)
 
 
-def attach_start_boundary_evidence(
-    error: BaseException,
-    evidence: StartBoundaryEvidence,
-) -> None:
-    """Attach typed truth while preserving the public exception/cancellation type."""
-
-    setattr(error, "start_boundary_evidence", evidence)
+class AgentSessionStartCancelledError(asyncio.CancelledError):
+    def __init__(self, start_evidence: StartBoundaryEvidence) -> None:
+        super().__init__("reset_cancelled")
+        self.start_evidence = start_evidence
+        self.exception_class = "CancelledError"

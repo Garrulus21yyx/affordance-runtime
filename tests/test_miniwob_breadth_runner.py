@@ -4,6 +4,9 @@ import asyncio
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobTaskOutcome,
@@ -24,6 +27,18 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
+from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
+from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model_port import ModelConfig
+
+
+@pytest.fixture(autouse=True)
+def _stable_final_git_identity(monkeypatch):
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.runner._final_git_identity",
+        lambda: ("0" * 40, False),
+    )
 
 
 def test_fake_sixty_case_campaign_is_strict_complete_and_failure_tolerant(monkeypatch, tmp_path: Path) -> None:
@@ -44,7 +59,7 @@ def test_fake_sixty_case_campaign_is_strict_complete_and_failure_tolerant(monkey
         fake_run_suite,
     )
     outcome = asyncio.run(run_breadth_campaign(
-        manifest, object(), tmp_path / "run", provider_capacity=_capacity(manifest),
+        manifest, _policy(), tmp_path / "run", provider_capacity=_capacity(manifest),
     ))
     assert order == [f"miniwob-60-{index:02d}" for index in range(1, 61)]
     assert outcome.acceptance.evidence_valid
@@ -71,7 +86,7 @@ def test_task_failure_does_not_invalidate_campaign_evidence(monkeypatch, tmp_pat
         fake_run_suite,
     )
     outcome = asyncio.run(run_breadth_campaign(
-        manifest, object(), tmp_path / "failure-run", provider_capacity=_capacity(manifest),
+        manifest, _policy(), tmp_path / "failure-run", provider_capacity=_capacity(manifest),
     ))
     assert outcome.acceptance.evidence_valid
     assert outcome.acceptance.successful_cases == 0
@@ -96,7 +111,7 @@ def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_p
     )
     outcome = asyncio.run(
         run_breadth_campaign(
-            manifest, object(), tmp_path / "unclassified-run",
+            manifest, _policy(), tmp_path / "unclassified-run",
             provider_capacity=_capacity(manifest),
         )
     )
@@ -121,7 +136,7 @@ def test_formal_acceptance_requires_explicit_provider_capacity(monkeypatch, tmp_
         fake_run_suite,
     )
     outcome = asyncio.run(run_breadth_campaign(
-        manifest, object(), tmp_path / "no-capacity",
+        manifest, _policy(), tmp_path / "no-capacity",
     ))
     assert not outcome.acceptance.evidence_valid
     assert "explicit provider capacity" in " ".join(outcome.acceptance.errors)
@@ -145,7 +160,7 @@ def test_spoofed_underlying_case_identity_is_rejected(monkeypatch, tmp_path: Pat
         fake_run_suite,
     )
     outcome = asyncio.run(run_breadth_campaign(
-        manifest, object(), tmp_path / "spoofed",
+        manifest, _policy(), tmp_path / "spoofed",
         provider_capacity=_capacity(manifest),
     ))
     assert not outcome.acceptance.evidence_valid
@@ -163,14 +178,14 @@ def test_interrupted_campaign_stays_incomplete_and_cannot_resume(monkeypatch, tm
     )
     output = tmp_path / "interrupted"
     try:
-        asyncio.run(run_breadth_campaign(_manifest(), object(), output))
+        asyncio.run(run_breadth_campaign(_manifest(), _policy(), output))
     except RuntimeError:
         pass
     progress = json.loads((output / "campaign-progress.json").read_text())
     assert progress["complete"] is False
     assert progress["completed_cases"] == 1
     try:
-        asyncio.run(run_breadth_campaign(_manifest(), object(), output))
+        asyncio.run(run_breadth_campaign(_manifest(), _policy(), output))
     except FileExistsError:
         pass
     else:
@@ -196,6 +211,13 @@ def test_pacing_state_is_shared_across_case_policy_wrappers() -> None:
     asyncio.run(second.decide("second"))
     assert waits == [7.5]
     assert state.calls == 2
+
+
+def test_formal_runner_rejects_unbound_policy_before_creating_output(tmp_path: Path) -> None:
+    output = tmp_path / "invalid-policy"
+    with pytest.raises(TypeError, match="ModelBackedAgentPolicy"):
+        asyncio.run(run_breadth_campaign(_manifest(), object(), output))
+    assert not output.exists()
 
 
 def _manifest() -> MiniWobBreadthManifest:
@@ -255,6 +277,21 @@ def _capacity(manifest) -> ProviderCapacityEvidence:
         breadth_manifest_digest(manifest), 600, 600, True,
         manifest.grounding_profile, 0, 0,
     )
+
+
+def _policy() -> ModelBackedAgentPolicy:
+    port = SimpleNamespace(
+        provider="mistral",
+        model="mistral-medium-3-5",
+        endpoint_class="test",
+        last_call=None,
+    )
+    adapter = ModelPortDecisionAdapter(
+        port,
+        ModelConfig(timeout_s=30.0, rate_limit_retries=0, transient_retries=0),
+        DecisionGroundingVariant.FORMAT_ONLY,
+    )
+    return ModelBackedAgentPolicy(adapter)
 
 
 def _target_identity(target_manifest) -> BenchmarkRunIdentity:

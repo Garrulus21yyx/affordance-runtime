@@ -70,7 +70,7 @@ def main() -> int:
         manifest, policy, args.output_dir, provider_capacity=capacity,
     ))
     attestation = write_campaign_reports(outcome, args.output_dir)
-    tree_errors = validate_campaign_tree(args.output_dir)
+    tree_errors = validate_campaign_tree(args.output_dir, manifest)
     evidence = json.loads(attestation.read_text(encoding="utf-8"))
     if tree_errors or evidence.get("evidence_valid") is not True:
         return 1

@@ -51,6 +51,8 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
         "run_id": outcome.run_id,
         "campaign_id": outcome.manifest.campaign_id,
         "manifest_digest": outcome.manifest_digest,
+        "manifest_schema_version": outcome.manifest.schema_version,
+        "selection_namespace": outcome.manifest.selection_namespace,
         "target_manifest_digest": outcome.suite.identity.manifest_digest,
         "profile_id": outcome.suite.identity.profile_id,
         "harness_schema_version": outcome.suite.identity.harness_schema_version,
@@ -62,11 +64,13 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
         "cases": summaries,
     })
     privacy_errors = privacy_scan(output_dir)
+    progress_path = output_dir / "campaign-progress.json"
     attestation = output_dir / "attestation.json"
     evidence_valid = (
         outcome.acceptance.evidence_valid
         and outcome.provider_capacity is not None
         and outcome.provider_capacity.sufficient
+        and progress_path.is_file()
         and not privacy_errors
     )
     _atomic_json(attestation, {
@@ -81,6 +85,8 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
         "profile_id": outcome.suite.identity.profile_id,
         "harness_schema_version": outcome.suite.identity.harness_schema_version,
         "case_schema_version": "target-loop-case.v6",
+        "manifest_schema_version": outcome.manifest.schema_version,
+        "selection_namespace": outcome.manifest.selection_namespace,
         "registry_digest": outcome.manifest.registry_digest,
         "capability_inventory_digest": outcome.manifest.capability_inventory_digest,
         "package_name": outcome.manifest.package_name,
@@ -96,6 +102,7 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
         "case_report_sha256": case_hashes,
         "summary_sha256": _sha256(summary_path),
         "campaign_sha256": _sha256(campaign_path),
+        "progress_sha256": _sha256(progress_path) if progress_path.is_file() else "",
         "privacy_errors": privacy_errors,
         "evidence_valid": evidence_valid,
         "generalization_claim": "NOT_CLAIMED",

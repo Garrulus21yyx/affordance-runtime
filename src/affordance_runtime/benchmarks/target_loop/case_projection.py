@@ -65,9 +65,11 @@ def project_case_result(
     if metric_collisions and failure_origin is CaseFailureOrigin.NONE:
         failure_origin = CaseFailureOrigin.UNKNOWN
     agent_failure = _agent_failure_code(result)
-    component_origin = instrumentation.failure_origin
+    component_origin, normalized_component_code = _component_failure(
+        instrumentation, metadata,
+    )
     component_code = (
-        _safe_code(instrumentation.failure_code, "runtime_failure")
+        _safe_code(normalized_component_code, "runtime_failure")
         if component_origin is not CaseFailureOrigin.NONE else ""
     )
     exception_class = _safe_exception_class(
@@ -171,24 +173,28 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
     measurements = {}
     metric_fields = {item.name for item in fields(MetricMeasurement)}
     for name, value in _dict(payload["measurements"]).items():
-        if not isinstance(value, dict) or set(value) != metric_fields:
+        if not isinstance(name, str) or not isinstance(value, dict) or set(value) != metric_fields:
             raise ValueError("public case metric evidence is malformed")
-        measurements[str(name)] = MetricMeasurement(**value)
+        measurements[name] = MetricMeasurement(**value)
     raw_facts = _dict(payload["failure_facts"])
     fact_fields = {item.name for item in fields(FailureFacts)}
     if set(raw_facts) != fact_fields:
         raise ValueError("public failure facts are incomplete")
+    if any(not isinstance(value, str) for value in raw_facts.values()):
+        raise TypeError("public failure facts must use strings")
+    raw_origin = raw_facts["component_origin"]
+    assert isinstance(raw_origin, str)
     facts = FailureFacts(
-        runtime_reason_code=str(raw_facts.get("runtime_reason_code", "")),
-        agent_failure_code=str(raw_facts.get("agent_failure_code", "")),
-        policy_failure_code=str(raw_facts.get("policy_failure_code", "")),
-        component_origin=CaseFailureOrigin(str(raw_facts.get("component_origin", "none"))),
-        component_code=str(raw_facts.get("component_code", "")),
-        component_exception_class=str(raw_facts.get("component_exception_class", "")),
-        watchdog_code=str(raw_facts.get("watchdog_code", "")),
-        cleanup_code=str(raw_facts.get("cleanup_code", "")),
-        cleanup_exception_class=str(raw_facts.get("cleanup_exception_class", "")),
-        harness_integrity_code=str(raw_facts.get("harness_integrity_code", "")),
+        runtime_reason_code=raw_facts["runtime_reason_code"],
+        agent_failure_code=raw_facts["agent_failure_code"],
+        policy_failure_code=raw_facts["policy_failure_code"],
+        component_origin=CaseFailureOrigin(raw_origin),
+        component_code=raw_facts["component_code"],
+        component_exception_class=raw_facts["component_exception_class"],
+        watchdog_code=raw_facts["watchdog_code"],
+        cleanup_code=raw_facts["cleanup_code"],
+        cleanup_exception_class=raw_facts["cleanup_exception_class"],
+        harness_integrity_code=raw_facts["harness_integrity_code"],
     )
     values = {
         item.name: payload[item.name]
@@ -198,9 +204,14 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
     values["failure_reason"] = ""
     values["measurements"] = measurements
     values["failure_facts"] = facts
-    values["failure_origin"] = CaseFailureOrigin(str(values["failure_origin"]))
+    failure_origin = values["failure_origin"]
+    if not isinstance(failure_origin, str):
+        raise ValueError("public failure origin is malformed")
+    values["failure_origin"] = CaseFailureOrigin(failure_origin)
     terminal = values["terminal_reason_code"]
-    values["terminal_reason_code"] = TerminalReasonCode(str(terminal)) if terminal else None
+    if terminal is not None and not isinstance(terminal, str):
+        raise ValueError("terminal reason code is malformed")
+    values["terminal_reason_code"] = TerminalReasonCode(terminal) if terminal else None
     return BenchmarkCaseResult(**cast(Any, values))
 
 
@@ -276,12 +287,11 @@ def _agent_failure_code(result) -> str:
 
 
 def _failure_origin(result, instrumentation, runtime_reason, snapshot) -> CaseFailureOrigin:
+    normalized, _ = _component_failure(instrumentation, snapshot)
+    if normalized not in {CaseFailureOrigin.NONE, CaseFailureOrigin.CLEANUP}:
+        return normalized
     if instrumentation.watchdog_code:
         return CaseFailureOrigin.HARNESS_WATCHDOG
-    if instrumentation.failure_origin not in {
-        CaseFailureOrigin.NONE, CaseFailureOrigin.CLEANUP,
-    }:
-        return instrumentation.failure_origin
     if result is not None and result.status is not AgentLoopStatus.DONE and result.policy_failure is not None:
         return CaseFailureOrigin.POLICY_DECISION
     if result is not None and result.failure_code is not None:
@@ -297,6 +307,21 @@ def _failure_origin(result, instrumentation, runtime_reason, snapshot) -> CaseFa
     if instrumentation.cleanup_failures:
         return CaseFailureOrigin.CLEANUP
     return CaseFailureOrigin.NONE
+
+
+def _component_failure(instrumentation, snapshot) -> tuple[CaseFailureOrigin, str]:
+    origin = instrumentation.failure_origin
+    code = instrumentation.failure_code
+    if origin is not CaseFailureOrigin.UNKNOWN or snapshot is None:
+        return origin, code
+    if snapshot.latest_attempt_operation == "execute":
+        return CaseFailureOrigin.EXECUTION, snapshot.latest_attempt_reason_code or code
+    if snapshot.latest_acquisition_request_kind:
+        return (
+            observation_failure_origin(snapshot.latest_acquisition_request_kind),
+            snapshot.latest_attempt_reason_code or code,
+        )
+    return origin, code
 
 
 def _runtime_origin(reason: str) -> CaseFailureOrigin:

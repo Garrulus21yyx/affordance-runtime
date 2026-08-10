@@ -33,8 +33,9 @@ from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEv
 from affordance_runtime.agent.result import AgentResult, project_result
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.start_error import (
+    AgentSessionStartCancelledError,
+    AgentSessionStartError,
     StartBoundaryEvidence,
-    attach_start_boundary_evidence,
     require_initial_observation,
 )
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
@@ -51,6 +52,7 @@ from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
+    AcquisitionStatus,
     ObservationAcquisition,
     ObservationRequestKind,
     WorldObservationRequest,
@@ -91,29 +93,33 @@ class AgentLoop:
                 attempt_id, AttemptDisposition.CANCELLED, "reset_cancelled", "CancelledError",
             )
             accounting.record(receipt)
-            attach_start_boundary_evidence(
-                exc, StartBoundaryEvidence(receipt, accounting.snapshot()),
-            )
-            raise
+            raise AgentSessionStartCancelledError(
+                StartBoundaryEvidence(receipt, accounting.snapshot())
+            ) from exc
         except Exception as exc:
             receipt = _reset_exception_receipt(
                 attempt_id, AttemptDisposition.THREW, "reset_exception", type(exc).__name__,
             )
             accounting.record(receipt)
-            attach_start_boundary_evidence(
-                exc, StartBoundaryEvidence(receipt, accounting.snapshot()),
-            )
-            raise
+            raise AgentSessionStartError(
+                AcquisitionStatus.FAILED,
+                AcquisitionOrigin.RESET,
+                "reset_exception",
+                StartBoundaryEvidence(receipt, accounting.snapshot()),
+                type(exc).__name__,
+            ) from exc
         if not isinstance(acquisition, ObservationAcquisition):
             receipt = _reset_exception_receipt(
                 attempt_id, AttemptDisposition.MALFORMED, "reset_malformed", "",
             )
             accounting.record(receipt)
-            error = TypeError("WorldEnvironment.reset returned a malformed contract")
-            attach_start_boundary_evidence(
-                error, StartBoundaryEvidence(receipt, accounting.snapshot()),
+            raise AgentSessionStartError(
+                AcquisitionStatus.FAILED,
+                AcquisitionOrigin.RESET,
+                "reset_malformed",
+                StartBoundaryEvidence(receipt, accounting.snapshot()),
+                "TypeError",
             )
-            raise error
         receipt = AttemptReceipt(
             attempt_id,
             AttemptOperation.RESET,

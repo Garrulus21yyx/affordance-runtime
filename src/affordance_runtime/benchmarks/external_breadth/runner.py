@@ -39,6 +39,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
 
 REQUIRED_METRICS = (
     "observations", "executions", "turns", "currentness_probes",
@@ -64,6 +65,7 @@ async def run_breadth_campaign(
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
     for case in manifest.cases:
         validate_pacing_budget(case.max_turns, manifest.minimum_policy_call_interval_s, case.timeout_s, 5.0)
+    configured_identity = _validate_formal_policy(policy, manifest)
     output_dir.mkdir(parents=True, exist_ok=False)
     digest = breadth_manifest_digest(manifest)
     run_id = f"miniwob-60:{uuid.uuid4().hex}"
@@ -76,17 +78,20 @@ async def run_breadth_campaign(
     instrumentations: list[BenchmarkInstrumentation] = []
     target_manifest = _target_manifest(manifest, policy, pacing_state, instrumentations)
     harness_digest = target_manifest_digest(target_manifest)
+    if harness_digest != expected_target_manifest_digest(manifest):
+        raise ValueError("target-loop manifest identity is not canonical")
     suite = await run_suite(target_manifest, _progress_callback(progress))
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
     records = tuple(
         _record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True)
     )
     provider, model, grounding = _model_identity(
-        instrumentations, provider_capacity, manifest.grounding_profile,
+        instrumentations, configured_identity,
     )
+    final_sha, final_dirty = _final_git_identity()
     acceptance = _accept_campaign(
         manifest, suite, records, provider, model, grounding, provider_capacity,
-        harness_digest,
+        harness_digest, final_sha, final_dirty,
     )
     progress.completed_cases = len(records)
     progress.success_count = acceptance.successful_cases
@@ -200,7 +205,7 @@ def _record(case, result) -> MiniWobBreadthCaseRecord:
 
 def _accept_campaign(
     manifest, suite, records, provider, model, grounding, provider_capacity,
-    harness_digest,
+    harness_digest, final_sha, final_dirty,
 ) -> MiniWobBreadthCampaignAcceptance:
     errors: list[str] = []
     identities = tuple(item.case_id for item in records)
@@ -221,6 +226,8 @@ def _accept_campaign(
         errors.append("suite identity/schema/digest does not match the frozen manifest")
     if suite.identity.git_dirty:
         errors.append("campaign git tree is dirty")
+    if final_dirty or final_sha != suite.identity.git_sha:
+        errors.append("campaign git identity changed during execution")
     if provider != "mistral" or model != manifest.model_profile or grounding != manifest.grounding_profile:
         errors.append("campaign model identity does not match the frozen profile")
     required_budget = sum(item.max_turns for item in manifest.cases)
@@ -277,8 +284,15 @@ def _accept_campaign(
         "provider_retry_count", "fallback_count", "cleanup_failures",
         "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",
     ):
-        if sum(_integer(item.result, name) for item in records):
-            errors.append(f"campaign safety metric {name} is nonzero")
+        for item in records:
+            measurement = item.result.measurements.get(name)
+            if (
+                measurement is None
+                or not measurement.measured
+                or type(measurement.value) is not int
+                or measurement.value != 0
+            ):
+                errors.append(f"{item.case_id}: campaign safety metric {name} is unavailable or nonzero")
     successful = sum(item.outcome is MiniWobTaskOutcome.SUCCESS for item in records)
     return MiniWobBreadthCampaignAcceptance(not errors, tuple(errors), 60, len(records), successful)
 
@@ -299,24 +313,66 @@ def _progress_callback(progress: CampaignProgressWriter):
 
 def _model_identity(
     instrumentations,
-    provider_capacity: ProviderCapacityEvidence | None,
-    expected_grounding: str,
+    configured: tuple[str, str, str],
 ) -> tuple[str, str, str]:
     metadata = [item.model_metadata for item in instrumentations if item.model_metadata is not None]
-    if provider_capacity is None:
-        return "", "", ""
-    configured = (
-        provider_capacity.provider_id,
-        provider_capacity.model_id,
-        provider_capacity.grounding_profile,
-    )
     if not metadata:
         return configured
     providers = {item.provider_id for item in metadata}
     models = {item.model_id for item in metadata}
     grounding = {item.grounding_profile_version for item in metadata}
     observed = _single(providers), _single(models), _single(grounding)
-    return observed if observed == configured and configured[2] == expected_grounding else ("", "", "")
+    return observed if observed == configured else ("", "", "")
+
+
+def _validate_formal_policy(
+    policy: object,
+    manifest: MiniWobBreadthManifest,
+) -> tuple[str, str, str]:
+    if not isinstance(policy, ModelBackedAgentPolicy) or not isinstance(
+        policy.port, ModelPortDecisionAdapter
+    ):
+        raise TypeError("formal breadth campaign requires ModelBackedAgentPolicy")
+    adapter = policy.port
+    provider = getattr(adapter.port, "provider", "")
+    model = getattr(adapter.port, "model", "")
+    identity = provider, model, adapter.grounding_profile_version
+    if (
+        identity != ("mistral", manifest.model_profile, manifest.grounding_profile)
+        or adapter.config.rate_limit_retries != 0
+        or adapter.config.transient_retries != 0
+    ):
+        raise ValueError("formal breadth policy identity is not the frozen profile")
+    return identity
+
+
+def expected_target_manifest_digest(manifest: MiniWobBreadthManifest) -> str:
+    cases = tuple(
+        BenchmarkCase(
+            case.case_id,
+            manifest.campaign_id,
+            case.capability_profile,
+            _unreachable_factory,
+            _unreachable_factory,
+            _unreachable_factory,
+            _TERMINAL_STATUSES,
+            case.timeout_s,
+            case.seed,
+            REQUIRED_METRICS,
+        )
+        for case in manifest.cases
+    )
+    return target_manifest_digest(BenchmarkManifest(
+        manifest.schema_version,
+        manifest.campaign_id,
+        "mistral-format-only-v1",
+        7,
+        cases,
+    ))
+
+
+def _unreachable_factory(*_args):
+    raise RuntimeError("identity-only benchmark factory")
 
 
 def _single(values: set[str]) -> str:
@@ -353,3 +409,13 @@ def _git_sha() -> str:
     import subprocess
 
     return subprocess.run(("git", "rev-parse", "HEAD"), check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _final_git_identity() -> tuple[str, bool]:
+    import subprocess
+
+    sha = _git_sha()
+    dirty = bool(subprocess.run(
+        ("git", "status", "--short"), check=True, capture_output=True, text=True,
+    ).stdout.strip())
+    return sha, dirty

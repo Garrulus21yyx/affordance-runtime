@@ -170,14 +170,37 @@ def test_thrown_reset_failure_carries_privacy_safe_attempt_truth(failure) -> Non
     async def scenario() -> None:
         environment = RaisingReset(initial_observation=_world("unused"))
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
-        with pytest.raises(type(failure)) as captured:
+        expected = asyncio.CancelledError if isinstance(failure, asyncio.CancelledError) else AgentSessionStartError
+        with pytest.raises(expected) as captured:
             await AgentEpisodeRunner(loop).start(environment, _task())
-        evidence = captured.value.start_boundary_evidence
+        evidence = captured.value.start_evidence
         assert evidence.receipt.operation.value == "reset"
         assert evidence.receipt.disposition.value in {"threw", "cancelled"}
         assert evidence.accounting.observation_attempts == 1
         assert evidence.accounting.receipt_count == 1
         assert "private reset detail" not in repr(evidence)
+
+    asyncio.run(scenario())
+
+
+def test_immutable_foreign_reset_exception_is_normalized_without_losing_receipt() -> None:
+    class ImmutableError(Exception):
+        def __setattr__(self, name, value):
+            raise AttributeError("immutable error")
+
+    class RaisingReset(StaticEnvironment):
+        async def reset(self, task):
+            self.reset_calls += 1
+            raise ImmutableError("private reset detail")
+
+    async def scenario() -> None:
+        environment = RaisingReset(initial_observation=_world("unused"))
+        loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
+        with pytest.raises(AgentSessionStartError) as captured:
+            await AgentEpisodeRunner(loop).start(environment, _task())
+        assert captured.value.exception_class == "ImmutableError"
+        assert captured.value.start_evidence.accounting.receipt_count == 1
+        assert isinstance(captured.value.__cause__, ImmutableError)
 
     asyncio.run(scenario())
 

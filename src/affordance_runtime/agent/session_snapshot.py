@@ -31,6 +31,8 @@ class PartialEpisodeSnapshot:
     latest_control_status: str = ""
     latest_control_reason_code: str = ""
     latest_acquisition_request_kind: str = ""
+    latest_attempt_operation: str = ""
+    latest_attempt_reason_code: str = ""
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
@@ -57,6 +59,11 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
     latest_control = (
         state.recent_control_transitions[-1]
         if state.recent_control_transitions
+        else None
+    )
+    latest_receipt = (
+        latest_control.attempt_receipts[-1]
+        if latest_control is not None and latest_control.attempt_receipts
         else None
     )
     return PartialEpisodeSnapshot(
@@ -86,6 +93,8 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         latest_control.acquisition.request_kind
         if latest_control is not None and latest_control.acquisition is not None
         else "",
+        str(latest_receipt.operation) if latest_receipt is not None else "",
+        latest_receipt.reason_code if latest_receipt is not None else "",
     )
 
 

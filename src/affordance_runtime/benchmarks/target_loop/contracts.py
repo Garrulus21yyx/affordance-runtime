@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import platform
 import subprocess
 import sys
@@ -29,11 +30,22 @@ class MetricMeasurement:
     unit: str = "count"
 
     def __post_init__(self) -> None:
+        if type(self.measured) is not bool:
+            raise TypeError("metric measured flag must be boolean")
         if self.measured == (self.value is None):
             raise ValueError("measured metrics require a value and unmeasured metrics require None")
-        if self.opportunities is not None and self.opportunities < 0:
+        if self.value is not None and (
+            isinstance(self.value, bool)
+            or not isinstance(self.value, int | float)
+            or not math.isfinite(self.value)
+            or self.value < 0
+        ):
+            raise ValueError("measured metric values must be finite non-negative numbers")
+        if self.opportunities is not None and (
+            type(self.opportunities) is not int or self.opportunities < 0
+        ):
             raise ValueError("metric opportunities cannot be negative")
-        if not self.unit:
+        if not isinstance(self.unit, str) or not self.unit or len(self.unit) > 32:
             raise ValueError("metric unit is required")
 
 
@@ -100,14 +112,20 @@ class FailureFacts:
     harness_integrity_code: str = ""
 
     def __post_init__(self) -> None:
+        if not isinstance(self.component_origin, CaseFailureOrigin):
+            raise TypeError("component failure origin must be typed")
         for value in (
             self.runtime_reason_code, self.agent_failure_code, self.policy_failure_code,
             self.component_code, self.watchdog_code, self.cleanup_code,
             self.harness_integrity_code,
         ):
+            if not isinstance(value, str):
+                raise TypeError("failure fact codes must be strings")
             if value and (len(value) > 96 or not value.replace("_", "").isalnum()):
                 raise ValueError("failure fact codes must be bounded identifiers")
         for value in (self.component_exception_class, self.cleanup_exception_class):
+            if not isinstance(value, str):
+                raise TypeError("failure exception classes must be strings")
             if value and (len(value) > 128 or not value.replace("_", "").isalnum()):
                 raise ValueError("failure exception classes must be bounded names")
         has_component = self.component_origin is not CaseFailureOrigin.NONE
@@ -256,6 +274,75 @@ class BenchmarkCaseResult:
     harness_schema_version: str = "target-loop-harness.v6"
 
     def __post_init__(self) -> None:
+        text_fields = (
+            self.case_id,
+            self.status,
+            self.failure_reason,
+            self.termination_origin,
+            self.case_failure_code,
+            self.latest_task_status,
+            self.latest_action_evaluation_status,
+            self.latest_semantic_attempt_key_digest,
+            self.last_progress_event_type,
+            self.failure_code,
+            self.exception_class,
+            self.last_decision_type,
+            self.last_policy_failure_code,
+            self.last_world_coverage,
+            self.pending_kind,
+            self.runtime_reason_code,
+            self.agent_failure_code,
+            self.cleanup_failure_code,
+            self.cleanup_exception_class,
+            self.harness_integrity_code,
+            self.case_schema_version,
+            self.suite_id,
+            self.profile_id,
+            self.manifest_digest,
+            self.harness_schema_version,
+        )
+        if any(
+            not isinstance(value, str)
+            or len(value) > 512
+            or any(ord(character) < 32 for character in value)
+            for value in text_fields
+        ):
+            raise TypeError("benchmark case text fields must be bounded strings")
+        if (
+            not self.case_id
+            or type(self.execution_completed) is not bool
+            or isinstance(self.latency_ms, bool)
+            or not isinstance(self.latency_ms, int | float)
+            or not math.isfinite(self.latency_ms)
+            or self.latency_ms < 0
+        ):
+            raise ValueError("benchmark case scalar contract is invalid")
+        if self.terminal_reason_code is not None and not isinstance(
+            self.terminal_reason_code, TerminalReasonCode
+        ):
+            raise TypeError("terminal reason code must be typed")
+        if not isinstance(self.failure_origin, CaseFailureOrigin):
+            raise TypeError("failure origin must be typed")
+        integer_fields = (
+            self.same_attempt_streak,
+            self.no_progress_count,
+            self.last_action_space_option_count,
+            self.last_world_target_count,
+            self.seed,
+            self.cleanup_failures,
+            self.harness_integrity_failures,
+        )
+        if any(type(value) is not int or value < 0 for value in integer_fields):
+            raise ValueError("benchmark case counts must be non-negative integers")
+        if type(self.partial_episode_available) is not bool or type(self.watchdog_triggered) is not bool:
+            raise TypeError("benchmark case flags must be boolean")
+        if not isinstance(self.measurements, Mapping) or any(
+            not isinstance(name, str) or not isinstance(value, MetricMeasurement)
+            for name, value in self.measurements.items()
+        ):
+            raise TypeError("benchmark measurements must be typed")
+        if not isinstance(self.failure_facts, FailureFacts):
+            raise TypeError("benchmark failure facts must be typed")
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
         if blocked and self.terminal_reason_code is None:
             raise ValueError("blocked case result requires a terminal reason code")
@@ -278,8 +365,10 @@ class BenchmarkCaseResult:
             raise ValueError("cleanup failure count must be zero or one")
         if self.harness_integrity_failures not in {0, 1}:
             raise ValueError("harness integrity failure count must be zero or one")
-        if not self.case_schema_version or not self.harness_schema_version:
-            raise ValueError("benchmark case evidence requires schema identity")
+        if self.case_schema_version != "target-loop-case.v6":
+            raise ValueError("benchmark case evidence schema is unsupported")
+        if self.harness_schema_version != "target-loop-harness.v6":
+            raise ValueError("benchmark harness evidence schema is unsupported")
         identity_values = (self.suite_id, self.profile_id, self.manifest_digest)
         if any(identity_values) and not all(identity_values):
             raise ValueError("benchmark case evidence identity must be complete")
