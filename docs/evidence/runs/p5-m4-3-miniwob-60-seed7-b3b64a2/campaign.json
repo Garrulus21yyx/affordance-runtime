@@ -1,0 +1,881 @@
+{
+  "acceptance": {
+    "completed_cases": 60,
+    "errors": [],
+    "evidence_valid": true,
+    "planned_cases": 60,
+    "successful_cases": 6
+  },
+  "campaign_id": "miniwob-60-seed7-v1",
+  "cases": [
+    {
+      "case_id": "miniwob-60-01",
+      "executions": 0,
+      "model_latency_ms": 3580.455,
+      "observations": 0,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "login-user",
+      "total_tokens": 4402,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-02",
+      "executions": 0,
+      "model_latency_ms": 1876.23,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "stock-market",
+      "total_tokens": 1280,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-03",
+      "executions": 1,
+      "model_latency_ms": 961.017,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-collapsible-nodelay",
+      "total_tokens": 1242,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-04",
+      "executions": 0,
+      "model_latency_ms": 1222.536,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "email-inbox-forward-nl",
+      "total_tokens": 999,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-05",
+      "executions": 0,
+      "model_latency_ms": 1105.086,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "grid-coordinate",
+      "total_tokens": 1006,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-06",
+      "executions": 2,
+      "model_latency_ms": 8518.670999999998,
+      "observations": 3,
+      "provider_attempts": 3,
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "task_family_label": "form-sequence-2",
+      "total_tokens": 8430,
+      "turns": 2,
+      "typed_outcome": "runtime_rejected"
+    },
+    {
+      "case_id": "miniwob-60-07",
+      "executions": 0,
+      "model_latency_ms": 14754.935999999998,
+      "observations": 1,
+      "provider_attempts": 10,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "tic-tac-toe",
+      "total_tokens": 13629,
+      "turns": 10,
+      "typed_outcome": "turn_budget_exhausted"
+    },
+    {
+      "case_id": "miniwob-60-08",
+      "executions": 1,
+      "model_latency_ms": 1083.136,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "phone-book",
+      "total_tokens": 2315,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-09",
+      "executions": 0,
+      "model_latency_ms": 2791.802,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-checkboxes-large",
+      "total_tokens": 1292,
+      "turns": 0,
+      "typed_outcome": "wrong_destination"
+    },
+    {
+      "case_id": "miniwob-60-10",
+      "executions": 2,
+      "model_latency_ms": 2361.8140000000003,
+      "observations": 3,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-button-sequence",
+      "total_tokens": 3080,
+      "turns": 2,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-11",
+      "executions": 0,
+      "model_latency_ms": 2080.812,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "read-table",
+      "total_tokens": 1691,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-12",
+      "executions": 0,
+      "model_latency_ms": 1365.821,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "simple-algebra",
+      "total_tokens": 1728,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-13",
+      "executions": 0,
+      "model_latency_ms": 3624.7650000000003,
+      "observations": 0,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "text-transform",
+      "total_tokens": 3344,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-14",
+      "executions": 0,
+      "model_latency_ms": 8338.289,
+      "observations": 1,
+      "provider_attempts": 6,
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "task_family_label": "order-food",
+      "total_tokens": 7122,
+      "turns": 5,
+      "typed_outcome": "runtime_rejected"
+    },
+    {
+      "case_id": "miniwob-60-15",
+      "executions": 2,
+      "model_latency_ms": 3972.717,
+      "observations": 3,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "enter-text-2",
+      "total_tokens": 3633,
+      "turns": 2,
+      "typed_outcome": "success"
+    },
+    {
+      "case_id": "miniwob-60-16",
+      "executions": 0,
+      "model_latency_ms": 2331.052,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "unicode-test",
+      "total_tokens": 2479,
+      "turns": 0,
+      "typed_outcome": "runtime_rejected"
+    },
+    {
+      "case_id": "miniwob-60-17",
+      "executions": 0,
+      "model_latency_ms": 11624.092999999999,
+      "observations": 1,
+      "provider_attempts": 8,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "social-media-all",
+      "total_tokens": 10424,
+      "turns": 8,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-18",
+      "executions": 0,
+      "model_latency_ms": 2245.245,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-tab",
+      "total_tokens": 1773,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-19",
+      "executions": 1,
+      "model_latency_ms": 2387.963,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-test-2",
+      "total_tokens": 1499,
+      "turns": 1,
+      "typed_outcome": "success"
+    },
+    {
+      "case_id": "miniwob-60-20",
+      "executions": 0,
+      "model_latency_ms": 1155.496,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "find-greatest",
+      "total_tokens": 1279,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-21",
+      "executions": 1,
+      "model_latency_ms": 1077.913,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-option",
+      "total_tokens": 1238,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-22",
+      "executions": 1,
+      "model_latency_ms": 1439.667,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-checkboxes-transfer",
+      "total_tokens": 1243,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-23",
+      "executions": 1,
+      "model_latency_ms": 2026.508,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-test",
+      "total_tokens": 1242,
+      "turns": 1,
+      "typed_outcome": "success"
+    },
+    {
+      "case_id": "miniwob-60-24",
+      "executions": 1,
+      "model_latency_ms": 1438.796,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "task_family_label": "buy-ticket",
+      "total_tokens": 2066,
+      "turns": 1,
+      "typed_outcome": "success"
+    },
+    {
+      "case_id": "miniwob-60-25",
+      "executions": 10,
+      "model_latency_ms": 19776.318,
+      "observations": 11,
+      "provider_attempts": 10,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "generate-number",
+      "total_tokens": 18349,
+      "turns": 10,
+      "typed_outcome": "turn_budget_exhausted"
+    },
+    {
+      "case_id": "miniwob-60-26",
+      "executions": 0,
+      "model_latency_ms": 19342.404,
+      "observations": 1,
+      "provider_attempts": 10,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "email-inbox-noscroll",
+      "total_tokens": 13701,
+      "turns": 10,
+      "typed_outcome": "turn_budget_exhausted"
+    },
+    {
+      "case_id": "miniwob-60-27",
+      "executions": 1,
+      "model_latency_ms": 8823.705999999998,
+      "observations": 2,
+      "provider_attempts": 3,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "copy-paste",
+      "total_tokens": 7323,
+      "turns": 1,
+      "typed_outcome": "no_progress_repetition"
+    },
+    {
+      "case_id": "miniwob-60-28",
+      "executions": 0,
+      "model_latency_ms": 14677.498,
+      "observations": 1,
+      "provider_attempts": 9,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-link",
+      "total_tokens": 11934,
+      "turns": 8,
+      "typed_outcome": "runtime_rejected"
+    },
+    {
+      "case_id": "miniwob-60-29",
+      "executions": 2,
+      "model_latency_ms": 2914.666,
+      "observations": 3,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "enter-text-dynamic",
+      "total_tokens": 3603,
+      "turns": 2,
+      "typed_outcome": "success"
+    },
+    {
+      "case_id": "miniwob-60-30",
+      "executions": 1,
+      "model_latency_ms": 1319.415,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-test-transfer",
+      "total_tokens": 1504,
+      "turns": 1,
+      "typed_outcome": "success"
+    },
+    {
+      "case_id": "miniwob-60-31",
+      "executions": 0,
+      "model_latency_ms": 1157.44,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-button",
+      "total_tokens": 2499,
+      "turns": 0,
+      "typed_outcome": "wrong_destination"
+    },
+    {
+      "case_id": "miniwob-60-32",
+      "executions": 2,
+      "model_latency_ms": 2869.04,
+      "observations": 3,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "multi-layouts",
+      "total_tokens": 5467,
+      "turns": 2,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-33",
+      "executions": 0,
+      "model_latency_ms": 13699.609999999999,
+      "observations": 1,
+      "provider_attempts": 10,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "email-inbox",
+      "total_tokens": 13621,
+      "turns": 10,
+      "typed_outcome": "turn_budget_exhausted"
+    },
+    {
+      "case_id": "miniwob-60-34",
+      "executions": 0,
+      "model_latency_ms": 10720.728,
+      "observations": 1,
+      "provider_attempts": 7,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-pie-nodelay",
+      "total_tokens": 8900,
+      "turns": 7,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-35",
+      "executions": 3,
+      "model_latency_ms": 5499.286,
+      "observations": 4,
+      "provider_attempts": 3,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "login-user-popup",
+      "total_tokens": 6840,
+      "turns": 3,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-36",
+      "executions": 0,
+      "model_latency_ms": 5179.85,
+      "observations": 1,
+      "provider_attempts": 3,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-menu",
+      "total_tokens": 3244,
+      "turns": 2,
+      "typed_outcome": "runtime_rejected"
+    },
+    {
+      "case_id": "miniwob-60-37",
+      "executions": 0,
+      "model_latency_ms": 3455.687,
+      "observations": 1,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "focus-text-2",
+      "total_tokens": 4796,
+      "turns": 0,
+      "typed_outcome": "wrong_parameters"
+    },
+    {
+      "case_id": "miniwob-60-38",
+      "executions": 0,
+      "model_latency_ms": 12885.275,
+      "observations": 1,
+      "provider_attempts": 8,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "hot-cold",
+      "total_tokens": 10174,
+      "turns": 7,
+      "typed_outcome": "runtime_rejected"
+    },
+    {
+      "case_id": "miniwob-60-39",
+      "executions": 0,
+      "model_latency_ms": 1247.235,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "read-table-2",
+      "total_tokens": 2193,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-40",
+      "executions": 1,
+      "model_latency_ms": 5273.567,
+      "observations": 2,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate",
+        "select"
+      ],
+      "task_family_label": "choose-list",
+      "total_tokens": 3928,
+      "turns": 1,
+      "typed_outcome": "wrong_destination"
+    },
+    {
+      "case_id": "miniwob-60-41",
+      "executions": 1,
+      "model_latency_ms": 2102.551,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "number-checkboxes",
+      "total_tokens": 1251,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-42",
+      "executions": 1,
+      "model_latency_ms": 1090.185,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-shades",
+      "total_tokens": 1235,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-43",
+      "executions": 0,
+      "model_latency_ms": 12947.43,
+      "observations": 1,
+      "provider_attempts": 6,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "social-media-some",
+      "total_tokens": 7294,
+      "turns": 6,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-44",
+      "executions": 0,
+      "model_latency_ms": 6130.5779999999995,
+      "observations": 1,
+      "provider_attempts": 4,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "social-media",
+      "total_tokens": 4470,
+      "turns": 4,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-45",
+      "executions": 10,
+      "model_latency_ms": 16107.110000000002,
+      "observations": 11,
+      "provider_attempts": 10,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-menu-2",
+      "total_tokens": 16138,
+      "turns": 10,
+      "typed_outcome": "turn_budget_exhausted"
+    },
+    {
+      "case_id": "miniwob-60-46",
+      "executions": 1,
+      "model_latency_ms": 1943.338,
+      "observations": 2,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "task_family_label": "form-sequence-3",
+      "total_tokens": 1766,
+      "turns": 1,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-47",
+      "executions": 0,
+      "model_latency_ms": 7844.374,
+      "observations": 1,
+      "provider_attempts": 6,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "email-inbox-nl-turk",
+      "total_tokens": 7099,
+      "turns": 6,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-48",
+      "executions": 0,
+      "model_latency_ms": 2427.955,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-tab-2",
+      "total_tokens": 1794,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-49",
+      "executions": 0,
+      "model_latency_ms": 13764.438999999998,
+      "observations": 1,
+      "provider_attempts": 10,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-pie",
+      "total_tokens": 14241,
+      "turns": 10,
+      "typed_outcome": "turn_budget_exhausted"
+    },
+    {
+      "case_id": "miniwob-60-50",
+      "executions": 0,
+      "model_latency_ms": 2237.685,
+      "observations": 0,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate",
+        "fill",
+        "select"
+      ],
+      "task_family_label": "book-flight",
+      "total_tokens": 2631,
+      "turns": 0,
+      "typed_outcome": "environment_failure"
+    },
+    {
+      "case_id": "miniwob-60-51",
+      "executions": 0,
+      "model_latency_ms": 4589.5509999999995,
+      "observations": 1,
+      "provider_attempts": 2,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "focus-text",
+      "total_tokens": 2997,
+      "turns": 0,
+      "typed_outcome": "no_progress_repetition"
+    },
+    {
+      "case_id": "miniwob-60-52",
+      "executions": 0,
+      "model_latency_ms": 12083.621,
+      "observations": 1,
+      "provider_attempts": 6,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "ascending-numbers",
+      "total_tokens": 7104,
+      "turns": 6,
+      "typed_outcome": "other_typed_failure"
+    },
+    {
+      "case_id": "miniwob-60-53",
+      "executions": 4,
+      "model_latency_ms": 16879.915,
+      "observations": 5,
+      "provider_attempts": 7,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "copy-paste-2",
+      "total_tokens": 25758,
+      "turns": 4,
+      "typed_outcome": "no_progress_repetition"
+    },
+    {
+      "case_id": "miniwob-60-54",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "use-spinner",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    },
+    {
+      "case_id": "miniwob-60-55",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-tab-2-hard",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    },
+    {
+      "case_id": "miniwob-60-56",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "choose-date-nodelay",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    },
+    {
+      "case_id": "miniwob-60-57",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate",
+        "fill"
+      ],
+      "task_family_label": "email-inbox-forward-nl-turk",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    },
+    {
+      "case_id": "miniwob-60-58",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-tab-2-easy",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    },
+    {
+      "case_id": "miniwob-60-59",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "click-collapsible",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    },
+    {
+      "case_id": "miniwob-60-60",
+      "executions": 0,
+      "model_latency_ms": 0.0,
+      "observations": 1,
+      "provider_attempts": 1,
+      "required_primitives": [
+        "activate"
+      ],
+      "task_family_label": "visual-addition",
+      "total_tokens": 0,
+      "turns": 0,
+      "typed_outcome": "provider_unavailable"
+    }
+  ],
+  "classification": "MINIWOB_60_SEEDED_BREADTH_PROFILE",
+  "complete": true,
+  "git_dirty": false,
+  "git_sha": "b3b64a2c338f0bc76af5d7a16dfddfed513152c4",
+  "manifest_digest": "sha256:ae83bb8f0d16fc89f4d47262f921642a8a808eb7e378e5be19f348a6ef0f9d17",
+  "run_id": "miniwob-60:43ba3c64bdf942bd9ecb3bea9d850587",
+  "schema_version": "miniwob-breadth-campaign.v1"
+}

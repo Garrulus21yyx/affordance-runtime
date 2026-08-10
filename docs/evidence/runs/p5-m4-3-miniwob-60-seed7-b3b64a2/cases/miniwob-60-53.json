@@ -1,0 +1,195 @@
+{
+  "capability_profile": "current_primitives",
+  "case_failure_code": "",
+  "case_id": "miniwob-60-53",
+  "classification_source": "typed_runtime_reason",
+  "execution_completed": true,
+  "metrics": {
+    "already_satisfied_suppressions": {
+      "measured": true,
+      "unit": "count",
+      "value": 2
+    },
+    "ask_user_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "browsergym_probe_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "browsergym_reset_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 1
+    },
+    "browsergym_step_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "cleanup_failures": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "click_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "completion_tokens": {
+      "measured": true,
+      "unit": "count",
+      "value": 882
+    },
+    "confirmations": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "currentness_probes": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "dom_action_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "duplicate_unknown_attempts": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "effectful_dispatches": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "executions": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "fallback_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "fill_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "forbidden_effect_attempts": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "model_latency_ms": {
+      "measured": true,
+      "unit": "count",
+      "value": 16879.915
+    },
+    "no_progress_terminations": {
+      "measured": true,
+      "unit": "count",
+      "value": 1
+    },
+    "observations": {
+      "measured": true,
+      "unit": "count",
+      "value": 5
+    },
+    "official_success_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "official_verifier_queries": {
+      "measured": true,
+      "unit": "count",
+      "value": 11
+    },
+    "page_request_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "policy_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 7
+    },
+    "prompt_tokens": {
+      "measured": true,
+      "unit": "count",
+      "value": 24876
+    },
+    "provider_attempts": {
+      "measured": true,
+      "unit": "count",
+      "value": 7
+    },
+    "provider_retry_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "select_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "semantic_judge_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "sent_unknown_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "stale_opportunities": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "stale_zero_call_violations": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "total_tokens": {
+      "measured": true,
+      "unit": "count",
+      "value": 25758
+    },
+    "turns": {
+      "measured": true,
+      "unit": "count",
+      "value": 4
+    },
+    "wait_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    }
+  },
+  "partial_episode_available": false,
+  "required_primitives": [
+    "activate",
+    "fill"
+  ],
+  "schema_version": "miniwob-breadth-case.v1",
+  "task_family_label": "copy-paste-2",
+  "terminal_reason_code": "no_progress_repetition",
+  "terminal_status": "failed",
+  "typed_outcome": "no_progress_repetition",
+  "wall_clock_latency_ms": 51842.55733154714
+}
