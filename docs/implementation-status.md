@@ -326,3 +326,16 @@ privacy-safe partial session snapshot and identify `harness_watchdog` /
 regressions pass for enter-text normal/repeat containment, choose-list, and
 click-button. The formal `cd49b8e` smoke remains `FAILED / case timeout`;
 `LIVE_SMOKE=NOT_RUN_THIS_SLICE`, and no attestation was generated.
+
+## P5-M4.3 MiniWoB-60 harness status
+
+The `external_breadth` harness is `READY`. Its frozen manifest is derived from
+the actual 0.14.3 registry, a pre-result static capability inventory, and the
+namespace `miniwob-60-seeded-breadth.v1`. Exactly 60 current-primitive cases
+use seed 7, ten turns, a 120-second watchdog, one-stage format-only Mistral,
+global 7.5-second pacing, and zero retry/fallback. Campaign evidence may be
+valid when individual tasks fail, but only after all 60 cases receive one
+typed classification and report-tree, cleanup, safety, exact-head, and privacy
+gates pass. The formal campaign remains `NOT_RUN` until the final clean pushed
+HEAD. Generalization is `NOT_CLAIMED`; Runtime, AgentLoop, parser/admission,
+prompt, adapter semantics, and the default Coordinator are unchanged.

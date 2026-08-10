@@ -26,7 +26,7 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
     if result.case_failure_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
-    policy = result.policy_failure_kind.removeprefix("ModelFailureKind.").casefold()
+    policy = result.case_failure_code.removeprefix("policy_").casefold()
     if policy == "provider_unavailable":
         return ClassifiedOutcome(MiniWobTaskOutcome.PROVIDER_UNAVAILABLE, "typed_policy_failure")
     if policy == "timeout":

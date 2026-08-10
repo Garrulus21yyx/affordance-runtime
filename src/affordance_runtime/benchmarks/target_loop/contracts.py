@@ -172,7 +172,6 @@ class BenchmarkCaseResult:
     same_attempt_streak: int = 0
     no_progress_count: int = 0
     last_progress_event_type: str = ""
-    policy_failure_kind: str = ""
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)

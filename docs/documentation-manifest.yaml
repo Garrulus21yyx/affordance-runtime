@@ -192,6 +192,10 @@ reference:
     path: docs/reviews/2026-08-10-p5-m4-2-verified-progress-repeated-action-containment.md
     lifecycle: current
 
+  - role: p5_m4_3_miniwob_60_seeded_breadth
+    path: docs/reviews/2026-08-10-p5-m4-3-miniwob-60-seeded-breadth.md
+    lifecycle: current
+
 immutable_records:
   - path: docs/evidence/
     lifecycle: immutable_record

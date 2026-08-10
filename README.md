@@ -279,3 +279,16 @@ most three route-free progress events, and a harness watchdog preserves a
 privacy-safe partial episode snapshot instead of reporting zero activity. The
 historical formal run at `cd49b8e` remains failed by case timeout; no local
 result backfills it. Format-only and the default Coordinator remain unchanged.
+
+## MiniWoB seeded breadth profile
+
+P5-M4.3 adds `MINIWOB_60_SEEDED_BREADTH_PROFILE`. The installed
+`browsergym-miniwob==0.14.3` registry and reviewed MiniWoB source are censused
+before execution. A static primitive inventory admits only tasks expressible
+with `activate`, `fill`, and `select`; SHA-256 ordering then freezes 60 cases
+without using model outcomes. The formal campaign is seed 7, serial,
+format-only, Mistral medium 3.5, 7.5-second fixed pacing, ten turns, 120 seconds,
+zero retry, and zero fallback. Reports separate evidence validity from task
+success and retain no prompt, response, oracle, reward, or private route. This
+is in-family synthetic breadth evidence, not GUI generalization or a complete
+MiniWoB benchmark.

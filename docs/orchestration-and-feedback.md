@@ -196,3 +196,13 @@ repeat under the same task/criterion/output/relevant-target fingerprint returns
 typed `NO_PROGRESS_REPETITION`. Different values, relevant progress, or a
 confirmed effect reset the streak. Runtime never chooses Submit or another
 replacement action.
+
+## Breadth campaign orchestration
+
+The MiniWoB-60 runner creates cases in frozen manifest order, shares one fixed
+pacing state across case boundaries, and delegates every episode to the normal
+AgentEpisodeRunner/AgentLoop. A case outcome is classified only after the loop
+or harness terminates. Failure advances to the next case without retry;
+process interruption leaves `complete=false` and a later run must start all 60
+cases under a new run ID. Capability labels and aggregate feedback remain
+offline measurement and cannot route production decisions.

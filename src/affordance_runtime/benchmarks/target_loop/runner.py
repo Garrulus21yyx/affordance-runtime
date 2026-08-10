@@ -170,6 +170,8 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
     failure_code = "case_timeout" if failure == "case timeout" else ""
     if result is not None and result.message == "agent loop turn budget exhausted":
         failure_code = "turn_budget_exhausted"
+    if result is not None and result.policy_failure is not None:
+        failure_code = f"policy_{result.policy_failure.kind}"
     return BenchmarkCaseResult(
         case_id=case_id,
         status=str(result.status) if result else str(AgentLoopStatus.FAILED),
@@ -194,9 +196,6 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=
         same_attempt_streak=partial.same_attempt_streak if partial is not None else 0,
         no_progress_count=partial.no_progress_count if partial is not None else 0,
         last_progress_event_type=partial.last_progress_event_type if partial is not None else "",
-        policy_failure_kind=(
-            str(result.policy_failure.kind) if result is not None and result.policy_failure is not None else ""
-        ),
     )
 
 

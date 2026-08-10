@@ -398,3 +398,11 @@ progress; and watchdog reports preserve partial session evidence. The fixed
 simple-task budget is 10 turns within the existing 120-second timeout. The
 historical `cd49b8e` fixed smoke remains failed by case timeout, and no live
 provider or external smoke was run for this correction.
+
+P5-M4.3 inserts one bounded evidence step before deciding whether P5-E is next.
+It freezes 60 tasks from the pinned MiniWoB registry by static current-primitive
+classification and deterministic hashing, then measures one seed through the
+unchanged one-stage target loop. It adds no primitive, planner, prompt,
+Runtime admission, recovery, retry, fallback, or default-path behavior.
+Outcome attribution can direct a later separately authorized phase, but this
+single synthetic-family run does not prove seed stability or GUI generalization.

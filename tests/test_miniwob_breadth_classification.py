@@ -36,7 +36,7 @@ def test_success_provider_and_no_progress_are_typed_separately() -> None:
         },
     )
     assert classify_case(success).outcome is MiniWobTaskOutcome.SUCCESS
-    assert classify_case(_result(policy_failure_kind="provider_unavailable")).outcome is MiniWobTaskOutcome.PROVIDER_UNAVAILABLE
+    assert classify_case(_result(case_failure_code="policy_provider_unavailable")).outcome is MiniWobTaskOutcome.PROVIDER_UNAVAILABLE
     repeated = _result(terminal_reason_code=TerminalReasonCode.NO_PROGRESS_REPETITION)
     assert classify_case(repeated).outcome is MiniWobTaskOutcome.NO_PROGRESS_REPETITION
 

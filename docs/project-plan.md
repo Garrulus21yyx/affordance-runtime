@@ -190,3 +190,8 @@ different requested values remain executable, while a mechanically satisfied
 exact value is zero-call and an unchanged repeat is bounded. Timeout evidence
 now preserves partial episode counts. The `cd49b8e` formal smoke remains a
 recorded case-timeout failure; this local closure does not change its status.
+
+P5-M4.3 is one frozen 60-task, single-seed MiniWoB breadth profile before the
+P5-E decision. It is a diagnostic gate inside one synthetic benchmark family.
+It neither changes product authority nor satisfies long-horizon, multi-surface,
+seed-robustness, generalization, or default-cutover completion gates.

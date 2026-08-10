@@ -228,3 +228,16 @@ one-stage Mistral `format-only.v1`, fixed 7.5-second pacing, zero retry/fallback
 attestation and preflight are accepted. The protected fixed-smoke workflow is
 `CONFIGURED_AND_MANUALLY_GATED`; the latest execution result is determined by
 its exact-head artifact. Adapter CI is not used as a substitute.
+
+## MiniWoB-60 seed-7 breadth campaign
+
+`miniwob-60-seed7-v1` is selected before live execution by sorting admitted
+registry IDs on `sha256("miniwob-60-seeded-breadth.v1" + NUL + task_id)` and
+taking the first 60. The committed manifest binds package/source, registry and
+inventory digests, case order, seed, budget, model, grounding, and pacing.
+Execution is serial with a fresh environment/session per case and one global
+pacing clock. Task failure continues the campaign; interruption invalidates
+the run and cannot resume or merge. Summary rates include overall,
+provider-available, and infrastructure-clean denominators, with zero
+denominators represented as null. The classification is
+`MINIWOB_60_SEEDED_BREADTH_PROFILE`; generalization remains unclaimed.

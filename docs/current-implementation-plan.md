@@ -146,3 +146,14 @@ per simple case so `(max_turns - 1) * 7.5s` remains below its 120s watchdog
 after a fixed 5s scheduling margin. No live provider, protected workflow, or
 external smoke belongs to this slice. The historical `cd49b8e` timeout remains
 the formal result until a separately authorized exact-head run occurs.
+
+## P5-M4.3 seeded breadth queue
+
+The next bounded activity is the frozen MiniWoB-60 seed-7 in-family campaign,
+not P5-E implementation. Registry census, primitive inventory, deterministic
+selection, typed attribution, atomic non-resumable progress, privacy-safe case
+reports, and exact-head attestation are repository-owned. Dynamic success
+counts and run identity remain outside source control. After one complete
+campaign, failure distribution selects the next review among primitive breadth,
+projection, policy relevance, progress/evaluation, seed robustness, or P5-E.
+No campaign result may tune the production prompt during the run.

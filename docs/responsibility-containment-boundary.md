@@ -222,3 +222,12 @@ execute/suppress/terminate disposition; `agent/session_snapshot` owns a
 read-only privacy-safe in-flight view. Progress projection cannot modify
 ActionSpace, choose a replacement action, import benchmark IDs, retain raw
 parameters, bind BrowserGym routes, or resume a timed-out session.
+
+`benchmarks/external_breadth` owns registry census, offline capability labels,
+deterministic manifest selection, serial orchestration, typed post-run
+classification, and privacy-bounded evidence. It reuses the existing
+BrowserGym environment and target-loop runner. Neither inventory nor task ID
+enters TaskGoal, AgentContext, ActionSpace, or policy metadata. Campaign
+classification cannot change Runtime, adapter projection, progress control,
+prompt, retry, fallback, or the next action. Atomic progress is observational
+only and is never resume, skip, replay, or backfill authority.

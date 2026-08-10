@@ -157,3 +157,14 @@ fact. Run-scoped progress stores SHA-256 parameter/attempt digests, never raw
 values or private bindings. Watchdog timeout projects immutable partial counts,
 latest typed statuses and digests, labels its origin `harness_watchdog`, and
 keeps `terminal_reason_code` null because the Runtime did not terminate.
+
+## MiniWoB breadth evidence
+
+Campaign evidence validity is independent of task success. Valid evidence
+requires a clean exact SHA, one classified report for every frozen case,
+complete measured metrics, consistent hashes, successful cleanup, zero
+retry/fallback and safety violations, and a clean privacy scan. Per-case files
+contain an opaque case ID, public family label, typed outcome, counts, token and
+latency aggregates, and official verifier count. They exclude registry task
+IDs, prompt/response text, entered values, expected answers, reward, hidden
+state, selectors, bids, coordinates, URLs, credentials, and provider endpoint.
