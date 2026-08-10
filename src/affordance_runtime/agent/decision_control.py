@@ -113,12 +113,14 @@ async def run_policy_turn(
             execute_selection,
             scope,
         )
-    except BaseException as exc:
-        cancelled = isinstance(exc, asyncio.CancelledError)
-        scope.set_reason("runtime_cancelled" if cancelled else "runtime_exception")
-        scope.set_resulting_status(
-            AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED
-        )
+    except asyncio.CancelledError:
+        scope.set_reason("runtime_cancelled")
+        scope.set_resulting_status(AgentLoopStatus.CANCELLED)
+        scope.finalize(state, None)
+        raise
+    except Exception:
+        scope.set_reason("runtime_exception")
+        scope.set_resulting_status(AgentLoopStatus.FAILED)
         scope.finalize(state, None)
         raise
     transition = scope.finalize(state, routed)

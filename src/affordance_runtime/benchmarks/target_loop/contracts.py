@@ -166,7 +166,7 @@ class BenchmarkRunIdentity:
     python_version: str
     platform: str
     manifest_schema_version: str = "target-loop-manifest.v1"
-    harness_schema_version: str = "target-loop-harness.v4"
+    harness_schema_version: str = "target-loop-harness.v5"
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:
@@ -209,6 +209,9 @@ class BenchmarkCaseResult:
     cleanup_failure_code: str = ""
     cleanup_exception_class: str = ""
     cleanup_failures: int = 0
+    watchdog_triggered: bool = False
+    harness_integrity_code: str = ""
+    harness_integrity_failures: int = 0
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
@@ -231,6 +234,8 @@ class BenchmarkCaseResult:
             raise ValueError("cleanup exception metadata must be a bounded class name")
         if self.cleanup_failures not in {0, 1}:
             raise ValueError("cleanup failure count must be zero or one")
+        if self.harness_integrity_failures not in {0, 1}:
+            raise ValueError("harness integrity failure count must be zero or one")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 

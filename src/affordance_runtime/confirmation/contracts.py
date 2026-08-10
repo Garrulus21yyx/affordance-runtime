@@ -38,6 +38,8 @@ class ConfirmationDecision:
     decision: ConfirmationDecisionKind
 
     def __post_init__(self) -> None:
+        if not isinstance(self.decision, ConfirmationDecisionKind):
+            raise TypeError("decision must be a ConfirmationDecisionKind")
         if not self.confirmation_id.strip() or not self.subject_id.strip():
             raise ValueError("confirmation decision requires request and subject identity")
 

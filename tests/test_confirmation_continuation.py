@@ -12,6 +12,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
+from affordance_runtime.risk import RiskDecisionKind, RiskPolicy
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
@@ -707,11 +708,80 @@ def test_confirmation_action_space_exception_closes_same_root_after_capture() ->
         root = session.state.recent_control_transitions[0]
         assert root.transition_id == root_id
         assert root.after_observation_id == "fresh"
+        assert root.task_evaluation is not None
+        assert root.task_evaluation.observation_id == "fresh"
         assert root.reason_code == "runtime_exception"
         assert root.resulting_status is AgentLoopStatus.FAILED
         assert session.state.control_transition_total_count == 1
         assert session.approved_confirmation is None
         assert session.confirmation_continuation_scope is None
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_capability_accessor_exception_is_not_a_physical_capture() -> None:
+    class RaisingCapabilitiesEnvironment(StaticEnvironment):
+        raise_capability = False
+
+        def __getattribute__(self, name):
+            if (
+                name == "observation_capabilities"
+                and object.__getattribute__(self, "raise_capability")
+            ):
+                raise RuntimeError("private capability detail")
+            return super().__getattribute__(name)
+
+    async def scenario() -> None:
+        environment = RaisingCapabilitiesEnvironment([_world("old", False, "#old")])
+        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        environment.raise_capability = True
+        with pytest.raises(RuntimeError, match="private capability detail"):
+            await session.resolve_confirmation(_decision(paused))
+        root = session.state.recent_control_transitions[0]
+        assert environment.capture_calls == 0
+        assert root.acquisition_attempts == ()
+        assert session.observation_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> None:
+    class BlockingFreshRisk:
+        calls = 0
+
+        def assess(self, task, selection):
+            self.calls += 1
+            assessment = RiskPolicy().assess(task, selection)
+            if self.calls > 1:
+                return replace(
+                    assessment,
+                    decision=RiskDecisionKind.BLOCK,
+                    reason="fresh policy blocks execution",
+                )
+            return assessment
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([
+            _world("initial", False, "#initial"),
+            _world("fresh", False, "#fresh"),
+        ])
+        loop = _loop()
+        loop.risk_policy = BlockingFreshRisk()
+        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        paused = await session.run_until_pause()
+
+        blocked = await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert blocked.status is AgentLoopStatus.BLOCKED
+        assert blocked.reason_code == "risk_blocked_after_confirmation"
+        assert root.reason_code == "risk_blocked_after_confirmation"
+        assert root.task_evaluation is not None
+        assert root.task_evaluation.observation_id == "fresh"
+        assert root.execution_attempts == ()
+        assert environment.execute_calls == 0
+        assert session.approved_confirmation is None
 
     asyncio.run(scenario())
 

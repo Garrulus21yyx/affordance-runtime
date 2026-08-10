@@ -27,6 +27,10 @@ class RiskAssessment:
     reason: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.decision, RiskDecisionKind):
+            raise TypeError("decision must be a RiskDecisionKind")
+        if not isinstance(self.risk, ActionRisk):
+            raise TypeError("risk must be an ActionRisk")
         if not self.subject_id.strip() or not self.reason.strip():
             raise ValueError("risk assessment requires subject identity and reason")
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))

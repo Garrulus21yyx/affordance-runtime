@@ -1,3 +1,5 @@
+import pytest
+
 from affordance_runtime.confirmation import (
     ConfirmationDecision,
     ConfirmationDecisionKind,
@@ -12,6 +14,11 @@ from affordance_runtime.world import (
     AgentTargetView,
     AgentWorldView,
 )
+
+
+def test_confirmation_decision_rejects_non_enum_kind() -> None:
+    with pytest.raises(TypeError, match="ConfirmationDecisionKind"):
+        ConfirmationDecision("confirmation:1", "subject:1", "not-a-decision")  # type: ignore[arg-type]
 
 
 def _selection() -> AdmittedActionSelection:

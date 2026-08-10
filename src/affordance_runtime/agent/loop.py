@@ -102,12 +102,12 @@ class AgentLoop:
                     session, result, "task_evaluation_invalid"
                 )
             state.current_task_evaluation = task_evaluation
+            if session.confirmation_continuation_scope is not None:
+                session.confirmation_continuation_scope.record_evaluations(
+                    task=task_evaluation
+                )
             task_status = task_evaluation_loop_status(task_evaluation)
             if task_status is not None:
-                if session.confirmation_continuation_scope is not None:
-                    session.confirmation_continuation_scope.record_evaluations(
-                        task=task_evaluation
-                    )
                 result = self._result(
                     session,
                     task_status,
@@ -185,7 +185,30 @@ class AgentLoop:
             candidates.append((selection, self.risk_policy.assess(session.task, selection)))
         exact = next((item for item in candidates if item[1].subject_id == confirmed.subject_id), None)
         if exact is not None:
-            selection = exact[0]
+            selection, assessment = exact
+            if assessment.decision is RiskDecisionKind.BLOCK:
+                result = self._result(
+                    session,
+                    AgentLoopStatus.BLOCKED,
+                    assessment.reason,
+                    "risk_blocked_after_confirmation",
+                )
+                return self._close_confirmation(
+                    session, result, "risk_blocked_after_confirmation"
+                )
+            if assessment.decision not in {
+                RiskDecisionKind.ALLOW,
+                RiskDecisionKind.NEEDS_CONFIRMATION,
+            }:
+                result = self._result(
+                    session,
+                    AgentLoopStatus.BLOCKED,
+                    "fresh risk decision is invalid",
+                    "risk_invalid_after_confirmation",
+                )
+                return self._close_confirmation(
+                    session, result, "risk_invalid_after_confirmation"
+                )
             execution_page = self.context_builder.execution_page(
                 action_space,
                 session.state,
@@ -291,10 +314,10 @@ class AgentLoop:
             scope.record_admission(AdmissionStatus.REJECTED, "invalid_action_parameters")
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, str(exc))
         assessment = self.risk_policy.assess(task, selection)
-        if assessment.decision == RiskDecisionKind.BLOCK:
+        if assessment.decision is RiskDecisionKind.BLOCK:
             scope.record_admission(AdmissionStatus.REJECTED, "risk_blocked")
             return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, assessment.reason)
-        if assessment.decision == RiskDecisionKind.NEEDS_CONFIRMATION:
+        if assessment.decision is RiskDecisionKind.NEEDS_CONFIRMATION:
             scope.record_admission(
                 AdmissionStatus.CONFIRMATION_REQUIRED,
                 "confirmation_required",
@@ -311,8 +334,19 @@ class AgentLoop:
                 build_agent_world_view(state.current_observation),
             ))
             return build_result(AgentLoopStatus.WAITING_CONFIRMATION, task, state, 0, 0, assessment.reason)
-        scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
-        return selection
+        if assessment.decision is RiskDecisionKind.ALLOW:
+            scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
+            return selection
+        scope.record_admission(AdmissionStatus.REJECTED, "risk_decision_invalid")
+        return build_result(
+            AgentLoopStatus.BLOCKED,
+            task,
+            state,
+            0,
+            0,
+            "risk decision is invalid",
+            reason_code="risk_decision_invalid",
+        )
 
     async def _resolve_confirmation(
         self,
@@ -320,7 +354,24 @@ class AgentLoop:
         decision: ConfirmationDecision,
     ) -> AgentResult:
         pending = session.state.pending_confirmation
-        if session.is_terminal or pending is None or decision.confirmation_id in session.resolved_confirmation_ids:
+        if session.is_terminal:
+            assert session.last_result is not None
+            return session.last_result
+        if pending is None:
+            return self._result(
+                session,
+                AgentLoopStatus.BLOCKED,
+                "no confirmation is pending",
+                "invalid_confirmation_decision",
+            )
+        if not isinstance(decision.decision, ConfirmationDecisionKind):
+            return self._result(
+                session,
+                AgentLoopStatus.WAITING_CONFIRMATION,
+                "confirmation decision kind is invalid",
+                "invalid_confirmation_decision",
+            )
+        if decision.confirmation_id in session.resolved_confirmation_ids:
             return self._result(
                 session,
                 AgentLoopStatus.WAITING_CONFIRMATION,

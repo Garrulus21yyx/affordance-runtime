@@ -167,6 +167,27 @@ def test_projection_defends_against_direct_custom_metric_collision() -> None:
     assert projected.measurements["observations"].value == 0
 
 
+def test_metric_collision_preserves_runtime_and_component_facts_independently() -> None:
+    instrumentation = BenchmarkInstrumentation()
+    instrumentation.record_failure(
+        CaseFailureOrigin.ACTION_EVALUATION,
+        "action_evaluator_exception",
+        RuntimeError("private detail"),
+    )
+    instrumentation.custom_metrics["observations"] = 99
+    projected = project_case_result(
+        "case", _result("runtime_exception"), instrumentation, 1.0, "display only"
+    )
+    assert projected.runtime_reason_code == "runtime_exception"
+    assert projected.case_failure_code == "runtime_exception"
+    assert projected.failure_origin is CaseFailureOrigin.ACTION_EVALUATION
+    assert projected.failure_code == "action_evaluator_exception"
+    assert projected.exception_class == "RuntimeError"
+    assert projected.harness_integrity_code == "metric_name_collision"
+    assert projected.harness_integrity_failures == 1
+    assert projected.measurements["observations"].value == 2
+
+
 def test_watchdog_remains_primary_when_cleanup_also_fails() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.record_failure(
@@ -199,3 +220,16 @@ def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
     )
     assert projected.case_failure_code == "cleanup_exception"
     assert projected.failure_origin is CaseFailureOrigin.CLEANUP
+
+
+def test_dynamic_exception_class_is_safely_normalized_without_losing_component() -> None:
+    instrumentation = BenchmarkInstrumentation()
+    instrumentation.failure_origin = CaseFailureOrigin.ACTION_EVALUATION
+    instrumentation.failure_code = "action_evaluator_exception"
+    instrumentation.exception_class = "private.class/" + "x" * 200
+    projected = project_case_result(
+        "case", _result("runtime_exception"), instrumentation, 1.0, "display only"
+    )
+    assert projected.failure_origin is CaseFailureOrigin.ACTION_EVALUATION
+    assert projected.failure_code == "action_evaluator_exception"
+    assert projected.exception_class == "Exception"

@@ -2,7 +2,11 @@ import asyncio
 from dataclasses import dataclass
 
 from affordance_runtime.agent import AgentLoopStatus, SelectAction
-from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkCase, BenchmarkComposition
+from affordance_runtime.benchmarks.target_loop.contracts import (
+    BenchmarkCase,
+    BenchmarkComposition,
+    CaseFailureOrigin,
+)
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
@@ -138,6 +142,37 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
     assert result.latest_task_status == "incomplete"
     assert result.latest_action_evaluation_status == "unknown"
     assert policy.calls == 2
+
+
+def test_component_timeout_error_is_not_classified_as_watchdog() -> None:
+    class RaisingPolicy:
+        async def decide(self, context):
+            del context
+            raise TimeoutError("component-owned timeout")
+
+    class IncompleteEvaluator:
+        async def evaluate(self, task, observation):
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "incomplete",
+            )
+
+    case = BenchmarkCase(
+        "component-timeout", "suite", "component timeout", lambda: TaskGoal("t", "t"),
+        lambda _metrics: StaticEnvironment([_action_world("observation:one")]),
+        lambda _metrics: BenchmarkComposition(RaisingPolicy(), ActionEvaluator(), IncompleteEvaluator()),
+        (AgentLoopStatus.FAILED,), 2.0, 7, ("observations",),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(run_suite(BenchmarkManifest(
+        "target-loop-manifest.v1", "suite", "deterministic", 7, (case,),
+    ))).cases[0]
+    assert result.case_failure_code != "case_timeout"
+    assert result.failure_origin is not CaseFailureOrigin.HARNESS_WATCHDOG
+    assert result.exception_class == "TimeoutError"
 
 
 def test_runner_preserves_typed_agent_failure_without_message_matching() -> None:

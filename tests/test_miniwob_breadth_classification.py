@@ -49,3 +49,26 @@ def test_timeout_and_runtime_rejection_do_not_use_free_text() -> None:
         terminal_reason_code=TerminalReasonCode.INVALID_ACTION_PARAMETERS,
     )
     assert classify_case(rejected).outcome is MiniWobTaskOutcome.WRONG_PARAMETERS
+
+
+def test_integrity_watchdog_cleanup_and_success_precedence() -> None:
+    integrity = _result(
+        status="done",
+        harness_integrity_code="metric_name_collision",
+        harness_integrity_failures=1,
+        measurements={
+            "official_success_count": MetricMeasurement(1, True),
+            "cleanup_failures": MetricMeasurement(0, True),
+            "sent_unknown_count": MetricMeasurement(0, True),
+        },
+    )
+    assert classify_case(integrity).outcome is MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE
+    watchdog = _result(
+        case_failure_code="case_timeout",
+        measurements={
+            "official_success_count": MetricMeasurement(0, True),
+            "cleanup_failures": MetricMeasurement(1, True),
+            "sent_unknown_count": MetricMeasurement(1, True),
+        },
+    )
+    assert classify_case(watchdog).outcome is MiniWobTaskOutcome.CASE_TIMEOUT

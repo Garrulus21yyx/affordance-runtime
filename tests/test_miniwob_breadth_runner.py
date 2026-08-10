@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
@@ -61,6 +62,28 @@ def test_task_failure_does_not_invalidate_campaign_evidence(monkeypatch, tmp_pat
     outcome = asyncio.run(run_breadth_campaign(_manifest(), object(), tmp_path / "failure-run"))
     assert outcome.acceptance.evidence_valid
     assert outcome.acceptance.successful_cases == 0
+
+
+def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_path: Path) -> None:
+    results = tuple(
+        replace(_result(index, failed=True), case_failure_code="")
+        for index in range(1, 61)
+    )
+
+    async def fake_run_suite(_manifest_value, callback):
+        for index, result in enumerate(results, 1):
+            callback(index, result)
+        return BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(True, ()), {})
+
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
+        fake_run_suite,
+    )
+    outcome = asyncio.run(
+        run_breadth_campaign(_manifest(), object(), tmp_path / "unclassified-run")
+    )
+    assert not outcome.acceptance.evidence_valid
+    assert len(outcome.acceptance.errors) == 60
 
 
 def test_interrupted_campaign_stays_incomplete_and_cannot_resume(monkeypatch, tmp_path: Path) -> None:

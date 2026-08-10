@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -58,15 +59,60 @@ class AgentRunSession:
     async def run_until_pause(self) -> AgentResult:
         if self.last_result is not None:
             return self.last_result
-        self.last_result = await self.agent_loop._run_session(self)
+        try:
+            self.last_result = await self.agent_loop._run_session(self)
+        except asyncio.CancelledError:
+            self._latch_terminal_exception(cancelled=True)
+            raise
+        except Exception:
+            self._latch_terminal_exception(cancelled=False)
+            raise
         return self.last_result
 
     async def resolve_confirmation(self, decision: ConfirmationDecision) -> AgentResult:
         if self.is_terminal:
             assert self.last_result is not None
             return self.last_result
-        self.last_result = await self.agent_loop._resolve_confirmation(self, decision)
+        if self.state.pending_confirmation is None:
+            if self.last_result is not None:
+                return self.last_result
+            from affordance_runtime.agent.result import build_result
+
+            return build_result(
+                AgentLoopStatus.BLOCKED,
+                self.task,
+                self.state,
+                self.observation_count,
+                self.execution_count,
+                "no confirmation is pending",
+                self.currentness_probe_count,
+                reason_code="invalid_confirmation_decision",
+            )
+        try:
+            self.last_result = await self.agent_loop._resolve_confirmation(self, decision)
+        except asyncio.CancelledError:
+            self._latch_terminal_exception(cancelled=True)
+            raise
+        except Exception:
+            self._latch_terminal_exception(cancelled=False)
+            raise
         return self.last_result
+
+    def _latch_terminal_exception(self, *, cancelled: bool) -> None:
+        from affordance_runtime.agent.result import build_result
+
+        status = AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED
+        reason = "runtime_cancelled" if cancelled else "runtime_exception"
+        self.last_result = build_result(
+            status,
+            self.task,
+            self.state,
+            self.observation_count,
+            self.execution_count,
+            reason,
+            self.currentness_probe_count,
+            reason_code=reason,
+        )
 
     @property
     def is_terminal(self) -> bool:

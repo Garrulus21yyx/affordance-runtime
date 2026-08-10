@@ -226,6 +226,8 @@ class ControlTransitionScope:
         self._intent = intent
         self._request_id = request_id
         self._result = result
+        if result.dispatch_status is not DispatchStatus.NOT_SENT:
+            self._task_evaluation = None
         self._executions.append(_execution_summary_from_result(
             request_id, result, currentness_probe_count,
         ))
@@ -356,6 +358,8 @@ class ControlContinuationScope:
         self._intent = intent
         self._request_id = request_id
         self._result = result
+        if result.dispatch_status is not DispatchStatus.NOT_SENT:
+            self._task_evaluation = None
         self._executions.append(_execution_summary_from_result(
             request_id, result, currentness_probe_count,
         ))

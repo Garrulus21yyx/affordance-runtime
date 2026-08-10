@@ -1,11 +1,67 @@
 import asyncio
 
+import pytest
 from test_confirmation_continuation import _decision, _loop, _task, _world
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoopStatus
-from affordance_runtime.confirmation import ConfirmationDecisionKind
+from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.testing import StaticEnvironment
+
+
+def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None:
+    class RaisingEvaluator:
+        calls = 0
+
+        async def evaluate(self, *args):
+            self.calls += 1
+            raise RuntimeError("private evaluator detail")
+
+    async def scenario() -> None:
+        evaluator = RaisingEvaluator()
+        environment = StaticEnvironment(
+            [
+                _world("initial", False, "#initial"),
+                _world("fresh", False, "#fresh"),
+                _world("after", True, "#after"),
+            ],
+            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        )
+        loop = _loop()
+        loop.action_evaluator = evaluator
+        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        paused = await session.run_until_pause()
+        with pytest.raises(RuntimeError, match="private evaluator detail"):
+            await session.resolve_confirmation(_decision(paused))
+
+        terminal = await session.run_until_pause()
+        repeated = await session.resolve_confirmation(ConfirmationDecision(
+            "confirmation:unused", "subject:unused", ConfirmationDecisionKind.DENY
+        ))
+        assert terminal is repeated is session.last_result
+        assert terminal.status is AgentLoopStatus.FAILED
+        assert terminal.reason_code == "runtime_exception"
+        assert terminal.execution_count == 1
+        assert len(environment.executed_requests) == 1
+        assert evaluator.calls == 1
+        assert session.state.control_transition_total_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_without_pending_does_not_create_a_fake_pause() -> None:
+    async def scenario() -> None:
+        session = await AgentEpisodeRunner(_loop()).start(
+            StaticEnvironment([_world("initial", False, "#initial")]), _task()
+        )
+        rejected = await session.resolve_confirmation(ConfirmationDecision(
+            "confirmation:unused", "subject:unused", ConfirmationDecisionKind.DENY
+        ))
+        assert rejected.status is not AgentLoopStatus.WAITING_CONFIRMATION
+        assert rejected.confirmation_request is None
+        assert session.last_result is None
+
+    asyncio.run(scenario())
 
 
 def test_done_session_returns_original_result_after_repeated_confirmation() -> None:

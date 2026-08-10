@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
+from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
@@ -14,18 +15,6 @@ from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
 from affordance_runtime.world import AcquisitionStatus, ObservationRequestKind
-
-_CANONICAL_METRICS = frozenset({
-    "observations", "executions", "currentness_probes", "turns",
-    "policy_calls", "semantic_judge_calls", "provider_attempts",
-    "confirmations", "sent_unknown_count", "duplicate_unknown_attempts",
-    "forbidden_effect_attempts", "stale_opportunities",
-    "stale_zero_call_violations", "effectful_dispatches",
-    "reset_acquisitions", "independent_capture_calls",
-    "post_action_acquisitions", "provider_retry_count", "prompt_tokens",
-    "completion_tokens", "total_tokens", "model_latency_ms",
-    "ask_user_count", "wait_count", "page_request_count", "cleanup_failures",
-})
 
 
 @dataclass
@@ -60,15 +49,13 @@ class BenchmarkInstrumentation:
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
-        if name in _CANONICAL_METRICS:
-            raise ValueError("custom metric cannot override a canonical metric")
+        require_custom_metric_name(name)
         if type(value) is not int or value < 0:
             raise ValueError("custom metric increments must be non-negative integers")
         self.custom_metrics[name] = self.custom_metrics.get(name, 0) + value
 
     def set_custom_metric(self, name: str, value: int | float) -> None:
-        if name in _CANONICAL_METRICS:
-            raise ValueError("custom metric cannot override a canonical metric")
+        require_custom_metric_name(name)
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise ValueError("custom metrics must be numeric")
         if not math.isfinite(value) or value < 0:

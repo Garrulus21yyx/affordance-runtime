@@ -21,7 +21,8 @@ def test_case_result_has_one_metric_authority() -> None:
             "last_policy_failure_code", "last_action_space_option_count",
             "last_world_target_count", "last_world_coverage", "pending_kind",
             "runtime_reason_code", "agent_failure_code", "cleanup_failure_code",
-            "cleanup_exception_class", "cleanup_failures",
+            "cleanup_exception_class", "cleanup_failures", "watchdog_triggered",
+            "harness_integrity_code", "harness_integrity_failures",
         }
 
 

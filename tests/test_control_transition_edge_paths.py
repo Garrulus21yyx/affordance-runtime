@@ -80,6 +80,12 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
         assert session.state.current_observation.observation_id == "after"
         assert session.execution_count == 1
         assert session.observation_count == 2
+        terminal = await session.run_until_pause()
+        assert terminal is session.last_result
+        assert terminal.status is AgentLoopStatus.FAILED
+        assert terminal.reason_code == "runtime_exception"
+        assert terminal.execution_count == 1
+        assert session.state.control_transition_total_count == 1
 
     asyncio.run(scenario())
 
@@ -104,6 +110,11 @@ def test_evaluator_cancellation_preserves_facts_and_propagates() -> None:
         assert root.after_observation_id == "after"
         assert session.execution_count == 1
         assert session.observation_count == 2
+        terminal = await session.run_until_pause()
+        assert terminal is session.last_result
+        assert terminal.status is AgentLoopStatus.CANCELLED
+        assert terminal.reason_code == "runtime_cancelled"
+        assert session.state.control_transition_total_count == 1
 
     asyncio.run(scenario())
 

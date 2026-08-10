@@ -110,11 +110,11 @@ async def _run_case(case) -> BenchmarkCaseResult:
                 CaseFailureOrigin.LOOP_CONSTRUCTION, "loop_construction_exception", exc,
             )
             raise _CaseStageError("AgentLoop construction", exc) from exc
-        result = await asyncio.wait_for(
+        result = await _run_with_watchdog(
             _run_episode(case, loop, counted_environment, task, instrumentation, session_holder),
-            timeout=case.timeout_s,
+            case.timeout_s,
         )
-    except TimeoutError as exc:
+    except _HarnessWatchdogTimeout as exc:
         failure = "case timeout"
         instrumentation.record_failure(CaseFailureOrigin.HARNESS_WATCHDOG, "case_timeout", exc)
         session = session_holder.get("session")
@@ -194,11 +194,31 @@ async def _close(environment) -> None:
         return
 
 
+async def _run_with_watchdog(awaitable, timeout_s: float):
+    """Own the deadline explicitly so component TimeoutError remains component truth."""
+    task = asyncio.create_task(awaitable)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout_s)
+        if task in done:
+            return task.result()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise _HarnessWatchdogTimeout
+    except asyncio.CancelledError:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+
+
 class _CaseStageError(RuntimeError):
     def __init__(self, stage: str, cause: Exception) -> None:
         self.stage = stage
         self.cause = cause
         super().__init__(stage)
+
+
+class _HarnessWatchdogTimeout(RuntimeError):
+    """Private sentinel raised only by the harness-owned deadline."""
 
 
 def _append_failure(current: str, addition: str) -> str:

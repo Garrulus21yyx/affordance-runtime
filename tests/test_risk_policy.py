@@ -4,7 +4,7 @@ import pytest
 
 from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
-from affordance_runtime.risk import RiskDecisionKind, RiskPolicy, semantic_subject_id
+from affordance_runtime.risk import RiskAssessment, RiskDecisionKind, RiskPolicy, semantic_subject_id
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ActionRisk,
@@ -12,6 +12,15 @@ from affordance_runtime.world import (
     AgentTargetView,
     AgentWorldView,
 )
+
+
+@pytest.mark.parametrize(
+    ("decision", "risk"),
+    (("unexpected", ActionRisk.MEDIUM), (RiskDecisionKind.ALLOW, "medium")),
+)
+def test_risk_assessment_rejects_non_enum_values(decision, risk) -> None:
+    with pytest.raises(TypeError):
+        RiskAssessment(decision, risk, (), (), "subject:1", "bounded")
 
 
 def _selection(**changes) -> AdmittedActionSelection:

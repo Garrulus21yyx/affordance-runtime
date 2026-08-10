@@ -20,14 +20,21 @@ class ClassifiedOutcome:
 
 def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     value = _metric(result, "official_success_count")
+    if result.harness_integrity_failures:
+        return ClassifiedOutcome(
+            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "harness_integrity"
+        )
+    if result.watchdog_triggered or result.case_failure_code == "case_timeout":
+        return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
+    if (
+        result.failure_origin is CaseFailureOrigin.CLEANUP
+        or result.case_failure_code == "cleanup_exception"
+    ):
+        return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if result.status == "done" and value == 1:
         return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "mechanical_verifier")
-    if result.failure_origin is CaseFailureOrigin.CLEANUP:
-        return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
-    if result.case_failure_code == "case_timeout":
-        return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
     if result.case_failure_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
     policy = result.case_failure_code.removeprefix("policy_").casefold()

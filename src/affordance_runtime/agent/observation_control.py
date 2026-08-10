@@ -270,14 +270,34 @@ async def capture_for_session(
     scope: ControlTransitionScope | ControlContinuationScope,
 ) -> FreshAcquisition:
     """Perform and monotonically account one Runtime-owned capture boundary."""
+    unavailable = capture_admission_failure(session.environment, request)
+    if unavailable is not None:
+        scope.record_acquisition(
+            unavailable.status,
+            unavailable.actual_origin,
+            unavailable.reason_code,
+            0,
+            request.kind,
+            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        )
+        return _with_request(unavailable, request.kind)
     try:
-        acquired = await capture_fresh(session.environment, previous_id, request)
+        acquisition = await session.environment.capture(request)
     except asyncio.CancelledError:
         _record_capture_exception(session, scope, request, "capture_cancelled")
         raise
     except Exception:
         _record_capture_exception(session, scope, request, "capture_exception")
         raise
+    acquired = _with_request(
+        validate_fresh_acquisition(
+            acquisition,
+            previous_id,
+            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+            attempts_override=1,
+        ),
+        request.kind,
+    )
     session.observation_count += acquired.attempts
     scope.record_acquisition(
         acquired.status,

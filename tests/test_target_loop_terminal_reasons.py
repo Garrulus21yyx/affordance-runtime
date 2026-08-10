@@ -48,7 +48,7 @@ def test_no_progress_failure_projects_typed_reason_without_message_matching() ->
 
 def test_typed_terminal_reason_advances_harness_contract() -> None:
     assert BenchmarkRunIdentity.__dataclass_fields__["harness_schema_version"].default == (
-        "target-loop-harness.v4"
+        "target-loop-harness.v5"
     )
 
 

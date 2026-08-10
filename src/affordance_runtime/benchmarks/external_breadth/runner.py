@@ -203,9 +203,23 @@ def _accept_campaign(manifest, suite, records, provider, model, grounding) -> Mi
     if provider != "mistral" or model != manifest.model_profile or grounding != manifest.grounding_profile:
         errors.append("campaign model identity does not match the frozen profile")
     for record in records:
-        missing = [name for name in REQUIRED_METRICS if not record.result.measurements[name].measured]
+        missing = [
+            name
+            for name in REQUIRED_METRICS
+            if name not in record.result.measurements
+            or not record.result.measurements[name].measured
+        ]
         if missing:
             errors.append(f"{record.case_id}: required metrics are incomplete")
+        if record.outcome in {
+            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE,
+            MiniWobTaskOutcome.OTHER_TYPED_FAILURE,
+        }:
+            errors.append(f"{record.case_id}: outcome is not fully classified")
+        if record.result.harness_integrity_failures:
+            errors.append(f"{record.case_id}: harness integrity failed")
+        if record.result.cleanup_failures:
+            errors.append(f"{record.case_id}: cleanup failed")
     for name in (
         "provider_retry_count", "fallback_count", "cleanup_failures",
         "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",
