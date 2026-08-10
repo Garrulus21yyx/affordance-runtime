@@ -52,6 +52,7 @@ class AgentLoopState:
     remaining_turns: int = 20
     final_result: dict[str, object] = field(default_factory=dict)
     recent_progress_events: tuple[ProgressEvent, ...] = ()
+    progress_event_total_count: int = 0
     recent_turn_limit: int = 12
     progress_event_limit: int = 3
 
@@ -64,6 +65,7 @@ class AgentLoopState:
             *self.recent_progress_events,
             event,
         )[-self.progress_event_limit :]
+        self.progress_event_total_count += 1
         self.progress_revision += 1
 
     def set_active_objective(self, objective: LocalObjective) -> None:

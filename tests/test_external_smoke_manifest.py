@@ -19,6 +19,7 @@ def test_external_smoke_manifest_is_fixed_reviewed_and_mechanical_only() -> None
         "browsergym/miniwob.enter-text",
         "browsergym/miniwob.choose-list",
     ]
+    assert all(item.max_turns == 10 for item in manifest.cases)
 
 
 def test_external_case_contract_has_no_oracle_or_private_route_fields() -> None:

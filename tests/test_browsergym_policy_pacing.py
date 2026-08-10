@@ -1,6 +1,11 @@
 import asyncio
 
-from affordance_runtime.benchmarks.external_smoke.pacing import PacedAgentPolicy
+import pytest
+
+from affordance_runtime.benchmarks.external_smoke.pacing import (
+    PacedAgentPolicy,
+    validate_pacing_budget,
+)
 
 
 class Policy:
@@ -26,3 +31,9 @@ def test_fixed_pacing_waits_between_calls_without_changing_decisions() -> None:
     asyncio.run(run())
     assert waits == [5.0]
     assert policy.calls == 2 and policy.total_wait_s == 5.0
+
+
+def test_pacing_budget_coherence_accepts_valid_and_rejects_impossible_schedule() -> None:
+    validate_pacing_budget(10, 7.5, 120.0, 5.0)
+    with pytest.raises(ValueError, match="minimum pacing schedule"):
+        validate_pacing_budget(20, 7.5, 120.0, 5.0)

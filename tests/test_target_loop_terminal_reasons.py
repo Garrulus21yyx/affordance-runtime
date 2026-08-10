@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import replace
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkManifest,
@@ -39,6 +39,14 @@ def test_terminal_reason_projection_never_copies_unknown_runtime_detail() -> Non
 
 def test_nonblocked_result_has_no_terminal_reason() -> None:
     assert project_terminal_reason_code(AgentLoopStatus.DONE, "task complete") is None
+
+
+def test_no_progress_failure_projects_typed_reason_without_message_matching() -> None:
+    assert project_terminal_reason_code(
+        AgentLoopStatus.FAILED,
+        "detail is not an authority",
+        AgentFailureCode.NO_PROGRESS_REPETITION,
+    ) is TerminalReasonCode.NO_PROGRESS_REPETITION
 
 
 def test_typed_terminal_reason_advances_harness_contract() -> None:

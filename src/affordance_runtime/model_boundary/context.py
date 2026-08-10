@@ -70,6 +70,17 @@ class IntentContextView:
 
 
 @dataclass(frozen=True)
+class AgentProgressEventView:
+    event_type: str
+    semantic_action: str
+    target_id: str
+    attempt_key_digest: str
+    effect_status: str
+    task_status: str
+    strategy_transition_required: bool
+
+
+@dataclass(frozen=True)
 class AgentProgressView:
     plan_summary: AgentPlanView | None
     active_objective: str
@@ -77,6 +88,7 @@ class AgentProgressView:
     verified_public_facts: tuple[PublicFactView, ...]
     unresolved_criteria: BoundedSection[str]
     unresolved_outputs: BoundedSection[str]
+    events: BoundedSection[AgentProgressEventView]
     truncated: bool = False
 
 

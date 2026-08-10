@@ -1,6 +1,6 @@
 """Privacy-safe projection of Runtime terminal messages for benchmark evidence."""
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.benchmarks.target_loop.contracts import TerminalReasonCode
 
 _EXACT_BLOCKED_REASONS = {
@@ -42,8 +42,11 @@ _INVALID_PARAMETER_EXACT = {
 def project_terminal_reason_code(
     status: AgentLoopStatus,
     message: str,
+    failure_code: AgentFailureCode | None = None,
 ) -> TerminalReasonCode | None:
     """Return a bounded code without copying message content into evidence."""
+    if failure_code == AgentFailureCode.NO_PROGRESS_REPETITION:
+        return TerminalReasonCode.NO_PROGRESS_REPETITION
     if status != AgentLoopStatus.BLOCKED:
         return None
     exact = _EXACT_BLOCKED_REASONS.get(message)

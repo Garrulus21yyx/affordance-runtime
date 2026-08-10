@@ -50,3 +50,16 @@ class PacedAgentPolicy:
         self.state.last_call_started_s = now
         self.state.calls += 1
         return await self.wrapped.decide(context)
+
+
+def validate_pacing_budget(
+    max_turns: int,
+    minimum_interval_s: float,
+    timeout_s: float,
+    scheduling_margin_s: float,
+) -> None:
+    if min(max_turns, timeout_s) <= 0 or min(minimum_interval_s, scheduling_margin_s) < 0:
+        raise ValueError("pacing budget values must be non-negative and bounded")
+    minimum_schedule_s = (max_turns - 1) * minimum_interval_s
+    if minimum_schedule_s >= timeout_s - scheduling_margin_s:
+        raise ValueError("minimum pacing schedule exhausts the case watchdog budget")

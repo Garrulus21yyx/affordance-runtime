@@ -47,6 +47,11 @@ class AgentRunSession:
         self.context_generation += 1
         return self.context_generation
 
+    def snapshot_partial_episode(self):
+        from affordance_runtime.agent.session_snapshot import snapshot_partial_episode
+
+        return snapshot_partial_episode(self)
+
     async def run_until_pause(self) -> AgentResult:
         if self.last_result is not None:
             return self.last_result

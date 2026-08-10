@@ -1,13 +1,22 @@
 import asyncio
 from dataclasses import dataclass
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import AgentLoopStatus, SelectAction
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkCase, BenchmarkComposition
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.task import TaskGoal
+from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import CoverageState, WorldObservation
+from affordance_runtime.world import (
+    ActionBinding,
+    CoverageState,
+    ObservationSourceProfile,
+    SemanticTarget,
+    StateFact,
+    SurfaceObservation,
+    WorldObservation,
+)
 
 
 @dataclass
@@ -57,3 +66,74 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
     assert result.acceptance.accepted
     assert events == ["start:a", "close:a", "start:b", "close:b"]
     assert [item.case_id for item in result.cases] == ["a", "b"]
+
+
+def _action_world(observation_id: str) -> WorldObservation:
+    target = SemanticTarget("target:button", "button", "Continue")
+    fact = StateFact(f"fact:{observation_id}:enabled", target.target_id, "enabled", True, observation_id)
+    binding = ActionBinding(
+        f"binding:{observation_id}", observation_id, observation_id, f"revision:{observation_id}",
+        f"fingerprint:{observation_id}", target.target_id, target.target_id, "dom", "dom",
+        "activate", "click", "local_reversible", ("advanced",),
+        {"type": "object", "properties": {}, "additionalProperties": False}, {},
+    )
+    source = SurfaceObservation(
+        observation_id, "dom", f"revision:{observation_id}", ObservationSourceProfile.dom(),
+        (target,), (fact,), (binding,),
+    )
+    return WorldObservation(
+        observation_id, (target,), (fact,), (binding,), {"dom": CoverageState.COMPLETE},
+        sources=(source,),
+    )
+
+
+def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
+    class ExecuteThenHangPolicy:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if self.calls == 1:
+                return SelectAction(context.context_id, context.actions.options[0].action_id)
+            await asyncio.Event().wait()
+
+    class IncompleteEvaluator:
+        async def evaluate(self, task, observation):
+            return TaskEvaluation(
+                task.task_id, observation.observation_id, TaskEvaluationStatus.INCOMPLETE, "incomplete"
+            )
+
+    policy = ExecuteThenHangPolicy()
+
+    def task():
+        return TaskGoal(
+            "timeout", "Exercise timeout snapshot", allowed_effects=("advanced",),
+            risk_profile=RiskProfile.LOW, loop_budget=LoopBudget(4, 6),
+        )
+    case = BenchmarkCase(
+        "timeout", "suite", "timeout snapshot", task,
+        lambda _metrics: StaticEnvironment(
+            [_action_world("observation:one"), _action_world("observation:two")],
+            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        ),
+        lambda _metrics: BenchmarkComposition(policy, ActionEvaluator(), IncompleteEvaluator()),
+        (AgentLoopStatus.FAILED,), 0.05, 7, ("observations", "executions", "turns"),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(run_suite(BenchmarkManifest(
+        "target-loop-manifest.v1", "suite", "deterministic", 7, (case,),
+    ))).cases[0]
+
+    assert result.failure_reason == "case timeout"
+    assert result.termination_origin == "harness_watchdog"
+    assert result.case_failure_code == "case_timeout"
+    assert result.partial_episode_available is True
+    assert result.terminal_reason_code is None
+    assert result.measurements["observations"].value == 2
+    assert result.measurements["executions"].value == 1
+    assert result.measurements["turns"].value == 1
+    assert result.latest_task_status == "incomplete"
+    assert result.latest_action_evaluation_status == "unknown"
+    assert policy.calls == 2

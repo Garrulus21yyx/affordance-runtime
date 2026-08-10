@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.progress_projection import project_progress_events
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
 from affordance_runtime.model_boundary.budgets import (
     DEFAULT_MAX_TOTAL_WAIT_MS,
@@ -237,7 +238,12 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved_outputs),
             len(unresolved_outputs) > max_unresolved,
         ),
-        truncated=len(unresolved) > max_unresolved or len(unresolved_outputs) > max_unresolved,
+        events=project_progress_events(state),
+        truncated=(
+            len(unresolved) > max_unresolved
+            or len(unresolved_outputs) > max_unresolved
+            or state.progress_event_total_count > len(state.recent_progress_events)
+        ),
     )
 
 
@@ -273,6 +279,17 @@ def _fit_context(
             progress = replace(context.progress, verified_public_facts=(), truncated=True)
             context = replace(context, progress=progress)
             continue
+        if context.progress.events.items:
+            events = BoundedSection(
+                context.progress.events.items[1:],
+                context.progress.events.total_count,
+                True,
+            )
+            context = replace(
+                context,
+                progress=replace(context.progress, events=events, truncated=True),
+            )
+            continue
         if context.history.items:
             history = BoundedSection(
                 context.history.items[1:],
@@ -298,5 +315,6 @@ def _fit_context(
         conflicts=context.world.conflicts.truncated,
         artifacts=context.world.artifact_summaries.truncated,
         history=context.history.truncated,
+        progress_events=context.progress.events.truncated,
     )
     return replace(context, budgets=replace(context.budgets, section_truncation=flags))

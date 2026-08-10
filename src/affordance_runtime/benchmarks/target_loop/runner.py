@@ -6,7 +6,7 @@ import asyncio
 import inspect
 import time
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, AgentRunSession
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
@@ -59,6 +59,8 @@ async def _run_case(case) -> BenchmarkCaseResult:
     instrumentation = BenchmarkInstrumentation()
     environment = None
     result = None
+    partial = None
+    session_holder: dict[str, AgentRunSession] = {}
     failure = ""
     started = time.perf_counter()
     try:
@@ -79,11 +81,14 @@ async def _run_case(case) -> BenchmarkCaseResult:
         except Exception as exc:
             raise _CaseStageError("AgentLoop construction", exc) from exc
         result = await asyncio.wait_for(
-            _run_episode(case, loop, counted_environment, task, instrumentation),
+            _run_episode(case, loop, counted_environment, task, instrumentation, session_holder),
             timeout=case.timeout_s,
         )
     except TimeoutError:
         failure = "case timeout"
+        session = session_holder.get("session")
+        if session is not None:
+            partial = session.snapshot_partial_episode()
     except _CaseStageError as exc:
         failure = f"{exc.stage} failed: {type(exc.cause).__name__}"
     except Exception as exc:
@@ -95,7 +100,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
             except Exception:
                 failure = _append_failure(failure, "cleanup failed")
     elapsed = (time.perf_counter() - started) * 1000
-    return _case_result(case.case_id, result, instrumentation, elapsed, failure)
+    return _case_result(case.case_id, result, instrumentation, elapsed, failure, partial)
 
 
 def _build_loop(composition, instrumentation):
@@ -109,8 +114,9 @@ def _build_loop(composition, instrumentation):
     return loop
 
 
-async def _run_episode(case, loop, environment, task, instrumentation):
+async def _run_episode(case, loop, environment, task, instrumentation, session_holder):
     session = await AgentEpisodeRunner(loop).start(environment, task)
+    session_holder["session"] = session
     result = await session.run_until_pause()
     if case.auto_confirm and result.status == AgentLoopStatus.WAITING_CONFIRMATION:
         request = result.confirmation_request
@@ -135,13 +141,13 @@ async def _close(environment) -> None:
         return
 
 
-def _case_result(case_id, result, instrumentation, latency_ms, failure) -> BenchmarkCaseResult:
+def _case_result(case_id, result, instrumentation, latency_ms, failure, partial=None) -> BenchmarkCaseResult:
     turns = result.turns if result is not None else ()
-    sent_unknown = sum(
+    sent_unknown = partial.sent_unknown_count if partial is not None else sum(
         item.result is not None and item.result.dispatch_status == DispatchStatus.SENT_UNKNOWN
         for item in turns
     )
-    values = _metric_values(result, turns, instrumentation, sent_unknown)
+    values = _metric_values(result, turns, instrumentation, sent_unknown, partial)
     measurements = {
         name: MetricMeasurement(value, True) for name, value in values.items()
     }
@@ -159,18 +165,36 @@ def _case_result(case_id, result, instrumentation, latency_ms, failure) -> Bench
         latency_ms=latency_ms,
         measurements=measurements,
         terminal_reason_code=(
-            project_terminal_reason_code(result.status, result.message) if result is not None else None
+            project_terminal_reason_code(result.status, result.message, result.failure_code)
+            if result is not None else None
         ),
+        termination_origin="harness_watchdog" if failure == "case timeout" else "",
+        case_failure_code="case_timeout" if failure == "case timeout" else "",
+        partial_episode_available=partial is not None,
+        latest_task_status=partial.latest_task_status if partial is not None else "",
+        latest_action_evaluation_status=(
+            partial.latest_action_evaluation_status if partial is not None else ""
+        ),
+        latest_semantic_attempt_key_digest=(
+            partial.latest_semantic_attempt_key_digest if partial is not None else ""
+        ),
+        same_attempt_streak=partial.same_attempt_streak if partial is not None else 0,
+        no_progress_count=partial.no_progress_count if partial is not None else 0,
+        last_progress_event_type=partial.last_progress_event_type if partial is not None else "",
     )
 
 
-def _metric_values(result, turns, state, sent_unknown) -> dict[str, int]:
+def _metric_values(result, turns, state, sent_unknown, partial=None) -> dict[str, int]:
     metadata = state.model_metadata
+    observations = result.observation_count if result else partial.observation_count if partial else 0
+    executions = result.execution_count if result else partial.execution_count if partial else 0
+    probes = result.currentness_probe_count if result else partial.currentness_probe_count if partial else 0
+    completed_turns = len(turns) if result else partial.completed_turn_count if partial else 0
     values = {
-        "observations": result.observation_count if result else 0,
-        "executions": result.execution_count if result else 0,
-        "currentness_probes": result.currentness_probe_count if result else 0,
-        "turns": len(turns),
+        "observations": observations,
+        "executions": executions,
+        "currentness_probes": probes,
+        "turns": completed_turns,
         "policy_calls": state.policy_calls,
         "semantic_judge_calls": state.semantic_judge_calls,
         "provider_attempts": state.provider_attempts,

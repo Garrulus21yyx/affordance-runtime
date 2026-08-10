@@ -12,7 +12,10 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_environment import 
 from affordance_runtime.benchmarks.external_smoke.composition import BrowserGymMechanicalActionEvaluator
 from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.external_smoke.manifest import EXTERNAL_SMOKE_MANIFEST
-from affordance_runtime.benchmarks.external_smoke.pacing import PacedAgentPolicy
+from affordance_runtime.benchmarks.external_smoke.pacing import (
+    PacedAgentPolicy,
+    validate_pacing_budget,
+)
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCase,
     BenchmarkComposition,
@@ -52,6 +55,13 @@ async def run_fixed_external_smoke(
     seed: int = 7,
     minimum_policy_call_interval_s: float = 7.5,
 ) -> FixedExternalSmokeOutcome:
+    for case in EXTERNAL_SMOKE_MANIFEST.cases:
+        validate_pacing_budget(
+            case.max_turns,
+            minimum_policy_call_interval_s,
+            case.timeout_s,
+            5.0,
+        )
     paced = PacedAgentPolicy(policy, minimum_policy_call_interval_s)
     instrumentations: list[BenchmarkInstrumentation] = []
     manifest = _manifest(seed, paced, instrumentations)

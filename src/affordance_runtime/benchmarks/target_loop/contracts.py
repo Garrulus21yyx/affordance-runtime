@@ -57,6 +57,7 @@ class TerminalReasonCode(StrEnum):
     WAIT_BUDGET_EXHAUSTED = "wait_budget_exhausted"
     STALE_BOUND_REQUEST = "stale_bound_request"
     INVALID_CONFIRMATION_DECISION = "invalid_confirmation_decision"
+    NO_PROGRESS_REPETITION = "no_progress_repetition"
     BLOCKED_OTHER = "blocked_other"
 
 
@@ -162,12 +163,25 @@ class BenchmarkCaseResult:
     latency_ms: float
     measurements: Mapping[str, MetricMeasurement] = field(default_factory=dict)
     terminal_reason_code: TerminalReasonCode | None = None
+    termination_origin: str = ""
+    case_failure_code: str = ""
+    partial_episode_available: bool = False
+    latest_task_status: str = ""
+    latest_action_evaluation_status: str = ""
+    latest_semantic_attempt_key_digest: str = ""
+    same_attempt_streak: int = 0
+    no_progress_count: int = 0
+    last_progress_event_type: str = ""
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
         if blocked and self.terminal_reason_code is None:
             raise ValueError("blocked case result requires a terminal reason code")
-        if not blocked and self.terminal_reason_code is not None:
+        no_progress = (
+            self.status == str(AgentLoopStatus.FAILED)
+            and self.terminal_reason_code == TerminalReasonCode.NO_PROGRESS_REPETITION
+        )
+        if not blocked and not no_progress and self.terminal_reason_code is not None:
             raise ValueError("non-blocked case result cannot carry a terminal reason code")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 

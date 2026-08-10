@@ -1,4 +1,6 @@
 import asyncio
+import json
+from dataclasses import FrozenInstanceError
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.result import AgentFailureCode
@@ -9,6 +11,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
@@ -81,10 +84,12 @@ class RepeatedFillPolicy:
     def __init__(self) -> None:
         self.calls = 0
         self.context_ids: list[str] = []
+        self.contexts = []
 
     async def decide(self, context):
         self.calls += 1
         self.context_ids.append(context.context_id)
+        self.contexts.append(context)
         option = next(item for item in context.actions.options if item.semantic_action == "fill")
         return SelectAction(context.context_id, option.action_id, {"value": "desired"})
 
@@ -143,6 +148,13 @@ def test_already_satisfied_selection_is_zero_call_then_typed_failure() -> None:
         assert binder.calls == 0
         assert policy.calls == 2
         assert len(set(policy.context_ids)) == 2
+        events = policy.contexts[1].progress.events
+        assert len(events.items) == 1
+        assert events.items[0].event_type == "already_satisfied_selection"
+        assert events.items[0].strategy_transition_required is True
+        progress_json = json.dumps(to_json_compatible(policy.contexts[1].progress))
+        assert "desired" not in progress_json
+        assert "private_route" not in progress_json
 
     asyncio.run(scenario())
 
@@ -154,7 +166,8 @@ def test_effectful_fill_executes_once_then_repeat_is_contained() -> None:
             [_world("observation:one", ""), _world("observation:two", "desired")],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        result = await AgentEpisodeRunner(_loop(policy)).run(environment, _task())
+        session = await AgentEpisodeRunner(_loop(policy)).start(environment, _task())
+        result = await session.run_until_pause()
 
         assert result.status is AgentLoopStatus.FAILED
         assert result.failure_code is AgentFailureCode.NO_PROGRESS_REPETITION
@@ -163,5 +176,21 @@ def test_effectful_fill_executes_once_then_repeat_is_contained() -> None:
         assert len(environment.executed_requests) == 1
         assert policy.calls == 3
         assert result.turns[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+        snapshot = session.snapshot_partial_episode()
+        assert snapshot.observation_count == 2
+        assert snapshot.execution_count == 1
+        assert snapshot.completed_turn_count == 3
+        assert snapshot.latest_task_status == "incomplete"
+        assert snapshot.latest_action_evaluation_status == "effect_confirmed"
+        assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
+        assert snapshot.same_attempt_streak == 2
+        assert snapshot.no_progress_count == 2
+        assert snapshot.last_progress_event_type == "already_satisfied_selection"
+        try:
+            snapshot.execution_count = 2
+        except FrozenInstanceError:
+            pass
+        else:
+            raise AssertionError("partial episode snapshot must be read-only")
 
     asyncio.run(scenario())

@@ -22,7 +22,7 @@ SOURCE_COMMIT = "7fd85d71a4b60325c6585396ec4f48377d049838"
 def _case(case_id: str, task_id: str, description: str, primitives: tuple[str, ...]) -> ExternalSmokeCase:
     return ExternalSmokeCase(
         case_id, "browsergym-miniwob", task_id, description,
-        20, 120.0, 0, primitives, "environment-native-mechanical",
+        10, 120.0, 0, primitives, "environment-native-mechanical",
         ("done",),
         (
             "observations", "executions", "provider_attempts", "official_success_count",
