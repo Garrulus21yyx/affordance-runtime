@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-10
-> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@a8ccaa90991afe64ae85a717e7ecfb77aa7a06fe`
+> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@f04cfd5e154b9d0458b65d01f4fe47cae67019fd`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -401,7 +401,7 @@ package-facade import-order dependence without moving projection authority.
 M4.5-B and B.1/B.2/B.3 now close decision-scoped accounting, terminal re-entry,
 fresh confirmation risk, physical capture truth and benchmark failure attribution;
 M4.5-C is the next admitted run.
-The reviewed implementation gate passed 1,931 tests with 15 skips, Ruff, mypy
+The reviewed implementation gate passed 1,935 tests with 15 skips, Ruff, mypy
 over 417 source files and diff-check. The unchanged pinned Python 3.12
 BrowserGym focused gate passed 9 tests and the real active-capture gate passed
 11 tests. These are regression/conformance results only; no formal MiniWoB-60

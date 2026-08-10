@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
 > **Updated:** 2026-08-10
-> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@a8ccaa90991afe64ae85a717e7ecfb77aa7a06fe`
+> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@f04cfd5e154b9d0458b65d01f4fe47cae67019fd`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 

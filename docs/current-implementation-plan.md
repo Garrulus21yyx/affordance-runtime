@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-10
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
-> **Reviewed implementation HEAD:** `a8ccaa90991afe64ae85a717e7ecfb77aa7a06fe`
+> **Reviewed implementation HEAD:** `f04cfd5e154b9d0458b65d01f4fe47cae67019fd`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -242,7 +242,7 @@ projection of that suffix. Confirmation continuation references and updates the
 same root identity without increasing the root count. Model history uses the
 narrow `model_boundary/control_transition_projection.py`; snapshots and target
 benchmark classification consume typed transition/result facts without message
-matching. The reviewed code gate passed 1,931 tests with 15 external/profile
+matching. The reviewed code gate passed 1,935 tests with 15 external/profile
 skips, Ruff, mypy over 417 source files, diff-check, the clean-process import
 matrix, the pinned Python 3.12 BrowserGym focused gate and the real 11-test
 active-capture gate. No
