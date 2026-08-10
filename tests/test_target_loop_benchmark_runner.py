@@ -44,7 +44,7 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
     class Environment(StaticEnvironment):
         async def reset(self, task):
             events.append(f"start:{task.task_id}")
-            await super().reset(task)
+            return await super().reset(task)
 
         async def close(self):
             events.append(f"close:{self.task.task_id}")

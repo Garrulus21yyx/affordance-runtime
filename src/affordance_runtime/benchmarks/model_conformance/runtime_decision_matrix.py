@@ -237,8 +237,10 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
     fresh = _evidence_world("replay:fresh", ())
     environment = StaticEnvironment((before, fresh))
     task = shared_task()
-    await environment.reset(task)
-    state = AgentLoopState(await environment.observe("runtime replay"), remaining_turns=3)
+    acquisition = await environment.reset(task)
+    if acquisition.observation is None:
+        raise RuntimeError("runtime replay initial acquisition failed")
+    state = AgentLoopState(acquisition.observation, remaining_turns=3)
     evaluator, waiter = _CountingTaskEvaluator(), _Waiter()
     session = AgentRunSession(cast(AgentLoop, SimpleNamespace()), task, environment, state)
     options = value.get("actions", {}).get("options", ())

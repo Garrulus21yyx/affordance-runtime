@@ -1,10 +1,13 @@
+from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
 from affordance_runtime.model_boundary.budgets import ContextProjectionBudget
 from affordance_runtime.model_boundary.world_projection import project_model_world
 from affordance_runtime.world import (
     AcquisitionCost,
     CoverageState,
     ObservationAssurance,
+    ObservationCapabilities,
     ObservationModality,
+    ObservationOffer,
     ObservationSourceProfile,
     SurfaceObservation,
     VerificationStrength,
@@ -73,7 +76,7 @@ def test_model_source_summary_excludes_debug_source_and_private_payload() -> Non
     assert view.sources[0].conflict_status == "clear"
 
 
-def test_failed_source_remains_an_acquisition_capability() -> None:
+def test_failed_source_evidence_and_operational_capability_are_independent() -> None:
     source = SurfaceObservation(
         "source:failed",
         "visual",
@@ -83,11 +86,21 @@ def test_failed_source_remains_an_acquisition_capability() -> None:
     )
     world = WorldObservation("world:failed", (), (), (), {"visual": CoverageState.FAILED}, sources=(source,))
 
-    view = project_model_world(world, ContextProjectionBudget())
+    capabilities = ObservationCapabilities(
+        True,
+        False,
+        (ObservationOffer("visual", "visual", "weak", "high"),),
+    )
+    view = project_model_world(
+        world,
+        ContextProjectionBudget(),
+        observation_capabilities=project_acquisition_offers(capabilities),
+    )
 
     assert tuple((item.modality, item.assurance) for item in view.observation_capabilities) == (
         (ObservationModality.VISUAL, ObservationAssurance.WEAK),
     )
+    assert view.sources[0].coverage == CoverageState.FAILED
 
 
 def test_assurance_dominance_allows_authoritative_for_structural_request() -> None:

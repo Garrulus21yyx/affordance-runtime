@@ -45,6 +45,24 @@ def as_external_result(snapshot: BrowserGymVerifierSnapshot) -> ExternalVerifier
     return ExternalVerifierResult(snapshot.status, snapshot.evidence_ref)
 
 
+def verifier_snapshot_from_current_probe(
+    *,
+    task_run_id: str,
+    observation_id: str,
+    source_observation_id: str,
+    probe: object,
+) -> BrowserGymVerifierSnapshot:
+    status = ExternalVerifierStatus.UNAVAILABLE
+    if isinstance(probe, dict):
+        if probe.get("ready") is True and probe.get("done") is False:
+            status = ExternalVerifierStatus.INCOMPLETE
+        # A read-only page probe does not independently prove the complete official
+        # success conjunction, so `done=True` deliberately remains unavailable.
+    return BrowserGymVerifierSnapshot(
+        task_run_id, observation_id, source_observation_id, status, "",
+    )
+
+
 def _status(reward: object, terminated: object, truncated: object, task_info: object) -> ExternalVerifierStatus:
     if not isinstance(task_info, dict) or truncated is not False:
         return ExternalVerifierStatus.UNAVAILABLE

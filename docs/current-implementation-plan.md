@@ -46,23 +46,22 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.3 historical MiniWoB-60 | `VALID_NEGATIVE_EVIDENCE` | clean `b3b64a2`, 6/60; immutable standalone run |
 | P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
-| P5-M4.5-A acquisition lifecycle | `NOT_STARTED / NEXT` | independent capture and execute-returned post acquisition |
-| P5-M4.5-B control accounting | `NOT_STARTED / QUEUED_AFTER_A` | bounded lossless ControlTransition, no ledger/replay |
+| P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, Runtime admission and BrowserGym active capture |
+| P5-M4.5-B control accounting | `NOT_STARTED / NEXT` | bounded lossless ControlTransition, no ledger/replay |
 | P5-E | `NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
 ## Next admitted slice
 
-The next admitted work is P5-M4.5-A, a narrow observation acquisition lifecycle
-correction. Rerun-v3 completed 60/60 with valid 4/60 evidence and exposed seven
-typed `post_observation_failure` cases. Four followed `RequestObservation`
-without a step snapshot; three followed stale/currentness refresh without a
-step snapshot. This confirms that active `WorldEnvironment.observe()` semantics
-and BrowserGym's consume-once reset/step cache are mismatched.
+M4.5-A is complete on the non-default target path. It replaced the generic
+observe/cache handshake with typed logical reset, independent capture and
+execute-returned post acquisition; closed Runtime admission against
+environment-owned capabilities; and added BrowserGym owner-thread active
+capture without reusing old verifier evidence.
 
-M4.5-A is followed by a separate M4.5-B commit for lossless
-control-transition accounting. Only after both close do we rerun the unchanged
+The next admitted work is the separate M4.5-B commit for lossless
+control-transition accounting. Only after it closes do we rerun the unchanged
 MiniWoB-60 profile, then evaluate a supported-subset multi-seed gate. P5-E,
 default cutover and old-core deletion remain unauthorized.
 
@@ -172,9 +171,9 @@ failures, 9 remaining unclassified typed failures and 11 Runtime rejections.
 Provider/policy competence remains a measured product variable, not something
 M4.5 may repair with retry, fallback or model-specific Runtime behavior.
 
-## P5-M4.5-A observation acquisition lifecycle — next
+## P5-M4.5-A observation acquisition lifecycle — complete
 
-Deliver only the target world lifecycle boundary:
+Delivered only the target world lifecycle boundary:
 
 1. `reset(task) -> ObservationAcquisition` supplies initial world state.
 2. `capture(request) -> ObservationAcquisition` reports `ACQUIRED`, typed
@@ -196,7 +195,7 @@ the pinned environment's read-only current-observation facility, but it cannot
 copy the previous step's verifier outcome under a new observation identity;
 current verifier evidence must be reacquired or explicitly unavailable.
 
-## P5-M4.5-B lossless ControlTransition — queued after A
+## P5-M4.5-B lossless ControlTransition — next
 
 Deliver one immutable, run-scoped, privacy-bounded root ControlTransition for
 every accepted policy decision. It retains before/after identity, decision,

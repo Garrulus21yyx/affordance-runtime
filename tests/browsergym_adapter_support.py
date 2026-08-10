@@ -44,6 +44,8 @@ class FakeBrowserGym:
         self.context = object()
         self.probes = {}
         self.unwrapped = self
+        self.supports_capture_current = True
+        self.capture_count = 0
 
     def reset(self, *, seed):
         assert isinstance(seed, int)
@@ -60,6 +62,15 @@ class FakeBrowserGym:
         if self.fail_probe:
             raise RuntimeError("probe unavailable")
         return self.probes[bid]
+
+    def capture_current(self):
+        self.capture_count += 1
+        return self.post, {
+            "ready": True,
+            "done": False,
+            "episode": "0",
+            "url": self.post["url"],
+        }
 
     def close(self):
         self.close_count += 1
@@ -91,5 +102,6 @@ def request_for(world, task, semantic_action, parameters=None):
 
 
 def start_environment(environment, task):
-    asyncio.run(environment.reset(task))
-    return asyncio.run(environment.observe("initial"))
+    acquisition = asyncio.run(environment.reset(task))
+    assert acquisition.observation is not None
+    return acquisition.observation

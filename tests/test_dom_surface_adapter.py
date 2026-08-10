@@ -53,8 +53,9 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await world.reset(task)
-        before = await world.observe("initial")
+        acquisition = await world.reset(task)
+        assert acquisition.observation is not None
+        before = acquisition.observation
         view = build_agent_world_view(before)
         space = ActionSpaceBuilder().build(task, before)
         option = space.options[0]
@@ -64,8 +65,10 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
         assert "selector" not in repr(view)
         assert request.binding.payload["selector"] == "#shared"
         assert world.is_current(request)
-        result = await world.execute(request)
-        after = await world.observe("post action")
+        outcome = await world.execute(request)
+        result = outcome.result
+        after = outcome.post_acquisition.observation
+        assert after is not None
 
         assert result.transport_success
         assert result.adapter_evidence["currentness_probe_count"] == 1
@@ -87,11 +90,13 @@ def test_stale_dom_binding_makes_zero_executor_calls() -> None:
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await world.reset(effectful)
-        old = await world.observe("old")
+        acquisition = await world.reset(effectful)
+        assert acquisition.observation is not None
+        old = acquisition.observation
         option = ActionSpaceBuilder().build(effectful, old).options[0]
         request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old, "context:test")
-        await world.observe("new")
+        from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
+        await world.capture(WorldObservationRequest(ObservationRequestKind.CURRENTNESS_REFRESH, "new"))
 
         assert not world.is_current(request)
         assert page.clicks == 0
@@ -109,15 +114,16 @@ def test_async_dom_fingerprint_change_makes_zero_executor_calls() -> None:
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await world.reset(task)
-        observed = await world.observe("initial")
+        acquisition = await world.reset(task)
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         option = ActionSpaceBuilder().build(task, observed).options[0]
         request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
 
         page.enabled = True  # DOM changes after observation, before execute.
 
         assert world.is_current(request)  # world/source identity is current; the adapter owns the live probe.
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.dispatch_status.value == "not_sent"
         assert page.clicks == 0
 
@@ -140,8 +146,9 @@ def test_unsupported_dom_primitive_does_not_discard_supported_actions() -> None:
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await world.reset(task)
-        observed = await world.observe("initial")
+        acquisition = await world.reset(task)
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         space = ActionSpaceBuilder().build(task, observed)
 
         assert len(observed.targets) == 2

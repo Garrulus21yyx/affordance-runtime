@@ -46,8 +46,9 @@ def test_success_evidence_is_current_opaque_and_resolves() -> None:
     }
     environment, task = open_fake(fake)
     before = start_environment(environment, task)
-    asyncio.run(environment.execute(request_for(before, task, "activate")))
-    after = asyncio.run(environment.observe("post"))
+    outcome = asyncio.run(environment.execute(request_for(before, task, "activate")))
+    after = outcome.post_acquisition.observation
+    assert after is not None
     evaluator = ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment)
     evaluation = asyncio.run(evaluator.evaluate(task, after))
     assert evaluation.status is TaskEvaluationStatus.COMPLETE
@@ -58,3 +59,26 @@ def test_success_evidence_is_current_opaque_and_resolves() -> None:
     asyncio.run(environment.close())
     asyncio.run(environment.close())
     assert fake.close_count == 1
+
+
+def test_independent_capture_does_not_relabel_old_success_verifier_evidence() -> None:
+    raw = raw_observation(ax_node("1", "button", "okay"))
+    fake = FakeBrowserGym(raw, raw)
+    fake.probes["1"] = {
+        "exists": True, "url": raw["url"], "episode": "0", "ready": True,
+        "done": False, "role": "button", "label": "okay", "state": {},
+    }
+    environment, task = open_fake(fake)
+    before = start_environment(environment, task)
+    sent = asyncio.run(environment.execute(request_for(before, task, "activate")))
+    assert sent.post_acquisition.observation is not None
+    assert environment.current_result(environment.benchmark_task_id).status is ExternalVerifierStatus.SUCCESS
+
+    from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
+
+    refreshed = asyncio.run(environment.capture(WorldObservationRequest(
+        ObservationRequestKind.CURRENTNESS_REFRESH, "refresh current verifier",
+    )))
+    assert refreshed.observation is not None
+    assert environment.current_result(environment.benchmark_task_id).status is ExternalVerifierStatus.INCOMPLETE
+    asyncio.run(environment.close())

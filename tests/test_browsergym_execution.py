@@ -10,6 +10,7 @@ from browsergym_adapter_support import (
 )
 
 from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
 
 
 def _fixture(*, fail_step=False, fail_probe=False):
@@ -44,7 +45,8 @@ def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
     for semantic, parameters, prefix in expected:
         fake, environment, task, world = _fixture()
         request = request_for(world, task, semantic, parameters)
-        result = asyncio.run(environment.execute(request))
+        outcome = asyncio.run(environment.execute(request))
+        result = outcome.result
         assert result.dispatch_status is DispatchStatus.SENT
         assert len(fake.actions) == 1 and fake.actions[0].startswith(prefix)
         assert environment.probe_calls == 1 and environment.step_calls == 1
@@ -55,13 +57,13 @@ def test_stale_or_unavailable_currentness_is_not_sent_and_zero_step() -> None:
     fake, environment, task, world = _fixture()
     request = request_for(world, task, "activate")
     fake.probes["1"]["label"] = "changed"
-    result = asyncio.run(environment.execute(request))
+    result = asyncio.run(environment.execute(request)).result
     assert (result.dispatch_status, result.error) == (DispatchStatus.NOT_SENT, ActionError.STALE_BINDING)
     assert fake.actions == [] and environment.step_calls == 0 and environment.probe_calls == 1
     asyncio.run(environment.close())
 
     fake, environment, task, world = _fixture(fail_probe=True)
-    result = asyncio.run(environment.execute(request_for(world, task, "activate")))
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
     assert (result.dispatch_status, result.error) == (
         DispatchStatus.NOT_SENT, ActionError.CURRENTNESS_UNAVAILABLE,
     )
@@ -71,24 +73,49 @@ def test_stale_or_unavailable_currentness_is_not_sent_and_zero_step() -> None:
 
 def test_step_exception_after_dispatch_is_sent_unknown_without_retry() -> None:
     fake, environment, task, world = _fixture(fail_step=True)
-    result = asyncio.run(environment.execute(request_for(world, task, "activate")))
+    outcome = asyncio.run(environment.execute(request_for(world, task, "activate")))
+    result = outcome.result
     assert result.dispatch_status is DispatchStatus.SENT_UNKNOWN
     assert result.error is ActionError.EXECUTION_FAILED
     assert len(fake.actions) == 1 and environment.step_calls == 1
     asyncio.run(environment.close())
 
 
-def test_post_step_observation_cache_is_consumed_without_second_step() -> None:
+def test_post_step_observation_is_returned_without_capture_or_second_step() -> None:
     fake, environment, task, world = _fixture()
-    result = asyncio.run(environment.execute(request_for(world, task, "activate")))
-    assert result.dispatch_status is DispatchStatus.SENT
-    after = asyncio.run(environment.observe("post action"))
+    outcome = asyncio.run(environment.execute(request_for(world, task, "activate")))
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    after = outcome.post_acquisition.observation
+    assert after is not None
     assert after.observation_id != world.observation_id
     assert len(fake.actions) == 1 and environment.full_observation_count == 2
-    try:
-        asyncio.run(environment.observe("duplicate"))
-    except RuntimeError as exc:
-        assert "unavailable" in str(exc)
-    else:
-        raise AssertionError("post-step cache was not consumed")
+    assert environment.capture_calls == 0
+    asyncio.run(environment.close())
+
+
+def test_independent_capture_is_active_fresh_and_does_not_step() -> None:
+    fake, environment, task, world = _fixture()
+    before_binding = world.bindings[0].binding_id
+    acquisition = asyncio.run(environment.capture(WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "refresh current browser world",
+        modality="structural",
+        required_assurance="structural",
+    )))
+    after = acquisition.observation
+    assert after is not None
+    assert after.observation_id != world.observation_id
+    assert after.bindings[0].binding_id != before_binding
+    assert fake.capture_count == 1
+    assert fake.actions == [] and environment.step_calls == 0
+    assert environment.capture_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_preparation_and_logical_reset_each_happen_exactly_once() -> None:
+    fake, environment, task, _world = _fixture()
+    assert fake.reset_count == 1
+    assert environment.backend_reset_calls == 1
+    assert environment.logical_reset_calls == 1
+    assert environment.capture_calls == 0
     asyncio.run(environment.close())

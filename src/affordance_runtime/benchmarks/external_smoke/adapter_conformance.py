@@ -66,11 +66,15 @@ class InstrumentedBrowserGymEnvironment:
     def __getattr__(self, name):
         return getattr(self.wrapped, name)
 
+    @property
+    def observation_capabilities(self):
+        return self.wrapped.observation_capabilities
+
     async def reset(self, task):
         return await self.wrapped.reset(task)
 
-    async def observe(self, reason):
-        return await self.wrapped.observe(reason)
+    async def capture(self, request):
+        return await self.wrapped.capture(request)
 
     async def execute(self, request):
         return await self.wrapped.execute(request)
@@ -88,6 +92,8 @@ class InstrumentedBrowserGymEnvironment:
         finally:
             metrics = {
                 "browsergym_reset_calls": self.wrapped.reset_calls,
+                "browsergym_logical_reset_calls": self.wrapped.logical_reset_calls,
+                "browsergym_capture_calls": self.wrapped.capture_calls,
                 "browsergym_step_calls": self.wrapped.step_calls,
                 "browsergym_probe_calls": self.wrapped.probe_calls,
                 "dom_action_calls": self.wrapped.dom_action_calls,

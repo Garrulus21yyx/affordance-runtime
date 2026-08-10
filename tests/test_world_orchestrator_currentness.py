@@ -9,9 +9,11 @@ from affordance_runtime.world import (
     ActionRisk,
     ActionSpaceBuilder,
     CoverageState,
+    ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
     SurfaceObservation,
+    WorldObservationRequest,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
@@ -25,7 +27,6 @@ class SequencedAdapter:
 
     async def reset(self, task: TaskGoal) -> None:
         del task
-        self.sequence = 0
         self.executions.clear()
 
     async def observe(self, reason: str) -> SurfaceObservation:
@@ -82,13 +83,14 @@ def test_multi_adapter_old_binding_cannot_be_relabelled_as_current() -> None:
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await environment.reset(task)
-        old = await environment.observe("old")
+        acquisition = await environment.reset(task)
+        assert acquisition.observation is not None
+        old = acquisition.observation
         option = ActionSpaceBuilder().build(task, old).options[0]
         request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old, "context:test")
 
-        await environment.observe("new")
-        result = await environment.execute(request)
+        await environment.capture(WorldObservationRequest(ObservationRequestKind.CURRENTNESS_REFRESH, "new"))
+        result = (await environment.execute(request)).result
 
         assert not environment.is_current(request)
         assert result.dispatch_status == DispatchStatus.NOT_SENT
@@ -108,14 +110,15 @@ def test_reset_invalidates_old_world_identity_before_next_observation() -> None:
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await environment.reset(task)
-        old = await environment.observe("old")
+        acquisition = await environment.reset(task)
+        assert acquisition.observation is not None
+        old = acquisition.observation
         builder = ActionSpaceBuilder()
         option = builder.build(task, old).options[0]
         request = ActionBinder().bind(builder.admit(option, {}), old, "context:test")
 
         await environment.reset(task)
-        result = await environment.execute(request)
+        result = (await environment.execute(request)).result
 
         assert not environment.is_current(request)
         assert result.dispatch_status == DispatchStatus.NOT_SENT

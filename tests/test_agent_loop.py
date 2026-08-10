@@ -264,8 +264,9 @@ def test_reused_post_action_observation_is_rejected() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-1", True)], [_sent()])
         result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
-        assert result.status == AgentLoopStatus.FAILED
-        assert "reused" in result.message
+        assert result.status == AgentLoopStatus.WAITING_USER
+        assert result.message == "observation_identity_reused"
+        assert result.final_observation.observation_id == "obs-1"
 
     asyncio.run(scenario())
 

@@ -8,10 +8,11 @@ from affordance_runtime.agent.decision_control import ensure_current_action_page
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
-from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
+from affordance_runtime.agent.observation_control import capture_fresh
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, add_counts, build_result
 from affordance_runtime.agent.session import AgentRunSession
+from affordance_runtime.agent.start_error import require_initial_observation
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
@@ -23,6 +24,7 @@ from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.binder import ActionBinder
 from affordance_runtime.world.contracts import ActionSpace, AdmittedActionSelection
@@ -48,7 +50,7 @@ class AgentLoop:
         environment: WorldEnvironment,
         intent_context: IntentContext | None = None,
     ) -> AgentRunSession:
-        current = await environment.observe("initial task grounding")
+        current = require_initial_observation(await environment.reset(task))
         state = AgentLoopState(
             current, remaining_turns=task.loop_budget.max_turns, recent_turn_limit=self.recent_turn_limit
         )
@@ -141,6 +143,7 @@ class AgentLoop:
                 observation_count=session.observation_count,
                 waited_ms=session.waited_ms,
                 context_generation=session.next_context_generation(),
+                observation_capabilities=session.environment.observation_capabilities,
             )
             session.current_context_snapshot = context
             session.consumed_context_id = context.context_id
@@ -227,16 +230,28 @@ class AgentLoop:
             return self._result(session, AgentLoopStatus.FAILED, "agent loop observation budget exhausted")
         session.approved_confirmation = pending
         previous_id = session.state.current_observation.observation_id
-        try:
-            fresh = await observe_fresh(
-                session.environment, previous_id, "fresh observation after confirmation"
-            )
-        except FreshObservationUnavailable as exc:
-            session.observation_count += 1
+        acquired = await capture_fresh(
+            session.environment,
+            previous_id,
+            WorldObservationRequest(
+                ObservationRequestKind.CONFIRMATION_REFRESH,
+                "fresh observation after confirmation",
+            ),
+        )
+        session.observation_count += acquired.attempts
+        if acquired.observation is None:
             session.approved_confirmation = None
-            return self._result(session, AgentLoopStatus.FAILED, str(exc))
-        session.observation_count += 1
-        session.state.current_observation = fresh
+            return build_result(
+                AgentLoopStatus.FAILED,
+                session.task,
+                session.state,
+                session.observation_count,
+                session.execution_count,
+                acquired.reason_code,
+                session.currentness_probe_count,
+                failure_code=acquired.failure_code,
+            )
+        session.state.current_observation = acquired.observation
         session.last_result = None
         return await self._run_session(session)
 
@@ -276,25 +291,3 @@ class AgentLoop:
             message,
             session.currentness_probe_count,
         )
-
-
-@dataclass(frozen=True)
-class AgentEpisodeRunner:
-    agent_loop: AgentLoop
-
-    async def start(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        intent_context: IntentContext | None = None,
-    ) -> AgentRunSession:
-        await environment.reset(task)
-        return await self.agent_loop.start(task, environment, intent_context)
-
-    async def run(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        intent_context: IntentContext | None = None,
-    ) -> AgentResult:
-        return await (await self.start(environment, task, intent_context)).run_until_pause()

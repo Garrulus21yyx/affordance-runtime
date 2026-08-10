@@ -1,5 +1,15 @@
 """Unified world contracts and runtime-owned action-space services."""
 
+from affordance_runtime.world.acquisition import (
+    AcquisitionOrigin,
+    AcquisitionStatus,
+    ExecutionOutcome,
+    ObservationAcquisition,
+    ObservationCapabilities,
+    ObservationOffer,
+    ObservationRequestKind,
+    WorldObservationRequest,
+)
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
 from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.binder import ActionBinder, BindingError
@@ -33,6 +43,8 @@ from affordance_runtime.world.view import AgentTargetView, AgentWorldView, build
 
 __all__ = [
     "ActionBinder",
+    "AcquisitionOrigin",
+    "AcquisitionStatus",
     "ActionPager",
     "ActionRelevance",
     "ActionRelevancePolicy",
@@ -48,15 +60,21 @@ __all__ = [
     "AgentWorldView",
     "BindingError",
     "CoverageState",
+    "ExecutionOutcome",
     "InternalActionPage",
     "ObservationAssurance",
+    "ObservationAcquisition",
+    "ObservationCapabilities",
     "ObservationConflict",
     "ObservationModality",
+    "ObservationOffer",
+    "ObservationRequestKind",
     "ObservationSourceProfile",
     "SemanticTarget",
     "StateFact",
     "SurfaceObservation",
     "WorldObservation",
+    "WorldObservationRequest",
     "VerificationStrength",
     "build_agent_world_view",
     "assurance_satisfies",

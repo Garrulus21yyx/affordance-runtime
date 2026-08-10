@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections import Counter
 from enum import StrEnum
 
@@ -66,20 +65,17 @@ async def probe_case(
         environment, task = BrowserGymMiniWobEnvironment.open(
             task_id, seed, max_turns=10, admitted_task_ids=admitted_task_ids,
         )
-        raw = environment._raw_cache
-        if not isinstance(raw, dict):
-            raise RuntimeError("initial raw observation unavailable")
-        raw_metrics = _raw_metrics(raw)
-        stage = "observation_projection"
-        projection = _project_diagnostic(environment, raw)
         stage = "initial_observation"
-        await environment.reset(task)
-        world = await environment.observe("local breadth diagnostic")
+        acquisition = await environment.reset(task)
+        if acquisition.observation is None:
+            raise RuntimeError("initial typed acquisition failed")
+        world = acquisition.observation
+        raw_metrics = environment.diagnostic_snapshot().as_metrics()
         stage = "action_space"
         action_space = ActionSpaceBuilder().build(task, world)
         stage = "task_evaluation"
         verifier = environment.current_result(task_id)
-        metrics = _projected_metrics(projection.world, action_space)
+        metrics = _projected_metrics(world, action_space)
         raw_actionable = raw_metrics["raw_actionable_node_count"]
         assert isinstance(raw_actionable, int)
         disposition = diagnostic_disposition(
@@ -113,55 +109,6 @@ async def probe_case(
                 await environment.close()
             except Exception:
                 pass
-
-
-def _project_diagnostic(environment, raw):
-    from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
-        project_browsergym_observation,
-    )
-    from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import verifier_snapshot
-
-    reward, terminated, truncated, task_info = environment._outcome
-    observation_id = "diagnostic:" + hashlib.sha256(environment.task_run_id.encode()).hexdigest()[:16]
-    snapshot = verifier_snapshot(
-        task_run_id=environment.task_run_id,
-        observation_id=observation_id,
-        source_observation_id=observation_id,
-        reward=reward,
-        terminated=terminated,
-        truncated=truncated,
-        task_info=task_info,
-    )
-    return project_browsergym_observation(
-        raw,
-        observation_id=observation_id,
-        source_revision="diagnostic-revision",
-        page_identity=environment._page_identity,
-        episode_identity=environment._episode_identity,
-        verifier=snapshot,
-    )
-
-
-def _raw_metrics(raw: dict[str, object]) -> dict[str, object]:
-    tree = raw.get("axtree_object")
-    nodes = tree.get("nodes", ()) if isinstance(tree, dict) else ()
-    roles: Counter[str] = Counter()
-    actionable = 0
-    interactive = 0
-    for node in nodes if isinstance(nodes, list) else ():
-        if not isinstance(node, dict) or node.get("ignored") is True:
-            continue
-        role = _typed(node.get("role"))
-        if role in _INTERACTIVE_ROLES:
-            interactive += 1
-            roles[role] += 1
-            if role != "option":
-                actionable += 1
-    return {
-        "raw_interactive_node_count": interactive,
-        "raw_actionable_node_count": actionable,
-        "raw_role_distribution": dict(sorted(roles.items())),
-    }
 
 
 def _projected_metrics(world, action_space) -> dict[str, object]:

@@ -15,7 +15,10 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
-from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
+from affordance_runtime.agent.observation_control import (
+    capture_admission_failure,
+    capture_fresh,
+)
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.result import build_result, observation_budget_result
 from affordance_runtime.agent.session import AgentRunSession
@@ -26,8 +29,8 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task.contracts import criterion_id
+from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 from affordance_runtime.world.contracts import ActionSpace
-from affordance_runtime.world.source_profile import assurance_satisfies
 
 SelectionExecutor = Callable[[AgentRunSession, ActionSpace, SelectAction], Awaitable[object]]
 
@@ -63,6 +66,7 @@ async def run_policy_turn(
         observation_count=session.observation_count,
         waited_ms=session.waited_ms,
         context_generation=session.next_context_generation(),
+        observation_capabilities=session.environment.observation_capabilities,
     )
     session.current_context_snapshot = context
     outcome = await policy.decide(context)
@@ -90,29 +94,53 @@ async def run_policy_turn(
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator)
     if isinstance(decision, RequestObservation):
-        capabilities = tuple(context.world.observation_capabilities)
-        if not any(
-            item.modality == decision.modality
-            and assurance_satisfies(item.assurance, decision.required_assurance)
-            for item in capabilities
-        ):
-            return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "observation capability was not offered")
-        return await _fresh_observation(session, decision, decision.reason)
+        return await _policy_observation(session, decision)
     if isinstance(decision, Wait):
-        if not _can_observe(session):
-            return observation_budget_result(task, state, 0, 0)
-        if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
-            state.append_turn(Turn(state.current_observation.observation_id, decision, decision_result="wait_budget_exceeded"))
-            return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "total wait budget exhausted")
-        await waiter.wait(decision.max_wait_ms)
-        session.waited_ms += decision.max_wait_ms
-        return await _fresh_observation(session, decision, "fresh observation after wait")
+        return await _wait_refresh(session, decision, waiter)
     if isinstance(decision, RequestActionPage):
         return _request_action_page(session, action_space, context_builder, decision)
     rejection = _current_page_selection_rejection(session, decision)
     if rejection:
         return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, rejection)
     return await execute_selection(session, action_space, decision)
+
+
+async def _policy_observation(session: AgentRunSession, decision: RequestObservation):
+    request = WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        decision.reason,
+        decision.subject_id,
+        decision.modality,
+        decision.required_assurance,
+    )
+    return await _fresh_observation(session, decision, request)
+
+
+async def _wait_refresh(session: AgentRunSession, decision: Wait, waiter: WaitController):
+    task, state = session.task, session.state
+    if not _can_observe(session):
+        return observation_budget_result(task, state, 0, 0)
+    request = WorldObservationRequest(
+        ObservationRequestKind.WAIT_REFRESH, "fresh observation after wait",
+    )
+    unavailable = capture_admission_failure(session.environment, request)
+    if unavailable is not None:
+        return build_result(
+            AgentLoopStatus.BLOCKED, task, state, 0, 0, unavailable.reason_code,
+            failure_code=unavailable.failure_code,
+        )
+    if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
+        state.append_turn(Turn(
+            state.current_observation.observation_id,
+            decision,
+            decision_result="wait_budget_exceeded",
+        ))
+        return build_result(
+            AgentLoopStatus.BLOCKED, task, state, 0, 0, "total wait budget exhausted",
+        )
+    await waiter.wait(decision.max_wait_ms)
+    session.waited_ms += decision.max_wait_ms
+    return await _fresh_observation(session, decision, request)
 
 
 def ensure_current_action_page(
@@ -132,18 +160,33 @@ def ensure_current_action_page(
     session.current_action_page = candidate
 
 
-async def _fresh_observation(session: AgentRunSession, decision: AgentDecision, reason: str) -> None | object:
+async def _fresh_observation(
+    session: AgentRunSession,
+    decision: AgentDecision,
+    request: WorldObservationRequest,
+) -> None | object:
     state = session.state
     if not _can_observe(session):
         return observation_budget_result(session.task, state, 0, 0)
     state.append_turn(Turn(state.current_observation.observation_id, decision))
     previous_id = state.current_observation.observation_id
-    try:
-        state.current_observation = await observe_fresh(session.environment, previous_id, reason)
-    except FreshObservationUnavailable as exc:
-        session.observation_count += 1
-        return build_result(AgentLoopStatus.FAILED, session.task, state, 0, 0, str(exc))
-    session.observation_count += 1
+    acquired = await capture_fresh(session.environment, previous_id, request)
+    session.observation_count += acquired.attempts
+    if acquired.observation is None:
+        status = (
+            AgentLoopStatus.BLOCKED
+            if acquired.attempts == 0 else AgentLoopStatus.FAILED
+        )
+        return build_result(
+            status,
+            session.task,
+            state,
+            0,
+            0,
+            acquired.reason_code,
+            failure_code=acquired.failure_code,
+        )
+    state.current_observation = acquired.observation
     return None
 
 

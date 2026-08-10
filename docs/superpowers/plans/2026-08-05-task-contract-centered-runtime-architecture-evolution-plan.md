@@ -122,8 +122,8 @@ P5-M4.2 local fill/select progress containment: COMPLETE
 P5-M4.3 historical MiniWoB-60 run: COMPLETE_VALID_NEGATIVE_EVIDENCE (6/60)
 P5-M4.4 failure attribution/capability inventory: COMPLETE_FOR_CURRENT_SCOPE
 post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)
-P5-M4.5-A acquisition lifecycle: NOT_STARTED / NEXT
-P5-M4.5-B ControlTransition accounting: NOT_STARTED / AFTER_M4.5-A
+P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT
+P5-M4.5-B ControlTransition accounting: NOT_STARTED / NEXT
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES
 ```
 
@@ -375,8 +375,8 @@ DONE: P5-M4.2 local fill/select progress containment
 DONE: P5-M4.3 historical MiniWoB-60 seed-7 negative run (6/60)
 DONE: P5-M4.4 typed attribution/capability inventory
 DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
-NEXT: P5-M4.5-A observation acquisition lifecycle
-THEN: P5-M4.5-B lossless bounded ControlTransition accounting
+DONE: P5-M4.5-A observation acquisition lifecycle
+NEXT: P5-M4.5-B lossless bounded ControlTransition accounting
 THEN: P5-M4.5-C same-profile MiniWoB-60 rerun
 THEN: P5-M4.5-D supported-subset multi-seed gate
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning

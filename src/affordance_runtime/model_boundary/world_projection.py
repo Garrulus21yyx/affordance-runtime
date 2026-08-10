@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
@@ -78,12 +79,6 @@ class ObservationSourceSummary:
 
 
 @dataclass(frozen=True)
-class ObservationCapabilityView:
-    modality: str
-    assurance: str
-
-
-@dataclass(frozen=True)
 class ModelArtifactView:
     evidence_ref: str
     kind: str
@@ -106,6 +101,7 @@ def project_model_world(
     budget: ContextProjectionBudget,
     pinned_target_ids: tuple[str, ...] = (),
     pinned_output_ids: tuple[str, ...] = (),
+    observation_capabilities: tuple[ObservationCapabilityView, ...] = (),
 ) -> ModelWorldView:
     pinned = set(pinned_target_ids)
     ordered_targets = tuple(item for item in observation.targets if item.target_id in pinned) + tuple(
@@ -150,9 +146,6 @@ def project_model_world(
         item for item in artifact_values if item.output_id not in pinned_outputs
     )
     shown_artifacts = artifacts[: budget.max_artifact_summaries]
-    capabilities = tuple(
-        sorted(_capabilities(observation))
-    )
     source_summaries = tuple(
         ObservationSourceSummary(
             source.source_profile.modality,
@@ -173,9 +166,7 @@ def project_model_world(
         _section(conflicts, len(observation.conflicts)),
         _section(shown_artifacts, len(artifacts)),
         sources=source_summaries,
-        observation_capabilities=tuple(
-            ObservationCapabilityView(modality, assurance) for modality, assurance in capabilities
-        ),
+        observation_capabilities=observation_capabilities,
     )
     return fit_model_world(
         view, budget.max_total_serialized_bytes // 2, pinned_target_ids, pinned_output_ids
@@ -290,25 +281,3 @@ def _private_key(key: str) -> bool:
 
 def _text(value: str) -> str:
     return value if len(value) <= _MAX_STRING else value[: _MAX_STRING - 1] + "…"
-
-
-def _legacy_capability(source: str) -> tuple[str, str]:
-    normalized = source.casefold()
-    if normalized == "visual":
-        return "visual", "weak"
-    if normalized == "wot":
-        return "environment_state", "authoritative"
-    return "structural", "structural"
-
-
-def _capabilities(observation: WorldObservation) -> set[tuple[str, str]]:
-    if observation.sources:
-        return {
-            (source.source_profile.modality, source.source_profile.assurance)
-            for source in observation.sources
-        }
-    return {
-        _legacy_capability(source)
-        for source, coverage in observation.coverage.items()
-        if str(coverage) not in {"failed", "not_acquired", "stale"}
-    }

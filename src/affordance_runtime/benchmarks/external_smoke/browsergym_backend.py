@@ -24,6 +24,13 @@ return {exists: true, url: location.href, episode: String(window.WOB_EPISODE_ID)
     required: !!el.required, selected: !!el.selected, option_count: options.length}, options};
 }"""
 
+_VERIFIER_PROBE_SCRIPT = """() => ({
+  ready: window.WOB_TASK_READY === true,
+  done: window.WOB_DONE_GLOBAL === true,
+  episode: String(window.WOB_EPISODE_ID),
+  url: location.href
+})"""
+
 
 class ThreadBoundBrowserGym:
     """Small synchronous facade; no page or element handle crosses the thread."""
@@ -35,7 +42,8 @@ class ThreadBoundBrowserGym:
         self._ready: Future[object] = Future()
         self._thread = threading.Thread(target=self._run, args=(task_id, headless), daemon=True)
         self._thread.start()
-        self._ready.result(timeout=60)
+        ready = self._ready.result(timeout=60)
+        self.supports_capture_current = bool(ready)
         self.browser = object()
         self.context = object()
         self.unwrapped = self
@@ -47,7 +55,9 @@ class ThreadBoundBrowserGym:
             import gymnasium as gym  # type: ignore[import-not-found]
 
             environment = gym.make(task_id, headless=headless)
-            self._ready.set_result(True)
+            unwrapped = getattr(environment, "unwrapped", environment)
+            getter = getattr(unwrapped, "_get_obs", None)
+            self._ready.set_result(callable(getter) and getattr(unwrapped, "page", None) is not None)
         except BaseException as exc:
             self._ready.set_exception(exc)
             return
@@ -57,6 +67,14 @@ class ThreadBoundBrowserGym:
                 if name == "probe_element":
                     unwrapped = getattr(environment, "unwrapped", environment)
                     value = unwrapped.page.evaluate(_PROBE_SCRIPT, *args)
+                elif name == "capture_current":
+                    unwrapped = getattr(environment, "unwrapped", environment)
+                    getter = getattr(unwrapped, "_get_obs", None)
+                    if not callable(getter):
+                        raise RuntimeError("pinned BrowserGym has no read-only observation API")
+                    raw = getter()
+                    verifier = unwrapped.page.evaluate(_VERIFIER_PROBE_SCRIPT)
+                    value = (raw, verifier)
                 else:
                     value = getattr(environment, name)(*args, **kwargs)
                     if name == "close":
@@ -84,6 +102,11 @@ class ThreadBoundBrowserGym:
 
     def probe_element(self, bid: str):
         return self._call("probe_element", bid)
+
+    def capture_current(self):
+        if not self.supports_capture_current:
+            raise RuntimeError("pinned BrowserGym read-only capture is unavailable")
+        return self._call("capture_current")
 
     def close(self) -> None:
         if self._closed:

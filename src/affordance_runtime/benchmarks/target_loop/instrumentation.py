@@ -12,6 +12,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
+from affordance_runtime.world import AcquisitionStatus, ObservationRequestKind
 
 
 @dataclass
@@ -37,7 +38,9 @@ class BenchmarkInstrumentation:
     failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
     failure_code: str = ""
     exception_class: str = ""
-    environment_observe_calls: int = 0
+    environment_reset_acquisitions: int = 0
+    environment_capture_calls: int = 0
+    environment_post_acquisitions: int = 0
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
@@ -150,24 +153,35 @@ class CountingEnvironment:
     def __getattr__(self, name):
         return getattr(self.wrapped, name)
 
+    @property
+    def observation_capabilities(self):
+        return self.wrapped.observation_capabilities
+
     async def reset(self, task):
         try:
-            return await self.wrapped.reset(task)
+            acquisition = await self.wrapped.reset(task)
+            self.instrumentation.environment_reset_acquisitions += int(
+                acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
+            )
+            return acquisition
         except Exception as exc:
             self.instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, "reset_exception", exc)
             raise
 
-    async def observe(self, reason):
-        origin = (
-            CaseFailureOrigin.INITIAL_OBSERVATION
-            if self.instrumentation.environment_observe_calls == 0
-            else CaseFailureOrigin.POST_ACTION_OBSERVATION
-        )
-        self.instrumentation.environment_observe_calls += 1
+    async def capture(self, request):
+        self.instrumentation.environment_capture_calls += 1
         try:
-            return await self.wrapped.observe(reason)
+            return await self.wrapped.capture(request)
         except Exception as exc:
-            self.instrumentation.record_failure(origin, "observation_exception", exc)
+            origin = (
+                CaseFailureOrigin.CURRENTNESS
+                if request.kind in {
+                    ObservationRequestKind.BINDING_REFRESH,
+                    ObservationRequestKind.CURRENTNESS_REFRESH,
+                }
+                else CaseFailureOrigin.DECISION_CONTROL
+            )
+            self.instrumentation.record_failure(origin, "capture_exception", exc)
             raise
 
     async def execute(self, request):
@@ -178,10 +192,14 @@ class CountingEnvironment:
         if set(request.selection.semantic_effects) & self.forbidden_effects:
             state.forbidden_effect_attempts += 1
         try:
-            result = await self.wrapped.execute(request)
+            outcome = await self.wrapped.execute(request)
         except Exception as exc:
             state.record_failure(CaseFailureOrigin.EXECUTION, "execution_exception", exc)
             raise
+        result = outcome.result
+        state.environment_post_acquisitions += int(
+            outcome.post_acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
+        )
         dispatches = _dispatch_count(self.wrapped, before, result)
         if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
             state.stale_opportunities += 1
@@ -192,7 +210,7 @@ class CountingEnvironment:
             state.effectful_dispatches += dispatches
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
             state._unknown_attempts.add(identity)
-        return result
+        return outcome
 
 
 def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):

@@ -27,7 +27,6 @@ from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.transport import HttpWotTransport
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.visual_grounding import VisualRegion
-from affordance_runtime.world import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
@@ -57,13 +56,17 @@ class ManagedRealEnvironment:
     wot_state: WotFixtureState | None = None
     _closed: bool = field(default=False, init=False)
 
-    async def reset(self, task: TaskGoal) -> None:
+    @property
+    def observation_capabilities(self):
+        return self.inner.observation_capabilities
+
+    async def reset(self, task: TaskGoal):
         return await self.inner.reset(task)
 
-    async def observe(self, reason: str) -> WorldObservation:
-        return await self.inner.observe(reason)
+    async def capture(self, request):
+        return await self.inner.capture(request)
 
-    async def execute(self, request: BoundActionRequest) -> ActionResult:
+    async def execute(self, request: BoundActionRequest):
         return await self.inner.execute(request)
 
     def is_current(self, request: BoundActionRequest) -> bool:

@@ -15,14 +15,17 @@ def test_three_surfaces_share_mechanical_runtime_composition(profile: str) -> No
     async def scenario(environment):
         task = shared_state_task()
         evaluator = ProductionTaskEvaluator()
-        await environment.reset(task)
-        before = await environment.observe("mechanical proof before")
+        acquisition = await environment.reset(task)
+        assert acquisition.observation is not None
+        before = acquisition.observation
         action_space = ActionSpaceBuilder().build(task, before)
         assert len(action_space.options) == 1
         selection = ActionSpaceBuilder().admit(action_space.options[0], {})
         request = ActionBinder().bind(selection, before, "context:mechanical-proof")
-        execution = await environment.execute(request)
-        after = await environment.observe("mechanical proof after")
+        outcome = await environment.execute(request)
+        execution = outcome.result
+        after = outcome.post_acquisition.observation
+        assert after is not None
         task_evaluation = await evaluator.evaluate(task, after)
         return before, execution, after, task_evaluation
 

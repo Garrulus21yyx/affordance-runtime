@@ -35,13 +35,21 @@ async def build_live_dom_scenario() -> LiveDomScenario:
     environment = real_dom_environment(instrumentation)
     task = real_adapter_task()
     try:
-        await environment.reset(task)
-        observation = await environment.observe("model conformance context")
+        acquisition = await environment.reset(task)
+        if acquisition.observation is None:
+            raise RuntimeError("model conformance initial acquisition failed")
+        observation = acquisition.observation
         state = AgentLoopState(observation, remaining_turns=task.loop_budget.max_turns)
         evaluation = await validated_task_evaluation(ProductionTaskEvaluator(), task, observation)
         action_space = ActionSpaceBuilder().build(task, observation)
         builder = ContextBuilder()
-        context = builder.build(task, state, action_space, evaluation)
+        context = builder.build(
+            task,
+            state,
+            action_space,
+            evaluation,
+            observation_capabilities=environment.observation_capabilities,
+        )
         serialized = serialize_agent_context(context)
         complexity = measure_model_input_complexity(
             serialized, MODEL_POLICY_INSTRUCTIONS, decision_response_schema(),

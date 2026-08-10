@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.progress_projection import project_progress_events
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
+from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
 from affordance_runtime.model_boundary.budgets import (
     DEFAULT_MAX_TOTAL_WAIT_MS,
     BoundedSection,
@@ -36,6 +37,7 @@ from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.view import build_agent_world_view
@@ -60,6 +62,7 @@ class ContextBuilder:
         observation_count: int = 1,
         waited_ms: int = 0,
         context_generation: int = 0,
+        observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
     ) -> AgentContext:
         default_page = self.page(action_space, state)
         page = action_page or default_page
@@ -75,7 +78,12 @@ class ContextBuilder:
         )
         shown_actions = projected_actions.options
         pinned_targets = _pinned_targets(shown_actions, state, self.budget.max_targets)
-        world = project_model_world(state.current_observation, self.budget, pinned_targets)
+        world = project_model_world(
+            state.current_observation,
+            self.budget,
+            pinned_targets,
+            observation_capabilities=project_acquisition_offers(observation_capabilities),
+        )
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
             raise ValueError("current action page target is absent from ModelWorldView")

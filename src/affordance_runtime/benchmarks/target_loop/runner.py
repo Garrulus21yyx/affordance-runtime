@@ -7,7 +7,13 @@ import inspect
 import time
 from collections.abc import Callable
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, AgentRunSession
+from affordance_runtime.agent import (
+    AgentEpisodeRunner,
+    AgentLoop,
+    AgentLoopStatus,
+    AgentRunSession,
+    AgentSessionStartError,
+)
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
@@ -147,6 +153,9 @@ def _build_loop(composition, instrumentation):
 async def _run_episode(case, loop, environment, task, instrumentation, session_holder):
     try:
         session = await AgentEpisodeRunner(loop).start(environment, task)
+    except AgentSessionStartError as exc:
+        instrumentation.record_failure(CaseFailureOrigin.SESSION_START, exc.reason_code, exc)
+        raise
     except Exception as exc:
         instrumentation.record_failure(CaseFailureOrigin.SESSION_START, "session_start_exception", exc)
         raise
@@ -273,6 +282,9 @@ def _metric_values(result, turns, state, sent_unknown, partial=None) -> dict[str
         "stale_opportunities": state.stale_opportunities,
         "stale_zero_call_violations": state.stale_zero_call_violations,
         "effectful_dispatches": state.effectful_dispatches,
+        "reset_acquisitions": state.environment_reset_acquisitions,
+        "independent_capture_calls": state.environment_capture_calls,
+        "post_action_acquisitions": state.environment_post_acquisitions,
         "provider_retry_count": (
             metadata.rate_limit_retry_count + metadata.transient_retry_count
             if metadata is not None else -1

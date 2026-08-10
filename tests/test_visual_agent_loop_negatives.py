@@ -202,8 +202,9 @@ def test_visual_effect_legality_and_exact_binding_prevent_route_escape() -> None
             allowed_effects=("shared_state_enabled",),
             risk_profile=RiskProfile.LOW,
         )
-        await world.reset(acquisition_task)
-        observed = await world.observe("initial")
+        acquisition = await world.reset(acquisition_task)
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         allowed = observed.bindings[0]
         forbidden = replace(
             allowed,

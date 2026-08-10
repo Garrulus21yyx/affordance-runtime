@@ -218,7 +218,7 @@ def test_fresh_observation_decisions_reject_reused_identity(decision_kind: str) 
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 0
         assert result.observation_count == 2
-        assert "identity was reused" in result.message
+        assert result.message == "observation_identity_reused"
 
     asyncio.run(scenario())
 
@@ -295,7 +295,7 @@ def test_stale_binding_refresh_rejects_reused_observation_identity() -> None:
         assert result.execution_count == 0
         assert result.observation_count == 2
         assert environment.executed_requests == []
-        assert "identity was reused" in result.message
+        assert result.message == "observation_identity_reused"
 
     asyncio.run(scenario())
 

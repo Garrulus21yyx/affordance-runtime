@@ -26,9 +26,9 @@ The target path now has:
 | VerifiedTaskState | `PARTIAL_PROJECTION_ONLY`; plan/objective/progress views and evidence-linked current facts exist, but no verified milestone/frontier lifecycle or promotion authority |
 | TaskProgressAuditor | `NOT_STARTED`; future P5-E owner, separate from local repetition containment |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
-| WorldEnvironment independent capture | `NOT_STARTED / CONTRACT_MISMATCH_CONFIRMED`; public `observe()` implies active acquisition while BrowserGym consumes only the latest reset/step cache |
-| post-action observation | present in current adapters; BrowserGym exposes the `env.step()` observation through a one-use cache rather than an `ExecutionOutcome` |
-| ObservationAcquisition / ExecutionOutcome target contracts | `NOT_STARTED`; expected capability-unavailable and acquisition-failed states are not yet typed at the target port |
+| WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
+| post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
+| ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded Turn state | `INTEGRATED_NON_DEFAULT`; normal action Turn is substantially complete |
 | lossless ControlTransition | `NOT_STARTED`; non-action/pause/rejection branches and terminal snapshots still reconstruct facts from Turn/session/progress owners |
@@ -83,7 +83,7 @@ The target path now has:
 | live semantic evaluator | `NOT_REQUIRED_FOR_FIRST_MECHANICAL_EXTERNAL_MANIFEST` |
 | external smoke manifest | `REVIEWED_AND_FIXED` for BrowserGym MiniWoB 0.14.3 tasks click-button/enter-text/choose-list |
 | external target-loop adapter | `CLOSED_FOR_PINNED_MINIWOB_MECHANICAL_PROFILE` |
-| BrowserGym independent capture | `NOT_STARTED`; current adapter cannot actively refresh without a new reset/step snapshot |
+| BrowserGym independent capture | `INTEGRATED_NON_DEFAULT / LOCAL_CONTRACT_ATTESTED`; owner-thread read-only current capture refreshes structure/bindings and page-native verifier status; real dependency conformance skipped locally because BrowserGym is absent |
 | external fixed-smoke workflow | `CONFIGURED_AND_MANUALLY_GATED`; execution status is exact-head artifact-backed |
 | latest formal fixed-smoke run | see the protected `browsergym-fixed-external-smoke` workflow artifact for the target SHA |
 | default cutover | `NOT_READY` |
@@ -92,8 +92,8 @@ The target path now has:
 | ActionBatch | helper implemented; not AgentLoop-integrated |
 | historical MiniWoB-60 seed-7 run | `VALID_NEGATIVE_EVIDENCE`; clean `b3b64a2`, 6/60 |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE`; clean `83dc4fa`, 4/60, kept separate from the historical run |
-| P5-M4.5-A acquisition lifecycle | `NOT_STARTED / NEXT_ADMITTED` |
-| P5-M4.5-B ControlTransition accounting | `NOT_STARTED / AFTER_M4.5-A` |
+| P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
+| P5-M4.5-B ControlTransition accounting | `NOT_STARTED / NEXT_ADMITTED` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
 
@@ -378,13 +378,17 @@ with the historical 6/60 archive. Its typed outcomes include 7
 `post_observation_failure`, 9 `unclassified_typed_failure`, and 11
 `runtime_rejected`; generalization remains `NOT_CLAIMED`.
 
-The seven observation failures make the current lifecycle mismatch an
-implementation fact: four `RequestObservation` branches had reset=1 and step=0,
-and three stale/currentness refresh branches had probe=1 and step=0; all tried
-to consume an unavailable BrowserGym post-step cache and surfaced
-`RuntimeError`. The generic WorldEnvironment port still cannot express
-independent-capture unavailable versus failed. M4.5-A is therefore the next
-admitted correction rather than a conditional idea.
+M4.5-A closes that confirmed lifecycle mismatch on the non-default target path.
+The generic port now returns typed acquisitions from logical reset and capture,
+and `ExecutionOutcome` preserves dispatch truth plus a mandatory typed post
+acquisition. BrowserGym projects prepared initial raw exactly once, projects
+step raw inside execute, and implements owner-thread read-only active capture;
+it no longer relays reset/step snapshots through a public cache. Independent
+capture reacquires incomplete page-native verifier state and deliberately marks
+success unavailable when the full official success conjunction cannot be
+proved. Local fake-backed contract tests pass; the pinned BrowserGym package is
+not installed in this development environment, so real conformance remains
+skipped rather than inferred. M4.5-B is now the next admitted correction.
 
 ## Control-transition and long-horizon gap status
 

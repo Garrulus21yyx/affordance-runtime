@@ -105,8 +105,9 @@ async def _bound(transport, scope=WotDeploymentScope.LOCAL_SIMULATION, clock=lam
     adapter = WotSurfaceAdapter(transport, deployment_scope=scope, clock=clock)
     world = UnifiedWorldEnvironment((adapter,))
     task = _task()
-    await world.reset(task)
-    observed = await world.observe("initial")
+    acquisition = await world.reset(task)
+    assert acquisition.observation is not None
+    observed = acquisition.observation
     option = ActionSpaceBuilder().build(task, observed).options[0]
     request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
     return adapter, world, observed, request
@@ -125,7 +126,7 @@ def test_wot_adapter_observes_state_keeps_route_private_and_executes_once() -> N
         assert any(target.state.get("expanded") is False for target in observed.targets)
         assert request.binding.payload["href"].endswith("/actions/enable")
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.transport_success
         assert result.adapter_evidence["currentness_probe_count"] == 1
         assert transport.probes == 1
@@ -154,8 +155,9 @@ def test_wot_physical_and_remote_routes_remain_high_risk() -> None:
         transport = FakeWotTransport()
         adapter = WotSurfaceAdapter(transport, deployment_scope=scope)
         world = UnifiedWorldEnvironment((adapter,))
-        await world.reset(_task())
-        observed = await world.observe("initial")
+        acquisition = await world.reset(_task())
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         option = ActionSpaceBuilder().build(_task(), observed).options[0]
         assert option.risk.value == "high"
 
@@ -169,7 +171,7 @@ def test_wot_changed_td_is_stale_with_zero_action_calls() -> None:
         _, world, _, request = await _bound(transport)
         transport.td["actions"]["enable"]["forms"][0]["htv:methodName"] = "PUT"
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.error.value == "stale_binding"
         assert transport.action_endpoint_calls == 0
 
@@ -182,7 +184,7 @@ def test_wot_currentness_probe_failure_is_not_sent() -> None:
         _, world, _, request = await _bound(transport)
         transport.probe_failure = True
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.error.value == "currentness_unavailable"
         assert transport.action_endpoint_calls == 0
 
@@ -195,7 +197,7 @@ def test_wot_reset_invalidates_old_request_without_probe_or_action() -> None:
         adapter, world, _, request = await _bound(transport)
         await adapter.reset(_task())
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.error.value == "stale_binding"
         assert transport.probes == 0
         assert transport.action_endpoint_calls == 0
@@ -208,9 +210,15 @@ def test_wot_rate_limit_rejects_second_send_without_sleep_or_action() -> None:
         now = [100.0]
         transport = FakeWotTransport(shared_td(min_interval_ms=1000))
         _, world, _, request = await _bound(transport, clock=lambda: now[0])
-        first = await world.execute(request)
-        assert first.transport_success
-        second = await world.execute(request)
+        first_outcome = await world.execute(request)
+        assert first_outcome.result.transport_success
+        after = first_outcome.post_acquisition.observation
+        assert after is not None
+        option = ActionSpaceBuilder().build(_task(), after).options[0]
+        rebound = ActionBinder().bind(
+            ActionSpaceBuilder().admit(option, {}), after, "context:test:second",
+        )
+        second = (await world.execute(rebound)).result
         assert second.error.value == "rate_limited"
         assert transport.action_endpoint_calls == 1
 
@@ -223,7 +231,7 @@ def test_wot_transport_pre_send_and_unknown_map_without_retry() -> None:
         transport.action_result = WotTransportResult(status, False, "fixture_failure")
         _, world, _, request = await _bound(transport)
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.dispatch_status.value == status.value
         assert result.error.value == expected_error
         assert transport.action_endpoint_calls == endpoint_calls
@@ -240,7 +248,7 @@ def test_wot_effectful_transport_exception_is_sent_unknown_without_retry() -> No
         transport.raise_on_execute = True
         _, world, _, request = await _bound(transport)
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
 
         assert result.dispatch_status.value == "sent_unknown"
         assert transport.action_port_calls == 1
@@ -257,8 +265,9 @@ def test_wot_malformed_parameters_are_rejected_before_transport() -> None:
         transport = FakeWotTransport(td)
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         world = UnifiedWorldEnvironment((adapter,))
-        await world.reset(_task())
-        observed = await world.observe("initial")
+        acquisition = await world.reset(_task())
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         option = next(item for item in ActionSpaceBuilder().build(_task(), observed).options if item.semantic_action == "set_value")
         valid = ActionSpaceBuilder().admit(option, {"value": True})
         request = ActionBinder().bind(valid, observed, "context:test")
@@ -272,7 +281,7 @@ def test_wot_malformed_parameters_are_rejected_before_transport() -> None:
             request.binding,
         )
 
-        result = await world.execute(invalid)
+        result = (await world.execute(invalid)).result
         assert result.error.value == "invalid_parameters"
         assert transport.action_endpoint_calls == 0
 

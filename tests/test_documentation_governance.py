@@ -92,22 +92,22 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
         "post-M4.4 separately authorized rerun-v3: "
         "COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)"
     ) in text
-    assert "P5-M4.5-A acquisition lifecycle: NOT_STARTED / NEXT" in text
-    assert "P5-M4.5-B ControlTransition accounting: NOT_STARTED / AFTER_M4.5-A" in text
+    assert "P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT" in text
+    assert "P5-M4.5-B ControlTransition accounting: NOT_STARTED / NEXT" in text
 
 
 def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
     text = CURRENT_PLAN.read_text(encoding="utf-8")
 
     markers = (
-        "P5-M4.5-A observation acquisition lifecycle — next",
-        "P5-M4.5-B lossless ControlTransition — queued after A",
+        "P5-M4.5-A observation acquisition lifecycle — complete",
+        "P5-M4.5-B lossless ControlTransition — next",
         "## Gates after M4.5",
         "VerifiedTaskState evidence promotion",
     )
     positions = [text.index(marker) for marker in markers]
     assert positions == sorted(positions)
-    assert "Rerun-v3 completed 60/60 with valid 4/60 evidence" in text
+    assert "separate clean `83dc4fa` run at 4/60" in text
     assert "rerun remains blocked" not in text.lower()
 
 

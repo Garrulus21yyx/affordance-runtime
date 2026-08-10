@@ -64,8 +64,8 @@ class NeverEvaluator:
 
 class WrongLineageWorld(UnifiedWorldEnvironment):
     async def execute(self, request):
-        result = await super().execute(request)
-        return replace(result, request_id="wrong-request")
+        outcome = await super().execute(request)
+        return replace(outcome, result=replace(outcome.result, request_id="wrong-request"))
 
 
 def _run(transport, task, policy, *, scope=WotDeploymentScope.LOCAL_SIMULATION, evaluator=None, world_type=UnifiedWorldEnvironment):
@@ -161,8 +161,9 @@ def test_wot_effect_legality_and_exact_binding_prevent_route_escape() -> None:
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         world = UnifiedWorldEnvironment((adapter,))
         acquisition_task = _task()
-        await world.reset(acquisition_task)
-        observed = await world.observe("initial")
+        acquisition = await world.reset(acquisition_task)
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         allowed = observed.bindings[0]
         forbidden = replace(
             allowed,
@@ -199,8 +200,9 @@ def test_unresolved_security_and_event_subscription_offer_no_wot_action() -> Non
         transport = FakeWotTransport(shared_td(security="missing"))
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         world = UnifiedWorldEnvironment((adapter,))
-        await world.reset(_task())
-        observed = await world.observe("locked")
+        acquisition = await world.reset(_task())
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         assert ActionSpaceBuilder().build(_task(), observed).options == ()
         assert observed.sources[0].artifacts["unsupported_events"] == ("changed",)
 

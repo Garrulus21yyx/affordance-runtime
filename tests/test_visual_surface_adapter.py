@@ -66,8 +66,9 @@ async def _bound(session: VisualSession, proposer: Proposer):
     adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
     world = UnifiedWorldEnvironment((adapter,))
     task = _task()
-    await world.reset(task)
-    observed = await world.observe("initial")
+    acquisition = await world.reset(task)
+    assert acquisition.observation is not None
+    observed = acquisition.observation
     option = ActionSpaceBuilder().build(task, observed).options[0]
     request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
     return adapter, world, observed, request
@@ -81,13 +82,13 @@ def test_visual_adapter_keeps_coordinates_private_and_uses_one_probe_and_pointer
 
         assert "action_point" not in repr(build_agent_world_view(observed))
         assert request.binding.payload["action_point_xy"] == (40.0, 40.0)
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
 
         assert result.transport_success
         assert result.adapter_evidence["currentness_probe_count"] == 1
-        assert session.captures == 2
+        assert session.captures == 3
         assert session.clicks == [(40, 40)]
-        assert proposer.calls == 1
+        assert proposer.calls == 2
 
     asyncio.run(scenario())
 
@@ -109,7 +110,7 @@ def test_visual_currentness_changes_are_not_sent(mutate) -> None:
         _, world, _, request = await _bound(session, proposer)
         mutate(session, proposer)
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
 
         assert result.dispatch_status.value == "not_sent"
         assert result.adapter_evidence["currentness_probe_count"] == 1
@@ -181,9 +182,9 @@ def test_visual_state_projection_keeps_only_bounded_semantic_values() -> None:
         ]
         adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
         world = UnifiedWorldEnvironment((adapter,))
-        await world.reset(_task())
-
-        observed = await world.observe("state projection")
+        acquisition = await world.reset(_task())
+        assert acquisition.observation is not None
+        observed = acquisition.observation
         assert observed.targets[0].state == {
             "enabled": True,
             "expanded": False,
@@ -202,7 +203,7 @@ def test_pre_pointer_capture_failure_is_currentness_unavailable() -> None:
             RuntimeError("capture unavailable")
         )
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.dispatch_status.value == "not_sent"
         assert result.error.value == "currentness_unavailable"
         assert result.adapter_evidence["currentness_probe_count"] == 1
@@ -222,7 +223,7 @@ def test_visual_action_point_outside_viewport_is_not_sent() -> None:
             action_point_xy=(130, 20),
         )
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.error.value == "invalid_parameters"
         assert session.clicks == []
 
@@ -235,7 +236,7 @@ def test_visual_pointer_exception_is_sent_unknown_without_retry() -> None:
         session.fail_click = True
         _, world, _, request = await _bound(session, Proposer())
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.dispatch_status.value == "sent_unknown"
         assert result.adapter_evidence["currentness_probe_count"] == 1
         assert len(session.clicks) == 1
@@ -249,7 +250,7 @@ def test_reset_invalidates_old_visual_request_without_probe_or_pointer_call() ->
         adapter, world, _, request = await _bound(session, Proposer())
         await adapter.reset(_task())
 
-        result = await world.execute(request)
+        result = (await world.execute(request)).result
         assert result.dispatch_status.value == "not_sent"
         assert result.adapter_evidence["currentness_probe_count"] == 0
         assert session.captures == 1
