@@ -93,7 +93,8 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
         "COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)"
     ) in text
     assert "P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT" in text
-    assert "P5-M4.5-B ControlTransition accounting: NOT_STARTED / NEXT" in text
+    assert "P5-M4.5-B ControlTransition accounting: COMPLETE_NON_DEFAULT" in text
+    assert "P5-M4.5-C same-profile rerun: NOT_STARTED / NEXT" in text
 
 
 def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
@@ -101,7 +102,7 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
 
     markers = (
         "P5-M4.5-A observation acquisition lifecycle — complete",
-        "P5-M4.5-B lossless ControlTransition — next",
+        "P5-M4.5-B lossless ControlTransition — complete",
         "## Gates after M4.5",
         "VerifiedTaskState evidence promotion",
     )

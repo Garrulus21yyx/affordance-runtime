@@ -76,7 +76,8 @@ core contracts for every GUI task.
 | P5-M4.2–M4.4 | Local fill/select containment, historical MiniWoB-60 breadth and typed attribution/capability evidence | valid clean `b3b64a2` negative run at 6/60; short-loop gaps remain |
 | post-M4.4 separately authorized rerun-v3 | Re-execute the frozen profile with expanded typed evidence | valid clean `83dc4fa` negative run at 4/60; separate from M4.3 |
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
-| P5-M4.5-B | Lossless bounded ControlTransition accounting | next; separate from acquisition before any new breadth/long-horizon claim |
+| P5-M4.5-B | Lossless bounded ControlTransition accounting | complete, non-default; separate from acquisition |
+| P5-M4.5-C | Same-profile MiniWoB-60 rerun | next; third independent exact record before multi-seed admission |
 | P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.5 and breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
@@ -219,9 +220,9 @@ It remains separate from 6/60 and does not establish a trend.
 
 P5-M4.5 now precedes P5-E. M4.5-A has separated reset/independent capture from
 execute-returned post-action acquisition and closed origin/fallback/counting
-semantics with real pinned active-capture evidence. M4.5-B next adds lightweight
-lossless ControlTransition accounting as a separate change. The unchanged
-MiniWoB-60 profile is rerun afterward, followed by a
+semantics with real pinned active-capture evidence. M4.5-B separately closes
+lightweight lossless ControlTransition accounting. M4.5-C next reruns the
+unchanged MiniWoB-60 profile, followed by a
 supported-subset multi-seed gate whose immutable manifest, exact seed set,
 numeric provider-availability/capacity floor, success floor and maximum seed
 variance are frozen before execution. P5-E then reuses the existing TaskPlan

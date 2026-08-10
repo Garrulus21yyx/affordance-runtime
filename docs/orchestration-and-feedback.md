@@ -222,18 +222,19 @@ benchmark-only and cannot alter decisions or recover failures.
 
 P5-M4.2 inserts one run-scoped check only after normal selection admission and
 before binding. It compares fill/select requested values with current complete
-structural public state. In the current implementation an already-satisfied selection records a bounded
-route-free event and starts a fresh policy context without fabricating a Turn,
-ActionResult, transport status, observation, or execution. One identical
+structural public state. An already-satisfied selection records a bounded
+route-free progress event plus the accepted decision's root ControlTransition,
+then starts a fresh policy context without fabricating ActionResult, transport
+status, observation, or execution. One identical
 repeat under the same task/criterion/output/relevant-target fingerprint returns
 typed `NO_PROGRESS_REPETITION`. Different values, relevant progress, or a
 confirmed effect reset the streak. Runtime never chooses Submit or another
 replacement action.
 
-That no-Turn behavior is a current accounting gap, not the target contract.
-M4.5-B records the accepted selection and its suppression/progress consequence
-as exactly one ControlTransition while still fabricating no execution or
-observation. The controller remains a fill/select local liveness guard; future
+At the pre-M4.5-B baseline this branch had no Turn and was an accounting gap.
+M4.5-B now records the accepted selection and its suppression/progress
+consequence as exactly one ControlTransition while still fabricating no
+execution or observation. The controller remains a fill/select local liveness guard; future
 TaskProgressAuditor and planner remain separate P5-E owners.
 
 ## Breadth campaign orchestration

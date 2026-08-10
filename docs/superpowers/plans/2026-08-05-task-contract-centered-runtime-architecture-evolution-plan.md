@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
 > **Updated:** 2026-08-10
-> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@de448a3151727fb11f2095c91045c28885b7b4b3`
+> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@9072a1fe27b215dfd766fab03284546285494447`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -123,8 +123,9 @@ P5-M4.3 historical MiniWoB-60 run: COMPLETE_VALID_NEGATIVE_EVIDENCE (6/60)
 P5-M4.4 failure attribution/capability inventory: COMPLETE_FOR_CURRENT_SCOPE
 post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)
 P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT
-P5-M4.5-B ControlTransition accounting: NOT_STARTED / NEXT
-P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES
+P5-M4.5-B ControlTransition accounting: COMPLETE_NON_DEFAULT
+P5-M4.5-C same-profile rerun: NOT_STARTED / NEXT
+P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
 ```
 
 ### P5-M0.1 — Disposable AgentContext architecture
@@ -376,8 +377,8 @@ DONE: P5-M4.3 historical MiniWoB-60 seed-7 negative run (6/60)
 DONE: P5-M4.4 typed attribution/capability inventory
 DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
 DONE: P5-M4.5-A observation acquisition lifecycle
-NEXT: P5-M4.5-B lossless bounded ControlTransition accounting
-THEN: P5-M4.5-C same-profile MiniWoB-60 rerun
+DONE: P5-M4.5-B lossless bounded ControlTransition accounting
+NEXT: P5-M4.5-C same-profile MiniWoB-60 rerun
 THEN: P5-M4.5-D supported-subset multi-seed gate
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
 THEN: P5-F bounded ActionBatch
@@ -472,7 +473,7 @@ and 11 `runtime_rejected` cases. At the P5-M4 baseline, those observation
 failures proved that public active-observation meaning and BrowserGym's
 consume-once post-step cache were not interchangeable. M4.5-A and its A.1
 closure now replace that lifecycle with typed, origin-validated acquisition;
-M4.5-B is the next admitted architecture repair. P5-E stays blocked until the
+M4.5-B now closes the accounting repair. M4.5-C is next; P5-E stays blocked until the
 same-profile rerun and the supported-
 subset multi-seed gate close; provider/model competence remains measured rather
 than repaired by Runtime machinery.

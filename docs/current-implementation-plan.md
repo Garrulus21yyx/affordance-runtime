@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-10
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
-> **Reviewed implementation HEAD:** `de448a3151727fb11f2095c91045c28885b7b4b3`
+> **Reviewed implementation HEAD:** `9072a1fe27b215dfd766fab03284546285494447`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -47,8 +47,9 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
-| P5-M4.5-B control accounting | `NOT_STARTED / NEXT` | bounded lossless ControlTransition, no ledger/replay |
-| P5-E | `NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
+| P5-M4.5-B control accounting | `COMPLETE_NON_DEFAULT` | one canonical immutable root transition per accepted decision; exact total + bounded suffix; typed continuation/snapshot/benchmark projection |
+| P5-M4.5-C same-profile rerun | `NOT_STARTED / NEXT` | third independent exact MiniWoB-60 seed-7 record; no trend merge or causal claim |
+| P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
@@ -66,10 +67,10 @@ status/reason with post-action failure semantics, and counts acquisitions that
 already occurred before ActionResult lineage rejection. Real pinned active
 capture is attested separately from the nine-test normal-action gate.
 
-The next admitted work is the separate M4.5-B commit for lossless
-control-transition accounting. Only after it closes do we rerun the unchanged
-MiniWoB-60 profile, then evaluate a supported-subset multi-seed gate. P5-E,
-default cutover and old-core deletion remain unauthorized.
+M4.5-B is complete in the separate reviewed implementation commit. The next
+admitted work is M4.5-C: rerun the unchanged MiniWoB-60 seed-7 profile as a
+third independent exact record, then evaluate a supported-subset multi-seed
+gate. P5-E, default cutover and old-core deletion remain unauthorized.
 
 ## Frozen work
 
@@ -201,16 +202,16 @@ the pinned environment's read-only current-observation facility, but it cannot
 copy the previous step's verifier outcome under a new observation identity;
 current verifier evidence must be reacquired or explicitly unavailable.
 
-## P5-M4.5-B lossless ControlTransition — next
+## P5-M4.5-B lossless ControlTransition — complete
 
-Deliver one immutable, run-scoped, privacy-bounded root ControlTransition for
+Delivered one immutable, run-scoped, privacy-bounded root ControlTransition for
 every accepted policy decision. It retains before/after identity, decision,
 admission, execution/acquisition, action/task evaluations, progress, pending,
 resulting status and Runtime-owned reason code. `AgentLoopState` remains current
 state authority; the transition window keeps an exact total count and bounded
 recent suffix.
 
-Exit gates: SelectAction plus all six non-action decisions and post-context/
+Closed exit gates: SelectAction plus all six non-action decisions and post-context/
 schema action-admission rejection,
 waiting/pending and typed failure paths have exactly one decision record;
 confirmation continuation is sourced without fabricating another policy
@@ -220,6 +221,17 @@ payload/private binding is retained. No durable store, replay, event bus,
 transaction commit or state reconstruction is admitted.
 Provider failure before a parsed decision and stale/schema-invalid input before
 the accepted-decision boundary do not fabricate a ControlTransition.
+
+The canonical owner is `agent/control_transition.py`; `AgentLoopState` stores
+the exact root total and bounded suffix. Compatibility `turns` is a read-only
+projection of that suffix. Confirmation continuation references and updates the
+same root identity without increasing the root count. Model history uses the
+narrow `model_boundary/control_transition_projection.py`; snapshots and target
+benchmark classification consume typed transition/result facts without message
+matching. The reviewed code gate passed 1,862 tests with 15 external/profile
+skips, Ruff, mypy over 415 source files, diff-check, the pinned Python 3.12
+BrowserGym focused 9-test gate and the real 11-test active-capture gate. No
+formal MiniWoB-60 campaign was run.
 
 ## Gates after M4.5
 

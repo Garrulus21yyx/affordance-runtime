@@ -94,8 +94,8 @@ The next target slices are deliberately narrow and separate:
 
 ```text
 P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
-→ P5-M4.5-B bounded lossless ControlTransition accounting: NEXT
-→ same frozen MiniWoB-60 profile rerun
+→ P5-M4.5-B bounded lossless ControlTransition accounting: COMPLETE_NON_DEFAULT
+→ P5-M4.5-C same frozen MiniWoB-60 profile rerun: NEXT
 → supported-subset multi-seed gate
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
 ```
@@ -285,5 +285,6 @@ separate exact-run record, not a replacement/merge/trend against 6/60. Seven
 post-observation failures confirmed the historical BrowserGym active-capture
 contract gap; nine failures remain unclassified despite typed metadata. M4.5-A
 acquisition is now closed, including real owner-thread active capture, origin
-validation and final-fallback truth. M4.5-B ControlTransition accounting is
-next before another exact-profile rerun, a multi-seed supported subset, and P5-E.
+validation and final-fallback truth. M4.5-B ControlTransition accounting is now
+closed; M4.5-C is the next admitted exact-profile rerun before a multi-seed
+supported subset and P5-E.

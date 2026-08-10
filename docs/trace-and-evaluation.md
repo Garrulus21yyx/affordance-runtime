@@ -206,6 +206,6 @@ The later clean `83dc4fa` rerun-v3 is a second immutable exact-run record with
 4/60 success, 7 post-observation failures, 9 unclassified typed failures and 11
 Runtime rejections. It neither replaces nor combines with 6/60. M4.5-A requires
 typed acquisition stage/status so expected unavailable/failed paths cannot
-escape as RuntimeError; M4.5-B requires every accepted decision's control facts
-to reach the case/snapshot projection without message parsing. Future reruns
+escape as RuntimeError; M4.5-B now carries every accepted decision's control
+facts into case/snapshot projection without message parsing. Future reruns
 remain new records rather than rewrites of either archive.

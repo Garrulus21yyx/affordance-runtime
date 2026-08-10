@@ -267,7 +267,7 @@ sequencing in `agent/observation_control.py`. Evidence assurance remains in
 WorldObservation/evaluation owners. No owner may infer capability from evidence
 quality or turn a typed unavailable result into a generic recovery transaction.
 
-M4.5-B adds one narrow ControlTransition constructor/accounting owner under
+M4.5-B installs one narrow ControlTransition constructor/accounting owner under
 `agent/`. AgentLoop supplies serial inputs and updates AgentLoopState once; the
 accounting owner normalizes privacy-safe typed facts but cannot execute,
 evaluate, persist, replay or reconstruct state. Session snapshot, model history

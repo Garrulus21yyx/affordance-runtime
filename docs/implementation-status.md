@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-10
-> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@de448a3151727fb11f2095c91045c28885b7b4b3`
+> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@9072a1fe27b215dfd766fab03284546285494447`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -30,8 +30,8 @@ The target path now has:
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
-| Evaluator-owned completion and bounded Turn state | `INTEGRATED_NON_DEFAULT`; normal action Turn is substantially complete |
-| lossless ControlTransition | `NOT_STARTED`; non-action/pause/rejection branches and terminal snapshots still reconstruct facts from Turn/session/progress owners |
+| Evaluator-owned completion and bounded transition state | `INTEGRATED_NON_DEFAULT`; evaluations are retained on canonical ControlTransition values |
+| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_B`; every accepted decision produces one immutable root, with exact total, bounded suffix and typed confirmation continuation |
 | local ProgressController | `CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS`; other semantic actions are not precondition-contained and this owner is not a planner |
 | SurfaceAdapter / UnifiedWorldEnvironment | complete for DOM, Visual-only, and WoT single-surface minimums; semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
@@ -93,8 +93,9 @@ The target path now has:
 | historical MiniWoB-60 seed-7 run | `VALID_NEGATIVE_EVIDENCE`; clean `b3b64a2`, 6/60 |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE`; clean `83dc4fa`, 4/60, kept separate from the historical run |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
-| P5-M4.5-B ControlTransition accounting | `NOT_STARTED / NEXT_ADMITTED` |
-| long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES` |
+| P5-M4.5-B ControlTransition accounting | `COMPLETE_NON_DEFAULT` |
+| P5-M4.5-C same-profile MiniWoB-60 rerun | `NOT_STARTED / NEXT_ADMITTED` |
+| long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
 
 The live DOM, Visual-only, and WoT local-simulation proofs use the same `TaskGoal` factory,
@@ -167,7 +168,7 @@ to policy rather than selecting a Runtime candidate. Confirmed action effects
 require exact request/before/after lineage and evidence-ref fields; resolution
 against the current WorldObservation is completed in P5-M0.
 
-P5-M0 projects TaskGoal, internal ActionSpace, bounded Turns, and optional Plan
+P5-M0 projects TaskGoal, internal ActionSpace, bounded transition summaries, and optional Plan
 into private-payload-free model views while retaining internal ActionSpace as
 the sole admission authority. Per-observation evidence indexes resolve action
 and task evidence. COMPLETE is deterministically bound to task, observation,
@@ -178,9 +179,10 @@ attestation and pinned BrowserGym runs are revision/profile-scoped; they do not
 make the provider a Runtime authority.
 TaskEvaluation UNKNOWN waits and BLOCKED terminates explicitly.
 
-Semantic fusion remains deliberately deferred. The small `AgentLoopState` and
-bounded `Turn` suffix are integrated; a lossless decision-scoped
-`ControlTransition` is not. Optional TurnRecorder remains telemetry-only.
+Semantic fusion remains deliberately deferred. `AgentLoopState` now retains an
+exact accepted-decision total plus a bounded canonical `ControlTransition`
+suffix; compatibility `Turn` values are derived read-only. Optional
+TurnRecorder remains telemetry-only.
 P5-M0.1 now provides the unified disposable AgentContext, ContextIdentity,
 bounded context-only intent, bounded model world/progress/pending/budget views,
 typed recurrent decisions, current-page paging, explicit-hint relevance and
@@ -396,17 +398,26 @@ The A.1 closure additionally rejects non-independent capture origins, reports
 the final fallback attempt's typed cause and exact attempt count, counts an
 already-performed post acquisition on ActionResult lineage failure, and removes
 package-facade import-order dependence without moving projection authority.
-M4.5-B is now the next admitted correction.
+M4.5-B now closes decision-scoped accounting; M4.5-C is the next admitted run.
+The reviewed implementation gate passed 1,862 tests with 15 skips, Ruff, mypy
+over 415 source files and diff-check. The unchanged pinned Python 3.12
+BrowserGym focused gate passed 9 tests and the real active-capture gate passed
+11 tests. These are regression/conformance results only; no formal MiniWoB-60
+campaign was run for M4.5-B.
 
 ## Control-transition and long-horizon gap status
 
-The current normal action path already appends one `Turn` containing before,
-decision/request/result, after and evaluations. It is not a lossless control
-boundary: AskUser, Abort, RequestObservation, Wait, paging, ProposeDone,
-post-context/schema action-admission rejection and pause/terminal facts are incomplete or distributed
-across `Turn`, `AgentRunSession`, `AgentLoopState`, `ProgressController`,
-`AgentResult` and benchmark snapshots. `ControlTransition` is therefore
-`NOT_STARTED`, not a rename of an already complete owner.
+M4.5-B installs `agent/control_transition.py` as the single canonical accounting
+owner. AskUser, Abort, RequestObservation, Wait, paging, ProposeDone,
+SelectAction and post-context/schema action-admission rejection each finalize
+exactly one root after decision acceptance. Admission, dispatch, acquisition
+attempts, evaluations, progress, pending/status and stable reason code remain on
+that immutable value. Confirmation continuation references the original root
+and does not increment its count. `PartialEpisodeSnapshot`, AgentResult and the
+target benchmark now consume typed transition projections; message matching and
+the session-owned latest-task-evaluation epoch are removed. No raw adapter
+evidence/private binding is retained by ControlTransition, and no ledger,
+replay, event sourcing or state reconstruction was added.
 
 Long-horizon scaffolding is partial only. `AgentLoopState.plan`,
 `active_objective`, progress revisions/events and AgentContext projections
@@ -414,5 +425,5 @@ exist, and current validated evaluations can project evidence-linked facts.
 The target production loop does not initialize or mutate plan/objective, and no
 verified milestone promotion/current frontier/replanning lifecycle exists.
 `ProgressController` remains an integrated fill/select local liveness guard;
-general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked until M4.5,
-the same-profile rerun and the supported-subset multi-seed gate close.
+general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked until the
+same-profile rerun and the supported-subset multi-seed gate close.

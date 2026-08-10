@@ -60,10 +60,10 @@ failures and 11 Runtime rejections. At the P5-M4 baseline it confirmed that
 BrowserGym's consume-once reset/step cache did not satisfy the public active-
 observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
 
-M4.5-A typed acquisition lifecycle is complete, including real owner-thread
-active-capture conformance. The active queue is M4.5-B bounded lossless
-ControlTransition accounting. The same frozen profile is rerun only after B,
-followed by a supported-subset multi-seed gate and then P5-E
+M4.5-A typed acquisition lifecycle and M4.5-B bounded lossless
+ControlTransition accounting are complete. The active queue is M4.5-C: a third
+independent rerun of the same frozen profile, followed by a supported-subset
+multi-seed gate and then P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
 ProgressController remains fill/select-only and is not a planner. The default
 Coordinator path is unchanged.
@@ -224,8 +224,8 @@ The seven rerun-v3 observation failures promoted independent acquisition from a
 conditional idea into the M4.5-A correction. That slice now separates reset
 initial acquisition, capability-aware capture and execute-returned post
 acquisition, validates origin/fallback truth, and has real pinned active-capture
-coverage. M4.5-B next records exactly one privacy-bounded root ControlTransition
+coverage. M4.5-B now records exactly one privacy-bounded root ControlTransition
 per accepted policy decision without introducing a ledger, replay or second
-state authority. See the [active queue](current-implementation-plan.md) for exit
-gates and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+state authority. See the [active queue](current-implementation-plan.md) for the
+M4.5-C gates and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 for ordering into rerun, multi-seed and P5-E.
