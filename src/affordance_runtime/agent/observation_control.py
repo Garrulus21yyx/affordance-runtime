@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from affordance_runtime.agent.control_transition import (
     ControlContinuationScope,
     ControlTransitionScope,
-    Turn,
 )
 from affordance_runtime.agent.result import AgentFailureCode, build_result
 from affordance_runtime.agent.state import AgentLoopStatus
@@ -140,15 +139,7 @@ def no_fresh_after_result(
     scope: ControlTransitionScope | ControlContinuationScope,
 ):
     state = session.state
-    scope.record_turn(
-        Turn(
-            state.current_observation.observation_id,
-            decision,
-            request.intent,
-            request.request_id,
-            result,
-        )
-    )
+    scope.record_execution(request.request_id, request.intent, result)
     state.set_pending_unknown_effect(request)
     return build_result(
         AgentLoopStatus.WAITING_USER,

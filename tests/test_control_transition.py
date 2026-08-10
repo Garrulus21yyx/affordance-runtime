@@ -20,11 +20,13 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent.control_transition import (
     AdmissionStatus,
+    ControlContinuationScope,
     ControlTransitionScope,
     PendingKind,
     Turn,
 )
 from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.model_boundary.failures import ModelFailureKind
@@ -83,6 +85,25 @@ def test_exact_root_total_survives_bounded_suffix() -> None:
     assert state.control_transition_total_count == 7
     assert [item.sequence for item in state.recent_control_transitions] == [5, 6, 7]
     assert len(state.recent_turns) == 3
+
+
+def test_continuation_monotonically_merges_progress_without_new_root() -> None:
+    state = AgentLoopState(_world("before", False))
+    decision = Abort("context:one", "stop", "policy")
+    root_scope = ControlTransitionScope(state, decision)
+    root_scope.set_reason("confirmation_required")
+    root = root_scope.finalize(state, None)
+    continuation = ControlContinuationScope(state, decision, root.transition_id)
+    state._append_progress_event(
+        ProgressEvent("effect_confirmed", "activate", "shared", "sha256:test", "effect_confirmed", "complete", False)
+    )
+    continuation.set_reason("task_complete")
+    continuation.finalize(state, None)
+
+    updated = state.recent_control_transitions[0]
+    assert state.control_transition_total_count == 1
+    assert updated.transition_id == root.transition_id
+    assert updated.progress.event_count == state.progress_event_total_count == 1
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,7 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+import pytest
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
@@ -10,12 +12,16 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
+    AcquisitionOrigin,
+    AcquisitionStatus,
     ActionBinding,
     ActionRisk,
     CoverageState,
+    ObservationAcquisition,
+    ObservationCapabilities,
     SemanticTarget,
     StateFact,
     WorldObservation,
@@ -165,6 +171,145 @@ def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() ->
     asyncio.run(scenario())
 
 
+def test_confirmation_observation_budget_exhaustion_closes_original_root() -> None:
+    async def scenario() -> None:
+        task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=1))
+        environment = StaticEnvironment([_world("old", False, "#old")])
+        session = await AgentEpisodeRunner(_loop()).start(environment, task)
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        failed = await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert failed.status is AgentLoopStatus.FAILED
+        assert failed.reason_code == "observation_budget_exhausted"
+        assert root.transition_id == root_id
+        assert root.resulting_status is AgentLoopStatus.FAILED
+        assert root.reason_code == "observation_budget_exhausted"
+        assert root.pending_kind.value == "none"
+        assert session.state.control_transition_total_count == 1
+        assert environment.capture_calls == 0
+        assert session.approved_confirmation is None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "reason_code", "capture_calls"),
+    (
+        ("unavailable", "independent_capture_unsupported", 0),
+        ("failed", "static_capture_failed", 1),
+        ("wrong_origin", "independent_capture_origin_invalid", 1),
+        ("stale", "observation_identity_reused", 1),
+    ),
+)
+def test_confirmation_refresh_failure_closes_original_root(
+    failure_kind: str,
+    reason_code: str,
+    capture_calls: int,
+) -> None:
+    class WrongOriginEnvironment(StaticEnvironment):
+        async def capture(self, request):
+            self.capture_calls += 1
+            self.capture_requests.append(request)
+            return ObservationAcquisition(
+                AcquisitionStatus.ACQUIRED,
+                AcquisitionOrigin.RESET,
+                _world("fresh", False, "#fresh"),
+                "static_capture_acquired",
+            )
+
+    async def scenario() -> None:
+        old = _world("old", False, "#old")
+        if failure_kind == "unavailable":
+            environment = StaticEnvironment(
+                [old],
+                observation_capabilities=ObservationCapabilities(False, True),
+            )
+        elif failure_kind == "wrong_origin":
+            environment = WrongOriginEnvironment([old])
+        elif failure_kind == "stale":
+            environment = StaticEnvironment([old, old])
+        else:
+            environment = StaticEnvironment([old])
+        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        failed = await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert failed.status is AgentLoopStatus.FAILED
+        assert failed.reason_code == reason_code
+        assert root.transition_id == root_id
+        assert root.reason_code == reason_code
+        assert root.resulting_status is AgentLoopStatus.FAILED
+        assert root.after_observation_id == "old"
+        assert root.acquisition is not None
+        assert root.acquisition.reason_code == reason_code
+        assert environment.capture_calls == capture_calls
+        assert session.state.control_transition_total_count == 1
+        assert session.approved_confirmation is None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("fresh_status", "expected_loop_status"),
+    (
+        (TaskEvaluationStatus.COMPLETE, AgentLoopStatus.DONE),
+        (TaskEvaluationStatus.UNKNOWN, AgentLoopStatus.WAITING_USER),
+        (TaskEvaluationStatus.BLOCKED, AgentLoopStatus.BLOCKED),
+    ),
+)
+def test_confirmation_fresh_task_terminal_closes_root_without_execution(
+    fresh_status: TaskEvaluationStatus,
+    expected_loop_status: AgentLoopStatus,
+) -> None:
+    class FreshStatusEvaluator:
+        calls = 0
+
+        async def evaluate(self, task, observation):
+            self.calls += 1
+            status = TaskEvaluationStatus.INCOMPLETE if self.calls == 1 else fresh_status
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                status,
+                str(status),
+                completion_evidence_refs=(observation.facts[0].fact_id,)
+                if status is TaskEvaluationStatus.COMPLETE
+                else (),
+            )
+
+    async def scenario() -> None:
+        evaluator = FreshStatusEvaluator()
+        environment = StaticEnvironment(
+            [_world("old", False, "#old"), _world("fresh", True, "#fresh")]
+        )
+        session = await AgentEpisodeRunner(
+            AgentLoop(FirstPolicy(), ActionEvaluator(), evaluator)
+        ).start(environment, _task())
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        terminal = await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert terminal.status is expected_loop_status
+        assert root.transition_id == root_id
+        assert root.after_observation_id == "fresh"
+        assert root.resulting_status is expected_loop_status
+        assert root.reason_code == f"task_{fresh_status}"
+        assert root.pending_kind.value == "none"
+        assert session.state.control_transition_total_count == 1
+        assert environment.execute_calls == 0
+        assert session.approved_confirmation is None
+
+    asyncio.run(scenario())
+
+
 def test_confirmation_subject_change_requires_new_confirmation() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment(
@@ -225,6 +370,13 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
             "#confirmed",
             "#rebound",
         ]
+        root = session.state.recent_control_transitions[0]
+        assert len(root.acquisition_attempts) == 3
+        assert [item.reason_code for item in root.acquisition_attempts] == [
+            "static_capture_acquired",
+            "static_capture_acquired",
+            "static_post_acquired",
+        ]
 
     asyncio.run(scenario())
 
@@ -256,6 +408,54 @@ def test_sent_unknown_no_effect_consumes_confirmation_and_waits_without_replay()
         assert second.execution_count == 1
         assert second.confirmation_request is None
         assert len(environment.executed_requests) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "exc",
+    (RuntimeError("private evaluator error"), asyncio.CancelledError()),
+)
+def test_confirmed_execution_exception_closes_root_and_propagates(
+    exc: BaseException,
+) -> None:
+    class RaisingEvaluator:
+        async def evaluate(self, *args):
+            del args
+            raise exc
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [
+                _world("initial", False, "#initial"),
+                _world("confirmed", False, "#confirmed"),
+                _world("after", True, "#after"),
+            ],
+            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        )
+        session = await AgentEpisodeRunner(
+            AgentLoop(FirstPolicy(), RaisingEvaluator(), TaskEvaluator())
+        ).start(environment, _task())
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        with pytest.raises(type(exc)):
+            await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert root.transition_id == root_id
+        assert root.execution is not None
+        assert root.execution.dispatch_status is DispatchStatus.SENT
+        assert root.after_observation_id == "after"
+        assert root.reason_code == (
+            "runtime_cancelled"
+            if isinstance(exc, asyncio.CancelledError)
+            else "runtime_exception"
+        )
+        assert root.pending_kind.value == "none"
+        assert session.execution_count == 1
+        assert session.observation_count == 3
+        assert session.approved_confirmation is None
 
     asyncio.run(scenario())
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 
 from affordance_runtime.agent.control_transition import (
     AdmissionStatus,
     ControlTransitionScope,
-    Turn,
 )
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -113,8 +113,12 @@ async def run_policy_turn(
             execute_selection,
             scope,
         )
-    except BaseException:
-        scope.set_reason("runtime_exception")
+    except BaseException as exc:
+        cancelled = isinstance(exc, asyncio.CancelledError)
+        scope.set_reason("runtime_cancelled" if cancelled else "runtime_exception")
+        scope.set_resulting_status(
+            AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED
+        )
         scope.finalize(state, None)
         raise
     transition = scope.finalize(state, routed)
@@ -133,12 +137,10 @@ async def _route_decision(
 ):
     task, state = session.task, session.state
     if isinstance(decision, AskUser):
-        scope.record_turn(Turn(state.current_observation.observation_id, decision))
         scope.set_reason("user_input_requested")
         state.set_pending_question(decision.question)
         return build_result(AgentLoopStatus.WAITING_USER, task, state, 0, 0, decision.question)
     if isinstance(decision, Abort):
-        scope.record_turn(Turn(state.current_observation.observation_id, decision))
         scope.set_reason(f"abort_{decision.category}")
         return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, decision.reason)
     if isinstance(decision, ProposeDone):
@@ -198,11 +200,7 @@ async def _wait_refresh(
             failure_code=unavailable.failure_code,
         )
     if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
-        scope.record_turn(Turn(
-            state.current_observation.observation_id,
-            decision,
-            decision_result="wait_budget_exceeded",
-        ))
+        scope.record_decision_result("wait_budget_exceeded")
         scope.set_reason("wait_budget_exhausted")
         return build_result(
             AgentLoopStatus.BLOCKED, task, state, 0, 0, "total wait budget exhausted",
@@ -239,7 +237,6 @@ async def _fresh_observation(
     if not _can_observe(session):
         scope.set_reason("observation_budget_exhausted")
         return observation_budget_result(session.task, state, 0, 0)
-    scope.record_turn(Turn(state.current_observation.observation_id, decision))
     previous_id = state.current_observation.observation_id
     acquired = await capture_fresh(session.environment, previous_id, request)
     scope.record_acquisition(
@@ -305,7 +302,7 @@ async def _propose_done(
             reason_code="task_evaluation_invalid",
         )
     state.current_task_evaluation = evaluation
-    scope.record_turn(Turn(state.current_observation.observation_id, decision, task_evaluation=evaluation))
+    scope.record_evaluations(task=evaluation)
     scope.set_reason(f"task_{evaluation.status}")
     status = task_evaluation_loop_status(evaluation)
     return None if status is None else build_result(status, task, state, 0, 0, evaluation.reason)
@@ -353,9 +350,7 @@ def _request_action_page(
         scope.set_reason("invalid_action_page_request")
         return build_result(AgentLoopStatus.BLOCKED, session.task, session.state, 0, 0, "invalid action page request")
     result = "page_unchanged" if session.current_action_page.page_id == previous_page_id else "page_changed"
-    scope.record_turn(
-        Turn(session.state.current_observation.observation_id, decision, decision_result=result)
-    )
+    scope.record_decision_result(result)
     scope.set_reason(result)
     return None
 

@@ -1,8 +1,6 @@
 """Narrow evaluator-proposal validation at AgentLoop boundaries."""
 
-from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.agent.policy import ActionEvaluator, TaskEvaluator
-from affordance_runtime.agent.state import Turn
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_action_evaluation, validate_task_evaluation
@@ -41,23 +39,4 @@ async def validated_action_evaluation(
         before,
         after,
         WorldEvidenceIndex.from_observation(after),
-    )
-
-
-def untrusted_evaluation_turn(
-    before_observation_id: str,
-    decision: AgentDecision,
-    request: BoundActionRequest,
-    result: ActionResult,
-    after_observation_id: str,
-    action_evaluation: ActionEvaluation | None = None,
-) -> Turn:
-    return Turn(
-        before_observation_id,
-        decision,
-        request.intent,
-        request.request_id,
-        result,
-        after_observation_id,
-        action_evaluation,
     )

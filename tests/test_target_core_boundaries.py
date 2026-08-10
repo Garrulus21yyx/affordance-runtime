@@ -185,6 +185,33 @@ def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writ
     assert writes == ["control_transition.py"]
 
 
+def test_turn_is_only_a_compatibility_projection_not_a_production_fact_writer() -> None:
+    for path in _files(PACKAGE / "agent"):
+        if path.name in {"control_transition.py", "state.py", "result.py"}:
+            continue
+        source = path.read_text(encoding="utf-8")
+        assert "record_turn(" not in source
+        assert "Turn(" not in source
+
+
+def test_benchmark_case_projection_is_narrow_and_separate_from_model_projection() -> None:
+    benchmark = PACKAGE / "benchmarks" / "target_loop" / "case_projection.py"
+    runner = PACKAGE / "benchmarks" / "target_loop" / "runner.py"
+    model = PACKAGE / "model_boundary" / "control_transition_projection.py"
+
+    assert not any(
+        name.startswith("affordance_runtime.model_boundary")
+        for name in _imports(benchmark)
+    )
+    assert not any(
+        name.startswith("affordance_runtime.benchmarks")
+        for name in _imports(model)
+    )
+    runner_source = runner.read_text(encoding="utf-8")
+    assert "def _case_result(" not in runner_source
+    assert "project_case_result(" in runner_source
+
+
 def test_turn_history_is_read_only_projection_not_a_second_write_api() -> None:
     state_tree = ast.parse((PACKAGE / "agent" / "state.py").read_text(encoding="utf-8"))
     state = next(

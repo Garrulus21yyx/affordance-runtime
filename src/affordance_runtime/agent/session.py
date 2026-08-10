@@ -14,7 +14,7 @@ from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.control_transition import AcquisitionSummary
+    from affordance_runtime.agent.control_transition import ControlContinuationScope
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.model_boundary.context import AgentContext
     from affordance_runtime.world.action_paging import InternalActionPage
@@ -33,7 +33,9 @@ class AgentRunSession:
     currentness_probe_count: int = 0
     approved_confirmation: ConfirmationRequest | None = field(default=None, repr=False)
     approved_confirmation_transition_id: str = field(default="", repr=False)
-    approved_confirmation_acquisition: AcquisitionSummary | None = field(default=None, repr=False)
+    confirmation_continuation_scope: ControlContinuationScope | None = field(
+        default=None, repr=False
+    )
     resolved_confirmation_ids: set[str] = field(default_factory=set, repr=False)
     last_result: AgentResult | None = field(default=None, repr=False)
     current_context_snapshot: AgentContext | None = field(default=None, repr=False)

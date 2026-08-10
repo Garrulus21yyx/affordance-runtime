@@ -80,17 +80,34 @@ class AgentLoopState:
                 transition.execution is not None
                 and str(transition.execution.dispatch_status) == "sent_unknown"
             )
+            attempts = (
+                *transition.acquisition_attempts,
+                *continuation.acquisition_attempts,
+            )
+            acquisition = None
+            if attempts:
+                final = attempts[-1]
+                acquisition = replace(
+                    final,
+                    attempts=sum(item.attempts for item in attempts),
+                )
             updated = replace(
                 transition,
                 execution=continuation.execution or transition.execution,
-                acquisition=continuation.acquisition or transition.acquisition,
-                acquisition_attempts=(
-                    continuation.acquisition_attempts
-                    or transition.acquisition_attempts
-                ),
+                acquisition=acquisition,
+                acquisition_attempts=attempts,
                 after_observation_id=continuation.after_observation_id,
-                action_evaluation=continuation.action_evaluation,
-                task_evaluation=continuation.task_evaluation,
+                action_evaluation=(
+                    continuation.action_evaluation or transition.action_evaluation
+                ),
+                task_evaluation=(
+                    continuation.task_evaluation or transition.task_evaluation
+                ),
+                progress=type(transition.progress)(
+                    transition.progress.event_count + continuation.progress.event_count,
+                    continuation.progress.latest_event_type
+                    or transition.progress.latest_event_type,
+                ),
                 pending_kind=continuation.pending_kind,
                 resulting_status=continuation.resulting_status,
                 reason_code=continuation.reason_code,

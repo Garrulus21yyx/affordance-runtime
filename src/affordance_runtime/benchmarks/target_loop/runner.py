@@ -15,6 +15,7 @@ from affordance_runtime.agent import (
     AgentSessionStartError,
 )
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
+from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
     BenchmarkManifest,
@@ -31,7 +32,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
-from affordance_runtime.benchmarks.target_loop.terminal_reasons import project_terminal_reason_code
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 
 
@@ -135,7 +135,15 @@ async def _run_case(case) -> BenchmarkCaseResult:
     if session is not None:
         snapshot = session.snapshot_partial_episode()
     elapsed = (time.perf_counter() - started) * 1000
-    return _case_result(case.case_id, result, instrumentation, elapsed, failure, partial, snapshot)
+    return project_case_result(
+        case.case_id,
+        result,
+        instrumentation,
+        elapsed,
+        failure,
+        timeout_snapshot=partial,
+        final_snapshot=snapshot,
+    )
 
 
 def _build_loop(composition, instrumentation):
@@ -181,157 +189,6 @@ async def _close(environment) -> None:
         if inspect.isawaitable(outcome):
             await outcome
         return
-
-
-def _case_result(
-    case_id, result, instrumentation, latency_ms, failure, partial=None, snapshot=None,
-) -> BenchmarkCaseResult:
-    turns = result.turns if result is not None else ()
-    sent_unknown = (
-        partial.sent_unknown_count
-        if partial is not None
-        else result.sent_unknown_count
-        if result is not None
-        else 0
-    )
-    values = _metric_values(result, turns, instrumentation, sent_unknown, partial)
-    measurements = {
-        name: MetricMeasurement(value, True) for name, value in values.items()
-    }
-    measurements["duplicate_unknown_attempts"] = MetricMeasurement(
-        values["duplicate_unknown_attempts"], True, sent_unknown,
-    )
-    measurements["stale_zero_call_violations"] = MetricMeasurement(
-        values["stale_zero_call_violations"], True, values["stale_opportunities"],
-    )
-    failure_code = (
-        "case_timeout"
-        if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG
-        else ""
-    )
-    if result is not None and result.reason_code == "turn_budget_exhausted":
-        failure_code = "turn_budget_exhausted"
-    if result is not None and result.policy_failure is not None:
-        failure_code = f"policy_{result.policy_failure.kind}"
-    if result is not None and result.failure_code is not None and not failure_code:
-        failure_code = str(result.failure_code)
-    metadata = snapshot or partial
-    return BenchmarkCaseResult(
-        case_id=case_id,
-        status=str(result.status) if result else str(AgentLoopStatus.FAILED),
-        execution_completed=result is not None and not failure,
-        failure_reason=failure,
-        latency_ms=latency_ms,
-        measurements=measurements,
-        terminal_reason_code=(
-            project_terminal_reason_code(result.status, result.reason_code, result.failure_code)
-            if result is not None else None
-        ),
-        termination_origin=(
-            "harness_watchdog"
-            if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG
-            else "cleanup"
-            if instrumentation.failure_origin is CaseFailureOrigin.CLEANUP
-            else "component"
-            if instrumentation.failure_origin is not CaseFailureOrigin.NONE
-            else "runtime"
-            if result is not None
-            else ""
-        ),
-        case_failure_code=failure_code,
-        partial_episode_available=partial is not None,
-        latest_semantic_attempt_key_digest=(
-            metadata.latest_semantic_attempt_key_digest if metadata is not None else ""
-        ),
-        same_attempt_streak=metadata.same_attempt_streak if metadata is not None else 0,
-        no_progress_count=metadata.no_progress_count if metadata is not None else 0,
-        last_progress_event_type=metadata.last_progress_event_type if metadata is not None else "",
-        failure_origin=(
-            instrumentation.failure_origin
-            if instrumentation.failure_origin is not CaseFailureOrigin.NONE
-            else _agent_failure_origin(result)
-        ),
-        failure_code=(
-            instrumentation.failure_code
-            or (str(result.failure_code) if result is not None and result.failure_code else "")
-        ),
-        exception_class=instrumentation.exception_class,
-        last_decision_type=metadata.last_decision_type if metadata is not None else "",
-        last_policy_failure_code=(
-            str(result.policy_failure.kind) if result is not None and result.policy_failure is not None else ""
-        ),
-        last_action_space_option_count=(
-            metadata.last_action_space_option_count if metadata is not None else 0
-        ),
-        last_world_target_count=metadata.last_world_target_count if metadata is not None else 0,
-        last_world_coverage=metadata.last_world_coverage if metadata is not None else "",
-        pending_kind=metadata.pending_kind if metadata is not None else "",
-        latest_task_status=metadata.latest_task_status if metadata is not None else "",
-        latest_action_evaluation_status=(
-            metadata.latest_action_evaluation_status if metadata is not None else ""
-        ),
-    )
-
-
-def _agent_failure_origin(result) -> CaseFailureOrigin:
-    if result is None or result.failure_code is None:
-        return CaseFailureOrigin.NONE
-    if str(result.failure_code).startswith("post_action_"):
-        return CaseFailureOrigin.POST_ACTION_OBSERVATION
-    return CaseFailureOrigin.DECISION_CONTROL
-
-
-def _metric_values(result, turns, state, sent_unknown, partial=None) -> dict[str, int]:
-    metadata = state.model_metadata
-    observations = result.observation_count if result else partial.observation_count if partial else 0
-    executions = result.execution_count if result else partial.execution_count if partial else 0
-    probes = result.currentness_probe_count if result else partial.currentness_probe_count if partial else 0
-    completed_turns = (
-        result.control_transition_total_count
-        if result
-        else partial.completed_turn_count
-        if partial
-        else 0
-    )
-    kind_counts = dict(
-        result.control_transition_kind_counts
-        if result is not None
-        else partial.decision_kind_counts
-        if partial is not None
-        else ()
-    )
-    values = {
-        "observations": observations,
-        "executions": executions,
-        "currentness_probes": probes,
-        "turns": completed_turns,
-        "policy_calls": state.policy_calls,
-        "semantic_judge_calls": state.semantic_judge_calls,
-        "provider_attempts": state.provider_attempts,
-        "confirmations": state.confirmations_submitted,
-        "ask_user_count": kind_counts.get("AskUser", 0),
-        "wait_count": kind_counts.get("Wait", 0),
-        "page_request_count": kind_counts.get("RequestActionPage", 0),
-        "sent_unknown_count": sent_unknown,
-        "duplicate_unknown_attempts": state.duplicate_unknown_attempts,
-        "forbidden_effect_attempts": state.forbidden_effect_attempts,
-        "stale_opportunities": state.stale_opportunities,
-        "stale_zero_call_violations": state.stale_zero_call_violations,
-        "effectful_dispatches": state.effectful_dispatches,
-        "reset_acquisitions": state.environment_reset_acquisitions,
-        "independent_capture_calls": state.environment_capture_calls,
-        "post_action_acquisitions": state.environment_post_acquisitions,
-        "provider_retry_count": (
-            metadata.rate_limit_retry_count + metadata.transient_retry_count
-            if metadata is not None else -1
-        ),
-        "prompt_tokens": state.prompt_tokens,
-        "completion_tokens": state.completion_tokens,
-        "total_tokens": state.total_tokens,
-        "model_latency_ms": state.model_latency_ms,
-    }
-    values.update(state.custom_metrics)
-    return values
 
 
 class _CaseStageError(RuntimeError):

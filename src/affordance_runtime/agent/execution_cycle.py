@@ -6,11 +6,9 @@ from affordance_runtime.agent.control_transition import (
     AdmissionStatus,
     ControlContinuationScope,
     ControlTransitionScope,
-    Turn,
 )
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import (
-    untrusted_evaluation_turn,
     validated_action_evaluation,
     validated_task_evaluation,
 )
@@ -71,97 +69,82 @@ async def execute_cycle(
     outcome = await session.environment.execute(request)
     result = outcome.result
     probed = _probe_count(result)
-    if result.request_id != request.request_id or result.backend != request.binding.executor_id:
-        _record_primary_post_acquisition(scope, outcome.post_acquisition)
-        scope.record_turn(Turn(before.observation_id, decision, request.intent, request.request_id, result))
-        scope.set_reason("action_result_lineage_mismatch")
-        terminal = build_result(
-            AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch",
-        )
-        observed = acquisition_attempt_count(outcome.post_acquisition)
-        return state, observed, int(result.dispatch_status is not DispatchStatus.NOT_SENT), probed, terminal
-    if result.dispatch_status is DispatchStatus.NOT_SENT:
-        _record_primary_post_acquisition(scope, outcome.post_acquisition)
-        return await _not_sent_outcome(session, decision, request, result, probed, scope)
-    remaining = task.loop_budget.max_observations - session.observation_count
+    scope.record_execution(request.request_id, request.intent, result)
     primary = validate_fresh_acquisition(
         outcome.post_acquisition,
         before.observation_id,
         expected_origin=AcquisitionOrigin.POST_ACTION,
         post_action=True,
     )
-    acquired = await post_action_observation(
-        session.environment, before.observation_id, outcome.post_acquisition, remaining,
-    )
-    primary_attempts = acquisition_attempt_count(outcome.post_acquisition)
-    if acquired.used_fallback:
+    if result.dispatch_status is not DispatchStatus.NOT_SENT or primary.attempts:
         scope.record_acquisition(
             primary.status,
-            AcquisitionOrigin.POST_ACTION,
+            outcome.post_acquisition.origin,
             primary.reason_code,
             primary.attempts,
         )
+    primary_attempts = acquisition_attempt_count(outcome.post_acquisition)
+    session.observation_count += primary_attempts
+    session.execution_count += int(result.dispatch_status is not DispatchStatus.NOT_SENT)
+    session.currentness_probe_count += probed
+    if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+        scope.set_reason("action_result_lineage_mismatch")
+        terminal = build_result(
+            AgentLoopStatus.FAILED, task, state, 0, 0, "action result lineage mismatch",
+        )
+        return state, 0, 0, 0, terminal
+    if result.dispatch_status is DispatchStatus.NOT_SENT:
+        return await _not_sent_outcome(session, decision, request, result, scope)
+    remaining = task.loop_budget.max_observations - session.observation_count
+    acquired = await post_action_observation(
+        session.environment, before.observation_id, outcome.post_acquisition, remaining,
+    )
+    if acquired.used_fallback:
+        fallback_attempts = acquired.attempts - primary_attempts
         scope.record_acquisition(
             acquired.status,
             AcquisitionOrigin.INDEPENDENT_CAPTURE,
             acquired.reason_code,
-            acquired.attempts - primary_attempts,
+            fallback_attempts,
             ObservationRequestKind.POST_ACTION_FALLBACK,
         )
-    else:
-        scope.record_acquisition(
-            acquired.status,
-            AcquisitionOrigin.POST_ACTION,
-            acquired.reason_code,
-            acquired.attempts,
-        )
+        session.observation_count += fallback_attempts
     if acquired.observation is None:
         terminal = no_fresh_after_result(session, decision, request, result, acquired, scope)
-        return state, acquired.attempts, 1, probed, terminal
+        return state, 0, 0, 0, terminal
+    state.current_observation = acquired.observation
+    state.current_task_evaluation = None
+    scope.record_after(acquired.observation.observation_id)
     return await _evaluate_after(
-        session, selection, decision, request, result, acquired.observation,
-        acquired.attempts, probed, action_evaluator, task_evaluator,
+        session, selection, decision, request, result, before, acquired.observation,
+        0, 0, action_evaluator, task_evaluator,
         scope,
     )
 
 
 async def _evaluate_after(
-    session, selection, decision, request, result, after, observed, probed,
+    session, selection, decision, request, result, before, after, observed, probed,
     action_evaluator, task_evaluator,
     scope,
 ):
     task, state = session.task, session.state
-    before = state.current_observation
     try:
         action_evaluation = await validated_action_evaluation(
             action_evaluator, task, before, request, result, after,
         )
     except ValueError as exc:
-        scope.record_turn(untrusted_evaluation_turn(
-            before.observation_id, decision, request, result, after.observation_id,
-        ))
+        scope.record_evaluations()
         scope.set_reason("action_evaluation_invalid")
-        state.current_observation = after
-        state.current_task_evaluation = None
         terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
-        return state, observed, 1, probed, terminal
+        return state, observed, 0, probed, terminal
     try:
         task_evaluation = await validated_task_evaluation(task_evaluator, task, after)
     except ValueError as exc:
-        scope.record_turn(untrusted_evaluation_turn(
-            before.observation_id, decision, request, result, after.observation_id,
-            action_evaluation,
-        ))
+        scope.record_evaluations(action=action_evaluation)
         scope.set_reason("task_evaluation_invalid")
-        state.current_observation = after
-        state.current_task_evaluation = None
         terminal = build_result(AgentLoopStatus.FAILED, task, state, 0, 0, str(exc))
-        return state, observed, 1, probed, terminal
-    scope.record_turn(Turn(
-        before.observation_id, decision, request.intent, request.request_id,
-        result, after.observation_id, action_evaluation, task_evaluation,
-    ))
-    state.current_observation = after
+        return state, observed, 0, probed, terminal
+    scope.record_evaluations(action_evaluation, task_evaluation)
     state.current_task_evaluation = task_evaluation
     record_execution_progress(session, selection, action_evaluation, after, task_evaluation)
     scope.set_reason(f"action_{action_evaluation.status}")
@@ -175,7 +158,7 @@ async def _evaluate_after(
         scope.set_reason("effect_unknown")
     elif terminal is not None:
         scope.set_reason("action_rejected")
-    return state, observed, 1, probed, terminal
+    return state, observed, 0, probed, terminal
 
 
 async def _binding_refresh(
@@ -201,7 +184,10 @@ async def _binding_refresh(
     if acquired.observation is not None:
         session.state.current_observation = acquired.observation
         session.state.current_task_evaluation = None
-        return session.state, acquired.attempts, 0, 0, None
+        scope.record_after(acquired.observation.observation_id)
+        session.observation_count += acquired.attempts
+        return session.state, 0, 0, 0, None
+    session.observation_count += acquired.attempts
     terminal = build_result(
         AgentLoopStatus.FAILED,
         session.task,
@@ -211,7 +197,7 @@ async def _binding_refresh(
         acquired.reason_code,
         failure_code=acquired.failure_code,
     )
-    return session.state, acquired.attempts, 0, 0, terminal
+    return session.state, 0, 0, 0, terminal
 
 
 async def _not_sent_outcome(
@@ -219,18 +205,16 @@ async def _not_sent_outcome(
     decision,
     request,
     result: ActionResult,
-    probed,
     scope: ControlTransitionScope | ControlContinuationScope,
 ):
     task, state = session.task, session.state
     before_id = state.current_observation.observation_id
-    scope.record_turn(Turn(before_id, decision, request.intent, request.request_id, result))
     if result.error not in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
         scope.set_reason("action_not_dispatched")
         terminal = build_result(
             AgentLoopStatus.FAILED, task, state, 0, 0, "action was not dispatched",
         )
-        return state, 0, 0, probed, terminal
+        return state, 0, 0, 0, terminal
     acquired = await capture_fresh(
         session.environment,
         before_id,
@@ -249,23 +233,17 @@ async def _not_sent_outcome(
     if acquired.observation is not None:
         state.current_observation = acquired.observation
         state.current_task_evaluation = None
-        return state, acquired.attempts, 0, probed, None
+        scope.record_after(acquired.observation.observation_id)
+        session.observation_count += acquired.attempts
+        return state, 0, 0, 0, None
+    session.observation_count += acquired.attempts
     terminal = build_result(
         AgentLoopStatus.FAILED, task, state, 0, 0, acquired.reason_code,
         failure_code=acquired.failure_code,
     )
-    return state, acquired.attempts, 0, probed, terminal
+    return state, 0, 0, 0, terminal
 
 
 def _probe_count(result: ActionResult) -> int:
     value = result.adapter_evidence.get("currentness_probe_count", 0)
     return int(value) if isinstance(value, int | float) else 0
-
-
-def _record_primary_post_acquisition(scope, acquisition) -> None:
-    scope.record_acquisition(
-        acquisition.status,
-        acquisition.origin,
-        acquisition.reason_code,
-        acquisition_attempt_count(acquisition),
-    )

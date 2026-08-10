@@ -50,6 +50,7 @@ class AdmissionSummary:
 
 @dataclass(frozen=True)
 class ExecutionSummary:
+    expected_request_id: str
     request_id: str
     backend: str
     dispatch_status: DispatchStatus
@@ -165,6 +166,7 @@ class ControlContinuation:
     request_id: str
     action_evaluation: ActionEvaluation | None
     task_evaluation: TaskEvaluation | None
+    progress: ProgressDelta
     pending_kind: PendingKind
     resulting_status: AgentLoopStatus | None
     reason_code: str
@@ -182,16 +184,63 @@ class ControlTransitionScope:
         self._decision = decision
         self._before_id = state.current_observation.observation_id
         self._progress_total = state.progress_event_total_count
-        self._turn = Turn(self._before_id, decision)
+        self._intent: ActionIntent | None = None
+        self._request_id = ""
+        self._result: ActionResult | None = None
+        self._after_id = ""
+        self._action_evaluation: ActionEvaluation | None = None
+        self._task_evaluation: TaskEvaluation | None = None
+        self._decision_result = ""
         self._admission: AdmissionSummary | None = None
         self._acquisitions: list[AcquisitionSummary] = []
         self._reason_code = ""
+        self._resulting_status: AgentLoopStatus | None = None
         self._finalized = False
 
     def record_turn(self, turn: Turn) -> None:
         if turn.decision != self._decision or turn.before_observation_id != self._before_id:
             raise ValueError("transition facts do not belong to the accepted decision")
-        self._turn = turn
+        self._merge_compatibility_turn(turn)
+
+    def record_execution(self, request_id: str, intent: ActionIntent, result: ActionResult) -> None:
+        self._intent = intent
+        self._request_id = request_id
+        self._result = result
+
+    def record_after(self, observation_id: str) -> None:
+        self._after_id = observation_id
+
+    def record_evaluations(
+        self,
+        action: ActionEvaluation | None = None,
+        task: TaskEvaluation | None = None,
+    ) -> None:
+        self._action_evaluation = action or self._action_evaluation
+        self._task_evaluation = task or self._task_evaluation
+
+    def record_decision_result(self, value: str) -> None:
+        self._decision_result = value
+
+    def _merge_compatibility_turn(self, turn: Turn) -> None:
+        current = self._as_turn()
+        merged = _merge_turn(current, turn)
+        self._intent, self._request_id, self._result = (
+            merged.intent, merged.request_id, merged.result
+        )
+        self._after_id = merged.after_observation_id
+        self._action_evaluation = merged.action_evaluation
+        self._task_evaluation = merged.task_evaluation
+        self._decision_result = merged.decision_result
+
+    def _as_turn(self) -> Turn:
+        return Turn(
+            self._before_id, self._decision, self._intent, self._request_id,
+            self._result, self._after_id, self._action_evaluation,
+            self._task_evaluation, self._decision_result,
+        )
+
+    def set_resulting_status(self, status: AgentLoopStatus) -> None:
+        self._resulting_status = status
 
     def record_admission(self, status: AdmissionStatus, reason_code: str) -> None:
         self._admission = AdmissionSummary(status, reason_code)
@@ -222,9 +271,9 @@ class ControlTransitionScope:
         if self._finalized:
             raise RuntimeError("accepted decision scope was already finalized")
         self._finalized = True
-        status = _outcome_status(outcome)
+        status = self._resulting_status or _outcome_status(outcome)
         sequence = state.control_transition_total_count + 1
-        turn = self._turn
+        turn = self._as_turn()
         after_id = turn.after_observation_id or state.current_observation.observation_id
         reason_code = self._reason_code or _default_reason(self._decision, status, turn)
         transition = ControlTransition(
@@ -267,15 +316,77 @@ class ControlContinuationScope:
         self._source_transition_id = source_transition_id
         self._decision = decision
         self._before_id = state.current_observation.observation_id
-        self._turn = Turn(self._before_id, decision)
+        self._progress_total = state.progress_event_total_count
+        self._intent: ActionIntent | None = None
+        self._request_id = ""
+        self._result: ActionResult | None = None
+        self._after_id = ""
+        self._action_evaluation: ActionEvaluation | None = None
+        self._task_evaluation: TaskEvaluation | None = None
+        self._decision_result = ""
         self._acquisitions: list[AcquisitionSummary] = []
         self._reason_code = ""
+        self._resulting_status: AgentLoopStatus | None = None
         self._finalized = False
 
     def record_turn(self, turn: Turn) -> None:
-        if turn.decision != self._decision or turn.before_observation_id != self._before_id:
-            raise ValueError("continuation facts do not belong to its root decision")
-        self._turn = turn
+        # A confirmation continuation may span fresh contexts and rebound worlds;
+        # its immutable root decision remains the accepted policy decision.
+        self._merge_compatibility_turn(turn)
+
+    def record_execution(self, request_id: str, intent: ActionIntent, result: ActionResult) -> None:
+        self._intent = intent
+        self._request_id = request_id
+        self._result = result
+
+    def record_after(self, observation_id: str) -> None:
+        self._after_id = observation_id
+
+    def record_evaluations(
+        self,
+        action: ActionEvaluation | None = None,
+        task: TaskEvaluation | None = None,
+    ) -> None:
+        self._action_evaluation = action or self._action_evaluation
+        self._task_evaluation = task or self._task_evaluation
+
+    def record_decision_result(self, value: str) -> None:
+        self._decision_result = value
+
+    def _merge_compatibility_turn(self, turn: Turn) -> None:
+        merged = _merge_turn(self._as_turn(), turn)
+        self._intent, self._request_id, self._result = (
+            merged.intent, merged.request_id, merged.result
+        )
+        self._after_id = merged.after_observation_id
+        self._action_evaluation = merged.action_evaluation
+        self._task_evaluation = merged.task_evaluation
+        self._decision_result = merged.decision_result
+
+    def _as_turn(self) -> Turn:
+        return Turn(
+            self._before_id, self._decision, self._intent, self._request_id,
+            self._result, self._after_id, self._action_evaluation,
+            self._task_evaluation, self._decision_result,
+        )
+
+    def set_resulting_status(self, status: AgentLoopStatus) -> None:
+        self._resulting_status = status
+
+    @property
+    def has_execution(self) -> bool:
+        return self._result is not None
+
+    @property
+    def reason_code(self) -> str:
+        return self._reason_code
+
+    @property
+    def has_effectful_execution(self) -> bool:
+        return bool(
+            self._result is not None
+            and self._result.dispatch_status is not DispatchStatus.NOT_SENT
+        )
 
     def record_admission(self, status: AdmissionStatus, reason_code: str) -> None:
         del status
@@ -311,46 +422,23 @@ class ControlContinuationScope:
             state.current_observation.observation_id,
             _aggregate_acquisition(self._acquisitions),
             tuple(self._acquisitions),
-            _execution_summary(self._turn),
-            self._turn.intent,
-            self._turn.request_id,
-            self._turn.action_evaluation,
-            self._turn.task_evaluation,
+            _execution_summary(self._as_turn()),
+            self._intent,
+            self._request_id,
+            self._action_evaluation,
+            self._task_evaluation,
+            _progress_delta(state, self._progress_total),
             _pending_kind(state),
-            _outcome_status(outcome),
-            self._reason_code or _default_reason(self._decision, _outcome_status(outcome), self._turn),
+            self._resulting_status or _outcome_status(outcome),
+            self._reason_code or _default_reason(
+                self._decision,
+                self._resulting_status or _outcome_status(outcome),
+                self._as_turn(),
+            ),
         )
         state.latest_control_continuation = continuation
         state._apply_control_continuation(continuation)
         return continuation
-
-
-def continuation_from_state(
-    state: AgentLoopState,
-    source_transition_id: str,
-    *,
-    status: AgentLoopStatus | None,
-    reason_code: str,
-    acquisition: AcquisitionSummary | None = None,
-    result: ActionResult | None = None,
-) -> ControlContinuation:
-    continuation = ControlContinuation(
-        source_transition_id,
-        state.current_observation.observation_id,
-        acquisition,
-        (acquisition,) if acquisition is not None else (),
-        _execution_summary(Turn(state.current_observation.observation_id, state.recent_control_transitions[-1].decision, result=result)) if result else None,
-        None,
-        "",
-        None,
-        None,
-        _pending_kind(state),
-        status,
-        reason_code,
-    )
-    state.latest_control_continuation = continuation
-    state._apply_control_continuation(continuation)
-    return continuation
 
 
 def _require_reason_code(value: str) -> None:
@@ -367,11 +455,27 @@ def _execution_summary(turn: Turn) -> ExecutionSummary | None:
     if turn.result is None:
         return None
     return ExecutionSummary(
-        turn.request_id or turn.result.request_id,
+        turn.request_id,
+        turn.result.request_id,
         turn.result.backend,
         turn.result.dispatch_status,
         turn.result.transport_success,
         turn.result.error,
+    )
+
+
+def _merge_turn(current: Turn, update: Turn) -> Turn:
+    """Merge staged facts without allowing a later partial update to erase truth."""
+    return Turn(
+        current.before_observation_id,
+        current.decision,
+        update.intent or current.intent,
+        update.request_id or current.request_id,
+        update.result or current.result,
+        update.after_observation_id or current.after_observation_id,
+        update.action_evaluation or current.action_evaluation,
+        update.task_evaluation or current.task_evaluation,
+        update.decision_result or current.decision_result,
     )
 
 

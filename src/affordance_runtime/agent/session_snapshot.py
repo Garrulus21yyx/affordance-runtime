@@ -28,6 +28,8 @@ class PartialEpisodeSnapshot:
     last_world_coverage: str
     pending_kind: str
     decision_kind_counts: tuple[tuple[str, int], ...] = ()
+    latest_control_status: str = ""
+    latest_control_reason_code: str = ""
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
@@ -45,15 +47,16 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
     )
     key = session.progress_controller.latest_attempt_key
     latest_event = state.recent_progress_events[-1] if state.recent_progress_events else None
-    latest_task = next(
-        (
-            item.task_evaluation
-            for item in reversed(state.recent_control_transitions)
-            if item.task_evaluation is not None
-            and item.task_evaluation.observation_id
-            == state.current_observation.observation_id
-        ),
-        state.current_task_evaluation,
+    latest_task = state.current_task_evaluation
+    if (
+        latest_task is not None
+        and latest_task.observation_id != state.current_observation.observation_id
+    ):
+        latest_task = None
+    latest_control = (
+        state.recent_control_transitions[-1]
+        if state.recent_control_transitions
+        else None
     )
     return PartialEpisodeSnapshot(
         session.observation_count,
@@ -75,6 +78,10 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         str(state.current_observation.coverage),
         _pending_kind(session),
         tuple(sorted(state.control_transition_kind_counts.items())),
+        str(latest_control.resulting_status)
+        if latest_control is not None and latest_control.resulting_status is not None
+        else "",
+        latest_control.reason_code if latest_control is not None else "",
     )
 
 
