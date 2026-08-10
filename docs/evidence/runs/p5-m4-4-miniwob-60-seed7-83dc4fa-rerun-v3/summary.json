@@ -1,0 +1,77 @@
+{
+  "capability_inventory_false_positive_count": 0,
+  "classification": "MINIWOB_60_SEEDED_BREADTH_PROFILE",
+  "completed_cases": 60,
+  "generalization_claim": "NOT_CLAIMED",
+  "infrastructure_clean_success_rate": 0.0784313725490196,
+  "outcome_counts": {
+    "ask_user_unresolved": 1,
+    "no_progress_repetition": 4,
+    "policy_aborted": 6,
+    "post_observation_failure": 7,
+    "provider_unavailable": 9,
+    "runtime_rejected": 11,
+    "success": 4,
+    "turn_budget_exhausted": 7,
+    "unclassified_typed_failure": 9,
+    "wrong_destination": 1,
+    "wrong_parameters": 1
+  },
+  "overall_success_rate": 0.06666666666666667,
+  "planned_cases": 60,
+  "provider_available_success_rate": 0.0784313725490196,
+  "schema_version": "miniwob-breadth-summary.v1",
+  "statistics": {
+    "executions": {
+      "median": 0.0,
+      "p90": 2.0
+    },
+    "model_latency_ms": {
+      "median": 4196.882,
+      "p90": 20304.877
+    },
+    "observations": {
+      "median": 1.0,
+      "p90": 3.0
+    },
+    "provider_attempts": {
+      "median": 2.0,
+      "p90": 10.0
+    },
+    "total_tokens": {
+      "median": 3003.0,
+      "p90": 13717.0
+    },
+    "turns": {
+      "median": 1.0,
+      "p90": 10.0
+    }
+  },
+  "success_by_primitive_profile": {
+    "activate": {
+      "rate": 0.046511627906976744,
+      "successful": 2,
+      "total": 43
+    },
+    "activate+fill": {
+      "rate": 0.09090909090909091,
+      "successful": 1,
+      "total": 11
+    },
+    "activate+fill+select": {
+      "rate": 0.0,
+      "successful": 0,
+      "total": 5
+    },
+    "activate+select": {
+      "rate": 1.0,
+      "successful": 1,
+      "total": 1
+    }
+  },
+  "successful_cases": 4,
+  "total_model_latency_ms": 468808.882,
+  "total_provider_attempts": 214.0,
+  "total_tokens": 326289.0,
+  "total_wall_clock_latency_ms": 1610115.3238974512
+}

@@ -1,0 +1,206 @@
+{
+  "capability_profile": "current_primitives",
+  "case_failure_code": "",
+  "case_id": "miniwob-60-33",
+  "classification_source": "typed_last_decision",
+  "exception_class": "",
+  "execution_completed": true,
+  "failure_code": "",
+  "failure_origin": "none",
+  "last_action_evaluation_status": "",
+  "last_action_space_option_count": 0,
+  "last_decision_type": "Abort",
+  "last_policy_failure_code": "",
+  "last_task_evaluation_status": "incomplete",
+  "last_world_coverage": "{'browsergym': <CoverageState.COMPLETE: 'complete'>}",
+  "last_world_target_count": 0,
+  "metrics": {
+    "already_satisfied_suppressions": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "ask_user_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "browsergym_probe_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "browsergym_reset_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 1
+    },
+    "browsergym_step_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "cleanup_failures": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "click_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "completion_tokens": {
+      "measured": true,
+      "unit": "count",
+      "value": 919
+    },
+    "confirmations": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "currentness_probes": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "dom_action_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "duplicate_unknown_attempts": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "effectful_dispatches": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "executions": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "fallback_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "fill_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "forbidden_effect_attempts": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "model_latency_ms": {
+      "measured": true,
+      "unit": "count",
+      "value": 17839.288
+    },
+    "no_progress_terminations": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "observations": {
+      "measured": true,
+      "unit": "count",
+      "value": 1
+    },
+    "official_success_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "official_verifier_queries": {
+      "measured": true,
+      "unit": "count",
+      "value": 9
+    },
+    "page_request_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 8
+    },
+    "policy_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 9
+    },
+    "prompt_tokens": {
+      "measured": true,
+      "unit": "count",
+      "value": 10994
+    },
+    "provider_attempts": {
+      "measured": true,
+      "unit": "count",
+      "value": 9
+    },
+    "provider_retry_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "select_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "semantic_judge_calls": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "sent_unknown_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "stale_opportunities": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "stale_zero_call_violations": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    },
+    "total_tokens": {
+      "measured": true,
+      "unit": "count",
+      "value": 11913
+    },
+    "turns": {
+      "measured": true,
+      "unit": "count",
+      "value": 9
+    },
+    "wait_count": {
+      "measured": true,
+      "unit": "count",
+      "value": 0
+    }
+  },
+  "partial_episode_available": false,
+  "pending_kind": "",
+  "required_primitives": [
+    "activate"
+  ],
+  "schema_version": "miniwob-breadth-case.v1",
+  "task_family_label": "email-inbox",
+  "terminal_reason_code": null,
+  "terminal_status": "failed",
+  "termination_origin": "runtime",
+  "typed_outcome": "policy_aborted",
+  "wall_clock_latency_ms": 68118.9019344747
+}
