@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
+from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
 
@@ -212,6 +214,42 @@ def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
     assert projected.case_failure_code == "cleanup_exception"
     assert projected.failure_origin is CaseFailureOrigin.NONE
     assert projected.termination_origin == "cleanup"
+
+
+@pytest.mark.parametrize(
+    "request_kind",
+    ("policy_request", "wait_refresh", "confirmation_refresh", "post_action_fallback"),
+)
+def test_returned_and_thrown_acquisition_failures_share_semantic_origin(
+    request_kind: str,
+) -> None:
+    snapshot = replace(
+        _snapshot(reason="observation_acquisition_failed"),
+        latest_acquisition_request_kind=request_kind,
+        latest_attempt_operation=(
+            "execute" if request_kind == "post_action_fallback" else "capture"
+        ),
+        latest_attempt_reason_code="capture_failed",
+    )
+    returned_result = _result("observation_acquisition_failed")
+    returned_result.failure_code = (
+        AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
+        if request_kind == "post_action_fallback"
+        else AgentFailureCode.OBSERVATION_ACQUISITION_FAILED
+    )
+    returned = project_case_result(
+        "returned", returned_result, BenchmarkInstrumentation(), 1.0, "failed",
+        final_snapshot=snapshot,
+    )
+    thrown_metrics = BenchmarkInstrumentation()
+    expected = observation_failure_origin(request_kind)
+    thrown_metrics.record_failure(expected, "capture_exception", RuntimeError("private"))
+    thrown = project_case_result(
+        "thrown", None, thrown_metrics, 1.0, "failed", final_snapshot=snapshot,
+    )
+    assert returned.failure_origin is thrown.failure_origin is expected
+    assert returned.failure_facts.component_exception_class == ""
+    assert thrown.failure_facts.component_exception_class == "RuntimeError"
 
 
 def test_dynamic_exception_class_is_safely_normalized_without_losing_component() -> None:

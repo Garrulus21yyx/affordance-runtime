@@ -19,6 +19,10 @@ class PolicyFailure:
     retryable: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, ModelFailureKind):
+            raise TypeError("policy failure kind must be typed")
+        if type(self.retryable) is not bool:
+            raise TypeError("policy failure retryable flag must be boolean")
         if not self.reason.strip() or len(self.reason) > 240:
             raise ValueError("policy failure requires a bounded public reason")
 

@@ -15,6 +15,8 @@ async def validated_task_evaluation(
     observation: WorldObservation,
 ) -> TaskEvaluation:
     proposal = await evaluator.evaluate(task, observation)
+    if not isinstance(proposal, TaskEvaluation):
+        raise ValueError("task evaluator returned a malformed result")
     return validate_task_evaluation(
         proposal,
         task,
@@ -32,6 +34,8 @@ async def validated_action_evaluation(
     after: WorldObservation,
 ) -> ActionEvaluation:
     proposal = await evaluator.evaluate(task, before, request, result, after)
+    if not isinstance(proposal, ActionEvaluation):
+        raise ValueError("action evaluator returned a malformed result")
     return validate_action_evaluation(
         proposal,
         task,

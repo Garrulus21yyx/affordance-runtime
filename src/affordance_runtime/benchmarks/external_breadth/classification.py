@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.agent import AgentFailureCode
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -11,6 +12,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     CaseFailureOrigin,
     TerminalReasonCode,
 )
+from affordance_runtime.model_boundary.failures import ModelFailureKind
 
 
 @dataclass(frozen=True)
@@ -28,27 +30,19 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         )
     if facts.watchdog_code:
         return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
-    if facts.cleanup_code:
-        return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
     if facts.runtime_reason_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
-    policy = facts.policy_failure_code.casefold()
-    if policy == "provider_unavailable":
-        return ClassifiedOutcome(MiniWobTaskOutcome.PROVIDER_UNAVAILABLE, "typed_policy_failure")
-    if policy == "timeout":
-        return ClassifiedOutcome(MiniWobTaskOutcome.PROVIDER_TIMEOUT, "typed_policy_failure")
-    if policy in {"invalid_response", "schema_error", "refused"}:
-        outcome = (
-            MiniWobTaskOutcome.PROVIDER_REFUSED
-            if policy == "refused"
-            else MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE
-        )
-        return ClassifiedOutcome(outcome, "typed_policy_failure")
+    if facts.policy_failure_code:
+        policy = ModelFailureKind(facts.policy_failure_code)
+        return ClassifiedOutcome(_POLICY_OUTCOMES[policy], "typed_policy_failure")
     reason = result.terminal_reason_code
     if reason is TerminalReasonCode.NO_PROGRESS_REPETITION:
         return ClassifiedOutcome(MiniWobTaskOutcome.NO_PROGRESS_REPETITION, "typed_runtime_reason")
+    if facts.agent_failure_code:
+        agent_failure = AgentFailureCode(facts.agent_failure_code)
+        return ClassifiedOutcome(_AGENT_FAILURE_OUTCOMES[agent_failure], "typed_agent_failure")
     if reason is TerminalReasonCode.INVALID_ACTION_PARAMETERS:
         return ClassifiedOutcome(MiniWobTaskOutcome.WRONG_PARAMETERS, "typed_runtime_reason")
     if reason is TerminalReasonCode.DESTINATION_OUTSIDE_CURRENT_PAGE:
@@ -76,6 +70,10 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     origin = _ORIGIN_OUTCOMES.get(facts.component_origin)
     if origin is not None:
         return ClassifiedOutcome(origin, "typed_failure_origin")
+    if facts.runtime_reason_code:
+        return ClassifiedOutcome(MiniWobTaskOutcome.RUNTIME_REJECTED, "typed_runtime_reason")
+    if facts.cleanup_code:
+        return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if result.status == "done" and value == 1:
         return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "mechanical_verifier")
     if result.failure_reason or result.failure_code or result.exception_class:
@@ -106,6 +104,48 @@ _ORIGIN_OUTCOMES = {
     CaseFailureOrigin.DECISION_CONTROL: MiniWobTaskOutcome.RUNTIME_REJECTED,
     CaseFailureOrigin.UNKNOWN: MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE,
 }
+
+_POLICY_OUTCOMES = {
+    ModelFailureKind.PROVIDER_UNAVAILABLE: MiniWobTaskOutcome.PROVIDER_UNAVAILABLE,
+    ModelFailureKind.TIMEOUT: MiniWobTaskOutcome.PROVIDER_TIMEOUT,
+    ModelFailureKind.INVALID_RESPONSE: MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE,
+    ModelFailureKind.SCHEMA_ERROR: MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE,
+    ModelFailureKind.REFUSED: MiniWobTaskOutcome.PROVIDER_REFUSED,
+    ModelFailureKind.INTERNAL_ERROR: MiniWobTaskOutcome.POLICY_DECISION_FAILURE,
+}
+
+_AGENT_FAILURE_OUTCOMES = {
+    AgentFailureCode.NO_PROGRESS_REPETITION: MiniWobTaskOutcome.NO_PROGRESS_REPETITION,
+    AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE: (
+        MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
+    ),
+    AgentFailureCode.OBSERVATION_ACQUISITION_FAILED: (
+        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
+    ),
+    AgentFailureCode.OBSERVATION_FRESHNESS_INVALID: (
+        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
+    ),
+    AgentFailureCode.OBSERVATION_ORIGIN_INVALID: (
+        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
+    ),
+    AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE: (
+        MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
+    ),
+    AgentFailureCode.POST_ACTION_ACQUISITION_FAILED: (
+        MiniWobTaskOutcome.POST_OBSERVATION_FAILURE
+    ),
+    AgentFailureCode.POST_ACTION_FRESHNESS_INVALID: (
+        MiniWobTaskOutcome.POST_OBSERVATION_FAILURE
+    ),
+    AgentFailureCode.POST_ACTION_ORIGIN_INVALID: (
+        MiniWobTaskOutcome.POST_OBSERVATION_FAILURE
+    ),
+}
+
+if set(_POLICY_OUTCOMES) != set(ModelFailureKind):
+    raise RuntimeError("policy failure outcome mapping is not total")
+if set(_AGENT_FAILURE_OUTCOMES) != set(AgentFailureCode):
+    raise RuntimeError("agent failure outcome mapping is not total")
 
 
 def _metric(result: BenchmarkCaseResult, name: str) -> int | float:

@@ -42,6 +42,8 @@ class ActionEvaluation:
     evidence: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, ActionEvaluationStatus):
+            raise TypeError("action evaluation status must be typed")
         if not all(
             value.strip()
             for value in (
@@ -76,6 +78,8 @@ class CriterionEvaluation:
     reason: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, CriterionEvaluationStatus):
+            raise TypeError("criterion evaluation status must be typed")
         if not self.criterion_id.strip() or not self.reason.strip():
             raise ValueError("criterion evaluation requires identity and reason")
         object.__setattr__(
@@ -116,10 +120,16 @@ class TaskEvaluation:
     outputs: tuple[EvaluatedOutput, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, TaskEvaluationStatus):
+            raise TypeError("task evaluation status must be typed")
         if not self.task_id.strip() or not self.observation_id.strip() or not self.reason.strip():
             raise ValueError("task evaluation requires task, observation, and reason")
         criteria = tuple(self.criteria)
         outputs = tuple(self.outputs)
+        if any(not isinstance(item, CriterionEvaluation) for item in criteria):
+            raise TypeError("task evaluation criteria must be typed")
+        if any(not isinstance(item, EvaluatedOutput) for item in outputs):
+            raise TypeError("task evaluation outputs must be typed")
         if len({item.criterion_id for item in criteria}) != len(criteria):
             raise ValueError("task evaluation criterion IDs must be unique")
         if len({item.output_id for item in outputs}) != len(outputs):

@@ -23,6 +23,10 @@ class ModelFailure:
     retryable: bool
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, ModelFailureKind):
+            raise TypeError("model failure kind must be typed")
+        if type(self.retryable) is not bool:
+            raise TypeError("model failure retryable flag must be boolean")
         reason = self.reason.strip()
         if not reason:
             raise ValueError("model failure reason cannot be blank")

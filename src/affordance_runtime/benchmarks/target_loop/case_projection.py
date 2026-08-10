@@ -7,7 +7,7 @@ from dataclasses import fields
 from enum import Enum
 from typing import Any, cast
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
@@ -22,6 +22,16 @@ from affordance_runtime.benchmarks.target_loop.metric_registry import canonical_
 from affordance_runtime.benchmarks.target_loop.terminal_reasons import project_terminal_reason_code
 
 _BOUNDED_CODE = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
+_ACQUISITION_FAILURE_CODES = {
+    item.value for item in AgentFailureCode
+    if item is not AgentFailureCode.NO_PROGRESS_REPETITION
+}
+_POST_ACTION_FAILURE_CODES = {
+    AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE.value,
+    AgentFailureCode.POST_ACTION_ACQUISITION_FAILED.value,
+    AgentFailureCode.POST_ACTION_FRESHNESS_INVALID.value,
+    AgentFailureCode.POST_ACTION_ORIGIN_INVALID.value,
+}
 
 
 def project_case_result(
@@ -59,7 +69,7 @@ def project_case_result(
     runtime_reason = _runtime_reason(result, metadata)
     agent_failure = _agent_failure_code(result)
     component_origin, normalized_component_code = _component_failure(
-        instrumentation, metadata,
+        instrumentation, metadata, agent_failure,
     )
     component_code = (
         _safe_code(normalized_component_code, "runtime_failure")
@@ -283,18 +293,28 @@ def _agent_failure_code(result) -> str:
     return ""
 
 
-def _component_failure(instrumentation, snapshot) -> tuple[CaseFailureOrigin, str]:
+def _component_failure(
+    instrumentation, snapshot, agent_failure: str,
+) -> tuple[CaseFailureOrigin, str]:
     origin = instrumentation.failure_origin
     code = instrumentation.failure_code
-    if origin is not CaseFailureOrigin.UNKNOWN or snapshot is None:
+    if origin not in {CaseFailureOrigin.NONE, CaseFailureOrigin.UNKNOWN} or snapshot is None:
         return origin, code
-    if snapshot.latest_attempt_operation == "execute":
-        return CaseFailureOrigin.EXECUTION, snapshot.latest_attempt_reason_code or code
-    if snapshot.latest_acquisition_request_kind:
+    if (
+        snapshot.latest_acquisition_request_kind
+        and agent_failure in _ACQUISITION_FAILURE_CODES
+    ):
         return (
             observation_failure_origin(snapshot.latest_acquisition_request_kind),
-            snapshot.latest_attempt_reason_code or code,
+            snapshot.latest_attempt_reason_code or code or agent_failure,
         )
+    if agent_failure in _POST_ACTION_FAILURE_CODES:
+        return (
+            CaseFailureOrigin.POST_ACTION_OBSERVATION,
+            snapshot.latest_attempt_reason_code or code or agent_failure,
+        )
+    if snapshot.latest_attempt_operation == "execute":
+        return CaseFailureOrigin.EXECUTION, snapshot.latest_attempt_reason_code or code
     return origin, code
 
 
