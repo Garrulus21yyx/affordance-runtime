@@ -705,6 +705,30 @@ def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None
     asyncio.run(scenario())
 
 
+def test_foreign_capture_exception_name_cannot_break_physical_accounting() -> None:
+    foreign_error = type("捕获-" * 70, (Exception,), {})("private capture detail")
+
+    class RaisingCaptureEnvironment(StaticEnvironment):
+        async def capture(self, request):
+            self.capture_calls += 1
+            self.capture_requests.append(request)
+            raise foreign_error
+
+    async def scenario() -> None:
+        environment = RaisingCaptureEnvironment([_world("old", False, "#old")])
+        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        with pytest.raises(type(foreign_error)):
+            await session.resolve_confirmation(_decision(paused))
+        root = session.state.recent_control_transitions[0]
+        assert environment.capture_calls == 1
+        assert session.observation_count == 2
+        assert len(root.attempt_receipts) == 1
+        assert root.attempt_receipts[0].exception_class.startswith("ExceptionClass_")
+
+    asyncio.run(scenario())
+
+
 def test_confirmation_action_space_exception_closes_same_root_after_capture() -> None:
     class RaisingSecondBuilder(ActionSpaceBuilder):
         calls = 0

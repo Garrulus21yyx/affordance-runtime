@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -10,6 +11,17 @@ from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.world.acquisition import AcquisitionOrigin, AcquisitionStatus
 
 _CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
+_EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+
+
+def safe_exception_class(error: BaseException) -> str:
+    """Return a stable bounded token without trusting a foreign class name."""
+
+    name = type(error).__name__
+    if _EXCEPTION_CLASS.fullmatch(name) is not None:
+        return name
+    digest = hashlib.sha256(name.encode("utf-8", errors="surrogatepass")).hexdigest()
+    return f"ExceptionClass_{digest}"
 
 
 class AttemptOperation(StrEnum):
@@ -60,8 +72,5 @@ class AttemptReceipt:
             raise ValueError("attempt receipt scalars must be non-negative integers")
         if self.effectful_dispatches > self.execution_attempts:
             raise ValueError("effectful dispatches cannot exceed execution attempts")
-        if self.exception_class and (
-            len(self.exception_class) > 128
-            or not self.exception_class.replace("_", "").isalnum()
-        ):
+        if self.exception_class and _EXCEPTION_CLASS.fullmatch(self.exception_class) is None:
             raise ValueError("attempt exception class must be bounded")

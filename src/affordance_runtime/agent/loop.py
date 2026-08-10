@@ -11,6 +11,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
     AttemptReceipt,
+    safe_exception_class,
 )
 from affordance_runtime.agent.control_outcome import (
     Continue,
@@ -97,8 +98,9 @@ class AgentLoop:
                 StartBoundaryEvidence(receipt, accounting.snapshot())
             ) from exc
         except Exception as exc:
+            exception_class = safe_exception_class(exc)
             receipt = _reset_exception_receipt(
-                attempt_id, AttemptDisposition.THREW, "reset_exception", type(exc).__name__,
+                attempt_id, AttemptDisposition.THREW, "reset_exception", exception_class,
             )
             accounting.record(receipt)
             raise AgentSessionStartError(
@@ -106,7 +108,7 @@ class AgentLoop:
                 AcquisitionOrigin.RESET,
                 "reset_exception",
                 StartBoundaryEvidence(receipt, accounting.snapshot()),
-                type(exc).__name__,
+                exception_class,
             ) from exc
         if not isinstance(acquisition, ObservationAcquisition):
             receipt = _reset_exception_receipt(

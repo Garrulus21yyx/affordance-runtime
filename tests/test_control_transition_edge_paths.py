@@ -154,6 +154,31 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
     asyncio.run(scenario())
 
 
+def test_foreign_execute_exception_name_cannot_break_physical_accounting() -> None:
+    foreign_error = type("Execute.Error!" * 12, (Exception,), {})("private execute detail")
+
+    class RaisingEnvironment(StaticEnvironment):
+        async def execute(self, request):
+            self.execute_calls += 1
+            self.executed_requests.append(request)
+            raise foreign_error
+
+    async def scenario() -> None:
+        environment = RaisingEnvironment([_world("before", False)])
+        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+            environment, _task(),
+        )
+        with pytest.raises(type(foreign_error)):
+            await session.run_until_pause()
+        root = session.state.recent_control_transitions[0]
+        assert environment.execute_calls == 1
+        assert session.execution_count == 1
+        assert len(root.attempt_receipts) == 1
+        assert root.attempt_receipts[0].exception_class.startswith("ExceptionClass_")
+
+    asyncio.run(scenario())
+
+
 def test_lineage_mismatch_preserves_expected_and_actual_request_identity() -> None:
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)

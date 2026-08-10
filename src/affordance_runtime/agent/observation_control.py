@@ -9,6 +9,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
     AttemptReceipt,
+    safe_exception_class,
 )
 from affordance_runtime.agent.control_outcome import Pause
 from affordance_runtime.agent.control_transition import (
@@ -296,7 +297,7 @@ async def capture_for_session(
     except Exception as exc:
         _record_capture_exception(
             session, scope, request, attempt_id, "capture_exception",
-            AttemptDisposition.THREW, type(exc).__name__,
+            AttemptDisposition.THREW, safe_exception_class(exc),
         )
         raise
     if not isinstance(acquisition, ObservationAcquisition):

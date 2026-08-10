@@ -205,6 +205,28 @@ def test_immutable_foreign_reset_exception_is_normalized_without_losing_receipt(
     asyncio.run(scenario())
 
 
+def test_foreign_reset_exception_name_cannot_break_physical_accounting() -> None:
+    foreign_error = type("X" * 129, (Exception,), {})("private reset detail")
+
+    class RaisingReset(StaticEnvironment):
+        async def reset(self, task):
+            self.reset_calls += 1
+            raise foreign_error
+
+    async def scenario() -> None:
+        environment = RaisingReset(initial_observation=_world("unused"))
+        loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
+        with pytest.raises(AgentSessionStartError) as captured:
+            await AgentEpisodeRunner(loop).start(environment, _task())
+        evidence = captured.value.start_evidence
+        assert environment.reset_calls == 1
+        assert evidence.accounting.observation_attempts == 1
+        assert evidence.accounting.receipt_count == 1
+        assert evidence.receipt.exception_class.startswith("ExceptionClass_")
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("origin", (AcquisitionOrigin.RESET, AcquisitionOrigin.POST_ACTION))
 def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionOrigin) -> None:
     class WrongOriginEnvironment(StaticEnvironment):

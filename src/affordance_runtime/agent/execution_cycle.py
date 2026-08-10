@@ -8,6 +8,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
     AttemptReceipt,
+    safe_exception_class,
 )
 from affordance_runtime.agent.control_outcome import Continue, LoopDirective, Terminate
 from affordance_runtime.agent.control_transition import (
@@ -251,7 +252,7 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
     except Exception as exc:
         _record_execute_exception(
             session, scope, request, attempt_id,
-            AttemptDisposition.THREW, "execute_exception", type(exc).__name__,
+            AttemptDisposition.THREW, "execute_exception", safe_exception_class(exc),
         )
         raise
     if not isinstance(outcome, ExecutionOutcome) or not isinstance(outcome.result, ActionResult):

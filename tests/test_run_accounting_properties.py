@@ -8,6 +8,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
     AttemptReceipt,
+    safe_exception_class,
 )
 
 
@@ -54,3 +55,18 @@ def test_same_receipt_cannot_be_accounted_twice() -> None:
         assert "already" in str(exc)
     else:
         raise AssertionError("duplicate receipt was accepted")
+
+
+@given(st.text().filter(lambda value: "\x00" not in value))
+def test_foreign_exception_class_is_normalized_to_a_bounded_private_token(name: str) -> None:
+    error = type(name, (Exception,), {})("private exception detail")
+    normalized = safe_exception_class(error)
+    receipt = AttemptReceipt(
+        "attempt:one", AttemptOperation.CAPTURE, "wait_refresh", None, None,
+        AttemptDisposition.THREW, "capture_exception", 1, 0, 0, 0,
+        exception_class=normalized,
+    )
+    assert receipt.exception_class == normalized
+    assert 0 < len(normalized) <= 128
+    assert normalized.replace("_", "").isalnum()
+    assert "private exception detail" not in normalized
