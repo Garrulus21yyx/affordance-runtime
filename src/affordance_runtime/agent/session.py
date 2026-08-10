@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.progress_control import ProgressController
 from affordance_runtime.agent.result import AgentResult
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationRequest
@@ -14,6 +15,7 @@ from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.loop import AgentLoop
+    from affordance_runtime.evaluation.contracts import TaskEvaluation
     from affordance_runtime.model_boundary.context import AgentContext
     from affordance_runtime.world.action_paging import InternalActionPage
     from affordance_runtime.world.contracts import ActionSpace
@@ -38,6 +40,8 @@ class AgentRunSession:
     current_action_space: ActionSpace | None = field(default=None, repr=False)
     current_action_page: InternalActionPage | None = field(default=None, repr=False)
     waited_ms: int = 0
+    progress_controller: ProgressController = field(default_factory=ProgressController, repr=False)
+    latest_task_evaluation: TaskEvaluation | None = field(default=None, repr=False)
 
     def next_context_generation(self) -> int:
         self.context_generation += 1

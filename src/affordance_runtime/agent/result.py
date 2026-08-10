@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
+
+
+class AgentFailureCode(StrEnum):
+    NO_PROGRESS_REPETITION = "no_progress_repetition"
 
 
 @dataclass(frozen=True)
@@ -23,6 +28,7 @@ class AgentResult:
     message: str = ""
     confirmation_request: ConfirmationRequest | None = None
     policy_failure: PolicyFailure | None = None
+    failure_code: AgentFailureCode | None = None
 
 
 def build_result(
@@ -34,6 +40,7 @@ def build_result(
     message: str,
     currentness_probe_count: int = 0,
     policy_failure: PolicyFailure | None = None,
+    failure_code: AgentFailureCode | None = None,
 ) -> AgentResult:
     return AgentResult(
         status,
@@ -46,6 +53,7 @@ def build_result(
         message,
         state.pending_confirmation if status == AgentLoopStatus.WAITING_CONFIRMATION else None,
         policy_failure,
+        failure_code,
     )
 
 
@@ -77,4 +85,5 @@ def add_counts(result_value: AgentResult, observations: int, executions: int, pr
         result_value.message,
         result_value.confirmation_request,
         result_value.policy_failure,
+        result_value.failure_code,
     )

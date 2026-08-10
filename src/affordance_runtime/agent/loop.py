@@ -1,9 +1,9 @@
 """Observe/select/bind/execute/reobserve/evaluate target AgentLoop."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import affordance_runtime.agent.progress_control as progress_control
 from affordance_runtime.agent.decision_control import ensure_current_action_page, run_policy_turn
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
@@ -69,6 +69,7 @@ class AgentLoop:
                 task_evaluation = await validated_task_evaluation(self.task_evaluator, task, state.current_observation)
             except ValueError as exc:
                 return self._result(session, AgentLoopStatus.FAILED, str(exc))
+            session.latest_task_evaluation = task_evaluation
             task_status = task_evaluation_loop_status(task_evaluation)
             if task_status is not None:
                 return self._result(session, task_status, task_evaluation.reason)
@@ -159,6 +160,9 @@ class AgentLoop:
         selection: AdmittedActionSelection,
         decision: SelectAction,
     ):
+        progress = progress_control.apply_selection_progress(session, selection)
+        if progress.disposition != progress_control.SelectionProgressDisposition.EXECUTE:
+            return progress.terminal_result
         return await execute_cycle(
             session,
             selection,
@@ -219,7 +223,7 @@ class AgentLoop:
         if decision.decision == ConfirmationDecisionKind.DENY:
             session.approved_confirmation = None
             return self._result(session, AgentLoopStatus.CANCELLED, "user denied the semantic action")
-        if not self._can_observe(session):
+        if session.observation_count >= session.task.loop_budget.max_observations:
             return self._result(session, AgentLoopStatus.FAILED, "agent loop observation budget exhausted")
         session.approved_confirmation = pending
         previous_id = session.state.current_observation.observation_id
@@ -260,10 +264,6 @@ class AgentLoop:
                 session.currentness_probe_count,
             )
         return None
-
-    @staticmethod
-    def _can_observe(session: AgentRunSession) -> bool:
-        return session.observation_count < session.task.loop_budget.max_observations
 
     @staticmethod
     def _result(session: AgentRunSession, status: AgentLoopStatus, message: str) -> AgentResult:

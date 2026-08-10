@@ -11,6 +11,7 @@ from affordance_runtime.agent.evaluation_control import (
 from affordance_runtime.agent.observation_control import FreshObservationUnavailable, observe_fresh
 from affordance_runtime.agent.policy import ActionEvaluator, TaskEvaluator
 from affordance_runtime.agent.post_action_policy import post_action_result
+from affordance_runtime.agent.progress_control import record_execution_progress
 from affordance_runtime.agent.result import build_result, observation_budget_result
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus, Turn
@@ -92,6 +93,9 @@ async def execute_cycle(
         )
     )
     state.current_observation = after
+    record_execution_progress(
+        session, selection, action_evaluation, after, task_evaluation
+    )
     post_terminal = post_action_result(task, state, request, result, action_evaluation, task_evaluation)
     return state, 1, 1, probed, post_terminal
 
