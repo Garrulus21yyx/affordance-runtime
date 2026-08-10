@@ -1,4 +1,4 @@
-# Evaluation and Turn Recording Contract
+# Evaluation, Control Transition, and Turn Recording Contract
 
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
 > **Scope:** execution result, effect evaluation, task evaluation, evidence, and telemetry
@@ -18,7 +18,8 @@ TaskGoal and optional EvaluationSpec.
 
 ActionResult dispatch status is `NOT_SENT`, `SENT`, or `SENT_UNKNOWN`.
 `success` only means the adapter did not report an execution error. A
-SENT_UNKNOWN result always goes through fresh observation and never direct retry.
+SENT_UNKNOWN result always goes through a typed fresh acquisition attempt and
+never direct retry. Acquisition failure cannot rewrite it as NOT_SENT.
 
 Target statuses are `EFFECT_CONFIRMED`, `NO_EFFECT_CONFIRMED`, `UNKNOWN`, and
 `REJECTED`. `NO_EFFECT_CONFIRMED` requires fresh identity-bound authoritative
@@ -99,11 +100,34 @@ of the Runtime index. Hybrid mechanical and semantic evidence are evaluated
 separately, and complete coverage with a not-yet-created semantic scope yields
 INCOMPLETE rather than an immediate WAITING_USER.
 
-## 5. TurnRecorder
+## 5. ControlTransition versus TurnRecorder
 
-Optional records contain before observation ID, LocalObjective, ActionIntent or
-Batch, bound request/result lineage, after observation ID, evaluations, route,
-latency, and model/visual-call counts.
+`ControlTransition` is mandatory lightweight run accounting for an accepted
+policy decision. It retains privacy-safe typed control facts: before/after
+observation identity, decision, admission, execution/acquisition, validated
+evaluations, progress, pending state, resulting status and Runtime-owned reason
+code. One accepted policy decision has exactly one root transition. The recent
+window is bounded while AgentLoopState retains an exact total count.
+
+This is “lossless” only across control facts: private binding payloads, raw
+provider responses, full observation bodies and credentials remain excluded.
+An actionless branch may keep the same before/after observation ID and explicitly
+record that no acquisition/execution occurred. A continuation may reference a
+root transition through a typed source without fabricating a second policy
+decision.
+
+ControlTransition is not telemetry, a durable ledger, event sourcing, a replay
+source, a global provenance graph, a commit protocol or state-reconstruction
+authority. AgentLoopState remains authoritative current state. AgentContext,
+BenchmarkCaseResult, PartialEpisodeSnapshot and recorder output are one-way
+bounded projections.
+
+### 5.1 TurnRecorder
+
+Optional records project ControlTransition plus before observation ID,
+LocalObjective, semantic ActionIntent or Batch, public request/result lineage,
+after observation ID, evaluations, route class, latency, and model/visual-call
+counts.
 Recorder failure must not change admission, execution, evaluation, or loop
 state. Trace is an offline debugging/benchmark input, never an authority.
 It records context revision/decision summaries but never reconstructs Runtime
@@ -117,9 +141,10 @@ success. Published claims bind revision and profile.
 
 ## 7. Current migration note
 
-Current TraceDag ordering and RuntimeCommitter coupling remain implementation
-facts. Their target replacement is best-effort TurnRecorder plus direct loop
-state update after domain evaluation.
+Current TraceDag ordering and RuntimeCommitter coupling remain old-baseline
+implementation facts. The target uses direct serial AgentLoopState updates,
+bounded in-memory ControlTransition accounting, and a separate best-effort
+TurnRecorder. No transition replay sits between evaluation and state update.
 P5-M3 entry closure floors no-effect assurance at structural, rejects orphan
 source evidence, requires current multi-source agreement, prunes already-met
 obligations, treats truncated semantic windows as inconclusive, contains
@@ -149,7 +174,8 @@ generalization.
 ## Primitive effect and partial-timeout evidence
 
 For fill/select, action-level evaluation is separate from task completion:
-fresh complete structural evidence that the current public value equals the
+fresh complete structural evidence acquired from ExecutionOutcome or an
+admitted independent capture that shows the current public value equals the
 requested value confirms the effect only when it changed; an already-equal or
 unchanged value confirms no effect. Missing, truncated, weak, or conflicting
 evidence remains UNKNOWN. Confirmed results reference only the fresh current
@@ -175,3 +201,11 @@ read-only archive reclassifier records original outcome, conservative revised
 category, confidence, and missing evidence fields. It cannot rewrite archived
 case, summary, campaign, or attestation JSON. Capability overlays and local
 diagnostics are later interpretation and do not change the historical 6/60.
+
+The later clean `83dc4fa` rerun-v3 is a second immutable exact-run record with
+4/60 success, 7 post-observation failures, 9 unclassified typed failures and 11
+Runtime rejections. It neither replaces nor combines with 6/60. M4.5-A requires
+typed acquisition stage/status so expected unavailable/failed paths cannot
+escape as RuntimeError; M4.5-B requires every accepted decision's control facts
+to reach the case/snapshot projection without message parsing. Future reruns
+remain new records rather than rewrites of either archive.

@@ -1,8 +1,9 @@
 # Current Implementation Plan
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
-> **Updated:** 2026-08-08
+> **Updated:** 2026-08-10
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
+> **Reviewed source HEAD:** `2c70557b13ba1f36ea4dd50320681279c48dfb53`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
@@ -33,37 +34,50 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M0.1 AgentContext architecture | `COMPLETE_NON_DEFAULT` | disposable unified context, bounded intent/world/history, current context identity, relevance, paging, source assurance, typed decisions |
 | P5-M0.1.1 operational closure | `COMPLETE_NON_DEFAULT` | one-shot epochs, fresh acquisition identity, cursor paging, projection coherence, recurrent decision history |
 | P5-M1 model-backed AgentPolicy | `CLOSED` | canonical structured decision contract and deterministic evaluators retained |
-| P5-M1.1 ModelPort bridge/hardening | `CLOSED` | hostile JSON, deadline, typed failures/metadata, zero retry/fallback, local HTTP proof; live unavailable |
+| P5-M1.1 ModelPort bridge/hardening | `CLOSED` | hostile JSON, deadline, typed failures/metadata, zero retry/fallback and local HTTP proof; later exact Mistral evidence is separately scoped |
 | P5-M2 production evaluator composition | `CLOSED_FOR_DECLARED_MINIMUM` | Runtime-composed mechanical/semantic/user/hybrid criteria and output binding |
 | P5-M2.1 evidence semantics closure | `CLOSED_FOR_DECLARED_PROFILES` | relevance-bound effects, strong no-effect scope, presented evidence only, dynamic readiness |
-| P5-M3 new-loop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` | internal core/safety/evaluation accepted; external suites not run |
+| P5-M3 new-loop benchmark harness | `CLOSED_FOR_INTERNAL_FIXED_MANIFEST` | internal core/safety/evaluation accepted; later external evidence is tracked under M4 |
 | P5-M3.1 measurement/real adapters | `CLOSED_LOCALLY` | typed expectations, actual safety counters, real DOM/Visual/WoT suite, exact-head attestation command |
 | P5-M3.2 admission package | `CLOSED_FOR_PINNED_MECHANICAL_PROFILE` | full-CI/live/adapter evidence and fixed manifest feed a protected manual workflow |
-| P5-E | `NOT_STARTED` | long-horizon plan execution |
+| P5-M3.3–M3.6 model compatibility | `CLOSED_FOR_CURRENT_SCOPE / NON_BLOCKING` | exact-profile diagnostics remain evidence, not Runtime repair authority |
+| P5-M4 BrowserGym pinned profile | `CLOSED_FOR_DECLARED_PROFILE` | reset/step cache lifecycle, projection, private binding, execution and mechanical verification; independent capture not implemented |
+| P5-M4.2 local progress guard | `CLOSED_FOR_FILL_SELECT` | exact local repeated-action containment; not task planning/auditing |
+| P5-M4.3 historical MiniWoB-60 | `VALID_NEGATIVE_EVIDENCE` | clean `b3b64a2`, 6/60; immutable standalone run |
+| P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
+| post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
+| P5-M4.5-A acquisition lifecycle | `NOT_STARTED / NEXT` | independent capture and execute-returned post acquisition |
+| P5-M4.5-B control accounting | `NOT_STARTED / QUEUED_AFTER_A` | bounded lossless ControlTransition, no ledger/replay |
+| P5-E | `NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
 ## Next admitted slice
 
-The three-surface single-adapter matrix, P5-D current profile, and P5-D6.1 are
-complete. P5-M0, P5-M0.1, P5-M0.1.1, P5-M1 and the P5-M1.1 existing-transport bridge are
-complete on the non-default path. P5-M2 criterion-specific composition is also
-complete for its declared minimum, and M2.1 closes its evidence-semantic entry
-gates. P5-M3 now closes the internal fixed-manifest harness. External benchmark
-admission remains blocked until final-head full CI, exact live policy evidence,
-and the target-loop BrowserGym environment wrapper all close. The reviewed
-mechanical manifest is not itself execution authority; default cutover and
-old-core deletion remain unauthorized.
+The next admitted work is P5-M4.5-A, a narrow observation acquisition lifecycle
+correction. Rerun-v3 completed 60/60 with valid 4/60 evidence and exposed seven
+typed `post_observation_failure` cases. Four followed `RequestObservation`
+without a step snapshot; three followed stale/currentness refresh without a
+step snapshot. This confirms that active `WorldEnvironment.observe()` semantics
+and BrowserGym's consume-once reset/step cache are mismatched.
+
+M4.5-A is followed by a separate M4.5-B commit for lossless
+control-transition accounting. Only after both close do we rerun the unchanged
+MiniWoB-60 profile, then evaluate a supported-subset multi-seed gate. P5-E,
+default cutover and old-core deletion remain unauthorized.
 
 ## Frozen work
 
 - new RuntimeDelta/RuntimeCommitter/StateKernel capability;
 - ledger, checkpoint/resume, event sourcing, generic recovery transaction;
 - global approval/capability/token registry or worker fencing;
-- ActionBatch integration and long-horizon plan mutation;
+- ActionBatch integration and P5-E long-horizon plan/frontier mutation before
+  the M4.5, same-profile rerun and supported-subset multi-seed gates;
 - default cutover or deletion before the positive cross-surface gates.
 - any AgentContext ownership of Runtime state, private route projection, or
   LocalObjective-based legality/risk change.
+- durable transition ledger, event sourcing, state replay/reconstruction,
+  generic recovery engine, or combining ProgressController with planning.
 
 ## Verification policy
 
@@ -86,9 +100,8 @@ profile on clean HEAD, producing accepted per-profile action-selection
 attestations. Mistral also passed one fresh Level-4 no-regression call for each
 grounding. The production default stays format-only; adopting compact grounding
 is a separate provider-neutral product decision.
-External execution remains blocked by
-the optional BrowserGym dependency, target-loop external environment adapter
-and admission package; M3.3 does not authorize that run or a default cutover.
+M3.3 did not itself authorize external execution or a default cutover; later M4
+adapter/run evidence is independent and does not widen this model-profile claim.
 
 ## P5-M3.4 closure
 
@@ -97,8 +110,9 @@ Compact grounding is production-supported as an explicit configuration, with
 metadata and exact-profile identity. Format-only remains the current default
 and explicit rollback configuration. The pure cutover checker is currently
 blocked by incomplete seven-decision live-local behavior, failed compact
-strong-provider no-regression and unavailable exact-head CI. The next action is
-review/remediation of those measured blockers, not a default flip.
+strong-provider no-regression and unavailable exact-head CI. That slice admitted
+no default flip; its model-profile blockers are non-blocking for the current
+M4.5 queue.
 
 ## P5-M3.5 closure
 
@@ -106,8 +120,7 @@ The v1 guide is frozen and its evidence is scoped to action selection. The new
 decision-neutral v2 profile, complete Runtime replay matrix, recurrent CLI and
 secret-free attestation are implemented. Scripted candidate closure is 75/75.
 Exact Qwen and Llama GPU candidates failed their 5/5 recurrent gates, so their
-20/20 support gates were not run. The next admitted work is evidence review or
-a separately authorized design change; this slice does not tune prompts,
+20/20 support gates were not run. This slice did not tune prompts,
 switch defaults, run external benchmarks, or add repair/retry/fallback.
 
 ## P5-M3.6 closure
@@ -128,12 +141,10 @@ The current mainline owner is the existing target loop. The pinned BrowserGym
 adapter now owns lifecycle/projection/private binding/execution/mechanical
 verification under `benchmarks/external_smoke`, while AgentLoop, parser,
 Runtime admission, target core, and default Coordinator remain unchanged. Real
-fixed-task adapter conformance is closed at 3/3. The remaining activity is
-operational only: generate clean-head attestations, push, and verify exact-head
-CI. A live fixed smoke may run only after exact-head internal/full-CI/live-policy
-evidence admits it and the caller already supplied both explicit execution
-gates. Its current result is determined only by the exact-head protected
-workflow and artifact, not by a durable status literal in this plan.
+fixed-task adapter conformance is closed at 3/3. Run evidence is represented by
+exact revision/profile artifacts rather than a durable status
+literal in this plan. The historical fixed smoke failed at `cd49b8e`; later
+MiniWoB-60 breadth records belong to M4.3/M4.4 and do not backfill it.
 
 ## P5-M4.2 local verified-progress closure
 
@@ -149,10 +160,78 @@ the formal result until a separately authorized exact-head run occurs.
 
 ## P5-M4.4 short-loop breadth closure
 
-The completed MiniWoB-60 seed-7 campaign is a valid negative breadth result at
-6/60, not a prompt-tuning signal or generalization claim. M4.4 closes future
-typed failure metadata, freezes a full-registry capability inventory v2, and
-runs deterministic local no-model diagnostics. A new formal breadth run is
-blocked by 27 unresolved legacy cases and undeclared/insufficient provider
-capacity. The next implementation slice, if authorized, is a generic M4.5
-short-loop coverage repair; P5-E remains blocked and unstarted.
+The historical MiniWoB-60 seed-7 campaign remains a valid negative breadth
+result at 6/60. M4.4 closed future typed failure metadata, froze full-registry
+capability inventory v2, and ran deterministic local no-model diagnostics. Its
+then-current decision to block a rerun remains revision-scoped history.
+
+A later separately authorized rerun-v3 completed from clean `83dc4fa` with
+valid 4/60 evidence. It does not backfill, replace, merge with, or establish a
+trend against 6/60. It narrows the next generic gaps: 7 observation lifecycle
+failures, 9 remaining unclassified typed failures and 11 Runtime rejections.
+Provider/policy competence remains a measured product variable, not something
+M4.5 may repair with retry, fallback or model-specific Runtime behavior.
+
+## P5-M4.5-A observation acquisition lifecycle — next
+
+Deliver only the target world lifecycle boundary:
+
+1. `reset(task) -> ObservationAcquisition` supplies initial world state.
+2. `capture(request) -> ObservationAcquisition` reports `ACQUIRED`, typed
+   `CAPABILITY_UNAVAILABLE`, or typed `FAILED`.
+3. `execute(request) -> ExecutionOutcome` carries `ActionResult` plus a typed
+   post-action acquisition.
+4. Operational `independent_capture` / `post_action_observation` capabilities
+   remain distinct from evidence modality/assurance.
+5. Normal action evaluation consumes execute-returned observation directly;
+   RequestObservation, Wait, stale/currentness and confirmation refresh use
+   independent capture only when admitted.
+
+Exit gates: successful reset always yields initial acquisition; BrowserGym
+recovery paths no longer consume an empty reset/step cache; capability absence
+never appears as a bare RuntimeError; acquisition failure cannot alter dispatch
+truth; `SENT_UNKNOWN` stays single-send/no-replay; existing DOM/Visual/WoT and
+BrowserGym action-path conformance stays green. An independent capture may use
+the pinned environment's read-only current-observation facility, but it cannot
+copy the previous step's verifier outcome under a new observation identity;
+current verifier evidence must be reacquired or explicitly unavailable.
+
+## P5-M4.5-B lossless ControlTransition — queued after A
+
+Deliver one immutable, run-scoped, privacy-bounded root ControlTransition for
+every accepted policy decision. It retains before/after identity, decision,
+admission, execution/acquisition, action/task evaluations, progress, pending,
+resulting status and Runtime-owned reason code. `AgentLoopState` remains current
+state authority; the transition window keeps an exact total count and bounded
+recent suffix.
+
+Exit gates: SelectAction plus all six non-action decisions and post-context/
+schema action-admission rejection,
+waiting/pending and typed failure paths have exactly one decision record;
+confirmation continuation is sourced without fabricating another policy
+decision; `PartialEpisodeSnapshot` and benchmark classification project typed
+facts without message matching or multi-owner epoch ambiguity; no raw provider
+payload/private binding is retained. No durable store, replay, event bus,
+transaction commit or state reconstruction is admitted.
+Provider failure before a parsed decision and stale/schema-invalid input before
+the accepted-decision boundary do not fabricate a ControlTransition.
+
+## Gates after M4.5
+
+Run the same frozen MiniWoB-60 seed-7 profile first and preserve it as a third
+independent exact-run record. Required gates are zero observation contract
+exceptions, complete typed classification, clean privacy/safety, zero retry/
+fallback and explicitly sufficient provider capacity. If that short-loop run is
+free of lifecycle/accounting hard-gate failures, freeze a supported-subset
+immutable manifest, exact seed set, numeric provider-availability/capacity
+floor, success floor and maximum seed variance before running the multi-seed
+gate. No threshold may be chosen after seeing results.
+Only if the multi-seed run meets every frozen threshold may P5-E be admitted:
+
+```text
+VerifiedTaskState evidence promotion
+→ milestone/current-frontier lifecycle + frontier-derived LocalObjective
+→ TaskProgressAuditor (separate from local ProgressController)
+→ low-frequency TaskPlanner and fact-driven replacement
+→ 20–50+ accepted-policy root-ControlTransition long-horizon gate
+```

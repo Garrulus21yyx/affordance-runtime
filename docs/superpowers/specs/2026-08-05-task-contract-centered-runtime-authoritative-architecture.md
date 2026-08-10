@@ -1,15 +1,16 @@
 # Affordance Runtime：AgentContext 循环式 E2E Agent 目标架构
 
 > **Lifecycle:** CURRENT AUTHORITATIVE ARCHITECTURE
-> **Updated:** 2026-08-08
+> **Updated:** 2026-08-10
 > **Scope:** target semantics and invariants only
 > **Implementation truth:** [Implementation Status](../../implementation-status.md)
 > **Migration order:** [Architecture Evolution Plan](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 文件路径仅为兼容文档治理检查而保留；文件名中的
 `task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，但实现状态
-仍以 Implementation Status 为准：AgentContext 的 P5-M0.1 profile 已在 non-default
-路径落地；model policy、criterion adjudicator 与长程能力仍未实现。
+仍以 Implementation Status 为准：AgentContext、model policy 与 declared-minimum
+criterion adjudicator 已在 non-default 路径落地；independent observation acquisition、
+lossless control-transition accounting 与长程 verified frontier 尚未落地。
 
 ## 0. 系统定位与计算模型
 
@@ -19,17 +20,16 @@ Runtime。核心不是状态事务，而是理解任务、有效观察、生成�
 
 ```text
 AgentDecision_t = AgentPolicy(AgentContext_t)
-Transition_t = RuntimeApply(AuthoritativeState_t, AgentDecision_t)
+ControlTransition_t = RuntimeApply(AgentLoopState_t, AgentDecision_t)
 
 AgentDecision
 → Runtime validation
-→ BoundActionRequest
-→ execute once
-→ ActionResult
-→ fresh WorldObservation
-→ validated ActionEvaluation
-→ validated TaskEvaluation
-→ AgentLoopState update
+→ action branch: BoundActionRequest → execute once
+                 → ExecutionOutcome(ActionResult, typed post-action acquisition)
+                 → fresh WorldObservation → validated evaluations
+  control branch: typed capture/page/user/wait/done/abort consequence
+→ exactly one bounded ControlTransition
+→ serial AgentLoopState update
 ```
 
 `AgentContext_t` 是 TaskGoal、bounded IntentContext、current WorldObservation、
@@ -41,7 +41,8 @@ progress、Internal ActionSpace、bounded history、pending state 和 budgets �
 1. **模型可见性不等于执行权。** Visible to model、authorized effect、executable
    route 和 verified fact 是四个不同概念。
 2. **Observation 是当前 binding 的事实来源。** TaskGoal 是稳定语义，TaskPlan
-   是可替换假设，AgentContext 是一次性投影，WorldObservation 是当前世界事实。
+   是可替换假设，WorldObservation 是当前世界事实，AgentLoopState 是当前 run control
+   state，ControlTransition 只回答本次 control boundary 发生了什么。
 3. **Agent 提议，Runtime 裁决。** Agent 选择 subgoal/semantic action、请求观察、
    询问、等待或建议完成；Runtime 独占 membership、binding、currentness、risk、
    confirmation、dispatch truth、evidence validation 和 task closure。
@@ -59,6 +60,7 @@ Thin Semantic Intake
         ↓
 Runtime Authoritative State
   TaskGoal/revision · WorldObservation · Internal ActionSpace · AgentLoopState
+  optional VerifiedTaskState
   PendingConfirmation/Question/UnknownEffect · validated evaluations
         ↓ one-way projection
 Disposable AgentContext
@@ -67,11 +69,12 @@ AgentPolicy → typed AgentDecision
         ↓ Runtime validation
 RiskPolicy / semantic confirmation / current binding / execute once
         ↓
-fresh observation / ActionEvaluationValidator / TaskEvaluationValidator
+typed fresh acquisition / ActionEvaluationValidator / TaskEvaluationValidator
 ```
 
 Runtime authoritative state 仅包括：`TaskGoal`、task revision、current
 `WorldObservation`、current Internal `ActionSpace`、`AgentLoopState`、
+以及其 optional nested `VerifiedTaskState` frontier、
 `PendingConfirmation`、`PendingUserQuestion`、`PendingUnknownRequest`、current
 `BoundActionRequest`、`ActionResult` 和 validated evaluations。
 
@@ -79,8 +82,10 @@ Runtime authoritative state 仅包括：`TaskGoal`、task revision、current
 @dataclass
 class AgentLoopState:
     current_observation: WorldObservation
-    recent_turns: tuple[Turn, ...]
+    recent_control_transitions: tuple[ControlTransition, ...]
+    control_transition_count: int
     task_plan: TaskPlan | None
+    verified_task_state: VerifiedTaskState | None
     active_objective: LocalObjective | None
     pending_confirmation: ConfirmationRequest | None
     pending_user_question: UserQuestion | None
@@ -93,8 +98,59 @@ class AgentLoopState:
     final_result: object | None
 ```
 
-它不保存全量 observation 历史、event DAG、recovery transaction、delta log、
-provider token registry、durable checkpoint 或 global approval store。
+它是当前 run 唯一顶层 state aggregate/control authority；nested
+`VerifiedTaskState` 只专管 long-horizon frontier。`recent_control_transitions` 只是
+bounded suffix；`control_transition_count` 保留准确总数。它不保存全量 observation
+历史、event DAG、recovery transaction、delta log、provider token registry、durable
+checkpoint 或 global approval store，也不从 transition replay 重建自身。
+
+### 2.1 World acquisition boundary
+
+Acquisition lifecycle capability 与已取得 evidence 的 modality/assurance 是两套概念。
+前者回答 backend 能否再次读取或随 action 返回 observation；后者回答某个已取得
+WorldObservation 能证明什么。任何 source assurance 都不能凭空创造 acquisition
+capability，capability 为 true 也不保证本次 acquisition 成功。
+
+```python
+@dataclass(frozen=True)
+class ObservationCapabilities:
+    independent_capture: bool
+    post_action_observation: bool
+    offers: tuple[ObservationOffer, ...] = ()
+
+@dataclass(frozen=True)
+class ObservationAcquisition:
+    status: AcquisitionStatus  # ACQUIRED | CAPABILITY_UNAVAILABLE | FAILED
+    origin: AcquisitionOrigin  # RESET | INDEPENDENT_CAPTURE | POST_ACTION
+    observation: WorldObservation | None
+    reason_code: str
+
+@dataclass(frozen=True)
+class ExecutionOutcome:
+    result: ActionResult
+    post_acquisition: ObservationAcquisition
+
+class WorldEnvironment(Protocol):
+    observation_capabilities: ObservationCapabilities
+    async def reset(self, task: TaskGoal) -> ObservationAcquisition: ...
+    async def capture(
+        self, request: WorldObservationRequest
+    ) -> ObservationAcquisition: ...
+    async def execute(self, request: BoundActionRequest) -> ExecutionOutcome: ...
+```
+
+成功 reset 必须交付 initial `ACQUIRED` observation；因此只有 reset/step snapshot 的
+backend 也能启动，而不必谎报 independent capture。`capture()` 在类型层面是 total
+operation：不支持时返回 typed `CAPABILITY_UNAVAILABLE`，支持但失败时返回 typed
+`FAILED`，不能用裸 `RuntimeError` 表达预期能力边界。`offers` 可进一步按 source、
+modality、assurance 和 cost 限定能力；两个 aggregate boolean 只是最小 adapter-level
+合同，不把所有 surface 假装成同一种传感器。
+
+正常 action path 直接消费 `execute()` 返回的 post-action acquisition。只有
+RequestObservation、Wait、stale/currentness recovery、confirmation refresh，或
+execute 未提供 after observation 时，Runtime 才在 capability 允许下调用
+`capture()`。如果两条路径都不能取得 evaluator 所需的新鲜证据，Runtime 返回 typed
+unsupported/failure 或进入既有 UNKNOWN control policy；它不得伪造 freshness。
 
 ## 3. Thin Semantic Intake
 
@@ -177,8 +233,9 @@ AgentDecision 都必须携带它。任何不等于 current context ID 的 decisi
 
 - `AgentTaskView`：公开 task ID、instruction、constraints、effect boundary、inputs、
   criteria/output/risk 摘要；不含 private route、credential、evaluator object。
-- `AgentProgressView`：active objective、milestones、verified facts、unresolved evidence
-  obligations；模型 reflection 永远不是 verified progress。
+- `AgentProgressView`：active objective、milestones、evidence-linked current facts、
+  unresolved evidence obligations；只有 VerifiedTaskState 中经 validated evidence
+  promotion 的 frontier 才是 verified progress，模型 reflection 永远不是。
 - `ModelWorldView`：bounded targets/facts/conflicts、truthful coverage 和 available
   observation modalities；不暴露 selector、coordinate、href、credential 或 route handle。
 - `AgentTurnView`：只保留 decision kind、semantic action、bounded public parameters、
@@ -259,13 +316,14 @@ AgentDecision = (
 
 - `SelectAction(action_id, parameters, destination_id)`；不得返回 selector、coordinate、
   bbox、href、backend、executor 或 credential。
-- `RequestObservation(subject_id, modality, required_assurance, reason)`；Runtime 选择
-  DOM/AX/Visual/WoT/API/provider。
+- `RequestObservation(subject_id, modality, required_assurance, reason)`；Runtime 先按
+  observation capabilities 选择 DOM/AX/Visual/WoT/API/provider；没有合格 independent
+  capture 时产生 typed unavailable control result，不抛裸异常。
 - `RequestActionPage(query, target_id, relevance_role)`；新 page 产生新 page/context ID，
   旧 decision 自动 stale。
 - `AskUser(question, requested_fields)`；改变任务语义的回答必须产生 TaskGoal revision。
 - `ProposeDone(claimed_criteria, evidence_refs, result_summary, unresolved_items)`；仅是建议。
-- `Wait(reason, max_wait_ms)`；实际等待后必须 fresh observe。
+- `Wait(reason, max_wait_ms)`；实际等待后请求 capability-admitted capture；不支持/失败 typed。
 - `Abort(reason, category)`；不声称成功。
 
 `ProposeTaskPlan`/`ReplaceTaskPlan` 延后到 long-horizon；不建立 `ProposeRecovery`
@@ -290,7 +348,7 @@ class ConfirmationSubject:
 ```
 
 Subject 不含 selector、coordinate、bbox、href、method、binding/option/observation ID、
-screenshot/TD digest 或 backend。确认后必须 fresh observe、重建 ActionSpace/subject、
+screenshot/TD digest 或 backend。确认后必须 capability-admitted fresh capture、重建 ActionSpace/subject、
 比较 semantic coverage、绑定 current private route，再执行一次；禁止执行旧 request。
 
 目标 reuse 使用 semantic dominance：action/target/destination/material parameters exact；
@@ -319,11 +377,62 @@ class BoundActionRequest:
 binding group、destination membership、schema、effect/risk consistency 和 currentness。
 `ActionResult` dispatch status 只有 `NOT_SENT / SENT / SENT_UNKNOWN`；result/receipt
 success 不等于 effect confirmed 或 task complete，`SENT_UNKNOWN` 永不自动 replay。
+`ExecutionOutcome.post_acquisition` 明确区分 acquired、unsupported 和 failed，不能用
+`WorldObservation | None` 把能力缺失与采集失败压成同一种情况。dispatch truth 先于且
+独立于 after-acquisition：一次已发送但回执不确定的 action 不能因后续 capture 失败被
+降格为 `NOT_SENT`，也不能被重放。
+
+### 8.1 Lossless control-transition boundary
+
+`ControlTransition` 是 decision-scoped、run-scoped、in-memory、immutable 且 bounded
+的 control accounting value：它保留本次被接受的决策经过 admission、execution/
+acquisition、evaluation、progress 和 pending/terminal control 后发生了什么。它不保留
+private binding/payload，也不要求原始 provider response 或 observation body。
+
+```python
+@dataclass(frozen=True)
+class ControlTransition:
+    transition_id: str
+    sequence: int
+    before_observation_id: str
+    decision: AgentDecision
+    admission: AdmissionSummary | None
+    execution: ExecutionSummary | None
+    acquisition: AcquisitionSummary | None
+    after_observation_id: str
+    action_evaluation: ActionEvaluation | None
+    task_evaluation: TaskEvaluation | None
+    progress: ProgressDelta
+    pending_kind: PendingKind
+    resulting_status: AgentLoopStatus | None
+    reason_code: str
+```
+
+所有 decision-relevant identity、typed status、origin 和 reason code 必须无损保留；
+“summary”只表示去除 private/raw payload，不表示丢掉 control facts。没有取得新
+observation 的 actionless 分支令 `after_observation_id == before_observation_id`，并由
+acquisition/pending/status 字段解释原因，不能假造一次 observation。
+
+核心不变量是：一个通过 current context/schema boundary 并被 Runtime 接受处理的
+policy decision，恰好产生一个 root `ControlTransition`。AskUser、Abort、
+RequestObservation、Wait、RequestActionPage、ProposeDone 和 SelectAction 都不能只靠
+分散 session 字段留下事实。confirmation/user continuation 如需单独记账，使用 typed
+continuation source 引用 root transition，不能伪造成第二个 policy decision，也不能把
+每个 low-level event 变成 ledger entry。pre-policy completion、provider boundary failure
+或 harness watchdog 没有 accepted decision 时，不伪造 transition；它们由 typed
+AgentResult/session snapshot 表达。
+
+`AgentLoopState` 始终是 current-state authority；ControlTransition 不是 commit record、
+replay source、durable ledger、global provenance graph 或 event bus。AgentContext history、
+BenchmarkCaseResult、PartialEpisodeSnapshot 与 optional TurnRecorder 都是它与 current
+state 的单向、privacy-bounded projection，不能反向参与 admission 或 state reconstruction。
 
 ## 9. Evaluation 与 criterion-specific completion
 
 `ActionEvaluationValidator` 处理动作是否发送及效果是否出现，至少绑定 request ID、
-before/after observation ID 和 current evidence refs。Milestone 只由 validated facts 与
+before/after observation ID 和 current evidence refs。after observation 必须来自该
+ExecutionOutcome 的 acquired post observation，或一次 capability-admitted independent
+capture。Milestone 只由 validated facts 与
 milestone criteria 完成。Task completion 要求全部 required criteria、constraints、
 forbidden-effect absence、required outputs 和 final authoritative checks。
 
@@ -346,34 +455,62 @@ adjudicator，返回 DONE/CONTINUE/REQUEST_OBSERVATION/ASK_USER/BLOCKED/FAILED�
 minimum output profile 继续要求 output 存在、regular file、SHA-256 和 current evidence
 refs；不建设通用 artifact platform。
 
-## 10. Long-horizon、Batch、Memory 与 telemetry
+## 10. Long-horizon、progress、Batch、Memory 与 telemetry
 
-长程目标限于单一活跃 episode、20–100+ turns、跨页面/应用/surface、中途询问、
-中间验证和事实驱动 replan；不含跨天后台任务、崩溃恢复、跨机器 continuation、
-distributed workers 或 durable workflow engine。TaskPlan 是可替换 milestone 假设，
-LocalObjective 是 nearby world state，不含预生成点击序列。context 只保留最近 8–12
-个 semantic turns、milestone summary、verified refs、failed assumptions 和 unresolved
+长程目标限于单一活跃 episode、20–100+ control transitions、跨页面/应用/surface、
+中途询问、中间验证和事实驱动 replan；不含跨天后台任务、崩溃恢复、跨机器
+continuation、distributed workers 或 durable workflow engine。TaskPlan 是可替换
+milestone hypothesis，LocalObjective 是由 current frontier 派生的 nearby desired world
+state，不含预生成点击序列。除非明确另述，long-horizon 长度按 accepted policy
+decision 产生的 root ControlTransition 计数，不按 low-level event 或 telemetry 行数计数。
+
+```python
+@dataclass(frozen=True)
+class VerifiedTaskState:
+    task_revision: int
+    milestone_statuses: tuple[VerifiedMilestoneStatus, ...]
+    current_frontier: tuple[str, ...]
+    verified_evidence_refs: tuple[str, ...]
+    unresolved_obligations: tuple[str, ...]
+    failed_assumptions: tuple[str, ...]
+```
+
+VerifiedTaskState 是 AgentLoopState 内专门的 long-horizon frontier authority，不是第二个
+state aggregate、store 或 executor context。它只接受 Runtime-validated current/durable-
+profile evidence 的 promotion；planner output、模型自述、action receipt 或 plan exhaustion
+不能更新 verified milestone。TaskProgressAuditor 只读 validated evaluation/evidence，
+负责 criterion/milestone/frontier promotion 建议；它不能选择 GUI action、替代 policy、
+降低 risk 或宣告 task completion。低频 TaskPlanner 基于 VerifiedTaskState 生成/替换
+TaskPlan；ObjectivePolicy 从 current frontier 派生 LocalObjective。
+
+现有/短环 `ProgressController` 与未来 `TaskProgressAuditor` 保持分层：前者只做
+已声明 local postcondition 的重复无进展 containment（当前 minimum 是 fill/select），
+是 liveness guard；后者在 P5-E 负责 milestone/task frontier。二者都不是 planner，不能
+合并成修正弱 policy 的万能模块。context 只保留最近 8–12 个 ControlTransition 的
+semantic projection、milestone summary、verified refs、failed assumptions 和 unresolved
 obligations。
 
 ActionBatch 是后续效率优化：最多三个、同 observation/surface/session、LOW risk、
 无 external effect、navigation/app/page change 或跨 surface；前置 action 必须
-`observation_barrier=False`，失败或 SENT_UNKNOWN 立即停止，batch 后 fresh observe。
+`observation_barrier=False`，失败或 SENT_UNKNOWN 立即停止，batch 后 fresh acquisition。
 
 Memory/Skill 仅是 sidecar hint；Runtime 必须重新 grounding，ActionSpace、RiskPolicy、
 confirmation 和 evaluator 仍然生效。promotion 只通过 offline replay/cross-surface
 evaluation 后 publish/reject。
 
-TurnRecorder 只记录 context revision、decision、semantic action、result、evaluation、
-latency/tokens、observation cost、confirmation 和 route metrics。recorder failure 不得
-改变 execution/result/completion；trace 不参与 admission 或 commit。
+TurnRecorder 只投影 ControlTransition 的 context revision、decision、semantic action、
+result、evaluation、latency/tokens、observation cost、confirmation 和 route metrics。
+recorder failure 不得改变 execution/result/completion；trace 不参与 admission 或 commit。
+ControlTransition 属于 run control accounting，TurnRecorder 属于 behavior-neutral optional
+telemetry；两者不能 dual-write 为两个 execution truth。
 
 ## 11. 模块责任与依赖门
 
 ```text
-task/           TaskGoal, IntentContext, planning contracts
+task/           TaskGoal, IntentContext, planning contracts, VerifiedTaskState contracts
 model_boundary/ AgentContext, projection, budgets, paging, model views
-world/          WorldObservation, ActionSpace, relevance, binder
-agent/          decisions, loop sequencing, session, state, post-action policy
+world/          WorldObservation, acquisition contracts, ActionSpace, relevance, binder
+agent/          decisions, loop sequencing, session/state, ControlTransition, progress guards
 risk/           risk policy, confirmation subject
 confirmation/   request/decision, summary, dominance
 evaluation/     evidence, criterion and task/output validation
@@ -409,14 +546,23 @@ observation、询问用户或停止。core 不建设通用 prompt-injection plat
 5. private route 永不进入 AgentContext。
 6. environment content 不能扩张 TaskGoal；raw intent 只能 context_only。
 7. clarification 必须先产生 TaskGoal revision。
-8. confirmation 绑定 semantic subject，确认后 fresh observe/rebind。
+8. confirmation 绑定 semantic subject，确认后 capability-aware capture/rebind。
 9. BoundActionRequest 必须 current；一个 effectful request 最多发送一次。
 10. SENT_UNKNOWN 不自动 replay；ActionResult 不证明 effect。
 11. Agent ProposeDone 不证明 completion；evidence 属于 current observation。
 12. criterion adjudicator 决定裁决方式；required output 真实且满足 integrity。
 13. TaskPlan 可替换且不是 authority；history/context 分区有界。
-14. recorder failure 不改变行为；benchmark metadata 不进入 product decision。
-15. core 不依赖 event sourcing、global transaction 或 approval registry。
+14. independent capture 与 post-action observation 是独立 capabilities；expected
+    unsupported/failed acquisition typed，不能以裸异常或伪造 freshness 表达。
+15. reset 提供 initial acquisition；effect evaluation 的 fresh after world 只来自
+    ExecutionOutcome 或 capability-admitted capture。
+16. dispatch truth 独立于 acquisition；SENT_UNKNOWN 不因 after-acquisition 失败而降格或重放。
+17. 一个 accepted policy decision 恰好产生一个 bounded root ControlTransition；
+    AgentLoopState 不由 transition replay 重建。
+18. VerifiedTaskState 只由 validated evidence promotion；TaskPlan 与模型自述不是 verified frontier。
+19. local ProgressController 与 TaskProgressAuditor 分离，二者都不替代 planner/policy。
+20. recorder failure 不改变行为；benchmark metadata 不进入 product decision。
+21. core 不依赖 event sourcing、global transaction 或 approval registry。
 
 ## 14. 明确非目标
 
@@ -425,17 +571,24 @@ observation、询问用户或停止。core 不建设通用 prompt-injection plat
 - core prompt-injection subsystem、durable resume、distributed workflow engine；
 - 每个任务必经 TaskSpecAuthority/ActionContract/TaskPlan；
 - semantic fusion 在真实多源目标合并需求出现前成为主线前置；
-- 为每个合同或 context namespace 创建 service/database/store。
+- 为每个合同或 context namespace 创建 service/database/store；
+- 将 ControlTransition 扩张为 durable event ledger、state reconstruction authority 或
+  low-level global event taxonomy；
+- 用 Runtime progress guard 代替 policy competence、hierarchical planning 或 learned progress awareness。
 
 ## 15. 目标运行流程与完成定义
 
-每轮先基于 current observation 做 task evaluation；未完成时构建 Internal ActionSpace
-和 disposable AgentContext，校验 typed decision 的 current context ID，再处理 observation/
-paging/user/wait/abort/done/action 分支。SelectAction 经 membership、risk/confirmation、
-current binding 后执行一次；随后 fresh observe，验证 action/task evaluation，并串行更新
-AgentLoopState。
+reset 先交付 initial acquisition。每轮基于 current observation 做 task evaluation；未完成
+时构建 Internal ActionSpace 和 disposable AgentContext，校验 typed decision 的 current
+context ID，再处理 observation/paging/user/wait/abort/done/action 分支。SelectAction 经
+membership、risk/confirmation、current binding 后执行一次；优先消费 ExecutionOutcome
+的 post-action acquisition，必要且支持时再 independent capture。Runtime 验证 action/task
+evaluation，为每个 accepted decision 追加恰好一个 bounded root ControlTransition，并串行
+更新 AgentLoopState。RequestObservation、Wait、stale/currentness 与 confirmation refresh
+只走 capability-aware capture，不消费不存在的 post-step cache。
 
 目标完成需要：M0.1 AgentContext/identity/paging 完成；model-backed AgentPolicy 与
 production evaluator composition 完成；new-loop harness 和小型 BrowserGym/MiniWoB smoke
-通过；长程与 breadth 按阶段证明；默认切换后旧 Coordinator/StateKernel/
+通过；observation acquisition lifecycle 与 lossless control accounting 闭合；长程 verified
+frontier 与 breadth 按阶段证明；默认切换后旧 Coordinator/StateKernel/
 RuntimeCommitter/ActionContract 不再进入 target core。上述完成定义不恢复 event core。

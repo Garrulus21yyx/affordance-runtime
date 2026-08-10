@@ -59,22 +59,22 @@ normative:
   - role: target_module_responsibility_containment
     path: docs/responsibility-containment-boundary.md
     lifecycle: current
-  - role: runtime_model_adapter_benchmark_boundary
+  - role: runtime_model_adapter_acquisition_benchmark_boundary
     path: docs/runtime-first-boundary.md
     lifecycle: current
   - role: benchmark_boundary
     path: docs/benchmark-governance-boundary.md
     lifecycle: current
-  - role: task_goal_and_agent_policy_contract
+  - role: task_goal_policy_and_verified_task_frontier_contract
     path: docs/task-intake-and-planner.md
     lifecycle: current
-  - role: perception_and_bounded_loop_recovery_contract
+  - role: perception_acquisition_and_bounded_loop_recovery_contract
     path: docs/active-perception-and-online-recovery.md
     lifecycle: current
-  - role: short_agent_loop_orchestration_contract
+  - role: decision_scoped_control_transition_orchestration_contract
     path: docs/orchestration-and-feedback.md
     lifecycle: current
-  - role: evaluation_and_turn_recording_contract
+  - role: evaluation_and_control_transition_projection_contract
     path: docs/trace-and-evaluation.md
     lifecycle: current
   - role: integration_contract
@@ -83,7 +83,7 @@ normative:
   - role: offline_harness_evolution_contract
     path: docs/harness-evolution.md
     lifecycle: current
-  - role: positive_cross_surface_benchmark_policy
+  - role: positive_cross_surface_and_exact_run_benchmark_policy
     path: docs/benchmark-plan.md
     lifecycle: current
 
@@ -198,7 +198,7 @@ reference:
 
   - role: p5_m4_4_miniwob_breadth_failure_attribution
     path: docs/reviews/2026-08-10-p5-m4-4-miniwob-breadth-failure-attribution.md
-    lifecycle: current
+    lifecycle: immutable_record
 
 immutable_records:
   - path: docs/evidence/

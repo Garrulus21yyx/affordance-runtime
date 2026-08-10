@@ -20,8 +20,17 @@ Governance:
 - [Documentation Governance](documentation-governance.md)
 - [Architecture Governance](architecture-governance-track.md)
 
-The target center is the unified world interface and short
-observe–act–observe–evaluate loop. TaskSpec/ActionContract/StateKernel/
-RuntimeCommitter documents describe the retained implementation baseline or
-archive history unless the target architecture explicitly adopts a local
-invariant from them.
+The target center is the unified world interface and a short typed
+acquire–decide–execute/acquire–evaluate loop. Adapters declare independent and
+post-action acquisition capabilities separately from evidence/source assurance;
+unsupported and failed acquisition stay typed. AgentLoopState remains current
+run-control authority, while a bounded decision-scoped ControlTransition records
+what just happened without becoming a durable ledger or replay authority. P5-E
+adds a run-scoped VerifiedTaskState for the validated task frontier, keeping
+TaskPlan replaceable and task-level auditing separate from the local
+`fill`/`select` repetition guard. Schemas and invariants remain solely in the
+authoritative architecture and scoped normative contracts linked above.
+
+TaskSpec/ActionContract/StateKernel/RuntimeCommitter documents describe the
+retained implementation baseline or archive history unless the target
+architecture explicitly adopts a local invariant from them.

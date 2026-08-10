@@ -1,8 +1,8 @@
 # Affordance Runtime：AgentContext 循环式 E2E Agent 演进计划
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
-> **Updated:** 2026-08-08
-> **Reviewed baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
+> **Updated:** 2026-08-10
+> **Reviewed baseline:** `codex/migrate-world-interaction-capabilities@2c70557b13ba1f36ea4dd50320681279c48dfb53`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -31,6 +31,8 @@ freeze target contracts
 → semantic human confirmation + unknown-effect handling
 → disposable AgentContext + context identity + paging
 → model-backed AgentPolicy + production evaluators + new-loop harness
+→ observation acquisition lifecycle + lossless control-transition accounting
+→ same-profile breadth rerun + supported-subset multi-seed gate
 → optional milestone planning and long-horizon loop
 → bounded ActionBatch
 → evaluated memory/skill sidecars
@@ -46,9 +48,11 @@ freeze target contracts
 5. Observation 是 current binding authority；Plan 是可丢弃假设。
 6. 单动作优先；Batch 只有在无 observation barrier 时才能作为局部优化。
 7. confirmation 绑定语义 intent/risk/consequences，不绑定 selector/coordinate；执行 request 仍绑定 current observation/binding。
-8. receipt/effect/task completion 分离，UNKNOWN 不盲重试。
-9. memory/skill/route hint 必须离线评测后发布，不在线自改。
-10. 每个实现切片必须保持新路径 non-default，直到 P5-H 明确完成默认切换。
+8. acquisition capability 与 observation evidence assurance 分离；unsupported/failed acquisition typed。
+9. receipt/effect/task completion 分离，UNKNOWN 不盲重试，dispatch truth 不因 acquisition 失败而降格。
+10. one accepted policy decision → exactly one bounded root ControlTransition；它不 replay/reconstruct state。
+11. memory/skill/route hint 必须离线评测后发布，不在线自改。
+12. 每个实现切片必须保持新路径 non-default，直到 P5-H 明确完成默认切换。
 
 ## 2. 基线资产与主要债务
 
@@ -59,7 +63,7 @@ freeze target contracts
 - active/targeted perception；
 - backend-neutral semantic actions 与 route hard gates；
 - executor routing 和 typed result/receipt；
-- fresh post-action observation；
+- typed post-action acquisition and evaluator freshness；
 - receipt/effect/completion separation；
 - stale zero-call、unknown no-retry、required-output integrity；
 - optional planning、System-1 cache/skill 的可复用思想。
@@ -76,12 +80,17 @@ freeze target contracts
 
 ### 首要验证缺口
 
-DOM、Visual full-digest 与 WoT local HTTP JSON 已用相同 TaskGoal、确定性
-AgentPolicy 和 evaluators 证明 shared-state adapter-only matrix，通用
-confirmation/evaluation 信任边界与声明的 target output minimum 已闭合。
-P5-M0.1/M0.1.1、P5-M1、existing-ModelPort bridge M1.1 与 declared-minimum
-production evaluator composition M2 已完成；当前下一切片是 new-AgentLoop harness。
-所有阶段继续以 completed behavior 为主证据。
+DOM、Visual full-digest 与 WoT local HTTP JSON 的 shared-state adapter-only matrix、
+AgentContext/model policy、declared-minimum evaluation、new-AgentLoop harness 和 pinned
+BrowserGym adapter 已闭合在 non-default path。M4.4 后续 formal rerun-v3 在 clean
+`83dc4fa` 完成 60/60、成功 4/60；它与历史 M4.3 `b3b64a2` 的 6/60 是两个不可合并的
+exact-run records。新运行直接暴露 7 个 `post_observation_failure`，并保留 9 个
+`unclassified_typed_failure`。
+
+因此当前首要缺口不是再加 transaction/safety machinery，也不是立即进入 P5-E；而是
+先闭合 independent acquisition lifecycle 与 lossless control-transition accounting，
+再按相同 profile 重跑，随后做 supported-subset multi-seed。所有阶段继续以 completed
+behavior 为主证据。
 
 ## 3. P5 阶段与切片
 
@@ -102,13 +111,20 @@ model-backed AgentPolicy: CLOSED
 P5-M1 model-backed AgentPolicy: COMPLETE_NON_DEFAULT
 P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT
 local HTTP provider transport proof: COMPLETE
-live provider profile: UNAVAILABLE
+live provider profile: EXACT_HEAD_MISTRAL_ATTESTED_FOR_DECLARED_PROFILES
 P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM
 P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT
 P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST
 P5-M3.1 measurement and real-adapter attestation: COMPLETE; reviewed exact-head internal artifact available
-P5-M3.2 admission package: PARTIAL_FAIL_CLOSED; full-CI/live workflows and fixed mechanical BrowserGym MiniWoB manifest implemented, target-loop external environment wrapper pending
-external benchmark: BLOCKED / NOT_RUN
+P5-M3.2 admission package: COMPLETE_FOR_PINNED_MECHANICAL_PROFILE
+P5-M4 pinned BrowserGym adapter: COMPLETE_FOR_DECLARED_PROFILE
+P5-M4.2 local fill/select progress containment: COMPLETE
+P5-M4.3 historical MiniWoB-60 run: COMPLETE_VALID_NEGATIVE_EVIDENCE (6/60)
+P5-M4.4 failure attribution/capability inventory: COMPLETE_FOR_CURRENT_SCOPE
+post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)
+P5-M4.5-A acquisition lifecycle: NOT_STARTED / NEXT
+P5-M4.5-B ControlTransition accounting: NOT_STARTED / AFTER_M4.5-A
+P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_M4.5_AND_BREADTH_GATES
 ```
 
 ### P5-M0.1 — Disposable AgentContext architecture
@@ -151,15 +167,16 @@ M1 established the injected provider-neutral structured model port:
 canonical bounded AgentContext JSON, a fixed authority prompt, strict decision
 schema/parser, one call without core retry, typed failure mapping, and internal
 DOM/Visual/WoT proofs with retained deterministic evaluators. Production model
-evaluation, semantic entailment, harness and benchmark admission remain
-unstarted or blocked.
+evaluation is closed for declared-minimum composition; general semantic
+entailment remains partial. M3 harness and the pinned M4 BrowserGym profile
+subsequently closed for their declared scopes.
 
 M1.1 closes the canonical hostile-JSON boundary and connects the policy through
 the existing ModelPort transport owner. The admitted profile enforces one
 attempt, zero retry, no fallback, an outer deadline, typed failures and
 secret-free call metadata. A local OpenAI-compatible HTTP fixture proves the
-transport path; live-provider attestation remains unavailable. M2 production
-evaluator composition is next.
+transport path; later exact-profile evidence is revision-scoped and does not
+change the zero-retry/fallback boundary.
 
 ### P5-A — Target contracts
 
@@ -169,7 +186,7 @@ evaluator composition is next.
 | `A1` | semantics-strong `TaskGoal`, risk-proportionate MaterialInput/Binding, optional `EvaluationSpec` | intake 不含 page/surface/route/TaskPlan；effect boundary fail-closed |
 | `A2` | optional `TaskPlan<Milestone>` and `LocalObjective` | simple task can bypass; no GUI actions/bindings; evaluator owns completion |
 | `A3` | `SurfaceObservation`, `WorldObservation`, `AgentWorldView`, `ActionBinding`, `ActionSpace` | contracts do not import StateKernel/delta/committer |
-| `A4` | `ActionIntent`, `BoundActionRequest`, `ActionResult`, evaluations, Turn, `AgentLoopState` | intent/request identities separated; one-way legacy projectors only |
+| `A4` | `ActionIntent`, `BoundActionRequest`, `ActionResult`, evaluations, bounded loop state | intent/request identities separated; one-way legacy projectors only |
 
 `A0–A4` 已完成并集成在 non-default target path；legacy projector 仍仅是单向边界。
 
@@ -177,7 +194,7 @@ evaluator composition is next.
 
 | Slice | Deliverable | Exit gate |
 |---|---|---|
-| `B1` | `SurfaceAdapter.observe/is_current/execute`, `ObservationOrchestrator`, `WorldFusion`, `ActionSpaceBuilder` | truthful coverage/currentness; no BrowserSession isinstance core branch |
+| `B1` | initial/current observation, `SurfaceAdapter`, `ObservationOrchestrator`, `WorldFusion`, `ActionSpaceBuilder` | truthful coverage/currentness; no BrowserSession isinstance core branch |
 | `B2` | DOM adapter | observe→space→bind→execute→reobserve conformance |
 | `B3` | Visual/SoM adapter | screenshot→semantic targets/options; model emits no raw coordinates |
 | `B4` | WoT adapter/session | read property/invoke/reobserve without test-only observer glue |
@@ -193,8 +210,8 @@ profiles 完成；`B5` breadth 尚未开始。
 暂不引入 TaskPlan 或 Batch，只实现：
 
 ```text
-observe → build ActionSpace → select ActionIntent → bind
-→ execute once → fresh observe → evaluate
+initial acquisition → build ActionSpace → select ActionIntent → bind
+→ execute once → typed post-action acquisition → evaluate
 ```
 
 | Slice | Positive case | Exit gate |
@@ -215,7 +232,7 @@ P5-D/D6.1 前置条件；`C5` 仅 small AgentLoopState 已完成。
 | `D1` | `ExecutorSupport + RiskPolicy` | ALLOW/CONFIRM/BLOCK only; task risk boundary applied |
 | `D2` | `ConfirmationRequest` over ActionIntent + consequences | target dominance permits only covered/non-stronger current subjects; incomparable or expanded semantics re-confirm; exact equality remains the current conservative implementation; pure fresh binding changes do not re-confirm |
 | `D3` | reobserve/rebind continuation | executor receives current BoundActionRequest; stale is zero-call |
-| `D4` | `SENT_UNKNOWN` handling | fresh observe/evaluate; no automatic replay |
+| `D4` | `SENT_UNKNOWN` handling | typed fresh acquisition/evaluate; no automatic replay |
 | `D5` | `ActionEvaluator + TaskEvaluator + target output validation` | evaluator control complete for no-required-output profile; output integrity pending M0 |
 
 旧 exact ActionContract hash equality remains baseline evidence only until this semantic-confirmation
@@ -227,15 +244,32 @@ path/SHA-256 minimum 闭合。`D6.1`
 lineage/evidence-ref fields 和 task-evaluation control。Evidence-ref fields 已强制；
 对 current WorldObservation 的解析已由 M0 完成。
 
+### P5-M4.5 — Short-loop lifecycle and accounting closure
+
+M4.5 只修 rerun-v3 已证实的通用 short-loop contract gaps，并拆成两个可独立归因的
+切片；禁止一次性混入 VerifiedTaskState、planner、prompt tuning 或通用 recovery engine。
+
+| Slice | Deliverable | Exit gate |
+|---|---|---|
+| `M4.5-A` | `reset -> initial ObservationAcquisition`；capability-aware `capture()`；`execute() -> ExecutionOutcome` | BrowserGym RequestObservation、Wait、stale/currentness、confirmation refresh 不再消费空 post-step cache；unsupported/failed typed；normal action 直接消费 returned post observation；SENT_UNKNOWN/one-send invariants unchanged |
+| `M4.5-B` | bounded in-memory `ControlTransition` for every accepted policy decision | action/non-action/pause/post-context-schema action-admission rejection branches retain typed admission/execution/acquisition/evaluation/progress/pending/status; exact total count + bounded suffix; pre-decision provider and stale/schema-invalid inputs do not fabricate transitions |
+| `M4.5-C` | same frozen MiniWoB-60 seed-7 profile rerun after A+B | new exact run kept separate from both 6/60 and 4/60 archives; zero observation contract exceptions; all failures typed; no causal claim across changed revisions |
+| `M4.5-D` | supported-subset multi-seed run | immutable manifest, exact seed set, numeric provider-availability/capacity floor, success floor and maximum seed variance frozen before execution; all thresholds met before P5-E |
+
+M4.5-A 与 M4.5-B 分开提交、分别跑 focused conformance，并分别保留 before/after
+evidence，避免同时改 perception lifecycle 和 accounting 后无法归因。`ControlTransition`
+只回答刚发生什么；AgentLoopState 仍是 authority，禁止 durable ledger、replay、global
+event taxonomy 或 state reconstruction。
+
 ### P5-E — Long-horizon planning
 
 | Slice | Deliverable | Exit gate |
 |---|---|---|
-| `E1` | low-frequency TaskPlanner and TaskPlan<Milestone> | simple tasks still bypass planning |
-| `E2` | MilestoneEvaluator and LocalObjective | facts/evidence own completion; LocalObjective contains no action sequence |
-| `E3` | fact-driven plan replacement | invalid plan is replaced, not patched through recovery history |
-| `E4` | bounded context: recent 8–12 Turns + milestone summary + evidence refs | no full event/observation history in model context |
-| `E5` | ask_user and intermediate verification | complete one 20–50 turn cross-page/application task without losing constraints |
+| `E1` | run-scoped `VerifiedTaskState` over existing TaskPlan/Milestone contracts | milestone status/current frontier/unresolved obligations update only from validated evidence; simple tasks can bypass |
+| `E2` | MilestoneEvaluator/TaskProgressAuditor and frontier-derived LocalObjective | auditor cannot choose action or mark TaskEvaluation COMPLETE; local ProgressController remains separate |
+| `E3` | low-frequency TaskPlanner and fact-driven plan replacement | planner output is hypothesis; invalid plan is replaced from verified frontier, not patched through recovery history |
+| `E4` | bounded context: recent 8–12 ControlTransition projections + milestone summary + evidence refs | no full transition/event/observation history in model context |
+| `E5` | ask_user and intermediate verification | complete one 20–50+ accepted-policy root-ControlTransition cross-page/application task without losing constraints |
 
 Cross-day background work, crash restore, cross-machine continuation and distributed workers remain
 outside this phase and the core Runtime.
@@ -246,7 +280,7 @@ outside this phase and the core Runtime.
 |---|---|---|
 | `F1` | option metadata `batchable/observation_barrier` and validator | default is barrier=true; unsafe/unknown fails closed |
 | `F2` | max-three same-observation/surface/session low-risk batch | no external effect, navigation, app/page change or cross-surface action |
-| `F3` | stop-on-failure execution and one fresh observation after batch | no intermediate-world dependency; each request/result lineage retained |
+| `F3` | stop-on-failure execution and one typed fresh acquisition after batch | no intermediate-world dependency; each request/result lineage retained |
 | `F4` | atomic adapter actions (`fill/select/replace_text/drag`) preferred | Batch is not used to emulate missing atomic affordances |
 | `F5` | ablation | compare success, model calls, observations, steps, latency and batch utilization |
 
@@ -254,7 +288,7 @@ outside this phase and the core Runtime.
 
 | Slice | Deliverable | Exit gate |
 |---|---|---|
-| `G1` | currentness-checked BindingCache | target/fingerprint resolved in current observation; fresh observe still required |
+| `G1` | currentness-checked BindingCache | target/fingerprint resolved in current observation; capability-aware fresh acquisition still required |
 | `G2` | experience retrieval and verified Skill contract | never bypasses ActionSpace/RiskPolicy/evaluator |
 | `G3` | failure attribution and candidate route/skill generation | no live policy mutation |
 | `G4` | offline replay + cross-surface promotion gate | publish/reject decision bound to evaluation version |
@@ -280,11 +314,13 @@ outside this phase and the core Runtime.
    subject under the target dominance order; until dominance is implemented,
    exact subject equality is the conservative gate. Private binding may fresh-rebind only.
 5. result/receipt alone cannot confirm effect or task completion.
-6. each action/admitted batch gets fresh post-observation.
+6. each action/admitted batch gets a typed post-action acquisition; evaluator freshness comes
+   from that outcome or an explicitly supported independent capture.
 7. SENT_UNKNOWN never replays automatically.
 8. required output exists and content matches.
 9. adapter reports truthful coverage/currentness.
-10. TaskPlan is optional/replaceable and evaluator-owned.
+10. TaskPlan is optional/replaceable hypothesis; evaluators own milestone/task
+    satisfaction, never the plan itself.
 11. Batch respects all barrier/risk/surface limits.
 12. recorder failure cannot alter behavior.
 13. benchmark metadata/reward cannot alter product decisions.
@@ -292,6 +328,11 @@ outside this phase and the core Runtime.
 15. AgentContext is one-way/disposable; all decisions bind current context ID.
 16. LocalObjective changes relevance only; source assurance never grants execution authority.
 17. ProposeDone is advisory; criterion-specific Runtime validation owns completion.
+18. acquisition capability and evidence assurance remain distinct; expected unavailable/failed is typed.
+19. one accepted policy decision produces exactly one bounded root ControlTransition;
+    transition history never reconstructs AgentLoopState.
+20. VerifiedTaskState accepts only validated evidence promotion; local repetition containment
+    and task-frontier auditing remain separate.
 
 Old hash/event/delta tests remain while their baseline path is default. When an old owner is deleted,
 owner-specific tests are deleted rather than translated into permanent target constraints.
@@ -329,7 +370,16 @@ DONE: P5-M1.1 strict decision boundary and existing ModelPort bridge
 DONE: P5-M2 production evaluator composition and criterion adjudicators
 DONE: P5-M2.1 evidence semantics and dynamic evaluation closure
 DONE: P5-M3 new-AgentLoop internal fixed-manifest harness; external smoke remains separately gated
-THEN: P5-E long-horizon planning
+DONE: P5-M3.1–M4 pinned adapter, admission, conformance and live-profile evidence for declared scopes
+DONE: P5-M4.2 local fill/select progress containment
+DONE: P5-M4.3 historical MiniWoB-60 seed-7 negative run (6/60)
+DONE: P5-M4.4 typed attribution/capability inventory
+DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
+NEXT: P5-M4.5-A observation acquisition lifecycle
+THEN: P5-M4.5-B lossless bounded ControlTransition accounting
+THEN: P5-M4.5-C same-profile MiniWoB-60 rerun
+THEN: P5-M4.5-D supported-subset multi-seed gate
+THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars
 LAST: P5-H breadth, default cutover and old-core deletion
@@ -342,9 +392,11 @@ Semantic fusion 继续 deferred，且不是 M0.1/M1 前置。不得先做 Batch/
 
 1. Default product uses unified world contracts and the new AgentLoop.
 2. DOM/AX/Visual/SVG/WoT positive matrix succeeds; API/Device/CLI conform.
-3. A 20–50 turn case retains constraints, asks when uncertain, verifies milestones and replans from facts.
+3. A 20–50+ accepted-policy root-ControlTransition case retains constraints,
+   asks when uncertain, verifies milestones and replans from facts.
 4. Batch only runs admitted no-barrier local actions and measurably reduces cost without lowering success.
-5. Semantic confirmation, stale zero-call, fresh observation, no-blind-retry and output integrity pass.
+5. Semantic confirmation, stale zero-call, capability-aware fresh acquisition, lossless control
+   accounting, no-blind-retry and output integrity pass.
 6. Memory/Skill promotion is offline and cannot bypass product gates.
 7. Trace is telemetry only; benchmark reward is offline only.
 8. StateKernel/RuntimeDelta/RuntimeCommitter/recovery transaction are absent from default imports/call path.
@@ -407,9 +459,18 @@ Runtime admission, recovery, retry, fallback, or default-path behavior.
 Outcome attribution can direct a later separately authorized phase, but this
 single synthetic-family run does not prove seed stability or GUI generalization.
 
-P5-M4.4 follows the valid 6/60 negative result before any P5-E work. It closes
-future typed failure origins, adds complete-registry multi-axis capability
-requirements, and performs local no-model lifecycle/projection diagnostics.
-It does not rerun the campaign or alter product behavior. A formal rerun is
-blocked while legacy evidence remains unresolved and provider capacity is not
-declared sufficient; P5-E is blocked by short-loop breadth closure.
+P5-M4.4 followed the valid historical 6/60 negative result before any P5-E
+work. It closed future typed failure origins, added complete-registry multi-axis
+capability requirements, and performed local no-model lifecycle/projection
+diagnostics without rerunning that slice or altering product behavior. A later,
+separately authorized exact-profile rerun-v3 completed at clean `83dc4fa` with
+valid 4/60 evidence. The two archives are immutable and cannot be merged or
+reported as a trend.
+
+Rerun-v3 retains 7 `post_observation_failure`, 9 `unclassified_typed_failure`
+and 11 `runtime_rejected` cases. The observation failures prove that the public
+active-observation meaning and BrowserGym's consume-once post-step cache are
+not interchangeable. M4.5-A/B are therefore the next admitted architecture
+repairs. P5-E stays blocked until their same-profile rerun and the supported-
+subset multi-seed gate close; provider/model competence remains measured rather
+than repaired by Runtime machinery.

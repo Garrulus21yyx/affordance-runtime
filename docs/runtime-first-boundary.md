@@ -6,9 +6,9 @@
 ## 1. Runtime product boundary
 
 Affordance Runtime owns the unified world model, action bindings, route
-selection, freshness, risk decision, execution result, fresh observation, and
-independent evaluation. It does not own the user's high-level reasoning policy,
-and it does not turn external content into user authority.
+selection, freshness, risk decision, execution result, observation acquisition
+lifecycle, and independent evaluation. It does not own the user's high-level
+reasoning policy, and it does not turn external content into user authority.
 
 Intake is responsibility-thin but semantically strong. The execution loop is
 capability-thick in perception, grounding, legal action generation, route
@@ -36,6 +36,21 @@ DOM, AX, Visual, SVG, WoT, API, Device, and CLI adapters report truthful entitie
 facts, coverage, conflicts, bindings, supported actions, freshness, and results.
 They do not interpret task meaning or declare task completion.
 
+Each world adapter declares operational `ObservationCapabilities`, including
+whether it supports `independent_capture` and whether execution normally
+provides a `post_action_observation`. These capabilities are separate from
+evidence modality, source assurance, and verifier independence: recapturability
+does not imply strong evidence, and strong evidence does not imply that a
+backend can recapture it.
+
+The target world boundary returns a typed `ObservationAcquisition` from reset
+and capture, and a typed `ExecutionOutcome` containing the `ActionResult` plus
+the post-action acquisition outcome. Acquisition distinguishes acquired,
+capability-unavailable, and failed states. A backend without independent
+capture keeps the capture operation total by returning typed
+`CAPABILITY_UNAVAILABLE`; it must not surface an incidental cache miss as a raw
+RuntimeError. Reset must still establish the initial observation acquisition.
+
 Credentials and signed URLs are injected at the backend boundary and do not
 enter AgentWorldView, BoundActionRequest telemetry, or general trace payloads.
 
@@ -43,29 +58,55 @@ enter AgentWorldView, BoundActionRequest telemetry, or general trace payloads.
 
 An ActionIntent expresses one semantic action. ActionBinder binds it to one
 current observation and binding as a BoundActionRequest. Runtime checks support
-and freshness, asks for semantic confirmation when needed, executes at most
-once, then reobserves. Target confirmation reuse requires the current subject
+and freshness, asks for semantic confirmation when needed, and executes at most
+once. The normal path consumes the typed post-action acquisition returned by
+execute. Perception and recovery paths request independent capture only when
+the declared capability supports it; unavailable or failed acquisition remains
+a typed control outcome. Target confirmation reuse requires the current subject
 to be covered by the confirmed subject: exact action/target/destination/material
 parameters, no added effects or stronger risk/consequence, and no worse
 reversibility. Exact equality is the conservative current implementation;
 selector/coordinate/form changes alone may fresh-rebind.
 
 Executor success is transport/execution information only. ActionEvaluator and
-TaskEvaluator use fresh independent evidence.
+TaskEvaluator use freshly admitted evidence at the required assurance. That
+evidence may arrive with the execution transition or through supported
+independent capture. A `SENT_UNKNOWN` dispatch is recorded before any refresh;
+capture failure cannot turn it into a zero-execution failure or authorize a
+duplicate attempt.
 
 The default is one action per observation. A bounded ActionBatch is permitted
 only for max-three, low-risk, same-observation/surface/session actions whose
 options declare no observation barrier. It cannot contain navigation, external
 effects, app/page changes, or cross-surface actions and must end with fresh observation.
+That final observation must come from a typed post-action acquisition or an
+explicitly supported independent capture.
 
-## 5. Benchmark boundary
+## 5. State, transition and progress boundary
+
+`AgentLoopState` is the authority for current run control state.
+`ControlTransition` is a bounded, run-scoped, decision-scoped typed record of
+what just happened. One accepted policy decision produces exactly one such
+record, including non-action decisions and typed acquisition/admission
+failures. It is not a durable ledger, event stream, replay source, or state
+reconstruction authority. AgentContext and benchmark/timeout artifacts are
+disposable projections of the current authorities and bounded transition
+suffix.
+
+P5-E adds `VerifiedTaskState` as the run-scoped validated task-frontier
+authority. TaskPlan remains a replaceable hypothesis. The local
+ProgressController continues to contain exact `fill`/`select` repetition;
+TaskProgressAuditor separately evaluates criterion, milestone, and frontier
+progress from validated evidence.
+
+## 6. Benchmark boundary
 
 BrowserGym, MiniWoB++, WorkArena, WebArena, ScreenSpot, WASP, local fixtures,
 and future device suites are evaluators. Production may not branch on task ID,
 seed, family, expected answer, selector, coordinate, or authored shortcut.
 External reward is never Runtime task completion.
 
-## 6. Baseline and target
+## 7. Baseline and target
 
 Current production still uses TaskSpec/ActionContract/StateKernel/
 RuntimeCommitter machinery. That is implementation truth during migration, not

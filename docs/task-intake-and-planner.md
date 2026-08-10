@@ -74,9 +74,9 @@ every GUI task.
 a composed success expression, required output integrity, and authoritative
 checks. It does not define page navigation or grant execution authority.
 
-## 5. TaskPlan, Milestone and LocalObjective
+## 5. TaskPlan, VerifiedTaskState, Milestone and LocalObjective
 
-TaskPlan is optional, low-frequency and replaceable:
+TaskPlan is an optional, low-frequency and replaceable hypothesis:
 
 ```python
 @dataclass(frozen=True)
@@ -103,8 +103,20 @@ TaskPlanner runs only for clearly multi-stage work, invalid plans, material
 environment change, repeated no-progress, or new user information. Simple
 click/read/fill/export tasks bypass it.
 
-MilestoneEvaluator—not Planner—decides satisfaction. LocalObjective describes
-the next nearby world state for one to several turns; it is not a StepPlan.
+P5-E introduces `VerifiedTaskState` as the run-scoped authority for the
+validated task frontier: verified milestone status, current frontier,
+validated evidence references, and unresolved criteria or outputs. It is not a
+durable project record and is updated only from validated evidence. A TaskPlan
+may be replaced after new facts without erasing or manufacturing verified
+state.
+
+`TaskProgressAuditor`—not Planner—evaluates criterion, milestone, and task-frontier
+progress and proposes evidence-backed promotion into VerifiedTaskState.
+`ProgressController` remains a separate local liveness guard. Its current
+exact already-satisfied/repetition handling is intentionally limited to
+`fill` and `select`; it does not own milestones, choose the next objective, or
+replan. LocalObjective is selected from the current frontier and describes the
+next nearby world state for one to several turns; it is not a StepPlan.
 
 ## 6. IntentContext and AgentContext
 
@@ -119,6 +131,8 @@ The unified policy input is a disposable `AgentContext`: opaque current
 bounded semantic history, pending summaries, budgets and decision mode. It is
 a one-way projection, never Runtime state. Every bounded section reports total
 count and truncation; private route/binding/credential data is excluded.
+When P5-E is active, its progress view is a bounded projection of
+VerifiedTaskState, not a second task-frontier authority.
 
 ## 7. AgentPolicy
 
@@ -150,9 +164,10 @@ assurance describes observation quality but never grants write authorization.
 
 ```text
 TaskGoal      = what
-TaskPlan      = optional current hypothesis of high-level how
-LocalObjective = nearby state to reach
-ActionIntent  = next semantic action
+VerifiedTaskState = validated run-scoped task frontier
+TaskPlan      = optional replaceable hypothesis of high-level how
+LocalObjective = nearby state selected from the frontier
+ActionIntent  = next semantic action selected by policy
 BoundActionRequest = current grounded executable request
 ```
 
@@ -188,13 +203,22 @@ Current code still requires admitted TaskSpec, mandatory planning flows, and
 ActionChoiceCatalog authority objects. Those remain baseline behavior until
 P5-A/P5-E/P5-H cutover and are not target contracts.
 
-P5-M0 and P5-M0.1 model-boundary contracts are integrated only on the
-non-default target loop. P5-M1 adds a model-backed AgentPolicy through the
-existing provider transport. P5-M2 adds a criterion-scoped semantic proposal
-bridge while Runtime retains completion authority; no general semantic
-entailment or benchmark harness is present. AgentContext/ContextIdentity/current-page admission and
-explicit-hint relevance are implemented; clarification continuation and
-targeted observation provider selection remain deferred.
+The target AgentLoop already has partial projection-oriented scaffolding for a
+plan, active objective, progress revision, evidence-linked facts, and
+unresolved obligations. Production start does not yet establish a verified
+milestone lifecycle or task frontier, and it does not promote or replace plans
+from validated milestone evidence. Those are P5-E responsibilities. The
+existing ProgressController remains the `fill`/`select` local repetition guard
+rather than an early TaskProgressAuditor.
+
+P5-M0/M0.1 model-boundary contracts, P5-M1 model-backed AgentPolicy and P5-M2
+criterion-scoped proposal composition are integrated on the non-default target
+loop; Runtime retains completion authority and general semantic entailment
+remains partial. The internal harness and scoped P5-M4 BrowserGym/MiniWoB
+evidence also exist. None of those creates verified milestone/frontier state.
+AgentContext/ContextIdentity/current-page admission and explicit-hint relevance
+are implemented; clarification continuation and targeted observation provider
+selection remain deferred.
 
 P5-M2.1 does not ask AgentPolicy to predict complete future state. Exact
 verification obligations exist only when Runtime can derive them from relevant

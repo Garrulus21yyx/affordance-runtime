@@ -5,7 +5,9 @@
 
 ## 1. Boundary
 
-The harness consumes immutable run/turn records and benchmark outcomes. It may
+The harness consumes immutable privacy-safe run/ControlTransition projections
+and benchmark outcomes. The live in-memory ControlTransition is not itself a
+durable ledger; optional recorder/benchmark artifacts provide the offline copy. It may
 propose changes to observation policy, route policy, prompts, or evaluators, but
 it never changes a live run or grants execution authority.
 
@@ -29,16 +31,17 @@ primary product-evolution axis.
 Candidates require focused correctness checks plus positive cross-surface
 comparison. Report task success, observation/model/visual cost, latency, route
 mistakes, fallback, confirmation, and unknown-effect behavior. No candidate may
-weaken stale zero-call, semantic confirmation identity, fresh observation, no blind
+weaken stale zero-call, semantic confirmation identity, typed fresh acquisition, no blind
 retry, or output integrity.
 
-The promotion chain is Turn records → failure attribution → candidate memory,
-Skill or route hint → offline replay/cross-surface evaluation → publish/reject.
+The promotion chain is privacy-safe ControlTransition projections → failure
+attribution → candidate memory, Skill or route hint → offline replay/cross-surface
+evaluation → publish/reject.
 The live Runtime never mutates or automatically publishes its own core policy.
 
 BindingCache hits are hints only: target identity and fingerprint/currentness
 must be resolved against the current observation, and execution still requires
-fresh post-action observation.
+typed fresh post-action acquisition.
 
 ## 4. Isolation
 

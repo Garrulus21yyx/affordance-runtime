@@ -14,6 +14,14 @@ EVOLUTION_PLAN = (
     / "plans"
     / "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md"
 )
+AUTHORITATIVE_ARCHITECTURE = (
+    DOCS
+    / "superpowers"
+    / "specs"
+    / "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md"
+)
+IMPLEMENTATION_STATUS = DOCS / "implementation-status.md"
+CURRENT_PLAN = DOCS / "current-implementation-plan.md"
 
 VALID_LIFECYCLES = {
     "current",
@@ -75,10 +83,52 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "model-backed AgentPolicy: CLOSED" in text
     assert "P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT" in text
     assert "local HTTP provider transport proof: COMPLETE" in text
-    assert "live provider profile: UNAVAILABLE" in text
+    assert "live provider profile: EXACT_HEAD_MISTRAL_ATTESTED_FOR_DECLARED_PROFILES" in text
     assert "P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM" in text
     assert "P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT" in text
     assert "P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST" in text
+    assert "P5-M4.3 historical MiniWoB-60 run: COMPLETE_VALID_NEGATIVE_EVIDENCE (6/60)" in text
+    assert (
+        "post-M4.4 separately authorized rerun-v3: "
+        "COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)"
+    ) in text
+    assert "P5-M4.5-A acquisition lifecycle: NOT_STARTED / NEXT" in text
+    assert "P5-M4.5-B ControlTransition accounting: NOT_STARTED / AFTER_M4.5-A" in text
+
+
+def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
+    text = CURRENT_PLAN.read_text(encoding="utf-8")
+
+    markers = (
+        "P5-M4.5-A observation acquisition lifecycle — next",
+        "P5-M4.5-B lossless ControlTransition — queued after A",
+        "## Gates after M4.5",
+        "VerifiedTaskState evidence promotion",
+    )
+    positions = [text.index(marker) for marker in markers]
+    assert positions == sorted(positions)
+    assert "Rerun-v3 completed 60/60 with valid 4/60 evidence" in text
+    assert "rerun remains blocked" not in text.lower()
+
+
+def test_target_contract_keeps_transition_lightweight_and_capture_typed() -> None:
+    architecture = AUTHORITATIVE_ARCHITECTURE.read_text(encoding="utf-8")
+    status = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
+
+    for marker in (
+        "class ObservationCapabilities",
+        "class ObservationAcquisition",
+        "class ExecutionOutcome",
+        "class ControlTransition",
+        "class VerifiedTaskState",
+        "AgentLoopState 不由 transition replay 重建",
+    ):
+        assert marker in architecture
+    assert "CAPABILITY_UNAVAILABLE" in architecture
+    assert "durable ledger" in architecture
+    assert "WorldEnvironment independent capture" in status
+    assert "lossless ControlTransition" in status
+    assert "CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS" in status
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:

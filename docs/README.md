@@ -26,9 +26,10 @@ TaskGoal
 → typed AgentDecision
 → RiskPolicy / HumanConfirmation when needed
 → current BoundActionRequest
-→ execute once → ActionResult
-→ fresh WorldObservation
+→ execute once → ExecutionOutcome(ActionResult + typed post acquisition)
+→ fresh WorldObservation from execute or capability-admitted capture
 → ActionEvaluation + TaskEvaluation
+→ bounded ControlTransition + AgentLoopState update
 → continue / reobserve / ask user / stop
 ```
 
@@ -47,28 +48,23 @@ one world interface. Internal transaction submission is not the product center.
 - [Project Plan](project-plan.md) summarizes the durable product direction.
 
 Current code still runs the older TaskSpec/ActionContract/StateKernel/
-RuntimeCommitter path. It is a retained migration baseline, not the target.
-The unified DOM, Visual full-digest, and WoT local HTTP JSON paths are integrated
-non-default, and their shared-state adapter-only matrix is proven. The older
-baseline remains the default product path. P5-D semantic confirmation, fresh
-rebind, and effect certainty are integrated non-default. P5-D6.1 contract
-completion is closed on the non-default path. P5-M0 model-safe
-policy views and deterministic evaluator trust validation are closed. P5-M1
-model policy core is closed, and P5-M1.1 connects it to the existing ModelPort
-owner with hostile-JSON limits, an outer deadline, zero retry/fallback, typed
-failures, metadata and a local HTTP transport proof. Live-provider attestation
-is unavailable. P5-M2 production evaluation is closed for declared-minimum
-criterion profiles: Runtime composes mechanical, evidence-scoped semantic,
-explicit-user and hybrid results; general semantic entailment remains partial.
-P5-M2.1 closes relevance-bound action verification, semantic evidence catalog
-visibility, hybrid component separation and dynamic semantic readiness.
-P5-M0.1 AgentContext/context identity/intent/relevance/paging/source-assurance
-is implemented on the non-default target path. P5-M1 uses the same non-default
-loop and retained deterministic evaluators.
-P5-M0.1.1 operational closure adds one-shot context generations, fresh
-acquisition-identity enforcement, traversable opaque-cursor paging, coherent
-task/world/action budgets, objective-aware page invalidation, capability/result
-separation and recurrent semantic history. The default Coordinator path is unchanged.
+RuntimeCommitter path by default. The non-default target path has the unified
+DOM/Visual/WoT matrix, semantic confirmation, disposable AgentContext, strict
+model-policy boundary, declared-minimum evaluators, internal harness and pinned
+BrowserGym adapter for their declared scopes.
+
+Two exact MiniWoB-60 runs are current immutable evidence and must not be
+combined: historical clean `b3b64a2` at 6/60, and clean `83dc4fa` rerun-v3 at
+4/60. Rerun-v3 records 7 post-observation failures, 9 unclassified typed
+failures and 11 Runtime rejections. It confirms that BrowserGym's consume-once
+reset/step cache does not satisfy the public active-observation meaning.
+
+The active queue is M4.5-A typed acquisition lifecycle, then M4.5-B bounded
+lossless ControlTransition accounting. The same frozen profile is rerun only
+after both, followed by a supported-subset multi-seed gate and then P5-E
+VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
+ProgressController remains fill/select-only and is not a planner. The default
+Coordinator path is unchanged.
 
 ## 3. Maintained policies and contracts
 
@@ -128,6 +124,8 @@ revision-scoped findings; they do not redefine target contracts.
 ## 5. Immutable records and archive
 
 - [Evidence](evidence/README.md) is revision-scoped and non-authoritative.
+- [post-M4.4 separately authorized rerun-v3 evidence](evidence/runs/p5-m4-4-miniwob-60-seed7-83dc4fa-rerun-v3/README.md)
+  is the immutable clean 4/60 exact-run record; it does not replace M4.3's 6/60.
 - `change-admission/` preserves historical scoped decisions.
 - [2026-08-05 archive](archive/superseded-2026-08-05/README.md)
 - [2026-07-29 archive](archive/superseded-2026-07-29/README.md)
@@ -209,5 +207,22 @@ uses current structural observations, Runtime-private element bindings,
 single-dispatch execution, fresh post-step observations, and official
 mechanical completion signals. Its fixed three-task conformance passes through
 AgentLoop, the strict canonical parser, and Runtime admission. Live provider
-execution remains separately opt-in and is `NOT_RUN` when unavailable. See the
+execution remains separately opt-in and exact-run-scoped. See the
 [P5-M4 review](reviews/2026-08-09-p5-m4-browsergym-target-loop-adapter.md).
+
+## P5-M4.2–M4.5 short-loop closure
+
+M4.2 implements fill/select-only local repeated-action containment; it is not a
+general progress auditor. M4.3's clean historical MiniWoB-60 result is 6/60.
+M4.4 added typed attribution/capability inventory, and a later separately
+authorized clean rerun-v3 completed at 4/60. The evidence archives are distinct
+and neither is a general capability estimate.
+
+The seven rerun-v3 observation failures promote independent acquisition from a
+conditional idea to the next admitted contract correction. M4.5-A separates
+reset initial acquisition, capability-aware capture and execute-returned post
+acquisition. M4.5-B records exactly one privacy-bounded root ControlTransition
+per accepted policy decision without introducing a ledger, replay or second
+state authority. See the [active queue](current-implementation-plan.md) for exit
+gates and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+for ordering into rerun, multi-seed and P5-E.

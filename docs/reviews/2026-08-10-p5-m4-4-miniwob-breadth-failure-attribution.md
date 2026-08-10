@@ -1,5 +1,12 @@
 # P5-M4.4 MiniWoB breadth failure attribution
 
+> **Lifecycle:** REVISION-SCOPED REVIEW
+> **Decision boundary:** the rerun-blocked conclusion below records the state at
+> M4.4 closure. A later separately authorized clean rerun-v3 completed at 4/60;
+> see its [immutable evidence record](../evidence/runs/p5-m4-4-miniwob-60-seed7-83dc4fa-rerun-v3/README.md)
+> and [current implementation status](../implementation-status.md). It does not
+> rewrite or merge the historical 6/60 run described here.
+
 ## Historical evidence boundary
 
 The immutable P5-M4.3 run at `b3b64a2c338f0bc76af5d7a16dfddfed513152c4`

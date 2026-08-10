@@ -58,6 +58,11 @@ replace the whole architecture.
   material bindings—never page structure, route, or Plan.
 - `EvaluationSpec` is optional strict completion/output semantics.
 - `WorldObservation` is the Runtime's complete current semantic world model.
+- `ObservationCapabilities` declares operational independent-capture and
+  post-action-observation support; it is separate from evidence modality and
+  source assurance.
+- `ObservationAcquisition` reports acquired, capability-unavailable, or failed
+  observation acquisition as a typed outcome.
 - `AgentWorldView` is the compact model-facing projection.
 - `SemanticTarget` retains one identity across surface representations.
 - `ActionBinding` contains surface/backend-specific execution material.
@@ -65,10 +70,19 @@ replace the whole architecture.
 - `ActionIntent` is the user/model-facing semantic action.
 - `BoundActionRequest` is one ActionIntent bound to current observation and binding.
 - `ActionResult` reports execution/transport status; it does not prove effect.
+- `ExecutionOutcome` retains ActionResult together with the typed post-action
+  ObservationAcquisition; acquisition failure does not erase dispatch truth.
 - `ActionEvaluation` and `TaskEvaluation` are independent post-observation judgments.
-- `TaskPlan<Milestone>` is optional and replaceable; `LocalObjective` is the
-  nearby state for one to several turns.
-- `AgentLoopState` is small serial loop state.
+- `TaskPlan<Milestone>` is an optional replaceable hypothesis; `LocalObjective`
+  is the nearby state selected from the current task frontier.
+- `VerifiedTaskState` is the P5-E run-scoped authority for the validated task
+  frontier and accepts only validated evidence updates.
+- `AgentLoopState` is the authority for current run control state.
+- `ControlTransition` is one bounded typed record per accepted policy decision.
+  It is run-scoped and in-memory, not a durable ledger, event-sourcing stream,
+  replay source, or state-reconstruction authority.
+- `ProgressController` is the local `fill`/`select` liveness guard;
+  `TaskProgressAuditor` separately owns criterion/milestone/frontier auditing.
 - `HumanConfirmation` binds semantic intent, risk and consequences; a fresh
   binding alone does not change what the user confirmed.
 - `ActionBatch` is semantic selection and `BoundActionBatch` is its current

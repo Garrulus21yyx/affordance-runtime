@@ -1,7 +1,7 @@
 # Affordance Runtime Project Plan
 
 > **Lifecycle:** CURRENT PRODUCT ROADMAP
-> **Updated:** 2026-08-08
+> **Updated:** 2026-08-10
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Migration authority:** [Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
@@ -35,6 +35,7 @@ semantically strong TaskGoal + risk-proportionate MaterialBindings
 optional EvaluationSpec / strict source lineage
 optional TaskPlan<Milestone> + LocalObjective
 WorldObservation + Internal ActionSpace
+ObservationCapabilities + ObservationAcquisition + ExecutionOutcome
 disposable AgentContext + opaque ContextIdentity
 bounded IntentContext + progress/world/history/pending/budget views
 AgentActionPageView + typed AgentDecision
@@ -42,8 +43,9 @@ SemanticTarget + ActionBinding
 ActionSpace + ActionIntent
 BoundActionRequest + ActionResult
 ActionEvaluation + TaskEvaluation
-AgentLoopState + Turn
-HumanConfirmation + optional TurnRecorder
+AgentLoopState + bounded ControlTransition
+optional VerifiedTaskState + TaskProgressAuditor
+HumanConfirmation + optional TurnRecorder telemetry
 bounded ActionBatch + evaluated memory/Skill sidecars
 ```
 
@@ -65,13 +67,16 @@ core contracts for every GUI task.
 | P5-M0.1 | Unified disposable AgentContext, ContextIdentity, bounded intent/world/history, relevance, paging, source assurance and typed decisions | complete, non-default |
 | P5-M0.1.1 | One-shot context epochs, fresh observation identity, traversable cursor paging and coherent bounded projections/history | complete, non-default |
 | P5-M1 | Model-backed target AgentPolicy using deterministic evaluators | complete |
-| P5-M1.1 | Existing ModelPort bridge and invocation hardening | complete for strict boundary and local HTTP transport; live provider unavailable |
+| P5-M1.1 | Existing ModelPort bridge and invocation hardening | complete for strict boundary/local HTTP transport; later exact Mistral profile separately attested |
 | P5-M2 | Production evaluator composition and criterion adjudicators | complete for declared minimum profiles; general entailment partial |
 | P5-M2.1 | Evidence semantics and dynamic evaluation closure | complete for Runtime-derived obligation and presented-evidence profiles |
-| P5-M3 | New-AgentLoop internal fixed-manifest harness | complete locally; external BrowserGym/MiniWoB not run and admission blocked |
+| P5-M3 | New-AgentLoop internal fixed-manifest harness | complete for fixed internal manifest |
 | P5-M3.1 | Harness measurement and real-adapter attestation | complete; reviewed exact-head internal artifact available, live profile separately gated |
-| P5-M3.2 | Exact-head CI/live gates and external smoke admission package | partial: reviewed fixed manifest and fail-closed preflight; external target-loop adapter and final remote attestations pending |
-| P5-E | Milestone planning, LocalObjective, bounded context and long-horizon evaluation | not started |
+| P5-M3.2–M4 | Exact-head gates and pinned BrowserGym/MiniWoB adapter/profile | complete for declared profiles; no generalization/default-cutover claim |
+| P5-M4.2–M4.4 | Local fill/select containment, historical MiniWoB-60 breadth and typed attribution/capability evidence | valid clean `b3b64a2` negative run at 6/60; short-loop gaps remain |
+| post-M4.4 separately authorized rerun-v3 | Re-execute the frozen profile with expanded typed evidence | valid clean `83dc4fa` negative run at 4/60; separate from M4.3 |
+| P5-M4.5 | Observation acquisition lifecycle, then lossless bounded ControlTransition accounting | next; separate slices before any new breadth/long-horizon claim |
+| P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.5 and breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
 | P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
@@ -101,7 +106,7 @@ are not product measures.
 
 Every phase preserves observation-bound request identity, stale zero-call,
 semantic confirmation identity with current rebinding, model/binding separation, result/effect/completion
-separation, fresh post-action observation, unknown no-retry, required-output
+separation, capability-aware fresh post-action acquisition, unknown no-retry, required-output
 integrity, and benchmark neutrality.
 AgentContext remains a one-way disposable projection; every decision binds the
 current context ID, LocalObjective changes relevance only, and source assurance
@@ -109,6 +114,10 @@ never grants execution authority.
 Each policy call receives a new one-shot generation even when its public
 projection is otherwise identical. Runtime-issued paging cursors bind filters,
 objective identity and exact membership; they are not durable state.
+Expected unsupported/failed acquisition is typed. Dispatch truth is independent
+of acquisition failure. One accepted policy decision has exactly one bounded
+root ControlTransition, while AgentLoopState remains the current-state authority.
+VerifiedTaskState accepts only validated evidence; TaskPlan remains a hypothesis.
 
 ## 6. Non-goals
 
@@ -117,7 +126,10 @@ objective identity and exact membership; they are not durable state.
 - global authorization-proof or capability-token platform;
 - prompt-injection classification as the Runtime architecture center;
 - mandatory full TaskPlan or strict source graph for ordinary GUI tasks;
-- trace or external reward as online execution/completion authority.
+- trace or external reward as online execution/completion authority;
+- ControlTransition as a durable ledger, replay source, global event taxonomy,
+  state reconstruction mechanism, or second execution truth;
+- a Runtime progress guard used as a substitute for policy/planner competence.
 
 ## 7. Program completion
 
@@ -134,23 +146,23 @@ rather than inferred from budget limits, and structured-output failures are
 located before policy/runtime compatibility conclusions are drawn. Weak-model
 compatibility is not a core requirement: an exact profile may be explicitly
 unsupported without adding parser repair, retry, fallback or model-specific
-Runtime behavior. The next admitted work remains the separately reviewed
-external adapter/dependency gate; no external run is authorized here.
+Runtime behavior. This phase did not itself authorize an external run; the
+later M4 adapter and breadth records are separate profile-scoped evidence.
 
 The exact installed Qwen 2.5 7B and Llama 3.1 8B digests now pass the complete
 L0–L4 compact-contract support gate at 20/20 per level. This closes their tested
 local action-selection profile, not full recurrent AgentPolicy, without changing the format-only production default.
-It does not close external adapter, remote CI, live-profile or default-cutover
-gates.
+It did not by itself close the later external adapter, live-profile or
+default-cutover gates.
 
 ## 9. Compact grounding production profile
 
 P5-M3.4 makes compact grounding explicitly configurable without provider/model
 routing, retry, fallback or Runtime repair. Exact identity includes grounding
 version and schema digest. The default-cutover checker is evidence-only and has
-no Runtime dependency. Current readiness is blocked by the live decision matrix,
-Mistral compact provider availability and exact-head remote CI; format-only
-remains default and external benchmark execution remains separately blocked.
+no Runtime dependency. Global compact-default readiness remains blocked by the
+decision matrix/provider evidence; format-only remains default. Later M4
+external runs are independently gated and do not promote compact grounding.
 
 ## 10. Decision-neutral recurrent qualification
 
@@ -199,6 +211,17 @@ seed-robustness, generalization, or default-cutover completion gates.
 P5-M4.4 interprets the valid 6/60 result without changing its historical
 denominator or files. It adds future failure-origin observability, full-registry
 multi-axis capability requirements, and local no-model coverage diagnostics.
-The breadth rerun remains blocked until legacy uncertainty is replaced by new
-typed evidence and provider capacity is explicitly sufficient. P5-E is
-`BLOCKED_BY_SHORT_LOOP_BREADTH`, not started.
+That slice's rerun-blocked decision remains historical. A later separately
+authorized rerun-v3 completed at clean `83dc4fa` with valid 4/60 evidence,
+including 7 post-observation failures and 9 still-unclassified typed failures.
+It remains separate from 6/60 and does not establish a trend.
+
+P5-M4.5 now precedes P5-E. It first separates reset/independent capture from
+execute-returned post-action acquisition, then adds lightweight lossless
+ControlTransition accounting. Those changes must be committed and measured
+separately. The unchanged MiniWoB-60 profile is rerun afterward, followed by a
+supported-subset multi-seed gate whose immutable manifest, exact seed set,
+numeric provider-availability/capacity floor, success floor and maximum seed
+variance are frozen before execution. P5-E then reuses the existing TaskPlan
+contracts while adding validated VerifiedTaskState frontier promotion and a
+task-level auditor separate from the local fill/select ProgressController.

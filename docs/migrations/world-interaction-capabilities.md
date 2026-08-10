@@ -28,6 +28,7 @@ state authoritative in the current Runtime.
 | Fast-path hints | `memory/binding_cache.py` |
 | Target short control loop | `agent/` (`INTEGRATED_NON_DEFAULT`) |
 | Low-risk batches | `execution/batch.py` helper only; not AgentLoop-integrated |
+| Target WorldEnvironment lifecycle | current `reset/observe/is_current/execute` port; M4.5 typed acquisition target not implemented |
 
 ## Preserved invariants
 
@@ -80,3 +81,17 @@ The current positive matrix status is DOM, Visual-only, and WoT local-simulation
 complete for the same shared-state task/policy/evaluators. This proves only
 single-surface adapter symmetry. Semantic fusion is not started. RoutePolicy is implemented only after hard gates. BindingCache remains
 a not-admitted prototype. Cross-surface claims and default cutover are blocked.
+
+## Current acquisition gap
+
+The pinned BrowserGym adapter implements post-action observation by caching the
+raw snapshot returned from reset/step and consuming it once through
+`observe()`. It does not implement an independent, side-effect-free active
+capture. The generic port name therefore overstates this backend's current
+capability; RequestObservation/Wait/stale/currentness/confirmation refresh can
+reach an empty cache. Formal rerun-v3 records seven such RuntimeError failures.
+
+The authoritative target replaces this mismatch in M4.5-A with reset-returned
+initial `ObservationAcquisition`, capability-aware `capture()`, and
+`ExecutionOutcome` carrying a typed post-action acquisition. This paragraph is
+a migration gap record, not a claim that those contracts are already in code.

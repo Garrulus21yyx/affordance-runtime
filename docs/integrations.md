@@ -30,7 +30,8 @@ rebinds before execution; binding-only changes do not require another prompt.
 
 ## 3. Observation and action privacy
 
-External APIs may expose AgentWorldView and safe turn summaries. They do not
+External APIs may expose AgentWorldView and privacy-safe ControlTransition
+summaries. They do not
 expose credentials, selectors, backend handles, signed URLs, or unrestricted
 screenshots/trace by default.
 
@@ -38,7 +39,8 @@ screenshots/trace by default.
 
 Cancellation can stop before the next primitive action. A cancel racing with an
 effectful dispatch cannot claim the action did not occur; the Runtime returns
-SENT_UNKNOWN and requires fresh observation. Current target does not promise process-
+SENT_UNKNOWN and requests typed fresh acquisition when supported. Acquisition
+failure does not authorize replay. Current target does not promise process-
 crash checkpoint/resume.
 
 ## 5. Benchmark integrations

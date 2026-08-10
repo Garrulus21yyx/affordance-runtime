@@ -12,8 +12,11 @@
 | `AgentPolicy` | next semantic decision | raw binding payload, execution, task completion |
 | `TaskPlanner` | optional high-level Milestone hypothesis | GUI actions, binding, completion authority |
 | `ObjectivePolicy` | current LocalObjective from task/plan/world | selector, route, action execution |
+| `VerifiedTaskState` | validated milestone status, current frontier, evidence refs and unresolved obligations for one run | plan truth, action selection, persistence, replay |
+| `TaskProgressAuditor` | evidence-scoped milestone/frontier promotion proposals | GUI action choice, task completion, local retry containment |
 | `SurfaceRegistry` | adapter discovery/selection for observation | task meaning or route execution result |
 | `SurfaceAdapter` | truthful observation, bindings, supported execution | global task planning or completion |
+| `WorldEnvironment` acquisition boundary | reset initial acquisition, capability-aware capture, execute outcome with typed post acquisition | evidence assurance inflation, policy recovery, exception-as-capability protocol |
 | `WorldFusion` | semantic entity/fact fusion and conflicts | action execution or user confirmation |
 | `ActionSpaceBuilder` | current legal semantic options and barrier metadata | model choice or backend execution |
 | `ActionRelevancePolicy` | DIRECT/ENABLING/INFORMATION/OTHER ranking and paging hints | legality, capability, risk lowering or completion |
@@ -22,6 +25,9 @@
 | `RiskPolicy` | ALLOW/NEEDS_CONFIRMATION/BLOCK | executor capability discovery or token registry |
 | `confirmation/` | semantic request/decision contracts and human-readable summary | surface payloads, BrowserSession, HTTP transport, registry |
 | `AgentRunSession` | one in-memory run, pending confirmation, consumption and continuation counts | persistence, global lookup, cross-process resume |
+| `AgentLoopState` | authoritative current run control state and bounded transition suffix/total | durable log, replay reconstruction, surface/evaluator algorithms |
+| `ControlTransition` accounting | one privacy-safe typed control boundary per accepted decision | state authority, event bus, persistence, low-level event taxonomy |
+| `ProgressController` | local semantic-attempt digest and declared postcondition repetition containment | planner, milestone promotion, general task progress |
 | `Executor` | one BoundActionRequest → ActionResult | effect/task success judgment |
 | `ActionEvaluator` | before/request/result/after → effect status | task completion |
 | `WorldEvidenceIndex` | current fact IDs and controlled artifact refs for one observation | artifact values, global provenance, or persistence |
@@ -30,7 +36,7 @@
 | `TaskEvaluator` | TaskGoal/EvaluationSpec + world/turns → task status | action dispatch |
 | `task_evaluation_policy.py` | COMPLETE/INCOMPLETE/UNKNOWN/BLOCKED → loop control | task inference, observation, or execution |
 | `LoopPolicy` | continue/reobserve/ask/stop | domain observation or execution |
-| `TurnRecorder` | optional telemetry | admission, execution, state authority |
+| `TurnRecorder` | optional projection of transitions/current state for telemetry | admission, execution, transition/state authority |
 | `BindingCache` / Skill sidecars | currentness-checked hints and offline-evaluated templates | bypassing ActionSpace/RiskPolicy/evaluation or online publication |
 | `model_boundary/` | disposable AgentContext, one-way projection, ContextIdentity, budgets, paging, model-safe views and typed future provider failures | Runtime state, concrete adapters, binders/executors, provider SDKs or fixtures |
 
@@ -57,9 +63,13 @@ not on AgentLoop internals.
 Only `AgentLoop` mutates `AgentLoopState` in the target serial MVP. Functions
 return domain results directly; they do not emit a universal internal command
 language. Observation/action/evaluation records are immutable values referenced
-by bounded recent turns.
+by bounded recent ControlTransitions. Every accepted policy decision yields one
+root transition; the exact total survives recent-window truncation.
 
 Trace or recorder persistence is best effort and not part of state commit.
+ControlTransition is in-memory run accounting and cannot be replayed to rebuild
+AgentLoopState. VerifiedTaskState, when P5-E adds it, is a specialized field of
+that state rather than another aggregate/store.
 
 ## 4. Anti-god-object rule
 
@@ -202,8 +212,8 @@ canonical deterministic schema digest. The decision matrix and cutover checker
 remain benchmark-only: they cannot select production grounding, repair model
 output, modify ActionSpace/admission, or influence AgentLoop behavior.
 
-P5-M4 keeps six narrow benchmark owners: `browsergym_environment` owns
-lifecycle/cache composition, `browsergym_projection` owns bounded structural
+P5-M4 keeps six narrow benchmark owners: `browsergym_environment` owns the
+current reset/step cache composition, `browsergym_projection` owns bounded structural
 projection, `browsergym_binding` owns short-lived private handles,
 `browsergym_execution` owns canonical-to-official action conversion,
 `browsergym_verifier` owns current official status, and `composition` owns the
@@ -212,6 +222,13 @@ package boundary. Pacing and live execution are benchmark-only; they do not
 enter model-policy core or AgentLoop. The scripted conformance decision port
 uses only serialized public context and cannot read task IDs or expected action
 sequences.
+
+That ownership closes only the normal BrowserGym reset/step snapshot path. It
+does not implement independent capture: its public observe consumes the cached
+snapshot once. M4.5-A moves generic acquisition semantics into the target
+WorldEnvironment contract while keeping BrowserGym mechanics in the benchmark
+adapter; AgentLoop must not learn task IDs or add a backend-specific recovery
+branch.
 
 ## P5-M4.2 narrow owners
 
@@ -237,3 +254,25 @@ contract and component wrappers. `external_breadth` owns only MiniWoB taxonomy,
 source-bound requirements, offline overlays, local probes, and rerun readiness.
 Neither capability readiness nor diagnostic disposition enters AgentContext,
 ActionSpace, BrowserGym adapter behavior, Runtime admission, or policy control.
+
+## P5-M4.5 and P5-E narrow owners
+
+M4.5-A keeps operational observation capability/outcome contracts in `world/`,
+adapter implementation in its environment owner, and capture selection/budget
+sequencing in `agent/observation_control.py`. Evidence assurance remains in
+WorldObservation/evaluation owners. No owner may infer capability from evidence
+quality or turn a typed unavailable result into a generic recovery transaction.
+
+M4.5-B adds one narrow ControlTransition constructor/accounting owner under
+`agent/`. AgentLoop supplies serial inputs and updates AgentLoopState once; the
+accounting owner normalizes privacy-safe typed facts but cannot execute,
+evaluate, persist, replay or reconstruct state. Session snapshot, model history
+and benchmark reports consume one-way projections instead of separately
+reassembling execution truth.
+
+P5-E reuses `task/planning_contracts.py`. VerifiedTaskState/milestone promotion
+and TaskProgressAuditor stay under task/evaluation ownership; ObjectivePolicy
+derives LocalObjective from the verified frontier. `agent/progress_control.py`
+continues to own only local fill/select repetition containment. Neither auditor
+nor controller may choose a replacement action, modify ActionSpace legality, or
+substitute for AgentPolicy/TaskPlanner.

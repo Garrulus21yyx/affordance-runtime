@@ -6,7 +6,7 @@
 ## 1. Main loop
 
 ```text
-observe
+reset → initial ObservationAcquisition
 → evaluate current task state
 → optionally plan/replace milestones
 → select LocalObjective
@@ -16,10 +16,11 @@ observe
 → reject stale decision with zero execution
 → risk decision / human confirmation
 → bind current request
-→ execute one action or admitted batch once
-→ fresh observe
+→ execute one action or admitted batch once → ExecutionOutcome
+→ use returned post observation; capture independently only when needed/supported
 → action evaluation
 → task evaluation
+→ append exactly one bounded root ControlTransition for the accepted decision
 → continue / reobserve / replan / ask / wait-confirmation / done / failed
 ```
 
@@ -27,16 +28,18 @@ AgentLoop sequences collaborators; it does not parse surfaces, choose policy
 internals, evaluate effects, or persist telemetry.
 
 Before policy invocation, Runtime projects TaskGoal, bounded IntentContext,
-progress, WorldObservation, current action page, bounded Turns, pending state
+progress, WorldObservation, current action page, bounded ControlTransition
+summaries, pending state
 and budgets into a disposable AgentContext.
-The policy never receives the internal ActionSpace or Turn objects. Its opaque
+The policy never receives the internal ActionSpace or ControlTransition objects. Its opaque
 action ID is resolved and admitted only against the still-current internal
 ActionSpace.
 
 ## 2. Loop state
 
-The serial MVP state contains current observation ref, bounded recent turns,
-optional TaskPlan/milestone summary, pending semantic confirmation, pending
+The serial target state contains current observation ref, an exact transition
+total plus bounded recent ControlTransition suffix, optional TaskPlan and
+VerifiedTaskState/frontier, pending semantic confirmation, pending
 uncertain request, budget, and final result.
 Externally meaningful states are RUNNING, WAITING_USER,
 WAITING_CONFIRMATION, CANCELLED, DONE, BLOCKED, and FAILED.
@@ -46,17 +49,37 @@ durable state machine.
 AgentLoopState, task/observation/action-space revisions and pending state remain
 Runtime-owned; AgentContext never becomes a second state aggregate.
 
+## 2.1 Control-transition accounting
+
+Every policy decision that passes the current context/schema boundary and is
+accepted for Runtime handling produces exactly one immutable root
+`ControlTransition`, including SelectAction, RequestObservation,
+RequestActionPage, AskUser, ProposeDone, Wait and Abort. Admission rejection,
+capability-unavailable, evaluation failure, pending/waiting and terminal
+consequences remain typed fields of that same decision record; they are not
+recovered later from exception text or several state owners.
+
+A confirmation/user continuation that changes state may carry a typed
+continuation source referencing the root transition, but cannot masquerade as
+another policy decision. A provider failure before a valid decision, initial
+pre-policy completion and harness watchdog have no accepted decision and do not
+fabricate one. ControlTransition is run-scoped and bounded, not a durable event
+log, replay source, global bus, commit record or state-reconstruction authority.
+
 ## 3. Feedback
 
 Products may stream observation/decision/action/evaluation summaries, but a
 stream event is informational. It cannot authorize an action, settle an effect,
 or complete a task. Sensitive binding payloads and credentials are excluded.
+The stream and optional TurnRecorder project ControlTransition/current state;
+they are not a second execution truth and recorder failure is behavior-neutral.
 
 ## 4. Confirmation
 
 WaitingConfirmation carries a typed `ConfirmationRequest`: confirmation ID,
 semantic subject ID, ActionIntent, effects, risk, consequences, and a semantic
-summary. A decision binds both IDs. On CONFIRM, `AgentRunSession` reobserves,
+summary. A decision binds both IDs. On CONFIRM, `AgentRunSession` requests a
+capability-admitted independent capture,
 checks whether the task is already complete, rebuilds ActionSpace, recomputes
 the subject, and only then binds the current route. The target admits reuse only
 when the current subject is covered by the confirmed subject: exact semantic
@@ -66,7 +89,9 @@ uses exact subject equality conservatively. Binding-only changes are allowed;
 incomparable or expanded semantics require a new confirmation. DENY clears the
 request and returns CANCELLED with zero execution.
 
-If the confirmed subject is absent after the fresh observation, Runtime clears
+If capture is unavailable/failed, the continuation returns a typed control
+result and does not bind or send the old request. If the confirmed subject is
+absent after the fresh observation, Runtime clears
 that approval and returns the already-fresh ActionSpace to the ordinary policy
 turn. It does not choose the first or a similar candidate. A terminal session
 is immutable: repeated run or resolve calls return its original DONE,
@@ -77,7 +102,7 @@ CANCELLED, FAILED, or BLOCKED result without observing or executing again.
 The core executes one primitive request at a time by default. It has no
 parallel surface fallback or hidden retry. Later, a max-three low-risk
 same-surface batch may run only when all intermediate observation barriers are
-false; failure stops the batch and final fresh observation is mandatory.
+false; failure stops the batch and final fresh acquisition is mandatory.
 
 ## 6. Interruption
 
@@ -113,18 +138,20 @@ composition without adding criterion branches to AgentLoop.
 P5-M0.1.1 makes every policy invocation a new one-shot epoch, including stale
 decision recovery and no-op page cycles. RequestObservation, Wait, stale/currentness
 refresh, confirmation refresh and post-action observation share the same
-new-acquisition-identity check. Page requests record `page_changed` or
+new-acquisition-identity check, but the current port does not distinguish their
+acquisition mechanisms. Page requests record `page_changed` or
 `page_unchanged` in bounded semantic history; they never execute an action.
 
 P5-M1 serializes each disposable context once, makes at most one injected
 structured-model call, parses exactly one typed decision, then reuses these
 same Runtime context/page/admission, binding, confirmation and evaluator steps.
-There is no core retry and provider exceptions/raw payloads do not enter Turn
-history. ProposeDone remains advisory and deterministic TaskEvaluator control is retained.
+There is no core retry and provider exceptions/raw payloads do not enter bounded
+history.
+ProposeDone remains advisory and deterministic TaskEvaluator control is retained.
 P5-M1.1 routes that single call through the existing ModelPort owner. An outer
 policy deadline bounds the awaited attempt; 429, transient transport, refusal
 and structured-output failures become internal `PolicyFailure` results with
-zero execution and no Turn entry. Provider metadata is diagnostic only and
+zero execution and no fabricated accepted-decision transition. Provider metadata is diagnostic only and
 never enters AgentContext or changes Runtime behavior.
 P5-M2 semantic evaluation is likewise one bounded zero-retry provider attempt
 covering all current semantic/hybrid criteria. Failure yields UNKNOWN criterion
@@ -177,7 +204,7 @@ present in AgentLoop or production factory composition.
 
 P5-M4 adds no BrowserGym branch to orchestration. The existing loop performs
 observe, context construction, one-stage policy, Runtime admission, bind,
-execute once, fresh observe, and TaskEvaluation. Before dispatch the adapter
+execute once, cache consumption as fresh observe, and TaskEvaluation. Before dispatch the adapter
 performs exactly one read-only currentness probe; stale or unavailable state is
 `NOT_SENT` with zero BrowserGym action calls. A thrown step after dispatch is
 `SENT_UNKNOWN` and is never retried. The cached step result supplies the next
@@ -185,17 +212,30 @@ fresh observation once. Official mechanical status is Runtime-private evaluator
 input and never policy feedback. Fixed 7.5-second pacing wraps only the live
 benchmark policy and cannot alter decisions or recover failures.
 
+This closes only the normal reset/step snapshot path. BrowserGym `observe()`
+consumes that cache once and raises RuntimeError when RequestObservation, Wait,
+stale/currentness or confirmation refresh asks for a snapshot without a new
+reset/step. Formal rerun-v3 observed seven such failures. M4.5-A replaces this
+overloaded call with typed reset/capture/execute outcomes; it does not add a
+BrowserGym-specific recovery branch to AgentLoop.
+
 ## Verified-progress selection containment
 
 P5-M4.2 inserts one run-scoped check only after normal selection admission and
 before binding. It compares fill/select requested values with current complete
-structural public state. An already-satisfied selection records a bounded
+structural public state. In the current implementation an already-satisfied selection records a bounded
 route-free event and starts a fresh policy context without fabricating a Turn,
 ActionResult, transport status, observation, or execution. One identical
 repeat under the same task/criterion/output/relevant-target fingerprint returns
 typed `NO_PROGRESS_REPETITION`. Different values, relevant progress, or a
 confirmed effect reset the streak. Runtime never chooses Submit or another
 replacement action.
+
+That no-Turn behavior is a current accounting gap, not the target contract.
+M4.5-B records the accepted selection and its suppression/progress consequence
+as exactly one ControlTransition while still fabricating no execution or
+observation. The controller remains a fill/select local liveness guard; future
+TaskProgressAuditor and planner remain separate P5-E owners.
 
 ## Breadth campaign orchestration
 
@@ -214,3 +254,8 @@ exception text or traceback. Waiting-user effect uncertainty, task uncertainty,
 AskUser, Abort, provider failure, Runtime rejection, evaluator failure,
 watchdog, and cleanup are separate outcomes; legacy reports lacking these
 fields remain unresolved rather than inferred from prose.
+
+The historical clean `b3b64a2` run (6/60) and clean `83dc4fa` rerun-v3
+(4/60) are separate immutable exact-run records. Rerun-v3's seven
+post-observation failures motivate M4.5-A; its remaining nine unclassified
+typed failures motivate M4.5-B. Neither outcome is online orchestration input.

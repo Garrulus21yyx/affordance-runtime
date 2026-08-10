@@ -30,13 +30,19 @@ a spatial move where applicable. API/Device/CLI join after symmetric adapters ex
 - binding-only fresh rebind with unchanged semantics → confirmation retained;
 - result/receipt-only completion rejected;
 - UNKNOWN effect → no duplicate attempt;
+- unsupported independent capture → typed capability outcome, no raw cache error;
+- failed post-action acquisition → execution/result identity retained, no replay;
 - missing/mismatched required artifact rejected;
 - model-injected selector/coordinate/backend payload rejected.
 
 ### Adapter conformance
 
 Each adapter proves truthful coverage, stable target identity, supported action
-reporting, binding freshness, execute result, and fresh reobservation.
+reporting, binding freshness, execute result, reset acquisition, and declared
+observation capabilities. Conformance tests exercise post-action acquisition
+and, when declared, independent capture. Capability-unavailable and acquisition
+failure are typed and distinct. Operational acquisition capability is assessed
+separately from evidence modality/source assurance.
 
 ## 3. Metrics
 
@@ -44,6 +50,7 @@ reporting, binding freshness, execute result, and fresh reobservation.
 task success rate
 steps to completion
 observation and targeted-observation count
+post-action and independent-acquisition success/unavailable/failure count
 model and visual calls
 latency
 route selection and wrong-route count
@@ -62,7 +69,8 @@ legacy diagnostics but are not target acceptance measures.
 
 ### Long-horizon profile
 
-At least one 20–50 turn task spans pages/applications or surface types and
+At least one 20–50+ accepted-policy root-ControlTransition task spans
+pages/applications or surface types and
 requires milestone verification, new-information retention, ask_user, and
 fact-driven plan replacement. Cross-day/background/crash-resume is excluded.
 
@@ -87,13 +95,15 @@ pipeline is not success evidence.
 
 ## 6. External benchmark admission
 
-Full external agent benchmarks remain **BLOCKED**. The same-task DOM/Visual/WoT
-single-surface adapter-only activation matrix is complete, but admission still requires:
+Scoped BrowserGym/MiniWoB fixed and breadth runs have completed under P5-M4.
+They do not admit full external-suite or cross-platform claims. Expansion to
+WebArena/WorkArena/OSWorld and general external-agent benchmarking remains
+**BLOCKED**. The historical first fixed-run gate required:
 
 1. positive new-loop DOM, Visual, and WoT verticals (closed for the shared-state task);
 2. the same TaskGoal, policy, evaluators, and semantic actions with adapter-only variation;
 3. runtime-owned ActionSpace and evaluator-owned completion;
-4. stale zero-call, fresh observation, and SENT_UNKNOWN no-retry;
+4. stale zero-call, fresh post-step observation, and SENT_UNKNOWN no-retry;
 5. P5-D confirmation/unknown-effect core (closed on the non-default target path);
 6. P5-D6.1 general confirmation/evaluation contract completion (closed non-default);
 7. P5-M0 model-safe policy/evaluator trust boundary (closed non-default);
@@ -106,28 +116,20 @@ single-surface adapter-only activation matrix is complete, but admission still r
 14. P5-M3 fixed internal benchmark harness that runs the new AgentLoop rather than the retained baseline (closed locally);
 15. exact-head remote CI evidence with zero forbidden side effects and duplicate unknown attempts.
 
-The first admitted external run is a small fixed BrowserGym/MiniWoB smoke set
+The first admitted external run was a small fixed BrowserGym/MiniWoB smoke set
 for harness and loop-contract validation, not a generalization claim.
-WebArena/WorkArena wait for an internal 20–50 turn case. OSWorld waits for
+WebArena/WorkArena wait for an internal long-horizon gate. OSWorld waits for
 AX/Visual/CLI/app-switch contracts. Component tests and the local DOM, Visual,
-and WoT verticals continue to run before this admission gate. Completing P5-D
-alone does not admit an external run; the model-backed target policy/evaluators,
-new-loop harness, and exact-head remote CI evidence remain mandatory.
-P5-D6.1 completion likewise does not independently admit an external run.
-P5-M0 completion likewise does not independently admit an external run.
-P5-M0.1 completion likewise does not independently admit an external run.
-P5-M0.1.1 completion likewise does not independently admit an external run.
-P5-M2 completion likewise does not admit an external run: P5-M3 harness, an
-exact live model-policy profile, and exact-head remote CI still block it.
-P5-M2.1 admits work on the internal P5-M3 harness only; it does not admit an
-external benchmark run.
+and WoT verticals continue to run before any expansion gate. P5-D through
+P5-M2.1 did not independently admit an external run; P5-M3/M4 supplied the
+separate harness, adapter and exact-profile admission evidence.
 
 The P5-M3 internal manifests are `internal-core`, `internal-safety`, and
 `internal-evaluation`. They run sequentially through `AgentEpisodeRunner`, keep
 expected terminal states outside all product inputs, record denominator-aware
 rates (`N/A` for zero opportunities), and fail closed on forbidden effects,
 duplicate unknown attempts, stale dispatch violations, cleanup failure, or
-missing metrics. Their local acceptance does not admit an external run.
+missing metrics. Their local acceptance did not by itself admit an external run.
 
 P5-M3.1 adds `internal-real-adapters`, whose deterministic cases use actual DOM,
 Visual-only and WoT production adapters. `MetricMeasurement` distinguishes zero
@@ -242,13 +244,66 @@ provider-available, and infrastructure-clean denominators, with zero
 denominators represented as null. The classification is
 `MINIWOB_60_SEEDED_BREADTH_PROFILE`; generalization remains unclaimed.
 
-The archived exact run at `b3b64a2` is valid evidence with 6/60 successes. It
-is a negative breadth measurement, not a statement that the model has “10%
-GUI capability.” The v1 inventory is primitive-only and insufficient for task
-readiness. Inventory v2 separately declares interaction, observation,
-reasoning, and control requirements, leaving unknown requirements unassessed.
-M4.4 local diagnostics never execute a policy: they compare raw structural
-interactive counts with projected targets and ActionSpace counts, query only
-the initial mechanical verifier, and close resources. Future rerun admission
-requires typed origins, zero unclassified outcomes, complete inventory and
-diagnostics, sufficient declared provider capacity, privacy, and validation.
+Two completed MiniWoB-60 executions are separate immutable exact-run records:
+
+- [P5-M4.3 at `b3b64a2c338f0bc76af5d7a16dfddfed513152c4`](evidence/runs/p5-m4-3-miniwob-60-seed7-b3b64a2/README.md)
+  completed 60/60 with 6 successes.
+- [post-M4.4 separately authorized rerun-v3 at `83dc4fa313e49b6c8772052ca44f03564f68aa63`](evidence/runs/p5-m4-4-miniwob-60-seed7-83dc4fa-rerun-v3/README.md)
+  completed 60/60 with 4 successes. It retains nine
+  `unclassified_typed_failure` cases and seven observation failures requiring
+  refresh-stage ownership.
+
+Neither result replaces the other. They differ in exact source and
+instrumentation and must not be merged into a 10/120 aggregate, treated as one
+continuous campaign, or converted into a model-capability percentage. Both are
+negative breadth measurements with `generalization_claim=NOT_CLAIMED`.
+
+The v1 inventory is primitive-only and insufficient for task readiness.
+Inventory v2 separately declares interaction, observation, reasoning, and
+control requirements, leaving unknown requirements unassessed. M4.4 local
+diagnostics never execute a policy: they compare raw structural interactive
+counts with projected targets and ActionSpace counts, query only the initial
+mechanical verifier, and close resources.
+
+### P5-M4.5 correction gates
+
+M4.5-A closes observation acquisition before another breadth claim:
+
+1. reset establishes a typed initial acquisition;
+2. adapters declare `independent_capture` and `post_action_observation` apart
+   from evidence/source assurance;
+3. normal actions consume the post-action acquisition from ExecutionOutcome;
+4. RequestObservation, Wait, stale/currentness refresh, and confirmation refresh
+   use independent capture only when supported;
+5. unsupported and failed acquisition are distinct typed outcomes, and
+   SENT_UNKNOWN dispatch identity survives either outcome without replay;
+6. a new capture identity never re-labels the previous step's verifier outcome
+   as current evidence; verifier state is reacquired or explicitly unavailable.
+
+M4.5-B closes decision-scoped transition accounting:
+
+1. every accepted policy decision produces exactly one bounded
+   `ControlTransition`, including AskUser, Abort, RequestObservation, Wait,
+   RequestActionPage, ProposeDone, and post-context/schema action-admission
+   rejection or later failed action paths; pre-decision provider/stale/schema
+   failures do not fabricate a transition;
+2. the record retains typed admission, execution/acquisition, before/after,
+   evaluations, progress, pending, resulting status, and Runtime-owned reason;
+3. run summaries and partial snapshots project typed data rather than infer a
+   terminal class from messages or differently aged state;
+4. transition storage reports total count plus a bounded suffix and remains
+   in-memory, run-scoped, non-replayable, and non-durable.
+
+M4.5-A and M4.5-B are separate implementation/verification slices so their
+effects remain attributable. Each must pass its focused conformance and safety
+tests before an exact-profile rerun. Any rerun is a new immutable record; it
+cannot amend, resume, or merge either exact run above. Zero unclassified typed
+outcomes remains an attribution gate, not permission to rewrite prior evidence.
+
+After an accepted same-profile rerun, a pre-result admitted supported subset
+must run across multiple seeds before P5-E. Its immutable manifest, exact seed
+set, numeric provider-availability/capacity floor, success floor and maximum
+seed variance are frozen before execution. Its cases are derived from the
+source-bound capability inventory, not prior success labels; it reports seed
+stability separately from overall breadth, must meet every frozen threshold to
+admit P5-E, and does not become Runtime routing input.
