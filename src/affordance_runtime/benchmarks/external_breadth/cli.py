@@ -162,6 +162,9 @@ def _provider_capacity(manifest) -> ProviderCapacityEvidence:
         required,
         declared,
         bool(raw),
+        manifest.grounding_profile,
+        0,
+        0,
     )
 
 

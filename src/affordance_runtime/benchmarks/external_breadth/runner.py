@@ -36,6 +36,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     TerminalReasonCode,
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
+from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 
@@ -74,14 +75,18 @@ async def run_breadth_campaign(
     pacing_state = FixedPacingState()
     instrumentations: list[BenchmarkInstrumentation] = []
     target_manifest = _target_manifest(manifest, policy, pacing_state, instrumentations)
+    harness_digest = target_manifest_digest(target_manifest)
     suite = await run_suite(target_manifest, _progress_callback(progress))
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
     records = tuple(
         _record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True)
     )
-    provider, model, grounding = _model_identity(instrumentations)
+    provider, model, grounding = _model_identity(
+        instrumentations, provider_capacity, manifest.grounding_profile,
+    )
     acceptance = _accept_campaign(
         manifest, suite, records, provider, model, grounding, provider_capacity,
+        harness_digest,
     )
     progress.completed_cases = len(records)
     progress.success_count = acceptance.successful_cases
@@ -177,12 +182,6 @@ def _derived_metrics(result):
     values["no_progress_terminations"] = MetricMeasurement(
         int(result.terminal_reason_code is TerminalReasonCode.NO_PROGRESS_REPETITION), True,
     )
-    retry = values.get("provider_retry_count")
-    if retry is not None and retry.value == -1:
-        values["provider_retry_count"] = MetricMeasurement(0, True)
-    for name in REQUIRED_METRICS:
-        if name not in values:
-            values[name] = MetricMeasurement(0, True)
     return replace(result, measurements=values)
 
 
@@ -201,6 +200,7 @@ def _record(case, result) -> MiniWobBreadthCaseRecord:
 
 def _accept_campaign(
     manifest, suite, records, provider, model, grounding, provider_capacity,
+    harness_digest,
 ) -> MiniWobBreadthCampaignAcceptance:
     errors: list[str] = []
     identities = tuple(item.case_id for item in records)
@@ -215,7 +215,7 @@ def _accept_campaign(
         identity.suite_id != manifest.campaign_id
         or identity.profile_id != "mistral-format-only-v1"
         or identity.seed != 7
-        or identity.manifest_digest != breadth_manifest_digest(manifest)
+        or identity.manifest_digest != harness_digest
         or identity.harness_schema_version != "target-loop-harness.v6"
     ):
         errors.append("suite identity/schema/digest does not match the frozen manifest")
@@ -230,6 +230,9 @@ def _accept_campaign(
         or provider_capacity.model_id != model
         or provider_capacity.manifest_digest != breadth_manifest_digest(manifest)
         or provider_capacity.required_attempt_budget != required_budget
+        or provider_capacity.grounding_profile != grounding
+        or provider_capacity.retry_count != 0
+        or provider_capacity.fallback_count != 0
         or not provider_capacity.sufficient
     ):
         errors.append("explicit provider capacity evidence is absent or insufficient")
@@ -294,14 +297,26 @@ def _progress_callback(progress: CampaignProgressWriter):
     return completed
 
 
-def _model_identity(instrumentations) -> tuple[str, str, str]:
+def _model_identity(
+    instrumentations,
+    provider_capacity: ProviderCapacityEvidence | None,
+    expected_grounding: str,
+) -> tuple[str, str, str]:
     metadata = [item.model_metadata for item in instrumentations if item.model_metadata is not None]
+    if provider_capacity is None:
+        return "", "", ""
+    configured = (
+        provider_capacity.provider_id,
+        provider_capacity.model_id,
+        provider_capacity.grounding_profile,
+    )
     if not metadata:
-        return "mistral", "mistral-medium-3-5", "format-only.v1"
+        return configured
     providers = {item.provider_id for item in metadata}
     models = {item.model_id for item in metadata}
     grounding = {item.grounding_profile_version for item in metadata}
-    return _single(providers), _single(models), _single(grounding)
+    observed = _single(providers), _single(models), _single(grounding)
+    return observed if observed == configured and configured[2] == expected_grounding else ("", "", "")
 
 
 def _single(values: set[str]) -> str:

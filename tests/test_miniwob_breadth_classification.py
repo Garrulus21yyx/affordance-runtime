@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
+    FailureFacts,
     MetricMeasurement,
     TerminalReasonCode,
 )
@@ -52,15 +55,21 @@ def test_timeout_and_runtime_rejection_do_not_use_free_text() -> None:
 
 
 def test_integrity_watchdog_cleanup_and_success_precedence() -> None:
+    with pytest.raises(ValueError, match="inconsistent"):
+        _result(
+            status="done",
+            harness_integrity_code="metric_name_collision",
+            harness_integrity_failures=1,
+            measurements={
+                "official_success_count": MetricMeasurement(1, True),
+                "cleanup_failures": MetricMeasurement(0, True),
+                "sent_unknown_count": MetricMeasurement(0, True),
+            },
+        )
     integrity = _result(
-        status="done",
         harness_integrity_code="metric_name_collision",
         harness_integrity_failures=1,
-        measurements={
-            "official_success_count": MetricMeasurement(1, True),
-            "cleanup_failures": MetricMeasurement(0, True),
-            "sent_unknown_count": MetricMeasurement(0, True),
-        },
+        failure_facts=FailureFacts(harness_integrity_code="metric_name_collision"),
     )
     assert classify_case(integrity).outcome is MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE
     watchdog = _result(

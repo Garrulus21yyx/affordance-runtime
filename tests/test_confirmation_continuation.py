@@ -812,6 +812,47 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("malformed", (object(), type("FakeRisk", (), {"decision": RiskDecisionKind.ALLOW, "reason": "allow"})()))
+def test_malformed_risk_policy_result_fails_closed_without_execution(malformed) -> None:
+    class MalformedRiskPolicy:
+        def assess(self, task, selection):
+            return malformed
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("initial", False, "#initial")])
+        loop = _loop()
+        loop.risk_policy = MalformedRiskPolicy()
+        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "risk_assessment_invalid"
+        assert environment.execute_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_risk_assessment_for_another_selection_cannot_authorize_current_action() -> None:
+    class WrongSubjectRiskPolicy:
+        def assess(self, task, selection):
+            assessment = RiskPolicy().assess(task, selection)
+            wrong_subject = replace(assessment.subject, target_id="different-target")
+            return replace(
+                assessment,
+                subject=wrong_subject,
+                subject_id=wrong_subject.subject_id,
+            )
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("initial", False, "#initial")])
+        loop = _loop()
+        loop.risk_policy = WrongSubjectRiskPolicy()
+        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "risk_assessment_invalid"
+        assert environment.execute_calls == 0
+
+    asyncio.run(scenario())
+
+
 def test_confirmation_has_no_dynamic_outcome_application_seam() -> None:
     assert not hasattr(_loop(), "_apply_outcome")
 

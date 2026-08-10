@@ -7,6 +7,16 @@ from dataclasses import dataclass, field
 from affordance_runtime.agent.attempt_receipt import AttemptReceipt
 
 
+@dataclass(frozen=True)
+class RunAccountingSnapshot:
+    observation_attempts: int
+    execution_attempts: int
+    effectful_dispatches: int
+    currentness_probes: int
+    waited_ms: int
+    receipt_count: int
+
+
 @dataclass
 class RunAccounting:
     _observation_attempts: int = field(default=0, init=False, repr=False)
@@ -56,3 +66,13 @@ class RunAccounting:
     @property
     def receipt_count(self) -> int:
         return len(self._receipt_ids)
+
+    def snapshot(self) -> RunAccountingSnapshot:
+        return RunAccountingSnapshot(
+            self.observation_attempts,
+            self.execution_attempts,
+            self.effectful_dispatches,
+            self.currentness_probes,
+            self.waited_ms,
+            self.receipt_count,
+        )

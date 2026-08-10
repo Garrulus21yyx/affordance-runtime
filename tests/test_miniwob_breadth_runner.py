@@ -23,6 +23,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkSuiteResult,
     MetricMeasurement,
 )
+from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 
 
 def test_fake_sixty_case_campaign_is_strict_complete_and_failure_tolerant(monkeypatch, tmp_path: Path) -> None:
@@ -32,10 +33,11 @@ def test_fake_sixty_case_campaign_is_strict_complete_and_failure_tolerant(monkey
 
     async def fake_run_suite(target_manifest, callback):
         assert [item.case_id for item in target_manifest.cases] == [item.case_id for item in manifest.cases]
-        for index, result in enumerate(results, 1):
+        bound = _bind_target_results(results, target_manifest)
+        for index, result in enumerate(bound, 1):
             order.append(result.case_id)
             callback(index, result)
-        return BenchmarkSuiteResult(_identity(manifest), results, BenchmarkAcceptance(True, ()), {})
+        return BenchmarkSuiteResult(_target_identity(target_manifest), bound, BenchmarkAcceptance(True, ()), {})
 
     monkeypatch.setattr(
         "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
@@ -58,10 +60,11 @@ def test_task_failure_does_not_invalidate_campaign_evidence(monkeypatch, tmp_pat
     manifest = _manifest()
     results = _bound_results(manifest, failed=lambda _index: True)
 
-    async def fake_run_suite(_manifest_value, callback):
-        for index, result in enumerate(results, 1):
+    async def fake_run_suite(target_manifest, callback):
+        bound = _bind_target_results(results, target_manifest)
+        for index, result in enumerate(bound, 1):
             callback(index, result)
-        return BenchmarkSuiteResult(_identity(manifest), results, BenchmarkAcceptance(False, ("task failures",)), {})
+        return BenchmarkSuiteResult(_target_identity(target_manifest), bound, BenchmarkAcceptance(False, ("task failures",)), {})
 
     monkeypatch.setattr(
         "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
@@ -81,10 +84,11 @@ def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_p
         for item in _bound_results(manifest, failed=lambda _index: True)
     )
 
-    async def fake_run_suite(_manifest_value, callback):
-        for index, result in enumerate(results, 1):
+    async def fake_run_suite(target_manifest, callback):
+        bound = _bind_target_results(results, target_manifest)
+        for index, result in enumerate(bound, 1):
             callback(index, result)
-        return BenchmarkSuiteResult(_identity(manifest), results, BenchmarkAcceptance(True, ()), {})
+        return BenchmarkSuiteResult(_target_identity(target_manifest), bound, BenchmarkAcceptance(True, ()), {})
 
     monkeypatch.setattr(
         "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
@@ -104,11 +108,12 @@ def test_formal_acceptance_requires_explicit_provider_capacity(monkeypatch, tmp_
     manifest = _manifest()
     results = _bound_results(manifest, failed=lambda _index: False)
 
-    async def fake_run_suite(_target_manifest, callback):
-        for index, result in enumerate(results, 1):
+    async def fake_run_suite(target_manifest, callback):
+        bound = _bind_target_results(results, target_manifest)
+        for index, result in enumerate(bound, 1):
             callback(index, result)
         return BenchmarkSuiteResult(
-            _identity(manifest), results, BenchmarkAcceptance(True, ()), {},
+            _target_identity(target_manifest), bound, BenchmarkAcceptance(True, ()), {},
         )
 
     monkeypatch.setattr(
@@ -127,11 +132,12 @@ def test_spoofed_underlying_case_identity_is_rejected(monkeypatch, tmp_path: Pat
     results = list(_bound_results(manifest, failed=lambda _index: False))
     results[0] = replace(results[0], case_id="spoofed-case")
 
-    async def fake_run_suite(_target_manifest, callback):
-        for index, result in enumerate(results, 1):
+    async def fake_run_suite(target_manifest, callback):
+        bound = _bind_target_results(results, target_manifest)
+        for index, result in enumerate(bound, 1):
             callback(index, result)
         return BenchmarkSuiteResult(
-            _identity(manifest), tuple(results), BenchmarkAcceptance(True, ()), {},
+            _target_identity(target_manifest), bound, BenchmarkAcceptance(True, ()), {},
         )
 
     monkeypatch.setattr(
@@ -247,4 +253,26 @@ def _capacity(manifest) -> ProviderCapacityEvidence:
     return ProviderCapacityEvidence(
         "provider-capacity-preflight.v1", "mistral", manifest.model_profile,
         breadth_manifest_digest(manifest), 600, 600, True,
+        manifest.grounding_profile, 0, 0,
+    )
+
+
+def _target_identity(target_manifest) -> BenchmarkRunIdentity:
+    return replace(
+        _identity(_manifest()),
+        manifest_digest=target_manifest_digest(target_manifest),
+    )
+
+
+def _bind_target_results(results, target_manifest):
+    identity = _target_identity(target_manifest)
+    return tuple(
+        replace(
+            result,
+            suite_id=identity.suite_id,
+            profile_id=identity.profile_id,
+            seed=identity.seed,
+            manifest_digest=identity.manifest_digest,
+        )
+        for result in results
     )

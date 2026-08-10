@@ -91,7 +91,7 @@ class AgentRunSession:
         if self.state.pending_confirmation is None:
             if self.last_result is not None:
                 return self.last_result
-            return project_result(
+            self.last_result = project_result(
                 self,
                 Terminate(
                     AgentLoopStatus.BLOCKED,
@@ -99,6 +99,7 @@ class AgentRunSession:
                     "no confirmation is pending",
                 ),
             )
+            return self.last_result
         try:
             self.last_result = await self.agent_loop._resolve_confirmation(self, decision)
         except asyncio.CancelledError:

@@ -59,7 +59,11 @@ def test_confirmation_without_pending_does_not_create_a_fake_pause() -> None:
         ))
         assert rejected.status is not AgentLoopStatus.WAITING_CONFIRMATION
         assert rejected.confirmation_request is None
-        assert session.last_result is None
+        assert session.last_result is rejected
+
+        repeated = await session.run_until_pause()
+        assert repeated is rejected
+        assert session.state.control_transition_total_count == 0
 
     asyncio.run(scenario())
 

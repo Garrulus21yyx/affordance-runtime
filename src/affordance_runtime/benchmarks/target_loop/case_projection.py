@@ -46,13 +46,15 @@ def project_case_result(
     )
     values = _metric_values(result, instrumentation, sent_unknown, metadata)
     measurements = {
-        name: MetricMeasurement(value, True) for name, value in values.items()
+        name: MetricMeasurement(value, value is not None) for name, value in values.items()
     }
     measurements["duplicate_unknown_attempts"] = MetricMeasurement(
         values["duplicate_unknown_attempts"], True, sent_unknown,
     )
+    stale_opportunities = values["stale_opportunities"]
+    assert isinstance(stale_opportunities, int)
     measurements["stale_zero_call_violations"] = MetricMeasurement(
-        values["stale_zero_call_violations"], True, int(values["stale_opportunities"]),
+        values["stale_zero_call_violations"], True, stale_opportunities,
     )
     runtime_reason = _runtime_reason(result, metadata)
     case_failure_code = _case_failure_code(
@@ -148,6 +150,7 @@ def public_case_evidence(result: BenchmarkCaseResult) -> dict[str, object]:
         **{
             item.name: _json_value(getattr(result, item.name))
             for item in fields(BenchmarkCaseResult)
+            if item.name != "failure_reason"
         },
     }
 
@@ -155,17 +158,25 @@ def public_case_evidence(result: BenchmarkCaseResult) -> dict[str, object]:
 def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResult:
     """Validate and reconstruct the complete public typed case evidence view."""
 
-    expected = {item.name for item in fields(BenchmarkCaseResult)} | {"schema_version"}
+    expected = {
+        item.name for item in fields(BenchmarkCaseResult) if item.name != "failure_reason"
+    } | {"schema_version"}
     if set(payload) != expected:
         raise ValueError("public case evidence fields do not match the declared schema")
     if payload["schema_version"] != payload["case_schema_version"]:
         raise ValueError("public case schema identity is inconsistent")
-    measurements = {
-        str(name): MetricMeasurement(**value)
-        for name, value in _dict(payload["measurements"]).items()
-        if isinstance(value, dict)
-    }
+    if payload["schema_version"] != "target-loop-case.v6":
+        raise ValueError("public case evidence schema is unsupported")
+    measurements = {}
+    metric_fields = {item.name for item in fields(MetricMeasurement)}
+    for name, value in _dict(payload["measurements"]).items():
+        if not isinstance(value, dict) or set(value) != metric_fields:
+            raise ValueError("public case metric evidence is malformed")
+        measurements[str(name)] = MetricMeasurement(**value)
     raw_facts = _dict(payload["failure_facts"])
+    fact_fields = {item.name for item in fields(FailureFacts)}
+    if set(raw_facts) != fact_fields:
+        raise ValueError("public failure facts are incomplete")
     facts = FailureFacts(
         runtime_reason_code=str(raw_facts.get("runtime_reason_code", "")),
         agent_failure_code=str(raw_facts.get("agent_failure_code", "")),
@@ -178,7 +189,12 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         cleanup_exception_class=str(raw_facts.get("cleanup_exception_class", "")),
         harness_integrity_code=str(raw_facts.get("harness_integrity_code", "")),
     )
-    values = {item.name: payload[item.name] for item in fields(BenchmarkCaseResult)}
+    values = {
+        item.name: payload[item.name]
+        for item in fields(BenchmarkCaseResult)
+        if item.name != "failure_reason"
+    }
+    values["failure_reason"] = ""
     values["measurements"] = measurements
     values["failure_facts"] = facts
     values["failure_origin"] = CaseFailureOrigin(str(values["failure_origin"]))
@@ -316,7 +332,7 @@ def _termination_origin(result, origin: CaseFailureOrigin) -> str:
     return "runtime" if result is not None else ""
 
 
-def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | float]:
+def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | float | None]:
     metadata = state.model_metadata
     values = {
         "observations": result.observation_count if result else snapshot.observation_count if snapshot else 0,
@@ -338,7 +354,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "post_action_acquisitions": state.environment_post_acquisitions,
         "provider_retry_count": (
             metadata.rate_limit_retry_count + metadata.transient_retry_count
-            if metadata is not None else -1
+            if metadata is not None else None
         ),
         "prompt_tokens": state.prompt_tokens,
         "completion_tokens": state.completion_tokens,

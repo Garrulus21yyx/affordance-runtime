@@ -71,6 +71,9 @@ class ProviderCapacityEvidence:
     required_attempt_budget: int
     declared_attempt_budget: int
     checked: bool
+    grounding_profile: str = ""
+    retry_count: int = -1
+    fallback_count: int = -1
 
     @property
     def sufficient(self) -> bool:
@@ -79,10 +82,17 @@ class ProviderCapacityEvidence:
     def __post_init__(self) -> None:
         if self.schema_version != "provider-capacity-preflight.v1":
             raise ValueError("provider capacity schema is unsupported")
-        if not self.provider_id or not self.model_id or not self.manifest_digest:
+        if (
+            not self.provider_id
+            or not self.model_id
+            or not self.manifest_digest
+            or not self.grounding_profile
+        ):
             raise ValueError("provider capacity evidence requires frozen identity")
         if self.required_attempt_budget <= 0 or self.declared_attempt_budget < 0:
             raise ValueError("provider capacity budgets are invalid")
+        if self.retry_count != 0 or self.fallback_count != 0:
+            raise ValueError("formal provider preflight requires zero retry and fallback")
 
 
 @dataclass(frozen=True)

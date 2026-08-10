@@ -32,7 +32,11 @@ from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
 from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.start_error import require_initial_observation
+from affordance_runtime.agent.start_error import (
+    StartBoundaryEvidence,
+    attach_start_boundary_evidence,
+    require_initial_observation,
+)
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
@@ -42,6 +46,7 @@ from affordance_runtime.execution.contracts import ActionIntent
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
+from affordance_runtime.risk.validation import validate_risk_assessment
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import (
@@ -81,22 +86,35 @@ class AgentLoop:
         attempt_id = accounting.next_attempt_id()
         try:
             acquisition = await environment.reset(task)
-        except asyncio.CancelledError:
-            accounting.record(_reset_exception_receipt(
+        except asyncio.CancelledError as exc:
+            receipt = _reset_exception_receipt(
                 attempt_id, AttemptDisposition.CANCELLED, "reset_cancelled", "CancelledError",
-            ))
+            )
+            accounting.record(receipt)
+            attach_start_boundary_evidence(
+                exc, StartBoundaryEvidence(receipt, accounting.snapshot()),
+            )
             raise
         except Exception as exc:
-            accounting.record(_reset_exception_receipt(
+            receipt = _reset_exception_receipt(
                 attempt_id, AttemptDisposition.THREW, "reset_exception", type(exc).__name__,
-            ))
+            )
+            accounting.record(receipt)
+            attach_start_boundary_evidence(
+                exc, StartBoundaryEvidence(receipt, accounting.snapshot()),
+            )
             raise
         if not isinstance(acquisition, ObservationAcquisition):
-            accounting.record(_reset_exception_receipt(
+            receipt = _reset_exception_receipt(
                 attempt_id, AttemptDisposition.MALFORMED, "reset_malformed", "",
-            ))
-            raise TypeError("WorldEnvironment.reset returned a malformed contract")
-        accounting.record(AttemptReceipt(
+            )
+            accounting.record(receipt)
+            error = TypeError("WorldEnvironment.reset returned a malformed contract")
+            attach_start_boundary_evidence(
+                error, StartBoundaryEvidence(receipt, accounting.snapshot()),
+            )
+            raise error
+        receipt = AttemptReceipt(
             attempt_id,
             AttemptOperation.RESET,
             "reset",
@@ -109,8 +127,10 @@ class AgentLoop:
             0,
             0,
             acquisition_status=acquisition.status,
-        ))
-        current = require_initial_observation(acquisition)
+        )
+        accounting.record(receipt)
+        evidence = StartBoundaryEvidence(receipt, accounting.snapshot())
+        current = require_initial_observation(acquisition, evidence)
         state = AgentLoopState(
             current, remaining_turns=task.loop_budget.max_turns, recent_turn_limit=self.recent_turn_limit
         )
@@ -237,9 +257,25 @@ class AgentLoop:
                     dict(confirmed.intent.parameters),
                     confirmed.intent.destination_id,
                 )
-            except ValueError:
+            except (TypeError, ValueError):
                 continue
-            candidates.append((selection, self.risk_policy.assess(session.task, selection)))
+            try:
+                assessment = validate_risk_assessment(
+                    session.task,
+                    selection,
+                    self.risk_policy.assess(session.task, selection),
+                )
+            except (TypeError, ValueError):
+                return self._close_confirmation(
+                    session,
+                    Terminate(
+                        AgentLoopStatus.BLOCKED,
+                        "risk_assessment_invalid",
+                        "fresh risk assessment is invalid",
+                    ),
+                    "risk_assessment_invalid",
+                )
+            candidates.append((selection, assessment))
         exact = next(
             (
                 item for item in candidates
@@ -370,7 +406,17 @@ class AgentLoop:
         except ValueError as exc:
             scope.record_admission(AdmissionStatus.REJECTED, "invalid_action_parameters")
             return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_parameters", str(exc))
-        assessment = self.risk_policy.assess(task, selection)
+        try:
+            assessment = validate_risk_assessment(
+                task, selection, self.risk_policy.assess(task, selection),
+            )
+        except (TypeError, ValueError):
+            scope.record_admission(AdmissionStatus.REJECTED, "risk_assessment_invalid")
+            return Terminate(
+                AgentLoopStatus.BLOCKED,
+                "risk_assessment_invalid",
+                "risk assessment is invalid",
+            )
         if assessment.decision is RiskDecisionKind.BLOCK:
             scope.record_admission(AdmissionStatus.REJECTED, "risk_blocked")
             return Terminate(AgentLoopStatus.BLOCKED, "risk_blocked", assessment.reason)

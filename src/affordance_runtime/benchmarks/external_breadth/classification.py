@@ -37,8 +37,6 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         or result.case_failure_code == "cleanup_exception"
     ):
         return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
-    if result.status == "done" and value == 1:
-        return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "mechanical_verifier")
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
     if result.case_failure_code == "turn_budget_exhausted":
@@ -95,6 +93,8 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     )
     if origin is not None:
         return ClassifiedOutcome(origin, "typed_failure_origin")
+    if result.status == "done" and value == 1:
+        return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "mechanical_verifier")
     if result.failure_reason or result.failure_code or result.exception_class:
         return ClassifiedOutcome(
             MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "bounded_unclassified_failure",

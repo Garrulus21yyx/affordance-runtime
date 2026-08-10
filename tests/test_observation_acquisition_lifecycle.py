@@ -153,6 +153,31 @@ def test_non_acquired_initial_result_raises_typed_start_error() -> None:
         assert captured.value.status is AcquisitionStatus.FAILED
         assert captured.value.origin is AcquisitionOrigin.RESET
         assert captured.value.reason_code == "initial_capture_failed"
+        assert captured.value.start_evidence.receipt.operation.value == "reset"
+        assert captured.value.start_evidence.accounting.observation_attempts == 1
+        assert captured.value.start_evidence.accounting.receipt_count == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", (RuntimeError("private reset detail"), asyncio.CancelledError()))
+def test_thrown_reset_failure_carries_privacy_safe_attempt_truth(failure) -> None:
+    class RaisingReset(StaticEnvironment):
+        async def reset(self, task):
+            self.reset_calls += 1
+            raise failure
+
+    async def scenario() -> None:
+        environment = RaisingReset(initial_observation=_world("unused"))
+        loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
+        with pytest.raises(type(failure)) as captured:
+            await AgentEpisodeRunner(loop).start(environment, _task())
+        evidence = captured.value.start_boundary_evidence
+        assert evidence.receipt.operation.value == "reset"
+        assert evidence.receipt.disposition.value in {"threw", "cancelled"}
+        assert evidence.accounting.observation_attempts == 1
+        assert evidence.accounting.receipt_count == 1
+        assert "private reset detail" not in repr(evidence)
 
     asyncio.run(scenario())
 

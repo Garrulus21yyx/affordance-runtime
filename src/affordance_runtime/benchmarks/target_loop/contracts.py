@@ -110,6 +110,13 @@ class FailureFacts:
         for value in (self.component_exception_class, self.cleanup_exception_class):
             if value and (len(value) > 128 or not value.replace("_", "").isalnum()):
                 raise ValueError("failure exception classes must be bounded names")
+        has_component = self.component_origin is not CaseFailureOrigin.NONE
+        if has_component != bool(self.component_code):
+            raise ValueError("component failure origin and code must be present together")
+        if not has_component and self.component_exception_class:
+            raise ValueError("component exception class requires a component failure")
+        if bool(self.cleanup_code) != bool(self.cleanup_exception_class):
+            raise ValueError("cleanup failure code and exception class must be present together")
 
 
 @dataclass(frozen=True)
@@ -276,6 +283,46 @@ class BenchmarkCaseResult:
         identity_values = (self.suite_id, self.profile_id, self.manifest_digest)
         if any(identity_values) and not all(identity_values):
             raise ValueError("benchmark case evidence identity must be complete")
+        facts = self.failure_facts
+        if (
+            self.runtime_reason_code != facts.runtime_reason_code
+            or self.agent_failure_code != facts.agent_failure_code
+            or self.last_policy_failure_code != facts.policy_failure_code
+            or self.cleanup_failure_code != facts.cleanup_code
+            or self.cleanup_exception_class != facts.cleanup_exception_class
+            or self.harness_integrity_code != facts.harness_integrity_code
+        ):
+            raise ValueError("benchmark case duplicate failure projections are inconsistent")
+        if facts.component_origin is not CaseFailureOrigin.NONE and (
+            self.failure_origin is not facts.component_origin
+            or self.failure_code != facts.component_code
+            or self.exception_class != facts.component_exception_class
+        ):
+            raise ValueError("benchmark component failure projection is inconsistent")
+        if self.watchdog_triggered != bool(facts.watchdog_code):
+            raise ValueError("benchmark watchdog projection is inconsistent")
+        if bool(self.cleanup_failures) != bool(facts.cleanup_code):
+            raise ValueError("benchmark cleanup projection is inconsistent")
+        if bool(self.harness_integrity_failures) != bool(facts.harness_integrity_code):
+            raise ValueError("benchmark integrity projection is inconsistent")
+        official = self.measurements.get("official_success_count")
+        has_failure_fact = any((
+            facts.runtime_reason_code,
+            facts.agent_failure_code,
+            facts.policy_failure_code,
+            facts.component_code,
+            facts.watchdog_code,
+            facts.cleanup_code,
+            facts.harness_integrity_code,
+        ))
+        if (
+            self.status == str(AgentLoopStatus.DONE)
+            and official is not None
+            and official.measured
+            and official.value == 1
+            and has_failure_fact
+        ):
+            raise ValueError("successful benchmark evidence cannot carry failure facts")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 

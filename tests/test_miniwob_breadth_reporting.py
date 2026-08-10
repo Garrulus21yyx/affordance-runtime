@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from affordance_runtime.benchmarks.external_breadth.attestation import validate_campaign_tree
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
@@ -47,7 +50,7 @@ def test_report_tree_is_complete_private_and_zero_denominators_are_null(tmp_path
         "mistral", "mistral-medium-3-5", "format-only.v1",
         ProviderCapacityEvidence(
             "provider-capacity-preflight.v1", "mistral", "mistral-medium-3-5",
-            "sha256:manifest", 600, 600, True,
+            "sha256:manifest", 600, 600, True, "format-only.v1", 0, 0,
         ),
     )
     output = tmp_path / "reports"
@@ -91,6 +94,9 @@ def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
         watchdog_triggered=True,
         harness_integrity_code="metric_name_collision",
         harness_integrity_failures=1,
+        failure_origin=CaseFailureOrigin.ACTION_EVALUATION,
+        failure_code="action_evaluator_exception",
+        exception_class="RuntimeError",
         failure_facts=FailureFacts(
             component_origin=CaseFailureOrigin.ACTION_EVALUATION,
             component_code="action_evaluator_exception",
@@ -121,6 +127,58 @@ def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
     }
 
 
+def test_tree_validator_rejects_coherently_rehashed_case_identity_mutation(
+    tmp_path: Path,
+) -> None:
+    output = _write_valid_tree(tmp_path)
+    case_path = output / "cases" / "miniwob-60-01.json"
+    payload = json.loads(case_path.read_text())
+    payload["benchmark_case_evidence"]["suite_id"] = "spoof-suite"
+    case_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    attestation_path = output / "attestation.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["case_report_sha256"]["miniwob-60-01"] = (
+        "sha256:" + hashlib.sha256(case_path.read_bytes()).hexdigest()
+    )
+    attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
+    assert any("formal case identity" in item for item in validate_campaign_tree(output))
+
+
+def test_provider_capacity_requires_explicit_zero_retry_fallback_identity() -> None:
+    with pytest.raises(ValueError, match="frozen identity"):
+        ProviderCapacityEvidence(
+            "provider-capacity-preflight.v1", "mistral", "model", "sha256:m",
+            1, 1, True,
+        )
+
+
+def _write_valid_tree(tmp_path: Path) -> Path:
+    manifest = _manifest()
+    results = tuple(_result(index, failed=False) for index in range(1, 61))
+    records = tuple(
+        MiniWobBreadthCaseRecord(
+            result.case_id, f"fake-{index:02d}", "current_primitives", ("activate",),
+            MiniWobTaskOutcome.SUCCESS, "mechanical_verifier", result,
+        )
+        for index, result in enumerate(results, 1)
+    )
+    outcome = MiniWobBreadthCampaignOutcome(
+        "opaque-run", manifest, "sha256:manifest",
+        BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(True, ()), {}),
+        records, MiniWobBreadthCampaignAcceptance(True, (), 60, 60, 60),
+        "mistral", "mistral-medium-3-5", "format-only.v1",
+        ProviderCapacityEvidence(
+            "provider-capacity-preflight.v1", "mistral", "mistral-medium-3-5",
+            "sha256:manifest", 600, 600, True, "format-only.v1", 0, 0,
+        ),
+    )
+    output = tmp_path / "valid-tree"
+    output.mkdir()
+    write_campaign_reports(outcome, output)
+    assert validate_campaign_tree(output) == ()
+    return output
+
+
 def _manifest() -> MiniWobBreadthManifest:
     cases = tuple(
         MiniWobBreadthCase(
@@ -140,12 +198,18 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
     measurements = {name: MetricMeasurement(0, True) for name in REQUIRED_METRICS}
     measurements["official_success_count"] = MetricMeasurement(0 if failed else 1, True)
     return BenchmarkCaseResult(
-        f"miniwob-60-{index:02d}", "failed" if failed else "done", True, "", 1.0, measurements,
+        f"miniwob-60-{index:02d}", "failed" if failed else "done", True, "", 1.0,
+        measurements,
+        suite_id="miniwob-60-seed7-v1",
+        profile_id="mistral-format-only-v1",
+        seed=7,
+        manifest_digest="target-digest",
     )
 
 
 def _identity() -> BenchmarkRunIdentity:
     return BenchmarkRunIdentity(
-        "opaque-run", "0" * 40, False, "suite", "digest", "profile", 7,
+        "opaque-run", "0" * 40, False, "miniwob-60-seed7-v1", "target-digest",
+        "mistral-format-only-v1", 7,
         "2026-08-10T00:00:00+00:00", "3.12", "test",
     )

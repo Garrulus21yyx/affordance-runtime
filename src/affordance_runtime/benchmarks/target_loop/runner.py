@@ -172,7 +172,7 @@ async def _run_episode(case, loop, environment, task, instrumentation, session_h
     try:
         session = await AgentEpisodeRunner(loop).start(environment, task)
     except AgentSessionStartError as exc:
-        instrumentation.record_failure(CaseFailureOrigin.SESSION_START, exc.reason_code, exc)
+        instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, exc.reason_code, exc)
         raise
     except Exception as exc:
         instrumentation.record_failure(CaseFailureOrigin.SESSION_START, "session_start_exception", exc)
