@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from affordance_runtime.world.contracts import CoverageState
+
 if TYPE_CHECKING:
     from affordance_runtime.agent.session import AgentRunSession
 
@@ -83,7 +85,7 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         else "",
         len(session.current_action_space.options) if session.current_action_space is not None else 0,
         len(state.current_observation.targets),
-        str(state.current_observation.coverage),
+        _coverage_summary(state.current_observation.coverage),
         _pending_kind(session),
         tuple(sorted(state.control_transition_kind_counts.items())),
         str(latest_control.resulting_status)
@@ -107,3 +109,16 @@ def _pending_kind(session: AgentRunSession) -> str:
     if state.pending_confirmation is not None:
         return "confirmation"
     return ""
+
+
+def _coverage_summary(coverage: dict[str, CoverageState]) -> str:
+    values = set(coverage.values())
+    for status in (
+        CoverageState.FAILED,
+        CoverageState.TRUNCATED,
+        CoverageState.STALE,
+        CoverageState.NOT_ACQUIRED,
+    ):
+        if status in values:
+            return str(status)
+    return str(CoverageState.COMPLETE)

@@ -56,6 +56,31 @@ def test_acquisition_values_are_frozen_and_enforce_observation_invariant() -> No
         ObservationAcquisition(
             AcquisitionStatus.ACQUIRED, AcquisitionOrigin.RESET, object(), "reset_acquired",
         )
+    with pytest.raises(TypeError, match="status"):
+        ObservationAcquisition(
+            "failed", AcquisitionOrigin.RESET, None, "reset_failed",  # type: ignore[arg-type]
+        )
+    with pytest.raises(TypeError, match="origin"):
+        ObservationAcquisition(
+            AcquisitionStatus.FAILED, "reset", None, "reset_failed",  # type: ignore[arg-type]
+        )
+
+
+def test_execution_result_and_outcome_algebras_reject_untyped_variants() -> None:
+    with pytest.raises(TypeError, match="dispatch status"):
+        ActionResult("request:1", "sent", "dom", True)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="boolean"):
+        ActionResult("request:1", DispatchStatus.SENT, "dom", 1)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="result"):
+        ExecutionOutcome(  # type: ignore[arg-type]
+            object(),
+            ObservationAcquisition(
+                AcquisitionStatus.FAILED,
+                AcquisitionOrigin.POST_ACTION,
+                None,
+                "post_capture_failed",
+            ),
+        )
 
 
 @pytest.mark.parametrize(

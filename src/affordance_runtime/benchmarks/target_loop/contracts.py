@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import platform
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
@@ -12,10 +13,14 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
+from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluationStatus
+from affordance_runtime.model_boundary.failures import ModelFailureKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
+from affordance_runtime.world.contracts import CoverageState
 from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
@@ -71,6 +76,28 @@ class TerminalReasonCode(StrEnum):
     INVALID_CONFIRMATION_DECISION = "invalid_confirmation_decision"
     NO_PROGRESS_REPETITION = "no_progress_repetition"
     BLOCKED_OTHER = "blocked_other"
+
+
+_BLOCKED_TERMINAL_REASONS = {
+    item.value: item
+    for item in TerminalReasonCode
+    if item not in {TerminalReasonCode.NO_PROGRESS_REPETITION, TerminalReasonCode.BLOCKED_OTHER}
+}
+
+
+def terminal_reason_from_facts(
+    status: str,
+    runtime_reason_code: str,
+    agent_failure_code: str,
+) -> TerminalReasonCode | None:
+    """Project a terminal reason from the closed public failure facts."""
+    if agent_failure_code == AgentFailureCode.NO_PROGRESS_REPETITION.value:
+        return TerminalReasonCode.NO_PROGRESS_REPETITION
+    if status != AgentLoopStatus.BLOCKED.value:
+        return None
+    return _BLOCKED_TERMINAL_REASONS.get(
+        runtime_reason_code, TerminalReasonCode.BLOCKED_OTHER,
+    )
 
 
 class CaseFailureOrigin(StrEnum):
@@ -135,6 +162,14 @@ class FailureFacts:
             raise ValueError("component exception class requires a component failure")
         if bool(self.cleanup_code) != bool(self.cleanup_exception_class):
             raise ValueError("cleanup failure code and exception class must be present together")
+        if self.agent_failure_code and self.agent_failure_code not in {
+            str(item) for item in AgentFailureCode
+        }:
+            raise ValueError("agent failure code is outside the closed vocabulary")
+        if self.policy_failure_code and self.policy_failure_code not in {
+            str(item) for item in ModelFailureKind
+        }:
+            raise ValueError("policy failure code is outside the closed vocabulary")
 
 
 @dataclass(frozen=True)
@@ -239,7 +274,7 @@ class BenchmarkCaseResult:
     latency_ms: float
     measurements: Mapping[str, MetricMeasurement] = field(default_factory=dict)
     terminal_reason_code: TerminalReasonCode | None = None
-    termination_origin: str = ""
+    termination_origin: str = "runtime"
     case_failure_code: str = ""
     partial_episode_available: bool = False
     latest_task_status: str = ""
@@ -338,6 +373,38 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark case counts must be non-negative integers")
         if type(self.partial_episode_available) is not bool or type(self.watchdog_triggered) is not bool:
             raise TypeError("benchmark case flags must be boolean")
+        if self.partial_episode_available and self.execution_completed:
+            raise ValueError("partial episode evidence cannot be execution-complete")
+        if self.pending_kind not in {"", "unknown_effect", "user_question", "confirmation"}:
+            raise ValueError("benchmark pending kind is outside the closed vocabulary")
+        expected_pending_status = {
+            "unknown_effect": AgentLoopStatus.WAITING_USER.value,
+            "user_question": AgentLoopStatus.WAITING_USER.value,
+            "confirmation": AgentLoopStatus.WAITING_CONFIRMATION.value,
+        }.get(self.pending_kind)
+        if expected_pending_status is not None and self.status != expected_pending_status:
+            raise ValueError("benchmark pending kind contradicts terminal status")
+        if self.latest_task_status not in {"", *(str(item) for item in TaskEvaluationStatus)}:
+            raise ValueError("benchmark task status is outside the closed vocabulary")
+        if self.latest_action_evaluation_status not in {
+            "", *(str(item) for item in ActionEvaluationStatus)
+        }:
+            raise ValueError("benchmark action status is outside the closed vocabulary")
+        if self.last_decision_type not in {
+            "", "Abort", "AskUser", "ProposeDone", "RequestActionPage",
+            "RequestObservation", "SelectAction", "Wait",
+        }:
+            raise ValueError("benchmark decision type is outside the closed vocabulary")
+        if self.last_progress_event_type not in {
+            "", "already_satisfied_selection", "action_effect_evaluated",
+        }:
+            raise ValueError("benchmark progress event is outside the closed vocabulary")
+        if self.last_world_coverage not in {"", *(str(item) for item in CoverageState)}:
+            raise ValueError("benchmark coverage is outside the closed vocabulary")
+        if self.latest_semantic_attempt_key_digest and re.fullmatch(
+            r"sha256:[0-9a-f]{64}", self.latest_semantic_attempt_key_digest,
+        ) is None:
+            raise ValueError("benchmark semantic attempt digest is malformed")
         if not isinstance(self.measurements, Mapping) or any(
             not isinstance(name, str) or not isinstance(value, MetricMeasurement)
             for name, value in self.measurements.items()
@@ -375,6 +442,9 @@ class BenchmarkCaseResult:
         if any(identity_values) and not all(identity_values):
             raise ValueError("benchmark case evidence identity must be complete")
         facts = self.failure_facts
+        abort_codes = {f"abort_{item.value}" for item in AbortCategory}
+        if self.last_decision_type == "Abort" and facts.runtime_reason_code not in abort_codes:
+            raise ValueError("benchmark abort decision and Runtime fact are inconsistent")
         if (
             self.runtime_reason_code != facts.runtime_reason_code
             or self.agent_failure_code != facts.agent_failure_code
@@ -384,19 +454,56 @@ class BenchmarkCaseResult:
             or self.harness_integrity_code != facts.harness_integrity_code
         ):
             raise ValueError("benchmark case duplicate failure projections are inconsistent")
-        if facts.component_origin is not CaseFailureOrigin.NONE and (
+        if (
             self.failure_origin is not facts.component_origin
             or self.failure_code != facts.component_code
             or self.exception_class != facts.component_exception_class
         ):
             raise ValueError("benchmark component failure projection is inconsistent")
-        if facts.component_origin is CaseFailureOrigin.NONE and (
-            self.exception_class
-            or (self.failure_origin is CaseFailureOrigin.NONE and self.failure_code)
-        ):
-            raise ValueError("benchmark legacy component fields require a typed source fact")
+        expected_case_failure_code = (
+            facts.watchdog_code
+            or (f"policy_{facts.policy_failure_code}" if facts.policy_failure_code else "")
+            or facts.agent_failure_code
+            or facts.runtime_reason_code
+            or facts.component_code
+            or facts.cleanup_code
+            or facts.harness_integrity_code
+        )
+        if self.case_failure_code != expected_case_failure_code:
+            raise ValueError("benchmark case failure code is inconsistent with failure facts")
+        expected_terminal_reason = terminal_reason_from_facts(
+            self.status, facts.runtime_reason_code, facts.agent_failure_code,
+        )
+        if self.terminal_reason_code is not expected_terminal_reason:
+            raise ValueError("benchmark terminal reason is inconsistent with failure facts")
         if self.watchdog_triggered != bool(facts.watchdog_code):
             raise ValueError("benchmark watchdog projection is inconsistent")
+        runtime_case_code = bool(
+            self.case_failure_code
+            and self.case_failure_code not in {
+                facts.watchdog_code, facts.cleanup_code, facts.harness_integrity_code,
+            }
+        )
+        has_runtime_truth = bool(
+            facts.runtime_reason_code
+            or facts.agent_failure_code
+            or facts.policy_failure_code
+            or self.terminal_reason_code is not None
+            or runtime_case_code
+        )
+        expected_termination_origin = (
+            "harness_watchdog"
+            if facts.watchdog_code
+            else "component"
+            if facts.component_origin is not CaseFailureOrigin.NONE
+            else "runtime"
+            if has_runtime_truth
+            else "cleanup"
+            if facts.cleanup_code
+            else "runtime"
+        )
+        if self.termination_origin != expected_termination_origin:
+            raise ValueError("benchmark termination origin is inconsistent with failure facts")
         if bool(self.cleanup_failures) != bool(facts.cleanup_code):
             raise ValueError("benchmark cleanup projection is inconsistent")
         if bool(self.harness_integrity_failures) != bool(facts.harness_integrity_code):
@@ -425,6 +532,14 @@ class BenchmarkCaseResult:
             )
         ):
             raise ValueError("successful benchmark evidence cannot carry failure facts")
+        if (
+            self.status == str(AgentLoopStatus.DONE)
+            and official is not None
+            and official.measured
+            and official.value == 1
+            and not self.execution_completed
+        ):
+            raise ValueError("successful benchmark evidence must be execution-complete")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 

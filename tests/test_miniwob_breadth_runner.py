@@ -24,6 +24,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
     BenchmarkRunIdentity,
     BenchmarkSuiteResult,
+    FailureFacts,
     MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
@@ -95,7 +96,12 @@ def test_task_failure_does_not_invalidate_campaign_evidence(monkeypatch, tmp_pat
 def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_path: Path) -> None:
     manifest = _manifest()
     results = tuple(
-        replace(item, case_failure_code="")
+        replace(
+            item,
+            case_failure_code="",
+            runtime_reason_code="",
+            failure_facts=FailureFacts(),
+        )
         for item in _bound_results(manifest, failed=lambda _index: True)
     )
 
@@ -242,9 +248,13 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
     measurements["observations"] = MetricMeasurement(2, True)
     measurements["policy_calls"] = MetricMeasurement(1, True)
     measurements["provider_attempts"] = MetricMeasurement(1, True)
+    facts = FailureFacts(runtime_reason_code="turn_budget_exhausted") if failed else FailureFacts()
     return BenchmarkCaseResult(
         f"miniwob-60-{index:02d}", "failed" if failed else "done", True, "", 2.0,
-        measurements, case_failure_code="turn_budget_exhausted" if failed else "",
+        measurements,
+        case_failure_code="turn_budget_exhausted" if failed else "",
+        runtime_reason_code="turn_budget_exhausted" if failed else "",
+        failure_facts=facts,
     )
 
 

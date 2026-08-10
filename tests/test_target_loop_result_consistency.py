@@ -4,6 +4,7 @@ import pytest
 
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
+    FailureFacts,
     MetricMeasurement,
     TerminalReasonCode,
 )
@@ -45,4 +46,7 @@ def test_case_terminal_reason_is_required_exactly_for_blocked_status() -> None:
         )
     BenchmarkCaseResult(
         "case", "failed", True, "", 1.0, {}, TerminalReasonCode.NO_PROGRESS_REPETITION,
+        case_failure_code="no_progress_repetition",
+        agent_failure_code="no_progress_repetition",
+        failure_facts=FailureFacts(agent_failure_code="no_progress_repetition"),
     )

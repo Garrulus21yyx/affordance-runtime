@@ -108,6 +108,12 @@ class ActionResult:
     adapter_evidence: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.dispatch_status, DispatchStatus):
+            raise TypeError("action result dispatch status must be typed")
+        if self.error is not None and not isinstance(self.error, ActionError):
+            raise TypeError("action result error must be typed")
+        if type(self.transport_success) is not bool:
+            raise TypeError("action result transport success must be boolean")
         if not self.request_id.strip() or not self.backend.strip():
             raise ValueError("action result requires request and backend identity")
         inconsistent = (

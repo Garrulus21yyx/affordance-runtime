@@ -6,6 +6,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
     BenchmarkRunIdentity,
     BenchmarkSuiteResult,
+    FailureFacts,
     MetricMeasurement,
     TerminalReasonCode,
 )
@@ -63,6 +64,9 @@ def test_blocked_live_report_contains_only_bounded_terminal_reason(tmp_path) -> 
     case = BenchmarkCaseResult(
         "miniwob-choose-list", "blocked", True, "", 1.0, safety,
         TerminalReasonCode.ACTION_OUTSIDE_CURRENT_PAGE,
+        case_failure_code="action_outside_current_page",
+        runtime_reason_code="action_outside_current_page",
+        failure_facts=FailureFacts(runtime_reason_code="action_outside_current_page"),
     )
     suite = BenchmarkSuiteResult(
         identity, (case,), BenchmarkAcceptance(False, ("case blocked",)), {},

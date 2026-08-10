@@ -27,12 +27,29 @@ def test_waiting_user_effect_and_task_unknown_are_distinct() -> None:
 
 
 def test_policy_abort_provider_and_no_action_are_typed() -> None:
-    aborted = _result(status="failed", last_decision_type="Abort")
-    provider = _result(status="failed", case_failure_code="policy_provider_unavailable")
+    abort_facts = FailureFacts(runtime_reason_code="abort_policy")
+    aborted = _result(
+        status="failed",
+        last_decision_type="Abort",
+        case_failure_code="abort_policy",
+        runtime_reason_code="abort_policy",
+        failure_facts=abort_facts,
+    )
+    provider_facts = FailureFacts(policy_failure_code="provider_unavailable")
+    provider = _result(
+        status="failed",
+        case_failure_code="policy_provider_unavailable",
+        last_policy_failure_code="provider_unavailable",
+        failure_facts=provider_facts,
+    )
+    no_action_facts = FailureFacts(runtime_reason_code="action_outside_action_space")
     no_action = _result(
         status="blocked",
         terminal_reason_code=TerminalReasonCode.ACTION_OUTSIDE_ACTION_SPACE,
         last_action_space_option_count=0,
+        case_failure_code="action_outside_action_space",
+        runtime_reason_code="action_outside_action_space",
+        failure_facts=no_action_facts,
     )
     assert classify_case(aborted).outcome is MiniWobTaskOutcome.POLICY_ABORTED
     assert classify_case(provider).outcome is MiniWobTaskOutcome.PROVIDER_UNAVAILABLE
@@ -51,10 +68,12 @@ def test_component_origins_are_classified_without_exception_text() -> None:
         if origin is CaseFailureOrigin.CLEANUP:
             result = _result(
                 status="failed",
-                failure_origin=origin,
+                failure_origin=CaseFailureOrigin.NONE,
+                termination_origin="cleanup",
                 cleanup_failure_code="cleanup_exception",
                 cleanup_exception_class="SentinelError",
                 cleanup_failures=1,
+                case_failure_code="cleanup_exception",
                 failure_facts=FailureFacts(
                     cleanup_code="cleanup_exception",
                     cleanup_exception_class="SentinelError",
@@ -64,8 +83,10 @@ def test_component_origins_are_classified_without_exception_text() -> None:
             result = _result(
                 status="failed",
                 failure_origin=origin,
+                termination_origin="component",
                 failure_code="component_exception",
                 exception_class="SentinelError",
+                case_failure_code="component_exception",
                 failure_facts=FailureFacts(
                     component_origin=origin,
                     component_code="component_exception",

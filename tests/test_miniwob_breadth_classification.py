@@ -39,17 +39,39 @@ def test_success_provider_and_no_progress_are_typed_separately() -> None:
         },
     )
     assert classify_case(success).outcome is MiniWobTaskOutcome.SUCCESS
-    assert classify_case(_result(case_failure_code="policy_provider_unavailable")).outcome is MiniWobTaskOutcome.PROVIDER_UNAVAILABLE
-    repeated = _result(terminal_reason_code=TerminalReasonCode.NO_PROGRESS_REPETITION)
+    policy_facts = FailureFacts(policy_failure_code="provider_unavailable")
+    provider = _result(
+        case_failure_code="policy_provider_unavailable",
+        last_policy_failure_code="provider_unavailable",
+        failure_facts=policy_facts,
+    )
+    assert classify_case(provider).outcome is MiniWobTaskOutcome.PROVIDER_UNAVAILABLE
+    progress_facts = FailureFacts(agent_failure_code="no_progress_repetition")
+    repeated = _result(
+        terminal_reason_code=TerminalReasonCode.NO_PROGRESS_REPETITION,
+        case_failure_code="no_progress_repetition",
+        agent_failure_code="no_progress_repetition",
+        failure_facts=progress_facts,
+    )
     assert classify_case(repeated).outcome is MiniWobTaskOutcome.NO_PROGRESS_REPETITION
 
 
 def test_timeout_and_runtime_rejection_do_not_use_free_text() -> None:
-    timeout = _result(case_failure_code="case_timeout")
+    timeout_facts = FailureFacts(watchdog_code="case_timeout")
+    timeout = _result(
+        case_failure_code="case_timeout",
+        termination_origin="harness_watchdog",
+        watchdog_triggered=True,
+        failure_facts=timeout_facts,
+    )
     assert classify_case(timeout).outcome is MiniWobTaskOutcome.CASE_TIMEOUT
+    rejected_facts = FailureFacts(runtime_reason_code="invalid_action_parameters")
     rejected = _result(
         status="blocked",
         terminal_reason_code=TerminalReasonCode.INVALID_ACTION_PARAMETERS,
+        case_failure_code="invalid_action_parameters",
+        runtime_reason_code="invalid_action_parameters",
+        failure_facts=rejected_facts,
     )
     assert classify_case(rejected).outcome is MiniWobTaskOutcome.WRONG_PARAMETERS
 
@@ -67,6 +89,7 @@ def test_integrity_watchdog_cleanup_and_success_precedence() -> None:
             },
         )
     integrity = _result(
+        case_failure_code="metric_name_collision",
         harness_integrity_code="metric_name_collision",
         harness_integrity_failures=1,
         failure_facts=FailureFacts(harness_integrity_code="metric_name_collision"),
@@ -74,6 +97,9 @@ def test_integrity_watchdog_cleanup_and_success_precedence() -> None:
     assert classify_case(integrity).outcome is MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE
     watchdog = _result(
         case_failure_code="case_timeout",
+        termination_origin="harness_watchdog",
+        watchdog_triggered=True,
+        failure_facts=FailureFacts(watchdog_code="case_timeout"),
         measurements={
             "official_success_count": MetricMeasurement(0, True),
             "cleanup_failures": MetricMeasurement(1, True),

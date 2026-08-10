@@ -100,7 +100,10 @@ def test_privacy_scan_rejects_private_coordinate_field_and_route_value(tmp_path:
 def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
     result = replace(
         _result(1, failed=True),
+        case_failure_code="case_timeout",
+        runtime_reason_code="",
         watchdog_triggered=True,
+        termination_origin="harness_watchdog",
         harness_integrity_code="metric_name_collision",
         harness_integrity_failures=1,
         failure_origin=CaseFailureOrigin.ACTION_EVALUATION,
@@ -247,6 +250,50 @@ def test_provider_capacity_requires_explicit_zero_retry_fallback_identity() -> N
             "provider-capacity-preflight.v1", "mistral", "model", "sha256:m",
             1, 1, True,
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("required_attempt_budget", True),
+        ("declared_attempt_budget", True),
+        ("retry_count", False),
+        ("fallback_count", False),
+    ),
+)
+def test_tree_validator_rejects_capacity_scalar_type_spoofs(
+    tmp_path: Path, field: str, value: object,
+) -> None:
+    output = _write_valid_tree(tmp_path)
+    path = output / "attestation.json"
+    payload = json.loads(path.read_text())
+    payload["provider_capacity"][field] = value
+    path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    assert any("provider capacity" in item for item in validate_campaign_tree(output, _manifest()))
+
+
+def test_tree_validator_rejects_extra_nested_formal_fields(tmp_path: Path) -> None:
+    output = _write_valid_tree(tmp_path)
+    attestation_path = output / "attestation.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["provider_capacity"]["derived_from_result"] = True
+    attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
+    assert any("provider capacity" in item for item in validate_campaign_tree(output, _manifest()))
+
+    acceptance_root = tmp_path / "acceptance"
+    acceptance_root.mkdir()
+    output = _write_valid_tree(acceptance_root)
+    campaign_path = output / "campaign.json"
+    campaign = json.loads(campaign_path.read_text())
+    campaign["acceptance"]["legacy_ok"] = True
+    campaign_path.write_text(json.dumps(campaign, sort_keys=True), encoding="utf-8")
+    attestation_path = output / "attestation.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["campaign_sha256"] = "sha256:" + hashlib.sha256(
+        campaign_path.read_bytes()
+    ).hexdigest()
+    attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
+    assert any("formal acceptance" in item for item in validate_campaign_tree(output, _manifest()))
 
 
 def _write_valid_tree(tmp_path: Path) -> Path:

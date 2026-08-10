@@ -61,6 +61,12 @@ class ExecutionSummary:
     currentness_probe_count: int = 0
 
     def __post_init__(self) -> None:
+        if not isinstance(self.dispatch_status, DispatchStatus):
+            raise TypeError("execution summary dispatch status must be typed")
+        if self.error is not None and not isinstance(self.error, ActionError):
+            raise TypeError("execution summary error must be typed")
+        if type(self.transport_success) is not bool:
+            raise TypeError("execution summary transport success must be boolean")
         if type(self.currentness_probe_count) is not int or self.currentness_probe_count < 0:
             raise ValueError("currentness probe count must be a non-negative integer")
 
@@ -75,6 +81,14 @@ class AcquisitionSummary:
     expected_origin: AcquisitionOrigin | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, AcquisitionStatus):
+            raise TypeError("acquisition summary status must be typed")
+        if self.origin is not None and not isinstance(self.origin, AcquisitionOrigin):
+            raise TypeError("acquisition summary origin must be typed")
+        if self.expected_origin is not None and not isinstance(
+            self.expected_origin, AcquisitionOrigin
+        ):
+            raise TypeError("acquisition summary expected origin must be typed")
         _require_reason_code(self.reason_code)
         if type(self.attempts) is not int or self.attempts < 0:
             raise ValueError("acquisition attempts must be a non-negative integer")

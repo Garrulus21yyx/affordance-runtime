@@ -69,6 +69,30 @@ class AttemptReceipt:
     acquisition_status: AcquisitionStatus | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.operation, AttemptOperation):
+            raise TypeError("attempt operation must be typed")
+        if not isinstance(self.disposition, AttemptDisposition):
+            raise TypeError("attempt disposition must be typed")
+        if self.expected_origin is not None and not isinstance(
+            self.expected_origin, AcquisitionOrigin
+        ):
+            raise TypeError("expected acquisition origin must be typed")
+        if self.actual_origin is not None and not isinstance(
+            self.actual_origin, AcquisitionOrigin
+        ):
+            raise TypeError("actual acquisition origin must be typed")
+        if self.dispatch_status is not None and not isinstance(
+            self.dispatch_status, DispatchStatus
+        ):
+            raise TypeError("attempt dispatch status must be typed")
+        if self.request_lineage_valid is not None and type(
+            self.request_lineage_valid
+        ) is not bool:
+            raise TypeError("attempt request lineage must be boolean")
+        if self.acquisition_status is not None and not isinstance(
+            self.acquisition_status, AcquisitionStatus
+        ):
+            raise TypeError("attempt acquisition status must be typed")
         if not self.attempt_id.startswith("attempt:"):
             raise ValueError("attempt receipt identity is invalid")
         if _CODE.fullmatch(self.reason_code) is None:

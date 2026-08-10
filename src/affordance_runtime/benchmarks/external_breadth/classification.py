@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
@@ -25,29 +26,15 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(
             MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "harness_integrity"
         )
-    if (
-        facts.watchdog_code
-        or result.watchdog_triggered
-        or result.case_failure_code == "case_timeout"
-    ):
+    if facts.watchdog_code:
         return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
-    if (
-        facts.cleanup_code
-        or result.failure_origin is CaseFailureOrigin.CLEANUP
-        or result.case_failure_code == "cleanup_exception"
-    ):
+    if facts.cleanup_code:
         return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
-    if result.case_failure_code == "turn_budget_exhausted":
+    if facts.runtime_reason_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
-    legacy_policy = (
-        result.case_failure_code.removeprefix("policy_")
-        if result.case_failure_code.startswith("policy_") else ""
-    )
-    policy = (
-        facts.policy_failure_code or result.last_policy_failure_code or legacy_policy
-    ).casefold()
+    policy = facts.policy_failure_code.casefold()
     if policy == "provider_unavailable":
         return ClassifiedOutcome(MiniWobTaskOutcome.PROVIDER_UNAVAILABLE, "typed_policy_failure")
     if policy == "timeout":
@@ -75,7 +62,7 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.NO_ACTION_OFFERED, "typed_runtime_reason")
     if reason is not None:
         return ClassifiedOutcome(MiniWobTaskOutcome.RUNTIME_REJECTED, "typed_runtime_reason")
-    if result.last_decision_type == "Abort":
+    if facts.runtime_reason_code in {f"abort_{item.value}" for item in AbortCategory}:
         return ClassifiedOutcome(MiniWobTaskOutcome.POLICY_ABORTED, "typed_last_decision")
     if result.status == "waiting_user":
         if result.last_decision_type == "AskUser" or result.pending_kind == "user_question":
@@ -86,11 +73,7 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
             )
         if result.latest_task_status == "unknown":
             return ClassifiedOutcome(MiniWobTaskOutcome.WAITING_USER_TASK_UNKNOWN, "typed_task_status")
-    origin = _ORIGIN_OUTCOMES.get(
-        facts.component_origin
-        if facts.component_origin is not CaseFailureOrigin.NONE
-        else result.failure_origin
-    )
+    origin = _ORIGIN_OUTCOMES.get(facts.component_origin)
     if origin is not None:
         return ClassifiedOutcome(origin, "typed_failure_origin")
     if result.status == "done" and value == 1:

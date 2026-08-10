@@ -202,6 +202,16 @@ def _validate_root_identity(
     }
     if any(attestation.get(name) != value for name, value in expected_attestation.items()):
         errors.append("attestation identity/schema/profile is not the frozen contract")
+    if (
+        type(attestation.get("git_dirty")) is not bool
+        or type(attestation.get("evidence_valid")) is not bool
+        or type(attestation.get("seed")) is not int
+        or type(attestation.get("planned_cases")) is not int
+        or type(attestation.get("completed_cases")) is not int
+        or isinstance(attestation.get("minimum_policy_call_interval_s"), bool)
+        or not isinstance(attestation.get("minimum_policy_call_interval_s"), int | float)
+    ):
+        errors.append("attestation scalar types are invalid")
     expected_attestation_fields = set(expected_attestation) | {
         "run_id", "git_sha", "case_report_sha256", "summary_sha256", "campaign_sha256",
         "progress_sha256", "provider_capacity",
@@ -230,14 +240,26 @@ def _validate_root_identity(
     }
     if any(campaign.get(name) != value for name, value in expected_campaign.items()):
         errors.append("campaign identity/schema/profile is not cross-bound")
+    if (
+        type(campaign.get("git_dirty")) is not bool
+        or type(campaign.get("complete")) is not bool
+    ):
+        errors.append("campaign scalar types are invalid")
     if set(campaign) != set(expected_campaign) | {"acceptance", "cases"}:
         errors.append("campaign fields do not match the formal schema")
     if (
         not isinstance(acceptance, dict)
+        or set(acceptance) != {
+            "evidence_valid", "errors", "planned_cases", "completed_cases",
+            "successful_cases",
+        }
         or acceptance.get("evidence_valid") is not True
         or acceptance.get("errors") not in ([], ())
+        or type(acceptance.get("planned_cases")) is not int
         or acceptance.get("planned_cases") != len(manifest.cases)
+        or type(acceptance.get("completed_cases")) is not int
         or acceptance.get("completed_cases") != len(manifest.cases)
+        or type(acceptance.get("successful_cases")) is not int
     ):
         errors.append("campaign formal acceptance is invalid")
 
@@ -257,8 +279,14 @@ def _validate_case_binding(result, case, attestation, target_digest, errors) -> 
 
 def _validate_capacity(value, attestation, manifest, errors) -> None:
     required = sum(item.max_turns for item in manifest.cases)
+    fields = {
+        "schema_version", "provider_id", "model_id", "manifest_digest",
+        "required_attempt_budget", "declared_attempt_budget", "checked", "sufficient",
+        "grounding_profile", "retry_count", "fallback_count",
+    }
     valid = bool(
         isinstance(value, dict)
+        and set(value) == fields
         and value.get("schema_version") == "provider-capacity-preflight.v1"
         and value.get("provider_id") == "mistral"
         and value.get("model_id") == manifest.model_profile
@@ -266,10 +294,13 @@ def _validate_capacity(value, attestation, manifest, errors) -> None:
         and value.get("grounding_profile") == manifest.grounding_profile
         and value.get("checked") is True
         and value.get("sufficient") is True
+        and type(value.get("required_attempt_budget")) is int
         and value.get("required_attempt_budget") == required
         and type(value.get("declared_attempt_budget")) is int
         and value["declared_attempt_budget"] >= required
+        and type(value.get("retry_count")) is int
         and value.get("retry_count") == 0
+        and type(value.get("fallback_count")) is int
         and value.get("fallback_count") == 0
         and value.get("provider_id") == attestation.get("provider_id")
         and value.get("model_id") == attestation.get("model_id")
@@ -347,6 +378,8 @@ def _validate_formal_case_gates(result, errors) -> None:
 
 
 def _required_metrics_are_measured(result) -> bool:
+    if set(result.measurements) != set(REQUIRED_METRICS):
+        return False
     for name in REQUIRED_METRICS:
         measurement = result.measurements.get(name)
         if measurement is None or not measurement.measured:

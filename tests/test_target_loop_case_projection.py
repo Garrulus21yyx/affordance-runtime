@@ -17,7 +17,7 @@ def _snapshot(
 ) -> PartialEpisodeSnapshot:
     return PartialEpisodeSnapshot(
         observations, executions, 3, turns, "unknown", "effect_confirmed",
-        "sha256:test", 1, 0, "effect_confirmed", 0, "SelectAction", 2, 1,
+        "sha256:" + "0" * 64, 1, 0, "action_effect_evaluated", 0, "SelectAction", 2, 1,
         "complete", "", (("SelectAction", turns),), control_status, reason,
     )
 
@@ -38,22 +38,14 @@ def _result(reason: str, *, message: str = "display only"):
     )
 
 
-@pytest.mark.parametrize(
-    ("reason", "origin"),
-    (
-        ("task_evaluation_invalid", CaseFailureOrigin.TASK_EVALUATION),
-        ("action_evaluation_invalid", CaseFailureOrigin.ACTION_EVALUATION),
-        ("action_result_lineage_mismatch", CaseFailureOrigin.EXECUTION),
-        ("action_not_dispatched", CaseFailureOrigin.EXECUTION),
-        ("observation_budget_exhausted", CaseFailureOrigin.DECISION_CONTROL),
-        ("abort_policy", CaseFailureOrigin.DECISION_CONTROL),
-        ("runtime_exception", CaseFailureOrigin.UNKNOWN),
-        ("confirmation_subject_unavailable", CaseFailureOrigin.DECISION_CONTROL),
-        ("new_bounded_runtime_reason", CaseFailureOrigin.UNKNOWN),
-    ),
-)
+@pytest.mark.parametrize("reason", (
+    "task_evaluation_invalid", "action_evaluation_invalid",
+    "action_result_lineage_mismatch", "action_not_dispatched",
+    "observation_budget_exhausted", "abort_policy", "runtime_exception",
+    "confirmation_subject_unavailable", "new_bounded_runtime_reason",
+))
 def test_runtime_reason_is_never_dropped_or_inferred_from_message(
-    reason: str, origin: CaseFailureOrigin,
+    reason: str,
 ) -> None:
     first = project_case_result(
         "case", _result(reason, message="first"), BenchmarkInstrumentation(), 1.0, "first"
@@ -62,8 +54,10 @@ def test_runtime_reason_is_never_dropped_or_inferred_from_message(
         "case", _result(reason, message="different"), BenchmarkInstrumentation(), 1.0, "different"
     )
     assert first.case_failure_code == second.case_failure_code == reason
-    assert first.failure_code == second.failure_code == reason
-    assert first.failure_origin is origin
+    assert first.runtime_reason_code == second.runtime_reason_code == reason
+    assert first.failure_facts.runtime_reason_code == reason
+    assert first.failure_code == second.failure_code == ""
+    assert first.failure_origin is CaseFailureOrigin.NONE
 
 
 def test_non_timeout_exception_uses_final_snapshot_exact_metrics_and_reason() -> None:
@@ -143,7 +137,8 @@ def test_cleanup_is_secondary_to_runtime_reason() -> None:
         "runtime failed; cleanup failed",
     )
     assert projected.case_failure_code == "task_evaluation_invalid"
-    assert projected.failure_origin is CaseFailureOrigin.TASK_EVALUATION
+    assert projected.failure_origin is CaseFailureOrigin.NONE
+    assert projected.termination_origin == "runtime"
     assert projected.cleanup_failure_code == "cleanup_exception"
     assert projected.cleanup_exception_class == "RuntimeError"
     assert projected.measurements["cleanup_failures"].value == 1
@@ -162,7 +157,7 @@ def test_projection_defends_against_direct_custom_metric_collision() -> None:
         "case", None, instrumentation, 1.0, "display only"
     )
     assert projected.case_failure_code == "metric_name_collision"
-    assert projected.failure_origin is CaseFailureOrigin.UNKNOWN
+    assert projected.failure_origin is CaseFailureOrigin.NONE
     assert projected.measurements["observations"].value == 0
 
 
@@ -198,7 +193,8 @@ def test_watchdog_remains_primary_when_cleanup_also_fails() -> None:
         timeout_snapshot=_snapshot(observations=3, executions=1, turns=1),
     )
     assert projected.case_failure_code == "case_timeout"
-    assert projected.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG
+    assert projected.failure_origin is CaseFailureOrigin.NONE
+    assert projected.termination_origin == "harness_watchdog"
     assert projected.cleanup_failure_code == "cleanup_exception"
     assert projected.measurements["cleanup_failures"].value == 1
 
@@ -214,7 +210,8 @@ def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
         "case", result, instrumentation, 1.0, "cleanup failed"
     )
     assert projected.case_failure_code == "cleanup_exception"
-    assert projected.failure_origin is CaseFailureOrigin.CLEANUP
+    assert projected.failure_origin is CaseFailureOrigin.NONE
+    assert projected.termination_origin == "cleanup"
 
 
 def test_dynamic_exception_class_is_safely_normalized_without_losing_component() -> None:

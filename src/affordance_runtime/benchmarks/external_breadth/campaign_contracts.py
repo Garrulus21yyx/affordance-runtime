@@ -89,7 +89,15 @@ class ProviderCapacityEvidence:
             or not self.grounding_profile
         ):
             raise ValueError("provider capacity evidence requires frozen identity")
-        if self.required_attempt_budget <= 0 or self.declared_attempt_budget < 0:
+        if (
+            type(self.required_attempt_budget) is not int
+            or type(self.declared_attempt_budget) is not int
+            or self.required_attempt_budget <= 0
+            or self.declared_attempt_budget < 0
+            or type(self.checked) is not bool
+            or type(self.retry_count) is not int
+            or type(self.fallback_count) is not int
+        ):
             raise ValueError("provider capacity budgets are invalid")
         if self.retry_count != 0 or self.fallback_count != 0:
             raise ValueError("formal provider preflight requires zero retry and fallback")

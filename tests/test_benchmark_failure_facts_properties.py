@@ -45,9 +45,13 @@ def test_failure_facts_are_orthogonal_and_round_trip(watchdog, cleanup, integrit
         harness_integrity_code=facts.harness_integrity_code,
         harness_integrity_failures=int(integrity),
         watchdog_triggered=watchdog,
+        case_failure_code=(
+            "case_timeout" if watchdog else "runtime_exception"
+        ),
         failure_origin=facts.component_origin,
         failure_code=facts.component_code,
         exception_class=facts.component_exception_class,
+        termination_origin="harness_watchdog" if watchdog else "component",
         failure_facts=facts,
     )
     decoded = decode_public_case_evidence(public_case_evidence(result))
@@ -126,6 +130,65 @@ def test_success_cannot_carry_unbound_legacy_failure_truth(changes) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"last_decision_type": "InventedDecision"},
+        {"pending_kind": "invented_pending"},
+        {"latest_task_status": "invented_task_status"},
+        {"latest_action_evaluation_status": "invented_action_status"},
+        {"last_progress_event_type": "invented_progress"},
+        {"last_world_coverage": "private coverage marker"},
+        {"latest_semantic_attempt_key_digest": "sha256:not-a-digest"},
+    ),
+)
+def test_public_typed_projection_strings_use_closed_vocabularies(changes) -> None:
+    with pytest.raises(ValueError, match="vocabulary|coverage|digest"):
+        BenchmarkCaseResult("case:one", "failed", True, "", 1.0, **changes)
+
+
+def test_partial_and_completed_episode_truth_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="partial"):
+        BenchmarkCaseResult(
+            "case:one", "failed", True, "", 1.0,
+            partial_episode_available=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("pending_kind", "status"),
+    (("confirmation", "done"), ("unknown_effect", "failed"), ("user_question", "done")),
+)
+def test_pending_kind_requires_matching_waiting_status(pending_kind, status) -> None:
+    with pytest.raises(ValueError, match="pending kind contradicts"):
+        BenchmarkCaseResult(
+            "case:one", status, True, "", 1.0, pending_kind=pending_kind,
+        )
+
+
+def test_abort_decision_requires_canonical_runtime_fact() -> None:
+    with pytest.raises(ValueError, match="abort decision"):
+        BenchmarkCaseResult(
+            "case:one", "failed", True, "", 1.0, last_decision_type="Abort",
+        )
+
+
+def test_component_fact_requires_exact_component_termination_projection() -> None:
+    facts = FailureFacts(
+        component_origin=CaseFailureOrigin.EXECUTION,
+        component_code="execute_failed",
+    )
+    with pytest.raises(ValueError, match="termination origin"):
+        BenchmarkCaseResult(
+            "case:one", "failed", True, "", 1.0,
+            failure_origin=CaseFailureOrigin.EXECUTION,
+            failure_code="execute_failed",
+            case_failure_code="execute_failed",
+            failure_facts=facts,
+            termination_origin="runtime",
+        )
+
+
 def test_public_evidence_omits_unrestricted_human_failure_reason() -> None:
     result = BenchmarkCaseResult(
         "case:one", "failed", True, "private selector:#secret", 1.0,
@@ -153,6 +216,8 @@ def test_mechanical_success_cannot_coexist_with_component_failure() -> None:
             failure_origin=CaseFailureOrigin.EXECUTION,
             failure_code="execution_exception",
             exception_class="RuntimeError",
+            case_failure_code="execution_exception",
+            termination_origin="component",
             failure_facts=facts,
         )
 

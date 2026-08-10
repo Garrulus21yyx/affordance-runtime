@@ -187,7 +187,11 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
 
 
 def _derived_metrics(result):
-    values = dict(result.measurements)
+    values = {
+        name: result.measurements[name]
+        for name in REQUIRED_METRICS
+        if name != "no_progress_terminations" and name in result.measurements
+    }
     values["no_progress_terminations"] = MetricMeasurement(
         int(result.terminal_reason_code is TerminalReasonCode.NO_PROGRESS_REPETITION), True,
     )
