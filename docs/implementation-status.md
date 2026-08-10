@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-10
-> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@34b5259f9692f393abf2f384246f56a0dd625ce6`
+> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@9da23daa45b53ca7463eb21fcef16c4ddf4885c8`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary

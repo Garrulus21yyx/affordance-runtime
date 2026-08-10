@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-10
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
-> **Reviewed implementation HEAD:** `34b5259f9692f393abf2f384246f56a0dd625ce6`
+> **Reviewed implementation HEAD:** `9da23daa45b53ca7463eb21fcef16c4ddf4885c8`
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Current decision
