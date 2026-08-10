@@ -50,6 +50,7 @@ def build_confirmation_request(
         assessment.risk,
         assessment.consequences,
         summary,
+        assessment.subject,
     )
 
 

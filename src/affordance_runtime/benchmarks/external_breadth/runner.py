@@ -12,6 +12,7 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCampaignOutcome,
     MiniWobBreadthCaseRecord,
     MiniWobTaskOutcome,
+    ProviderCapacityEvidence,
 )
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.external_breadth.contracts import MiniWobBreadthManifest
@@ -46,6 +47,7 @@ REQUIRED_METRICS = (
     "already_satisfied_suppressions", "no_progress_terminations", "official_success_count",
     "sent_unknown_count", "duplicate_unknown_attempts", "forbidden_effect_attempts",
     "stale_zero_call_violations", "provider_retry_count", "fallback_count", "cleanup_failures",
+    "observation_contract_exceptions",
 )
 _TERMINAL_STATUSES = tuple(item for item in AgentLoopStatus if item is not AgentLoopStatus.RUNNING)
 
@@ -54,6 +56,8 @@ async def run_breadth_campaign(
     manifest: MiniWobBreadthManifest,
     policy: ModelBackedAgentPolicy,
     output_dir: Path,
+    *,
+    provider_capacity: ProviderCapacityEvidence | None = None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -76,7 +80,9 @@ async def run_breadth_campaign(
         _record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True)
     )
     provider, model, grounding = _model_identity(instrumentations)
-    acceptance = _accept_campaign(manifest, suite, records, provider, model, grounding)
+    acceptance = _accept_campaign(
+        manifest, suite, records, provider, model, grounding, provider_capacity,
+    )
     progress.completed_cases = len(records)
     progress.success_count = acceptance.successful_cases
     progress.failure_category_counts = _outcome_counts(records)
@@ -86,6 +92,7 @@ async def run_breadth_campaign(
     progress.write(current_case_id=records[-1].case_id, complete=True)
     return MiniWobBreadthCampaignOutcome(
         run_id, manifest, digest, suite, records, acceptance, provider, model, grounding,
+        provider_capacity,
     )
 
 
@@ -192,16 +199,40 @@ def _record(case, result) -> MiniWobBreadthCaseRecord:
     )
 
 
-def _accept_campaign(manifest, suite, records, provider, model, grounding) -> MiniWobBreadthCampaignAcceptance:
+def _accept_campaign(
+    manifest, suite, records, provider, model, grounding, provider_capacity,
+) -> MiniWobBreadthCampaignAcceptance:
     errors: list[str] = []
     identities = tuple(item.case_id for item in records)
     expected = tuple(item.case_id for item in manifest.cases)
     if len(records) != 60 or identities != expected or len(set(identities)) != 60:
         errors.append("campaign result set does not match the frozen 60-case manifest")
+    underlying = tuple(item.result.case_id for item in records)
+    if underlying != expected:
+        errors.append("underlying case identities do not match the frozen manifest")
+    identity = suite.identity
+    if (
+        identity.suite_id != manifest.campaign_id
+        or identity.profile_id != "mistral-format-only-v1"
+        or identity.seed != 7
+        or identity.manifest_digest != breadth_manifest_digest(manifest)
+        or identity.harness_schema_version != "target-loop-harness.v6"
+    ):
+        errors.append("suite identity/schema/digest does not match the frozen manifest")
     if suite.identity.git_dirty:
         errors.append("campaign git tree is dirty")
     if provider != "mistral" or model != manifest.model_profile or grounding != manifest.grounding_profile:
         errors.append("campaign model identity does not match the frozen profile")
+    required_budget = sum(item.max_turns for item in manifest.cases)
+    if (
+        provider_capacity is None
+        or provider_capacity.provider_id != provider
+        or provider_capacity.model_id != model
+        or provider_capacity.manifest_digest != breadth_manifest_digest(manifest)
+        or provider_capacity.required_attempt_budget != required_budget
+        or not provider_capacity.sufficient
+    ):
+        errors.append("explicit provider capacity evidence is absent or insufficient")
     for record in records:
         missing = [
             name
@@ -220,6 +251,25 @@ def _accept_campaign(manifest, suite, records, provider, model, grounding) -> Mi
             errors.append(f"{record.case_id}: harness integrity failed")
         if record.result.cleanup_failures:
             errors.append(f"{record.case_id}: cleanup failed")
+        if record.result.failure_facts.harness_integrity_code:
+            errors.append(f"{record.case_id}: typed harness integrity fact is nonzero")
+        if record.result.case_schema_version != "target-loop-case.v6":
+            errors.append(f"{record.case_id}: case evidence schema is unsupported")
+        if record.result.harness_schema_version != "target-loop-harness.v6":
+            errors.append(f"{record.case_id}: harness evidence schema is unsupported")
+        if record.result.suite_id != manifest.campaign_id:
+            errors.append(f"{record.case_id}: suite identity mismatch")
+        if record.result.profile_id != "mistral-format-only-v1":
+            errors.append(f"{record.case_id}: profile identity mismatch")
+        if record.result.seed != 7 or record.result.manifest_digest != identity.manifest_digest:
+            errors.append(f"{record.case_id}: seed or manifest identity mismatch")
+        observation_exceptions = record.result.measurements.get(
+            "observation_contract_exceptions"
+        )
+        if observation_exceptions is None or not observation_exceptions.measured:
+            errors.append(f"{record.case_id}: observation contract exception gate is unmeasured")
+        elif observation_exceptions.value != 0:
+            errors.append(f"{record.case_id}: observation contract exception gate is nonzero")
     for name in (
         "provider_retry_count", "fallback_count", "cleanup_failures",
         "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",

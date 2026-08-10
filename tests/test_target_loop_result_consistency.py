@@ -23,6 +23,8 @@ def test_case_result_has_one_metric_authority() -> None:
             "runtime_reason_code", "agent_failure_code", "cleanup_failure_code",
             "cleanup_exception_class", "cleanup_failures", "watchdog_triggered",
             "harness_integrity_code", "harness_integrity_failures",
+            "failure_facts", "case_schema_version", "suite_id", "profile_id",
+            "seed", "manifest_digest", "harness_schema_version",
         }
 
 

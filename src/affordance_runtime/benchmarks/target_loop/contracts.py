@@ -85,6 +85,34 @@ class CaseFailureOrigin(StrEnum):
 
 
 @dataclass(frozen=True)
+class FailureFacts:
+    """Orthogonal privacy-safe facts; primary classification is a projection."""
+
+    runtime_reason_code: str = ""
+    agent_failure_code: str = ""
+    policy_failure_code: str = ""
+    component_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
+    component_code: str = ""
+    component_exception_class: str = ""
+    watchdog_code: str = ""
+    cleanup_code: str = ""
+    cleanup_exception_class: str = ""
+    harness_integrity_code: str = ""
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.runtime_reason_code, self.agent_failure_code, self.policy_failure_code,
+            self.component_code, self.watchdog_code, self.cleanup_code,
+            self.harness_integrity_code,
+        ):
+            if value and (len(value) > 96 or not value.replace("_", "").isalnum()):
+                raise ValueError("failure fact codes must be bounded identifiers")
+        for value in (self.component_exception_class, self.cleanup_exception_class):
+            if value and (len(value) > 128 or not value.replace("_", "").isalnum()):
+                raise ValueError("failure exception classes must be bounded names")
+
+
+@dataclass(frozen=True)
 class MetricExpectation:
     metric: str
     operator: MetricExpectationOperator
@@ -166,7 +194,7 @@ class BenchmarkRunIdentity:
     python_version: str
     platform: str
     manifest_schema_version: str = "target-loop-manifest.v1"
-    harness_schema_version: str = "target-loop-harness.v5"
+    harness_schema_version: str = "target-loop-harness.v6"
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:
@@ -212,6 +240,13 @@ class BenchmarkCaseResult:
     watchdog_triggered: bool = False
     harness_integrity_code: str = ""
     harness_integrity_failures: int = 0
+    failure_facts: FailureFacts = field(default_factory=FailureFacts)
+    case_schema_version: str = "target-loop-case.v6"
+    suite_id: str = ""
+    profile_id: str = ""
+    seed: int = 0
+    manifest_digest: str = ""
+    harness_schema_version: str = "target-loop-harness.v6"
 
     def __post_init__(self) -> None:
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
@@ -236,6 +271,11 @@ class BenchmarkCaseResult:
             raise ValueError("cleanup failure count must be zero or one")
         if self.harness_integrity_failures not in {0, 1}:
             raise ValueError("harness integrity failure count must be zero or one")
+        if not self.case_schema_version or not self.harness_schema_version:
+            raise ValueError("benchmark case evidence requires schema identity")
+        identity_values = (self.suite_id, self.profile_id, self.manifest_digest)
+        if any(identity_values) and not all(identity_values):
+            raise ValueError("benchmark case evidence identity must be complete")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
 
 
@@ -289,4 +329,5 @@ _KNOWN_METRICS = frozenset({
     "official_success_count", "provider_retry_count", "fallback_count", "cleanup_failures",
     "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
     "click_calls", "already_satisfied_suppressions", "no_progress_terminations",
+    "observation_contract_exceptions",
 })

@@ -5,11 +5,15 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
+from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
+    MiniWobTaskOutcome,
+    ProviderCapacityEvidence,
+)
 from affordance_runtime.benchmarks.external_breadth.contracts import (
     MiniWobBreadthCase,
     MiniWobBreadthManifest,
 )
+from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
 from affordance_runtime.benchmarks.external_breadth.runner import REQUIRED_METRICS, run_breadth_campaign
 from affordance_runtime.benchmarks.external_smoke.pacing import FixedPacingState, PacedAgentPolicy
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -22,21 +26,24 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 
 
 def test_fake_sixty_case_campaign_is_strict_complete_and_failure_tolerant(monkeypatch, tmp_path: Path) -> None:
-    results = tuple(_result(index, failed=index == 7) for index in range(1, 61))
+    manifest = _manifest()
+    results = _bound_results(manifest, failed=lambda index: index == 7)
     order: list[str] = []
 
-    async def fake_run_suite(manifest, callback):
-        assert [item.case_id for item in manifest.cases] == [item.case_id for item in _manifest().cases]
+    async def fake_run_suite(target_manifest, callback):
+        assert [item.case_id for item in target_manifest.cases] == [item.case_id for item in manifest.cases]
         for index, result in enumerate(results, 1):
             order.append(result.case_id)
             callback(index, result)
-        return BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(True, ()), {})
+        return BenchmarkSuiteResult(_identity(manifest), results, BenchmarkAcceptance(True, ()), {})
 
     monkeypatch.setattr(
         "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
         fake_run_suite,
     )
-    outcome = asyncio.run(run_breadth_campaign(_manifest(), object(), tmp_path / "run"))
+    outcome = asyncio.run(run_breadth_campaign(
+        manifest, object(), tmp_path / "run", provider_capacity=_capacity(manifest),
+    ))
     assert order == [f"miniwob-60-{index:02d}" for index in range(1, 61)]
     assert outcome.acceptance.evidence_valid
     assert outcome.acceptance.completed_cases == 60
@@ -48,42 +55,95 @@ def test_fake_sixty_case_campaign_is_strict_complete_and_failure_tolerant(monkey
 
 
 def test_task_failure_does_not_invalidate_campaign_evidence(monkeypatch, tmp_path: Path) -> None:
-    results = tuple(_result(index, failed=True) for index in range(1, 61))
+    manifest = _manifest()
+    results = _bound_results(manifest, failed=lambda _index: True)
 
     async def fake_run_suite(_manifest_value, callback):
         for index, result in enumerate(results, 1):
             callback(index, result)
-        return BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(False, ("task failures",)), {})
+        return BenchmarkSuiteResult(_identity(manifest), results, BenchmarkAcceptance(False, ("task failures",)), {})
 
     monkeypatch.setattr(
         "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
         fake_run_suite,
     )
-    outcome = asyncio.run(run_breadth_campaign(_manifest(), object(), tmp_path / "failure-run"))
+    outcome = asyncio.run(run_breadth_campaign(
+        manifest, object(), tmp_path / "failure-run", provider_capacity=_capacity(manifest),
+    ))
     assert outcome.acceptance.evidence_valid
     assert outcome.acceptance.successful_cases == 0
 
 
 def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_path: Path) -> None:
+    manifest = _manifest()
     results = tuple(
-        replace(_result(index, failed=True), case_failure_code="")
-        for index in range(1, 61)
+        replace(item, case_failure_code="")
+        for item in _bound_results(manifest, failed=lambda _index: True)
     )
 
     async def fake_run_suite(_manifest_value, callback):
         for index, result in enumerate(results, 1):
             callback(index, result)
-        return BenchmarkSuiteResult(_identity(), results, BenchmarkAcceptance(True, ()), {})
+        return BenchmarkSuiteResult(_identity(manifest), results, BenchmarkAcceptance(True, ()), {})
 
     monkeypatch.setattr(
         "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
         fake_run_suite,
     )
     outcome = asyncio.run(
-        run_breadth_campaign(_manifest(), object(), tmp_path / "unclassified-run")
+        run_breadth_campaign(
+            manifest, object(), tmp_path / "unclassified-run",
+            provider_capacity=_capacity(manifest),
+        )
     )
     assert not outcome.acceptance.evidence_valid
     assert len(outcome.acceptance.errors) == 60
+
+
+def test_formal_acceptance_requires_explicit_provider_capacity(monkeypatch, tmp_path: Path) -> None:
+    manifest = _manifest()
+    results = _bound_results(manifest, failed=lambda _index: False)
+
+    async def fake_run_suite(_target_manifest, callback):
+        for index, result in enumerate(results, 1):
+            callback(index, result)
+        return BenchmarkSuiteResult(
+            _identity(manifest), results, BenchmarkAcceptance(True, ()), {},
+        )
+
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
+        fake_run_suite,
+    )
+    outcome = asyncio.run(run_breadth_campaign(
+        manifest, object(), tmp_path / "no-capacity",
+    ))
+    assert not outcome.acceptance.evidence_valid
+    assert "explicit provider capacity" in " ".join(outcome.acceptance.errors)
+
+
+def test_spoofed_underlying_case_identity_is_rejected(monkeypatch, tmp_path: Path) -> None:
+    manifest = _manifest()
+    results = list(_bound_results(manifest, failed=lambda _index: False))
+    results[0] = replace(results[0], case_id="spoofed-case")
+
+    async def fake_run_suite(_target_manifest, callback):
+        for index, result in enumerate(results, 1):
+            callback(index, result)
+        return BenchmarkSuiteResult(
+            _identity(manifest), tuple(results), BenchmarkAcceptance(True, ()), {},
+        )
+
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.runner.run_suite",
+        fake_run_suite,
+    )
+    outcome = asyncio.run(run_breadth_campaign(
+        manifest, object(), tmp_path / "spoofed",
+        provider_capacity=_capacity(manifest),
+    ))
+    assert not outcome.acceptance.evidence_valid
+    assert "underlying case identities" in " ".join(outcome.acceptance.errors)
 
 
 def test_interrupted_campaign_stays_incomplete_and_cannot_resume(monkeypatch, tmp_path: Path) -> None:
@@ -160,8 +220,31 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
     )
 
 
-def _identity() -> BenchmarkRunIdentity:
+def _identity(manifest) -> BenchmarkRunIdentity:
     return BenchmarkRunIdentity(
-        "opaque-run", "0" * 40, False, "miniwob-60-seed7-v1", "digest",
+        "opaque-run", "0" * 40, False, manifest.campaign_id,
+        breadth_manifest_digest(manifest),
         "mistral-format-only-v1", 7, "2026-08-10T00:00:00+00:00", "3.12", "test",
+    )
+
+
+def _bound_results(manifest, *, failed):
+    identity = _identity(manifest)
+    return tuple(
+        replace(
+            _result(index, failed=failed(index)),
+            suite_id=identity.suite_id,
+            profile_id=identity.profile_id,
+            seed=identity.seed,
+            manifest_digest=identity.manifest_digest,
+            harness_schema_version=identity.harness_schema_version,
+        )
+        for index in range(1, 61)
+    )
+
+
+def _capacity(manifest) -> ProviderCapacityEvidence:
+    return ProviderCapacityEvidence(
+        "provider-capacity-preflight.v1", "mistral", manifest.model_profile,
+        breadth_manifest_digest(manifest), 600, 600, True,
     )

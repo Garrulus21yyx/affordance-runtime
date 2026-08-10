@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from hypothesis import given
+from hypothesis import strategies as st
+
+from affordance_runtime.agent.accounting import RunAccounting
+from affordance_runtime.agent.attempt_receipt import (
+    AttemptDisposition,
+    AttemptOperation,
+    AttemptReceipt,
+)
+
+
+@given(
+    st.lists(
+        st.tuples(
+            st.sampled_from(tuple(AttemptOperation)),
+            st.sampled_from(tuple(AttemptDisposition)),
+            st.integers(min_value=0, max_value=2),
+            st.integers(min_value=0, max_value=2),
+            st.integers(min_value=0, max_value=3),
+        ),
+        min_size=1,
+        max_size=40,
+    )
+)
+def test_accounting_is_the_sum_of_exactly_once_receipts(specs) -> None:
+    accounting = RunAccounting()
+    receipts = []
+    for index, (operation, disposition, acquisitions, executions, probes) in enumerate(specs, 1):
+        receipt = AttemptReceipt(
+            f"attempt:{index}", operation, "", None, None, disposition,
+            "bounded_reason", acquisitions, executions, executions, probes,
+        )
+        accounting.record(receipt)
+        receipts.append(receipt)
+    assert accounting.observation_attempts == sum(item.acquisition_attempts for item in receipts)
+    assert accounting.execution_attempts == sum(item.execution_attempts for item in receipts)
+    assert accounting.currentness_probes == sum(item.currentness_probe_count for item in receipts)
+    assert accounting.effectful_dispatches == sum(item.effectful_dispatches for item in receipts)
+    assert accounting.receipt_count == len(receipts)
+
+
+def test_same_receipt_cannot_be_accounted_twice() -> None:
+    accounting = RunAccounting()
+    receipt = AttemptReceipt(
+        "attempt:one", AttemptOperation.CAPTURE, "wait_refresh", None, None,
+        AttemptDisposition.RETURNED, "capture_acquired", 1, 0, 0, 0,
+    )
+    accounting.record(receipt)
+    try:
+        accounting.record(receipt)
+    except ValueError as exc:
+        assert "already" in str(exc)
+    else:
+        raise AssertionError("duplicate receipt was accepted")

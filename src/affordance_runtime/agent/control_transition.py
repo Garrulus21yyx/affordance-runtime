@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.attempt_receipt import AttemptOperation, AttemptReceipt
+from affordance_runtime.agent.control_outcome import Continue, LoopDirective, Pause, Terminate
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import (
@@ -114,6 +116,7 @@ class ControlTransition:
     execution_attempts: tuple[ExecutionSummary, ...]
     acquisition: AcquisitionSummary | None
     acquisition_attempts: tuple[AcquisitionSummary, ...]
+    attempt_receipts: tuple[AttemptReceipt, ...]
     after_observation_id: str
     action_evaluation: ActionEvaluation | None
     task_evaluation: TaskEvaluation | None
@@ -178,6 +181,7 @@ class ControlContinuation:
     after_observation_id: str
     acquisition: AcquisitionSummary | None
     acquisition_attempts: tuple[AcquisitionSummary, ...]
+    attempt_receipts: tuple[AttemptReceipt, ...]
     execution: ExecutionSummary | None
     execution_attempts: tuple[ExecutionSummary, ...]
     intent: ActionIntent | None
@@ -195,10 +199,10 @@ class ControlContinuation:
         _require_reason_code(self.reason_code)
 
 
-class ControlTransitionScope:
-    """Ephemeral fact collector with exactly-once root finalization."""
+class _FactAccumulator:
+    """Shared monotonic merge owner for root and continuation facts."""
 
-    def __init__(self, state: AgentLoopState, decision: AgentDecision) -> None:
+    def _initialize_facts(self, state: AgentLoopState, decision: AgentDecision) -> None:
         self._decision = decision
         self._before_id = state.current_observation.observation_id
         self._progress_total = state.progress_event_total_count
@@ -210,17 +214,14 @@ class ControlTransitionScope:
         self._action_evaluation: ActionEvaluation | None = None
         self._task_evaluation: TaskEvaluation | None = None
         self._decision_result = ""
-        self._admission: AdmissionSummary | None = None
         self._acquisitions: list[AcquisitionSummary] = []
+        self._attempt_receipts: list[AttemptReceipt] = []
         self._reason_code = ""
         self._resulting_status: AgentLoopStatus | None = None
         self._finalized = False
 
     def record_execution(
-        self,
-        request_id: str,
-        intent: ActionIntent | None,
-        result: ActionResult,
+        self, request_id: str, intent: ActionIntent | None, result: ActionResult,
         currentness_probe_count: int = 0,
     ) -> None:
         self._intent = intent
@@ -232,12 +233,24 @@ class ControlTransitionScope:
             request_id, result, currentness_probe_count,
         ))
 
+    def record_execution_receipt(
+        self, receipt: AttemptReceipt, request_id: str,
+        intent: ActionIntent | None, result: ActionResult,
+    ) -> None:
+        self._attempt_receipts.append(receipt)
+        self.record_execution(request_id, intent, result, receipt.currentness_probe_count)
+        if receipt.acquisition_status is not None and receipt.acquisition_attempts:
+            self.record_acquisition(
+                receipt.acquisition_status, receipt.actual_origin, receipt.reason_code,
+                receipt.acquisition_attempts, receipt.request_kind,
+                expected_origin=receipt.expected_origin,
+            )
+
     def record_after(self, observation_id: str) -> None:
         self._after_id = observation_id
 
     def record_evaluations(
-        self,
-        action: ActionEvaluation | None = None,
+        self, action: ActionEvaluation | None = None,
         task: TaskEvaluation | None = None,
     ) -> None:
         self._action_evaluation = action or self._action_evaluation
@@ -256,35 +269,60 @@ class ControlTransitionScope:
     def set_resulting_status(self, status: AgentLoopStatus) -> None:
         self._resulting_status = status
 
-    def record_admission(self, status: AdmissionStatus, reason_code: str) -> None:
-        self._admission = AdmissionSummary(status, reason_code)
-        self._reason_code = reason_code
-
     def record_acquisition(
-        self,
-        status: AcquisitionStatus,
-        origin: AcquisitionOrigin | None,
-        reason_code: str,
-        attempts: int,
-        request_kind: ObservationRequestKind | str = "",
-        *,
+        self, status: AcquisitionStatus, origin: AcquisitionOrigin | None,
+        reason_code: str, attempts: int,
+        request_kind: ObservationRequestKind | str = "", *,
         expected_origin: AcquisitionOrigin | None = None,
     ) -> None:
         self._acquisitions.append(AcquisitionSummary(
-            status,
-            origin,
-            reason_code,
-            attempts,
-            str(request_kind),
-            expected_origin,
+            status, origin, reason_code, attempts, str(request_kind), expected_origin,
         ))
         self._reason_code = reason_code
+
+    def record_attempt(self, receipt: AttemptReceipt) -> None:
+        self._attempt_receipts.append(receipt)
+        if receipt.operation is AttemptOperation.CAPTURE:
+            self.record_acquisition(
+                receipt.acquisition_status or AcquisitionStatus.FAILED,
+                receipt.actual_origin, receipt.reason_code,
+                receipt.acquisition_attempts, receipt.request_kind,
+                expected_origin=receipt.expected_origin,
+            )
 
     def set_reason(self, reason_code: str) -> None:
         _require_reason_code(reason_code)
         self._reason_code = reason_code
 
-    def finalize(self, state: AgentLoopState, outcome: object) -> ControlTransition:
+    @property
+    def has_execution(self) -> bool:
+        return self._result is not None
+
+    @property
+    def reason_code(self) -> str:
+        return self._reason_code
+
+    @property
+    def has_effectful_execution(self) -> bool:
+        return bool(
+            self._result is not None
+            and self._result.dispatch_status is not DispatchStatus.NOT_SENT
+        )
+
+
+class ControlTransitionScope(_FactAccumulator):
+    """Ephemeral fact collector with exactly-once root finalization."""
+
+    def __init__(self, state: AgentLoopState, decision: AgentDecision) -> None:
+        self._initialize_facts(state, decision)
+        self._admission: AdmissionSummary | None = None
+
+    def record_admission(self, status: AdmissionStatus, reason_code: str) -> None:
+        self._admission = AdmissionSummary(status, reason_code)
+        self._reason_code = reason_code
+
+
+    def finalize(self, state: AgentLoopState, outcome: LoopDirective) -> ControlTransition:
         if self._finalized:
             raise RuntimeError("accepted decision scope was already finalized")
         self._finalized = True
@@ -303,6 +341,7 @@ class ControlTransitionScope:
             tuple(self._executions),
             _aggregate_acquisition(self._acquisitions),
             tuple(self._acquisitions),
+            tuple(self._attempt_receipts),
             after_id,
             turn.action_evaluation,
             turn.task_evaluation,
@@ -320,7 +359,7 @@ class ControlTransitionScope:
         return transition
 
 
-class ControlContinuationScope:
+class ControlContinuationScope(_FactAccumulator):
     """Typed confirmation continuation that never increments root count."""
 
     def __init__(
@@ -332,106 +371,14 @@ class ControlContinuationScope:
         if not source_transition_id:
             raise ValueError("confirmation continuation requires its root transition")
         self._source_transition_id = source_transition_id
-        self._decision = decision
-        self._before_id = state.current_observation.observation_id
-        self._progress_total = state.progress_event_total_count
-        self._intent: ActionIntent | None = None
-        self._request_id = ""
-        self._result: ActionResult | None = None
-        self._executions: list[ExecutionSummary] = []
-        self._after_id = ""
-        self._action_evaluation: ActionEvaluation | None = None
-        self._task_evaluation: TaskEvaluation | None = None
-        self._decision_result = ""
-        self._acquisitions: list[AcquisitionSummary] = []
-        self._reason_code = ""
-        self._resulting_status: AgentLoopStatus | None = None
-        self._finalized = False
-
-    def record_execution(
-        self,
-        request_id: str,
-        intent: ActionIntent | None,
-        result: ActionResult,
-        currentness_probe_count: int = 0,
-    ) -> None:
-        self._intent = intent
-        self._request_id = request_id
-        self._result = result
-        if result.dispatch_status is not DispatchStatus.NOT_SENT:
-            self._task_evaluation = None
-        self._executions.append(_execution_summary_from_result(
-            request_id, result, currentness_probe_count,
-        ))
-
-    def record_after(self, observation_id: str) -> None:
-        self._after_id = observation_id
-
-    def record_evaluations(
-        self,
-        action: ActionEvaluation | None = None,
-        task: TaskEvaluation | None = None,
-    ) -> None:
-        self._action_evaluation = action or self._action_evaluation
-        self._task_evaluation = task or self._task_evaluation
-
-    def record_decision_result(self, value: str) -> None:
-        self._decision_result = value
-
-    def _as_turn(self) -> Turn:
-        return Turn(
-            self._before_id, self._decision, self._intent, self._request_id,
-            self._result, self._after_id, self._action_evaluation,
-            self._task_evaluation, self._decision_result,
-        )
-
-    def set_resulting_status(self, status: AgentLoopStatus) -> None:
-        self._resulting_status = status
-
-    @property
-    def has_execution(self) -> bool:
-        return self._result is not None
-
-    @property
-    def reason_code(self) -> str:
-        return self._reason_code
-
-    @property
-    def has_effectful_execution(self) -> bool:
-        return bool(
-            self._result is not None
-            and self._result.dispatch_status is not DispatchStatus.NOT_SENT
-        )
+        self._initialize_facts(state, decision)
 
     def record_admission(self, status: AdmissionStatus, reason_code: str) -> None:
         del status
         self.set_reason(reason_code)
 
-    def record_acquisition(
-        self,
-        status: AcquisitionStatus,
-        origin: AcquisitionOrigin | None,
-        reason_code: str,
-        attempts: int,
-        request_kind: ObservationRequestKind | str = "",
-        *,
-        expected_origin: AcquisitionOrigin | None = None,
-    ) -> None:
-        self._acquisitions.append(AcquisitionSummary(
-            status,
-            origin,
-            reason_code,
-            attempts,
-            str(request_kind),
-            expected_origin,
-        ))
-        self._reason_code = reason_code
 
-    def set_reason(self, reason_code: str) -> None:
-        _require_reason_code(reason_code)
-        self._reason_code = reason_code
-
-    def finalize(self, state: AgentLoopState, outcome: object) -> ControlContinuation:
+    def finalize(self, state: AgentLoopState, outcome: LoopDirective) -> ControlContinuation:
         if self._finalized:
             raise RuntimeError("confirmation continuation was already finalized")
         self._finalized = True
@@ -440,6 +387,7 @@ class ControlContinuationScope:
             state.current_observation.observation_id,
             _aggregate_acquisition(self._acquisitions),
             tuple(self._acquisitions),
+            tuple(self._attempt_receipts),
             self._executions[-1] if self._executions else None,
             tuple(self._executions),
             self._intent,
@@ -524,13 +472,12 @@ def _pending_kind(state: AgentLoopState) -> PendingKind:
     return PendingKind.NONE
 
 
-def _outcome_status(outcome: object):
-    if hasattr(outcome, "status"):
-        return outcome.status
-    if isinstance(outcome, tuple) and outcome:
-        terminal = outcome[-1]
-        return terminal.status if terminal is not None else None
-    return None
+def _outcome_status(outcome: LoopDirective):
+    match outcome:
+        case Continue():
+            return None
+        case Pause(status=status) | Terminate(status=status):
+            return status
 
 
 def _default_reason(decision: AgentDecision, status: object, turn: Turn) -> str:

@@ -23,7 +23,7 @@ from affordance_runtime.world.contracts import (
 from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.result import AgentResult
+    from affordance_runtime.agent.control_outcome import LoopDirective
     from affordance_runtime.agent.session import AgentRunSession
 
 
@@ -84,7 +84,7 @@ class ProgressEvent:
 class SelectionProgressResult:
     disposition: SelectionProgressDisposition
     event: ProgressEvent | None = None
-    terminal_result: AgentResult | None = None
+    terminal_result: LoopDirective | None = None
 
 
 @dataclass
@@ -161,17 +161,14 @@ def apply_selection_progress(
 ) -> SelectionProgressResult:
     """Apply zero-call containment after admission and before binding."""
 
-    from affordance_runtime.agent.result import AgentFailureCode, build_result
+    from affordance_runtime.agent.control_outcome import Terminate
+    from affordance_runtime.agent.result_code import AgentFailureCode
     from affordance_runtime.agent.state import AgentLoopStatus
 
     evaluation = session.state.current_task_evaluation
     if evaluation is None:
-        terminal = build_result(
-            AgentLoopStatus.FAILED,
-            session.task,
-            session.state,
-            0,
-            0,
+        terminal = Terminate(
+            AgentLoopStatus.FAILED, "task_evaluation_unavailable",
             "validated task evaluation is unavailable",
         )
         return SelectionProgressResult(SelectionProgressDisposition.TERMINATE_NO_PROGRESS, terminal_result=terminal)
@@ -185,13 +182,16 @@ def apply_selection_progress(
     assert progress.event is not None
     session.state._append_progress_event(progress.event)
     if progress.disposition == SelectionProgressDisposition.ALREADY_SATISFIED:
-        return progress
-    terminal = build_result(
+        from affordance_runtime.agent.control_outcome import Continue
+
+        return SelectionProgressResult(
+            progress.disposition,
+            progress.event,
+            Continue("already_satisfied"),
+        )
+    terminal = Terminate(
         AgentLoopStatus.FAILED,
-        session.task,
-        session.state,
-        0,
-        0,
+        "no_progress_repetition",
         "same semantic selection repeated without verified progress",
         failure_code=AgentFailureCode.NO_PROGRESS_REPETITION,
     )

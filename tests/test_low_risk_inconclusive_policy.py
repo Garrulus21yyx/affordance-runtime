@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from test_agent_loop import _task, _world
 
+from affordance_runtime.agent.control_outcome import Continue
 from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
@@ -44,7 +45,7 @@ def test_low_risk_sent_local_inconclusive_continues_from_fresh_world() -> None:
         _task(), state, request, ActionResult(request.request_id, DispatchStatus.SENT, "dom", True),
         _action(request), _task_evaluation(TaskEvaluationStatus.INCOMPLETE),
     )
-    assert result is None
+    assert isinstance(result, Continue)
     assert state.pending_unknown_request is None
 
 

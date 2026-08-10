@@ -61,6 +61,31 @@ class MiniWobBreadthCampaignAcceptance:
 
 
 @dataclass(frozen=True)
+class ProviderCapacityEvidence:
+    """Frozen, explicit preflight evidence; never inferred from run outcomes."""
+
+    schema_version: str
+    provider_id: str
+    model_id: str
+    manifest_digest: str
+    required_attempt_budget: int
+    declared_attempt_budget: int
+    checked: bool
+
+    @property
+    def sufficient(self) -> bool:
+        return self.checked and self.declared_attempt_budget >= self.required_attempt_budget
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "provider-capacity-preflight.v1":
+            raise ValueError("provider capacity schema is unsupported")
+        if not self.provider_id or not self.model_id or not self.manifest_digest:
+            raise ValueError("provider capacity evidence requires frozen identity")
+        if self.required_attempt_budget <= 0 or self.declared_attempt_budget < 0:
+            raise ValueError("provider capacity budgets are invalid")
+
+
+@dataclass(frozen=True)
 class MiniWobBreadthCaseRecord:
     case_id: str
     task_family_label: str
@@ -82,3 +107,4 @@ class MiniWobBreadthCampaignOutcome:
     provider_id: str
     model_id: str
     grounding_profile: str
+    provider_capacity: ProviderCapacityEvidence | None = None

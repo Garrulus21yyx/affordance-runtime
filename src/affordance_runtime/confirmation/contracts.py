@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.execution.contracts import ActionIntent
+from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.risk.contracts import ConfirmationSubject
 from affordance_runtime.world.contracts import ActionRisk
 
 
@@ -18,12 +20,26 @@ class ConfirmationRequest:
     risk: ActionRisk
     consequences: tuple[str, ...]
     summary: str
+    subject: ConfirmationSubject = field(repr=False)
 
     def __post_init__(self) -> None:
         if not all(value.strip() for value in (self.confirmation_id, self.subject_id, self.summary)):
             raise ValueError("confirmation request requires request, subject, and summary")
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "consequences", tuple(self.consequences))
+        if self.subject_id != self.subject.subject_id:
+            raise ValueError("confirmation subject identity must be canonical")
+        if (
+            self.intent.semantic_action != self.subject.semantic_action
+            or self.intent.target_id != self.subject.target_id
+            or self.intent.destination_id != self.subject.destination_id
+            or to_json_compatible(self.intent.parameters)
+            != to_json_compatible(self.subject.parameters)
+            or tuple(sorted(self.semantic_effects)) != self.subject.assessed_effects
+            or self.risk is not self.subject.risk
+            or tuple(sorted(self.consequences)) != self.subject.consequences
+        ):
+            raise ValueError("confirmation request does not match canonical semantics")
 
 
 class ConfirmationDecisionKind(StrEnum):

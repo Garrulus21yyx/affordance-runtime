@@ -90,6 +90,10 @@ class AgentLoopState:
                 *transition.acquisition_attempts,
                 *continuation.acquisition_attempts,
             )
+            receipts = (
+                *transition.attempt_receipts,
+                *continuation.attempt_receipts,
+            )
             acquisition = None
             if attempts:
                 final = attempts[-1]
@@ -103,6 +107,7 @@ class AgentLoopState:
                 execution_attempts=execution_attempts,
                 acquisition=acquisition,
                 acquisition_attempts=attempts,
+                attempt_receipts=receipts,
                 after_observation_id=continuation.after_observation_id,
                 action_evaluation=(
                     continuation.action_evaluation or transition.action_evaluation

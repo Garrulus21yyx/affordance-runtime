@@ -5,11 +5,17 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from affordance_runtime.agent.attempt_receipt import (
+    AttemptDisposition,
+    AttemptOperation,
+    AttemptReceipt,
+)
+from affordance_runtime.agent.control_outcome import Pause
 from affordance_runtime.agent.control_transition import (
     ControlContinuationScope,
     ControlTransitionScope,
 )
-from affordance_runtime.agent.result import AgentFailureCode, build_result
+from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -161,12 +167,9 @@ def no_fresh_after_result(
 ):
     state = session.state
     state.set_pending_unknown_effect(request)
-    return build_result(
+    return Pause(
         AgentLoopStatus.WAITING_USER,
-        session.task,
-        state,
-        0,
-        0,
+        acquisition.reason_code,
         acquisition.reason_code,
         failure_code=acquisition.failure_code,
     )
@@ -281,14 +284,27 @@ async def capture_for_session(
             expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
         )
         return _with_request(unavailable, request.kind)
+    attempt_id = session.accounting.next_attempt_id()
     try:
         acquisition = await session.environment.capture(request)
     except asyncio.CancelledError:
-        _record_capture_exception(session, scope, request, "capture_cancelled")
+        _record_capture_exception(
+            session, scope, request, attempt_id, "capture_cancelled",
+            AttemptDisposition.CANCELLED, "CancelledError",
+        )
         raise
-    except Exception:
-        _record_capture_exception(session, scope, request, "capture_exception")
+    except Exception as exc:
+        _record_capture_exception(
+            session, scope, request, attempt_id, "capture_exception",
+            AttemptDisposition.THREW, type(exc).__name__,
+        )
         raise
+    if not isinstance(acquisition, ObservationAcquisition):
+        _record_capture_exception(
+            session, scope, request, attempt_id, "capture_malformed",
+            AttemptDisposition.MALFORMED, "",
+        )
+        raise TypeError("WorldEnvironment.capture returned a malformed contract")
     acquired = _with_request(
         validate_fresh_acquisition(
             acquisition,
@@ -298,28 +314,46 @@ async def capture_for_session(
         ),
         request.kind,
     )
-    session.observation_count += acquired.attempts
-    scope.record_acquisition(
-        acquired.status,
+    receipt = AttemptReceipt(
+        attempt_id,
+        AttemptOperation.CAPTURE,
+        str(request.kind),
+        AcquisitionOrigin.INDEPENDENT_CAPTURE,
         acquired.actual_origin,
+        AttemptDisposition.RETURNED,
         acquired.reason_code,
-        acquired.attempts,
-        request.kind,
-        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        1,
+        0,
+        0,
+        0,
+        acquisition_status=acquired.status,
     )
+    session.accounting.record(receipt)
+    scope.record_attempt(receipt)
     return acquired
 
 
-def _record_capture_exception(session, scope, request, reason_code: str) -> None:
-    session.observation_count += 1
-    scope.record_acquisition(
-        AcquisitionStatus.FAILED,
+def _record_capture_exception(
+    session, scope, request, attempt_id: str, reason_code: str,
+    disposition: AttemptDisposition, exception_class: str,
+) -> None:
+    receipt = AttemptReceipt(
+        attempt_id,
+        AttemptOperation.CAPTURE,
+        str(request.kind),
+        AcquisitionOrigin.INDEPENDENT_CAPTURE,
         None,
+        disposition,
         reason_code,
         1,
-        request.kind,
-        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        0,
+        0,
+        0,
+        exception_class=exception_class,
+        acquisition_status=AcquisitionStatus.FAILED,
     )
+    session.accounting.record(receipt)
+    scope.record_attempt(receipt)
 
 
 def _with_request(

@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
+from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.execution import ActionError, DispatchStatus
@@ -14,7 +15,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
-from affordance_runtime.world import AcquisitionStatus, ObservationRequestKind
+from affordance_runtime.world import AcquisitionStatus
 
 
 @dataclass
@@ -43,6 +44,8 @@ class BenchmarkInstrumentation:
     cleanup_failure_code: str = ""
     cleanup_exception_class: str = ""
     cleanup_failures: int = 0
+    watchdog_code: str = ""
+    watchdog_exception_class: str = ""
     environment_reset_acquisitions: int = 0
     environment_capture_calls: int = 0
     environment_post_acquisitions: int = 0
@@ -63,10 +66,17 @@ class BenchmarkInstrumentation:
         self.custom_metrics[name] = value
 
     def record_failure(self, origin: CaseFailureOrigin, code: str, exception: Exception) -> None:
+        if origin in {CaseFailureOrigin.HARNESS_WATCHDOG, CaseFailureOrigin.CLEANUP}:
+            raise ValueError("watchdog and cleanup facts have dedicated owners")
         if self.failure_origin is CaseFailureOrigin.NONE:
             self.failure_origin = origin
             self.failure_code = code
             self.exception_class = type(exception).__name__
+
+    def record_watchdog(self, code: str, exception: Exception) -> None:
+        if not self.watchdog_code:
+            self.watchdog_code = code
+            self.watchdog_exception_class = type(exception).__name__
 
     def record_cleanup_failure(self, code: str, exception: Exception) -> None:
         if self.cleanup_failures:
@@ -196,15 +206,7 @@ class CountingEnvironment:
         try:
             return await self.wrapped.capture(request)
         except Exception as exc:
-            origin = (
-                CaseFailureOrigin.ACTION_BINDING
-                if request.kind is ObservationRequestKind.BINDING_REFRESH
-                else CaseFailureOrigin.CURRENTNESS
-                if request.kind is ObservationRequestKind.CURRENTNESS_REFRESH
-                else CaseFailureOrigin.POST_ACTION_OBSERVATION
-                if request.kind is ObservationRequestKind.POST_ACTION_FALLBACK
-                else CaseFailureOrigin.DECISION_CONTROL
-            )
+            origin = observation_failure_origin(request.kind)
             self.instrumentation.record_failure(origin, "capture_exception", exc)
             raise
 

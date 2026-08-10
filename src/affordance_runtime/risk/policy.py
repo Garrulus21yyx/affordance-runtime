@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.risk.contracts import RiskAssessment, RiskDecisionKind, semantic_subject_id
+from affordance_runtime.risk.contracts import ConfirmationSubject, RiskAssessment, RiskDecisionKind
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.world.contracts import ActionRisk, AdmittedActionSelection
 
@@ -19,17 +19,20 @@ class RiskPolicy:
         consequences = _consequences(selection)
         effective_risk = _effective_risk(task.risk_profile, selection.risk)
         decision, reason = _decision(task, selection, effective_risk)
+        subject = ConfirmationSubject.from_selection(
+            selection,
+            assessed_effects=tuple(sorted(selection.semantic_effects)),
+            consequences=consequences,
+            effective_risk=effective_risk,
+        )
         return RiskAssessment(
             decision,
             effective_risk,
             tuple(sorted(selection.semantic_effects)),
             consequences,
-            semantic_subject_id(
-                selection,
-                consequences=consequences,
-                effective_risk=effective_risk,
-            ),
+            subject.subject_id,
             reason,
+            subject,
         )
 
 

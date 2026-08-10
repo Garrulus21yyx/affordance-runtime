@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from affordance_runtime.agent import (
     AgentEpisodeRunner,
@@ -45,7 +46,14 @@ async def run_suite(
     )
     completed = []
     for index, case in enumerate(manifest.cases, 1):
-        result = await _run_case(case)
+        result = replace(
+            await _run_case(case),
+            suite_id=identity.suite_id,
+            profile_id=identity.profile_id,
+            seed=identity.seed,
+            manifest_digest=identity.manifest_digest,
+            harness_schema_version=identity.harness_schema_version,
+        )
         completed.append(result)
         if case_completed is not None:
             case_completed(index, result)
@@ -116,7 +124,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
         )
     except _HarnessWatchdogTimeout as exc:
         failure = "case timeout"
-        instrumentation.record_failure(CaseFailureOrigin.HARNESS_WATCHDOG, "case_timeout", exc)
+        instrumentation.record_watchdog("case_timeout", exc)
         session = session_holder.get("session")
         if session is not None:
             partial = session.snapshot_partial_episode()

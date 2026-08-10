@@ -5,6 +5,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from affordance_runtime.agent.control_outcome import (
+    Continue,
+    LoopDirective,
+    Pause,
+    Terminate,
+    directive,
+)
 from affordance_runtime.agent.control_transition import (
     AdmissionStatus,
     ControlTransitionScope,
@@ -25,12 +32,6 @@ from affordance_runtime.agent.observation_control import (
     capture_for_session,
 )
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
-from affordance_runtime.agent.result import (
-    AgentResult,
-    build_result,
-    observation_budget_result,
-    refresh_control_projection,
-)
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
@@ -48,7 +49,7 @@ from affordance_runtime.world.contracts import ActionSpace
 
 SelectionExecutor = Callable[
     [AgentRunSession, ActionSpace, SelectAction, ControlTransitionScope],
-    Awaitable[object],
+    Awaitable[LoopDirective],
 ]
 
 
@@ -71,7 +72,7 @@ async def run_policy_turn(
     task_evaluator: TaskEvaluator,
     waiter: WaitController,
     execute_selection: SelectionExecutor,
-) -> object:
+) -> LoopDirective:
     task, state = session.task, session.state
     context = context_builder.build(
         task,
@@ -89,18 +90,15 @@ async def run_policy_turn(
     outcome = await policy.decide(context)
     state.remaining_turns -= 1
     if isinstance(outcome, PolicyFailure):
-        return build_result(
+        return Terminate(
             AgentLoopStatus.FAILED,
-            task,
-            state,
-            0,
-            0,
+            f"policy_{outcome.kind}",
             outcome.reason,
             policy_failure=outcome,
         )
     decision = outcome
     if not accept_current_decision(session, decision):
-        return None
+        return Continue("stale_decision")
     scope = ControlTransitionScope(state, decision)
     try:
         routed = await _route_decision(
@@ -116,15 +114,15 @@ async def run_policy_turn(
     except asyncio.CancelledError:
         scope.set_reason("runtime_cancelled")
         scope.set_resulting_status(AgentLoopStatus.CANCELLED)
-        scope.finalize(state, None)
+        scope.finalize(state, Terminate(AgentLoopStatus.CANCELLED, "runtime_cancelled"))
         raise
     except Exception:
         scope.set_reason("runtime_exception")
         scope.set_resulting_status(AgentLoopStatus.FAILED)
-        scope.finalize(state, None)
+        scope.finalize(state, Terminate(AgentLoopStatus.FAILED, "runtime_exception"))
         raise
-    transition = scope.finalize(state, routed)
-    return _refresh_routed_result(routed, state, transition.reason_code)
+    scope.finalize(state, routed)
+    return routed
 
 
 async def _route_decision(
@@ -136,15 +134,15 @@ async def _route_decision(
     waiter,
     execute_selection,
     scope,
-):
-    task, state = session.task, session.state
+) -> LoopDirective:
+    state = session.state
     if isinstance(decision, AskUser):
         scope.set_reason("user_input_requested")
         state.set_pending_question(decision.question)
-        return build_result(AgentLoopStatus.WAITING_USER, task, state, 0, 0, decision.question)
+        return Pause(AgentLoopStatus.WAITING_USER, "user_input_requested", decision.question)
     if isinstance(decision, Abort):
         scope.set_reason(f"abort_{decision.category}")
-        return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, decision.reason)
+        return Terminate(AgentLoopStatus.FAILED, f"abort_{decision.category}", decision.reason)
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator, scope)
     if isinstance(decision, RequestObservation):
@@ -156,7 +154,7 @@ async def _route_decision(
     rejection = _current_page_selection_rejection(session, decision)
     if rejection:
         scope.record_admission(AdmissionStatus.REJECTED, _selection_rejection_code(rejection))
-        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, rejection)
+        return Terminate(AgentLoopStatus.BLOCKED, _selection_rejection_code(rejection), rejection)
     return await execute_selection(session, action_space, decision, scope)
 
 
@@ -180,11 +178,13 @@ async def _wait_refresh(
     decision: Wait,
     waiter: WaitController,
     scope: ControlTransitionScope,
-):
-    task, state = session.task, session.state
+) -> LoopDirective:
     if not _can_observe(session):
         scope.set_reason("observation_budget_exhausted")
-        return observation_budget_result(task, state, 0, 0)
+        return Terminate(
+            AgentLoopStatus.FAILED, "observation_budget_exhausted",
+            "agent loop observation budget exhausted",
+        )
     request = WorldObservationRequest(
         ObservationRequestKind.WAIT_REFRESH, "fresh observation after wait",
     )
@@ -198,18 +198,19 @@ async def _wait_refresh(
             request.kind,
             expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
         )
-        return build_result(
-            AgentLoopStatus.BLOCKED, task, state, 0, 0, unavailable.reason_code,
+        return Terminate(
+            AgentLoopStatus.BLOCKED, unavailable.reason_code, unavailable.reason_code,
             failure_code=unavailable.failure_code,
         )
     if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
         scope.record_decision_result("wait_budget_exceeded")
         scope.set_reason("wait_budget_exhausted")
-        return build_result(
-            AgentLoopStatus.BLOCKED, task, state, 0, 0, "total wait budget exhausted",
+        return Terminate(
+            AgentLoopStatus.BLOCKED, "wait_budget_exhausted",
+            "total wait budget exhausted",
         )
     await waiter.wait(decision.max_wait_ms)
-    session.waited_ms += decision.max_wait_ms
+    session.accounting.record_wait(decision.max_wait_ms)
     return await _fresh_observation(session, decision, request, scope)
 
 
@@ -235,11 +236,14 @@ async def _fresh_observation(
     decision: AgentDecision,
     request: WorldObservationRequest,
     scope: ControlTransitionScope,
-) -> None | object:
+) -> LoopDirective:
     state = session.state
     if not _can_observe(session):
         scope.set_reason("observation_budget_exhausted")
-        return observation_budget_result(session.task, state, 0, 0)
+        return Terminate(
+            AgentLoopStatus.FAILED, "observation_budget_exhausted",
+            "agent loop observation budget exhausted",
+        )
     previous_id = state.current_observation.observation_id
     acquired = await capture_for_session(session, previous_id, request, scope)
     if acquired.observation is None:
@@ -247,18 +251,15 @@ async def _fresh_observation(
             AgentLoopStatus.BLOCKED
             if acquired.attempts == 0 else AgentLoopStatus.FAILED
         )
-        return build_result(
+        return directive(
             status,
-            session.task,
-            state,
-            0,
-            0,
+            acquired.reason_code,
             acquired.reason_code,
             failure_code=acquired.failure_code,
         )
     state.current_observation = acquired.observation
     state.current_task_evaluation = None
-    return None
+    return Continue("observation_acquired")
 
 
 async def _propose_done(
@@ -266,19 +267,19 @@ async def _propose_done(
     decision: ProposeDone,
     task_evaluator: TaskEvaluator,
     scope: ControlTransitionScope,
-) -> None | object:
+) -> LoopDirective:
     task, state = session.task, session.state
     index = WorldEvidenceIndex.from_observation(state.current_observation)
     known = {criterion_id(item) for item in task.success_criteria}
     if len(set(decision.claimed_criteria)) != len(decision.claimed_criteria) or not set(decision.claimed_criteria).issubset(known):
         scope.set_reason("invalid_completion_claim")
-        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "completion claim contains an unknown or duplicate criterion")
+        return Terminate(AgentLoopStatus.BLOCKED, "invalid_completion_claim", "completion claim contains an unknown or duplicate criterion")
     if decision.unresolved_items:
         scope.set_reason("invalid_completion_claim")
-        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "completion claim retains unresolved items")
+        return Terminate(AgentLoopStatus.BLOCKED, "invalid_completion_claim", "completion claim retains unresolved items")
     if any(not index.resolve(item) for item in decision.evidence_refs):
         scope.set_reason("completion_evidence_not_current")
-        return build_result(AgentLoopStatus.BLOCKED, task, state, 0, 0, "completion evidence is not current")
+        return Terminate(AgentLoopStatus.BLOCKED, "completion_evidence_not_current", "completion evidence is not current")
     try:
         evaluation = await validated_task_evaluation(
             task_evaluator,
@@ -287,20 +288,18 @@ async def _propose_done(
         )
     except ValueError as exc:
         scope.set_reason("task_evaluation_invalid")
-        return build_result(
+        return Terminate(
             AgentLoopStatus.FAILED,
-            task,
-            state,
-            0,
-            0,
+            "task_evaluation_invalid",
             str(exc),
-            reason_code="task_evaluation_invalid",
         )
     state.current_task_evaluation = evaluation
     scope.record_evaluations(task=evaluation)
     scope.set_reason(f"task_{evaluation.status}")
     status = task_evaluation_loop_status(evaluation)
-    return None if status is None else build_result(status, task, state, 0, 0, evaluation.reason)
+    return Continue("task_incomplete") if status is None else directive(
+        status, f"task_{evaluation.status}", evaluation.reason,
+    )
 
 
 def _can_observe(session: AgentRunSession) -> bool:
@@ -327,10 +326,10 @@ def _request_action_page(
     context_builder: ContextBuilder,
     decision: RequestActionPage,
     scope: ControlTransitionScope,
-) -> object | None:
+) -> LoopDirective:
     if not _valid_page_request(session, decision):
         scope.set_reason("invalid_action_page_request")
-        return build_result(AgentLoopStatus.BLOCKED, session.task, session.state, 0, 0, "invalid action page request")
+        return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
     previous_page_id = session.current_action_page.page_id if session.current_action_page else ""
     try:
         session.current_action_page = context_builder.page(
@@ -343,11 +342,11 @@ def _request_action_page(
         )
     except ValueError:
         scope.set_reason("invalid_action_page_request")
-        return build_result(AgentLoopStatus.BLOCKED, session.task, session.state, 0, 0, "invalid action page request")
+        return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
     result = "page_unchanged" if session.current_action_page.page_id == previous_page_id else "page_changed"
     scope.record_decision_result(result)
     scope.set_reason(result)
-    return None
+    return Continue(result)
 
 
 def _current_page_selection_rejection(session: AgentRunSession, decision: SelectAction) -> str:
@@ -363,11 +362,3 @@ def _selection_rejection_code(message: str) -> str:
     if "destination" in message:
         return "destination_outside_current_page"
     return "action_outside_current_page"
-
-
-def _refresh_routed_result(outcome, state, reason_code):
-    if isinstance(outcome, AgentResult):
-        return refresh_control_projection(outcome, state, reason_code)
-    if isinstance(outcome, tuple) and outcome and isinstance(outcome[-1], AgentResult):
-        return (*outcome[:-1], refresh_control_projection(outcome[-1], state, reason_code))
-    return outcome

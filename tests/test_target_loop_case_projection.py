@@ -95,8 +95,7 @@ def test_success_reason_does_not_become_a_failure_code() -> None:
 
 def test_watchdog_snapshot_has_explicit_precedence_over_final_snapshot() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.failure_origin = CaseFailureOrigin.HARNESS_WATCHDOG
-    instrumentation.failure_code = "case_timeout"
+    instrumentation.record_watchdog("case_timeout", TimeoutError())
     projected = project_case_result(
         "case",
         None,
@@ -190,11 +189,7 @@ def test_metric_collision_preserves_runtime_and_component_facts_independently() 
 
 def test_watchdog_remains_primary_when_cleanup_also_fails() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_failure(
-        CaseFailureOrigin.HARNESS_WATCHDOG,
-        "case_timeout",
-        TimeoutError(),
-    )
+    instrumentation.record_watchdog("case_timeout", TimeoutError())
     instrumentation.record_cleanup_failure(
         "cleanup_exception", RuntimeError("private cleanup detail")
     )

@@ -19,15 +19,21 @@ class ClassifiedOutcome:
 
 
 def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
+    facts = result.failure_facts
     value = _metric(result, "official_success_count")
-    if result.harness_integrity_failures:
+    if facts.harness_integrity_code or result.harness_integrity_failures:
         return ClassifiedOutcome(
             MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "harness_integrity"
         )
-    if result.watchdog_triggered or result.case_failure_code == "case_timeout":
+    if (
+        facts.watchdog_code
+        or result.watchdog_triggered
+        or result.case_failure_code == "case_timeout"
+    ):
         return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
     if (
-        result.failure_origin is CaseFailureOrigin.CLEANUP
+        facts.cleanup_code
+        or result.failure_origin is CaseFailureOrigin.CLEANUP
         or result.case_failure_code == "cleanup_exception"
     ):
         return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
@@ -37,7 +43,13 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
     if result.case_failure_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
-    policy = result.case_failure_code.removeprefix("policy_").casefold()
+    legacy_policy = (
+        result.case_failure_code.removeprefix("policy_")
+        if result.case_failure_code.startswith("policy_") else ""
+    )
+    policy = (
+        facts.policy_failure_code or result.last_policy_failure_code or legacy_policy
+    ).casefold()
     if policy == "provider_unavailable":
         return ClassifiedOutcome(MiniWobTaskOutcome.PROVIDER_UNAVAILABLE, "typed_policy_failure")
     if policy == "timeout":
@@ -76,7 +88,11 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
             )
         if result.latest_task_status == "unknown":
             return ClassifiedOutcome(MiniWobTaskOutcome.WAITING_USER_TASK_UNKNOWN, "typed_task_status")
-    origin = _ORIGIN_OUTCOMES.get(result.failure_origin)
+    origin = _ORIGIN_OUTCOMES.get(
+        facts.component_origin
+        if facts.component_origin is not CaseFailureOrigin.NONE
+        else result.failure_origin
+    )
     if origin is not None:
         return ClassifiedOutcome(origin, "typed_failure_origin")
     if result.failure_reason or result.failure_code or result.exception_class:

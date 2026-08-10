@@ -12,6 +12,7 @@ CANONICAL_METRICS = frozenset({
     "post_action_acquisitions", "provider_retry_count", "prompt_tokens",
     "completion_tokens", "total_tokens", "model_latency_ms",
     "ask_user_count", "wait_count", "page_request_count", "cleanup_failures",
+    "observation_contract_exceptions",
 })
 
 

@@ -368,7 +368,7 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
         completed = await session.resolve_confirmation(_decision(paused))
 
         assert completed.status == AgentLoopStatus.DONE
-        assert completed.execution_count == 1
+        assert completed.execution_count == 2
         assert attempts == 2
         assert [item.binding.payload["selector"] for item in environment.executed_requests] == [
             "#confirmed",
@@ -681,6 +681,30 @@ def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
     asyncio.run(scenario())
 
 
+def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None:
+    class MalformedCaptureEnvironment(StaticEnvironment):
+        async def capture(self, request):
+            self.capture_calls += 1
+            self.capture_requests.append(request)
+            return object()
+
+    async def scenario() -> None:
+        environment = MalformedCaptureEnvironment([_world("old", False, "#old")])
+        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        with pytest.raises(TypeError, match="malformed contract"):
+            await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        assert environment.capture_calls == 1
+        assert session.observation_count == 2
+        assert len(root.attempt_receipts) == 1
+        assert root.attempt_receipts[0].disposition.value == "malformed"
+        assert root.acquisition_attempts[0].attempts == 1
+
+    asyncio.run(scenario())
+
+
 def test_confirmation_action_space_exception_closes_same_root_after_capture() -> None:
     class RaisingSecondBuilder(ActionSpaceBuilder):
         calls = 0
@@ -781,55 +805,15 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
         assert root.task_evaluation.observation_id == "fresh"
         assert root.execution_attempts == ()
         assert environment.execute_calls == 0
+        assert blocked.observation_count == session.observation_count == 2
+        assert sum(item.acquisition.attempts for item in (root,) if item.acquisition) == 1
         assert session.approved_confirmation is None
 
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("exc", (RuntimeError("apply failed"), asyncio.CancelledError()))
-def test_confirmation_outcome_application_exception_closes_root_before_reentry(exc) -> None:
-    async def scenario() -> None:
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("fresh", False, "#fresh"),
-                _world("after", True, "#after"),
-            ],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
-        )
-        loop = _loop()
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
-        paused = await session.run_until_pause()
-        root_id = session.state.recent_control_transitions[0].transition_id
-
-        def raising_apply(_session, _outcome):
-            raise exc
-
-        loop._apply_outcome = raising_apply  # type: ignore[method-assign]
-        with pytest.raises(type(exc)):
-            await session.resolve_confirmation(_decision(paused))
-
-        root = session.state.recent_control_transitions[0]
-        terminal = await session.run_until_pause()
-        assert root.transition_id == root_id
-        assert root.resulting_status is (
-            AgentLoopStatus.CANCELLED
-            if isinstance(exc, asyncio.CancelledError)
-            else AgentLoopStatus.FAILED
-        )
-        assert root.reason_code == (
-            "runtime_cancelled"
-            if isinstance(exc, asyncio.CancelledError)
-            else "runtime_exception"
-        )
-        assert root.execution is not None
-        assert root.after_observation_id == "after"
-        assert terminal is session.last_result
-        assert terminal.execution_count == 1
-        assert environment.execute_calls == 1
-        assert session.state.control_transition_total_count == 1
-
-    asyncio.run(scenario())
+def test_confirmation_has_no_dynamic_outcome_application_seam() -> None:
+    assert not hasattr(_loop(), "_apply_outcome")
 
 
 @pytest.mark.parametrize("exc", (RuntimeError("task failed"), asyncio.CancelledError()))

@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from affordance_runtime.benchmarks.external_breadth.attestation import validate_campaign_tree
+from affordance_runtime.benchmarks.external_breadth.campaign_contracts import ProviderCapacityEvidence
 from affordance_runtime.benchmarks.external_breadth.capability_inventory import (
     build_capability_inventory,
     capability_inventory_digest,
@@ -50,15 +51,24 @@ def main() -> int:
         _write_frozen_evidence(args.output, census, manifest)
         return 0
     errors = _configuration_errors(manifest)
+    capacity = _provider_capacity(manifest)
+    if not capacity.sufficient:
+        errors.append("declared provider attempt capacity is insufficient")
     if args.command == "preflight":
-        print(json.dumps({"available": not errors, "errors": errors}, sort_keys=True))
+        print(json.dumps({
+            "available": not errors,
+            "errors": errors,
+            "provider_capacity": asdict(capacity),
+        }, sort_keys=True))
         return int(bool(errors))
     errors.extend(_argument_errors(args))
     if errors:
         print(json.dumps({"status": "NOT_RUN_UNAVAILABLE_CONFIG", "errors": errors}, sort_keys=True))
         return 1
     policy = model_policy_from_environment(grounding_variant="format-only")
-    outcome = asyncio.run(run_breadth_campaign(manifest, policy, args.output_dir))
+    outcome = asyncio.run(run_breadth_campaign(
+        manifest, policy, args.output_dir, provider_capacity=capacity,
+    ))
     attestation = write_campaign_reports(outcome, args.output_dir)
     tree_errors = validate_campaign_tree(args.output_dir)
     evidence = json.loads(attestation.read_text(encoding="utf-8"))
@@ -138,6 +148,21 @@ def _configuration_errors(manifest) -> list[str]:
     except (AttributeError, ValueError):
         errors.append("Mistral model policy composition is unavailable")
     return errors
+
+
+def _provider_capacity(manifest) -> ProviderCapacityEvidence:
+    required = sum(item.max_turns for item in manifest.cases)
+    raw = os.environ.get("MINIWOB_PROVIDER_ATTEMPT_BUDGET", "").strip()
+    declared = int(raw) if raw.isdecimal() else 0
+    return ProviderCapacityEvidence(
+        "provider-capacity-preflight.v1",
+        "mistral",
+        manifest.model_profile,
+        breadth_manifest_digest(manifest),
+        required,
+        declared,
+        bool(raw),
+    )
 
 
 def _argument_errors(args) -> list[str]:

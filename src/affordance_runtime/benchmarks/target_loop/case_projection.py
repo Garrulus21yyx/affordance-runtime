@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import re
+from dataclasses import fields
+from enum import Enum
+from typing import Any, cast
 
 from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
     CaseFailureOrigin,
+    FailureFacts,
     MetricMeasurement,
+    TerminalReasonCode,
 )
+from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.metric_registry import canonical_metric_collisions
 from affordance_runtime.benchmarks.target_loop.terminal_reasons import project_terminal_reason_code
@@ -56,6 +62,35 @@ def project_case_result(
     if metric_collisions and failure_origin is CaseFailureOrigin.NONE:
         failure_origin = CaseFailureOrigin.UNKNOWN
     agent_failure = _agent_failure_code(result)
+    component_origin = instrumentation.failure_origin
+    component_code = (
+        _safe_code(instrumentation.failure_code, "runtime_failure")
+        if component_origin is not CaseFailureOrigin.NONE else ""
+    )
+    exception_class = _safe_exception_class(
+        instrumentation.exception_class
+    )
+    policy_code = (
+        str(result.policy_failure.kind)
+        if result is not None and result.policy_failure is not None else ""
+    )
+    cleanup_code = _safe_code(
+        instrumentation.cleanup_failure_code, "cleanup_exception"
+    ) if instrumentation.cleanup_failures else ""
+    integrity_code = "metric_name_collision" if metric_collisions else ""
+    facts = FailureFacts(
+        runtime_reason,
+        agent_failure,
+        policy_code,
+        component_origin,
+        component_code,
+        exception_class,
+        _safe_code(instrumentation.watchdog_code, "case_timeout")
+        if instrumentation.watchdog_code else "",
+        cleanup_code,
+        _safe_exception_class(instrumentation.cleanup_exception_class),
+        integrity_code,
+    )
     return BenchmarkCaseResult(
         case_id=case_id,
         status=str(result.status) if result else str(AgentLoopStatus.FAILED),
@@ -77,17 +112,10 @@ def project_case_result(
         no_progress_count=metadata.no_progress_count if metadata else 0,
         last_progress_event_type=metadata.last_progress_event_type if metadata else "",
         failure_origin=failure_origin,
-        failure_code=_component_failure_code(
-            instrumentation, failure_origin, case_failure_code
-        ),
-        exception_class=_safe_exception_class(
-            _primary_exception_class(instrumentation, failure_origin)
-        ),
+        failure_code=component_code or case_failure_code,
+        exception_class=exception_class,
         last_decision_type=metadata.last_decision_type if metadata else "",
-        last_policy_failure_code=(
-            str(result.policy_failure.kind)
-            if result is not None and result.policy_failure is not None else ""
-        ),
+        last_policy_failure_code=policy_code,
         last_action_space_option_count=(metadata.last_action_space_option_count if metadata else 0),
         last_world_target_count=metadata.last_world_target_count if metadata else 0,
         last_world_coverage=metadata.last_world_coverage if metadata else "",
@@ -98,23 +126,89 @@ def project_case_result(
         ),
         runtime_reason_code=runtime_reason,
         agent_failure_code=agent_failure,
-        cleanup_failure_code=_safe_code(
-            instrumentation.cleanup_failure_code, "cleanup_exception"
-        ) if instrumentation.cleanup_failures else "",
+        cleanup_failure_code=cleanup_code,
         cleanup_exception_class=_safe_exception_class(
             instrumentation.cleanup_exception_class
         ),
         cleanup_failures=instrumentation.cleanup_failures,
         watchdog_triggered=(
-            instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG
+            bool(instrumentation.watchdog_code)
         ),
-        harness_integrity_code="metric_name_collision" if metric_collisions else "",
+        harness_integrity_code=integrity_code,
         harness_integrity_failures=int(bool(metric_collisions)),
+        failure_facts=facts,
     )
 
 
+def public_case_evidence(result: BenchmarkCaseResult) -> dict[str, object]:
+    """Serialize every declared public case field from one schema authority."""
+
+    return {
+        "schema_version": result.case_schema_version,
+        **{
+            item.name: _json_value(getattr(result, item.name))
+            for item in fields(BenchmarkCaseResult)
+        },
+    }
+
+
+def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResult:
+    """Validate and reconstruct the complete public typed case evidence view."""
+
+    expected = {item.name for item in fields(BenchmarkCaseResult)} | {"schema_version"}
+    if set(payload) != expected:
+        raise ValueError("public case evidence fields do not match the declared schema")
+    if payload["schema_version"] != payload["case_schema_version"]:
+        raise ValueError("public case schema identity is inconsistent")
+    measurements = {
+        str(name): MetricMeasurement(**value)
+        for name, value in _dict(payload["measurements"]).items()
+        if isinstance(value, dict)
+    }
+    raw_facts = _dict(payload["failure_facts"])
+    facts = FailureFacts(
+        runtime_reason_code=str(raw_facts.get("runtime_reason_code", "")),
+        agent_failure_code=str(raw_facts.get("agent_failure_code", "")),
+        policy_failure_code=str(raw_facts.get("policy_failure_code", "")),
+        component_origin=CaseFailureOrigin(str(raw_facts.get("component_origin", "none"))),
+        component_code=str(raw_facts.get("component_code", "")),
+        component_exception_class=str(raw_facts.get("component_exception_class", "")),
+        watchdog_code=str(raw_facts.get("watchdog_code", "")),
+        cleanup_code=str(raw_facts.get("cleanup_code", "")),
+        cleanup_exception_class=str(raw_facts.get("cleanup_exception_class", "")),
+        harness_integrity_code=str(raw_facts.get("harness_integrity_code", "")),
+    )
+    values = {item.name: payload[item.name] for item in fields(BenchmarkCaseResult)}
+    values["measurements"] = measurements
+    values["failure_facts"] = facts
+    values["failure_origin"] = CaseFailureOrigin(str(values["failure_origin"]))
+    terminal = values["terminal_reason_code"]
+    values["terminal_reason_code"] = TerminalReasonCode(str(terminal)) if terminal else None
+    return BenchmarkCaseResult(**cast(Any, values))
+
+
+def _json_value(value):
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, FailureFacts):
+        return {item.name: _json_value(getattr(value, item.name)) for item in fields(value)}
+    if isinstance(value, MetricMeasurement):
+        return {item.name: _json_value(getattr(value, item.name)) for item in fields(value)}
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_value(item) for item in value]
+    return value
+
+
+def _dict(value: object) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError("public case evidence object is malformed")
+    return value
+
+
 def _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot):
-    if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG:
+    if instrumentation.watchdog_code:
         return timeout_snapshot or final_snapshot
     return final_snapshot or timeout_snapshot
 
@@ -137,7 +231,7 @@ def _runtime_reason(result, snapshot) -> str:
 def _case_failure_code(
     result, instrumentation, runtime_reason: str, integrity_failure: bool
 ) -> str:
-    if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG:
+    if instrumentation.watchdog_code:
         return "case_timeout"
     if result is not None and result.status is not AgentLoopStatus.DONE and result.policy_failure is not None:
         return f"policy_{result.policy_failure.kind}"
@@ -165,8 +259,8 @@ def _agent_failure_code(result) -> str:
 
 
 def _failure_origin(result, instrumentation, runtime_reason, snapshot) -> CaseFailureOrigin:
-    if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_WATCHDOG:
-        return instrumentation.failure_origin
+    if instrumentation.watchdog_code:
+        return CaseFailureOrigin.HARNESS_WATCHDOG
     if instrumentation.failure_origin not in {
         CaseFailureOrigin.NONE, CaseFailureOrigin.CLEANUP,
     }:
@@ -178,10 +272,8 @@ def _failure_origin(result, instrumentation, runtime_reason, snapshot) -> CaseFa
         if failure_code.startswith("post_action_"):
             return CaseFailureOrigin.POST_ACTION_OBSERVATION
         request_kind = snapshot.latest_acquisition_request_kind if snapshot else ""
-        if request_kind == "binding_refresh":
-            return CaseFailureOrigin.ACTION_BINDING
-        if request_kind == "currentness_refresh":
-            return CaseFailureOrigin.CURRENTNESS
+        if request_kind:
+            return observation_failure_origin(request_kind)
         return _runtime_origin(runtime_reason)
     if runtime_reason and _is_failure_result(result):
         return _runtime_origin(runtime_reason)
@@ -253,6 +345,16 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "total_tokens": state.total_tokens,
         "model_latency_ms": state.model_latency_ms,
         "cleanup_failures": state.cleanup_failures,
+        "observation_contract_exceptions": int(
+            state.failure_origin in {
+                CaseFailureOrigin.INITIAL_OBSERVATION,
+                CaseFailureOrigin.OBSERVATION_PROJECTION,
+                CaseFailureOrigin.POST_ACTION_OBSERVATION,
+                CaseFailureOrigin.CURRENTNESS,
+                CaseFailureOrigin.ACTION_BINDING,
+            }
+            and bool(state.exception_class)
+        ),
     }
     kind_counts = dict(
         result.control_transition_kind_counts

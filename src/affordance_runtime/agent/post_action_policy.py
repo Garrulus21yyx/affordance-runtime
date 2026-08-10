@@ -1,6 +1,6 @@
 """Effect-certainty decisions after fresh action observation."""
 
-from affordance_runtime.agent.result import AgentResult, build_result
+from affordance_runtime.agent.control_outcome import Continue, LoopDirective, directive
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
 from affordance_runtime.evaluation.contracts import (
@@ -19,37 +19,31 @@ def post_action_result(
     result: ActionResult,
     action_evaluation: ActionEvaluation,
     task_evaluation: TaskEvaluation,
-) -> AgentResult | None:
+) -> LoopDirective:
     task_status = task_evaluation_loop_status(task_evaluation)
     if task_status is not None:
-        return build_result(task_status, task, state, 0, 0, task_evaluation.reason)
+        return directive(task_status, f"task_{task_evaluation.status}", task_evaluation.reason)
     if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
         state.set_pending_unknown_effect(request)
-        return build_result(
+        return directive(
             AgentLoopStatus.WAITING_USER,
-            task,
-            state,
-            0,
-            0,
+            "effect_unknown",
             "effect remains unknown after transport uncertainty; request will not be replayed",
         )
     if action_evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
-        return None
+        return Continue("action_effect_confirmed")
     if action_evaluation.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED:
-        return None
+        return Continue("action_no_effect_confirmed")
     if action_evaluation.status == ActionEvaluationStatus.REJECTED:
-        return build_result(AgentLoopStatus.FAILED, task, state, 0, 0, action_evaluation.reason)
+        return directive(AgentLoopStatus.FAILED, "action_rejected", action_evaluation.reason)
     low_local = str(request.selection.risk) == "low" and request.selection.effect_category in {
         "observation", "local_reversible",
     }
     if result.dispatch_status == DispatchStatus.SENT and low_local:
-        return None
+        return Continue("action_unknown_low_local")
     state.set_pending_unknown_effect(request)
-    return build_result(
+    return directive(
         AgentLoopStatus.WAITING_USER,
-        task,
-        state,
-        0,
-        0,
+        "effect_unknown",
         "effect remains unknown after fresh observation; request will not be replayed",
     )

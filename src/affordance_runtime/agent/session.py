@@ -6,8 +6,10 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.accounting import RunAccounting
+from affordance_runtime.agent.control_outcome import Terminate
 from affordance_runtime.agent.progress_control import ProgressController
-from affordance_runtime.agent.result import AgentResult
+from affordance_runtime.agent.result import AgentResult, project_result
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
@@ -29,9 +31,7 @@ class AgentRunSession:
     environment: WorldEnvironment
     state: AgentLoopState
     intent_context: IntentContext | None = None
-    observation_count: int = 1
-    execution_count: int = 0
-    currentness_probe_count: int = 0
+    accounting: RunAccounting = field(default_factory=RunAccounting)
     approved_confirmation: ConfirmationRequest | None = field(default=None, repr=False)
     approved_confirmation_transition_id: str = field(default="", repr=False)
     confirmation_continuation_scope: ControlContinuationScope | None = field(
@@ -44,8 +44,23 @@ class AgentRunSession:
     context_generation: int = field(default=0, repr=False)
     current_action_space: ActionSpace | None = field(default=None, repr=False)
     current_action_page: InternalActionPage | None = field(default=None, repr=False)
-    waited_ms: int = 0
     progress_controller: ProgressController = field(default_factory=ProgressController, repr=False)
+
+    @property
+    def observation_count(self) -> int:
+        return self.accounting.observation_attempts
+
+    @property
+    def execution_count(self) -> int:
+        return self.accounting.execution_attempts
+
+    @property
+    def currentness_probe_count(self) -> int:
+        return self.accounting.currentness_probes
+
+    @property
+    def waited_ms(self) -> int:
+        return self.accounting.waited_ms
 
     def next_context_generation(self) -> int:
         self.context_generation += 1
@@ -76,17 +91,13 @@ class AgentRunSession:
         if self.state.pending_confirmation is None:
             if self.last_result is not None:
                 return self.last_result
-            from affordance_runtime.agent.result import build_result
-
-            return build_result(
-                AgentLoopStatus.BLOCKED,
-                self.task,
-                self.state,
-                self.observation_count,
-                self.execution_count,
-                "no confirmation is pending",
-                self.currentness_probe_count,
-                reason_code="invalid_confirmation_decision",
+            return project_result(
+                self,
+                Terminate(
+                    AgentLoopStatus.BLOCKED,
+                    "invalid_confirmation_decision",
+                    "no confirmation is pending",
+                ),
             )
         try:
             self.last_result = await self.agent_loop._resolve_confirmation(self, decision)
@@ -99,20 +110,9 @@ class AgentRunSession:
         return self.last_result
 
     def _latch_terminal_exception(self, *, cancelled: bool) -> None:
-        from affordance_runtime.agent.result import build_result
-
         status = AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED
         reason = "runtime_cancelled" if cancelled else "runtime_exception"
-        self.last_result = build_result(
-            status,
-            self.task,
-            self.state,
-            self.observation_count,
-            self.execution_count,
-            reason,
-            self.currentness_probe_count,
-            reason_code=reason,
-        )
+        self.last_result = project_result(self, Terminate(status, reason, reason))
 
     @property
     def is_terminal(self) -> bool:

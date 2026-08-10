@@ -19,6 +19,12 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.accounting import RunAccounting
+from affordance_runtime.agent.attempt_receipt import (
+    AttemptDisposition,
+    AttemptOperation,
+    AttemptReceipt,
+)
 from affordance_runtime.agent.decision_control import run_policy_turn
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState
@@ -242,7 +248,16 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
         raise RuntimeError("runtime replay initial acquisition failed")
     state = AgentLoopState(acquisition.observation, remaining_turns=3)
     evaluator, waiter = _CountingTaskEvaluator(), _Waiter()
-    session = AgentRunSession(cast(AgentLoop, SimpleNamespace()), task, environment, state)
+    accounting = RunAccounting()
+    accounting.record(AttemptReceipt(
+        accounting.next_attempt_id(), AttemptOperation.RESET, "reset",
+        acquisition.origin, acquisition.origin, AttemptDisposition.RETURNED,
+        acquisition.reason_code, 1, 0, 0, 0, acquisition_status=acquisition.status,
+    ))
+    session = AgentRunSession(
+        cast(AgentLoop, SimpleNamespace()), task, environment, state,
+        accounting=accounting,
+    )
     options = value.get("actions", {}).get("options", ())
     visible = tuple(str(item.get("action_id") or "") for item in options)
     destinations = {

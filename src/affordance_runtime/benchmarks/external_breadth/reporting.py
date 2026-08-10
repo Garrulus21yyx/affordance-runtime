@@ -15,6 +15,7 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobTaskOutcome,
 )
 from affordance_runtime.benchmarks.external_smoke.adapter_reporting import _atomic_json
+from affordance_runtime.benchmarks.target_loop.case_projection import public_case_evidence
 
 _FORBIDDEN_FIELDS = frozenset({
     "raw_prompt", "raw_response", "chain_of_thought", "hidden_reasoning", "api_key",
@@ -58,7 +59,12 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
     })
     privacy_errors = privacy_scan(output_dir)
     attestation = output_dir / "attestation.json"
-    evidence_valid = outcome.acceptance.evidence_valid and not privacy_errors
+    evidence_valid = (
+        outcome.acceptance.evidence_valid
+        and outcome.provider_capacity is not None
+        and outcome.provider_capacity.sufficient
+        and not privacy_errors
+    )
     _atomic_json(attestation, {
         "schema_version": "miniwob-breadth-attestation.v1",
         "classification": "MINIWOB_60_SEEDED_BREADTH_PROFILE",
@@ -84,6 +90,19 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
         "privacy_errors": privacy_errors,
         "evidence_valid": evidence_valid,
         "generalization_claim": "NOT_CLAIMED",
+        "provider_capacity": (
+            {
+                "schema_version": outcome.provider_capacity.schema_version,
+                "provider_id": outcome.provider_capacity.provider_id,
+                "model_id": outcome.provider_capacity.model_id,
+                "manifest_digest": outcome.provider_capacity.manifest_digest,
+                "required_attempt_budget": outcome.provider_capacity.required_attempt_budget,
+                "declared_attempt_budget": outcome.provider_capacity.declared_attempt_budget,
+                "checked": outcome.provider_capacity.checked,
+                "sufficient": outcome.provider_capacity.sufficient,
+            }
+            if outcome.provider_capacity is not None else None
+        ),
     })
     return attestation
 
@@ -123,47 +142,22 @@ def _privacy_errors(payload: Any, relative: str, location: str = "$") -> list[st
 
 def _case_payload(record: MiniWobBreadthCaseRecord) -> dict[str, object]:
     result = record.result
-    metrics = {
-        name: {"measured": item.measured, "value": item.value, "unit": item.unit}
-        for name, item in sorted(result.measurements.items())
-    }
     return {
-        "schema_version": "miniwob-breadth-case.v2",
+        "schema_version": "miniwob-breadth-case.v3",
         "case_id": record.case_id,
         "task_family_label": record.task_family_label,
         "capability_profile": record.capability_profile,
         "required_primitives": record.required_primitives,
-        "terminal_status": result.status,
         "typed_outcome": record.outcome.value,
         "classification_source": record.classification_source,
-        "execution_completed": result.execution_completed,
-        "terminal_reason_code": str(result.terminal_reason_code) if result.terminal_reason_code else None,
-        "case_failure_code": result.case_failure_code,
-        "failure_origin": str(result.failure_origin),
-        "failure_code": result.failure_code,
-        "runtime_reason_code": result.runtime_reason_code,
-        "agent_failure_code": result.agent_failure_code,
-        "exception_class": result.exception_class,
-        "cleanup_failure_code": result.cleanup_failure_code,
-        "cleanup_exception_class": result.cleanup_exception_class,
-        "cleanup_failures": result.cleanup_failures,
-        "termination_origin": result.termination_origin,
-        "last_decision_type": result.last_decision_type,
-        "last_policy_failure_code": result.last_policy_failure_code,
-        "last_action_evaluation_status": result.latest_action_evaluation_status,
-        "last_task_evaluation_status": result.latest_task_status,
-        "last_action_space_option_count": result.last_action_space_option_count,
-        "last_world_target_count": result.last_world_target_count,
-        "last_world_coverage": result.last_world_coverage,
-        "pending_kind": result.pending_kind,
-        "partial_episode_available": result.partial_episode_available,
-        "wall_clock_latency_ms": result.latency_ms,
-        "metrics": metrics,
+        "benchmark_case_evidence": public_case_evidence(result),
     }
 
 
 def _case_summary(payload: dict[str, object]) -> dict[str, object]:
-    metrics = payload["metrics"]
+    evidence = payload["benchmark_case_evidence"]
+    assert isinstance(evidence, dict)
+    metrics = evidence["measurements"]
     assert isinstance(metrics, dict)
     names = ("turns", "observations", "executions", "provider_attempts", "total_tokens", "model_latency_ms")
     return {
@@ -171,6 +165,7 @@ def _case_summary(payload: dict[str, object]) -> dict[str, object]:
         "task_family_label": payload["task_family_label"],
         "required_primitives": payload["required_primitives"],
         "typed_outcome": payload["typed_outcome"],
+        "terminal_status": evidence["status"],
         **{name: metrics[name]["value"] for name in names},
     }
 

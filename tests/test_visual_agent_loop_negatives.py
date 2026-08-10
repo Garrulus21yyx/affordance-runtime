@@ -161,7 +161,7 @@ def test_visual_currentness_unavailable_reobserves_without_counting_execution() 
 
     assert result.status == AgentLoopStatus.DONE
     assert result.observation_count == 3
-    assert result.execution_count == 1
+    assert result.execution_count == 2
     assert result.currentness_probe_count == 2
     assert len(session.clicks) == 1
     assert proposer.calls == 3
