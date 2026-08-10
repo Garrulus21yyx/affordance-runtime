@@ -274,6 +274,14 @@ evaluate, persist, replay or reconstruct state. Session snapshot, model history
 and benchmark reports consume one-way projections instead of separately
 reassembling execution truth.
 
+The B.1 closure makes that collector decision-scoped and monotonic: execution,
+acquisition, after identity, evaluation and progress are staged independently;
+`Turn` is only a read-only compatibility projection. AgentLoop owns the single
+confirmation closure path, `session_snapshot.py` reads current evaluation only
+from AgentLoopState, and `benchmarks/target_loop/case_projection.py` alone owns
+benchmark-specific typed precedence. Model projection does not import or serve
+the benchmark projection.
+
 P5-E reuses `task/planning_contracts.py`. VerifiedTaskState/milestone promotion
 and TaskProgressAuditor stay under task/evaluation ownership; ObjectivePolicy
 derives LocalObjective from the verified frontier. `agent/progress_control.py`

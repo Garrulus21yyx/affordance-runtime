@@ -95,3 +95,9 @@ the pinned backend's read-only current-world API on its owner thread, and
 `ExecutionOutcome` carries the typed post-action acquisition. Runtime validates
 origin and fresh identity, reports the last real fallback cause and exact
 attempt count, and never derives admission from AgentContext projection.
+
+M4.5-B and B.1 separately close control accounting on top of that lifecycle:
+execution/acquisition truth is recorded before evaluation, confirmation retries
+merge into the original accepted-decision root, AgentLoopState remains current
+evaluation authority, and benchmark mapping lives in its own typed projection.
+This adds no ledger, replay, event sourcing or state reconstruction.

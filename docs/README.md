@@ -61,7 +61,8 @@ BrowserGym's consume-once reset/step cache did not satisfy the public active-
 observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
 
 M4.5-A typed acquisition lifecycle and M4.5-B bounded lossless
-ControlTransition accounting are complete. The active queue is M4.5-C: a third
+ControlTransition accounting, including B.1 incremental facts, continuation,
+snapshot-authority and benchmark-projection closure, are complete. The active queue is M4.5-C: a third
 independent rerun of the same frozen profile, followed by a supported-subset
 multi-seed gate and then P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
@@ -225,7 +226,9 @@ conditional idea into the M4.5-A correction. That slice now separates reset
 initial acquisition, capability-aware capture and execute-returned post
 acquisition, validates origin/fallback truth, and has real pinned active-capture
 coverage. M4.5-B now records exactly one privacy-bounded root ControlTransition
-per accepted policy decision without introducing a ledger, replay or second
-state authority. See the [active queue](current-implementation-plan.md) for the
+per accepted policy decision. Physical facts are monotonic, confirmation updates
+the same root, and current snapshot/benchmark projections do not reconstruct
+authority from history. This introduces no ledger, replay or second state
+authority. See the [active queue](current-implementation-plan.md) for the
 M4.5-C gates and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 for ordering into rerun, multi-seed and P5-E.

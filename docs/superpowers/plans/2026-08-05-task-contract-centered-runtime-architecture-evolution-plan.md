@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
 > **Updated:** 2026-08-10
-> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@9072a1fe27b215dfd766fab03284546285494447`
+> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@34b5259f9692f393abf2f384246f56a0dd625ce6`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -377,7 +377,7 @@ DONE: P5-M4.3 historical MiniWoB-60 seed-7 negative run (6/60)
 DONE: P5-M4.4 typed attribution/capability inventory
 DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
 DONE: P5-M4.5-A observation acquisition lifecycle
-DONE: P5-M4.5-B lossless bounded ControlTransition accounting
+DONE: P5-M4.5-B lossless bounded ControlTransition accounting, including B.1 edge closure
 NEXT: P5-M4.5-C same-profile MiniWoB-60 rerun
 THEN: P5-M4.5-D supported-subset multi-seed gate
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
@@ -473,7 +473,8 @@ and 11 `runtime_rejected` cases. At the P5-M4 baseline, those observation
 failures proved that public active-observation meaning and BrowserGym's
 consume-once post-step cache were not interchangeable. M4.5-A and its A.1
 closure now replace that lifecycle with typed, origin-validated acquisition;
-M4.5-B now closes the accounting repair. M4.5-C is next; P5-E stays blocked until the
+M4.5-B plus its B.1 edge closure now closes incremental execution facts,
+confirmation continuation, snapshot authority and benchmark projection. M4.5-C is next; P5-E stays blocked until the
 same-profile rerun and the supported-
 subset multi-seed gate close; provider/model competence remains measured rather
 than repaired by Runtime machinery.

@@ -10,7 +10,8 @@
 `task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，但实现状态
 仍以 Implementation Status 为准：AgentContext、model policy 与 declared-minimum
 criterion adjudicator 与 independent observation acquisition 已在 non-default 路径
-落地；lossless control-transition accounting 与长程 verified frontier 尚未落地。
+落地；lossless control-transition accounting 也已在 non-default 路径闭合，长程
+verified frontier 尚未落地。
 
 ## 0. 系统定位与计算模型
 
@@ -426,6 +427,13 @@ AgentResult/session snapshot 表达。
 replay source、durable ledger、global provenance graph 或 event bus。AgentContext history、
 BenchmarkCaseResult、PartialEpisodeSnapshot 与 optional TurnRecorder 都是它与 current
 state 的单向、privacy-bounded projection，不能反向参与 admission 或 state reconstruction。
+
+ActionResult 返回后，decision-scoped collector 必须立即单调记录实际 dispatch、expected/
+actual request lineage 与 probe facts；fresh after acquisition 验证后必须立即更新 current
+world 并记录 after identity。后续 evaluator exception/cancellation 只能补充同一 root 的
+typed terminal reason/status，不能擦除已发生事实。confirmation continuation 的 ordered
+acquisition attempts、evaluation 与 progress 也只能单调合并到原 root，不能增加 root count。
+`Turn` 仅是 bounded suffix 的兼容只读投影，不是事实写入容器。
 
 ## 9. Evaluation 与 criterion-specific completion
 

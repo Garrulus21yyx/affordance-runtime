@@ -101,8 +101,10 @@ P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 ```
 
 `ProgressController` remains a fill/select local liveness guard, not a planner.
-`ControlTransition` remains run-scoped, in-memory and non-replayable;
-AgentLoopState remains current-state authority. The baseline is retained, not
+`ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
+acquisition and after-world facts are recorded monotonically before evaluator
+completion; confirmation continuation updates the same root. AgentLoopState
+remains current-state authority. The baseline is retained, not
 rolled back, and transaction/commit/recovery machinery remains frozen. See
 [Implementation Status](docs/implementation-status.md) for exact code truth and
 [Current Implementation Plan](docs/current-implementation-plan.md) for the
@@ -285,6 +287,7 @@ separate exact-run record, not a replacement/merge/trend against 6/60. Seven
 post-observation failures confirmed the historical BrowserGym active-capture
 contract gap; nine failures remain unclassified despite typed metadata. M4.5-A
 acquisition is now closed, including real owner-thread active capture, origin
-validation and final-fallback truth. M4.5-B ControlTransition accounting is now
+validation and final-fallback truth. M4.5-B ControlTransition accounting,
+including its B.1 execution/continuation/snapshot/benchmark edge closure, is now
 closed; M4.5-C is the next admitted exact-profile rerun before a multi-seed
 supported subset and P5-E.

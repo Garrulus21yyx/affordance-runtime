@@ -237,6 +237,13 @@ consequence as exactly one ControlTransition while still fabricating no
 execution or observation. The controller remains a fill/select local liveness guard; future
 TaskProgressAuditor and planner remain separate P5-E owners.
 
+The B.1 closure records dispatch and physical acquisition/probe totals at their
+actual boundaries, before evaluator completion. RuntimeError or cancellation
+therefore closes and rethrows from the same accepted-decision root. Confirmation
+refresh, binding/currentness refresh and final post acquisition append once in
+physical order; terminal, denied or externally completed continuations clear
+confirmation state and never create another root.
+
 ## Breadth campaign orchestration
 
 The MiniWoB-60 runner creates cases in frozen manifest order, shares one fixed
