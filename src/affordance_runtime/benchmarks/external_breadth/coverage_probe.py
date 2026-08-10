@@ -1,0 +1,208 @@
+"""Local BrowserGym lifecycle, projection, ActionSpace, and verifier diagnostics."""
+
+from __future__ import annotations
+
+import hashlib
+from collections import Counter
+from enum import StrEnum
+
+from affordance_runtime.benchmarks.external_breadth.diagnostic_selection import DiagnosticSelection
+from affordance_runtime.benchmarks.external_breadth.requirements import TaskReadiness
+
+_INTERACTIVE_ROLES = frozenset({
+    "button", "link", "textbox", "searchbox", "combobox", "listbox", "checkbox", "radio",
+    "option", "menuitem", "tab", "spinbutton", "slider",
+})
+
+
+class BreadthDiagnosticDisposition(StrEnum):
+    ENVIRONMENT_LIFECYCLE_GAP = "environment_lifecycle_gap"
+    PROJECTION_GAP = "projection_gap"
+    OBSERVATION_SEMANTICS_GAP = "observation_semantics_gap"
+    ACTION_SPACE_GAP = "action_space_gap"
+    EVALUATION_GAP = "evaluation_gap"
+    POLICY_OR_REASONING_CANDIDATE = "policy_or_reasoning_candidate"
+    PROVIDER_CAPACITY = "provider_capacity"
+    REQUIREMENT_UNSUPPORTED = "requirement_unsupported"
+    REQUIREMENT_UNASSESSED = "requirement_unassessed"
+    UNRESOLVED = "unresolved"
+
+
+def diagnostic_disposition(
+    readiness: TaskReadiness,
+    lifecycle_success: bool,
+    projection_success: bool,
+    raw_actionable_count: int,
+    action_option_count: int,
+) -> BreadthDiagnosticDisposition:
+    if readiness is TaskReadiness.DECLARED_UNSUPPORTED:
+        return BreadthDiagnosticDisposition.REQUIREMENT_UNSUPPORTED
+    if readiness is TaskReadiness.UNASSESSED:
+        return BreadthDiagnosticDisposition.REQUIREMENT_UNASSESSED
+    if not lifecycle_success:
+        return BreadthDiagnosticDisposition.ENVIRONMENT_LIFECYCLE_GAP
+    if not projection_success:
+        return BreadthDiagnosticDisposition.PROJECTION_GAP
+    if raw_actionable_count and not action_option_count:
+        return BreadthDiagnosticDisposition.ACTION_SPACE_GAP
+    return BreadthDiagnosticDisposition.POLICY_OR_REASONING_CANDIDATE
+
+
+async def probe_case(
+    selection: DiagnosticSelection,
+    readiness: TaskReadiness,
+    seed: int,
+    admitted_task_ids: frozenset[str],
+) -> dict[str, object]:
+    from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
+        BrowserGymMiniWobEnvironment,
+    )
+    from affordance_runtime.world import ActionSpaceBuilder
+
+    task_id = f"browsergym/miniwob.{selection.task_family_label}"
+    environment = None
+    stage = "environment_reset"
+    try:
+        environment, task = BrowserGymMiniWobEnvironment.open(
+            task_id, seed, max_turns=10, admitted_task_ids=admitted_task_ids,
+        )
+        raw = environment._raw_cache
+        if not isinstance(raw, dict):
+            raise RuntimeError("initial raw observation unavailable")
+        raw_metrics = _raw_metrics(raw)
+        stage = "observation_projection"
+        projection = _project_diagnostic(environment, raw)
+        stage = "initial_observation"
+        await environment.reset(task)
+        world = await environment.observe("local breadth diagnostic")
+        stage = "action_space"
+        action_space = ActionSpaceBuilder().build(task, world)
+        stage = "task_evaluation"
+        verifier = environment.current_result(task_id)
+        metrics = _projected_metrics(projection.world, action_space)
+        raw_actionable = raw_metrics["raw_actionable_node_count"]
+        assert isinstance(raw_actionable, int)
+        disposition = diagnostic_disposition(
+            readiness, True, True, raw_actionable, len(action_space.options),
+        )
+        stage = "cleanup"
+        await environment.close()
+        environment = None
+        return _success_payload(selection, readiness, raw_metrics, metrics, verifier, disposition)
+    except Exception as exc:
+        return {
+            "case_id": selection.case_id,
+            "task_family_label": selection.task_family_label,
+            "original_outcome": selection.original_outcome,
+            "readiness": readiness.value,
+            "lifecycle_success": False,
+            "projection_success": stage not in {"environment_reset", "observation_projection"},
+            "failure_stage": stage,
+            "exception_class": type(exc).__name__,
+            "disposition": (
+                BreadthDiagnosticDisposition.PROJECTION_GAP.value
+                if stage == "observation_projection"
+                else BreadthDiagnosticDisposition.EVALUATION_GAP.value
+                if stage == "task_evaluation"
+                else BreadthDiagnosticDisposition.ENVIRONMENT_LIFECYCLE_GAP.value
+            ),
+        }
+    finally:
+        if environment is not None:
+            try:
+                await environment.close()
+            except Exception:
+                pass
+
+
+def _project_diagnostic(environment, raw):
+    from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
+        project_browsergym_observation,
+    )
+    from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import verifier_snapshot
+
+    reward, terminated, truncated, task_info = environment._outcome
+    observation_id = "diagnostic:" + hashlib.sha256(environment.task_run_id.encode()).hexdigest()[:16]
+    snapshot = verifier_snapshot(
+        task_run_id=environment.task_run_id,
+        observation_id=observation_id,
+        source_observation_id=observation_id,
+        reward=reward,
+        terminated=terminated,
+        truncated=truncated,
+        task_info=task_info,
+    )
+    return project_browsergym_observation(
+        raw,
+        observation_id=observation_id,
+        source_revision="diagnostic-revision",
+        page_identity=environment._page_identity,
+        episode_identity=environment._episode_identity,
+        verifier=snapshot,
+    )
+
+
+def _raw_metrics(raw: dict[str, object]) -> dict[str, object]:
+    tree = raw.get("axtree_object")
+    nodes = tree.get("nodes", ()) if isinstance(tree, dict) else ()
+    roles: Counter[str] = Counter()
+    actionable = 0
+    interactive = 0
+    for node in nodes if isinstance(nodes, list) else ():
+        if not isinstance(node, dict) or node.get("ignored") is True:
+            continue
+        role = _typed(node.get("role"))
+        if role in _INTERACTIVE_ROLES:
+            interactive += 1
+            roles[role] += 1
+            if role != "option":
+                actionable += 1
+    return {
+        "raw_interactive_node_count": interactive,
+        "raw_actionable_node_count": actionable,
+        "raw_role_distribution": dict(sorted(roles.items())),
+    }
+
+
+def _projected_metrics(world, action_space) -> dict[str, object]:
+    labels = [item.label for item in world.targets]
+    actions = Counter(item.semantic_action for item in action_space.options)
+    roles = Counter(item.role for item in world.targets)
+    select_domains = []
+    for option in action_space.options:
+        value = option.parameter_schema.get("properties", {}).get("value", {})
+        if option.semantic_action == "select" and isinstance(value, dict):
+            select_domains.append(len(value.get("enum", ())))
+    return {
+        "projected_target_count": len(world.targets),
+        "projected_fact_count": len(world.facts),
+        "action_binding_count": len(world.bindings),
+        "action_option_count": len(action_space.options),
+        "semantic_action_counts": dict(sorted(actions.items())),
+        "projected_role_distribution": dict(sorted(roles.items())),
+        "blank_label_count": sum(not value.strip() for value in labels),
+        "duplicate_label_count": len(labels) - len(set(labels)),
+        "select_option_counts": select_domains,
+        "coverage": {key: str(value) for key, value in world.coverage.items()},
+    }
+
+
+def _success_payload(selection, readiness, raw, projected, verifier, disposition):
+    return {
+        "case_id": selection.case_id,
+        "task_family_label": selection.task_family_label,
+        "original_outcome": selection.original_outcome,
+        "readiness": readiness.value,
+        "lifecycle_success": True,
+        "projection_success": True,
+        "failure_stage": "",
+        "exception_class": "",
+        **raw,
+        **projected,
+        "verifier_initial_status": str(verifier.status),
+        "disposition": disposition.value,
+    }
+
+
+def _typed(value: object) -> str:
+    return str(value.get("value", "")) if isinstance(value, dict) else ""
