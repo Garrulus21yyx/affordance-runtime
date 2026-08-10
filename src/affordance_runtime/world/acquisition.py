@@ -78,8 +78,10 @@ class ObservationAcquisition:
 
     def __post_init__(self) -> None:
         acquired = self.status is AcquisitionStatus.ACQUIRED
-        if acquired != (self.observation is not None):
-            raise ValueError("ACQUIRED requires an observation and other statuses forbid one")
+        if acquired != isinstance(self.observation, WorldObservation):
+            raise ValueError(
+                "ACQUIRED requires a WorldObservation and other statuses forbid one"
+            )
         _validate_reason_code(self.reason_code)
 
 

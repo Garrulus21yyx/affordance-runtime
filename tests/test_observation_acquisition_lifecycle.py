@@ -52,6 +52,10 @@ def test_acquisition_values_are_frozen_and_enforce_observation_invariant() -> No
         ObservationAcquisition(
             AcquisitionStatus.FAILED, AcquisitionOrigin.RESET, _world("one"), "reset_failed",
         )
+    with pytest.raises(ValueError, match="WorldObservation"):
+        ObservationAcquisition(
+            AcquisitionStatus.ACQUIRED, AcquisitionOrigin.RESET, object(), "reset_acquired",
+        )
 
 
 @pytest.mark.parametrize(
@@ -201,6 +205,26 @@ def test_immutable_foreign_reset_exception_is_normalized_without_losing_receipt(
         assert captured.value.exception_class == "ImmutableError"
         assert captured.value.start_evidence.accounting.receipt_count == 1
         assert isinstance(captured.value.__cause__, ImmutableError)
+
+    asyncio.run(scenario())
+
+
+def test_malformed_reset_return_is_one_failed_physical_attempt() -> None:
+    class MalformedReset(StaticEnvironment):
+        async def reset(self, task):
+            self.reset_calls += 1
+            return object()
+
+    async def scenario() -> None:
+        environment = MalformedReset(initial_observation=_world("unused"))
+        loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
+        with pytest.raises(AgentSessionStartError) as captured:
+            await AgentEpisodeRunner(loop).start(environment, _task())
+        evidence = captured.value.start_evidence
+        assert environment.reset_calls == 1
+        assert evidence.receipt.disposition.value == "malformed"
+        assert evidence.accounting.observation_attempts == 1
+        assert evidence.accounting.receipt_count == 1
 
     asyncio.run(scenario())
 

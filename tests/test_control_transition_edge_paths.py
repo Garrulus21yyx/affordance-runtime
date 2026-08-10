@@ -180,6 +180,29 @@ def test_foreign_execute_exception_name_cannot_break_physical_accounting() -> No
     asyncio.run(scenario())
 
 
+def test_malformed_execute_return_is_one_failed_physical_attempt() -> None:
+    class MalformedEnvironment(StaticEnvironment):
+        async def execute(self, request):
+            self.execute_calls += 1
+            self.executed_requests.append(request)
+            return object()
+
+    async def scenario() -> None:
+        environment = MalformedEnvironment([_world("before", False)])
+        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+            environment, _task(),
+        )
+        with pytest.raises(TypeError, match="malformed contract"):
+            await session.run_until_pause()
+        root = session.state.recent_control_transitions[0]
+        assert environment.execute_calls == 1
+        assert session.execution_count == 1
+        assert len(root.attempt_receipts) == 1
+        assert root.attempt_receipts[0].disposition.value == "malformed"
+
+    asyncio.run(scenario())
+
+
 def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() -> None:
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)
