@@ -311,3 +311,18 @@ or safety violations. External preflight is admitted. Formal fixed-smoke
 execution status is not hard-coded in source: it is determined by the protected
 exact-head GitHub Actions run and its `browsergym-fixed-external-smoke`
 artifact. The old Coordinator product path is unchanged.
+
+## P5-M4.2 local verified-progress status
+
+P5-M4.2 is a local-only correctness closure. `fill` and `select` effects are
+mechanically evaluated from fresh, complete structural public value facts;
+`activate` remains UNKNOWN unless task completion is independently established.
+Already-satisfied fill/select selections make zero Binder, surface probe, step,
+or execution calls. The first selection emits bounded strategy-transition
+feedback; the next identical semantic attempt under unchanged narrow progress
+fails with typed `NO_PROGRESS_REPETITION`. Timeout reports read an immutable,
+privacy-safe partial session snapshot and identify `harness_watchdog` /
+`case_timeout` without inventing a Runtime terminal reason. Real local pinned
+regressions pass for enter-text normal/repeat containment, choose-list, and
+click-button. The formal `cd49b8e` smoke remains `FAILED / case timeout`;
+`LIVE_SMOKE=NOT_RUN_THIS_SLICE`, and no attestation was generated.

@@ -389,3 +389,12 @@ An exact-head live smoke is a separate fixed-manifest gate and remains
 `NOT_RUN/BLOCKED_WITH_REASON` when provider evidence or explicit execution
 authority is absent. This milestone authorizes neither a benchmark campaign
 nor a default Coordinator-path change.
+
+P5-M4.2 closes the locally diagnosed repeated-action gap without changing that
+admission boundary. Fill/select receive fresh structural effect verification;
+already-satisfied exact selections are suppressed before binding; one unchanged
+repeat has a typed bounded failure; model context receives bounded route-free
+progress; and watchdog reports preserve partial session evidence. The fixed
+simple-task budget is 10 turns within the existing 120-second timeout. The
+historical `cd49b8e` fixed smoke remains failed by case timeout, and no live
+provider or external smoke was run for this correction.

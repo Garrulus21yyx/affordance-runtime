@@ -145,3 +145,15 @@ and hashes; raw prompts/responses, selectors, bids, coordinates, URLs and
 oracle material are forbidden. Adapter attestation and live-smoke attestation
 remain distinct so a mechanical conformance pass cannot be reported as model
 generalization.
+
+## Primitive effect and partial-timeout evidence
+
+For fill/select, action-level evaluation is separate from task completion:
+fresh complete structural evidence that the current public value equals the
+requested value confirms the effect only when it changed; an already-equal or
+unchanged value confirms no effect. Missing, truncated, weak, or conflicting
+evidence remains UNKNOWN. Confirmed results reference only the fresh current
+fact. Run-scoped progress stores SHA-256 parameter/attempt digests, never raw
+values or private bindings. Watchdog timeout projects immutable partial counts,
+latest typed statuses and digests, labels its origin `harness_watchdog`, and
+keeps `terminal_reason_code` null because the Runtime did not terminate.

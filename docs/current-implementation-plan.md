@@ -134,3 +134,15 @@ CI. A live fixed smoke may run only after exact-head internal/full-CI/live-polic
 evidence admits it and the caller already supplied both explicit execution
 gates. Its current result is determined only by the exact-head protected
 workflow and artifact, not by a durable status literal in this plan.
+
+## P5-M4.2 local verified-progress closure
+
+The local target-loop correction is complete: fresh structural fill/select
+postconditions produce current action evidence; already-satisfied selections
+are zero-call; an unchanged exact repeat terminates with a typed no-progress
+code; bounded progress enters the next AgentContext; and watchdog timeout
+retains partial counts/evaluation status. The fixed manifest now uses 10 turns
+per simple case so `(max_turns - 1) * 7.5s` remains below its 120s watchdog
+after a fixed 5s scheduling margin. No live provider, protected workflow, or
+external smoke belongs to this slice. The historical `cd49b8e` timeout remains
+the formal result until a separately authorized exact-head run occurs.

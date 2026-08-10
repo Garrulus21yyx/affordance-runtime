@@ -184,3 +184,15 @@ performs exactly one read-only currentness probe; stale or unavailable state is
 fresh observation once. Official mechanical status is Runtime-private evaluator
 input and never policy feedback. Fixed 7.5-second pacing wraps only the live
 benchmark policy and cannot alter decisions or recover failures.
+
+## Verified-progress selection containment
+
+P5-M4.2 inserts one run-scoped check only after normal selection admission and
+before binding. It compares fill/select requested values with current complete
+structural public state. An already-satisfied selection records a bounded
+route-free event and starts a fresh policy context without fabricating a Turn,
+ActionResult, transport status, observation, or execution. One identical
+repeat under the same task/criterion/output/relevant-target fingerprint returns
+typed `NO_PROGRESS_REPETITION`. Different values, relevant progress, or a
+confirmed effect reset the streak. Runtime never chooses Submit or another
+replacement action.

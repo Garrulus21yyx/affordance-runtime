@@ -179,6 +179,14 @@ evaluated only from current official mechanical status. Adapter conformance is
 3/3 and admits `target_loop_adapter_ready` only from a clean exact-head
 attestation. Live Mistral smoke remains an independently gated deployment
 profile with fixed 7.5-second pacing. Its exact-head internal DOM attestation
-is accepted and external preflight is admitted; the fixed external run remains
-`NOT_RUN` because its separate explicit execution opt-in is absent. No
-generalization or default Coordinator cutover follows from this milestone.
+was accepted and external preflight admitted the subsequently authorized run;
+the formal `cd49b8e` run then failed by case timeout. No local diagnostic or
+correctness test backfills that result. No generalization or default
+Coordinator cutover follows from this milestone.
+
+P5-M4.2 adds only run-scoped verified-progress containment to that profile.
+It does not plan the next action or remove fill/select from ActionSpace:
+different requested values remain executable, while a mechanically satisfied
+exact value is zero-call and an unchanged repeat is bounded. Timeout evidence
+now preserves partial episode counts. The `cd49b8e` formal smoke remains a
+recorded case-timeout failure; this local closure does not change its status.

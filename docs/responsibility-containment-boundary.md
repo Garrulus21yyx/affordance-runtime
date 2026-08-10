@@ -212,3 +212,13 @@ package boundary. Pacing and live execution are benchmark-only; they do not
 enter model-policy core or AgentLoop. The scripted conformance decision port
 uses only serialized public context and cannot read task IDs or expected action
 sequences.
+
+## P5-M4.2 narrow owners
+
+P5-M4.2 adds three narrow owners without changing those imports:
+`browsergym_action_evaluator` owns only fill/select public postconditions;
+`agent/progress_control` owns run-scoped semantic digests and
+execute/suppress/terminate disposition; `agent/session_snapshot` owns a
+read-only privacy-safe in-flight view. Progress projection cannot modify
+ActionSpace, choose a replacement action, import benchmark IDs, retain raw
+parameters, bind BrowserGym routes, or resume a timed-out session.

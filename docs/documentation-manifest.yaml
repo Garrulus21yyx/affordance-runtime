@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-08-09
+updated: 2026-08-10
 repository: affordance-runtime
 
 authority_precedence:
@@ -186,6 +186,10 @@ reference:
 
   - role: p5_m4_browsergym_target_loop_adapter
     path: docs/reviews/2026-08-09-p5-m4-browsergym-target-loop-adapter.md
+    lifecycle: current
+
+  - role: p5_m4_2_verified_progress_repeated_action_containment
+    path: docs/reviews/2026-08-10-p5-m4-2-verified-progress-repeated-action-containment.md
     lifecycle: current
 
 immutable_records:

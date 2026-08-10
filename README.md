@@ -269,3 +269,13 @@ private, and closes the reviewed click-button, enter-text, and choose-list
 tasks with environment-native mechanical verification. This is fixed-profile
 adapter conformance, not a model-generalization claim. Live external smoke is
 separately gated and is not run without an existing explicit opt-in.
+
+P5-M4.2 closes a local correctness gap without rerunning that smoke. Fresh,
+complete structural evidence now confirms fill/select primitive effects. A
+fill/select whose requested public value is already current is suppressed
+before binding, probing, or execution; one unchanged exact repeat then fails
+with `NO_PROGRESS_REPETITION`. The next disposable AgentContext receives at
+most three route-free progress events, and a harness watchdog preserves a
+privacy-safe partial episode snapshot instead of reporting zero activity. The
+historical formal run at `cd49b8e` remains failed by case timeout; no local
+result backfills it. Format-only and the default Coordinator remain unchanged.

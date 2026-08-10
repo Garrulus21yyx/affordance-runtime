@@ -24,7 +24,9 @@ def _fixture(*, fail_step=False, fail_probe=False):
     common = {"exists": True, "url": raw["url"], "episode": "0", "ready": True, "done": False}
     fake.probes = {
         "1": {**common, "role": "button", "label": "okay", "state": {}},
-        "2": {**common, "role": "textbox", "label": "", "state": {"required": False}},
+        "2": {**common, "role": "textbox", "label": "", "state": {
+            "value": "", "required": False,
+        }},
         "3": {**common, "role": "combobox", "label": "", "state": {
             "value": "A", "expanded": False, "option_count": 2,
         }},
