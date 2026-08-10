@@ -146,6 +146,13 @@ class AgentLoop:
                     self._execute_selection,
                 )
             applied_result = self._apply_outcome(session, outcome)
+            scope = session.confirmation_continuation_scope
+            if scope is not None and (
+                scope.has_effectful_execution or applied_result is not None
+            ):
+                applied_result = self._close_confirmation(
+                    session, applied_result, scope.reason_code
+                )
             if applied_result is not None:
                 return applied_result
 
@@ -250,12 +257,6 @@ class AgentLoop:
                 scope.record_evaluations(task=task_evaluation)
                 return self._close_confirmation(
                     session, outcome, "already_satisfied"
-                )
-            if scope.has_effectful_execution or _terminal_from_outcome(outcome) is not None:
-                return self._close_confirmation(
-                    session,
-                    outcome,
-                    scope.reason_code,
                 )
             return outcome
         self._close_confirmation(

@@ -786,6 +786,52 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("exc", (RuntimeError("apply failed"), asyncio.CancelledError()))
+def test_confirmation_outcome_application_exception_closes_root_before_reentry(exc) -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [
+                _world("initial", False, "#initial"),
+                _world("fresh", False, "#fresh"),
+                _world("after", True, "#after"),
+            ],
+            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        )
+        loop = _loop()
+        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        paused = await session.run_until_pause()
+        root_id = session.state.recent_control_transitions[0].transition_id
+
+        def raising_apply(_session, _outcome):
+            raise exc
+
+        loop._apply_outcome = raising_apply  # type: ignore[method-assign]
+        with pytest.raises(type(exc)):
+            await session.resolve_confirmation(_decision(paused))
+
+        root = session.state.recent_control_transitions[0]
+        terminal = await session.run_until_pause()
+        assert root.transition_id == root_id
+        assert root.resulting_status is (
+            AgentLoopStatus.CANCELLED
+            if isinstance(exc, asyncio.CancelledError)
+            else AgentLoopStatus.FAILED
+        )
+        assert root.reason_code == (
+            "runtime_cancelled"
+            if isinstance(exc, asyncio.CancelledError)
+            else "runtime_exception"
+        )
+        assert root.execution is not None
+        assert root.after_observation_id == "after"
+        assert terminal is session.last_result
+        assert terminal.execution_count == 1
+        assert environment.execute_calls == 1
+        assert session.state.control_transition_total_count == 1
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("exc", (RuntimeError("task failed"), asyncio.CancelledError()))
 def test_confirmed_task_evaluator_exception_preserves_action_epoch_only(exc) -> None:
     class RaisingThirdTaskEvaluator(TaskEvaluator):

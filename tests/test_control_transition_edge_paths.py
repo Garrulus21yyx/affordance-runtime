@@ -119,6 +119,41 @@ def test_evaluator_cancellation_preserves_facts_and_propagates() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("exc", (RuntimeError("execute failed"), asyncio.CancelledError()))
+def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(exc) -> None:
+    class RaisingEnvironment(StaticEnvironment):
+        async def execute(self, request):
+            self.execute_calls += 1
+            self.executed_requests.append(request)
+            raise exc
+
+    async def scenario() -> None:
+        policy = ScriptedPolicy(["first"])
+        environment = RaisingEnvironment([_world("before", False)])
+        session = await AgentEpisodeRunner(_loop(policy)).start(environment, _task())
+        with pytest.raises(type(exc)):
+            await session.run_until_pause()
+
+        terminal = await session.run_until_pause()
+        root = session.state.recent_control_transitions[0]
+        assert terminal is session.last_result
+        assert terminal.status is (
+            AgentLoopStatus.CANCELLED
+            if isinstance(exc, asyncio.CancelledError)
+            else AgentLoopStatus.FAILED
+        )
+        assert root.reason_code == (
+            "runtime_cancelled"
+            if isinstance(exc, asyncio.CancelledError)
+            else "runtime_exception"
+        )
+        assert policy.decisions == []
+        assert environment.execute_calls == 1
+        assert session.state.control_transition_total_count == 1
+
+    asyncio.run(scenario())
+
+
 def test_lineage_mismatch_preserves_expected_and_actual_request_identity() -> None:
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)
