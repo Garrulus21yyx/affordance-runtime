@@ -6,9 +6,11 @@ import json
 import re
 from dataclasses import dataclass, field
 
+from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
+    BrowserGymMechanicalActionEvaluator,
+)
 from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
-from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelDecisionResponse, ModelMetadata
 
 
@@ -32,15 +34,6 @@ class BrowserGymStructuredDecisionPort:
                 prompt_version="browsergym-adapter-conformance.v1",
                 schema_version=request.schema_version,
             ),
-        )
-
-
-class BrowserGymMechanicalActionEvaluator:
-    async def evaluate(self, task, before, request, result, after):
-        del task, result
-        return ActionEvaluation(
-            request.request_id, before.observation_id, after.observation_id,
-            ActionEvaluationStatus.UNKNOWN, "mechanical task verifier owns completion",
         )
 
 

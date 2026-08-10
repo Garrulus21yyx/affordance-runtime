@@ -51,6 +51,9 @@ def derive_action_verification_obligations(
 ) -> tuple[RuntimeVerificationObligation, ...]:
     subjects = {request.intent.target_id, request.intent.destination_id} - {""}
     obligations: list[RuntimeVerificationObligation] = []
+    primitive = _primitive_value_obligation(request)
+    if primitive is not None:
+        obligations.append(primitive)
     try:
         criteria = normalize_task_criteria(task)
     except ValueError:
@@ -79,6 +82,21 @@ def derive_action_verification_obligations(
             VerificationObligationKind.ARTIFACT_CREATED, output_id=output_id,
         ))
     return tuple(obligations)
+
+
+def _primitive_value_obligation(request: BoundActionRequest) -> RuntimeVerificationObligation | None:
+    semantic = request.intent.semantic_action
+    value = request.intent.parameters.get("value")
+    if semantic not in {"fill", "select"} or not isinstance(value, str):
+        return None
+    return RuntimeVerificationObligation(
+        VerificationObligationKind.FACT_TRANSITION_TO,
+        request.intent.target_id,
+        "value",
+        value,
+        f"action-postcondition:{semantic}:value",
+        required_assurance="structural",
+    )
 
 
 def _unique_subject(before: WorldObservation, predicate: str, allowed: set[str]) -> str:

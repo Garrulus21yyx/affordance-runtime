@@ -135,7 +135,7 @@ def _candidates(raw: dict[str, object]) -> list[_ProjectedNode]:
             continue
         seen.add((bid, role))
         label = _typed_value(value.get("name"))[:240]
-        state = _state(value)
+        state = _state(value, include_value=role in {"textbox", "searchbox", "combobox", "listbox"})
         option_values = options if role in {"combobox", "listbox"} else ()
         if option_values:
             state["option_count"] = len(option_values)
@@ -188,10 +188,10 @@ def _options(nodes: object) -> tuple[tuple[str, str], ...]:
     return tuple(values)
 
 
-def _state(node: dict[str, object]) -> dict[str, object]:
+def _state(node: dict[str, object], *, include_value: bool) -> dict[str, object]:
     state: dict[str, object] = {}
     value = _typed_value(node.get("value"))
-    if value:
+    if value or include_value:
         state["value"] = value[:240]
     properties = node.get("properties")
     for item in properties if isinstance(properties, list) else ():
