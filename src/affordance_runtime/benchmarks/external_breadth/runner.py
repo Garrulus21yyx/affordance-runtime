@@ -17,7 +17,11 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.external_breadth.contracts import MiniWobBreadthManifest
 from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
-from affordance_runtime.benchmarks.external_breadth.progress import CampaignProgressWriter, ProgressEventObserver
+from affordance_runtime.benchmarks.external_breadth.progress import (
+    CampaignProgressWriter,
+    ProgressEventObserver,
+    case_progress_digest,
+)
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import InstrumentedBrowserGymEnvironment
 from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
 from affordance_runtime.benchmarks.external_smoke.composition import BrowserGymMechanicalActionEvaluator
@@ -306,7 +310,7 @@ def _progress_callback(progress: CampaignProgressWriter):
         progress.provider_attempts += _integer(result, "provider_attempts")
         progress.total_tokens += _integer(result, "total_tokens")
         progress.model_latency_ms += _number(result, "model_latency_ms")
-        progress.last_completed_case_digest = _case_digest(result)
+        progress.last_completed_case_digest = case_progress_digest(result)
         progress.write(current_case_id=result.case_id)
     return completed
 
@@ -395,14 +399,6 @@ def _number(result, name: str) -> float:
     item = result.measurements.get(name)
     value = item.value if item is not None and item.measured else 0
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
-
-
-def _case_digest(result) -> str:
-    import hashlib
-    import json
-
-    payload = (result.case_id, result.status, result.case_failure_code, result.terminal_reason_code)
-    return "sha256:" + hashlib.sha256(json.dumps(payload, default=str).encode()).hexdigest()
 
 
 def _git_sha() -> str:

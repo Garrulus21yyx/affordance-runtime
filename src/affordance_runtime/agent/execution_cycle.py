@@ -8,6 +8,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
     AttemptReceipt,
+    safe_boundary_identity,
     safe_exception_class,
 )
 from affordance_runtime.agent.control_outcome import Continue, LoopDirective, Terminate
@@ -262,6 +263,17 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         )
         raise TypeError("WorldEnvironment.execute returned a malformed contract")
     result = outcome.result
+    request_lineage_valid = (
+        result.request_id == request.request_id
+        and result.backend == request.binding.executor_id
+    )
+    public_result = ActionResult(
+        safe_boundary_identity(result.request_id, request.request_id, kind="request"),
+        result.dispatch_status,
+        safe_boundary_identity(result.backend, request.binding.executor_id, kind="backend"),
+        result.transport_success,
+        result.error,
+    )
     primary = validate_fresh_acquisition(
         outcome.post_acquisition,
         previous_id,
@@ -287,12 +299,12 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         probes,
         result.dispatch_status,
         request.request_id,
-        result.request_id,
-        result.request_id == request.request_id,
+        public_result.request_id,
+        request_lineage_valid,
         acquisition_status=primary.status,
     )
     session.accounting.record(receipt)
-    scope.record_execution_receipt(receipt, request.request_id, request.intent, result)
+    scope.record_execution_receipt(receipt, request.request_id, request.intent, public_result)
     return outcome
 
 

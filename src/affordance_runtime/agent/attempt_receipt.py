@@ -24,6 +24,17 @@ def safe_exception_class(error: BaseException) -> str:
     return f"ExceptionClass_{digest}"
 
 
+def safe_boundary_identity(actual: str, expected: str, *, kind: str) -> str:
+    """Retain equality truth while making a foreign mismatch opaque."""
+
+    if actual == expected:
+        return expected
+    digest = hashlib.sha256(
+        f"{kind}\0{actual}".encode("utf-8", errors="surrogatepass")
+    ).hexdigest()
+    return f"{kind}_sha256_{digest}"
+
+
 class AttemptOperation(StrEnum):
     RESET = "reset"
     CAPTURE = "capture"

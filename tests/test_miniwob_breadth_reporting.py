@@ -17,7 +17,10 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
 )
 from affordance_runtime.benchmarks.external_breadth.contracts import MiniWobBreadthCase, MiniWobBreadthManifest
 from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
-from affordance_runtime.benchmarks.external_breadth.progress import CampaignProgressWriter
+from affordance_runtime.benchmarks.external_breadth.progress import (
+    CampaignProgressWriter,
+    case_progress_digest,
+)
 from affordance_runtime.benchmarks.external_breadth.reporting import (
     _case_payload,
     privacy_scan,
@@ -153,6 +156,44 @@ def test_tree_validator_rejects_coherently_rehashed_case_identity_mutation(
     )
 
 
+def test_tree_validator_fails_closed_for_missing_required_metric(tmp_path: Path) -> None:
+    output = _write_valid_tree(tmp_path)
+    case_path = output / "cases" / "miniwob-60-01.json"
+    payload = json.loads(case_path.read_text())
+    del payload["benchmark_case_evidence"]["measurements"]["observations"]
+    case_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    _rebind_file(output, "miniwob-60-01", case_path)
+    errors = validate_campaign_tree(output, _manifest())
+    assert any("required formal metrics" in item for item in errors)
+
+
+def test_tree_validator_binds_progress_to_exact_last_case(tmp_path: Path) -> None:
+    output = _write_valid_tree(tmp_path)
+    progress_path = output / "campaign-progress.json"
+    payload = json.loads(progress_path.read_text())
+    payload["last_completed_case_digest"] = "anything"
+    progress_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    attestation_path = output / "attestation.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["progress_sha256"] = (
+        "sha256:" + hashlib.sha256(progress_path.read_bytes()).hexdigest()
+    )
+    attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
+    assert any(
+        "progress is not" in item
+        for item in validate_campaign_tree(output, _manifest())
+    )
+
+
+def _rebind_file(output: Path, case_id: str, case_path: Path) -> None:
+    attestation_path = output / "attestation.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["case_report_sha256"][case_id] = (
+        "sha256:" + hashlib.sha256(case_path.read_bytes()).hexdigest()
+    )
+    attestation_path.write_text(json.dumps(attestation, sort_keys=True), encoding="utf-8")
+
+
 def test_provider_capacity_requires_explicit_zero_retry_fallback_identity() -> None:
     with pytest.raises(ValueError, match="frozen identity"):
         ProviderCapacityEvidence(
@@ -215,6 +256,7 @@ def _write_progress(output: Path, outcome: MiniWobBreadthCampaignOutcome) -> Non
             float(record.result.measurements["model_latency_ms"].value or 0)
             for record in outcome.cases
         ),
+        last_completed_case_digest=case_progress_digest(outcome.cases[-1].result),
     )
     writer.write(current_case_id=outcome.cases[-1].case_id, complete=True)
 

@@ -11,11 +11,14 @@ from typing import Any, cast
 
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCaseRecord,
+    MiniWobTaskOutcome,
 )
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.external_breadth.contracts import MiniWobBreadthManifest
 from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
+from affordance_runtime.benchmarks.external_breadth.progress import case_progress_digest
 from affordance_runtime.benchmarks.external_breadth.runner import (
+    REQUIRED_METRICS,
     expected_target_manifest_digest,
 )
 from affordance_runtime.benchmarks.target_loop.case_projection import (
@@ -80,6 +83,9 @@ def validate_campaign_tree(
         if decoded is None:
             errors.append(f"{case_id}: public case evidence is malformed")
             continue
+        if not _required_metrics_are_measured(decoded):
+            errors.append(f"{case_id}: required formal metrics are incomplete")
+            continue
         classified = classify_case(decoded)
         raw_required = payload.get("required_primitives")
         required_primitives = (
@@ -123,9 +129,12 @@ def validate_campaign_tree(
         if not path.is_file() or attestation.get(field) != _sha256(path):
             errors.append(f"{name}: report digest mismatch")
     _validate_capacity(attestation.get("provider_capacity"), attestation, manifest, errors)
-    _validate_aggregates(
-        records, case_payloads, summary, campaign, progress, manifest, errors,
-    )
+    try:
+        _validate_aggregates(
+            records, case_payloads, summary, campaign, progress, manifest, errors,
+        )
+    except (ArithmeticError, KeyError, TypeError, ValueError):
+        errors.append("campaign aggregate projection is malformed")
     for result in (item.result for item in records):
         _validate_formal_case_gates(result, errors)
     from affordance_runtime.benchmarks.external_breadth.reporting import privacy_scan
@@ -277,14 +286,17 @@ def _validate_aggregates(records, payloads, summary, campaign, progress, manifes
         "provider_attempts": expected_summary["total_provider_attempts"],
         "total_tokens": expected_summary["total_tokens"],
         "model_latency_ms": expected_summary["total_model_latency_ms"],
+        "last_completed_case_digest": case_progress_digest(records[-1].result),
     }
-    if any(progress.get(name) != value for name, value in expected_progress.items()):
+    if set(progress) != set(expected_progress) or any(
+        progress.get(name) != value for name, value in expected_progress.items()
+    ):
         errors.append("campaign progress is not a complete aggregate projection")
-    if not isinstance(progress.get("last_completed_case_digest"), str):
-        errors.append("campaign progress last-case identity is invalid")
 
 
 def _validate_formal_case_gates(result, errors) -> None:
+    if classify_case(result).outcome is MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE:
+        errors.append(f"{result.case_id}: formal outcome is unclassified")
     if result.harness_integrity_failures or result.failure_facts.harness_integrity_code:
         errors.append(f"{result.case_id}: harness integrity failed")
     if result.cleanup_failures or result.failure_facts.cleanup_code:
@@ -305,6 +317,16 @@ def _validate_formal_case_gates(result, errors) -> None:
             or measurement.value != 0
         ):
             errors.append(f"{result.case_id}: formal gate {metric} is unavailable or nonzero")
+
+
+def _required_metrics_are_measured(result) -> bool:
+    return all(
+        (measurement := result.measurements.get(name)) is not None
+        and measurement.measured
+        and isinstance(measurement.value, int | float)
+        and not isinstance(measurement.value, bool)
+        for name in REQUIRED_METRICS
+    )
 
 
 def _object(path: Path) -> dict[str, object]:

@@ -7,6 +7,10 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkComposition,
     CaseFailureOrigin,
 )
+from affordance_runtime.benchmarks.target_loop.instrumentation import (
+    BenchmarkInstrumentation,
+    CountingEnvironment,
+)
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
@@ -71,6 +75,22 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
     assert result.acceptance.accepted
     assert events == ["start:a", "close:a", "start:b", "close:b"]
     assert [item.case_id for item in result.cases] == ["a", "b"]
+
+
+def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:
+    marker = object()
+
+    class MalformedReset:
+        async def reset(self, task):
+            del task
+            return marker
+
+    instrumentation = BenchmarkInstrumentation()
+    environment = CountingEnvironment(MalformedReset(), instrumentation, frozenset())
+    returned = asyncio.run(environment.reset(TaskGoal("task", "task")))
+    assert returned is marker
+    assert instrumentation.environment_reset_acquisitions == 0
+    assert instrumentation.failure_origin is CaseFailureOrigin.NONE
 
 
 def _action_world(observation_id: str) -> WorldObservation:

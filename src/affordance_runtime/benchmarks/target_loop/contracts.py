@@ -310,6 +310,7 @@ class BenchmarkCaseResult:
             raise TypeError("benchmark case text fields must be bounded strings")
         if (
             not self.case_id
+            or self.status not in {str(item) for item in AgentLoopStatus if item is not AgentLoopStatus.RUNNING}
             or type(self.execution_completed) is not bool
             or isinstance(self.latency_ms, bool)
             or not isinstance(self.latency_ms, int | float)
@@ -388,6 +389,11 @@ class BenchmarkCaseResult:
             or self.exception_class != facts.component_exception_class
         ):
             raise ValueError("benchmark component failure projection is inconsistent")
+        if facts.component_origin is CaseFailureOrigin.NONE and (
+            self.exception_class
+            or (self.failure_origin is CaseFailureOrigin.NONE and self.failure_code)
+        ):
+            raise ValueError("benchmark legacy component fields require a typed source fact")
         if self.watchdog_triggered != bool(facts.watchdog_code):
             raise ValueError("benchmark watchdog projection is inconsistent")
         if bool(self.cleanup_failures) != bool(facts.cleanup_code):
@@ -409,7 +415,13 @@ class BenchmarkCaseResult:
             and official is not None
             and official.measured
             and official.value == 1
-            and has_failure_fact
+            and (
+                has_failure_fact
+                or self.case_failure_code
+                or self.failure_code
+                or self.exception_class
+                or self.terminal_reason_code is not None
+            )
         ):
             raise ValueError("successful benchmark evidence cannot carry failure facts")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))

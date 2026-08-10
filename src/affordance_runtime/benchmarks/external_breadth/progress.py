@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from affordance_runtime.benchmarks.external_smoke.adapter_reporting import _atomic_json
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
+
+
+def case_progress_digest(result: object) -> str:
+    """Bind observer progress to the final public case disposition."""
+
+    payload = (
+        getattr(result, "case_id", ""),
+        getattr(result, "status", ""),
+        getattr(result, "case_failure_code", ""),
+        getattr(result, "terminal_reason_code", None),
+    )
+    encoded = json.dumps(payload, default=str, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 @dataclass

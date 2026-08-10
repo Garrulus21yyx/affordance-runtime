@@ -8,6 +8,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
     AttemptReceipt,
+    safe_boundary_identity,
     safe_exception_class,
 )
 
@@ -70,3 +71,17 @@ def test_foreign_exception_class_is_normalized_to_a_bounded_private_token(name: 
     assert 0 < len(normalized) <= 128
     assert normalized.replace("_", "").isalnum()
     assert "private exception detail" not in normalized
+
+
+@given(st.text(), st.text(), st.sampled_from(("request", "backend")))
+def test_foreign_boundary_identity_retains_only_equality_or_opaque_digest(
+    actual: str, expected: str, kind: str,
+) -> None:
+    normalized = safe_boundary_identity(actual, expected, kind=kind)
+    if actual == expected:
+        assert normalized == expected
+    else:
+        assert normalized.startswith(f"{kind}_sha256_")
+        assert len(normalized) == len(kind) + 8 + 64
+        if actual:
+            assert actual not in normalized

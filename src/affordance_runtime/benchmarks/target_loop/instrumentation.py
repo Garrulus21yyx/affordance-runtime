@@ -193,13 +193,12 @@ class CountingEnvironment:
     async def reset(self, task):
         try:
             acquisition = await self.wrapped.reset(task)
-            self.instrumentation.environment_reset_acquisitions += int(
-                acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
-            )
-            return acquisition
         except Exception as exc:
             self.instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, "reset_exception", exc)
             raise
+        if isinstance(acquisition, ObservationAcquisition):
+            self.instrumentation.environment_reset_acquisitions += 1
+        return acquisition
 
     async def capture(self, request):
         self.instrumentation.environment_capture_calls += 1

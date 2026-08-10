@@ -97,6 +97,34 @@ def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
     with pytest.raises(TypeError, match="strings"):
         decode_public_case_evidence(null_fact)
 
+    bad_status = public_case_evidence(
+        BenchmarkCaseResult("case:one", "failed", True, "", 1.0)
+    )
+    bad_status["status"] = "gibberish"
+    with pytest.raises(ValueError, match="scalar"):
+        decode_public_case_evidence(bad_status)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"failure_code": "execution_exception"},
+        {"case_failure_code": "bogus"},
+        {"exception_class": "RuntimeError"},
+    ),
+)
+def test_success_cannot_carry_unbound_legacy_failure_truth(changes) -> None:
+    with pytest.raises(ValueError, match="failure|source fact"):
+        BenchmarkCaseResult(
+            "case:one",
+            "done",
+            True,
+            "",
+            1.0,
+            {"official_success_count": MetricMeasurement(1, True)},
+            **changes,
+        )
+
 
 def test_public_evidence_omits_unrestricted_human_failure_reason() -> None:
     result = BenchmarkCaseResult(

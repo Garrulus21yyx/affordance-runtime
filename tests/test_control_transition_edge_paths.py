@@ -179,7 +179,7 @@ def test_foreign_execute_exception_name_cannot_break_physical_accounting() -> No
     asyncio.run(scenario())
 
 
-def test_lineage_mismatch_preserves_expected_and_actual_request_identity() -> None:
+def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() -> None:
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)
         session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
@@ -191,13 +191,38 @@ def test_lineage_mismatch_preserves_expected_and_actual_request_identity() -> No
         assert terminal.reason_code == "action_result_lineage_mismatch"
         assert root.execution is not None
         assert root.execution.expected_request_id == root.request_id
-        assert root.execution.request_id == "request:wrong"
+        assert root.execution.request_id.startswith("request_sha256_")
+        assert root.execution.backend == "dom"
+        assert root.attempt_receipts[0].request_lineage_valid is False
+        assert "request:wrong" not in repr(root)
         assert root.acquisition is not None and root.acquisition.attempts == 1
         assert session.execution_count == 1
         assert session.observation_count == 2
         assert tuple(item.origin for item in root.acquisition_attempts) == (
             AcquisitionOrigin.POST_ACTION,
         )
+
+    asyncio.run(scenario())
+
+
+def test_foreign_execution_identity_is_private_across_transition_and_turn() -> None:
+    marker = "PRIVATE_CREDENTIAL_SELECTOR"
+
+    async def scenario() -> None:
+        result = ActionResult(marker, DispatchStatus.SENT, marker, True)
+        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+            StaticEnvironment([_world("before", False), _world("after", True)], [result]),
+            _task(),
+        )
+        terminal = await session.run_until_pause()
+        root = session.state.recent_control_transitions[0]
+        assert terminal.reason_code == "action_result_lineage_mismatch"
+        assert marker not in repr(root)
+        assert marker not in repr(root.as_turn())
+        assert marker not in repr(session.snapshot_partial_episode())
+        assert root.execution is not None
+        assert root.execution.request_id.startswith("request_sha256_")
+        assert root.execution.backend.startswith("backend_sha256_")
 
     asyncio.run(scenario())
 
