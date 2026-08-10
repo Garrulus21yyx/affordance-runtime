@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
 from pathlib import Path
+
+from affordance_runtime.benchmarks.external_breadth.inventory_v2 import (
+    build_capability_inventory_v2,
+    capability_inventory_v2_digest,
+    current_declared_capabilities,
+    task_readiness,
+)
+from affordance_runtime.benchmarks.external_breadth.registry import load_registry_census
 
 
 def reclassify_archive(archive: Path) -> dict[str, object]:
@@ -30,6 +39,36 @@ def reclassify_archive(archive: Path) -> dict[str, object]:
         "revised_category_counts": dict(sorted(counts.items())),
         "unresolved_count": counts["unresolved_legacy_evidence"],
         "cases": records,
+    }
+
+
+def capability_overlay(archive: Path, source_root: Path | None = None) -> dict[str, object]:
+    census = load_registry_census()
+    capabilities = current_declared_capabilities()
+    inventory = build_capability_inventory_v2(census, source_root)
+    by_task = {item.task_id: item for item in inventory}
+    cases = []
+    for path in sorted((archive / "cases").glob("*.json")):
+        historical = json.loads(path.read_text(encoding="utf-8"))
+        task_id = f"browsergym/miniwob.{historical['task_family_label']}"
+        requirements = by_task[task_id]
+        cases.append({
+            "case_id": historical["case_id"],
+            "task_family_label": historical["task_family_label"],
+            "historical_outcome": historical["typed_outcome"],
+            "v1_primitive_profile": historical["required_primitives"],
+            "v2_requirements": requirements.__dict__,
+            "v2_readiness": task_readiness(requirements, capabilities).value,
+        })
+    counts = Counter(str(item["v2_readiness"]) for item in cases)
+    return {
+        "schema_version": "miniwob-60-capability-overlay.v1",
+        "historical_results_modified": False,
+        "inventory_schema_version": "miniwob-capability-inventory.v2",
+        "inventory_digest": capability_inventory_v2_digest(census, inventory, capabilities),
+        "registry_task_count": len(inventory),
+        "readiness_counts": dict(sorted(counts.items())),
+        "cases": cases,
     }
 
 
@@ -64,11 +103,17 @@ def main() -> int:
     reclassify = commands.add_parser("reclassify-archive")
     reclassify.add_argument("--input", type=Path, required=True)
     reclassify.add_argument("--output", type=Path, required=True)
+    overlay = commands.add_parser("capability-overlay")
+    overlay.add_argument("--archive", type=Path, required=True)
+    overlay.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "reclassify-archive":
         payload = reclassify_archive(args.input)
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    elif args.command == "capability-overlay":
+        configured = os.environ.get("MINIWOB_SOURCE_DIR", "").strip()
+        payload = capability_overlay(args.archive, Path(configured) if configured else None)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
 
 
