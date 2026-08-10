@@ -74,8 +74,8 @@ async def run_breadth_campaign(
     records = tuple(
         _record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True)
     )
-    acceptance = _accept_campaign(manifest, suite, records)
     provider, model, grounding = _model_identity(instrumentations)
+    acceptance = _accept_campaign(manifest, suite, records, provider, model, grounding)
     progress.completed_cases = len(records)
     progress.success_count = acceptance.successful_cases
     progress.failure_category_counts = _outcome_counts(records)
@@ -185,7 +185,7 @@ def _record(case, result) -> MiniWobBreadthCaseRecord:
     )
 
 
-def _accept_campaign(manifest, suite, records) -> MiniWobBreadthCampaignAcceptance:
+def _accept_campaign(manifest, suite, records, provider, model, grounding) -> MiniWobBreadthCampaignAcceptance:
     errors: list[str] = []
     identities = tuple(item.case_id for item in records)
     expected = tuple(item.case_id for item in manifest.cases)
@@ -193,6 +193,8 @@ def _accept_campaign(manifest, suite, records) -> MiniWobBreadthCampaignAcceptan
         errors.append("campaign result set does not match the frozen 60-case manifest")
     if suite.identity.git_dirty:
         errors.append("campaign git tree is dirty")
+    if provider != "mistral" or model != manifest.model_profile or grounding != manifest.grounding_profile:
+        errors.append("campaign model identity does not match the frozen profile")
     for record in records:
         missing = [name for name in REQUIRED_METRICS if not record.result.measurements[name].measured]
         if missing:

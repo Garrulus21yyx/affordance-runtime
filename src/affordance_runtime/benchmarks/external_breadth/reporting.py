@@ -84,8 +84,6 @@ def write_campaign_reports(outcome: MiniWobBreadthCampaignOutcome, output_dir: P
 def privacy_scan(output_dir: Path) -> tuple[str, ...]:
     errors = []
     for path in sorted(output_dir.rglob("*.json")):
-        if path.name == "attestation.json":
-            continue
         text = path.read_text(encoding="utf-8").casefold()
         for marker in _FORBIDDEN:
             if marker in text:
