@@ -57,6 +57,22 @@ def test_privacy_scan_fails_closed_for_forbidden_report_material(tmp_path: Path)
     assert privacy_scan(tmp_path)
 
 
+def test_privacy_scan_allows_public_task_family_containing_coordinate(tmp_path: Path) -> None:
+    path = tmp_path / "case.json"
+    path.write_text('{"task_family_label":"grid-coordinate"}', encoding="utf-8")
+    assert privacy_scan(tmp_path) == ()
+
+
+def test_privacy_scan_rejects_private_coordinate_field_and_route_value(tmp_path: Path) -> None:
+    coordinate = tmp_path / "coordinate.json"
+    coordinate.write_text('{"coordinate":[10,20]}', encoding="utf-8")
+    route = tmp_path / "route.json"
+    route.write_text('{"detail":"selector:#private"}', encoding="utf-8")
+    errors = privacy_scan(tmp_path)
+    assert any("forbidden field coordinate" in error for error in errors)
+    assert any("forbidden value selector:" in error for error in errors)
+
+
 def _manifest() -> MiniWobBreadthManifest:
     cases = tuple(
         MiniWobBreadthCase(
