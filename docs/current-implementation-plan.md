@@ -147,13 +147,12 @@ after a fixed 5s scheduling margin. No live provider, protected workflow, or
 external smoke belongs to this slice. The historical `cd49b8e` timeout remains
 the formal result until a separately authorized exact-head run occurs.
 
-## P5-M4.3 seeded breadth queue
+## P5-M4.4 short-loop breadth closure
 
-The next bounded activity is the frozen MiniWoB-60 seed-7 in-family campaign,
-not P5-E implementation. Registry census, primitive inventory, deterministic
-selection, typed attribution, atomic non-resumable progress, privacy-safe case
-reports, and exact-head attestation are repository-owned. Dynamic success
-counts and run identity remain outside source control. After one complete
-campaign, failure distribution selects the next review among primitive breadth,
-projection, policy relevance, progress/evaluation, seed robustness, or P5-E.
-No campaign result may tune the production prompt during the run.
+The completed MiniWoB-60 seed-7 campaign is a valid negative breadth result at
+6/60, not a prompt-tuning signal or generalization claim. M4.4 closes future
+typed failure metadata, freezes a full-registry capability inventory v2, and
+runs deterministic local no-model diagnostics. A new formal breadth run is
+blocked by 27 unresolved legacy cases and undeclared/insufficient provider
+capacity. The next implementation slice, if authorized, is a generic M4.5
+short-loop coverage repair; P5-E remains blocked and unstarted.

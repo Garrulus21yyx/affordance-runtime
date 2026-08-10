@@ -292,3 +292,13 @@ zero retry, and zero fallback. Reports separate evidence validity from task
 success and retain no prompt, response, oracle, reward, or private route. This
 is in-family synthetic breadth evidence, not GUI generalization or a complete
 MiniWoB benchmark.
+
+P5-M4.4 records the completed run as a valid negative breadth result: 6/60 at
+exact run SHA `b3b64a2`, with no change to the historical reports. Later
+read-only analysis leaves 27 historical fallback/environment cases explicitly
+`UNRESOLVED_LEGACY_EVIDENCE`. A source-bound, multi-axis capability inventory
+v2 covers all 125 registry tasks and classifies the historical 60 as 15 declared
+supported, 31 declared unsupported, and 14 unassessed. Local no-model probes
+reset and project all 22 deterministic representatives, but project only 51 of
+103 raw interactive nodes and expose 20 blank labels. A breadth rerun and P5-E
+remain blocked; M4.4 makes no provider call or product behavior change.

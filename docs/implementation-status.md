@@ -336,6 +336,22 @@ use seed 7, ten turns, a 120-second watchdog, one-stage format-only Mistral,
 global 7.5-second pacing, and zero retry/fallback. Campaign evidence may be
 valid when individual tasks fail, but only after all 60 cases receive one
 typed classification and report-tree, cleanup, safety, exact-head, and privacy
-gates pass. The formal campaign remains `NOT_RUN` until the final clean pushed
-HEAD. Generalization is `NOT_CLAIMED`; Runtime, AgentLoop, parser/admission,
-prompt, adapter semantics, and the default Coordinator are unchanged.
+gates pass. The exact-head formal campaign completed at run SHA `b3b64a2` with
+valid evidence and 6/60 task success; that negative breadth result is not a
+general capability estimate because its historical attribution and primitive-
+only inventory were incomplete. Generalization is `NOT_CLAIMED`; Runtime,
+AgentLoop, parser/admission, prompt, adapter semantics, and the default
+Coordinator are unchanged.
+
+## P5-M4.4 failure attribution and capability closure
+
+The immutable formal result is now archived as valid negative evidence: 6/60
+at run SHA `b3b64a2`, with generalization unclaimed. Future reports record
+bounded component origin/code, exception class, last decision/evaluation
+status, ActionSpace/target counts, coverage, and pending kind. Read-only legacy
+analysis leaves 27 cases unresolved rather than guessing. Capability inventory
+v2 covers 125/125 pinned tasks; its historical overlay is 15 supported, 31
+unsupported, and 14 unassessed. Twenty-two no-model lifecycle probes all reset
+and project, while projection covers 51/103 raw interactive nodes. Formal rerun
+is `BLOCKED_WITH_EXPLICIT_ERRORS`; P5-E is
+`BLOCKED_BY_SHORT_LOOP_BREADTH`.

@@ -195,3 +195,10 @@ P5-M4.3 is one frozen 60-task, single-seed MiniWoB breadth profile before the
 P5-E decision. It is a diagnostic gate inside one synthetic benchmark family.
 It neither changes product authority nor satisfies long-horizon, multi-surface,
 seed-robustness, generalization, or default-cutover completion gates.
+
+P5-M4.4 interprets the valid 6/60 result without changing its historical
+denominator or files. It adds future failure-origin observability, full-registry
+multi-axis capability requirements, and local no-model coverage diagnostics.
+The breadth rerun remains blocked until legacy uncertainty is replaced by new
+typed evidence and provider capacity is explicitly sufficient. P5-E is
+`BLOCKED_BY_SHORT_LOOP_BREADTH`, not started.

@@ -241,3 +241,14 @@ the run and cannot resume or merge. Summary rates include overall,
 provider-available, and infrastructure-clean denominators, with zero
 denominators represented as null. The classification is
 `MINIWOB_60_SEEDED_BREADTH_PROFILE`; generalization remains unclaimed.
+
+The archived exact run at `b3b64a2` is valid evidence with 6/60 successes. It
+is a negative breadth measurement, not a statement that the model has “10%
+GUI capability.” The v1 inventory is primitive-only and insufficient for task
+readiness. Inventory v2 separately declares interaction, observation,
+reasoning, and control requirements, leaving unknown requirements unassessed.
+M4.4 local diagnostics never execute a policy: they compare raw structural
+interactive counts with projected targets and ActionSpace counts, query only
+the initial mechanical verifier, and close resources. Future rerun admission
+requires typed origins, zero unclassified outcomes, complete inventory and
+diagnostics, sufficient declared provider capacity, privacy, and validation.

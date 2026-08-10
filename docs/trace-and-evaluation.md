@@ -168,3 +168,10 @@ contain an opaque case ID, public family label, typed outcome, counts, token and
 latency aggregates, and official verifier count. They exclude registry task
 IDs, prompt/response text, entered values, expected answers, reward, hidden
 state, selectors, bids, coordinates, URLs, credentials, and provider endpoint.
+
+P5-M4.4 adds bounded breadth failure metadata without weakening report privacy:
+exception class is permitted, while exception message and traceback are not. A
+read-only archive reclassifier records original outcome, conservative revised
+category, confidence, and missing evidence fields. It cannot rewrite archived
+case, summary, campaign, or attestation JSON. Capability overlays and local
+diagnostics are later interpretation and do not change the historical 6/60.

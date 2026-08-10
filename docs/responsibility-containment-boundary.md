@@ -231,3 +231,9 @@ enters TaskGoal, AgentContext, ActionSpace, or policy metadata. Campaign
 classification cannot change Runtime, adapter projection, progress control,
 prompt, retry, fallback, or the next action. Atomic progress is observational
 only and is never resume, skip, replay, or backfill authority.
+
+P5-M4.4 keeps failure origin in the surface-neutral target-loop benchmark
+contract and component wrappers. `external_breadth` owns only MiniWoB taxonomy,
+source-bound requirements, offline overlays, local probes, and rerun readiness.
+Neither capability readiness nor diagnostic disposition enters AgentContext,
+ActionSpace, BrowserGym adapter behavior, Runtime admission, or policy control.

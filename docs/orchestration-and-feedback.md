@@ -206,3 +206,11 @@ or harness terminates. Failure advances to the next case without retry;
 process interruption leaves `complete=false` and a later run must start all 60
 cases under a new run ID. Capability labels and aggregate feedback remain
 offline measurement and cannot route production decisions.
+
+Future breadth reports retain bounded failure authority: component origin,
+stable code, exception class only, last decision type, action/task evaluation
+status, ActionSpace/target counts, coverage, and pending kind. They never retain
+exception text or traceback. Waiting-user effect uncertainty, task uncertainty,
+AskUser, Abort, provider failure, Runtime rejection, evaluator failure,
+watchdog, and cleanup are separate outcomes; legacy reports lacking these
+fields remain unresolved rather than inferred from prose.

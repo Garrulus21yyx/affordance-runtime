@@ -196,6 +196,10 @@ reference:
     path: docs/reviews/2026-08-10-p5-m4-3-miniwob-60-seeded-breadth.md
     lifecycle: current
 
+  - role: p5_m4_4_miniwob_breadth_failure_attribution
+    path: docs/reviews/2026-08-10-p5-m4-4-miniwob-breadth-failure-attribution.md
+    lifecycle: current
+
 immutable_records:
   - path: docs/evidence/
     lifecycle: immutable_record

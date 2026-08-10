@@ -119,6 +119,8 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M3.1 harness measurement and real-adapter closure](reviews/2026-08-08-p5-m3-1-harness-measurement-real-adapters.md)
 - [P5-M3.2 external benchmark admission package](reviews/2026-08-08-p5-m3-2-external-benchmark-admission-package.md)
 - [P5-M4.2 verified progress and repeated-action containment](reviews/2026-08-10-p5-m4-2-verified-progress-repeated-action-containment.md)
+- [P5-M4.3 MiniWoB-60 seeded breadth](reviews/2026-08-10-p5-m4-3-miniwob-60-seeded-breadth.md)
+- [P5-M4.4 MiniWoB breadth failure attribution](reviews/2026-08-10-p5-m4-4-miniwob-breadth-failure-attribution.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

@@ -406,3 +406,10 @@ unchanged one-stage target loop. It adds no primitive, planner, prompt,
 Runtime admission, recovery, retry, fallback, or default-path behavior.
 Outcome attribution can direct a later separately authorized phase, but this
 single synthetic-family run does not prove seed stability or GUI generalization.
+
+P5-M4.4 follows the valid 6/60 negative result before any P5-E work. It closes
+future typed failure origins, adds complete-registry multi-axis capability
+requirements, and performs local no-model lifecycle/projection diagnostics.
+It does not rerun the campaign or alter product behavior. A formal rerun is
+blocked while legacy evidence remains unresolved and provider capacity is not
+declared sufficient; P5-E is blocked by short-loop breadth closure.
