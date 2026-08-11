@@ -17,6 +17,7 @@ from affordance_runtime.benchmarks.external_breadth.control_feedback_targeted im
     _FEEDBACK_METRICS,
     TARGETED_CAMPAIGN_ID,
     TARGETED_CASE_IDS,
+    _targeted_derived_metrics,
     targeted_manifest,
     validate_targeted_evidence,
     write_targeted_evidence,
@@ -57,6 +58,17 @@ def test_control_feedback_provider_capacity_preflight_checks_declared_budget(
 
     assert insufficient.sufficient is False
     assert sufficient.sufficient is True
+
+
+def test_control_feedback_targeted_derivation_preserves_canonical_d_metrics() -> None:
+    base = _result(37, failed=False)
+    measurements = dict(base.measurements)
+    for name in _FEEDBACK_METRICS:
+        measurements[name] = MetricMeasurement(1, True)
+
+    derived = _targeted_derived_metrics(replace(base, measurements=measurements))
+
+    assert all(derived.measurements[name].value == 1 for name in _FEEDBACK_METRICS)
 
 
 def test_control_feedback_evidence_validator_redecodes_and_detects_tamper(tmp_path: Path) -> None:

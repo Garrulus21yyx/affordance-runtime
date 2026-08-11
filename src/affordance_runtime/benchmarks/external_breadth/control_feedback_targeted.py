@@ -146,7 +146,9 @@ async def run_control_feedback_targeted_diagnostic(
     if expected_target_manifest_digest(manifest) != target_manifest_digest(target):
         raise ValueError("control-feedback target-loop manifest identity is not canonical")
     suite = await run_suite(target, _progress_callback(progress))
-    suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
+    suite = replace(suite, cases=tuple(
+        _targeted_derived_metrics(item) for item in suite.cases
+    ))
     records = tuple(
         _record(case, result)
         for case, result in zip(manifest.cases, suite.cases, strict=True)
@@ -536,6 +538,19 @@ def _metric(result, name: str) -> int | float:
     if item is None or not item.measured or isinstance(item.value, bool):
         return 0
     return item.value if isinstance(item.value, int | float) else 0
+
+
+def _targeted_derived_metrics(result):
+    """Keep the formal derived set plus D's canonical typed measurements."""
+
+    base = _derived_metrics(result)
+    measurements = dict(base.measurements)
+    measurements.update({
+        name: result.measurements[name]
+        for name in _FEEDBACK_METRICS
+        if name in result.measurements
+    })
+    return replace(base, measurements=measurements)
 
 
 def _read(path: Path) -> dict[str, object]:
