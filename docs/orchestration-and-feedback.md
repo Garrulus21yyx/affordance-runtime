@@ -83,6 +83,11 @@ only the public-safe category/code/subject/field refs, retry disposition and
 `strategy_transition_required` into the next disposable AgentContext.
 ContextBuilder only assembles that view.
 
+The policy consumes this as an outcome observation, not as a Runtime-authored
+correction. It may reflect inside its ordinary inference, but any correction is
+a new AgentDecision. `retry_disposition` means only that a new policy decision
+is admitted; it never authorizes replay of the rejected request.
+
 AgentPolicy—not Runtime—uses the next normal `decide()` call to correct public
 parameters or change strategy. Runtime never parses exception text into advice,
 rewrites parameters, selects a replacement action, or automatically replays a
