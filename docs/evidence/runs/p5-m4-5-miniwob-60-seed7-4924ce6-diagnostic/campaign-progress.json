@@ -1,0 +1,24 @@
+{
+  "campaign_id": "miniwob-60-seed7-v1",
+  "complete": true,
+  "completed_cases": 60,
+  "current_case_id": "miniwob-60-60",
+  "failure_category_counts": {
+    "case_timeout": 1,
+    "no_progress_repetition": 2,
+    "runtime_rejected": 10,
+    "success": 8,
+    "task_failed": 25,
+    "waiting_user_task_unknown": 14
+  },
+  "git_sha": "4924ce61748d8efdec4fcc6de494acf8a9f224cc",
+  "last_completed_case_digest": "sha256:2f6f01081d443e471dd2d0d882432a801ec74a4e03ed53953471517e260d97c8",
+  "manifest_digest": "sha256:ae83bb8f0d16fc89f4d47262f921642a8a808eb7e378e5be19f348a6ef0f9d17",
+  "model_latency_ms": 560774.165,
+  "planned_cases": 60,
+  "provider_attempts": 290,
+  "run_id": "miniwob-60:e9551acfcd31466e91481ee5923fc9af",
+  "schema_version": "miniwob-breadth-progress.v1",
+  "success_count": 8,
+  "total_tokens": 555164
+}

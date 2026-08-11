@@ -1,0 +1,235 @@
+{
+  "benchmark_case_evidence": {
+    "agent_failure_code": "no_progress_repetition",
+    "case_failure_code": "no_progress_repetition",
+    "case_id": "miniwob-60-51",
+    "case_schema_version": "target-loop-case.v7",
+    "cleanup_exception_class": "",
+    "cleanup_failure_code": "",
+    "cleanup_failures": 0,
+    "exception_class": "",
+    "execution_completed": true,
+    "failure_code": "",
+    "failure_facts": {
+      "agent_failure_code": "no_progress_repetition",
+      "cleanup_code": "",
+      "cleanup_exception_class": "",
+      "component_code": "",
+      "component_exception_class": "",
+      "component_origin": "none",
+      "harness_integrity_code": "",
+      "policy_failure_code": "",
+      "runtime_failure": {
+        "attempt_id": "",
+        "code": "no_progress_repetition",
+        "exception_class": "",
+        "kind": "no_progress",
+        "root_id": "transition:2:cab07f8e369bd5fed331",
+        "stage": "control"
+      },
+      "runtime_reason_code": "no_progress_repetition",
+      "watchdog_code": ""
+    },
+    "failure_origin": "none",
+    "harness_integrity_code": "",
+    "harness_integrity_failures": 0,
+    "harness_schema_version": "target-loop-harness.v6",
+    "last_action_space_option_count": 1,
+    "last_decision_type": "SelectAction",
+    "last_policy_failure_code": "",
+    "last_progress_event_type": "already_satisfied_selection",
+    "last_world_coverage": "complete",
+    "last_world_target_count": 1,
+    "latency_ms": 14577.114082872868,
+    "latest_action_evaluation_status": "",
+    "latest_semantic_attempt_key_digest": "sha256:ee79a7181cec286f27a43c880dfca9ff8963706b8374a1fd02ffacf640ed103f",
+    "latest_task_status": "incomplete",
+    "manifest_digest": "92257b9bcf12cc663832e93bd53aece1ad1a882e451a7ea7eae272902d0a02dc",
+    "measurements": {
+      "already_satisfied_suppressions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_probe_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "browsergym_reset_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_step_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "cleanup_failures": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "click_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "completion_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 217
+      },
+      "currentness_probes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "duplicate_unknown_attempts": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "executions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "fallback_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "fill_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "forbidden_effect_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "model_latency_ms": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3637.523
+      },
+      "no_progress_terminations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "observation_contract_exceptions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "official_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "policy_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "prompt_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2857
+      },
+      "provider_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "provider_retry_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "select_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "sent_unknown_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_zero_call_violations": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "total_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3074
+      },
+      "turns": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      }
+    },
+    "no_progress_count": 2,
+    "partial_episode_available": false,
+    "pending_kind": "",
+    "profile_id": "mistral-format-only-v1",
+    "runtime_reason_code": "no_progress_repetition",
+    "same_attempt_streak": 2,
+    "schema_version": "target-loop-case.v7",
+    "seed": 7,
+    "status": "failed",
+    "suite_id": "miniwob-60-seed7-v1",
+    "terminal_reason_code": "no_progress_repetition",
+    "termination_origin": "runtime",
+    "watchdog_triggered": false
+  },
+  "capability_profile": "current_primitives",
+  "case_id": "miniwob-60-51",
+  "classification_source": "canonical_runtime_failure",
+  "required_primitives": [
+    "activate"
+  ],
+  "schema_version": "miniwob-breadth-case.v3",
+  "task_family_label": "focus-text",
+  "typed_outcome": "no_progress_repetition"
+}
