@@ -9,6 +9,8 @@ from affordance_runtime.evaluation import (
     CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_task_evaluation
@@ -111,3 +113,49 @@ def test_agent_loop_rejects_invalid_initial_complete_without_policy_or_execution
         assert "task evaluation" in result.message
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    (
+        (TaskOutcomeKind.TERMINAL_SUCCESS, TaskEvaluationStatus.INCOMPLETE),
+        (TaskOutcomeKind.RUNNING_INCOMPLETE, TaskEvaluationStatus.UNKNOWN),
+        (TaskOutcomeKind.TERMINAL_FAILURE, TaskEvaluationStatus.COMPLETE),
+        (TaskOutcomeKind.VERIFIER_UNAVAILABLE, TaskEvaluationStatus.BLOCKED),
+    ),
+)
+def test_task_outcome_status_matrix_rejects_every_cross_kind(kind, status) -> None:
+    refs = ("fact:after:enabled",) if kind in {
+        TaskOutcomeKind.TERMINAL_SUCCESS, TaskOutcomeKind.TERMINAL_FAILURE,
+    } else ()
+    with pytest.raises(ValueError, match="contradicts"):
+        TaskEvaluation(
+            "enable-shared",
+            "after",
+            status,
+            "invalid matrix",
+            completion_evidence_refs=refs if status is TaskEvaluationStatus.COMPLETE else (),
+            outcome=TaskOutcomeFact(kind, "typed_outcome", refs),
+        )
+
+
+def test_task_outcome_evidence_must_resolve_in_current_observation() -> None:
+    observation = _world("after", True)
+    evaluation = TaskEvaluation(
+        "enable-shared",
+        "after",
+        TaskEvaluationStatus.BLOCKED,
+        "terminal task failure",
+        outcome=TaskOutcomeFact(
+            TaskOutcomeKind.TERMINAL_FAILURE,
+            "verified_terminal_task_failure",
+            ("fact:stale:status",),
+        ),
+    )
+    with pytest.raises(ValueError, match="task outcome evidence"):
+        validate_task_evaluation(
+            evaluation,
+            _criterion_task(),
+            observation,
+            WorldEvidenceIndex.from_observation(observation),
+        )

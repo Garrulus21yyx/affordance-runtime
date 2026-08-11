@@ -44,7 +44,10 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     verifier_snapshot,
     verifier_snapshot_from_current_probe,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalVerifierResult
+from affordance_runtime.benchmarks.external_smoke.environment import (
+    ExternalVerifierResult,
+    VerifierFactSource,
+)
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
@@ -170,6 +173,7 @@ class BrowserGymMiniWobEnvironment:
             task_run_id=self.task_run_id,
             observation_id=observation_id,
             source_observation_id=observation_id,
+            source=VerifierFactSource.RESET,
             reward=0.0,
             terminated=False,
             truncated=False,
@@ -242,6 +246,7 @@ class BrowserGymMiniWobEnvironment:
                 task_run_id=self.task_run_id,
                 observation_id=observation_id,
                 source_observation_id=observation_id,
+                source=VerifierFactSource.POST_ACTION,
                 reward=reward,
                 terminated=terminated,
                 truncated=truncated,

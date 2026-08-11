@@ -13,7 +13,11 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     BrowserGymVerifierSnapshot,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalVerifierStatus
+from affordance_runtime.benchmarks.external_smoke.environment import (
+    ExternalVerifierReason,
+    ExternalVerifierStatus,
+    VerifierFactSource,
+)
 from affordance_runtime.evaluation import ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionResult, DispatchStatus
@@ -46,7 +50,8 @@ def _world(
             ax_node("private-b", "option", "B"),
         )
     snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque", observation_id, observation_id, ExternalVerifierStatus.INCOMPLETE, "",
+        "run:opaque", observation_id, observation_id, VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
     )
     world = project_browsergym_observation(
         raw_observation(*nodes), observation_id=observation_id,
@@ -119,7 +124,8 @@ def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
         observation_id="obs:after", source_revision="revision:after",
         page_identity="page:opaque", episode_identity="0",
         verifier=BrowserGymVerifierSnapshot(
-            "run:opaque", "obs:after", "obs:after", ExternalVerifierStatus.INCOMPLETE, "",
+            "run:opaque", "obs:after", "obs:after", VerifierFactSource.RESET,
+            ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
         ),
     ).world
     assert _evaluate(before, missing, "fill", "desired").status is ActionEvaluationStatus.UNKNOWN
@@ -156,7 +162,8 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
         observation_id="obs:before", source_revision="revision:before",
         page_identity="page:opaque", episode_identity="0",
         verifier=BrowserGymVerifierSnapshot(
-            "run:opaque", "obs:before", "obs:before", ExternalVerifierStatus.INCOMPLETE, "",
+            "run:opaque", "obs:before", "obs:before", VerifierFactSource.RESET,
+            ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
         ),
     ).world
     after = replace(before, observation_id="obs:after", bindings=(), sources=())

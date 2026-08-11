@@ -36,7 +36,7 @@ from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEval
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
-from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
+from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -336,9 +336,12 @@ async def _propose_done(
     state.current_task_evaluation = evaluation
     scope.record_evaluations(task=evaluation)
     scope.set_reason(f"task_{evaluation.status}")
-    status = task_evaluation_loop_status(evaluation)
-    return Continue("task_incomplete") if status is None else directive(
-        status, f"task_{evaluation.status}", evaluation.reason,
+    disposition = task_evaluation_disposition(evaluation)
+    return Continue("task_incomplete") if disposition.status is None else directive(
+        disposition.status,
+        disposition.reason_code,
+        evaluation.reason,
+        task_terminal=disposition.task_terminal,
     )
 
 

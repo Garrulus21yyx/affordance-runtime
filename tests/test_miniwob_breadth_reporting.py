@@ -47,7 +47,7 @@ def test_report_tree_is_complete_private_and_zero_denominators_are_null(tmp_path
     records = tuple(
         MiniWobBreadthCaseRecord(
             result.case_id, f"fake-{index:02d}", "current_primitives", ("activate",),
-            MiniWobTaskOutcome.SUCCESS, "mechanical_verifier", result,
+                MiniWobTaskOutcome.SUCCESS, "canonical_task_outcome", result,
         )
         for index, result in enumerate(results, 1)
     )
@@ -137,6 +137,8 @@ def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
         "cleanup_exception_class": "",
             "harness_integrity_code": "metric_name_collision",
             "runtime_failure": None,
+            "task_outcome_kind": "",
+            "task_outcome_code": "",
         }
 
 
@@ -303,7 +305,7 @@ def _write_valid_tree(tmp_path: Path) -> Path:
     records = tuple(
         MiniWobBreadthCaseRecord(
             result.case_id, f"fake-{index:02d}", "current_primitives", ("activate",),
-            MiniWobTaskOutcome.SUCCESS, "mechanical_verifier", result,
+                MiniWobTaskOutcome.SUCCESS, "canonical_task_outcome", result,
         )
         for index, result in enumerate(results, 1)
     )
@@ -374,9 +376,15 @@ def _manifest() -> MiniWobBreadthManifest:
 def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
     measurements = {name: MetricMeasurement(0, True) for name in REQUIRED_METRICS}
     measurements["official_success_count"] = MetricMeasurement(0 if failed else 1, True)
+    facts = FailureFacts() if failed else FailureFacts(
+        task_outcome_kind="terminal_success",
+        task_outcome_code="verified_success",
+    )
     return BenchmarkCaseResult(
         f"miniwob-60-{index:02d}", "failed" if failed else "done", True, "", 1.0,
         measurements,
+        latest_task_status="" if failed else "complete",
+        failure_facts=facts,
         suite_id="miniwob-60-seed7-v1",
         profile_id="mistral-format-only-v1",
         seed=7,

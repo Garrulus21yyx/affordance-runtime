@@ -7,7 +7,12 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _
 
 from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, Wait
 from affordance_runtime.agent.control_transition import ControlTransitionScope
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    TaskEvaluation,
+    TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
+)
 from affordance_runtime.testing import StaticEnvironment
 
 
@@ -68,5 +73,29 @@ def test_snapshot_fails_closed_on_current_task_evaluation_lineage_mismatch() -> 
             completion_evidence_refs=("fact:stale",),
         )
         assert session.snapshot_partial_episode().latest_task_status == ""
+        assert session.snapshot_partial_episode().task_outcome_kind == ""
+
+    asyncio.run(scenario())
+
+
+def test_snapshot_projects_only_current_canonical_task_outcome() -> None:
+    async def scenario() -> None:
+        session = await AgentEpisodeRunner(
+            AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
+        ).start(StaticEnvironment([_world("current", False)]), _task())
+        session.state.current_task_evaluation = TaskEvaluation(
+            _task().task_id,
+            "current",
+            TaskEvaluationStatus.BLOCKED,
+            "terminal",
+            outcome=TaskOutcomeFact(
+                TaskOutcomeKind.TERMINAL_FAILURE,
+                "verified_terminal_task_failure",
+                ("fact:current:enabled",),
+            ),
+        )
+        snapshot = session.snapshot_partial_episode()
+        assert snapshot.task_outcome_kind == "terminal_failure"
+        assert snapshot.task_outcome_code == "verified_terminal_task_failure"
 
     asyncio.run(scenario())

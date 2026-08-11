@@ -111,6 +111,8 @@ def runtime_failure_from_outcome(
     status = outcome.status
     if str(status) in {"done", "waiting_user", "waiting_confirmation"}:
         return None
+    if outcome.task_terminal is not None:
+        return None
     if outcome.failure_stage is not None:
         return RuntimeFailure(
             outcome.failure_stage,

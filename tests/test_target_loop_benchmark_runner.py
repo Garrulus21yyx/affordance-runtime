@@ -258,7 +258,7 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
 
     assert result.case_failure_code == "post_action_capability_unavailable"
     assert result.failure_code == ""
-    assert result.runtime_reason_code == "post_action_observation_unavailable"
+    assert result.runtime_reason_code == ""
     assert result.agent_failure_code == "post_action_capability_unavailable"
     assert result.failure_origin is CaseFailureOrigin.NONE
     assert result.failure_facts.runtime_failure is None

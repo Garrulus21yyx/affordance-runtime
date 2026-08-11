@@ -11,6 +11,7 @@ from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure, runtime_failure_from_outcome
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
+from affordance_runtime.evaluation.contracts import TaskOutcomeFact
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -38,6 +39,7 @@ class AgentResult:
     control_transition_kind_counts: tuple[tuple[str, int], ...] = ()
     sent_unknown_count: int = 0
     runtime_failure: RuntimeFailure | None = None
+    task_outcome: TaskOutcomeFact | None = None
 
 
 def project_result(
@@ -49,6 +51,13 @@ def project_result(
     """Project one public result from authoritative absolute session state."""
 
     state = session.state
+    current_evaluation = state.current_task_evaluation
+    current_outcome = (
+        current_evaluation.outcome
+        if current_evaluation is not None
+        and current_evaluation.observation_id == state.current_observation.observation_id
+        else None
+    )
     latest = state.recent_control_transitions[-1] if state.recent_control_transitions else None
     root_id = latest.transition_id if latest is not None else ""
     attempt_id = (
@@ -83,4 +92,5 @@ def project_result(
         runtime_failure or runtime_failure_from_outcome(
             outcome, root_id=root_id, attempt_id=attempt_id
         ),
+        current_outcome,
     )

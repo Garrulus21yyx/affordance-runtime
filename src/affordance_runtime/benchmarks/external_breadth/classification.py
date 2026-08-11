@@ -17,6 +17,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     CaseFailureOrigin,
     TerminalReasonCode,
 )
+from affordance_runtime.evaluation import TaskOutcomeKind
 from affordance_runtime.model_boundary.failures import ModelFailureKind
 
 
@@ -28,7 +29,6 @@ class ClassifiedOutcome:
 
 def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     facts = result.failure_facts
-    value = _metric(result, "official_success_count")
     if facts.harness_integrity_code or result.harness_integrity_failures:
         return ClassifiedOutcome(
             MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "harness_integrity"
@@ -68,6 +68,19 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
             MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE,
         )
         return ClassifiedOutcome(outcome, "canonical_runtime_failure")
+    if facts.task_outcome_kind:
+        task_outcome = TaskOutcomeKind(facts.task_outcome_kind)
+        if task_outcome is TaskOutcomeKind.TERMINAL_SUCCESS:
+            return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "canonical_task_outcome")
+        if task_outcome is TaskOutcomeKind.TERMINAL_FAILURE:
+            return ClassifiedOutcome(MiniWobTaskOutcome.TASK_FAILED, "canonical_task_outcome")
+        if (
+            task_outcome is TaskOutcomeKind.VERIFIER_UNAVAILABLE
+            and result.status == "waiting_user"
+        ):
+            return ClassifiedOutcome(
+                MiniWobTaskOutcome.VERIFIER_UNKNOWN, "canonical_task_outcome",
+            )
     if facts.runtime_reason_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
     if facts.policy_failure_code:
@@ -101,8 +114,6 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
             return ClassifiedOutcome(
                 MiniWobTaskOutcome.WAITING_USER_EFFECT_UNKNOWN, "typed_pending_kind",
             )
-        if result.latest_task_status == "unknown":
-            return ClassifiedOutcome(MiniWobTaskOutcome.WAITING_USER_TASK_UNKNOWN, "typed_task_status")
     origin = _ORIGIN_OUTCOMES.get(facts.component_origin)
     if origin is not None:
         return ClassifiedOutcome(origin, "typed_failure_origin")
@@ -110,8 +121,6 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.RUNTIME_REJECTED, "typed_runtime_reason")
     if facts.cleanup_code:
         return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
-    if result.status == "done" and value == 1:
-        return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "mechanical_verifier")
     if result.failure_reason or result.failure_code or result.exception_class:
         return ClassifiedOutcome(
             MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "bounded_unclassified_failure",

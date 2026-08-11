@@ -24,6 +24,7 @@ _PHYSICAL_PROPERTIES_SCRIPT = """el => ({
 _VERIFIER_PROBE_SCRIPT = """() => ({
   ready: window.WOB_TASK_READY === true,
   done: window.WOB_DONE_GLOBAL === true,
+  raw_reward: window.WOB_RAW_REWARD_GLOBAL,
   episode: String(window.WOB_EPISODE_ID),
   url: location.href
 })"""

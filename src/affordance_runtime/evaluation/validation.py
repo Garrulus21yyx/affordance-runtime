@@ -78,6 +78,8 @@ def validate_task_evaluation(
         ) != EvidenceApplicability.ACCEPTED:
             raise ValueError("task evaluation criterion evidence is not applicable")
     _require_resolved(evaluation.completion_evidence_refs, evidence_index, "completion evidence")
+    if evaluation.outcome is not None:
+        _require_resolved(evaluation.outcome.evidence_refs, evidence_index, "task outcome evidence")
     for output in evaluation.outputs:
         _require_resolved(output.evidence_refs, evidence_index, "output evidence")
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}

@@ -17,7 +17,11 @@ from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
-from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ActionEvaluationStatus,
+    TaskEvaluationStatus,
+    TaskOutcomeKind,
+)
 from affordance_runtime.model_boundary.failures import ModelFailureKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
@@ -27,8 +31,10 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
-CASE_SCHEMA_VERSION = "target-loop-case.v7"
-SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset({"target-loop-case.v6", CASE_SCHEMA_VERSION})
+CASE_SCHEMA_VERSION = "target-loop-case.v8"
+SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset({
+    "target-loop-case.v6", "target-loop-case.v7", CASE_SCHEMA_VERSION,
+})
 _FACT_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
 _EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
@@ -144,6 +150,8 @@ class CaseFacts:
     cleanup_exception_class: str = ""
     harness_integrity_code: str = ""
     runtime_failure: RuntimeFailure | None = None
+    task_outcome_kind: str = ""
+    task_outcome_code: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.component_origin, CaseFailureOrigin):
@@ -156,6 +164,7 @@ class CaseFacts:
             self.runtime_reason_code, self.agent_failure_code, self.policy_failure_code,
             self.component_code, self.watchdog_code, self.cleanup_code,
             self.harness_integrity_code,
+            self.task_outcome_kind, self.task_outcome_code,
         ):
             if not isinstance(value, str):
                 raise TypeError("failure fact codes must be strings")
@@ -181,6 +190,12 @@ class CaseFacts:
             str(item) for item in ModelFailureKind
         }:
             raise ValueError("policy failure code is outside the closed vocabulary")
+        if self.task_outcome_kind not in {"", *(str(item) for item in TaskOutcomeKind)}:
+            raise ValueError("task outcome kind is outside the closed vocabulary")
+        if bool(self.task_outcome_kind) != bool(self.task_outcome_code):
+            raise ValueError("task outcome kind and code must be present together")
+        if self.task_outcome_code and _FACT_CODE.fullmatch(self.task_outcome_code) is None:
+            raise ValueError("task outcome code must be bounded")
         if self.runtime_failure is not None:
             if self.policy_failure_code and (
                 self.runtime_failure.stage is not FailureStage.POLICY
@@ -482,7 +497,11 @@ class BenchmarkCaseResult:
         if not isinstance(self.failure_facts, FailureFacts):
             raise TypeError("benchmark failure facts must be typed")
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
-        if blocked and self.terminal_reason_code is None:
+        task_terminal = (
+            self.failure_facts.task_outcome_kind
+            == TaskOutcomeKind.TERMINAL_FAILURE.value
+        )
+        if blocked and self.terminal_reason_code is None and not task_terminal:
             raise ValueError("blocked case result requires a terminal reason code")
         no_progress = (
             self.status == str(AgentLoopStatus.FAILED)
@@ -503,17 +522,35 @@ class BenchmarkCaseResult:
             raise ValueError("harness integrity failure count must be zero or one")
         if self.case_schema_version not in SUPPORTED_CASE_SCHEMA_VERSIONS:
             raise ValueError("benchmark case evidence schema is unsupported")
-        if (
-            self.case_schema_version == "target-loop-case.v6"
-            and self.failure_facts.runtime_failure is not None
-        ):
+        if self.case_schema_version == "target-loop-case.v6" and self.failure_facts.runtime_failure is not None:
             raise ValueError("legacy case evidence cannot carry canonical RuntimeFailure")
+        if self.case_schema_version in {"target-loop-case.v6", "target-loop-case.v7"} and (
+            self.failure_facts.task_outcome_kind or self.failure_facts.task_outcome_code
+        ):
+            raise ValueError("legacy case evidence cannot carry canonical task outcome")
         if self.harness_schema_version != "target-loop-harness.v6":
             raise ValueError("benchmark harness evidence schema is unsupported")
         identity_values = (self.suite_id, self.profile_id, self.manifest_digest)
         if any(identity_values) and not all(identity_values):
             raise ValueError("benchmark case evidence identity must be complete")
         facts = self.failure_facts
+        if facts.task_outcome_kind:
+            task_kind = TaskOutcomeKind(facts.task_outcome_kind)
+            expected_status = {
+                TaskOutcomeKind.TERMINAL_SUCCESS: AgentLoopStatus.DONE.value,
+                TaskOutcomeKind.TERMINAL_FAILURE: AgentLoopStatus.BLOCKED.value,
+                TaskOutcomeKind.VERIFIER_UNAVAILABLE: AgentLoopStatus.WAITING_USER.value,
+            }.get(task_kind)
+            if expected_status is not None and self.status != expected_status:
+                raise ValueError("canonical task outcome contradicts case status")
+            expected_task_status = {
+                TaskOutcomeKind.TERMINAL_SUCCESS: TaskEvaluationStatus.COMPLETE.value,
+                TaskOutcomeKind.TERMINAL_FAILURE: TaskEvaluationStatus.BLOCKED.value,
+                TaskOutcomeKind.VERIFIER_UNAVAILABLE: TaskEvaluationStatus.UNKNOWN.value,
+                TaskOutcomeKind.RUNNING_INCOMPLETE: TaskEvaluationStatus.INCOMPLETE.value,
+            }[task_kind]
+            if self.latest_task_status and self.latest_task_status != expected_task_status:
+                raise ValueError("canonical task outcome contradicts task evaluation status")
         abort_codes = {f"abort_{item.value}" for item in AbortCategory}
         if self.last_decision_type == "Abort" and facts.runtime_reason_code not in abort_codes:
             raise ValueError("benchmark abort decision and Runtime fact are inconsistent")

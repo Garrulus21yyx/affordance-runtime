@@ -35,6 +35,8 @@ class PartialEpisodeSnapshot:
     latest_acquisition_request_kind: str = ""
     latest_attempt_operation: str = ""
     latest_attempt_reason_code: str = ""
+    task_outcome_kind: str = ""
+    task_outcome_code: str = ""
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
@@ -97,6 +99,12 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         else "",
         str(latest_receipt.operation) if latest_receipt is not None else "",
         latest_receipt.reason_code if latest_receipt is not None else "",
+        str(latest_task.outcome.kind)
+        if latest_task is not None and latest_task.outcome is not None
+        else "",
+        latest_task.outcome.code
+        if latest_task is not None and latest_task.outcome is not None
+        else "",
     )
 
 

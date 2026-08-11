@@ -2,10 +2,12 @@ import asyncio
 
 from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalEnvironmentTaskEvaluator,
+    ExternalVerifierReason,
     ExternalVerifierResult,
     ExternalVerifierStatus,
+    VerifierFactSource,
 )
-from affordance_runtime.evaluation import TaskEvaluationStatus
+from affordance_runtime.evaluation import TaskEvaluationStatus, TaskOutcomeKind
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import CoverageState, WorldObservation
 
@@ -16,8 +18,27 @@ class Verifier:
 
     def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult:
         assert benchmark_task_id == "browsergym/miniwob.click-button"
-        ref = "fact:external-verifier-success" if self.status == ExternalVerifierStatus.SUCCESS else ""
-        return ExternalVerifierResult(self.status, ref)
+        terminal = self.status in {
+            ExternalVerifierStatus.SUCCESS,
+            ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
+        }
+        ref = ("fact:external-verifier-status",) if terminal else ()
+        reason = {
+            ExternalVerifierStatus.SUCCESS: ExternalVerifierReason.VERIFIED_SUCCESS,
+            ExternalVerifierStatus.INCOMPLETE: ExternalVerifierReason.VERIFIED_RUNNING,
+            ExternalVerifierStatus.TERMINAL_TASK_FAILURE: (
+                ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE
+            ),
+            ExternalVerifierStatus.UNAVAILABLE: ExternalVerifierReason.MISSING_FACTS,
+        }[self.status]
+        return ExternalVerifierResult(
+            VerifierFactSource.POST_ACTION,
+            self.status,
+            reason,
+            "current",
+            "current",
+            ref,
+        )
 
 
 def test_external_task_evaluator_uses_only_environment_native_mechanical_status() -> None:
@@ -26,6 +47,7 @@ def test_external_task_evaluator_uses_only_environment_native_mechanical_status(
     expected = {
         ExternalVerifierStatus.SUCCESS: TaskEvaluationStatus.COMPLETE,
         ExternalVerifierStatus.INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
+        ExternalVerifierStatus.TERMINAL_TASK_FAILURE: TaskEvaluationStatus.BLOCKED,
         ExternalVerifierStatus.UNAVAILABLE: TaskEvaluationStatus.UNKNOWN,
     }
     for verifier_status, task_status in expected.items():
@@ -34,3 +56,36 @@ def test_external_task_evaluator_uses_only_environment_native_mechanical_status(
         )
         result = asyncio.run(evaluator.evaluate(task, observation))
         assert result.status == task_status
+        assert result.outcome is not None
+        assert result.outcome.kind is {
+            ExternalVerifierStatus.SUCCESS: TaskOutcomeKind.TERMINAL_SUCCESS,
+            ExternalVerifierStatus.INCOMPLETE: TaskOutcomeKind.RUNNING_INCOMPLETE,
+            ExternalVerifierStatus.TERMINAL_TASK_FAILURE: TaskOutcomeKind.TERMINAL_FAILURE,
+            ExternalVerifierStatus.UNAVAILABLE: TaskOutcomeKind.VERIFIER_UNAVAILABLE,
+        }[verifier_status]
+
+
+def test_external_task_evaluator_fails_closed_on_latest_pointer_lineage_mismatch() -> None:
+    class StaleVerifier:
+        def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult:
+            del benchmark_task_id
+            return ExternalVerifierResult(
+                VerifierFactSource.POST_ACTION,
+                ExternalVerifierStatus.SUCCESS,
+                ExternalVerifierReason.VERIFIED_SUCCESS,
+                "old",
+                "old",
+                ("fact:old-status",),
+            )
+
+    task = TaskGoal("external", "Complete the local benchmark instruction")
+    observation = WorldObservation(
+        "current", (), (), (), {"external": CoverageState.COMPLETE},
+    )
+    result = asyncio.run(ExternalEnvironmentTaskEvaluator(
+        "browsergym/miniwob.click-button", StaleVerifier(),
+    ).evaluate(task, observation))
+    assert result.status is TaskEvaluationStatus.UNKNOWN
+    assert result.outcome is not None
+    assert result.outcome.kind is TaskOutcomeKind.VERIFIER_UNAVAILABLE
+    assert result.outcome.code == "source_insufficient"

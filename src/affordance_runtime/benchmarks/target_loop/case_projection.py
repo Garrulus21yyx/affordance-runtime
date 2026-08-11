@@ -64,7 +64,6 @@ def project_case_result(
     measurements["stale_zero_call_violations"] = MetricMeasurement(
         values["stale_zero_call_violations"], True, stale_opportunities,
     )
-    runtime_reason = _runtime_reason(result, metadata)
     agent_failure = _agent_failure_code(result)
     component_origin, normalized_component_code = _component_failure(instrumentation)
     component_code = (
@@ -82,7 +81,12 @@ def project_case_result(
         instrumentation.cleanup_failure_code, "cleanup_exception"
     ) if instrumentation.cleanup_failures else ""
     integrity_code = "metric_name_collision" if metric_collisions else ""
-    public_runtime_failure = runtime_reason if _is_failure_result(result) else ""
+    canonical_runtime_failure = (
+        getattr(result, "runtime_failure", None) if result is not None else None
+    )
+    public_runtime_failure = (
+        canonical_runtime_failure.code if canonical_runtime_failure is not None else ""
+    )
     if (
         result is None
         and not public_runtime_failure
@@ -92,6 +96,21 @@ def project_case_result(
         and not integrity_code
     ):
         public_runtime_failure = "runtime_failure"
+    task_outcome = getattr(result, "task_outcome", None) if result is not None else None
+    task_outcome_kind = (
+        str(task_outcome.kind)
+        if task_outcome is not None
+        else metadata.task_outcome_kind
+        if metadata is not None
+        else ""
+    )
+    task_outcome_code = (
+        task_outcome.code
+        if task_outcome is not None
+        else metadata.task_outcome_code
+        if metadata is not None
+        else ""
+    )
     facts = FailureFacts(
         public_runtime_failure,
         agent_failure,
@@ -104,7 +123,9 @@ def project_case_result(
         cleanup_code,
         _safe_exception_class(instrumentation.cleanup_exception_class),
         integrity_code,
-        getattr(result, "runtime_failure", None) if result is not None else None,
+        canonical_runtime_failure,
+        task_outcome_kind,
+        task_outcome_code,
     )
     status = str(result.status) if result else str(AgentLoopStatus.FAILED)
     legacy = project_legacy_case_fields(status, facts)
@@ -160,21 +181,6 @@ def _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot):
     return final_snapshot or timeout_snapshot
 
 
-def _runtime_reason(result, snapshot) -> str:
-    if result is not None:
-        candidate = result.reason_code
-    elif (
-        snapshot is not None
-        and snapshot.latest_control_status in {"failed", "blocked", "cancelled"}
-    ):
-        candidate = snapshot.latest_control_reason_code
-    else:
-        candidate = ""
-    if not candidate:
-        return ""
-    return candidate if _BOUNDED_CODE.fullmatch(candidate) else "runtime_failure"
-
-
 def _agent_failure_code(result) -> str:
     if result is not None and result.failure_code is not None:
         return str(result.failure_code)
@@ -185,10 +191,6 @@ def _component_failure(instrumentation) -> tuple[CaseFailureOrigin, str]:
     """Copy component-owned truth; snapshots and latest operations are non-authoritative."""
 
     return instrumentation.failure_origin, instrumentation.failure_code
-
-
-def _is_failure_result(result) -> bool:
-    return bool(result is None or result.status is not AgentLoopStatus.DONE)
 
 
 def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | float | None]:
@@ -213,7 +215,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "post_action_acquisitions": state.environment_post_acquisitions,
         "provider_retry_count": (
             metadata.rate_limit_retry_count + metadata.transient_retry_count
-            if metadata is not None else None
+            if metadata is not None else state.configured_provider_retry_count
         ),
         "prompt_tokens": state.prompt_tokens,
         "completion_tokens": state.completion_tokens,

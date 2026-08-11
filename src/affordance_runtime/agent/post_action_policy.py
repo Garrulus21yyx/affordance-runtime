@@ -2,7 +2,7 @@
 
 from affordance_runtime.agent.control_outcome import Continue, LoopDirective, directive
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
-from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
+from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.evaluation.contracts import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -20,9 +20,14 @@ def post_action_result(
     action_evaluation: ActionEvaluation,
     task_evaluation: TaskEvaluation,
 ) -> LoopDirective:
-    task_status = task_evaluation_loop_status(task_evaluation)
-    if task_status is not None:
-        return directive(task_status, f"task_{task_evaluation.status}", task_evaluation.reason)
+    task_disposition = task_evaluation_disposition(task_evaluation)
+    if task_disposition.status is not None:
+        return directive(
+            task_disposition.status,
+            task_disposition.reason_code,
+            task_evaluation.reason,
+            task_terminal=task_disposition.task_terminal,
+        )
     if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
         state.set_pending_unknown_effect(request)
         return directive(

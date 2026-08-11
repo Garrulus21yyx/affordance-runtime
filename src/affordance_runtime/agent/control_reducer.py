@@ -14,7 +14,7 @@ from affordance_runtime.agent.control_transition import (
     PendingKind,
 )
 from affordance_runtime.agent.decisions import Abort, AskUser, SelectAction
-from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
+from affordance_runtime.evaluation.contracts import TaskEvaluationStatus, TaskOutcomeKind
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.world.acquisition import AcquisitionStatus
 
@@ -455,6 +455,15 @@ def validate_control_state(state: object) -> ControlRejected | None:
 
 def _pending_status_error(pending_kind, resulting_status, task_evaluation=None) -> str:
     status = str(resulting_status or "")
+    if task_evaluation is not None and task_evaluation.outcome is not None:
+        expected_outcome = {
+            TaskOutcomeKind.TERMINAL_SUCCESS: (PendingKind.NONE, "done"),
+            TaskOutcomeKind.RUNNING_INCOMPLETE: (PendingKind.NONE, ""),
+            TaskOutcomeKind.TERMINAL_FAILURE: (PendingKind.NONE, "blocked"),
+            TaskOutcomeKind.VERIFIER_UNAVAILABLE: (PendingKind.NONE, "waiting_user"),
+        }[task_evaluation.outcome.kind]
+        if (pending_kind, status) != expected_outcome:
+            return "task_outcome_disposition_mismatch"
     expected = {
         PendingKind.NONE: {"", *_TERMINAL},
         PendingKind.USER: {"waiting_user"},

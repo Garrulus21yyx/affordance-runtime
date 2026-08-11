@@ -10,7 +10,10 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_environment import 
     BrowserGymMiniWobEnvironment,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import verifier_snapshot
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalVerifierStatus
+from affordance_runtime.benchmarks.external_smoke.environment import (
+    ExternalVerifierStatus,
+    VerifierFactSource,
+)
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -70,10 +73,15 @@ def test_real_active_capture_does_not_copy_old_success_or_dispatch_again() -> No
                 task_run_id=environment.task_run_id,
                 observation_id=initial.observation.observation_id,
                 source_observation_id=initial.observation.observation_id,
+                source=VerifierFactSource.POST_ACTION,
                 reward=1.0,
                 terminated=True,
                 truncated=False,
-                task_info={"RAW_REWARD_GLOBAL": 1, "DONE_GLOBAL": True},
+                task_info={
+                    "RAW_REWARD_GLOBAL": 1,
+                    "DONE_GLOBAL": True,
+                    "TASK_READY": True,
+                },
             )
             assert environment.current_result(environment.benchmark_task_id).status is ExternalVerifierStatus.SUCCESS
             steps = environment.step_calls

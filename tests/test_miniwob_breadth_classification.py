@@ -38,8 +38,14 @@ def _result(**changes) -> BenchmarkCaseResult:
 
 
 def test_success_provider_and_no_progress_are_typed_separately() -> None:
+    success_facts = FailureFacts(
+        task_outcome_kind="terminal_success",
+        task_outcome_code="verified_success",
+    )
     success = _result(
         status="done",
+        latest_task_status="complete",
+        failure_facts=success_facts,
         measurements={
             "official_success_count": MetricMeasurement(1, True),
             "cleanup_failures": MetricMeasurement(0, True),
@@ -47,6 +53,15 @@ def test_success_provider_and_no_progress_are_typed_separately() -> None:
         },
     )
     assert classify_case(success).outcome is MiniWobTaskOutcome.SUCCESS
+    spoofed_metric = _result(
+        status="done",
+        measurements={
+            "official_success_count": MetricMeasurement(1, True),
+            "cleanup_failures": MetricMeasurement(0, True),
+            "sent_unknown_count": MetricMeasurement(0, True),
+        },
+    )
+    assert classify_case(spoofed_metric).outcome is MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE
     policy_facts = FailureFacts(policy_failure_code="provider_unavailable")
     provider = _result(
         case_failure_code="policy_provider_unavailable",
@@ -83,6 +98,99 @@ def test_canonical_runtime_stage_and_kind_own_classification() -> None:
     classified = classify_case(result)
     assert classified.outcome is MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
     assert classified.source == "canonical_runtime_failure"
+
+
+def test_terminal_task_failure_is_not_runtime_rejected_or_metric_inferred() -> None:
+    facts = FailureFacts(
+        task_outcome_kind="terminal_failure",
+        task_outcome_code="verified_terminal_task_failure",
+    )
+    result = _result(
+        status="blocked",
+        latest_task_status="blocked",
+        terminal_reason_code=None,
+        termination_origin="",
+        case_failure_code="verified_terminal_task_failure",
+        failure_facts=facts,
+        measurements={
+            "official_success_count": MetricMeasurement(1, True),
+            "cleanup_failures": MetricMeasurement(0, True),
+            "sent_unknown_count": MetricMeasurement(0, True),
+        },
+    )
+    classified = classify_case(result)
+    assert classified.outcome is MiniWobTaskOutcome.TASK_FAILED
+    assert classified.source == "canonical_task_outcome"
+    assert result.failure_facts.runtime_failure is None
+
+
+def test_task_outcome_precedence_preserves_watchdog_runtime_and_cleanup_truth() -> None:
+    task = dict(
+        task_outcome_kind="terminal_failure",
+        task_outcome_code="verified_terminal_task_failure",
+    )
+    cleanup_facts = FailureFacts(
+        **task,
+        cleanup_code="cleanup_exception",
+        cleanup_exception_class="RuntimeError",
+    )
+    cleanup = _result(
+        status="blocked",
+        latest_task_status="blocked",
+        terminal_reason_code=None,
+        termination_origin="cleanup",
+        case_failure_code="verified_terminal_task_failure",
+        cleanup_failure_code="cleanup_exception",
+        cleanup_exception_class="RuntimeError",
+        cleanup_failures=1,
+        failure_facts=cleanup_facts,
+    )
+    assert classify_case(cleanup).outcome is MiniWobTaskOutcome.TASK_FAILED
+
+    watchdog_facts = FailureFacts(**task, watchdog_code="case_timeout")
+    watchdog = _result(
+        status="blocked",
+        latest_task_status="blocked",
+        terminal_reason_code=None,
+        case_failure_code="case_timeout",
+        termination_origin="harness_watchdog",
+        watchdog_triggered=True,
+        failure_facts=watchdog_facts,
+    )
+    assert classify_case(watchdog).outcome is MiniWobTaskOutcome.CASE_TIMEOUT
+
+    runtime = RuntimeFailure(
+        FailureStage.EXECUTION, FailureKind.CALL_FAILED, "execution_failed",
+    )
+    runtime_facts = FailureFacts(
+        **task,
+        runtime_reason_code=runtime.code,
+        runtime_failure=runtime,
+    )
+    with_runtime = _result(
+        status="blocked",
+        latest_task_status="blocked",
+        terminal_reason_code=TerminalReasonCode.BLOCKED_OTHER,
+        case_failure_code=runtime.code,
+        runtime_reason_code=runtime.code,
+        failure_facts=runtime_facts,
+    )
+    assert classify_case(with_runtime).outcome is MiniWobTaskOutcome.EXECUTION_FAILURE
+
+
+def test_verifier_unavailable_waiting_user_maps_only_from_canonical_outcome() -> None:
+    facts = FailureFacts(
+        task_outcome_kind="verifier_unavailable",
+        task_outcome_code="missing_facts",
+    )
+    result = _result(
+        status="waiting_user",
+        latest_task_status="unknown",
+        failure_facts=facts,
+    )
+    classified = classify_case(result)
+    assert classified.outcome is MiniWobTaskOutcome.VERIFIER_UNKNOWN
+    assert classified.source == "canonical_task_outcome"
 
 
 @pytest.mark.parametrize(

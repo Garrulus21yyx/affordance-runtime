@@ -18,6 +18,13 @@ from affordance_runtime.benchmarks.external_breadth.contracts import (
 )
 from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
 from affordance_runtime.benchmarks.external_breadth.runner import REQUIRED_METRICS, run_breadth_campaign
+from affordance_runtime.benchmarks.external_breadth.verifier_targeted import (
+    PREVIOUS_VERIFIER_UNKNOWN_CASE_IDS,
+    run_verifier_targeted_diagnostic,
+    targeted_manifest,
+    validate_targeted_evidence,
+    write_targeted_evidence,
+)
 from affordance_runtime.benchmarks.external_smoke.pacing import FixedPacingState, PacedAgentPolicy
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkAcceptance,
@@ -226,6 +233,88 @@ def test_formal_runner_rejects_unbound_policy_before_creating_output(tmp_path: P
     assert not output.exists()
 
 
+def test_targeted_selector_is_exact_and_formal_sixty_guard_remains_closed(
+    tmp_path: Path,
+) -> None:
+    selected = targeted_manifest(_manifest())
+    assert tuple(item.case_id for item in selected.cases) == PREVIOUS_VERIFIER_UNKNOWN_CASE_IDS
+    assert len(selected.cases) == 14
+    with pytest.raises(ValueError, match="exactly 60"):
+        asyncio.run(run_breadth_campaign(selected, _policy(), tmp_path / "formal"))
+
+
+def test_targeted_wrapper_reuses_case_execution_and_writes_valid_typed_evidence(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    manifest = targeted_manifest(_manifest())
+    results = tuple(
+        _result(int(case.case_id[-2:]), failed=False)
+        for case in manifest.cases
+    )
+
+    async def fake_run_suite(target, callback):
+        identity = replace(
+            _identity(manifest),
+            suite_id=target.suite_id,
+            manifest_digest=target_manifest_digest(target),
+        )
+        bound = tuple(
+            replace(
+                result,
+                suite_id=identity.suite_id,
+                profile_id=identity.profile_id,
+                seed=identity.seed,
+                manifest_digest=identity.manifest_digest,
+            )
+            for result in results
+        )
+        for index, result in enumerate(bound, 1):
+            callback(index, result)
+        return BenchmarkSuiteResult(
+            identity, bound, BenchmarkAcceptance(True, ()), {},
+        )
+
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.verifier_targeted.run_suite",
+        fake_run_suite,
+    )
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.verifier_targeted._final_git_identity",
+        lambda: ("0" * 40, False),
+    )
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.external_breadth.verifier_targeted._git_sha",
+        lambda: "0" * 40,
+    )
+    required = sum(item.max_turns for item in manifest.cases)
+    capacity = ProviderCapacityEvidence(
+        "provider-capacity-preflight.v1",
+        "mistral",
+        manifest.model_profile,
+        breadth_manifest_digest(manifest),
+        required,
+        required,
+        True,
+        manifest.grounding_profile,
+        0,
+        0,
+    )
+    output = tmp_path / "targeted"
+    outcome = asyncio.run(run_verifier_targeted_diagnostic(
+        manifest, _policy(), output, provider_capacity=capacity,
+    ))
+    assert outcome.acceptance.evidence_valid
+    assert tuple(item.case_id for item in outcome.cases) == PREVIOUS_VERIFIER_UNKNOWN_CASE_IDS
+    write_targeted_evidence(outcome, output)
+    assert validate_targeted_evidence(output) == ()
+
+    first = json.loads((output / "cases" / "miniwob-60-01.json").read_text())
+    assert first["verifier_status"] == "success"
+    assert first["task_outcome_kind"] == "terminal_success"
+    assert "raw_reward" not in json.dumps(first)
+
+
 def _manifest() -> MiniWobBreadthManifest:
     cases = tuple(
         MiniWobBreadthCase(
@@ -248,11 +337,19 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
     measurements["observations"] = MetricMeasurement(2, True)
     measurements["policy_calls"] = MetricMeasurement(1, True)
     measurements["provider_attempts"] = MetricMeasurement(1, True)
-    facts = FailureFacts(runtime_reason_code="turn_budget_exhausted") if failed else FailureFacts()
+    facts = (
+        FailureFacts(runtime_reason_code="turn_budget_exhausted")
+        if failed
+        else FailureFacts(
+            task_outcome_kind="terminal_success",
+            task_outcome_code="verified_success",
+        )
+    )
     return BenchmarkCaseResult(
         f"miniwob-60-{index:02d}", "failed" if failed else "done", True, "", 2.0,
         measurements,
         case_failure_code="turn_budget_exhausted" if failed else "",
+        latest_task_status="" if failed else "complete",
         runtime_reason_code="turn_budget_exhausted" if failed else "",
         failure_facts=facts,
     )

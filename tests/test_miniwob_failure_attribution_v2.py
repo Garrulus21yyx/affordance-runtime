@@ -15,7 +15,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 )
 
 
-def test_waiting_user_effect_and_task_unknown_are_distinct() -> None:
+def test_waiting_user_effect_is_typed_and_task_status_cannot_invent_outcome() -> None:
     effect = _result(
         status="waiting_user",
         pending_kind="unknown_effect",
@@ -23,7 +23,7 @@ def test_waiting_user_effect_and_task_unknown_are_distinct() -> None:
     )
     task = _result(status="waiting_user", latest_task_status="unknown")
     assert classify_case(effect).outcome is MiniWobTaskOutcome.WAITING_USER_EFFECT_UNKNOWN
-    assert classify_case(task).outcome is MiniWobTaskOutcome.WAITING_USER_TASK_UNKNOWN
+    assert classify_case(task).outcome is MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE
 
 
 def test_policy_abort_provider_and_no_action_are_typed() -> None:

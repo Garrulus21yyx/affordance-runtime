@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
@@ -37,6 +38,10 @@ def _result(reason: str, *, message: str = "display only"):
         reason_code=reason,
         failure_code=None,
         policy_failure=None,
+        runtime_failure=RuntimeFailure(
+            FailureStage.CONTROL, FailureKind.REJECTED, reason,
+        ),
+        task_outcome=None,
     )
 
 
@@ -71,7 +76,7 @@ def test_non_timeout_exception_uses_final_snapshot_exact_metrics_and_reason() ->
         "human exception display",
         final_snapshot=_snapshot(observations=4, executions=1, turns=2),
     )
-    assert projected.case_failure_code == "runtime_exception"
+    assert projected.case_failure_code == "runtime_failure"
     assert projected.measurements["observations"].value == 4
     assert projected.measurements["executions"].value == 1
     assert projected.measurements["turns"].value == 2
@@ -81,6 +86,7 @@ def test_non_timeout_exception_uses_final_snapshot_exact_metrics_and_reason() ->
 def test_success_reason_does_not_become_a_failure_code() -> None:
     result = _result("task_complete")
     result.status = AgentLoopStatus.DONE
+    result.runtime_failure = None
     projected = project_case_result(
         "case", result, BenchmarkInstrumentation(), 1.0, ""
     )
@@ -208,6 +214,7 @@ def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
     )
     result = _result("task_complete")
     result.status = AgentLoopStatus.DONE
+    result.runtime_failure = None
     projected = project_case_result(
         "case", result, instrumentation, 1.0, "cleanup failed"
     )
@@ -237,6 +244,11 @@ def test_snapshot_request_kind_cannot_infer_component_origin(
         if request_kind == "post_action_fallback"
         else AgentFailureCode.OBSERVATION_ACQUISITION_FAILED
     )
+    returned_result.runtime_failure = RuntimeFailure(
+        FailureStage.ACQUISITION,
+        FailureKind.CALL_FAILED,
+        str(returned_result.failure_code),
+    )
     returned = project_case_result(
         "returned", returned_result, BenchmarkInstrumentation(), 1.0, "failed",
         final_snapshot=snapshot,
@@ -264,3 +276,13 @@ def test_dynamic_exception_class_is_safely_normalized_without_losing_component()
     assert projected.failure_origin is CaseFailureOrigin.ACTION_EVALUATION
     assert projected.failure_code == "action_evaluator_exception"
     assert projected.exception_class == "Exception"
+
+
+def test_configured_zero_retry_is_measured_when_provider_returns_no_metadata() -> None:
+    instrumentation = BenchmarkInstrumentation(configured_provider_retry_count=0)
+    projected = project_case_result(
+        "provider-unavailable", None, instrumentation, 1.0, "provider unavailable",
+    )
+    measurement = projected.measurements["provider_retry_count"]
+    assert measurement.measured
+    assert measurement.value == 0

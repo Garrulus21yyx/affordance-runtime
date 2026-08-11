@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, TypeAlias
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
+from affordance_runtime.evaluation.contracts import TaskOutcomeKind
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.state import AgentLoopStatus
@@ -52,6 +53,7 @@ class Terminate:
     failure_stage: FailureStage | None = None
     failure_kind: FailureKind | None = None
     exception_class: str = ""
+    task_terminal: TaskOutcomeKind | None = None
 
     def __post_init__(self) -> None:
         from affordance_runtime.agent.state import AgentLoopStatus
@@ -66,6 +68,13 @@ class Terminate:
             raise TypeError("terminal failure stage must be typed")
         if self.failure_kind is not None and not isinstance(self.failure_kind, FailureKind):
             raise TypeError("terminal failure kind must be typed")
+        if self.task_terminal is not None:
+            if self.task_terminal is not TaskOutcomeKind.TERMINAL_FAILURE:
+                raise ValueError("only terminal task failure can mark a control termination")
+            if str(self.status) != "blocked":
+                raise ValueError("task terminal marker requires BLOCKED status")
+            if any((self.failure_code, self.policy_failure, self.failure_stage, self.failure_kind)):
+                raise ValueError("task terminal marker cannot fabricate Runtime failure fields")
         _validate(self.reason_code)
 
 
@@ -81,12 +90,13 @@ def directive(
     policy_failure: PolicyFailure | None = None,
     failure_stage: FailureStage | None = None,
     failure_kind: FailureKind | None = None,
+    task_terminal: TaskOutcomeKind | None = None,
 ) -> LoopDirective:
     if str(status) in {"waiting_user", "waiting_confirmation"}:
         return Pause(status, reason_code, message, failure_code, policy_failure)
     return Terminate(
         status, reason_code, message, failure_code, policy_failure,
-        failure_stage, failure_kind,
+        failure_stage, failure_kind, task_terminal=task_terminal,
     )
 
 

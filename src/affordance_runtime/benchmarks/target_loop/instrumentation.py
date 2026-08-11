@@ -24,6 +24,7 @@ class BenchmarkInstrumentation:
     action_evaluator_calls: int = 0
     task_evaluator_calls: int = 0
     provider_attempts: int = 0
+    configured_provider_retry_count: int | None = None
     semantic_judge_calls: int = 0
     confirmations_submitted: int = 0
     environment_execute_calls: int = 0
@@ -249,14 +250,29 @@ class CountingEnvironment:
 
 def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):
     if isinstance(policy, ModelBackedAgentPolicy):
+        instrumentation.configured_provider_retry_count = _configured_retry_count(
+            policy.port,
+        )
         policy = replace(policy, port=CountingDecisionPort(policy.port, instrumentation))
     elif isinstance(getattr(policy, "wrapped", None), ModelBackedAgentPolicy):
         inner = policy.wrapped
+        instrumentation.configured_provider_retry_count = _configured_retry_count(
+            inner.port,
+        )
         policy = replace(
             policy,
             wrapped=replace(inner, port=CountingDecisionPort(inner.port, instrumentation)),
         )
     return CountingPolicy(policy, instrumentation)
+
+
+def _configured_retry_count(port: object) -> int | None:
+    config = getattr(port, "config", None)
+    rate_limit = getattr(config, "rate_limit_retries", None)
+    transient = getattr(config, "transient_retries", None)
+    if type(rate_limit) is int and type(transient) is int:
+        return rate_limit + transient
+    return None
 
 
 def instrument_task_evaluator(evaluator, instrumentation: BenchmarkInstrumentation):

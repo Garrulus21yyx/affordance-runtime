@@ -23,6 +23,8 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 
 def public_case_evidence(result: BenchmarkCaseResult) -> dict[str, object]:
     """Serialize every declared public case field from one schema authority."""
+    if result.case_schema_version != CASE_SCHEMA_VERSION:
+        raise ValueError("legacy public case evidence is read-only")
     payload = {
         "schema_version": result.case_schema_version,
         **{
@@ -31,9 +33,6 @@ def public_case_evidence(result: BenchmarkCaseResult) -> dict[str, object]:
             if item.name != "failure_reason"
         },
     }
-    if result.case_schema_version == "target-loop-case.v6":
-        facts = cast(dict[str, object], payload["failure_facts"])
-        facts.pop("runtime_failure")
     return payload
 
 
@@ -47,7 +46,9 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         raise ValueError("public case evidence fields do not match the declared schema")
     if payload["schema_version"] != payload["case_schema_version"]:
         raise ValueError("public case schema identity is inconsistent")
-    if payload["schema_version"] not in {"target-loop-case.v6", CASE_SCHEMA_VERSION}:
+    if payload["schema_version"] not in {
+        "target-loop-case.v6", "target-loop-case.v7", CASE_SCHEMA_VERSION,
+    }:
         raise ValueError("public case evidence schema is unsupported")
     measurements = {}
     metric_fields = {item.name for item in fields(MetricMeasurement)}
@@ -57,15 +58,16 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         measurements[name] = MetricMeasurement(**value)
     raw_facts = _dict(payload["failure_facts"])
     fact_fields = {item.name for item in fields(CaseFacts)}
-    legacy_fact_fields = fact_fields - {"runtime_failure"}
-    expected_fact_fields = (
-        legacy_fact_fields
-        if payload["schema_version"] == "target-loop-case.v6"
-        else fact_fields
-    )
+    v7_fact_fields = fact_fields - {"task_outcome_kind", "task_outcome_code"}
+    v6_fact_fields = v7_fact_fields - {"runtime_failure"}
+    expected_fact_fields = {
+        "target-loop-case.v6": v6_fact_fields,
+        "target-loop-case.v7": v7_fact_fields,
+        CASE_SCHEMA_VERSION: fact_fields,
+    }[payload["schema_version"]]
     if set(raw_facts) != expected_fact_fields:
         raise ValueError("public case facts are incomplete")
-    string_fact_names = fact_fields - {"component_origin", "runtime_failure"}
+    string_fact_names = expected_fact_fields - {"component_origin", "runtime_failure"}
     if any(not isinstance(raw_facts[name], str) for name in string_fact_names):
         raise TypeError("public case fact codes must use strings")
     raw_origin = raw_facts["component_origin"]
@@ -83,6 +85,8 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         cleanup_exception_class=raw_facts["cleanup_exception_class"],
         harness_integrity_code=raw_facts["harness_integrity_code"],
         runtime_failure=_decode_runtime_failure(raw_facts.get("runtime_failure")),
+        task_outcome_kind=raw_facts.get("task_outcome_kind", ""),
+        task_outcome_code=raw_facts.get("task_outcome_code", ""),
     )
     values = {
         item.name: payload[item.name]

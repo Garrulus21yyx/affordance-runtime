@@ -120,10 +120,23 @@ def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
     )
     legacy["schema_version"] = legacy["case_schema_version"] = "target-loop-case.v6"
     legacy["failure_facts"].pop("runtime_failure")
-    assert decode_public_case_evidence(legacy).case_schema_version == "target-loop-case.v6"
-    legacy_round_trip = public_case_evidence(decode_public_case_evidence(legacy))
-    assert "runtime_failure" not in legacy_round_trip["failure_facts"]
-    assert decode_public_case_evidence(legacy_round_trip).case_schema_version.endswith("v6")
+    legacy["failure_facts"].pop("task_outcome_kind")
+    legacy["failure_facts"].pop("task_outcome_code")
+    decoded_legacy = decode_public_case_evidence(legacy)
+    assert decoded_legacy.case_schema_version == "target-loop-case.v6"
+    with pytest.raises(ValueError, match="read-only"):
+        public_case_evidence(decoded_legacy)
+
+    v7 = public_case_evidence(
+        BenchmarkCaseResult("case:v7", "failed", True, "", 1.0)
+    )
+    v7["schema_version"] = v7["case_schema_version"] = "target-loop-case.v7"
+    v7["failure_facts"].pop("task_outcome_kind")
+    v7["failure_facts"].pop("task_outcome_code")
+    decoded_v7 = decode_public_case_evidence(v7)
+    assert decoded_v7.failure_facts.task_outcome_kind == ""
+    with pytest.raises(ValueError, match="read-only"):
+        public_case_evidence(decoded_v7)
 
     wrong_scalars = public_case_evidence(
         BenchmarkCaseResult(

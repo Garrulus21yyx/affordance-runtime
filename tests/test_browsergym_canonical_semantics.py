@@ -20,12 +20,17 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     BrowserGymVerifierSnapshot,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalVerifierStatus
+from affordance_runtime.benchmarks.external_smoke.environment import (
+    ExternalVerifierReason,
+    ExternalVerifierStatus,
+    VerifierFactSource,
+)
 
 
 def _snapshot() -> BrowserGymVerifierSnapshot:
     return BrowserGymVerifierSnapshot(
-        "run:opaque", "obs:1", "obs:1", ExternalVerifierStatus.INCOMPLETE, "",
+        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
     )
 
 

@@ -41,7 +41,7 @@ from affordance_runtime.agent.start_error import (
     require_initial_observation,
 )
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
-from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
+from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
@@ -198,14 +198,17 @@ class AgentLoop:
                 session.confirmation_continuation_scope.record_evaluations(
                     task=task_evaluation
                 )
-            task_status = task_evaluation_loop_status(task_evaluation)
-            if task_status is not None:
+            task_disposition = task_evaluation_disposition(task_evaluation)
+            if task_disposition.status is not None:
                 task_outcome = directive(
-                    task_status, f"task_{task_evaluation.status}", task_evaluation.reason,
+                    task_disposition.status,
+                    task_disposition.reason_code,
+                    task_evaluation.reason,
+                    task_terminal=task_disposition.task_terminal,
                 )
                 assert not isinstance(task_outcome, Continue)
                 return self._close_confirmation(
-                    session, task_outcome, f"task_{task_evaluation.status}"
+                    session, task_outcome, task_disposition.reason_code
                 )
             if (
                 session.approved_confirmation is None

@@ -101,9 +101,15 @@ class FakeBrowserGym:
         self.probe_task = {
             "ready": True,
             "done": False,
+            "raw_reward": 0,
             "episode": "0",
         }
         self.probe_override = None
+        self.step_reward = 1.0
+        self.step_raw_reward = 1
+        self.step_terminated = True
+        self.step_truncated = False
+        self.step_done = True
 
     def reset(self, *, seed):
         assert isinstance(seed, int)
@@ -114,7 +120,16 @@ class FakeBrowserGym:
         self.actions.append(action)
         if self.fail_step:
             raise RuntimeError("after dispatch")
-        return self.post, 1.0, True, False, {"task_info": task_info(reward=1, done=True)}
+        return (
+            self.post,
+            self.step_reward,
+            self.step_terminated,
+            self.step_truncated,
+            {"task_info": task_info(
+                reward=self.step_raw_reward,
+                done=self.step_done,
+            )},
+        )
 
     def currentness_probe(self, bid):
         del bid
@@ -131,12 +146,7 @@ class FakeBrowserGym:
 
     def capture_current(self):
         self.capture_count += 1
-        return self.post, {
-            "ready": True,
-            "done": False,
-            "episode": "0",
-            "url": self.post["url"],
-        }
+        return self.post, {**self.probe_task, "url": self.post["url"]}
 
     def close(self):
         self.close_count += 1

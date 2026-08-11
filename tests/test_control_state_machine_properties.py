@@ -39,7 +39,12 @@ from affordance_runtime.benchmarks.target_loop.failure_origin import (
     OBSERVATION_FAILURE_ORIGINS,
     observation_failure_origin,
 )
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    TaskEvaluation,
+    TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
+)
 from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
@@ -634,6 +639,33 @@ def test_pending_status_and_attempt_identity_algebras_are_closed() -> None:
     assert reduce_control(
         ControlState(), AppendRoot(contradictory, 1)
     ) == ControlRejected("pending_status_mismatch")
+
+    terminal_evaluation = TaskEvaluation(
+        "task:1",
+        "observation:2",
+        TaskEvaluationStatus.BLOCKED,
+        "official terminal failure",
+        outcome=TaskOutcomeFact(
+            TaskOutcomeKind.TERMINAL_FAILURE,
+            "verified_terminal_task_failure",
+            ("fact:observation:2:status",),
+        ),
+    )
+    mismatched_terminal = replace(
+        _root(1, status=AgentLoopStatus.DONE),
+        task_evaluation=terminal_evaluation,
+    )
+    assert reduce_control(
+        ControlState(), AppendRoot(mismatched_terminal, 1)
+    ) == ControlRejected("task_outcome_disposition_mismatch")
+    matched_terminal = replace(
+        _root(1, status=AgentLoopStatus.BLOCKED),
+        task_evaluation=terminal_evaluation,
+    )
+    assert isinstance(
+        reduce_control(ControlState(), AppendRoot(matched_terminal, 1)),
+        ControlAccepted,
+    )
 
     root = _root(1, dispatch=DispatchStatus.SENT_UNKNOWN)
     duplicate = replace(

@@ -14,6 +14,7 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     MECHANICAL_EVIDENCE_KEY,
+    MECHANICAL_STATUS_EVIDENCE_KEY,
     BrowserGymVerifierSnapshot,
 )
 from affordance_runtime.world import (
@@ -77,8 +78,10 @@ def project_browsergym_observation(
     truncated = len(candidates) > len(projected) or fact_total > len(facts)
     coverage = CoverageState.TRUNCATED if truncated else CoverageState.COMPLETE
     artifacts = {}
-    if verifier.evidence_ref:
-        artifacts[MECHANICAL_EVIDENCE_KEY] = {"public_summary": ""}
+    for evidence_ref in verifier.evidence_refs:
+        key = evidence_ref.rsplit(":", 1)[-1]
+        if key in {MECHANICAL_EVIDENCE_KEY, MECHANICAL_STATUS_EVIDENCE_KEY}:
+            artifacts[key] = {"public_summary": ""}
     source = SurfaceObservation(
         observation_id,
         "browsergym",

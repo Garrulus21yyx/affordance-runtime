@@ -13,6 +13,8 @@ from affordance_runtime.evaluation import (
     CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task.contracts import criterion_id
@@ -127,5 +129,44 @@ def test_post_action_blocked_stops_before_another_policy_turn() -> None:
         assert result.status == AgentLoopStatus.BLOCKED
         assert result.execution_count == 1
         assert result.message == "task evaluation is blocked"
+
+    asyncio.run(scenario())
+
+
+def test_canonical_task_terminal_failure_is_absorbing_without_runtime_failure() -> None:
+    class TerminalEvaluator:
+        calls = 0
+
+        async def evaluate(self, task, observation):
+            self.calls += 1
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.BLOCKED,
+                "official negative terminal",
+                outcome=TaskOutcomeFact(
+                    TaskOutcomeKind.TERMINAL_FAILURE,
+                    "verified_terminal_task_failure",
+                    (observation.facts[0].fact_id,),
+                ),
+            )
+
+    async def scenario() -> None:
+        evaluator = TerminalEvaluator()
+        loop = AgentLoop(FailIfCalledPolicy(), SharedActionEvaluator(), evaluator)
+        session = await AgentEpisodeRunner(loop).start(
+            StaticEnvironment([_world("initial", False)]), _task(),
+        )
+
+        first = await session.run_until_pause()
+        second = await session.run_until_pause()
+
+        assert first is second
+        assert first.status is AgentLoopStatus.BLOCKED
+        assert first.runtime_failure is None
+        assert first.task_outcome is not None
+        assert first.task_outcome.kind is TaskOutcomeKind.TERMINAL_FAILURE
+        assert first.execution_count == 0
+        assert evaluator.calls == 1
 
     asyncio.run(scenario())

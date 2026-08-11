@@ -8,7 +8,11 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     BrowserGymVerifierSnapshot,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalVerifierStatus
+from affordance_runtime.benchmarks.external_smoke.environment import (
+    ExternalVerifierReason,
+    ExternalVerifierStatus,
+    VerifierFactSource,
+)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_policy.serialization import serialize_agent_context
@@ -24,7 +28,10 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
         ax_node("private-4", "option", "A"),
         ax_node("private-5", "option", "B"),
     )
-    snapshot = BrowserGymVerifierSnapshot("run:opaque", "obs:1", "obs:1", ExternalVerifierStatus.INCOMPLETE, "")
+    snapshot = BrowserGymVerifierSnapshot(
+        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
+    )
     projected = project_browsergym_observation(
         raw, observation_id="obs:1", source_revision="revision:1",
         page_identity="page:opaque", episode_identity="0", verifier=snapshot,
@@ -43,7 +50,10 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:
     raw = raw_observation(ax_node("private-1", "button", "okay"))
-    snapshot = BrowserGymVerifierSnapshot("run:opaque", "obs:1", "obs:1", ExternalVerifierStatus.INCOMPLETE, "")
+    snapshot = BrowserGymVerifierSnapshot(
+        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
+    )
     world = project_browsergym_observation(
         raw, observation_id="obs:1", source_revision="revision:1",
         page_identity="page:opaque", episode_identity="0", verifier=snapshot,

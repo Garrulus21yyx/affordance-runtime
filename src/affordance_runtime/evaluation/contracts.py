@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -22,6 +23,13 @@ class TaskEvaluationStatus(StrEnum):
     INCOMPLETE = "incomplete"
     UNKNOWN = "unknown"
     BLOCKED = "blocked"
+
+
+class TaskOutcomeKind(StrEnum):
+    RUNNING_INCOMPLETE = "running_incomplete"
+    TERMINAL_SUCCESS = "terminal_success"
+    TERMINAL_FAILURE = "terminal_failure"
+    VERIFIER_UNAVAILABLE = "verifier_unavailable"
 
 
 class CriterionEvaluationStatus(StrEnum):
@@ -109,6 +117,35 @@ class EvaluatedOutput:
         )
 
 
+_OUTCOME_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
+
+
+@dataclass(frozen=True)
+class TaskOutcomeFact:
+    """Generic canonical task-domain outcome; no adapter oracle payload is public."""
+
+    kind: TaskOutcomeKind
+    code: str
+    evidence_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, TaskOutcomeKind):
+            raise TypeError("task outcome kind must be typed")
+        if not isinstance(self.code, str) or _OUTCOME_CODE.fullmatch(self.code) is None:
+            raise ValueError("task outcome code must be a bounded identifier")
+        requires_evidence = self.kind in {
+            TaskOutcomeKind.TERMINAL_SUCCESS,
+            TaskOutcomeKind.TERMINAL_FAILURE,
+        }
+        object.__setattr__(
+            self,
+            "evidence_refs",
+            validate_evidence_refs(tuple(self.evidence_refs), allow_empty=not requires_evidence),
+        )
+        if not requires_evidence and self.evidence_refs:
+            raise ValueError("nonterminal or unavailable task outcome cannot carry proof")
+
+
 @dataclass(frozen=True)
 class TaskEvaluation:
     task_id: str
@@ -118,6 +155,7 @@ class TaskEvaluation:
     criteria: tuple[CriterionEvaluation, ...] = ()
     completion_evidence_refs: tuple[str, ...] = ()
     outputs: tuple[EvaluatedOutput, ...] = ()
+    outcome: TaskOutcomeFact | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, TaskEvaluationStatus):
@@ -130,6 +168,8 @@ class TaskEvaluation:
             raise TypeError("task evaluation criteria must be typed")
         if any(not isinstance(item, EvaluatedOutput) for item in outputs):
             raise TypeError("task evaluation outputs must be typed")
+        if self.outcome is not None and not isinstance(self.outcome, TaskOutcomeFact):
+            raise TypeError("task evaluation outcome must be typed")
         if len({item.criterion_id for item in criteria}) != len(criteria):
             raise ValueError("task evaluation criterion IDs must be unique")
         if len({item.output_id for item in outputs}) != len(outputs):
@@ -144,6 +184,20 @@ class TaskEvaluation:
             ),
         )
         object.__setattr__(self, "outputs", outputs)
+        if self.outcome is not None:
+            expected = {
+                TaskOutcomeKind.TERMINAL_SUCCESS: TaskEvaluationStatus.COMPLETE,
+                TaskOutcomeKind.RUNNING_INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
+                TaskOutcomeKind.TERMINAL_FAILURE: TaskEvaluationStatus.BLOCKED,
+                TaskOutcomeKind.VERIFIER_UNAVAILABLE: TaskEvaluationStatus.UNKNOWN,
+            }[self.outcome.kind]
+            if self.status is not expected:
+                raise ValueError("task outcome kind contradicts task evaluation status")
+            if self.outcome.kind is TaskOutcomeKind.TERMINAL_SUCCESS:
+                if self.outcome.evidence_refs != self.completion_evidence_refs:
+                    raise ValueError("terminal success outcome and completion proof must agree")
+            elif self.completion_evidence_refs:
+                raise ValueError("non-success task outcome cannot carry completion proof")
 
 
 def _contains_secret_key(value: object) -> bool:
