@@ -29,6 +29,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnv
 from affordance_runtime.benchmarks.external_smoke.pacing import (
     FixedPacingState,
     PacedAgentPolicy,
+    PacedRequirementHypothesisProposer,
     validate_pacing_budget,
 )
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -112,9 +113,22 @@ async def run_breadth_campaign(
     )
 
 
-def _target_manifest(manifest, policy, pacing_state, instrumentations) -> BenchmarkManifest:
+def _target_manifest(
+    manifest,
+    policy,
+    pacing_state,
+    instrumentations,
+    requirement_hypothesis_proposer=None,
+) -> BenchmarkManifest:
     cases = tuple(
-        _target_case(item, manifest, policy, pacing_state, instrumentations)
+        _target_case(
+            item,
+            manifest,
+            policy,
+            pacing_state,
+            instrumentations,
+            requirement_hypothesis_proposer,
+        )
         for item in manifest.cases
     )
     return BenchmarkManifest(
@@ -122,7 +136,14 @@ def _target_manifest(manifest, policy, pacing_state, instrumentations) -> Benchm
     )
 
 
-def _target_case(case, manifest, base_policy, pacing_state, instrumentations) -> BenchmarkCase:
+def _target_case(
+    case,
+    manifest,
+    base_policy,
+    pacing_state,
+    instrumentations,
+    requirement_hypothesis_proposer=None,
+) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
 
@@ -153,10 +174,20 @@ def _target_case(case, manifest, base_policy, pacing_state, instrumentations) ->
             base_policy, manifest.minimum_policy_call_interval_s,
             state=pacing_state, context_observer=observer,
         )
+        paced_proposer = (
+            PacedRequirementHypothesisProposer(
+                requirement_hypothesis_proposer,
+                manifest.minimum_policy_call_interval_s,
+                state=pacing_state,
+            )
+            if requirement_hypothesis_proposer is not None
+            else None
+        )
         return BenchmarkComposition(
             paced,
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
+            requirement_hypothesis_proposer=paced_proposer,
         )
 
     return BenchmarkCase(

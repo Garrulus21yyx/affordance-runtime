@@ -15,7 +15,13 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.task import (
+    HypothesisProposalMode,
+    LoopBudget,
+    RequirementHypothesisProposalBatch,
+    RiskProfile,
+    TaskGoal,
+)
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     ActionBinding,
@@ -76,6 +82,54 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
     assert result.acceptance.accepted
     assert events == ["start:a", "close:a", "start:b", "close:b"]
     assert [item.case_id for item in result.cases] == ["a", "b"]
+
+
+def test_runner_instruments_optional_hypothesis_proposer_without_a_gui_turn() -> None:
+    class Proposer:
+        async def propose(
+            self, task, observation, action_space, *, mode, observation_cursor=""
+        ):
+            del observation_cursor
+            del task, observation, action_space
+            assert mode is HypothesisProposalMode.INITIAL
+            return RequirementHypothesisProposalBatch(mode, ())
+
+    case = BenchmarkCase(
+        "hypothesis",
+        "suite",
+        "hypothesis instrumentation",
+        lambda: TaskGoal("hypothesis", "Already terminal"),
+        lambda _metrics: StaticEnvironment(
+            [WorldObservation("observation:1", (), (), (), {"static": CoverageState.COMPLETE})]
+        ),
+        lambda _metrics: BenchmarkComposition(
+            NeverPolicy(),
+            ActionEvaluator(),
+            CompleteEvaluator(),
+            requirement_hypothesis_proposer=Proposer(),
+        ),
+        (AgentLoopStatus.BLOCKED,),
+        2.0,
+        7,
+        ("requirement_hypothesis_calls", "policy_calls", "turns"),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            )
+        )
+    ).cases[0]
+
+    assert result.measurements["requirement_hypothesis_calls"].value == 1
+    assert result.measurements["policy_calls"].value == 0
+    assert result.measurements["turns"].value == 0
 
 
 def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:

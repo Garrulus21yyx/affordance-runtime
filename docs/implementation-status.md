@@ -507,17 +507,31 @@ comparison-invalid because 7 pairs contain provider failures. The 8 comparable
 pairs were 8/8 text-only and 7/8 screenshot+AX, so screenshot benefit is not
 demonstrated. Stable opaque entity identity, a bounded retained
 entity/state/fact/relation/option inventory, fair frozen-snapshot paging and
-negative-claim coverage gating are implemented. The remaining active gap is a
-bounded non-authoritative requirement-hypothesis producer and lifecycle. The
+negative-claim coverage gating are implemented. Bounded non-authoritative
+requirement-hypothesis proposal, atomic Runtime admission/lifecycle, mechanical
+predicate assessment and fair candidate pinning are also implemented. Proposal
+is limited to one initial call plus changed-snapshot/page augmentation, with a
+hard four-call run budget. Benchmark accounting separates hypothesis calls
+from GUI policy calls and partitions cases into capability-covered, unassessed
+and declared-gap cohorts. Retryable hypothesis-provider failures use bounded
+attempt/deadline recovery and remain nonterminal after exhaustion. The
+remaining active gate is separated-cohort benchmark validation. The
 active convergence plan is the [task-grounded perception/frontier record](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
 
-P5-E is `IN_PROGRESS / VERTICAL_SLICE_IMPLEMENTED`. Closed typed objective
+P5-E is `IN_PROGRESS /
+HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`. Closed typed objective
 operations, atomic objective/action admission, verifier-backed objective
 assessment, one active rolling objective, repair feedback and bounded repetition
-containment are implemented. A production incremental `RequirementHypothesis`
-producer, Runtime hypothesis lifecycle and hypothesis-conditioned fair pinning
-are not implemented. Model hypotheses cannot define authoritative task
-requirements or terminal completion.
+containment are implemented. The optional incremental `RequirementHypothesis`
+producer uses bounded public context and closed predicates; Runtime assigns IDs
+and admits each batch atomically, verifier assessment owns only
+`SATISFIED/CONTRADICTED/UNKNOWN`, and active unknown candidates feed a bounded
+pin header with reserved exploration slots. Provider/proposal failure is
+nonterminal metadata. The proposer reads the current frozen observation page,
+not always page one, and has a hard four-call run budget. Model hypotheses
+cannot define authoritative task
+requirements, set completeness, action authority or terminal completion. This
+slice is implemented but has not passed a separated-cohort benchmark.
 
 ## Control-transition and long-horizon gap status
 
@@ -530,18 +544,20 @@ reviewed closure. Codecs, legacy fields, privacy sanitation and telemetry remain
 downstream projections and cannot infer or override truth. No ledger, replay,
 event sourcing or state reconstruction is admitted.
 
-Long-horizon scaffolding is partial only. `AgentLoopState.plan`,
-`active_objective`, progress revisions/events and AgentContext projections
-exist, and current validated evaluations can project evidence-linked facts.
-The target production loop does not initialize or mutate plan/objective, and no
-verified milestone promotion/current frontier/replanning lifecycle exists.
+Long-horizon capability remains partial. `VerifiedTaskState`, one active rolling
+objective, evaluator-backed objective audit, non-authoritative requirement
+hypotheses and their bounded AgentContext projection exist. The optional
+hypothesis producer is invoked at task start; Runtime owns atomic admission and
+IDs, while predicate assessment never owns task necessity or completion.
+General multi-milestone planning and benchmark-proven replanning remain open.
 `ProgressController` remains an integrated fill/select local liveness guard;
-general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is
+it is not the task-frontier owner. P5-E is implemented as an unvalidated
+vertical slice. M4.6 is
 `IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`,
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`BLOCKED_BY_M4_6_D_CONVERGENCE`;
+`IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit

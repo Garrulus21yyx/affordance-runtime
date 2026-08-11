@@ -41,7 +41,11 @@ from affordance_runtime.agent.start_error import (
     StartBoundaryEvidence,
     require_initial_observation,
 )
-from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
+from affordance_runtime.agent.state import (
+    MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS,
+    AgentLoopState,
+    AgentLoopStatus,
+)
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
@@ -53,6 +57,12 @@ from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.risk.validation import validate_risk_assessment
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.frontier import PreparedObjectiveOperation
+from affordance_runtime.task.hypothesis_contracts import (
+    HypothesisProposalMode,
+    RequirementHypothesisFailure,
+    RequirementHypothesisFailureKind,
+)
+from affordance_runtime.task.hypothesis_runtime import admit_requirement_hypotheses
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -68,6 +78,10 @@ from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.view import build_agent_world_view
 
 _DirectiveT = TypeVar("_DirectiveT", bound=LoopDirective)
+
+
+def _hypothesis_basis(state: AgentLoopState) -> str:
+    return f"{state.current_observation.observation_id}:{state.observation_cursor or 'initial'}"
 
 
 @dataclass
@@ -145,8 +159,89 @@ class AgentLoop:
         state = AgentLoopState(
             current, remaining_turns=task.loop_budget.max_turns, recent_turn_limit=self.recent_turn_limit
         )
-        return AgentRunSession(
+        session = AgentRunSession(
             self, task, environment, state, intent_context, accounting,
+        )
+        await self._initialize_requirement_hypotheses(session)
+        return session
+
+    async def _initialize_requirement_hypotheses(
+        self,
+        session: AgentRunSession,
+    ) -> None:
+        if self.context_builder.requirement_hypothesis_proposer is None:
+            return
+        action_space = self.action_space_builder.build(
+            session.task,
+            session.state.current_observation,
+        )
+        await self._propose_requirement_hypotheses(
+            session,
+            action_space,
+            HypothesisProposalMode.INITIAL,
+        )
+
+    async def _maybe_augment_requirement_hypotheses(
+        self,
+        session: AgentRunSession,
+        action_space: ActionSpace,
+    ) -> None:
+        state = session.state
+        if (
+            self.context_builder.requirement_hypothesis_proposer is None
+            or state.requirement_hypothesis_proposal_count
+            >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
+            or _hypothesis_basis(state) == state.requirement_hypothesis_last_basis
+        ):
+            return
+        await self._propose_requirement_hypotheses(
+            session,
+            action_space,
+            HypothesisProposalMode.AUGMENT,
+        )
+
+    async def _propose_requirement_hypotheses(
+        self,
+        session: AgentRunSession,
+        action_space: ActionSpace,
+        mode: HypothesisProposalMode,
+    ) -> None:
+        proposer = self.context_builder.requirement_hypothesis_proposer
+        if proposer is None:
+            return
+        state = session.state
+        basis = _hypothesis_basis(state)
+        state.record_requirement_hypothesis_proposal(basis)
+        try:
+            proposed = await proposer.propose(
+                session.task,
+                state.current_observation,
+                action_space,
+                mode=mode,
+                observation_cursor=state.observation_cursor,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            proposed = RequirementHypothesisFailure(
+                RequirementHypothesisFailureKind.INTERNAL_ERROR,
+                "requirement_hypothesis_proposer_failed",
+            )
+        if isinstance(proposed, RequirementHypothesisFailure):
+            session.state.install_requirement_hypotheses(
+                state.requirement_hypotheses,
+                failure_reason=proposed.reason_code,
+            )
+            return
+        admitted = admit_requirement_hypotheses(
+            state.requirement_hypotheses,
+            proposed,
+            state.current_observation,
+        )
+        reason = admitted.rejected_codes[0].value if admitted.rejected_codes else ""
+        session.state.install_requirement_hypotheses(
+            admitted.state,
+            failure_reason=reason,
         )
 
     async def run(
@@ -226,6 +321,7 @@ class AgentLoop:
                     session, outcome, "turn_budget_exhausted"
                 )
             action_space = self.action_space_builder.build(task, state.current_observation)
+            await self._maybe_augment_requirement_hypotheses(session, action_space)
             ensure_current_action_page(session, action_space, self.context_builder)
             from affordance_runtime.agent.control_feedback import current_semantic_scope
             from affordance_runtime.world.public_semantic_digest import (

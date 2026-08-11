@@ -282,6 +282,7 @@ class BenchmarkComposition:
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
+    requirement_hypothesis_proposer: object | None = None
 
 
 @dataclass(frozen=True)
@@ -676,7 +677,7 @@ def _git(*args: str) -> str:
 
 _KNOWN_METRICS = frozenset({
     "observations", "executions", "currentness_probes", "turns", "policy_calls",
-    "semantic_judge_calls", "provider_attempts", "confirmations", "ask_user_count",
+    "requirement_hypothesis_calls", "semantic_judge_calls", "provider_attempts", "confirmations", "ask_user_count",
     "wait_count", "page_request_count", "sent_unknown_count", "duplicate_unknown_attempts",
     "forbidden_effect_attempts", "stale_opportunities", "stale_zero_call_violations",
     "effectful_dispatches", "dom_click_calls", "visual_proposer_calls", "pointer_calls",

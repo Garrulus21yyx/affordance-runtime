@@ -17,12 +17,14 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
+from affordance_runtime.model_policy.requirement_proposer import ModelRequirementHypothesisProposer
 from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
 
 @dataclass
 class BenchmarkInstrumentation:
     policy_calls: int = 0
+    requirement_hypothesis_calls: int = 0
     action_evaluator_calls: int = 0
     task_evaluator_calls: int = 0
     provider_attempts: int = 0
@@ -390,6 +392,35 @@ class CountingModelPort:
 
 
 @dataclass
+class CountingRequirementHypothesisProposer:
+    wrapped: object
+    instrumentation: BenchmarkInstrumentation
+
+    async def propose(
+        self,
+        task,
+        observation,
+        action_space,
+        *,
+        mode,
+        observation_cursor="",
+    ):
+        self.instrumentation.requirement_hypothesis_calls += 1
+        result = await self.wrapped.propose(
+            task,
+            observation,
+            action_space,
+            mode=mode,
+            observation_cursor=observation_cursor,
+        )
+        self.instrumentation.provider_retry_count += max(
+            0,
+            int(getattr(self.wrapped, "last_attempt_count", 1)) - 1,
+        )
+        return result
+
+
+@dataclass
 class CountingSemanticJudge:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
@@ -485,6 +516,26 @@ def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):
             wrapped=replace(inner, port=CountingDecisionPort(inner.port, instrumentation)),
         )
     return CountingPolicy(policy, instrumentation)
+
+
+def instrument_requirement_hypothesis_proposer(proposer, instrumentation):
+    if isinstance(proposer, ModelRequirementHypothesisProposer):
+        proposer = replace(
+            proposer,
+            port=CountingModelPort(proposer.port, instrumentation),
+        )
+    elif isinstance(
+        getattr(proposer, "wrapped", None),
+        ModelRequirementHypothesisProposer,
+    ):
+        proposer = replace(
+            proposer,
+            wrapped=replace(
+                proposer.wrapped,
+                port=CountingModelPort(proposer.wrapped.port, instrumentation),
+            ),
+        )
+    return CountingRequirementHypothesisProposer(proposer, instrumentation)
 
 
 def _configured_retry_count(port: object) -> int | None:

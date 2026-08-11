@@ -70,7 +70,8 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; M4.6-E is
-`BLOCKED_BY_M4_6_D_CONVERGENCE`;
+`IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED` with the task-grounded perception and
+non-authoritative hypothesis vertical slices implemented;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`
@@ -79,9 +80,10 @@ is verified by no-model run
 M4.6-D provides typed control feedback with a frozen two-distinct-issue
 same-scope repair/no-gain budget and immediate exact-repeat containment, not
 Runtime autocorrection or a mandatory reflection agent;
-M4.7 multi-seed and P5-E remain blocked by
-their targeted/breadth gates. Only after those gates may P5-E
-VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
+M4.7 multi-seed and P5-E benchmark validation remain blocked by their
+targeted/breadth gates. P5-E already contains VerifiedTaskState, rolling
+objective and bounded hypothesis vertical slices; general milestone planning
+is still open. The local
 ProgressController remains fill/select-only and is not a planner. The default
 Coordinator path is unchanged.
 
@@ -93,7 +95,7 @@ M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C
 COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D
 REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E
-BLOCKED_BY_M4_6_D_CONVERGENCE`.
+IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`.
 Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts

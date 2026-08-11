@@ -4,7 +4,7 @@ from __future__ import annotations
 
 CANONICAL_METRICS = frozenset({
     "observations", "executions", "currentness_probes", "turns",
-    "policy_calls", "semantic_judge_calls", "provider_attempts",
+    "policy_calls", "requirement_hypothesis_calls", "semantic_judge_calls", "provider_attempts",
     "confirmations", "sent_unknown_count", "duplicate_unknown_attempts",
     "forbidden_effect_attempts", "stale_opportunities",
     "stale_zero_call_violations", "effectful_dispatches",

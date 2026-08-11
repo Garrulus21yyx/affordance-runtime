@@ -52,10 +52,10 @@ authority.
 | 3 | completed | Add `ObservationPager` and bounded traversal state over one frozen snapshot, with pinned header plus fair exploration slots. | model boundary and loop state |
 | 4 | completed | Add `NegativeClaimCoverageGate` for absence/no-progress/infeasible/unsupported/unsupported-ProposeDone claims only; authoritative success and normal actions bypass it. | decision/progress control |
 | 5 | completed | Run a clean current-SHA text-only versus screenshot+AX baseline on the intersection capability-covered cohort, separating run validity, comparison validity and inconclusive pairs. | benchmark profile and fresh evidence |
-| 6 | in_progress | Add bounded instruction-first incremental `RequirementHypothesis` proposals with optional candidate entity references and unknown set completeness. | model/task hypothesis contracts |
-| 7 | pending | Add Runtime hypothesis admission/lifecycle plus verifier predicate assessment without creating task requirements or terminal truth. | task frontier/runtime admission/evaluation |
-| 8 | pending | Add bounded hypothesis pinning to existing rolling objectives while preserving fair cursor enumeration and ActionSpace authority. | context projection/action relevance |
-| 9 | pending | Run separated capability-covered, unassessed and declared-gap cohorts; decide viewport/OCR/SoM/scroll work only from fresh failure evidence. | benchmark reports/evidence |
+| 6 | completed | Add bounded instruction-first incremental `RequirementHypothesis` proposals with optional candidate entity references and unknown set completeness. | model/task hypothesis contracts |
+| 7 | completed | Add atomic Runtime hypothesis admission/lifecycle plus verifier predicate assessment without creating task requirements or terminal truth. | task frontier/runtime admission/evaluation |
+| 8 | completed | Add bounded hypothesis pinning to existing rolling objectives while preserving fair cursor enumeration and ActionSpace authority. | context projection/action relevance |
+| 9 | in_progress | Run separated capability-covered, unassessed and declared-gap cohorts; decide viewport/OCR/SoM/scroll work only from fresh failure evidence. | benchmark reports/evidence |
 
 ## Exit criteria
 
@@ -205,3 +205,32 @@ authority.
   `docs/evidence/runs/m4-6-e-perception-ab-capability-covered-b892c3a`; exact
   raw exchanges remain private outside the repository with directory mode 0700
   and file mode 0600. Step 6 started; viewport/OCR/SoM remains deferred.
+- 2026-08-12: steps 6-8 implemented as a non-authoritative hypothesis slice.
+  A model proposer receives only public instruction, bounded world/action views
+  and an optional real screenshot; output is limited to eight closed typed
+  predicates and always declares set completeness `unknown`. Runtime validates
+  all references atomically, assigns opaque `hypothesis:N` IDs and owns
+  revision/retirement. Any invalid member causes zero installation. Verifier
+  assessment is limited to `satisfied/contradicted/unknown`; incomplete or
+  unassessed inventory cannot prove absence. Active unknown hypotheses may pin
+  at most eight candidate entities while `ObservationPager` retains reserved
+  fair-enumeration slots. An adversarial test places 70 distractors before a
+  read-only required heading and proves it remains visible without creating an
+  `ActionOption`. The proposer is optional and its provider/invalid-response
+  failure is nonterminal metadata, not a GUI turn or task failure. Step 9 is
+  now the remaining benchmark gate; implementation is not a success claim.
+- 2026-08-12: closed the first-page hypothesis loop before benchmark work. The
+  proposer now receives the current opaque observation cursor and reads the
+  same frozen inventory page that triggered augmentation. Calls are limited to
+  one initial proposal plus changed-snapshot/page augmentation, with four calls
+  maximum per run. Target-loop evidence reports
+  `requirement_hypothesis_calls` separately from GUI `policy_calls`; both paths
+  share benchmark pacing, and hypothesis calls create no GUI turn. Cohort
+  partitioning now exhaustively and disjointly reports `capability_covered`,
+  `unassessed` and `declared_gap`. Live separated-cohort execution remains step
+  9 and requires a clean implementation SHA.
+- 2026-08-12: provider recovery also wraps the task-start/page-augment model
+  call. Retryable rate-limit, capacity and outer timeout failures receive the
+  same bounded attempt/deadline policy before one typed nonterminal hypothesis
+  failure is exposed; retries do not create GUI turns. Benchmark
+  `provider_attempts` and `provider_retry_count` include these attempts.

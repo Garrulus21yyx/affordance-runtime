@@ -78,9 +78,9 @@ core contracts for every GUI task.
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
-| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE; M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE; M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED at recovery implementation `1c00e331e4f310f904b70f454dad7cc55c8b47e2` with valid v2 run `miniwob-control-feedback-25:58be2cd216a24c4bb4fb7786dbebb9e6`; M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE |
+| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A-C COMPLETE_NON_DEFAULT; M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED; M4.6-E IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED with screenshot transport, semantic breadth, stable identity, bounded inventory/paging, negative-claim gating and non-authoritative requirement-hypothesis vertical slice; separated-cohort benchmark remains open |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
-| P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.6/M4.7 breadth gates |
+| P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED; general long-horizon planning and separated-cohort validation remain open |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
 | P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
@@ -92,7 +92,7 @@ REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, M4.5-C
 FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED /
 GENERALIZATION_NOT_CLAIMED`, and M4.6 `IN_PROGRESS / M4.6-A
 COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
-COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE`; Implementation
+COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`; Implementation
 Status owns current code truth.
 
 ## 4. Product success measures

@@ -89,6 +89,20 @@ class AgentRequirementStateView:
 
 
 @dataclass(frozen=True)
+class AgentRequirementHypothesisView:
+    hypothesis_id: str
+    summary: str
+    predicate: Mapping[str, object]
+    candidate_entity_ids: tuple[str, ...]
+    status: str
+    assessment: str
+    evidence_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "predicate", freeze_json(self.predicate))
+
+
+@dataclass(frozen=True)
 class AgentObjectiveView:
     objective_id: str
     intended_requirement_ids: tuple[str, ...]
@@ -121,6 +135,9 @@ class AgentTaskFrontierView:
     next_objective_required: bool
     must_advance_from_objective_id: str
     strategy_change_required: bool
+    requirement_hypotheses: tuple[AgentRequirementHypothesisView, ...] = ()
+    hypothesis_set_completeness: str = "unknown"
+    hypothesis_failure_reason: str = ""
 
 
 @dataclass(frozen=True)

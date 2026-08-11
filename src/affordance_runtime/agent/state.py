@@ -14,10 +14,12 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.frontier import PreparedObjectiveOperation
 from affordance_runtime.task.frontier_contracts import ActiveObjective, VerifiedTaskState
+from affordance_runtime.task.hypothesis_contracts import RequirementHypothesisState
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
+MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS = 4
 _SEMANTIC_DIGEST = re.compile(r"[0-9a-f]{64}")
 
 
@@ -49,6 +51,12 @@ class AgentLoopState:
     plan: TaskPlan | None = None
     active_objective: LocalObjective | ActiveObjective | None = None
     verified_task_state: VerifiedTaskState | None = None
+    requirement_hypotheses: RequirementHypothesisState = field(
+        default_factory=RequirementHypothesisState,
+    )
+    requirement_hypothesis_failure_reason: str = ""
+    requirement_hypothesis_proposal_count: int = 0
+    requirement_hypothesis_last_basis: str = ""
     objective_sequence: int = 0
     task_revision: int = 1
     progress_revision: int = 0
@@ -154,6 +162,31 @@ class AgentLoopState:
         if self.verified_task_state != task_state:
             self.verified_task_state = task_state
             self.progress_revision += 1
+
+    def install_requirement_hypotheses(
+        self,
+        hypotheses: RequirementHypothesisState,
+        *,
+        failure_reason: str = "",
+    ) -> None:
+        if (
+            self.requirement_hypotheses != hypotheses
+            or self.requirement_hypothesis_failure_reason != failure_reason
+        ):
+            self.requirement_hypotheses = hypotheses
+            self.requirement_hypothesis_failure_reason = failure_reason
+            self.progress_revision += 1
+
+    def record_requirement_hypothesis_proposal(self, basis: str) -> None:
+        if (
+            not basis.strip()
+            or len(basis) > 640
+            or self.requirement_hypothesis_proposal_count
+            >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
+        ):
+            raise ValueError("requirement hypothesis proposal budget is invalid")
+        self.requirement_hypothesis_proposal_count += 1
+        self.requirement_hypothesis_last_basis = basis
 
     def commit_objective_operation(self, prepared: PreparedObjectiveOperation) -> None:
         """Commit an already validated operation exactly once against current state."""

@@ -24,6 +24,7 @@ from affordance_runtime.model_boundary.context import (
     AgentObjectiveView,
     AgentPendingView,
     AgentProgressView,
+    AgentRequirementHypothesisView,
     AgentRequirementStateView,
     AgentTaskFrontierView,
     ContextIdentity,
@@ -48,6 +49,11 @@ from affordance_runtime.task.frontier_contracts import (
     ActiveObjective,
     predicate_public_value,
 )
+from affordance_runtime.task.hypothesis_contracts import (
+    HypothesisPredicateAssessment,
+    RequirementHypothesisProposer,
+    TrackedHypothesisStatus,
+)
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
@@ -63,6 +69,7 @@ if TYPE_CHECKING:
 class ContextBuilder:
     budget: ContextProjectionBudget = field(default_factory=ContextProjectionBudget)
     pager: ActionPager = field(default_factory=ActionPager)
+    requirement_hypothesis_proposer: RequirementHypothesisProposer | None = None
 
     def build(
         self,
@@ -234,6 +241,12 @@ def _pinned_targets(actions, state, limit: int) -> tuple[str, ...]:
         values.extend((*objective.direct_target_ids, *objective.enabling_target_ids))
     if state.pending_confirmation is not None:
         values.append(state.pending_confirmation.intent.target_id)
+    values.extend(
+        target_id
+        for hypothesis in state.requirement_hypotheses.active[:8]
+        if hypothesis.assessment is HypothesisPredicateAssessment.UNKNOWN
+        for target_id in hypothesis.candidate_entity_ids
+    )
     current = {item.target_id for item in state.current_observation.targets}
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
@@ -324,6 +337,21 @@ def _task_frontier_view(state) -> AgentTaskFrontierView | None:
         must_advance,
         latest.objective_id if must_advance and latest is not None else "",
         must_advance,
+        tuple(
+            AgentRequirementHypothesisView(
+                item.hypothesis_id,
+                item.summary,
+                predicate_public_value(item.predicate),
+                item.candidate_entity_ids,
+                item.status.value,
+                item.assessment.value,
+                item.evidence_refs,
+            )
+            for item in state.requirement_hypotheses.hypotheses
+            if item.status is TrackedHypothesisStatus.ACTIVE
+        ),
+        state.requirement_hypotheses.completeness.value,
+        state.requirement_hypothesis_failure_reason,
     )
 
 

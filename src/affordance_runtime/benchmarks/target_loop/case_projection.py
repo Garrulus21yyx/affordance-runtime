@@ -200,6 +200,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "currentness_probes": result.currentness_probe_count if result else snapshot.currentness_probe_count if snapshot else 0,
         "turns": result.control_transition_total_count if result else snapshot.completed_turn_count if snapshot else 0,
         "policy_calls": state.policy_calls,
+        "requirement_hypothesis_calls": state.requirement_hypothesis_calls,
         "semantic_judge_calls": state.semantic_judge_calls,
         "provider_attempts": state.provider_attempts,
         "confirmations": state.confirmations_submitted,

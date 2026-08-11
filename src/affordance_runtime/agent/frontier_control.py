@@ -10,6 +10,7 @@ from affordance_runtime.task.frontier import (
     verify_active_objective,
 )
 from affordance_runtime.task.frontier_contracts import ActiveObjective
+from affordance_runtime.task.hypothesis_runtime import assess_requirement_hypotheses
 
 
 def audit_task_frontier(
@@ -21,6 +22,14 @@ def audit_task_frontier(
     """Refresh verifier truth, then close an objective only by its predicate."""
 
     state = session.state
+    state.install_requirement_hypotheses(
+        assess_requirement_hypotheses(
+            state.requirement_hypotheses,
+            state.current_observation,
+            evaluation,
+        ),
+        failure_reason=state.requirement_hypothesis_failure_reason,
+    )
     verified = synchronize_verified_task_state(
         session.task,
         evaluation,

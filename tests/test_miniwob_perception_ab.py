@@ -9,6 +9,7 @@ from affordance_runtime.benchmarks.external_breadth.manifest import build_breadt
 from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     _inconclusive_pairs,
     capability_covered_cases,
+    readiness_cohorts,
 )
 
 
@@ -52,3 +53,28 @@ def test_perception_comparison_validity_is_separate_from_run_evidence() -> None:
     )
 
     assert _inconclusive_pairs(("case:1",), arms) == ("case:1",)
+
+
+def test_readiness_cohorts_are_disjoint_and_exhaust_the_manifest() -> None:
+    payload = json.loads(
+        open(
+            "docs/benchmarks/miniwob-60-seed7-v1-manifest.json",
+            encoding="utf-8",
+        ).read()
+    )
+    census = MiniWobRegistryCensus(
+        payload["package_name"],
+        payload["package_version"],
+        payload.get("core_version", payload["package_version"]),
+        payload["source_commit"],
+        tuple(item["task_id"] for item in payload["cases"]),
+        payload["registry_digest"],
+    )
+    manifest = build_breadth_manifest(census)
+
+    cohorts = readiness_cohorts(manifest, census)
+
+    assert set(cohorts) == {"capability_covered", "unassessed", "declared_gap"}
+    case_ids = [case.case_id for values in cohorts.values() for case in values]
+    assert len(case_ids) == len(manifest.cases)
+    assert len(case_ids) == len(set(case_ids))

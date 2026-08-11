@@ -41,10 +41,15 @@ from affordance_runtime.model_policy.model_port_bridge import (
     ModelPortDecisionAdapter,
 )
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
+from affordance_runtime.model_policy.requirement_proposer import (
+    ModelRequirementHypothesisProposer,
+)
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
 PROFILE_ID = "MINIWOB_CAPABILITY_COVERED_PERCEPTION_AB"
 CAPABILITY_COVERED_COHORT = "capability_covered"
+UNASSESSED_COHORT = "unassessed"
+DECLARED_GAP_COHORT = "declared_gap"
 _SAFETY_METRICS = (
     "cleanup_failures",
     "duplicate_unknown_attempts",
@@ -65,6 +70,8 @@ class PerceptionArmOutcome:
     provider_attempts: int
     total_tokens: int
     model_latency_ms: float
+    requirement_hypotheses_enabled: bool
+    requirement_hypothesis_calls: int
 
     @property
     def success_count(self) -> int:
@@ -82,6 +89,28 @@ def capability_covered_cases(
     return tuple(case for case in manifest.cases if readiness.get(case.task_id) is TaskReadiness.DECLARED_SUPPORTED)
 
 
+def readiness_cohorts(
+    manifest: MiniWobBreadthManifest,
+    census: MiniWobRegistryCensus,
+    *,
+    source_root: Path | None = None,
+) -> dict[str, tuple]:
+    inventory = build_capability_inventory_v2(census, source_root)
+    readiness = {
+        item.task_id: task_readiness(item, current_declared_capabilities())
+        for item in inventory
+    }
+    names = {
+        TaskReadiness.DECLARED_SUPPORTED: CAPABILITY_COVERED_COHORT,
+        TaskReadiness.UNASSESSED: UNASSESSED_COHORT,
+        TaskReadiness.DECLARED_UNSUPPORTED: DECLARED_GAP_COHORT,
+    }
+    result: dict[str, list[object]] = {name: [] for name in names.values()}
+    for case in manifest.cases:
+        result[names[readiness.get(case.task_id, TaskReadiness.UNASSESSED)]].append(case)
+    return {name: tuple(values) for name, values in result.items()}
+
+
 def declared_supported_cases(
     manifest: MiniWobBreadthManifest,
     census: MiniWobRegistryCensus,
@@ -97,6 +126,8 @@ async def run_perception_arm(
     manifest: MiniWobBreadthManifest,
     policy: ModelBackedAgentPolicy,
     perception_profile: DecisionPerceptionProfile,
+    *,
+    enable_requirement_hypotheses: bool = False,
 ) -> PerceptionArmOutcome:
     adapter = _adapter(policy)
     if adapter.perception_profile is not perception_profile:
@@ -107,10 +138,28 @@ async def run_perception_arm(
         adapter.grounding_profile_version,
     )
     instrumentations: list[BenchmarkInstrumentation] = []
-    target = _target_manifest(manifest, policy, FixedPacingState(), instrumentations)
+    proposer = (
+        ModelRequirementHypothesisProposer(
+            adapter.port,
+            adapter.config,
+            perception_profile,
+        )
+        if enable_requirement_hypotheses
+        else None
+    )
+    target = _target_manifest(
+        manifest,
+        policy,
+        FixedPacingState(),
+        instrumentations,
+        proposer,
+    )
     target = replace(
         target,
-        profile_id=f"mistral-format-only-{perception_profile.value}",
+        profile_id=(
+            f"mistral-format-only-{perception_profile.value}"
+            + ("-requirement-hypotheses" if enable_requirement_hypotheses else "")
+        ),
     )
     suite = await run_suite(target)
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
@@ -135,6 +184,11 @@ async def run_perception_arm(
         sum(_integer(item.result, "provider_attempts") for item in records),
         sum(_integer(item.result, "total_tokens") for item in records),
         sum(_number(item.result, "model_latency_ms") for item in records),
+        enable_requirement_hypotheses,
+        sum(
+            _integer(item.result, "requirement_hypothesis_calls")
+            for item in records
+        ),
     )
 
 
@@ -182,6 +236,8 @@ def write_perception_ab(
                 "provider_attempts": arm.provider_attempts,
                 "total_tokens": arm.total_tokens,
                 "model_latency_ms": arm.model_latency_ms,
+                "requirement_hypotheses_enabled": arm.requirement_hypotheses_enabled,
+                "requirement_hypothesis_calls": arm.requirement_hypothesis_calls,
                 "errors": arm.errors,
             }
             for arm in arms
@@ -196,6 +252,8 @@ def write_perception_ab(
         errors.append("A/B requires exactly the text-only and screenshot+AX arms")
     if len(identities) != 1:
         errors.append("A/B arms did not use the same provider/model/grounding identity")
+    if len({arm.requirement_hypotheses_enabled for arm in arms}) != 1:
+        errors.append("A/B arms did not use the same requirement-hypothesis profile")
     inconclusive_pairs = _inconclusive_pairs(case_ids, arms)
     run_evidence_valid = not errors
     comparison_valid = run_evidence_valid and not inconclusive_pairs
