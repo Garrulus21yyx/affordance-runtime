@@ -184,3 +184,11 @@ authority.
   Ruff passed, mypy passed across 451 source files, the full suite passed 2229
   with 27 skipped, and all 15 documentation-governance checks passed. The
   current-SHA perception A/B is the next gate.
+- 2026-08-12: before executing step 5, upgraded the A/B report contract to
+  `miniwob-perception-ab.v2`. Public cohort naming is now
+  `capability_covered`, the primary metric is explicitly the
+  declared-capability-covered cohort success rate, and
+  `run_evidence_valid`, `comparison_valid`, and `inconclusive_pairs` are
+  separate. A provider-contaminated pair can no longer be presented as a valid
+  perception comparison even when its archived run evidence is structurally
+  valid.

@@ -42,8 +42,9 @@ from affordance_runtime.model_policy.model_port_bridge import (
 )
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
 
-SCHEMA_VERSION = "miniwob-perception-ab.v1"
-PROFILE_ID = "MINIWOB_DECLARED_SUPPORTED_PERCEPTION_AB"
+SCHEMA_VERSION = "miniwob-perception-ab.v2"
+PROFILE_ID = "MINIWOB_CAPABILITY_COVERED_PERCEPTION_AB"
+CAPABILITY_COVERED_COHORT = "capability_covered"
 _SAFETY_METRICS = (
     "cleanup_failures",
     "duplicate_unknown_attempts",
@@ -70,21 +71,26 @@ class PerceptionArmOutcome:
         return sum(item.outcome is MiniWobTaskOutcome.SUCCESS for item in self.records)
 
 
-def declared_supported_cases(
+def capability_covered_cases(
     manifest: MiniWobBreadthManifest,
     census: MiniWobRegistryCensus,
     *,
     source_root: Path | None = None,
 ) -> tuple:
     inventory = build_capability_inventory_v2(census, source_root)
-    readiness = {
-        item.task_id: task_readiness(item, current_declared_capabilities())
-        for item in inventory
-    }
-    return tuple(
-        case for case in manifest.cases
-        if readiness.get(case.task_id) is TaskReadiness.DECLARED_SUPPORTED
-    )
+    readiness = {item.task_id: task_readiness(item, current_declared_capabilities()) for item in inventory}
+    return tuple(case for case in manifest.cases if readiness.get(case.task_id) is TaskReadiness.DECLARED_SUPPORTED)
+
+
+def declared_supported_cases(
+    manifest: MiniWobBreadthManifest,
+    census: MiniWobRegistryCensus,
+    *,
+    source_root: Path | None = None,
+) -> tuple:
+    """Compatibility alias; public reports use capability-covered terminology."""
+
+    return capability_covered_cases(manifest, census, source_root=source_root)
 
 
 async def run_perception_arm(
@@ -111,7 +117,10 @@ async def run_perception_arm(
     records = tuple(
         _record(case, result, instrumentation)
         for case, result, instrumentation in zip(
-            manifest.cases, suite.cases, instrumentations, strict=True,
+            manifest.cases,
+            suite.cases,
+            instrumentations,
+            strict=True,
         )
     )
     provider, model, grounding = _model_identity(instrumentations, configured_identity)
@@ -141,19 +150,23 @@ def write_perception_ab(
         arm_dir = output_dir / arm.perception_profile.value
         arm_dir.mkdir()
         for record in arm.records:
-            _atomic_json(arm_dir / f"{record.case_id}.json", {
-                "cohort": TaskReadiness.DECLARED_SUPPORTED.value,
-                "perception_profile": arm.perception_profile.value,
-                "typed_outcome": record.outcome.value,
-                "policy_trace": record.diagnostic_trace,
-                "case": public_case_evidence(record.result),
-            })
+            _atomic_json(
+                arm_dir / f"{record.case_id}.json",
+                {
+                    "cohort": CAPABILITY_COVERED_COHORT,
+                    "perception_profile": arm.perception_profile.value,
+                    "typed_outcome": record.outcome.value,
+                    "policy_trace": record.diagnostic_trace,
+                    "case": public_case_evidence(record.result),
+                },
+            )
     report = output_dir / "report.json"
     public = {
         "schema_version": SCHEMA_VERSION,
         "profile": PROFILE_ID,
         "implementation_sha": implementation_sha,
-        "cohort": TaskReadiness.DECLARED_SUPPORTED.value,
+        "cohort": CAPABILITY_COVERED_COHORT,
+        "primary_metric": "declared-capability-covered cohort success rate",
         "case_ids": case_ids,
         "same_model_required": True,
         "mixed_cohort_success_rate_prohibited": True,
@@ -183,7 +196,20 @@ def write_perception_ab(
         errors.append("A/B requires exactly the text-only and screenshot+AX arms")
     if len(identities) != 1:
         errors.append("A/B arms did not use the same provider/model/grounding identity")
-    _atomic_json(report, {**public, "evidence_valid": not errors, "errors": errors})
+    inconclusive_pairs = _inconclusive_pairs(case_ids, arms)
+    run_evidence_valid = not errors
+    comparison_valid = run_evidence_valid and not inconclusive_pairs
+    _atomic_json(
+        report,
+        {
+            **public,
+            "run_evidence_valid": run_evidence_valid,
+            "comparison_valid": comparison_valid,
+            "inconclusive_pairs": inconclusive_pairs,
+            "evidence_valid": run_evidence_valid,
+            "errors": errors,
+        },
+    )
     return report
 
 
@@ -196,14 +222,10 @@ def _adapter(policy: ModelBackedAgentPolicy) -> ModelPortDecisionAdapter:
     adapter = composed.primary_port if isinstance(composed, ProviderCallOrchestrator) else composed
     if not isinstance(adapter, ModelPortDecisionAdapter):
         raise TypeError("perception A/B requires the canonical model bridge")
-    if (
-        getattr(adapter.port, "provider", "") != "mistral"
-        or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
-    ):
+    if getattr(adapter.port, "provider", "") != "mistral" or getattr(adapter.port, "model", "") != "mistral-medium-3-5":
         raise ValueError("perception A/B requires the frozen Mistral model identity")
-    if (
-        adapter.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX
-        and not getattr(adapter.port, "supports_multimodal", False)
+    if adapter.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX and not getattr(
+        adapter.port, "supports_multimodal", False
     ):
         raise ValueError("screenshot+AX arm requires a multimodal model port")
     return adapter
@@ -224,3 +246,29 @@ def _arm_errors(records, initial_sha: str, initial_dirty: bool) -> list[str]:
         if record.result.harness_integrity_failures:
             errors.append(f"{record.case_id}: harness integrity failed")
     return errors
+
+
+def _inconclusive_pairs(
+    case_ids: tuple[str, ...],
+    arms: tuple[PerceptionArmOutcome, ...],
+) -> tuple[str, ...]:
+    inconclusive = {
+        MiniWobTaskOutcome.PROVIDER_UNAVAILABLE,
+        MiniWobTaskOutcome.PROVIDER_TIMEOUT,
+        MiniWobTaskOutcome.PROVIDER_REFUSED,
+        MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE,
+        MiniWobTaskOutcome.CASE_TIMEOUT,
+        MiniWobTaskOutcome.ENVIRONMENT_FAILURE,
+        MiniWobTaskOutcome.CLEANUP_FAILURE,
+    }
+    by_arm = [{record.case_id: record for record in arm.records} for arm in arms]
+    return tuple(
+        case_id
+        for case_id in case_ids
+        if any(
+            case_id not in records
+            or records[case_id].outcome in inconclusive
+            or bool(records[case_id].result.harness_integrity_failures)
+            for records in by_arm
+        )
+    )
