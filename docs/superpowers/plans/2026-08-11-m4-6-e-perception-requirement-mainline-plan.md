@@ -111,3 +111,12 @@ without creating a second task or action authority.
   validation is 2221 passed and 27 skipped; Ruff and mypy pass. A fresh
   clean-SHA directed rerun is required to verify provider schema compatibility
   and actual dispatch.
+- 2026-08-11: the clean-SHA `60e9771` directed rerun passed. Call 1 proposed an
+  already-satisfied `target_present` objective and was rejected with zero
+  dispatch. Call 2 received both typed repair candidates; the provider schema
+  selected `objective_operation: none`, retained the legal click decision, and
+  Runtime independently admitted and dispatched it. The external verifier
+  returned `terminal_success/verified_success`. The run used two policy calls,
+  two provider attempts and one execution, with no evidence/harness errors.
+  Public trace and mode-0600 raw exchanges are retained under the local
+  `artifacts/m4-6-e-objective-feedback-click-tab-60e9771` diagnostic tree.
