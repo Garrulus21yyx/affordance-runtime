@@ -67,3 +67,25 @@ def test_canonical_payload_rejects_non_finite_python_parameter_values(value: flo
                 "destination_id": "",
             }
         )
+
+
+def test_direct_decision_boundary_rejects_non_json_sequence_coercion() -> None:
+    with pytest.raises(TypeError, match="JSON lists"):
+        AgentDecisionPayload.model_validate(
+            {
+                "type": "ask_user",
+                "context_id": "context:1",
+                "question": "Which value?",
+                "requested_fields": ("value",),
+            }
+        )
+    with pytest.raises(TypeError, match="JSON lists"):
+        AgentDecisionPayload.model_validate(
+            {
+                "type": "select_action",
+                "context_id": "context:1",
+                "action_id": "action:1",
+                "parameters": {"indices": range(2)},
+                "destination_id": "",
+            }
+        )

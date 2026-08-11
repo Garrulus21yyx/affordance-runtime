@@ -3,6 +3,11 @@ from __future__ import annotations
 import pytest
 
 from affordance_runtime.agent import AgentFailureCode
+from affordance_runtime.agent.runtime_failure import (
+    FailureKind,
+    FailureStage,
+    RuntimeFailure,
+)
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -57,6 +62,81 @@ def test_success_provider_and_no_progress_are_typed_separately() -> None:
         failure_facts=progress_facts,
     )
     assert classify_case(repeated).outcome is MiniWobTaskOutcome.NO_PROGRESS_REPETITION
+
+
+def test_canonical_runtime_stage_and_kind_own_classification() -> None:
+    runtime_failure = RuntimeFailure(
+        FailureStage.ACQUISITION,
+        FailureKind.CAPABILITY_UNAVAILABLE,
+        "future_capability_code",
+    )
+    facts = FailureFacts(
+        runtime_reason_code=runtime_failure.code,
+        runtime_failure=runtime_failure,
+    )
+    result = _result(
+        case_failure_code=runtime_failure.code,
+        runtime_reason_code=runtime_failure.code,
+        failure_facts=facts,
+    )
+
+    classified = classify_case(result)
+    assert classified.outcome is MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
+    assert classified.source == "canonical_runtime_failure"
+
+
+@pytest.mark.parametrize(
+    "stage",
+    (FailureStage.EXECUTION, FailureStage.EVALUATION),
+)
+def test_production_invalid_outputs_have_total_canonical_classification(stage) -> None:
+    failure = RuntimeFailure(stage, FailureKind.INVALID_OUTPUT, "invalid_component_output")
+    facts = FailureFacts(runtime_reason_code=failure.code, runtime_failure=failure)
+    classified = classify_case(_result(
+        case_failure_code=failure.code,
+        runtime_reason_code=failure.code,
+        failure_facts=facts,
+    ))
+    assert classified.outcome is (
+        MiniWobTaskOutcome.EXECUTION_FAILURE
+        if stage is FailureStage.EXECUTION
+        else MiniWobTaskOutcome.TASK_FAILED
+    )
+
+
+def test_typed_policy_code_specializes_canonical_call_failure() -> None:
+    failure = RuntimeFailure(FailureStage.POLICY, FailureKind.CALL_FAILED, "timeout")
+    facts = FailureFacts(policy_failure_code="timeout", runtime_failure=failure)
+    classified = classify_case(_result(
+        case_failure_code="policy_timeout",
+        last_policy_failure_code="timeout",
+        failure_facts=facts,
+    ))
+    assert classified.outcome is MiniWobTaskOutcome.PROVIDER_TIMEOUT
+    assert classified.source == "canonical_runtime_failure"
+
+
+def test_typed_evaluation_origin_specializes_canonical_call_failure() -> None:
+    failure = RuntimeFailure(
+        FailureStage.EVALUATION,
+        FailureKind.CALL_FAILED,
+        "action_evaluation_call_failed",
+    )
+    facts = FailureFacts(
+        component_origin=CaseFailureOrigin.ACTION_EVALUATION,
+        component_code="action_evaluator_exception",
+        component_exception_class="RuntimeError",
+        runtime_failure=failure,
+    )
+    classified = classify_case(_result(
+        case_failure_code=facts.component_code,
+        failure_origin=facts.component_origin,
+        failure_code=facts.component_code,
+        exception_class=facts.component_exception_class,
+        termination_origin="component",
+        failure_facts=facts,
+    ))
+    assert classified.outcome is MiniWobTaskOutcome.ACTION_EVALUATOR_FAILURE
 
 
 def test_timeout_and_runtime_rejection_do_not_use_free_text() -> None:

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.agent.runtime_failure import (
+    FailureKind,
+    FailureStage,
+    RuntimeFailure,
+)
 from affordance_runtime.benchmarks.target_loop.case_projection import (
     decode_public_case_evidence,
     public_case_evidence,
@@ -26,6 +31,9 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 def test_failure_facts_are_orthogonal_and_round_trip(watchdog, cleanup, integrity) -> None:
     facts = FailureFacts(
         runtime_reason_code="runtime_exception",
+        runtime_failure=RuntimeFailure(
+            FailureStage.SESSION, FailureKind.CALL_FAILED, "runtime_exception",
+        ),
         component_origin=CaseFailureOrigin.ACTION_EVALUATION,
         component_code="action_evaluator_exception",
         component_exception_class="RuntimeError",
@@ -69,6 +77,32 @@ def test_adding_watchdog_does_not_erase_component_failure() -> None:
     assert changed.component_code == facts.component_code
 
 
+def test_runtime_failure_stage_is_frozen_and_codec_round_trip_preserves_authority() -> None:
+    failure = RuntimeFailure(
+        FailureStage.ACQUISITION,
+        FailureKind.CALL_FAILED,
+        "observation_acquisition_failed",
+        "transition:1:00000000000000000000",
+        "attempt:1",
+        "RuntimeError",
+    )
+    facts = FailureFacts(
+        runtime_reason_code=failure.code,
+        runtime_failure=failure,
+    )
+    result = BenchmarkCaseResult(
+        "case:one", "failed", True, "display only", 1.0,
+        runtime_reason_code=failure.code,
+        case_failure_code=failure.code,
+        failure_facts=facts,
+    )
+
+    decoded = decode_public_case_evidence(public_case_evidence(result))
+    assert decoded.failure_facts.runtime_failure == failure
+    with pytest.raises(FrozenInstanceError):
+        failure.stage = FailureStage.CONTROL
+
+
 def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
     payload = public_case_evidence(BenchmarkCaseResult("case:one", "failed", True, "", 1.0))
     malformed = dict(payload)
@@ -80,6 +114,16 @@ def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
     future["schema_version"] = future["case_schema_version"] = "target-loop-case.v999"
     with pytest.raises(ValueError, match="unsupported"):
         decode_public_case_evidence(future)
+
+    legacy = public_case_evidence(
+        BenchmarkCaseResult("case:legacy", "failed", True, "", 1.0)
+    )
+    legacy["schema_version"] = legacy["case_schema_version"] = "target-loop-case.v6"
+    legacy["failure_facts"].pop("runtime_failure")
+    assert decode_public_case_evidence(legacy).case_schema_version == "target-loop-case.v6"
+    legacy_round_trip = public_case_evidence(decode_public_case_evidence(legacy))
+    assert "runtime_failure" not in legacy_round_trip["failure_facts"]
+    assert decode_public_case_evidence(legacy_round_trip).case_schema_version.endswith("v6")
 
     wrong_scalars = public_case_evidence(
         BenchmarkCaseResult(
@@ -107,6 +151,47 @@ def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
     bad_status["status"] = "gibberish"
     with pytest.raises(ValueError, match="scalar"):
         decode_public_case_evidence(bad_status)
+
+
+def test_failure_algebras_reject_contradictory_or_unsupported_truth() -> None:
+    with pytest.raises(ValueError, match="stage and kind"):
+        RuntimeFailure(
+            FailureStage.POLICY,
+            FailureKind.CAPABILITY_UNAVAILABLE,
+            "unsupported_failure_pair",
+        )
+    for code in ("123", "UPPER", "秘密"):
+        with pytest.raises(ValueError, match="bounded identifiers"):
+            FailureFacts(component_origin=CaseFailureOrigin.EXECUTION, component_code=code)
+    with pytest.raises(ValueError, match="policy failure facts conflict"):
+        FailureFacts(
+            policy_failure_code="timeout",
+            runtime_failure=RuntimeFailure(
+                FailureStage.POLICY,
+                FailureKind.INVALID_OUTPUT,
+                "invalid_response",
+            ),
+        )
+
+
+def test_official_success_cannot_coexist_with_canonical_runtime_failure() -> None:
+    facts = FailureFacts(
+        runtime_failure=RuntimeFailure(
+            FailureStage.EXECUTION,
+            FailureKind.CALL_FAILED,
+            "execution_failed",
+        )
+    )
+    with pytest.raises(ValueError, match="cannot carry failure facts"):
+        BenchmarkCaseResult(
+            "case:success",
+            "done",
+            True,
+            "",
+            1.0,
+            measurements={"official_success_count": MetricMeasurement(1, True)},
+            failure_facts=facts,
+        )
 
 
 @pytest.mark.parametrize(

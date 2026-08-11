@@ -135,8 +135,9 @@ def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
         "watchdog_code": "case_timeout",
         "cleanup_code": "",
         "cleanup_exception_class": "",
-        "harness_integrity_code": "metric_name_collision",
-    }
+            "harness_integrity_code": "metric_name_collision",
+            "runtime_failure": None,
+        }
 
 
 def test_tree_validator_rejects_coherently_rehashed_case_identity_mutation(

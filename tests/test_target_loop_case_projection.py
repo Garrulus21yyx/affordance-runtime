@@ -220,7 +220,7 @@ def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
     "request_kind",
     ("policy_request", "wait_refresh", "confirmation_refresh", "post_action_fallback"),
 )
-def test_returned_and_thrown_acquisition_failures_share_semantic_origin(
+def test_snapshot_request_kind_cannot_infer_component_origin(
     request_kind: str,
 ) -> None:
     snapshot = replace(
@@ -247,7 +247,8 @@ def test_returned_and_thrown_acquisition_failures_share_semantic_origin(
     thrown = project_case_result(
         "thrown", None, thrown_metrics, 1.0, "failed", final_snapshot=snapshot,
     )
-    assert returned.failure_origin is thrown.failure_origin is expected
+    assert returned.failure_origin is CaseFailureOrigin.NONE
+    assert thrown.failure_origin is expected
     assert returned.failure_facts.component_exception_class == ""
     assert thrown.failure_facts.component_exception_class == "RuntimeError"
 

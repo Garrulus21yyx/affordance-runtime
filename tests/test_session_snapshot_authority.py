@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
-from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop
+from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, Wait
 from affordance_runtime.agent.control_transition import ControlTransitionScope
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.testing import StaticEnvironment
@@ -31,7 +31,7 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
         session = await AgentEpisodeRunner(
             AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("current", False)]), _task())
-        decision = Abort("context:history", "stop", "policy")
+        decision = Wait("context:history", "history", 1)
         old = TaskEvaluation(
             _task().task_id,
             "current",
@@ -43,7 +43,7 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
         )
         scope = ControlTransitionScope(session.state, decision)
         scope.record_evaluations(task=old)
-        scope.set_reason("abort_policy")
+        scope.set_reason("history_recorded")
         scope.finalize(session.state, None)
         session.state.current_task_evaluation = TaskEvaluation(
             _task().task_id, "current", current, "current authority"

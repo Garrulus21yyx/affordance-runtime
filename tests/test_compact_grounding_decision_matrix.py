@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from affordance_runtime.benchmarks.model_conformance.contracts import (
@@ -40,7 +41,17 @@ class ScriptedPort:
     async def generate_structured(self, messages, output_schema, config):
         del messages, config
         self.calls += 1
-        return output_schema.model_validate(self.payload)
+        # A provider boundary returns JSON arrays, not Python tuples used by the
+        # immutable decision-matrix fixture.
+        return output_schema.model_validate(_as_json_value(self.payload))
+
+
+def _as_json_value(value):
+    if isinstance(value, Mapping):
+        return {key: _as_json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_as_json_value(item) for item in value]
+    return value
 
 
 def _run(case):

@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 import pytest
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -677,6 +678,15 @@ def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
         )
         assert session.approved_confirmation is None
         assert session.confirmation_continuation_scope is None
+        assert session.last_result is not None
+        assert session.last_result.runtime_failure is not None
+        assert session.last_result.runtime_failure.stage is (
+            FailureStage.SESSION
+            if isinstance(exc, asyncio.CancelledError)
+            else FailureStage.ACQUISITION
+        )
+        assert session.last_result.runtime_failure.root_id == root.transition_id
+        assert session.last_result.runtime_failure.attempt_id == root.attempt_receipts[-1].attempt_id
 
     asyncio.run(scenario())
 
@@ -701,6 +711,10 @@ def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None
         assert len(root.attempt_receipts) == 1
         assert root.attempt_receipts[0].disposition.value == "malformed"
         assert root.acquisition_attempts[0].attempts == 1
+        assert session.last_result is not None
+        assert session.last_result.runtime_failure is not None
+        assert session.last_result.runtime_failure.stage is FailureStage.ACQUISITION
+        assert session.last_result.runtime_failure.kind is FailureKind.INVALID_OUTPUT
 
     asyncio.run(scenario())
 

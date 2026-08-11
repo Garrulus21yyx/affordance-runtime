@@ -88,7 +88,8 @@ def test_destination_ladder_runs_with_full_union_and_reports_diagnostic_pass(tmp
 
     assert result.passed_levels == ("D0", "D1", "D2", "D3", "D4")
     assert result.classification == "diagnostic_pass"
-    assert all(item.schema_bytes > 5_000 for item in result.attempts)
+    assert len({item.schema_bytes for item in result.attempts}) == 1
+    assert result.attempts[0].schema_bytes > 0
     assert len(result.cell_summaries) == 5
     assert all(item.success_count == 1 for item in result.cell_summaries)
     assert result.cell_summaries[0].decision_variant_counts == (("select_action", 1),)

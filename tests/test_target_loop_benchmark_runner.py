@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 
 from affordance_runtime.agent import AgentLoopStatus, SelectAction
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCase,
     BenchmarkComposition,
@@ -193,6 +194,10 @@ def test_component_timeout_error_is_not_classified_as_watchdog() -> None:
     assert result.case_failure_code != "case_timeout"
     assert result.failure_origin is not CaseFailureOrigin.HARNESS_WATCHDOG
     assert result.exception_class == "TimeoutError"
+    assert result.failure_facts.runtime_failure is not None
+    assert result.failure_facts.runtime_failure.stage is FailureStage.POLICY
+    assert result.failure_facts.runtime_failure.kind is FailureKind.CALL_FAILED
+    assert result.failure_facts.runtime_failure.exception_class == "TimeoutError"
 
 
 def test_runner_preserves_typed_agent_failure_without_message_matching() -> None:
@@ -252,7 +257,8 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
     ).cases[0]
 
     assert result.case_failure_code == "post_action_capability_unavailable"
-    assert result.failure_code == "post_action_observation_unavailable"
+    assert result.failure_code == ""
     assert result.runtime_reason_code == "post_action_observation_unavailable"
     assert result.agent_failure_code == "post_action_capability_unavailable"
-    assert str(result.failure_origin) == "post_action_observation"
+    assert result.failure_origin is CaseFailureOrigin.NONE
+    assert result.failure_facts.runtime_failure is None

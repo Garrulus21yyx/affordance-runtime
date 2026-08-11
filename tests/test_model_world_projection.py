@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.agent import Abort
+from affordance_runtime.agent import Wait
 from affordance_runtime.agent.control_transition import ControlTransitionScope
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import (
@@ -395,7 +395,7 @@ def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
 
 def _append_abort_transitions(state: AgentLoopState, reasons: tuple[str, ...]) -> None:
     for reason in reasons:
-        decision = Abort("context:1", reason, "policy")
+        decision = Wait("context:1", reason, 1)
         scope = ControlTransitionScope(state, decision)
-        scope.set_reason("abort_policy")
+        scope.set_reason("history_recorded")
         scope.finalize(state, None)

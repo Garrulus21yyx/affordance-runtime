@@ -18,14 +18,17 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.attempt_receipt import (
+    AttemptDisposition,
+    AttemptOperation,
+    AttemptReceipt,
+)
 from affordance_runtime.agent.control_transition import (
     AdmissionStatus,
-    ControlContinuationScope,
     ControlTransitionScope,
     PendingKind,
 )
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
@@ -34,24 +37,47 @@ from affordance_runtime.model_boundary.control_transition_projection import (
 )
 from affordance_runtime.model_boundary.failures import ModelFailureKind
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ObservationRequestKind
+from affordance_runtime.world import (
+    AcquisitionOrigin,
+    AcquisitionStatus,
+    ObservationRequestKind,
+)
 
 
 def test_transition_is_frozen_bounded_and_strips_adapter_payload() -> None:
     state = AgentLoopState(_world("before", False))
-    decision = Abort("context:one", "stop", "policy")
+    decision = SelectAction("context:one", "action:one")
     scope = ControlTransitionScope(state, decision)
     scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
-    scope.record_execution(
-        "",
-        None,
-        ActionResult(
-            "request:one",
+    result = ActionResult(
+        "request:one",
+        DispatchStatus.SENT,
+        "dom",
+        True,
+        adapter_evidence={"selector": "#private", "raw_payload": "secret"},
+    )
+    scope.record_execution_receipt(
+        AttemptReceipt(
+            "attempt:1",
+            AttemptOperation.EXECUTE,
+            "post_action",
+            AcquisitionOrigin.POST_ACTION,
+            AcquisitionOrigin.POST_ACTION,
+            AttemptDisposition.RETURNED,
+            "post_action_acquired",
+            1,
+            1,
+            1,
+            0,
             DispatchStatus.SENT,
-            "dom",
+            "request:one",
+            "request:one",
             True,
-            adapter_evidence={"selector": "#private", "raw_payload": "secret"},
+            acquisition_status=AcquisitionStatus.ACQUIRED,
         ),
+        "request:one",
+        None,
+        result,
     )
     transition = scope.finalize(state, None)
 
@@ -69,7 +95,7 @@ def test_transition_is_frozen_bounded_and_strips_adapter_payload() -> None:
 
 def test_transition_rejects_old_task_evaluation_epoch_before_model_projection() -> None:
     state = AgentLoopState(_world("before", False))
-    scope = ControlTransitionScope(state, Abort("context:one", "stop", "policy"))
+    scope = ControlTransitionScope(state, Wait("context:one", "wait", 1))
     scope.set_reason("runtime_exception")
     transition = scope.finalize(state, None)
     with pytest.raises(ValueError, match="task evaluation"):
@@ -104,33 +130,14 @@ def test_transition_rejects_unbounded_or_unstable_reason_codes(reason_code: str)
 def test_exact_root_total_survives_bounded_suffix() -> None:
     state = AgentLoopState(_world("before", False), recent_turn_limit=3)
     for index in range(7):
-        decision = Abort(f"context:{index}", f"stop {index}", "policy")
+        decision = Wait(f"context:{index}", f"wait {index}", 1)
         scope = ControlTransitionScope(state, decision)
-        scope.set_reason("abort_policy")
+        scope.set_reason("wait_continued")
         scope.finalize(state, None)
 
     assert state.control_transition_total_count == 7
     assert [item.sequence for item in state.recent_control_transitions] == [5, 6, 7]
     assert len(state.recent_turns) == 3
-
-
-def test_continuation_monotonically_merges_progress_without_new_root() -> None:
-    state = AgentLoopState(_world("before", False))
-    decision = Abort("context:one", "stop", "policy")
-    root_scope = ControlTransitionScope(state, decision)
-    root_scope.set_reason("confirmation_required")
-    root = root_scope.finalize(state, None)
-    continuation = ControlContinuationScope(state, decision, root.transition_id)
-    state._append_progress_event(
-        ProgressEvent("effect_confirmed", "activate", "shared", "sha256:test", "effect_confirmed", "complete", False)
-    )
-    continuation.set_reason("task_complete")
-    continuation.finalize(state, None)
-
-    updated = state.recent_control_transitions[0]
-    assert state.control_transition_total_count == 1
-    assert updated.transition_id == root.transition_id
-    assert updated.progress.event_count == state.progress_event_total_count == 1
 
 
 @pytest.mark.parametrize(

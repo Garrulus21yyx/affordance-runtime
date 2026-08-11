@@ -1,3 +1,5 @@
+"""Exceptional-path witnesses for the canonical control-transition contract."""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +17,7 @@ from test_agent_loop import (
 )
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.testing import StaticEnvironment
@@ -85,6 +88,11 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
         assert terminal is session.last_result
         assert terminal.status is AgentLoopStatus.FAILED
         assert terminal.reason_code == "runtime_exception"
+        assert terminal.runtime_failure is not None
+        assert terminal.runtime_failure.stage is FailureStage.EVALUATION
+        assert terminal.runtime_failure.kind is FailureKind.CALL_FAILED
+        assert terminal.runtime_failure.root_id == root.transition_id
+        assert terminal.runtime_failure.attempt_id == root.attempt_receipts[-1].attempt_id
         assert terminal.execution_count == 1
         assert session.state.control_transition_total_count == 1
 
@@ -151,6 +159,14 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
         assert policy.decisions == []
         assert environment.execute_calls == 1
         assert session.state.control_transition_total_count == 1
+        assert terminal.runtime_failure is not None
+        assert terminal.runtime_failure.stage is (
+            FailureStage.SESSION
+            if isinstance(exc, asyncio.CancelledError)
+            else FailureStage.EXECUTION
+        )
+        assert terminal.runtime_failure.root_id == root.transition_id
+        assert terminal.runtime_failure.attempt_id == root.attempt_receipts[-1].attempt_id
 
     asyncio.run(scenario())
 
@@ -176,6 +192,43 @@ def test_foreign_execute_exception_name_cannot_break_physical_accounting() -> No
         assert session.execution_count == 1
         assert len(root.attempt_receipts) == 1
         assert root.attempt_receipts[0].exception_class.startswith("ExceptionClass_")
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("component", ("policy", "initial_task_evaluator"))
+def test_predecision_component_exception_keeps_typed_stage_without_root(component) -> None:
+    class RaisingPolicy:
+        async def decide(self, context):
+            del context
+            raise TimeoutError("private policy detail")
+
+    class RaisingInitialTaskEvaluator:
+        async def evaluate(self, task, observation):
+            del task, observation
+            raise RuntimeError("private evaluation detail")
+
+    async def scenario() -> None:
+        session = await AgentEpisodeRunner(AgentLoop(
+            RaisingPolicy() if component == "policy" else ScriptedPolicy(["first"]),
+            SharedActionEvaluator(),
+            RaisingInitialTaskEvaluator()
+            if component == "initial_task_evaluator"
+            else SharedTaskEvaluator(),
+        )).start(StaticEnvironment([_world("before", False)]), _task())
+        with pytest.raises(TimeoutError if component == "policy" else RuntimeError):
+            await session.run_until_pause()
+        assert session.last_result is not None
+        failure = session.last_result.runtime_failure
+        assert failure is not None
+        assert failure.stage is (
+            FailureStage.POLICY
+            if component == "policy"
+            else FailureStage.EVALUATION
+        )
+        assert failure.kind is FailureKind.CALL_FAILED
+        assert not failure.root_id and not failure.attempt_id
+        assert failure.exception_class in {"TimeoutError", "RuntimeError"}
 
     asyncio.run(scenario())
 
