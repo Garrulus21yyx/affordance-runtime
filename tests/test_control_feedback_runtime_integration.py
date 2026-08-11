@@ -110,6 +110,40 @@ def test_action_page_identity_churn_cannot_bypass_no_gain_repetition() -> None:
     asyncio.run(scenario())
 
 
+def test_casefold_equivalent_page_queries_are_bounded_as_one_no_gain_issue() -> None:
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            query = "NO-SUCH-ACTION" if self.calls % 2 else "no-such-action"
+            return RequestActionPage(context.context_id, query=query)
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment([_world("before", False)])
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "no_progress_control_repetition"
+        assert policy.calls == 3
+        assert result.control_feedback_delivery_count == 1
+        assert result.control_repetition_count == 1
+        assert result.execution_count == 0
+        assert result.currentness_probe_count == 0
+        assert environment.execute_calls == 0
+        assert environment.capture_calls == 0
+        assert all(
+            not transition.execution_attempts
+            and not transition.acquisition_attempts
+            for transition in result.control_transitions
+        )
+
+    asyncio.run(scenario())
+
+
 def test_policy_observation_fresh_identity_without_semantic_gain_is_bounded() -> None:
     class Policy:
         calls = 0

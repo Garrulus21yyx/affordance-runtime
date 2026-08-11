@@ -8,7 +8,10 @@ from collections.abc import Mapping
 
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.world.action_paging import InternalActionPage
+from affordance_runtime.world.action_paging import (
+    InternalActionPage,
+    canonical_action_query,
+)
 from affordance_runtime.world.contracts import ActionOption, ActionSpace, SemanticTarget, WorldObservation
 
 
@@ -160,7 +163,7 @@ def public_action_page_semantics(
         "total_count": page.total_count,
         "has_more": page.has_more,
         "offset": page.offset,
-        "query": page.query,
+        "query": canonical_action_query(page.query),
         "target_filter": target_filter,
         "relevance_role": str(page.relevance_role or ""),
     }
@@ -229,7 +232,7 @@ def action_page_request_digest(
     semantic_offset: int,
 ) -> str:
     return _digest((
-        query,
+        canonical_action_query(query),
         public_subject_semantics(observation, target_id) if target_id else ("none",),
         relevance_role,
         semantic_offset,

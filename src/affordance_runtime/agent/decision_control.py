@@ -53,6 +53,7 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
+from affordance_runtime.world.action_paging import canonical_action_query
 from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.public_semantic_digest import (
@@ -460,7 +461,7 @@ def _valid_page_request(session: AgentRunSession, decision: RequestActionPage) -
         return False
     role = page.relevance_role.value if page.relevance_role else ""
     return (
-        decision.query == page.query
+        canonical_action_query(decision.query) == page.query
         and decision.target_id == page.target_id
         and decision.relevance_role == role
     )

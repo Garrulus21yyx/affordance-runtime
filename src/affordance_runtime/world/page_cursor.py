@@ -21,7 +21,7 @@ def cursor_fingerprint(
 ) -> str:
     payload = (
         action_space_id,
-        query.casefold(),
+        query,
         target_id,
         role.value if role else "",
         objective_digest,

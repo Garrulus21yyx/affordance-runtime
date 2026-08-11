@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from hypothesis import given
+from hypothesis import strategies as st
 from test_agent_loop import _task, _world
 
 from affordance_runtime.agent.state import AgentLoopState
@@ -107,4 +109,36 @@ def test_target_action_and_page_id_churn_with_same_semantics_is_ignored() -> Non
     assert public_world_semantic_digest(first) == public_world_semantic_digest(second)
     assert public_action_page_digest(first, first_space, first_page) == public_action_page_digest(
         second, second_space, second_page,
+    )
+
+
+@given(st.text(alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", min_size=1, max_size=50))
+def test_casefold_equivalent_queries_have_one_page_and_digest_semantics(query: str) -> None:
+    world = _world("obs:query", False)
+    state = AgentLoopState(world)
+    space = ActionSpaceBuilder().build(_task(), world)
+    builder = ContextBuilder()
+    alternate = query.swapcase()
+    first = builder.page(space, state, query=query)
+    second = builder.page(space, state, query=alternate)
+
+    assert query.casefold() == alternate.casefold()
+    assert first.page_id == second.page_id
+    assert first.visible_action_ids == second.visible_action_ids
+    assert first.total_count == second.total_count
+    assert public_action_page_digest(world, space, first) == public_action_page_digest(
+        world, space, second,
+    )
+    assert action_page_request_digest(
+        world,
+        query=query,
+        target_id="",
+        relevance_role="",
+        semantic_offset=first.offset,
+    ) == action_page_request_digest(
+        world,
+        query=alternate,
+        target_id="",
+        relevance_role="",
+        semantic_offset=second.offset,
     )

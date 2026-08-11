@@ -22,6 +22,14 @@ _ROLE_ORDER = {
 }
 
 
+def canonical_action_query(query: str) -> str:
+    """Return the sole bounded query semantics used by action paging."""
+
+    if not isinstance(query, str):
+        raise TypeError("action page query must be text")
+    return query[:120].casefold()
+
+
 @dataclass(frozen=True)
 class InternalActionPage:
     page_id: str
@@ -115,7 +123,7 @@ class ActionPager:
         max_destinations_per_option: int = 16,
         max_targets: int = 64,
     ) -> InternalActionPage:
-        query = query[:120]
+        query = canonical_action_query(query)
         role = ActionRelevanceRole(relevance_role) if relevance_role else None
         labels = labels or {}
         limit = min(self.page_size, page_size or self.page_size)
@@ -244,7 +252,7 @@ def _page_id(
         offset,
         visible_ids,
         visible_destinations,
-        query.casefold(),
+        canonical_action_query(query),
         target_id,
         role.value if role else "",
         objective_digest,
@@ -270,7 +278,7 @@ def _ranked_options(
     if role is not None:
         ranked = [item for item in ranked if item[2].role == role]
     if query:
-        needle = query.casefold()
+        needle = canonical_action_query(query)
         ranked = [
             item
             for item in ranked
