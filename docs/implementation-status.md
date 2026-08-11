@@ -462,7 +462,7 @@ all policy/provider/token/step/probe/independent-capture totals at zero. This is
 declared inventory-profile closure only, not task-relative completeness or a
 performance/generalization claim.
 
-M4.6-D is implemented at `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`.
+M4.6-D is implemented at `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`.
 Typed ActionSpace/page/schema owners now produce public-safe admission facts;
 one canonical `ControlFeedback` envelope projects once into the next ordinary
 policy context. Identity-free world/page/task digests own the shared two-distinct
@@ -470,11 +470,16 @@ issue budget: an exact repeat or third distinct issue terminates as
 `no_progress_control_repetition`, while effectful SENT or relevant semantic gain
 resets it. Runtime neither edits parameters nor replays requests. Adapter-side
 INVALID_PARAMETERS after Runtime admission remains execution failure truth.
+ActionPager owns the sole bounded casefolded query semantics used by filtering,
+page/cursor identity and D request/result digests, so case-only query changes
+cannot reset the issue budget.
 The accepted fixed run
-`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`
+`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`
 completed 25/25 with valid schema, identity, privacy, safety, integrity and
 cleanup gates. Its feedback/correction measurements are not task-success,
 performance or generalization evidence.
+The earlier `ccb682a` run remains immutable but is not current verification for
+this residual owner fix.
 
 ## Control-transition and long-horizon gap status
 

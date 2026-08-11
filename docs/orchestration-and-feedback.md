@@ -110,8 +110,8 @@ integrity failure and post-admission adapter-contract mismatch are not model
 repair paths. No fresh identity alone resets a semantic streak.
 
 The declared bounded feedback path is implemented at
-`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc` and verified by the fixed run
-`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`; correction
+`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` and verified by the fixed run
+`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`; correction
 measurements remain distinct from task success.
 
 ## 4. Confirmation

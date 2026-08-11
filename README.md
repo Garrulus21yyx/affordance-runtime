@@ -110,8 +110,8 @@ no-gain containment. Its initial profile permits two distinct same-scope issues
 but terminates an identical issue on repeat. Runtime states the validated fact;
 AgentPolicy chooses the correction. It does not auto-edit parameters, replay a
 request or add a mandatory reflection agent. The implementation is
-`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`; the accepted targeted run is
-`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`. M4.6-E remains
+`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`; the accepted targeted run is
+`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`. M4.6-E remains
 not started.
 `ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
 acquisition and after-world facts are recorded monotonically before evaluator

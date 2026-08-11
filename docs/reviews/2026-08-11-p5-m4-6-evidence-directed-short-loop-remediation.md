@@ -47,7 +47,7 @@ ledger, a replay source or execution truth.
 | M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
 | M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `880e65fef0c2541be9f4b5af121e610f858685db` residual closure; original/run SHA `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; raw probe facts preserve presence/type; nonterminal task facts do not erase cross-domain control truth |
 | M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering preceded target creation and projection-only coverage calculation; diagnostics separately rescanned raw AX | the accepted no-model run proves only `browsergym-ax-target-inventory.v1` counts, not task-relative completeness, success, performance or generalization | `e6c410021d8b9bf11b52f24520a6258ede5d2027` | `miniwob-inventory-17:6220967c47a24532b4140728627e4950` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty; ActionSpace remains the only action-availability authority |
-| M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 (`invalid_action_parameters`, one policy, zero execution/step, three current options); adjacent final current-page action/destination rejection cases 06, 09, 12, 16, 48, 53, 56; page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | source preserves the typed public admission reason but terminalizes before another policy turn; unchanged page only continues; observation freshness uses identity rather than public semantic gain | the accepted targeted run proves bounded feedback delivery/correction facts for this exact profile, not task success, performance, generalization or M4.5-B closure | `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc` | `miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd` | typed source owner → canonical envelope → model-safe feedback reaches an ordinary policy turn; Runtime never edits parameters or chooses an action; same issue fingerprint repeats terminate immediately and the initial profile permits at most two distinct repair/no-gain issues per identity-free scope; Runtime refresh and sent/uncertain requests are exempt from replay |
+| M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 (`invalid_action_parameters`, one policy, zero execution/step, three current options); adjacent final current-page action/destination rejection cases 06, 09, 12, 16, 48, 53, 56; page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | source preserves the typed public admission reason but terminalizes before another policy turn; unchanged page only continues; observation freshness uses identity rather than public semantic gain | the accepted targeted run proves bounded feedback delivery/correction facts for this exact profile, not task success, performance, generalization or M4.5-B closure | `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` | `miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983` | typed source owner → canonical envelope → model-safe feedback reaches an ordinary policy turn; Runtime never edits parameters or chooses an action; same issue fingerprint repeats terminate immediately and the initial profile permits at most two distinct repair/no-gain issues per identity-free scope; Runtime refresh and sent/uncertain requests are exempt from replay |
 | M4.6-E stable identity/breadth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` (source-only adjacent risk) | no direct baseline cohort for ordinal identity; zero-target cohort remains breadth witness | target ID includes ordinal; observable and executable roles are coupled | neither ordinal identity nor a particular unsupported role was shown to cause a baseline failure | `NONE` | `NONE` | identity survives irrelevant AX order changes; read-only semantics cannot grant unsupported execution; quotas preserve actionable controls |
 
 `Implementation SHA` is filled only after a clean product commit exists.
@@ -375,7 +375,7 @@ The old diagnostic remains 64 JSON files with digest
 
 ## M4.6-D bounded control-feedback evidence
 
-Implementation `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc` establishes
+Residual implementation `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` establishes
 typed ActionSpace/page/schema admission issues, the closed three-kind
 `ControlFeedback` matrix, identity-free public world/action/task scope digests,
 and an AgentLoopState-owned shared budget of two distinct repair/no-gain issues.
@@ -383,34 +383,44 @@ An exact repeat or third distinct issue terminates as
 `no_progress_control_repetition`; effectful `SENT` or relevant world/task/page
 gain resets the budget. Strategy-transition feedback does not consume it.
 Feedback is projected once into the next ordinary policy context without an
-extra call, replay or Runtime parameter/action choice.
+extra call, replay or Runtime parameter/action choice. `ActionPager` now owns
+one bounded `canonical_action_query`; filtering, page/cursor identity,
+continuation validation and public request/result digests consume that exact
+casefolded value. Equivalent query casing is therefore no-gain rather than a
+scope reset.
 
 The accepted immutable run
-`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`
+`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`
 completed 25/25 at seed 7 with profile `mistral-format-only-v1`, provider
 `mistral`, model `mistral-medium-3-5` and grounding `format-only.v1`.
 Outcome distribution was 18 `NO_PROGRESS_CONTROL_REPETITION`, one
-`NO_PROGRESS_REPETITION`, five `TASK_FAILED` and one `SUCCESS`. It recorded 45
-feedback facts, 26 context deliveries/issue consumptions, 18 bounded control
-terminations, 23 first and two second feedback opportunities, two admitted
-first-opportunity corrections, and one strategy-transition feedback. Case 37
+`NO_PROGRESS_REPETITION`, four `TASK_FAILED`, one `RUNTIME_REJECTED` and one
+`SUCCESS`. It recorded 42 feedback facts, 24 context deliveries, 22 issue
+consumptions, 18 bounded control terminations, 22 first feedback opportunities,
+three admitted first-opportunity corrections, and two strategy-transition
+feedback facts. Case 37
 records its first repair on policy root one with zero execution, step, probe or
 capture, followed by exactly one feedback delivery. Provider retry/fallback,
 privacy, schema, harness-integrity, cleanup, duplicate-unknown,
 stale-zero-call, forbidden-effect and repair-zero-call violations were zero.
 Campaign, summary and attestation SHA-256 values are respectively
-`d11388e957230beb3a97be5e7109c9fcef3a2b78e90652bfe13491ad5bf2d4d2`,
-`7662307290aef462d30516de3503917c23a7cf7a74043f765813f83e5e82b3d8` and
-`f9a2878364cb4b087a9c5a01f8b4e27abcd5659ea988eea74a7cf258beb4ba59`.
+`e301d2a2fa887d105a46a77df266abc80e623968993de4c168dca5a9287f7f16`,
+`5f6f5cc46775eb364f5c6f2f0aaffdfc3670d9bac3a239d6b15847553c30a271` and
+`88d11790eb6ccbc6d965595454aa8683cef99bc795aec41470b7c6763ed8aa90`.
 
-Focused D properties passed 40 tests; the full suite passed 2189 with 27
+Focused D properties passed 42 tests; the full suite passed 2191 with 27
 skipped. Ruff, mypy over 442 source files, architecture/documentation gates,
 compose validation, clean-process imports and `git diff --check` passed. The
 command-scoped pinned Python 3.12 BrowserGym gate passed 22 tests. Clean-SHA
 full-validation was accepted with SHA-256
-`6343dd99304c52f69d4b3ed62def8b7eb5b3146262b7e620fd8d4a14e9454c4a`.
+`6670c6409bff2b531aa2699e61565a1889497d099109a3c22c9879dae8469d88`.
 This evidence measures bounded feedback delivery and admission correction; it
 does not prove a success-rate, performance or generalization improvement.
+
+The earlier implementation `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`
+and run `miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`
+remain immutable historical evidence. They do not validate the residual query
+owner fix and are not the current closure identity.
 
 ## Promotion gate
 

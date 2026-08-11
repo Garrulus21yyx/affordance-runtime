@@ -117,7 +117,7 @@ Risk/safety/task terminal, `SENT_UNKNOWN`, component/integrity failure and an
 adapter parameter mismatch after successful Runtime admission remain terminal
 or paused according to their owning contracts and are never model-repair replay.
 This bounded contract is implemented at
-`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`; it does not cut over the default
+`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`; it does not cut over the default
 path.
 
 ## 6. Benchmark boundary

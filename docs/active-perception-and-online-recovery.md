@@ -123,8 +123,8 @@ repeating stops immediately, while a different no-gain control request consumes
 the remaining budget rather than resetting it.
 
 This declared policy-origin no-gain contract is implemented at
-`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc` and verified by targeted run
-`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`.
+`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` and verified by targeted run
+`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`.
 
 ## 5. Bounded recovery
 
