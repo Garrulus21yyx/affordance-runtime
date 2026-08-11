@@ -25,9 +25,9 @@ Constraints:
 | 3 | done | Extend repairable rejection feedback with the rejected public decision, owner-produced violation, recovery constraints, and current ActionPage projection without duplicated authority. | control feedback, admission/schema/page owners, model projection |
 | 4 | done | Extend post-execution feedback with owner-produced expected/observed semantic effects and mechanical recovery permissions. | execution cycle and control feedback |
 | 5 | done | Update evidence schemas, projections, attestation, and focused invariant/property tests. | targeted benchmark v2, canonical metrics, focused/property tests |
-| 6 | done | Run focused tests, affected regressions, type/lint/architecture gates, then resolve failures. | Ruff passed; full pytest: 2203 passed, 27 skipped; documentation/property regressions resolved |
-| 7 | pending | Rerun the frozen 25 MiniWoB cases into a new immutable evidence directory and compare outcomes with `miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`. | TBD |
-| 8 | pending | Update authoritative implementation/status/review documentation with implementation identity, evidence limits, run ID, and honest outcome distribution. | TBD |
+| 6 | done | Run focused tests, affected regressions, type/lint/architecture gates, then resolve failures. | Ruff/mypy passed; final full pytest: 2204 passed, 27 skipped; documentation/property regressions resolved |
+| 7 | done | Rerun the frozen 25 MiniWoB cases into a new immutable evidence directory and compare outcomes with `miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`. | valid run `miniwob-control-feedback-25:58be2cd216a24c4bb4fb7786dbebb9e6` |
+| 8 | done | Update authoritative implementation/status/review documentation with implementation identity, evidence limits, run ID, and honest outcome distribution. | implementation/status/roadmap/review projections updated without closure claim |
 
 ## Exit criteria
 
@@ -65,3 +65,11 @@ Constraints:
   legacy formal-policy identity gate accepted only the one-attempt adapter. The
   gate now explicitly distinguishes legacy one-attempt campaigns from the
   frozen recovery wrapper; focused identity/runner tests passed (19 tests).
+- 2026-08-11: a second launch was stopped after four cases when live inspection
+  showed its untracked output directory would invalidate the clean-tree gate;
+  the partial directory is retained locally and excluded from evidence.
+- 2026-08-11: clean-SHA run `58be2cd216a24c4bb4fb7786dbebb9e6`
+  completed 25/25 with valid v2 evidence. Outcomes: 16 control repetitions,
+  two ordinary no-progress repetitions, six task failures and one success.
+  There were no provider terminal failures, but also no actual provider retries;
+  controlled tests, not this live run, exercise retry/exhaustion behavior.

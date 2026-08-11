@@ -461,6 +461,37 @@ new run is valid implementation evidence, but D remains implemented-not-verified
 until an independent fresh-context held-out review confirms the frozen algebra;
 therefore this section does not attest closure or admit E.
 
+### M4.6-D runtime recovery v2 rerun
+
+Implementation `1c00e331e4f310f904b70f454dad7cc55c8b47e2` adds bounded
+provider recovery outside GUI policy and projects the rejected public decision,
+owner-produced contract violation, current legal recovery choices, expected and
+observed semantic effect, and mechanical recovery permissions. Provider retries
+do not create GUI decisions, transitions or turns; exhaustion remains a typed
+infrastructure outcome.
+
+The immutable v2 run
+`miniwob-control-feedback-25:58be2cd216a24c4bb4fb7786dbebb9e6`
+completed 25/25 with `evidence_valid=true`. Its distribution was 16
+`NO_PROGRESS_CONTROL_REPETITION`, two `NO_PROGRESS_REPETITION`, six
+`TASK_FAILED` and one `SUCCESS`; provider-unavailable and runtime-rejected
+terminal outcomes were zero. It recorded 69 policy calls and 69 provider
+attempts, hence zero actual retries and fallbacks. It delivered 30 feedback
+contexts containing 10 related-decision snapshots, 10 exact contract-violation
+snapshots and 43 recovery-constraint snapshots. No action-evaluation semantic
+effect snapshot was exercised. Validator/privacy/schema/harness, cleanup,
+duplicate-unknown, stale-zero-call, forbidden-effect and repair-zero-call errors
+were zero.
+
+The disappearance of the prior run's nine provider-unavailable outcomes is not
+causal evidence for retry effectiveness because this run encountered no
+retryable provider failure. Retry, non-retryable immediate failure, compatible
+fallback and typed exhaustion are covered by controlled tests. The live result
+shows infrastructure availability alone does not solve the main GUI-policy
+bottleneck: 18/25 cases still terminated for bounded no-progress. This remains
+implementation evidence, not held-out closure, performance or generalization
+evidence.
+
 ## Promotion gate
 
 After M4.6-A through M4.6-E have independent implementation identities and

@@ -483,6 +483,21 @@ The earlier `ccb682a` and `8b92d13` runs remain immutable. The new run validates
 the implementation identity but is not independent held-out closure evidence;
 D remains implemented-not-verified and E blocked.
 
+M4.6-D runtime-recovery implementation `1c00e331e4f310f904b70f454dad7cc55c8b47e2`
+adds a bounded provider-call orchestrator above the one-attempt bridge, exact
+admission-owner violation snapshots, current-page recovery constraints and
+post-action semantic-effect/recovery projections. The valid v2 rerun
+`miniwob-control-feedback-25:58be2cd216a24c4bb4fb7786dbebb9e6`
+completed the same 25/25 selector with 16 control repetitions, two ordinary
+no-progress repetitions, six task failures and one success. It recorded 69
+policy calls/69 provider attempts, 10 related-decision and violation snapshots,
+43 recovery-constraint snapshots, 30 feedback deliveries and zero retry,
+fallback, privacy, schema, harness-integrity, cleanup or safety violations.
+No semantic-effect snapshot was exercised. Because the live provider produced
+no retryable failure, the run proves wiring and evidence validity but not live
+retry effectiveness; controlled exceptional-path tests cover retry and typed
+exhaustion. D remains implemented-not-verified pending fresh held-out review.
+
 ## Control-transition and long-horizon gap status
 
 The current M4.5-B candidate includes a bounded pure reducer, strict boundary

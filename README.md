@@ -109,9 +109,11 @@ bounded zero-dispatch ordinary-policy repair budget, plus page/policy-observatio
 no-gain containment. Its initial profile permits two distinct same-scope issues
 but terminates an identical issue on repeat. Runtime states the validated fact;
 AgentPolicy chooses the correction. It does not auto-edit parameters, replay a
-request or add a mandatory reflection agent. The convergence implementation is
-`9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`; the valid targeted run is
-`miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`. D remains
+request or add a mandatory reflection agent. The latest runtime-recovery
+implementation is `1c00e331e4f310f904b70f454dad7cc55c8b47e2`; its valid v2
+targeted run is `miniwob-control-feedback-25:58be2cd216a24c4bb4fb7786dbebb9e6`.
+It exercised enriched feedback wiring but no live provider retry, so controlled
+failure tests remain the retry evidence. D remains
 implemented-not-verified pending independent held-out review, so M4.6-E is blocked.
 `ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
 acquisition and after-world facts are recorded monotonically before evaluator
