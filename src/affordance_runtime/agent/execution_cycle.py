@@ -115,6 +115,8 @@ async def execute_cycle(
         )
     if result.dispatch_status is DispatchStatus.NOT_SENT:
         return await _not_sent_outcome(session, decision, request, result, scope)
+    if result.dispatch_status is DispatchStatus.SENT:
+        state.clear_control_issue_budget()
     remaining = task.loop_budget.max_observations - session.observation_count
     acquired = primary
     if (
@@ -132,8 +134,7 @@ async def execute_cycle(
         acquired = post_action_fallback_result(primary, fallback)
     if acquired.observation is None:
         return no_fresh_after_result(session, decision, request, result, acquired, scope)
-    state.current_observation = acquired.observation
-    state.current_task_evaluation = None
+    state.install_observation(acquired.observation)
     scope.record_after(acquired.observation.observation_id)
     return await _evaluate_after(
         session, selection, decision, request, result, before, acquired.observation,
@@ -195,11 +196,33 @@ async def _evaluate_after(
         raise
     scope.record_evaluations(task=task_evaluation)
     state.current_task_evaluation = task_evaluation
-    record_execution_progress(session, selection, action_evaluation, after, task_evaluation)
+    progress_event = record_execution_progress(
+        session, selection, action_evaluation, after, task_evaluation,
+    )
     scope.set_reason(f"action_{action_evaluation.status}")
     outcome = post_action_result(
         task, state, request, result, action_evaluation, task_evaluation,
     )
+    if isinstance(outcome, Continue) and progress_event is not None and progress_event.strategy_transition_required:
+        from affordance_runtime.agent.control_feedback import (
+            ControlFeedbackSource,
+            route_feedback,
+            strategy_feedback,
+        )
+
+        action_space = session.agent_loop.action_space_builder.build(task, after)
+        page = session.agent_loop.context_builder.page(action_space, state)
+        session.current_action_space = action_space
+        session.current_action_page = page
+        feedback = strategy_feedback(
+            state,
+            action_space,
+            page,
+            source=ControlFeedbackSource.ACTION_EVALUATION,
+            code="action_no_effect_change_strategy",
+            public_subject_id=selection.target_id,
+        )
+        outcome = route_feedback(state, scope, feedback)
     scope.set_reason(outcome.reason_code)
     return outcome
 
@@ -219,8 +242,7 @@ async def _binding_refresh(
         scope,
     )
     if acquired.observation is not None:
-        session.state.current_observation = acquired.observation
-        session.state.current_task_evaluation = None
+        session.state.install_observation(acquired.observation)
         scope.record_after(acquired.observation.observation_id)
         return Continue("binding_refreshed")
     return Terminate(
@@ -258,8 +280,7 @@ async def _not_sent_outcome(
         scope,
     )
     if acquired.observation is not None:
-        state.current_observation = acquired.observation
-        state.current_task_evaluation = None
+        state.install_observation(acquired.observation)
         scope.record_after(acquired.observation.observation_id)
         return Continue("currentness_refreshed")
     return Terminate(

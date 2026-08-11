@@ -31,6 +31,10 @@ if TYPE_CHECKING:
         AgentTaskView,
         AgentTurnView,
     )
+    from affordance_runtime.model_boundary.control_feedback_projection import (
+        AgentControlFeedbackView,
+        project_control_feedback,
+    )
     from affordance_runtime.model_boundary.control_transition_projection import (
         project_control_transitions,
     )
@@ -49,6 +53,10 @@ if TYPE_CHECKING:
     from affordance_runtime.model_boundary.task_projection import project_task
 
 _EXPORTS = {
+    "AgentControlFeedbackView": (
+        "affordance_runtime.model_boundary.control_feedback_projection",
+        "AgentControlFeedbackView",
+    ),
     "AgentActionOptionView": ("affordance_runtime.model_boundary.contracts", "AgentActionOptionView"),
     "AgentActionPageView": ("affordance_runtime.model_boundary.contracts", "AgentActionPageView"),
     "AgentActionSpaceView": ("affordance_runtime.model_boundary.contracts", "AgentActionSpaceView"),
@@ -84,6 +92,10 @@ _EXPORTS = {
     "project_control_transitions": (
         "affordance_runtime.model_boundary.control_transition_projection",
         "project_control_transitions",
+    ),
+    "project_control_feedback": (
+        "affordance_runtime.model_boundary.control_feedback_projection",
+        "project_control_feedback",
     ),
     "project_parameter_schema_for_model": (
         "affordance_runtime.model_boundary.projection",

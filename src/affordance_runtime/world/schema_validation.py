@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from affordance_runtime.world.admission_issue import AdmissionIssue, invalid_parameters_issue
+
 _PRIVATE_PARAMETER_PARTS = frozenset(
     {"selector", "coordinate", "bbox", "point", "href", "method", "backend", "executor", "credential", "security"}
 )
@@ -134,3 +136,19 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
             raise ValueError(f"{path} is below minimum")
         if "maximum" in schema and value > schema["maximum"]:
             raise ValueError(f"{path} exceeds maximum")
+
+
+def validate_value_issue(
+    value: Any,
+    schema: Mapping[str, Any],
+    *,
+    path: str = "parameters",
+) -> AdmissionIssue | None:
+    """Return the public rejection fact without exposing a value or private path."""
+
+    try:
+        reject_private_parameter_values(value, path=path)
+        validate_value(value, schema, path=path)
+    except (TypeError, ValueError):
+        return invalid_parameters_issue()
+    return None

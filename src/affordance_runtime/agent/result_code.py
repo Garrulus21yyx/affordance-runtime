@@ -5,6 +5,7 @@ from enum import StrEnum
 
 class AgentFailureCode(StrEnum):
     NO_PROGRESS_REPETITION = "no_progress_repetition"
+    NO_PROGRESS_CONTROL_REPETITION = "no_progress_control_repetition"
     OBSERVATION_CAPABILITY_UNAVAILABLE = "observation_capability_unavailable"
     OBSERVATION_ACQUISITION_FAILED = "observation_acquisition_failed"
     OBSERVATION_FRESHNESS_INVALID = "observation_freshness_invalid"

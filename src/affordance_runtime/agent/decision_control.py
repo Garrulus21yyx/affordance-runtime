@@ -6,6 +6,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from affordance_runtime.agent.attempt_receipt import safe_exception_class
+from affordance_runtime.agent.control_feedback import (
+    ControlFeedbackSource,
+    no_gain_feedback,
+    repair_feedback,
+    route_feedback,
+)
 from affordance_runtime.agent.control_outcome import (
     Continue,
     LoopDirective,
@@ -47,7 +53,14 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
+from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.contracts import ActionSpace
+from affordance_runtime.world.public_semantic_digest import (
+    action_page_request_digest,
+    observation_request_digest,
+    policy_observation_result_digest,
+    public_action_page_digest,
+)
 
 SelectionExecutor = Callable[
     [AgentRunSession, ActionSpace, SelectAction, ControlTransitionScope],
@@ -88,6 +101,7 @@ async def run_policy_turn(
     task_evaluator: TaskEvaluator,
     waiter: WaitController,
     execute_selection: SelectionExecutor,
+    action_space_builder: ActionSpaceBuilder,
 ) -> LoopDirective:
     task, state = session.task, session.state
     context = context_builder.build(
@@ -103,6 +117,7 @@ async def run_policy_turn(
         observation_capabilities=session.environment.observation_capabilities,
     )
     session.current_context_snapshot = context
+    state.consume_control_feedback_for_policy()
     try:
         outcome = await policy.decide(context)
     except asyncio.CancelledError:
@@ -137,6 +152,8 @@ async def run_policy_turn(
             waiter,
             execute_selection,
             scope,
+            action_space_builder,
+            task_evaluation,
         )
     except asyncio.CancelledError:
         scope.set_reason("runtime_cancelled")
@@ -161,6 +178,8 @@ async def _route_decision(
     waiter,
     execute_selection,
     scope,
+    action_space_builder,
+    task_evaluation,
 ) -> LoopDirective:
     state = session.state
     if isinstance(decision, AskUser):
@@ -173,22 +192,44 @@ async def _route_decision(
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator, scope)
     if isinstance(decision, RequestObservation):
-        return await _policy_observation(session, decision, scope)
+        return await _policy_observation(
+            session,
+            action_space,
+            decision,
+            scope,
+            context_builder,
+            task_evaluator,
+            action_space_builder,
+            task_evaluation,
+        )
     if isinstance(decision, Wait):
         return await _wait_refresh(session, decision, waiter, scope)
     if isinstance(decision, RequestActionPage):
         return _request_action_page(session, action_space, context_builder, decision, scope)
-    rejection = _current_page_selection_rejection(session, decision)
-    if rejection:
-        scope.record_admission(AdmissionStatus.REJECTED, _selection_rejection_code(rejection))
-        return Terminate(AgentLoopStatus.BLOCKED, _selection_rejection_code(rejection), rejection)
+    page = session.current_action_page or context_builder.page(action_space, state)
+    issue = page.selection_issue(decision.action_id, decision.destination_id)
+    if issue is not None:
+        scope.record_admission(AdmissionStatus.REJECTED, issue.code.value)
+        feedback = repair_feedback(
+            state,
+            action_space,
+            page,
+            code=issue.code.value,
+            public_field_paths=issue.public_field_paths,
+        )
+        return route_feedback(state, scope, feedback)
     return await execute_selection(session, action_space, decision, scope)
 
 
 async def _policy_observation(
     session: AgentRunSession,
+    action_space: ActionSpace,
     decision: RequestObservation,
     scope: ControlTransitionScope,
+    context_builder: ContextBuilder,
+    task_evaluator: TaskEvaluator,
+    action_space_builder: ActionSpaceBuilder,
+    prior_task_evaluation: TaskEvaluation,
 ):
     request = WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
@@ -197,7 +238,70 @@ async def _policy_observation(
         decision.modality,
         decision.required_assurance,
     )
-    return await _fresh_observation(session, decision, request, scope)
+    state = session.state
+    previous_page = session.current_action_page or context_builder.page(action_space, state)
+    request_digest = observation_request_digest(
+        state.current_observation,
+        subject_id=decision.subject_id,
+        modality=decision.modality,
+        required_assurance=decision.required_assurance,
+    )
+    before_result = policy_observation_result_digest(
+        state.current_observation,
+        action_space,
+        previous_page,
+        prior_task_evaluation,
+    )
+    acquired = await _fresh_observation(session, decision, request, scope)
+    if not isinstance(acquired, Continue):
+        return acquired
+    try:
+        evaluation = await validated_task_evaluation(
+            task_evaluator, session.task, state.current_observation,
+        )
+    except asyncio.CancelledError:
+        raise
+    except ValueError as exc:
+        scope.set_reason("task_evaluation_invalid")
+        return Terminate(
+            AgentLoopStatus.FAILED,
+            "task_evaluation_invalid",
+            str(exc),
+            failure_stage=FailureStage.EVALUATION,
+            failure_kind=FailureKind.INVALID_OUTPUT,
+        )
+    state.current_task_evaluation = evaluation
+    scope.record_evaluations(task=evaluation)
+    disposition = task_evaluation_disposition(evaluation)
+    if disposition.status is not None:
+        return directive(
+            disposition.status,
+            disposition.reason_code,
+            evaluation.reason,
+            task_terminal=disposition.task_terminal,
+        )
+    new_space = action_space_builder.build(session.task, state.current_observation)
+    new_page = context_builder.page(new_space, state)
+    session.current_action_space = new_space
+    session.current_action_page = new_page
+    after_result = policy_observation_result_digest(
+        state.current_observation, new_space, new_page, evaluation,
+    )
+    if after_result != before_result:
+        state.clear_control_issue_budget()
+        return Continue("observation_semantic_gain")
+    feedback = no_gain_feedback(
+        state,
+        new_space,
+        new_page,
+        source=ControlFeedbackSource.POLICY_OBSERVATION,
+        code="observation_no_information_gain",
+        request_digest=request_digest,
+        result_digest=after_result,
+        public_subject_id=decision.subject_id,
+        public_field_paths=("observation",),
+    )
+    return route_feedback(state, scope, feedback)
 
 
 async def _wait_refresh(
@@ -284,8 +388,7 @@ async def _fresh_observation(
             acquired.reason_code,
             failure_code=acquired.failure_code,
         )
-    state.current_observation = acquired.observation
-    state.current_task_evaluation = None
+    state.install_observation(acquired.observation)
     return Continue("observation_acquired")
 
 
@@ -373,7 +476,10 @@ def _request_action_page(
     if not _valid_page_request(session, decision):
         scope.set_reason("invalid_action_page_request")
         return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
-    previous_page_id = session.current_action_page.page_id if session.current_action_page else ""
+    previous_page = session.current_action_page or context_builder.page(action_space, session.state)
+    previous_digest = public_action_page_digest(
+        session.state.current_observation, action_space, previous_page,
+    )
     try:
         session.current_action_page = context_builder.page(
             action_space,
@@ -386,22 +492,32 @@ def _request_action_page(
     except ValueError:
         scope.set_reason("invalid_action_page_request")
         return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
-    result = "page_unchanged" if session.current_action_page.page_id == previous_page_id else "page_changed"
+    result_digest = public_action_page_digest(
+        session.state.current_observation, action_space, session.current_action_page,
+    )
+    request_digest = action_page_request_digest(
+        session.state.current_observation,
+        query=decision.query,
+        target_id=decision.target_id,
+        relevance_role=decision.relevance_role,
+        semantic_offset=session.current_action_page.offset,
+    )
+    if result_digest == previous_digest:
+        feedback = no_gain_feedback(
+            session.state,
+            action_space,
+            session.current_action_page,
+            source=ControlFeedbackSource.ACTION_PAGE,
+            code="action_page_no_information_gain",
+            request_digest=request_digest,
+            result_digest=result_digest,
+            public_subject_id=decision.target_id or None,
+            public_field_paths=("actions",),
+        )
+        scope.record_decision_result("page_unchanged")
+        return route_feedback(session.state, scope, feedback)
+    session.state.clear_control_issue_budget()
+    result = "page_changed"
     scope.record_decision_result(result)
     scope.set_reason(result)
     return Continue(result)
-
-
-def _current_page_selection_rejection(session: AgentRunSession, decision: SelectAction) -> str:
-    page = session.current_action_page
-    if page is None or decision.action_id not in page.visible_action_ids:
-        return "policy selected outside the current action page"
-    if decision.destination_id and decision.destination_id not in page.visible_destination_ids(decision.action_id):
-        return "policy selected a destination outside the current action page"
-    return ""
-
-
-def _selection_rejection_code(message: str) -> str:
-    if "destination" in message:
-        return "destination_outside_current_page"
-    return "action_outside_current_page"

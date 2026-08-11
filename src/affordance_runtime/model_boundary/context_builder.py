@@ -27,6 +27,7 @@ from affordance_runtime.model_boundary.context import (
     IntentExcerptView,
 )
 from affordance_runtime.model_boundary.contracts import AgentActionPageView
+from affordance_runtime.model_boundary.control_feedback_projection import project_control_feedback
 from affordance_runtime.model_boundary.control_transition_projection import (
     project_control_transitions,
 )
@@ -134,6 +135,7 @@ class ContextBuilder:
                 truncation,
             ),
             DecisionMode.ACT,
+            project_control_feedback(state.pending_control_feedback),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 

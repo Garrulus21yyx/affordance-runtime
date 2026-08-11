@@ -11,7 +11,8 @@ from affordance_runtime.world.acquisition import (
     WorldObservationRequest,
 )
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
-from affordance_runtime.world.action_space import ActionSpaceBuilder
+from affordance_runtime.world.action_space import ActionAdmissionResult, ActionSpaceBuilder
+from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIssueCode
 from affordance_runtime.world.binder import ActionBinder, BindingError
 from affordance_runtime.world.contracts import (
     ActionBinding,
@@ -59,6 +60,9 @@ __all__ = [
     "ActionRisk",
     "ActionSpace",
     "ActionSpaceBuilder",
+    "ActionAdmissionResult",
+    "AdmissionIssue",
+    "AdmissionIssueCode",
     "AdmittedActionSelection",
     "AcquisitionCost",
     "AgentTargetView",

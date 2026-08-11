@@ -37,6 +37,10 @@ class PartialEpisodeSnapshot:
     latest_attempt_reason_code: str = ""
     task_outcome_kind: str = ""
     task_outcome_code: str = ""
+    control_feedback_count: int = 0
+    control_feedback_delivery_count: int = 0
+    control_issue_consumption_count: int = 0
+    control_repetition_count: int = 0
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
@@ -105,6 +109,10 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         latest_task.outcome.code
         if latest_task is not None and latest_task.outcome is not None
         else "",
+        state.control_feedback_total_count,
+        state.control_feedback_delivery_total_count,
+        state.control_issue_consumption_total_count,
+        state.control_repetition_total_count,
     )
 
 

@@ -6,6 +6,10 @@ from dataclasses import dataclass, replace
 from typing import TypeAlias
 
 from affordance_runtime.agent.attempt_receipt import AttemptDisposition, AttemptOperation
+from affordance_runtime.agent.control_feedback import (
+    ControlFeedbackKind,
+    ControlFeedbackSource,
+)
 from affordance_runtime.agent.control_transition import (
     AcquisitionSummary,
     AdmissionStatus,
@@ -380,6 +384,25 @@ def _transition_lifecycle_error(
         transition.action_evaluation is not None
         or transition.task_evaluation is not None
     )
+    feedback = transition.control_feedback
+    if feedback is not None:
+        if feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION and (
+            not is_selection
+            or admission is not AdmissionStatus.REJECTED
+            or feedback.source is not ControlFeedbackSource.ACTION_ADMISSION
+            or has_execution
+            or transition.acquisition_attempts
+            or transition.attempt_receipts
+            or transition.before_observation_id != transition.after_observation_id
+        ):
+            return "repair_feedback_lifecycle_mismatch"
+        if feedback.kind is ControlFeedbackKind.NO_INFORMATION_GAIN:
+            expected_source = {
+                "RequestActionPage": ControlFeedbackSource.ACTION_PAGE,
+                "RequestObservation": ControlFeedbackSource.POLICY_OBSERVATION,
+            }.get(type(transition.decision).__name__)
+            if feedback.source is not expected_source or has_execution:
+                return "no_gain_feedback_lifecycle_mismatch"
 
     if is_selection != (admission is not None):
         return "decision_admission_mismatch"
@@ -403,13 +426,20 @@ def _transition_lifecycle_error(
             or transition.attempt_receipts
         ):
             return "confirmation_lifecycle_mismatch"
-    if admission is AdmissionStatus.REJECTED and (
-        transition.pending_kind is not PendingKind.NONE
-        or has_execution
-        or transition.action_evaluation is not None
-        or str(transition.resulting_status) not in {"blocked", "failed"}
-    ):
-        return "rejected_admission_lifecycle_mismatch"
+    if admission is AdmissionStatus.REJECTED:
+        repairable = bool(
+            feedback is not None
+            and feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION
+        )
+        if (
+            transition.pending_kind is not PendingKind.NONE
+            or has_execution
+            or transition.action_evaluation is not None
+            or str(transition.resulting_status or "") not in (
+                {"", "blocked", "failed"} if repairable else {"blocked", "failed"}
+            )
+        ):
+            return "rejected_admission_lifecycle_mismatch"
     if admission is AdmissionStatus.ADMITTED and (
         transition.pending_kind is PendingKind.CONFIRMATION
     ):

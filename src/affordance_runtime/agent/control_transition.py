@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, get_args
 
 from affordance_runtime.agent.attempt_receipt import AttemptOperation, AttemptReceipt
+from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.agent.control_outcome import Continue, LoopDirective, Pause, Terminate
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
@@ -159,6 +160,7 @@ class ControlTransition:
     intent: ActionIntent | None = None
     request_id: str = ""
     decision_result: str = ""
+    control_feedback: ControlFeedback | None = None
 
     def __post_init__(self) -> None:
         from affordance_runtime.agent.state import AgentLoopStatus
@@ -207,6 +209,10 @@ class ControlTransition:
             self.task_evaluation, TaskEvaluation
         ):
             raise TypeError("control transition task evaluation must be typed")
+        if self.control_feedback is not None and not isinstance(
+            self.control_feedback, ControlFeedback
+        ):
+            raise TypeError("control transition feedback must be typed")
         if (
             not isinstance(self.before_observation_id, str)
             or not isinstance(self.after_observation_id, str)
@@ -346,6 +352,7 @@ class _FactAccumulator:
         self._action_evaluation: ActionEvaluation | None = None
         self._task_evaluation: TaskEvaluation | None = None
         self._decision_result = ""
+        self._control_feedback: ControlFeedback | None = None
         self._acquisitions: list[AcquisitionSummary] = []
         self._attempt_receipts: list[AttemptReceipt] = []
         self._reason_code = ""
@@ -390,6 +397,13 @@ class _FactAccumulator:
 
     def record_decision_result(self, value: str) -> None:
         self._decision_result = value
+
+    def record_control_feedback(self, feedback: ControlFeedback) -> None:
+        if self._control_feedback is not None:
+            raise RuntimeError("control transition already has feedback")
+        if not isinstance(feedback, ControlFeedback):
+            raise TypeError("control transition feedback must be typed")
+        self._control_feedback = feedback
 
     def _as_turn(self) -> Turn:
         return Turn(
@@ -484,6 +498,7 @@ class ControlTransitionScope(_FactAccumulator):
             turn.intent,
             turn.request_id,
             turn.decision_result,
+            self._control_feedback,
         )
         state._append_control_transition(transition)
         if state.pending_confirmation is not None:

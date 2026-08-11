@@ -31,6 +31,7 @@ class MiniWobTaskOutcome(StrEnum):
     WRONG_DESTINATION = "wrong_destination"
     RUNTIME_REJECTED = "runtime_rejected"
     NO_PROGRESS_REPETITION = "no_progress_repetition"
+    NO_PROGRESS_CONTROL_REPETITION = "no_progress_control_repetition"
     TURN_BUDGET_EXHAUSTED = "turn_budget_exhausted"
     CASE_TIMEOUT = "case_timeout"
     RESET_FAILURE = "reset_failure"

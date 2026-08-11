@@ -8,6 +8,12 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.control_feedback import (
+        ControlFeedback,
+        ControlFeedbackKind,
+        ControlFeedbackSource,
+        NextDecisionDisposition,
+    )
     from affordance_runtime.agent.control_transition import (
         AcquisitionSummary,
         AdmissionStatus,
@@ -36,6 +42,12 @@ if TYPE_CHECKING:
     from affordance_runtime.task.contracts import TaskGoal
 
 _EXPORTS = {
+    "ControlFeedback": ("affordance_runtime.agent.control_feedback", "ControlFeedback"),
+    "ControlFeedbackKind": ("affordance_runtime.agent.control_feedback", "ControlFeedbackKind"),
+    "ControlFeedbackSource": ("affordance_runtime.agent.control_feedback", "ControlFeedbackSource"),
+    "NextDecisionDisposition": (
+        "affordance_runtime.agent.control_feedback", "NextDecisionDisposition",
+    ),
     "AcquisitionSummary": ("affordance_runtime.agent.control_transition", "AcquisitionSummary"),
     "AdmissionSummary": ("affordance_runtime.agent.control_transition", "AdmissionSummary"),
     "AdmissionStatus": ("affordance_runtime.agent.control_transition", "AdmissionStatus"),

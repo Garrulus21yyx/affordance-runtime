@@ -371,7 +371,10 @@ def test_every_agent_failure_code_has_a_typed_outcome(code) -> None:
         agent_failure_code=code.value,
         terminal_reason_code=(
             TerminalReasonCode.NO_PROGRESS_REPETITION
-            if code is AgentFailureCode.NO_PROGRESS_REPETITION else None
+            if code is AgentFailureCode.NO_PROGRESS_REPETITION
+            else TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION
+            if code is AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION
+            else None
         ),
         failure_facts=facts,
     )

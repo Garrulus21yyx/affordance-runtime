@@ -233,6 +233,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
             and bool(state.exception_class)
         ),
     }
+    values.update(_control_feedback_metrics(result, snapshot))
     kind_counts = dict(
         result.control_transition_kind_counts
         if result is not None
@@ -247,6 +248,123 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
     })
     values.update({name: value for name, value in state.custom_metrics.items() if name not in values})
     return values
+
+
+def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
+    transitions = tuple(getattr(result, "control_transitions", ())) if result is not None else ()
+    feedback = tuple(
+        (index, item.control_feedback)
+        for index, item in enumerate(transitions)
+        if item.control_feedback is not None
+    )
+    kind_counts: dict[str, int] = {}
+    source_counts: dict[str, int] = {}
+    code_counts: dict[str, int] = {}
+    opportunity_counts = {1: 0, 2: 0}
+    corrected_counts = {1: 0, 2: 0}
+    scope_ordinals: dict[str, int] = {}
+    for index, item in feedback:
+        assert item is not None
+        kind_counts[item.kind.value] = kind_counts.get(item.kind.value, 0) + 1
+        source_counts[item.source.value] = source_counts.get(item.source.value, 0) + 1
+        code_counts[item.code] = code_counts.get(item.code, 0) + 1
+        if not item.consumes_issue_budget:
+            continue
+        ordinal = scope_ordinals.get(item.scope_digest, 0) + 1
+        scope_ordinals[item.scope_digest] = ordinal
+        if ordinal not in opportunity_counts or index + 1 >= len(transitions):
+            continue
+        opportunity_counts[ordinal] += 1
+        following = transitions[index + 1]
+        if _feedback_opportunity_corrected(item, following):
+            corrected_counts[ordinal] += 1
+    return {
+        "feedback_repairable_rejection_count": kind_counts.get("repairable_rejection", 0),
+        "feedback_no_information_gain_count": kind_counts.get("no_information_gain", 0),
+        "feedback_strategy_transition_required_count": kind_counts.get(
+            "strategy_transition_required", 0,
+        ),
+        "feedback_action_admission_source_count": source_counts.get("action_admission", 0),
+        "feedback_action_page_source_count": source_counts.get("action_page", 0),
+        "feedback_policy_observation_source_count": source_counts.get("policy_observation", 0),
+        "feedback_action_evaluation_source_count": source_counts.get("action_evaluation", 0),
+        "feedback_progress_event_source_count": source_counts.get("progress_event", 0),
+        "feedback_context_delivery_count": (
+            getattr(result, "control_feedback_delivery_count", 0)
+            if result is not None else snapshot.control_feedback_delivery_count
+            if snapshot is not None else 0
+        ),
+        "control_issue_budget_consumption_count": (
+            getattr(result, "control_issue_consumption_count", 0)
+            if result is not None else snapshot.control_issue_consumption_count
+            if snapshot is not None else 0
+        ),
+        "control_repetition_termination_count": (
+            getattr(result, "control_repetition_count", 0)
+            if result is not None else snapshot.control_repetition_count
+            if snapshot is not None else 0
+        ),
+        "first_opportunity_policy_decision_count": opportunity_counts[1],
+        "first_opportunity_admission_corrected_count": corrected_counts[1],
+        "second_opportunity_policy_decision_count": opportunity_counts[2],
+        "second_opportunity_admission_corrected_count": corrected_counts[2],
+        "strategy_transition_feedback_count": kind_counts.get(
+            "strategy_transition_required", 0,
+        ),
+        "first_policy_repair_feedback_count": int(any(
+            item is not None
+            and item.kind.value == "repairable_rejection"
+            and transitions[index].sequence == 1
+            for index, item in feedback
+        )),
+        "repair_feedback_zero_call_violation_count": sum(
+            bool(
+                item is not None
+                and item.kind.value == "repairable_rejection"
+                and (
+                    transitions[index].execution_attempts
+                    or transitions[index].acquisition_attempts
+                    or transitions[index].attempt_receipts
+                )
+            )
+            for index, item in feedback
+        ),
+        "feedback_invalid_action_parameters_code_count": code_counts.get(
+            "invalid_action_parameters", 0,
+        ),
+        "feedback_action_outside_action_space_code_count": code_counts.get(
+            "action_outside_action_space", 0,
+        ),
+        "feedback_action_outside_current_page_code_count": code_counts.get(
+            "action_outside_current_page", 0,
+        ),
+        "feedback_destination_outside_current_page_code_count": code_counts.get(
+            "destination_outside_current_page", 0,
+        ),
+        "feedback_action_page_no_information_gain_code_count": code_counts.get(
+            "action_page_no_information_gain", 0,
+        ),
+        "feedback_observation_no_information_gain_code_count": code_counts.get(
+            "observation_no_information_gain", 0,
+        ),
+    }
+
+
+def _feedback_opportunity_corrected(feedback, following) -> bool:
+    """Apply the frozen owner-validation definition to the next ordinary root."""
+
+    if following.control_feedback is not None:
+        return False
+    if feedback.source.value == "action_admission":
+        return (
+            following.admission is not None
+            and following.admission.status.value in {"admitted", "confirmation_required"}
+        )
+    if feedback.source.value == "action_page":
+        return following.decision_result == "page_changed"
+    if feedback.source.value == "policy_observation":
+        return following.reason_code == "observation_semantic_gain"
+    return False
 
 
 def _safe_code(value: str, fallback: str) -> str:

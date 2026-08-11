@@ -173,10 +173,15 @@ def test_each_terminal_accepted_decision_creates_one_root(
         ).start(StaticEnvironment([_world("before", False)]), _task())
         await session.run_until_pause()
 
-        assert session.state.control_transition_total_count == 1
+        expected_roots = 2 if expected_reason == "action_outside_current_page" else 1
+        assert session.state.control_transition_total_count == expected_roots
         transition = session.state.recent_control_transitions[0]
         assert transition.reason_code == expected_reason
         assert transition.before_observation_id == "before"
+        if expected_roots == 2:
+            assert session.state.recent_control_transitions[1].reason_code == (
+                "no_progress_control_repetition"
+            )
 
     asyncio.run(scenario())
 

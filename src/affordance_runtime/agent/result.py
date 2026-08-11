@@ -40,6 +40,10 @@ class AgentResult:
     sent_unknown_count: int = 0
     runtime_failure: RuntimeFailure | None = None
     task_outcome: TaskOutcomeFact | None = None
+    control_feedback_count: int = 0
+    control_feedback_delivery_count: int = 0
+    control_issue_consumption_count: int = 0
+    control_repetition_count: int = 0
 
 
 def project_result(
@@ -93,4 +97,8 @@ def project_result(
             outcome, root_id=root_id, attempt_id=attempt_id
         ),
         current_outcome,
+        state.control_feedback_total_count,
+        state.control_feedback_delivery_total_count,
+        state.control_issue_consumption_total_count,
+        state.control_repetition_total_count,
     )

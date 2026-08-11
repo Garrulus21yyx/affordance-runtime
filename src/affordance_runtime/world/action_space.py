@@ -13,6 +13,7 @@ from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.world.action_classification import EffectCategory
+from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIssueCode
 from affordance_runtime.world.contracts import (
     ActionBinding,
     ActionOption,
@@ -22,7 +23,11 @@ from affordance_runtime.world.contracts import (
     WorldObservation,
     validate_selected_destination,
 )
-from affordance_runtime.world.schema_validation import reject_private_parameter_values, validate_value
+from affordance_runtime.world.schema_validation import (
+    reject_private_parameter_values,
+    validate_value,
+    validate_value_issue,
+)
 
 _FORBIDDEN_PARAMETER_KEYS = frozenset(
     {
@@ -43,6 +48,16 @@ _FORBIDDEN_PARAMETER_KEYS = frozenset(
     }
 )
 _GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class ActionAdmissionResult:
+    admitted: AdmittedActionSelection | None = None
+    issue: AdmissionIssue | None = None
+
+    def __post_init__(self) -> None:
+        if (self.admitted is None) == (self.issue is None):
+            raise ValueError("action admission result must contain exactly one outcome")
 
 
 @dataclass(frozen=True)
@@ -128,9 +143,28 @@ class ActionSpaceBuilder:
         parameters: dict[str, Any],
         destination_id: str = "",
     ) -> AdmittedActionSelection:
-        self.validate_parameters(option, parameters)
+        result = self.try_admit(option, parameters, destination_id)
+        if result.admitted is not None:
+            return result.admitted
+        assert result.issue is not None
+        # Compatibility wrapper only. Production routing consumes the typed result.
+        if result.issue.code is AdmissionIssueCode.INVALID_ACTION_PARAMETERS:
+            self.validate_parameters(option, parameters)
         _validate_destination(option, destination_id)
-        return AdmittedActionSelection(
+        raise AssertionError("typed admission rejected without compatibility error")
+
+    def try_admit(
+        self,
+        option: ActionOption,
+        parameters: dict[str, Any],
+        destination_id: str = "",
+    ) -> ActionAdmissionResult:
+        issue = self.parameter_issue(option, parameters)
+        if issue is None:
+            issue = _destination_issue(option, destination_id)
+        if issue is not None:
+            return ActionAdmissionResult(issue=issue)
+        return ActionAdmissionResult(admitted=AdmittedActionSelection(
             option.action_id,
             option.observation_id,
             option.semantic_action,
@@ -145,7 +179,36 @@ class ActionSpaceBuilder:
             destination_id,
             option.destination_required,
             option.eligible_destination_ids,
-        )
+        ))
+
+    def try_admit_selection(
+        self,
+        action_space: ActionSpace,
+        action_id: str,
+        parameters: dict[str, Any],
+        destination_id: str = "",
+    ) -> ActionAdmissionResult:
+        """Admit by public selection identity without throwing or parsing prose."""
+
+        option = action_space.find(action_id)
+        if option is None:
+            return ActionAdmissionResult(issue=AdmissionIssue(
+                AdmissionIssueCode.ACTION_OUTSIDE_ACTION_SPACE,
+                ("action_id",),
+            ))
+        return self.try_admit(option, parameters, destination_id)
+
+    def parameter_issue(
+        self,
+        option: ActionOption,
+        parameters: dict[str, Any],
+    ) -> AdmissionIssue | None:
+        if _FORBIDDEN_PARAMETER_KEYS.intersection(parameters):
+            return AdmissionIssue(
+                AdmissionIssueCode.INVALID_ACTION_PARAMETERS,
+                ("parameters",),
+            )
+        return validate_value_issue(parameters, option.parameter_schema)
 
 
 def _binding_is_current(binding: ActionBinding, observation: WorldObservation) -> bool:
@@ -188,3 +251,14 @@ def _validate_destination(option: ActionOption, destination_id: str) -> None:
     if destination_id and not option.eligible_destination_ids:
         raise ValueError("action does not accept a semantic destination")
     validate_selected_destination(destination_id, option.destination_required, option.eligible_destination_ids)
+
+
+def _destination_issue(option: ActionOption, destination_id: str) -> AdmissionIssue | None:
+    try:
+        _validate_destination(option, destination_id)
+    except ValueError:
+        return AdmissionIssue(
+            AdmissionIssueCode.INVALID_ACTION_PARAMETERS,
+            ("destination_id",),
+        )
+    return None

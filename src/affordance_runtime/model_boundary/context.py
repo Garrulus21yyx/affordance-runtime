@@ -11,6 +11,7 @@ from enum import StrEnum
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import AgentActionPageView, AgentPlanView, AgentTaskView, AgentTurnView
+from affordance_runtime.model_boundary.control_feedback_projection import AgentControlFeedbackView
 from affordance_runtime.model_boundary.world_projection import ModelWorldView, PublicFactView
 
 
@@ -122,6 +123,7 @@ class AgentContext:
     pending: AgentPendingView
     budgets: AgentBudgetView
     decision_mode: DecisionMode
+    control_feedback: AgentControlFeedbackView | None = None
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):

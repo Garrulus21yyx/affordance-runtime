@@ -152,6 +152,10 @@ def test_already_satisfied_selection_is_zero_call_then_typed_failure() -> None:
         assert len(events.items) == 1
         assert events.items[0].event_type == "already_satisfied_selection"
         assert events.items[0].strategy_transition_required is True
+        assert policy.contexts[1].control_feedback is not None
+        assert policy.contexts[1].control_feedback.kind == "strategy_transition_required"
+        assert policy.contexts[1].control_feedback.source == "progress_event"
+        assert result.control_issue_consumption_count == 0
         progress_json = json.dumps(to_json_compatible(policy.contexts[1].progress))
         assert "desired" not in progress_json
         assert "private_route" not in progress_json
@@ -175,6 +179,9 @@ def test_effectful_fill_executes_once_then_repeat_is_contained() -> None:
         assert result.currentness_probe_count == 0
         assert len(environment.executed_requests) == 1
         assert policy.calls == 3
+        assert policy.contexts[2].control_feedback is not None
+        assert policy.contexts[2].control_feedback.kind == "strategy_transition_required"
+        assert result.control_issue_consumption_count == 0
         assert result.turns[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
         snapshot = session.snapshot_partial_episode()
         assert snapshot.observation_count == 2

@@ -40,7 +40,8 @@ from affordance_runtime.benchmarks.target_loop.support import (
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionPager, StateFact, SurfaceObservation
+from affordance_runtime.world import ActionPager, ActionSpaceBuilder, StateFact, SurfaceObservation
+from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIssueCode
 from affordance_runtime.world.contracts import ActionSpace, WorldObservation
 
 from .decision_matrix import DECISION_VARIANTS
@@ -221,8 +222,43 @@ class _ReplayPage:
     target_id: str
     relevance_role: object = None
 
+    @property
+    def visible_destinations(self):
+        return tuple(
+            (action_id, self.destinations.get(action_id, ()))
+            for action_id in self.visible_action_ids
+        )
+
+    @property
+    def relevance(self):
+        return ()
+
+    @property
+    def total_count(self):
+        return len(self.visible_action_ids)
+
+    @property
+    def has_more(self):
+        return bool(self.next_cursor)
+
+    @property
+    def offset(self):
+        return 0
+
     def visible_destination_ids(self, action_id: str) -> tuple[str, ...]:
         return self.destinations.get(action_id, ())
+
+    def selection_issue(self, action_id: str, destination_id: str = ""):
+        if action_id not in self.visible_action_ids:
+            return AdmissionIssue(
+                AdmissionIssueCode.ACTION_OUTSIDE_CURRENT_PAGE, ("actions",),
+            )
+        if destination_id and destination_id not in self.visible_destination_ids(action_id):
+            return AdmissionIssue(
+                AdmissionIssueCode.DESTINATION_OUTSIDE_CURRENT_PAGE,
+                ("destination_id",),
+            )
+        return None
 
 
 @dataclass
@@ -296,6 +332,7 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
         session, ActionSpace(before.observation_id, ()),
         await evaluator.evaluate(task, before), _ReplayPolicy(decision),
         cast(ContextBuilder, _ReplayContextBuilder(context)), evaluator, waiter, dry_run,
+        ActionSpaceBuilder(),
     )
     status = outcome.status.value if hasattr(outcome, "status") else "continued"
     policy_failure = bool(getattr(outcome, "policy_failure", None))

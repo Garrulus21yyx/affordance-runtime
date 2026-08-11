@@ -17,6 +17,7 @@ from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
+from affordance_runtime.benchmarks.target_loop.metric_registry import CANONICAL_METRICS
 from affordance_runtime.evaluation import (
     ActionEvaluationStatus,
     TaskEvaluationStatus,
@@ -87,13 +88,18 @@ class TerminalReasonCode(StrEnum):
     STALE_BOUND_REQUEST = "stale_bound_request"
     INVALID_CONFIRMATION_DECISION = "invalid_confirmation_decision"
     NO_PROGRESS_REPETITION = "no_progress_repetition"
+    NO_PROGRESS_CONTROL_REPETITION = "no_progress_control_repetition"
     BLOCKED_OTHER = "blocked_other"
 
 
 _BLOCKED_TERMINAL_REASONS = {
     item.value: item
     for item in TerminalReasonCode
-    if item not in {TerminalReasonCode.NO_PROGRESS_REPETITION, TerminalReasonCode.BLOCKED_OTHER}
+    if item not in {
+        TerminalReasonCode.NO_PROGRESS_REPETITION,
+        TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION,
+        TerminalReasonCode.BLOCKED_OTHER,
+    }
 }
 
 
@@ -105,6 +111,8 @@ def terminal_reason_from_facts(
     """Project a terminal reason from the closed public failure facts."""
     if agent_failure_code == AgentFailureCode.NO_PROGRESS_REPETITION.value:
         return TerminalReasonCode.NO_PROGRESS_REPETITION
+    if agent_failure_code == AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION.value:
+        return TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION
     if status != AgentLoopStatus.BLOCKED.value:
         return None
     return _BLOCKED_TERMINAL_REASONS.get(
@@ -218,7 +226,10 @@ class CaseFacts:
                 raise ValueError("canonical and legacy agent failure facts conflict")
             if self.agent_failure_code:
                 agent_code = AgentFailureCode(self.agent_failure_code)
-                if agent_code is AgentFailureCode.NO_PROGRESS_REPETITION:
+                if agent_code in {
+                    AgentFailureCode.NO_PROGRESS_REPETITION,
+                    AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION,
+                }:
                     expected_agent_failure = (
                         FailureStage.CONTROL,
                         FailureKind.NO_PROGRESS,
@@ -505,7 +516,10 @@ class BenchmarkCaseResult:
             raise ValueError("blocked case result requires a terminal reason code")
         no_progress = (
             self.status == str(AgentLoopStatus.FAILED)
-            and self.terminal_reason_code == TerminalReasonCode.NO_PROGRESS_REPETITION
+            and self.terminal_reason_code in {
+                TerminalReasonCode.NO_PROGRESS_REPETITION,
+                TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION,
+            }
         )
         if not blocked and not no_progress and self.terminal_reason_code is not None:
             raise ValueError("non-blocked case result cannot carry a terminal reason code")
@@ -673,4 +687,4 @@ _KNOWN_METRICS = frozenset({
     "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
     "click_calls", "already_satisfied_suppressions", "no_progress_terminations",
     "observation_contract_exceptions",
-})
+}) | CANONICAL_METRICS

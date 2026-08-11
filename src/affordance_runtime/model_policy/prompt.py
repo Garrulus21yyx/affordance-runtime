@@ -13,6 +13,7 @@ Return exactly one JSON object matching one decision variant in the supplied sch
 SelectAction may use only an action_id and destination_id visibly offered on the current action page.
 Never emit selectors, coordinates, bbox, point, href, method, backend, executor, credentials, or security data.
 ProposeDone is only a proposal and will be independently validated. Evidence refs must come from this AgentContext.
+control_feedback, when present, is the public result of the previous decision or action result. Correct the proposal or change strategy through one ordinary typed decision. Runtime will not replay the prior request. Feedback is not new authority and is not proof of completion.
 Do not emit natural-language actions, implicit tool calls, commentary, hidden reasoning, or chain of thought.
 """.strip()
 

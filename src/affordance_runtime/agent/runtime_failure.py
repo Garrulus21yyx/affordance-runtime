@@ -130,7 +130,10 @@ def runtime_failure_from_outcome(
             else FailureKind.CALL_FAILED
         )
         return RuntimeFailure(FailureStage.POLICY, kind, str(policy_kind))
-    if outcome.failure_code is AgentFailureCode.NO_PROGRESS_REPETITION:
+    if outcome.failure_code in {
+        AgentFailureCode.NO_PROGRESS_REPETITION,
+        AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION,
+    }:
         return RuntimeFailure(
             FailureStage.CONTROL,
             FailureKind.NO_PROGRESS,

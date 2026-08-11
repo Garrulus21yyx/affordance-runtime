@@ -204,7 +204,7 @@ def record_execution_progress(
     action_evaluation: ActionEvaluation,
     observation: WorldObservation,
     evaluation: TaskEvaluation,
-) -> None:
+) -> ProgressEvent | None:
     event = session.progress_controller.record_action_outcome(
         selection,
         action_evaluation.status,
@@ -213,6 +213,7 @@ def record_execution_progress(
     )
     if event is not None:
         session.state._append_progress_event(event)
+    return event
 
 def _postcondition_is_satisfied(
     selection: AdmittedActionSelection,

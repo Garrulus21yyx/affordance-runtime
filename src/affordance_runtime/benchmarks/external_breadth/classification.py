@@ -38,6 +38,11 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
     if facts.runtime_failure is not None:
+        if facts.runtime_failure.code == AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION.value:
+            return ClassifiedOutcome(
+                MiniWobTaskOutcome.NO_PROGRESS_CONTROL_REPETITION,
+                "canonical_runtime_failure",
+            )
         if (
             facts.runtime_failure.stage is FailureStage.POLICY
             and facts.policy_failure_code
@@ -89,6 +94,11 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     reason = result.terminal_reason_code
     if reason is TerminalReasonCode.NO_PROGRESS_REPETITION:
         return ClassifiedOutcome(MiniWobTaskOutcome.NO_PROGRESS_REPETITION, "typed_runtime_reason")
+    if reason is TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION:
+        return ClassifiedOutcome(
+            MiniWobTaskOutcome.NO_PROGRESS_CONTROL_REPETITION,
+            "typed_runtime_reason",
+        )
     if facts.agent_failure_code:
         agent_failure = AgentFailureCode(facts.agent_failure_code)
         return ClassifiedOutcome(_AGENT_FAILURE_OUTCOMES[agent_failure], "typed_agent_failure")
@@ -161,6 +171,9 @@ _POLICY_OUTCOMES = {
 
 _AGENT_FAILURE_OUTCOMES = {
     AgentFailureCode.NO_PROGRESS_REPETITION: MiniWobTaskOutcome.NO_PROGRESS_REPETITION,
+    AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION: (
+        MiniWobTaskOutcome.NO_PROGRESS_CONTROL_REPETITION
+    ),
     AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE: (
         MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
     ),

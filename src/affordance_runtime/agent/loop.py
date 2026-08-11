@@ -224,6 +224,14 @@ class AgentLoop:
                 )
             action_space = self.action_space_builder.build(task, state.current_observation)
             ensure_current_action_page(session, action_space, self.context_builder)
+            if state.control_feedback_scope_digest:
+                from affordance_runtime.agent.control_feedback import current_semantic_scope
+
+                assert session.current_action_page is not None
+                if current_semantic_scope(
+                    state, action_space, session.current_action_page,
+                ) != state.control_feedback_scope_digest:
+                    state.clear_control_issue_budget()
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
             else:
@@ -236,6 +244,7 @@ class AgentLoop:
                     self.task_evaluator,
                     self.wait_controller,
                     self._execute_selection,
+                    self.action_space_builder,
                 )
             scope = session.confirmation_continuation_scope
             if scope is not None and (
@@ -256,13 +265,12 @@ class AgentLoop:
         scope: ControlTransitionScope,
     ) -> LoopDirective:
         admitted = self._admit_selection(
-            session.task,
-            session.state,
+            session,
             action_space,
             decision,
             scope,
         )
-        if isinstance(admitted, Pause | Terminate):
+        if isinstance(admitted, Continue | Pause | Terminate):
             return admitted
         return (await self._execute_admitted(session, admitted, decision, scope)).routed
 
@@ -397,6 +405,31 @@ class AgentLoop:
                 else "no_progress_repetition"
             )
             assert progress.terminal_result is not None
+            if (
+                progress.disposition
+                is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
+            ):
+                from affordance_runtime.agent.control_feedback import (
+                    ControlFeedbackSource,
+                    route_feedback,
+                    strategy_feedback,
+                )
+
+                action_space = session.current_action_space
+                page = session.current_action_page
+                assert action_space is not None and page is not None
+                feedback = strategy_feedback(
+                    session.state,
+                    action_space,
+                    page,
+                    source=ControlFeedbackSource.PROGRESS_EVENT,
+                    code="already_satisfied_change_strategy",
+                    public_subject_id=selection.target_id,
+                )
+                return _AdmittedOutcome(
+                    route_feedback(session.state, scope, feedback),
+                    progress.disposition,
+                )
             return _AdmittedOutcome(progress.terminal_result, progress.disposition)
         routed = await execute_cycle(
             session,
@@ -411,25 +444,37 @@ class AgentLoop:
 
     def _admit_selection(
         self,
-        task: TaskGoal,
-        state: AgentLoopState,
+        session: AgentRunSession,
         action_space: ActionSpace,
         decision: SelectAction,
         scope: ControlTransitionScope,
-    ) -> AdmittedActionSelection | Pause | Terminate:
+    ) -> AdmittedActionSelection | Continue | Pause | Terminate:
+        task = session.task
+        state = session.state
+        page = session.current_action_page or self.context_builder.page(action_space, state)
         option = action_space.find(decision.action_id)
-        if option is None:
-            scope.record_admission(AdmissionStatus.REJECTED, "action_outside_action_space")
-            return Terminate(AgentLoopStatus.BLOCKED, "action_outside_action_space", "policy selected outside ActionSpace")
-        try:
-            selection = self.action_space_builder.admit(
-                option,
-                dict(decision.parameters),
-                decision.destination_id,
+        admission = self.action_space_builder.try_admit_selection(
+            action_space,
+            decision.action_id,
+            dict(decision.parameters),
+            decision.destination_id,
+        )
+        if admission.issue is not None:
+            from affordance_runtime.agent.control_feedback import repair_feedback, route_feedback
+
+            issue = admission.issue
+            scope.record_admission(AdmissionStatus.REJECTED, issue.code.value)
+            feedback = repair_feedback(
+                state,
+                action_space,
+                page,
+                code=issue.code.value,
+                public_field_paths=issue.public_field_paths,
+                public_subject_id=option.target_id if option is not None else None,
             )
-        except ValueError as exc:
-            scope.record_admission(AdmissionStatus.REJECTED, "invalid_action_parameters")
-            return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_parameters", str(exc))
+            return route_feedback(state, scope, feedback)
+        assert admission.admitted is not None
+        selection = admission.admitted
         try:
             assessment = validate_risk_assessment(
                 task, selection, self.risk_policy.assess(task, selection),
@@ -564,8 +609,7 @@ class AgentLoop:
                 failure_code=acquired.failure_code,
             )
             return self._close_confirmation(session, outcome, acquired.reason_code)
-        session.state.current_observation = acquired.observation
-        session.state.current_task_evaluation = None
+        session.state.install_observation(acquired.observation)
         scope.record_after(acquired.observation.observation_id)
         session.last_result = None
         return await self._run_control(session)

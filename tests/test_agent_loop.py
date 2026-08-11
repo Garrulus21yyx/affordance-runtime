@@ -331,7 +331,9 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
 def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> None:
     async def scenario(decision) -> AgentLoopStatus:
         environment = StaticEnvironment([_world("obs-1", False)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([decision]))).run(environment, _task())
+        result = await AgentEpisodeRunner(
+            _loop(ScriptedPolicy([decision, decision]))
+        ).run(environment, _task())
         assert result.execution_count == 0
         return result.status
 
@@ -442,7 +444,10 @@ def test_read_only_task_cannot_select_an_effectful_option() -> None:
         task = TaskGoal("inspect", "Inspect shared state")
         environment = StaticEnvironment([world])
         result = await AgentEpisodeRunner(
-            _loop(ScriptedPolicy([SelectAction("context:test", effectful_option.action_id)]))
+            _loop(ScriptedPolicy([
+                SelectAction("context:test", effectful_option.action_id),
+                SelectAction("context:test", effectful_option.action_id),
+            ]))
         ).run(environment, task)
 
         assert result.status == AgentLoopStatus.BLOCKED
@@ -476,7 +481,12 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
 
 def test_recent_turns_are_bounded() -> None:
     async def scenario() -> None:
-        observations = [_world(f"obs-{index}", False) for index in range(20)]
+        observations = []
+        for index in range(20):
+            world = _world(f"obs-{index}", False)
+            target = replace(world.targets[0], label=f"Enable shared state revision {index}")
+            source = replace(world.sources[0], targets=(target,))
+            observations.append(replace(world, targets=(target,), sources=(source,)))
         decisions = [
             RequestObservation("context:test", "world", "structural", "structural", "refresh")
             for _ in range(15)

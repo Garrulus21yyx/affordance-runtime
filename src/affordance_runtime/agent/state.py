@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
 from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
@@ -50,6 +51,13 @@ class AgentLoopState:
     progress_event_total_count: int = 0
     recent_turn_limit: int = 12
     progress_event_limit: int = 3
+    control_feedback_scope_digest: str = ""
+    consumed_control_issue_digests: tuple[str, ...] = ()
+    pending_control_feedback: ControlFeedback | None = None
+    control_feedback_total_count: int = 0
+    control_feedback_delivery_total_count: int = 0
+    control_repetition_total_count: int = 0
+    control_issue_consumption_total_count: int = 0
 
     @property
     def recent_turns(self) -> tuple[Turn, ...]:
@@ -165,3 +173,64 @@ class AgentLoopState:
         if self.pending_unknown_request is not None:
             self.pending_unknown_request = None
             self.pending_revision += 1
+
+    def install_control_feedback(
+        self,
+        feedback: ControlFeedback,
+        issue_digests: tuple[str, ...],
+    ) -> None:
+        if not isinstance(feedback, ControlFeedback):
+            raise TypeError("pending feedback must be typed")
+        if len(issue_digests) > 2 or len(set(issue_digests)) != len(issue_digests):
+            raise ValueError("control issue budget state is invalid")
+        prior = (
+            self.consumed_control_issue_digests
+            if self.control_feedback_scope_digest == feedback.scope_digest
+            else ()
+        )
+        if feedback.consumes_issue_budget and feedback.issue_digest not in prior:
+            self.control_issue_consumption_total_count += 1
+        self.control_feedback_scope_digest = feedback.scope_digest
+        self.consumed_control_issue_digests = tuple(issue_digests)
+        self.pending_control_feedback = feedback
+        self.control_feedback_total_count += 1
+        self.pending_revision += 1
+
+    def consume_control_feedback_for_policy(self) -> ControlFeedback | None:
+        feedback = self.pending_control_feedback
+        if feedback is not None:
+            self.pending_control_feedback = None
+            self.control_feedback_delivery_total_count += 1
+            self.pending_revision += 1
+        return feedback
+
+    def clear_control_issue_budget(self) -> None:
+        changed = bool(
+            self.control_feedback_scope_digest
+            or self.consumed_control_issue_digests
+            or self.pending_control_feedback is not None
+        )
+        self.control_feedback_scope_digest = ""
+        self.consumed_control_issue_digests = ()
+        self.pending_control_feedback = None
+        if changed:
+            self.pending_revision += 1
+
+    def record_control_repetition(self) -> None:
+        self.control_repetition_total_count += 1
+
+    def install_observation(self, observation: WorldObservation) -> bool:
+        """Install fresh identity and clear D state only for public semantic gain."""
+
+        from affordance_runtime.world.public_semantic_digest import (
+            public_world_semantic_digest,
+        )
+
+        changed = public_world_semantic_digest(
+            observation
+        ) != public_world_semantic_digest(self.current_observation)
+        self.current_observation = observation
+        self.current_task_evaluation = None
+        if changed:
+            self.clear_control_issue_budget()
+        return changed
