@@ -73,3 +73,11 @@ without creating a second task or action authority.
   fresh live reset now projects 22/22 targets, 7 actionable and 15 read-only,
   with zero omissions. Full validation after this repair is 2218 passed and 27
   skipped; Ruff and mypy pass. A fresh A/B remains required for this new SHA.
+- 2026-08-11: fresh A/B on clickable-normalization SHA `b853a5e` is valid and
+  privacy-clean. Both arms reached 1/2: `click-link` succeeded in text-only and
+  screenshot+AX, proving candidate projection was the gating change. Text-only
+  `click-tab-2` repeated already-satisfied `target_present` objectives;
+  screenshot+AX received three rate-limit attempts before provider exhaustion.
+  The screenshot arm carried one image part on every recorded request and
+  completed `click-link` in one policy call/one execution. This does not show a
+  screenshot success-rate advantage on the two-case cohort.

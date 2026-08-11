@@ -1,0 +1,48 @@
+{
+  "arms": [
+    {
+      "completed_cases": 2,
+      "errors": [],
+      "grounding_profile": "format-only.v1",
+      "model_id": "mistral-medium-3-5",
+      "model_latency_ms": 15427.326,
+      "outcome_counts": {
+        "no_progress_control_repetition": 1,
+        "success": 1
+      },
+      "perception_profile": "text-only.v1",
+      "provider_attempts": 4,
+      "provider_id": "mistral",
+      "success_count": 1,
+      "total_tokens": 24683
+    },
+    {
+      "completed_cases": 2,
+      "errors": [],
+      "grounding_profile": "format-only.v1",
+      "model_id": "mistral-medium-3-5",
+      "model_latency_ms": 3352.4,
+      "outcome_counts": {
+        "provider_unavailable": 1,
+        "success": 1
+      },
+      "perception_profile": "screenshot-ax.v1",
+      "provider_attempts": 4,
+      "provider_id": "mistral",
+      "success_count": 1,
+      "total_tokens": 4809
+    }
+  ],
+  "case_ids": [
+    "miniwob-60-28",
+    "miniwob-60-48"
+  ],
+  "cohort": "declared_supported",
+  "errors": [],
+  "evidence_valid": true,
+  "implementation_sha": "b853a5efe414351fc4258ce7aa8e9453946962aa",
+  "mixed_cohort_success_rate_prohibited": true,
+  "profile": "MINIWOB_DECLARED_SUPPORTED_PERCEPTION_AB",
+  "same_model_required": true,
+  "schema_version": "miniwob-perception-ab.v1"
+}
