@@ -265,6 +265,33 @@ DOM heuristic, and whole-page option reuse is removed. No BrowserGym page,
 locator, element handle, BID, selector, native option value or private
 fingerprint crosses into public world/model facts.
 
+M4.6-B closes verifier/task-terminal ownership without changing that semantic
+boundary. The exact owner map is:
+
+- `browsergym_verifier` alone validates pinned RESET, POST_ACTION and
+  READ_ONLY_PROBE facts and owns the four-state BrowserGym truth table;
+- `ExternalEnvironmentTaskEvaluator` alone maps a current, lineage-matched
+  external assessment into generic `TaskEvaluation`;
+- evaluation contracts own `TaskOutcomeFact` and the outcome/status/evidence
+  matrix, including separate completion and neutral negative-status proof;
+- `task_evaluation_policy` alone maps a validated TaskEvaluation into one loop
+  disposition and explicit terminal-task marker;
+- `AgentLoopState.current_task_evaluation` remains current task truth;
+  AgentResult and session snapshots project only an epoch-matched outcome;
+- CaseFacts v8 copies privacy-safe outcome kind/code orthogonally to Runtime,
+  watchdog and cleanup facts; v6/v7 are decode-only and never infer new truth;
+- `external_breadth/classification` alone owns benchmark precedence. Metrics,
+  status, messages, latest operations, legacy fields and telemetry cannot
+  manufacture task success or failure.
+
+The removed semantic owners were the three-state unavailable collapse,
+status-only routing duplicated across initial/post-action/confirmation paths,
+synthetic `RuntimeFailure(CONTROL, REJECTED)` for task-domain terminal failure,
+case projection of presentation reason as Runtime truth, and benchmark
+inference from latest task status or `official_success_count`. BrowserGym raw
+reward and private oracle payload never cross into AgentContext, model input or
+public benchmark evidence.
+
 ## P5-M4.2 narrow owners
 
 P5-M4.2 adds three narrow owners without changing those imports:

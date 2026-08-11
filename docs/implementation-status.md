@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -431,6 +431,18 @@ targeted run artifact was produced, so its Verification run ID is `NONE`.
 This is non-default declared-currentness closure only; it is not a performance,
 generalization, MiniWoB-60 outcome or M4.5-B closure claim.
 
+M4.6-B is implemented at
+`07895ede392bdff065ba3b4c0a6384ba18904143` and verified by immutable targeted
+run `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015`. Four-state
+source-aware BrowserGym verifier truth now maps through canonical
+`TaskOutcomeFact`, one task-evaluation control disposition, current-epoch
+AgentResult/snapshot/CaseFacts v8 projection and unique benchmark precedence.
+The frozen previous-verifier-unknown run completed 14/14 with valid evidence:
+12 terminal-task-failure and 2 running-incomplete canonical facts; 13
+TASK_FAILED and 1 RUNTIME_REJECTED outcomes. This is declared verifier-scope
+closure only, with no full MiniWoB-60, performance/generalization or M4.5-B
+closure claim.
+
 ## Control-transition and long-horizon gap status
 
 The current M4.5-B candidate includes a bounded pure reducer, strict boundary
@@ -449,8 +461,9 @@ The target production loop does not initialize or mutate plan/objective, and no
 verified milestone promotion/current frontier/replanning lifecycle exists.
 `ProgressController` remains an integrated fill/select local liveness guard;
 general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is
-`IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`
-and M4.6-B is `NEXT`; M4.7 multi-seed remains blocked by its
+`IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`,
+M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, and M4.6-C is
+`NEXT`; M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.

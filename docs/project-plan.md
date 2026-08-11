@@ -78,7 +78,7 @@ core contracts for every GUI task.
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
-| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B NEXT; then semantic inventory, bounded control no-gain and staged breadth |
+| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE; M4.6-C NEXT; then bounded control no-gain and staged breadth |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
 | P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.6/M4.7 breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
@@ -91,7 +91,8 @@ REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, M4.5-C
 `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 /
 FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED /
 GENERALIZATION_NOT_CLAIMED`, and M4.6 `IN_PROGRESS / M4.6-A
-COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT`; Implementation
+COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
+COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT`; Implementation
 Status owns current code truth.
 
 ## 4. Product success measures

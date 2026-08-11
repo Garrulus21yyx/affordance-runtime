@@ -24,8 +24,8 @@ diagnostic are independent records. They are not merged into a trend claim.
 ```text
 M4.6 overall: IN_PROGRESS
 M4.6-A canonical AX semantics/currentness: COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE
-M4.6-B verifier/task-terminal truth: NEXT
-M4.6-C semantic inventory truth: NOT_STARTED
+M4.6-B verifier/task-terminal truth: COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE
+M4.6-C semantic inventory truth: NEXT
 M4.6-D bounded control no-gain: NOT_STARTED
 M4.6-E stable target identity and semantic breadth: NOT_STARTED
 M4.7 supported-subset multi-seed: BLOCKED_BY_M4_6_GATES
@@ -45,7 +45,7 @@ ledger, a replay source or execution truth.
 | Remediation | Trigger run / Git SHA | Observed cohort | Source mechanism | Claim limit | Implementation SHA | Verification run ID | Exit property |
 |---|---|---|---|---|---|---|---|
 | M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
-| M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable | `NONE` | `NONE` | supported verifier algebra is total; task terminal is orthogonal to Runtime failure; new run separates terminal failure from unavailable |
+| M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; task terminal is orthogonal to Runtime failure; new run separates terminal failure from unavailable |
 | M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering precedes target creation and coverage calculation | baseline does not prove the task-required missing role or that more targets guarantee success | `NONE` | `NONE` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty |
 | M4.6-D bounded control no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | unchanged page only continues; observation freshness uses identity rather than public semantic gain | case JSON stores only the last decision and no per-turn semantic digest | `NONE` | `NONE` | first exact no-gain gives typed feedback; second consecutive identical request/result terminates; Runtime refresh is exempt |
 | M4.6-E stable identity/breadth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` (source-only adjacent risk) | no direct baseline cohort for ordinal identity; zero-target cohort remains breadth witness | target ID includes ordinal; observable and executable roles are coupled | neither ordinal identity nor a particular unsupported role was shown to cause a baseline failure | `NONE` | `NONE` | identity survives irrelevant AX order changes; read-only semantics cannot grant unsupported execution; quotas preserve actionable controls |
@@ -65,10 +65,14 @@ Neither column ever points to the docs-only archive commit.
 | BrowserGym projection | bounded target/fact/binding assembly only |
 | BrowserGym binding | immutable private canonical binding and public-label-to-native-value dispatch mapping only |
 | BrowserGym verifier | pure external verifier fact classification |
+| evaluation contracts | generic canonical `TaskOutcomeFact` and status/evidence matrix |
+| task-evaluation control policy | the only `TaskEvaluation`-to-loop disposition owner |
 | world semantic projection | generic inventory summary and identity-free public digest |
 | agent control liveness | exact page/policy-observation no-gain transition |
-| `AgentLoopState` | current bounded liveness state authority |
-| model and benchmark projections | one-way copies of canonical facts, never inference owners |
+| `AgentLoopState` | current task evaluation and bounded liveness state authority |
+| AgentResult/session snapshot/CaseFacts | current-epoch bounded one-way task-outcome projection |
+| external breadth classification | unique benchmark outcome precedence |
+| codec/legacy/model/telemetry projections | downstream-only copies, never inference owners |
 
 No file is split or retained because of a line-count threshold. Responsibility,
 authority, cohesion and change coupling decide ownership. Projection,
@@ -116,6 +120,52 @@ fresh-context verdict was `VERIFIED`.
 This attests only canonical currentness on the declared non-default scope. It
 does not claim a MiniWoB success-rate, performance improvement, generalization,
 M4.5-B closure, or completion of M4.6-B through M4.6-E or P5-E.
+
+## M4.6-B focused and targeted evidence
+
+The clean product implementation is
+`07895ede392bdff065ba3b4c0a6384ba18904143`. The accepted immutable targeted
+run is `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` under
+`docs/evidence/runs/p5-m4-6-b-miniwob-verifier-14-seed7-07895ed-targeted/`.
+It is the frozen previous-verifier-unknown cohort, not a full MiniWoB-60 run or
+a negative-terminal cohort selected after observing results.
+
+- source-aware verifier properties cover exact bool/numeric validation,
+  bool-as-number, NaN/infinity, arbitrary shapes and held-out exact integers
+  through `10**10000`; RESET cannot prove terminal status and malformed or
+  unsupported combinations fail closed;
+- evaluation/evidence properties separate completion proof from neutral
+  negative-status proof and reject stale-epoch evidence;
+- loop/reducer properties preserve actual Runtime failures, make pure task
+  terminal failure absorbing and exactly-once, and produce no synthetic
+  `RuntimeFailure(CONTROL, REJECTED)`;
+- CaseFacts v8, v6/v7 read-only decoding and classification precedence
+  properties prevent status/message/latest-operation or metric inference;
+- the command-scoped Python 3.12 pinned real gate passed `13` tests, including
+  deterministic `login-user-popup` seed 7 with exactly one SENT and backend
+  step, `BLOCKED` terminal task outcome, current neutral evidence, empty
+  completion proof, no RuntimeFailure and zero-call terminal re-entry;
+- the final full repository suite passed `2115` tests with `26` skipped;
+  `ruff check .`, `mypy src` over 433 source files, clean-process imports,
+  architecture/documentation gates and `git diff --check` passed;
+- fresh-context review generated held-out source/evidence/timing/legacy/privacy
+  variants. It found shared exact-large-int and legacy-emission gaps; both were
+  fixed in the common classifier/codec, and the final verdict was `VERIFIED`.
+
+The targeted run completed 14/14 with valid evidence, zero acceptance or
+harness-integrity errors, zero unclassified outcomes and a clean privacy scan.
+Canonical verifier distribution was 12 `TERMINAL_TASK_FAILURE` and 2
+`INCOMPLETE`; benchmark distribution was 13 `TASK_FAILED` and 1
+`RUNTIME_REJECTED`. All 12 terminal-task-failure cases classified as
+`TASK_FAILED` from `canonical_task_outcome` with no RuntimeFailure. The extra
+`TASK_FAILED` was an independent canonical session RuntimeFailure after a
+running-incomplete fact, so precedence remained orthogonal.
+
+The old diagnostic remains exactly 64 JSON files with digest
+`7a3f60c10896fc2f458afc11874bce866987fb9f1e752c8d164ae4b05d80b318`.
+No old result or classification was rewritten. M4.6 remains `IN_PROGRESS`,
+M4.6-C is `NEXT`, and M4.5-B reviewed closure SHA remains `NONE`. No
+performance, success-rate or generalization claim is made.
 
 ## Promotion gate
 

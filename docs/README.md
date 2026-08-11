@@ -66,7 +66,8 @@ property convergence; the earlier B.1/B.2/B.3 closure claims are withdrawn.
 M4.5-C diagnostic execution is complete with valid `4924ce6` evidence, while
 formal exit, performance and generalization remain unclaimed. M4.6 is
 `IN_PROGRESS`: M4.6-A canonical AX semantics/currentness is
-`COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`, and M4.6-B is `NEXT`;
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`, M4.6-B is
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, and M4.6-C is `NEXT`;
 M4.7 multi-seed and P5-E remain blocked by
 their targeted/breadth gates. Only after those gates may P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
@@ -77,7 +78,8 @@ Status mirror: M4.5-B is `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
 IMPLEMENTED_NOT_VERIFIED`; M4.5-C is `COMPLETE_DIAGNOSTIC /
 EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
 PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 is `IN_PROGRESS /
-M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT`.
+M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
+COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT`.
 Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts

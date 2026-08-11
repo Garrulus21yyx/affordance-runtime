@@ -1,0 +1,232 @@
+{
+  "benchmark_case_evidence": {
+    "agent_failure_code": "",
+    "case_failure_code": "verified_terminal_task_failure",
+    "case_id": "miniwob-60-32",
+    "case_schema_version": "target-loop-case.v8",
+    "cleanup_exception_class": "",
+    "cleanup_failure_code": "",
+    "cleanup_failures": 0,
+    "exception_class": "",
+    "execution_completed": true,
+    "failure_code": "",
+    "failure_facts": {
+      "agent_failure_code": "",
+      "cleanup_code": "",
+      "cleanup_exception_class": "",
+      "component_code": "",
+      "component_exception_class": "",
+      "component_origin": "none",
+      "harness_integrity_code": "",
+      "policy_failure_code": "",
+      "runtime_failure": null,
+      "runtime_reason_code": "",
+      "task_outcome_code": "verified_terminal_task_failure",
+      "task_outcome_kind": "terminal_failure",
+      "watchdog_code": ""
+    },
+    "failure_origin": "none",
+    "harness_integrity_code": "",
+    "harness_integrity_failures": 0,
+    "harness_schema_version": "target-loop-harness.v6",
+    "last_action_space_option_count": 4,
+    "last_decision_type": "SelectAction",
+    "last_policy_failure_code": "",
+    "last_progress_event_type": "action_effect_evaluated",
+    "last_world_coverage": "complete",
+    "last_world_target_count": 4,
+    "latency_ms": 15355.326432734728,
+    "latest_action_evaluation_status": "unknown",
+    "latest_semantic_attempt_key_digest": "",
+    "latest_task_status": "blocked",
+    "manifest_digest": "fabbb213cc0f37af103980ecef1f2854aa4ef05c5d2698137cd7ebb0fbb3b5cd",
+    "measurements": {
+      "already_satisfied_suppressions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "browsergym_probe_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "browsergym_reset_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_step_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "cleanup_failures": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "click_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "completion_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 228
+      },
+      "currentness_probes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "duplicate_unknown_attempts": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "executions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "fallback_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "fill_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "forbidden_effect_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "model_latency_ms": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2652.326
+      },
+      "no_progress_terminations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observation_contract_exceptions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "official_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "policy_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "prompt_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 5320
+      },
+      "provider_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "provider_retry_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "select_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "sent_unknown_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_zero_call_violations": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "total_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 5548
+      },
+      "turns": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      }
+    },
+    "no_progress_count": 0,
+    "partial_episode_available": false,
+    "pending_kind": "",
+    "profile_id": "mistral-format-only-v1",
+    "runtime_reason_code": "",
+    "same_attempt_streak": 0,
+    "schema_version": "target-loop-case.v8",
+    "seed": 7,
+    "status": "blocked",
+    "suite_id": "miniwob-verifier-14-targeted-seed7-v1",
+    "terminal_reason_code": null,
+    "termination_origin": "",
+    "watchdog_triggered": false
+  },
+  "case_id": "miniwob-60-32",
+  "classification_source": "canonical_task_outcome",
+  "implementation_sha": "07895ede392bdff065ba3b4c0a6384ba18904143",
+  "run_id": "miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015",
+  "schema_version": "miniwob-verifier-targeted-case.v1",
+  "task_family_label": "multi-layouts",
+  "task_outcome_code": "verified_terminal_task_failure",
+  "task_outcome_kind": "terminal_failure",
+  "typed_outcome": "task_failed",
+  "verifier_reason": "verified_terminal_task_failure",
+  "verifier_status": "terminal_task_failure"
+}
