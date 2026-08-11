@@ -363,6 +363,9 @@ ordinary AgentPolicy chooses the next action. No feedback owner may duplicate
 ActionSpace schema, choose a replacement, invoke a reflector, become a retry
 manager, or reinterpret benchmark outcomes.
 
+That owner map is implemented for the declared M4.6-D non-default scope at
+`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`; M4.6-E breadth remains outside it.
+
 P5-E reuses `task/planning_contracts.py`. VerifiedTaskState/milestone promotion
 and TaskProgressAuditor stay under task/evaluation ownership; ObjectivePolicy
 derives LocalObjective from the verified frontier. `agent/progress_control.py`

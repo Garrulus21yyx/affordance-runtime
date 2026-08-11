@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -462,21 +462,19 @@ all policy/provider/token/step/probe/independent-capture totals at zero. This is
 declared inventory-profile closure only, not task-relative completeness or a
 performance/generalization claim.
 
-M4.6-D is not implemented. Current public action parameter/page admission
-records typed rejection and finalizes the accepted decision, but returns
-`BLOCKED` instead of projecting a bounded repair opportunity to the same run's next
-policy context. The direct `4924ce6` witness is case 37:
-`invalid_action_parameters`, one policy call, zero execution/step and three
-current options. A parameter-domain rejection reported by an adapter after
-successful Runtime admission remains an internal adapter-contract mismatch,
-not policy repair. `NO_EFFECT_CONFIRMED` and already-satisfied fill/select
-already enter ActionEvaluation/progress history and the first verified local
-no-progress event carries strategy-transition feedback; exact unchanged
-fill/select repetition is bounded. There is no general action retry controller.
-`page_unchanged` continues without a repetition bound, and policy observation
-freshness still uses acquisition identity rather than identity-free semantic
-gain. No dedicated `AgentContext.control_feedback`, typed admission-issue
-producer, frozen same-scope issue budget or M4.6-D verification run exists yet.
+M4.6-D is implemented at `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`.
+Typed ActionSpace/page/schema owners now produce public-safe admission facts;
+one canonical `ControlFeedback` envelope projects once into the next ordinary
+policy context. Identity-free world/page/task digests own the shared two-distinct
+issue budget: an exact repeat or third distinct issue terminates as
+`no_progress_control_repetition`, while effectful SENT or relevant semantic gain
+resets it. Runtime neither edits parameters nor replays requests. Adapter-side
+INVALID_PARAMETERS after Runtime admission remains execution failure truth.
+The accepted fixed run
+`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`
+completed 25/25 with valid schema, identity, privacy, safety, integrity and
+cleanup gates. Its feedback/correction measurements are not task-success,
+performance or generalization evidence.
 
 ## Control-transition and long-horizon gap status
 
@@ -498,7 +496,9 @@ verified milestone promotion/current frontier/replanning lifecycle exists.
 general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is
 `IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`,
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
-`COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is `NEXT`;
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE`, and M4.6-E is
+`NOT_STARTED`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit

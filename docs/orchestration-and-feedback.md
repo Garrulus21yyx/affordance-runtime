@@ -109,6 +109,11 @@ risk/safety/task/session terminal, budget/cancel, `SENT_UNKNOWN`, component/
 integrity failure and post-admission adapter-contract mismatch are not model
 repair paths. No fresh identity alone resets a semantic streak.
 
+The declared bounded feedback path is implemented at
+`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc` and verified by the fixed run
+`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`; correction
+measurements remain distinct from task success.
+
 ## 4. Confirmation
 
 WaitingConfirmation carries a typed `ConfirmationRequest`: confirmation ID,

@@ -122,6 +122,10 @@ two-distinct-issue same-scope budget: the same request/result fingerprint
 repeating stops immediately, while a different no-gain control request consumes
 the remaining budget rather than resetting it.
 
+This declared policy-origin no-gain contract is implemented at
+`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc` and verified by targeted run
+`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`.
+
 ## 5. Bounded recovery
 
 Public recovery decisions are only:

@@ -97,20 +97,22 @@ The next target slices are deliberately narrow and separate:
 P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 → P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
 → P5-M4.5-C diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
-→ P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT
+→ P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED
   (M4.6-B residual contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`)
 → P5-M4.7 supported-subset multi-seed gate: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
 ```
 
 `ProgressController` remains a fill/select local liveness guard, not a planner.
-Planned M4.6-D adds a typed, sanitized control-feedback channel and a tiny
+M4.6-D adds a typed, sanitized control-feedback channel and a tiny
 bounded zero-dispatch ordinary-policy repair budget, plus page/policy-observation
 no-gain containment. Its initial profile permits two distinct same-scope issues
 but terminates an identical issue on repeat. Runtime states the validated fact;
 AgentPolicy chooses the correction. It does not auto-edit parameters, replay a
-request or add a mandatory reflection agent. M4.6-D is not implemented and is
-the only next M4.6 slice.
+request or add a mandatory reflection agent. The implementation is
+`ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`; the accepted targeted run is
+`miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`. M4.6-E remains
+not started.
 `ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
 acquisition and after-world facts are recorded monotonically before evaluator
 completion; confirmation continuation updates the same root. AgentLoopState

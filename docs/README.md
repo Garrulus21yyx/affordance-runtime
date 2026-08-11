@@ -68,13 +68,15 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `IN_PROGRESS`: M4.6-A canonical AX semantics/currentness is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`, M4.6-B is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
-`COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is `NEXT`;
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE`; M4.6-E is
+`NOT_STARTED`;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`
 is verified by no-model run
 `miniwob-inventory-17:6220967c47a24532b4140728627e4950`;
-M4.6-D is planned as typed control feedback with a frozen two-distinct-issue
+M4.6-D provides typed control feedback with a frozen two-distinct-issue
 same-scope repair/no-gain budget and immediate exact-repeat containment, not
 Runtime autocorrection or a mandatory reflection agent;
 M4.7 multi-seed and P5-E remain blocked by
@@ -89,7 +91,8 @@ EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
 PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 is `IN_PROGRESS /
 M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C
-COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT`.
+COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D
+COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED`.
 Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts
@@ -253,7 +256,7 @@ coverage. The M4.5-B candidate records bounded ControlTransition facts, but
 reducer legality, attempt matrices and failure/projection ownership are still
 under convergence review. This review introduces no ledger, replay or second
 state authority. See the [active queue](current-implementation-plan.md) for the
-completed M4.6-C inventory slice and the next admitted M4.6-D feedback contract, the
+completed M4.6-C inventory and M4.6-D feedback slices, the
 [immutable M4.5-C attribution](reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md),
 the [current M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md),
 and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).

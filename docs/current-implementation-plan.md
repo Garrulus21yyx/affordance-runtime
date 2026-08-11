@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT` | M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`; accepted no-model run `miniwob-inventory-17:6220967c47a24532b4140728627e4950`; next bounded model-facing control feedback/repair/no-gain, then stable identity/breadth |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED` | M4.6-D implementation `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`; accepted run `miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`; E remains outside this slice |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -79,9 +79,9 @@ A separately authorized M4.5-C diagnostic has now completed from clean
 `4924ce61748d8efdec4fcc6de494acf8a9f224cc`: 60/60 cases, 8/60 success,
 valid evidence and no generalization claim. The archive commit `5f8d6ac` is
 docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
-AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
-semantic inventory truth are complete for their declared non-default scopes;
-M4.6-D is the next admitted product slice. B assurance review
+AX semantics/currentness, M4.6-B verifier/task-terminal truth, M4.6-C
+semantic inventory truth and M4.6-D bounded control feedback are complete for
+their declared non-default scopes. M4.6-E remains not started. B assurance review
 remains independently open; P5-E, default cutover and old-core deletion remain
 unauthorized.
 
@@ -279,9 +279,9 @@ Implement one independently measurable slice at a time:
    exact repeated no-gain containment for action pages and policy observations;
    AgentPolicy chooses the correction, Runtime never parses exception text or
    edits parameters, Runtime refresh is exempt, and sent/uncertain requests are
-   never replayed — `NEXT`;
+   never replayed — `COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
-   semantic breadth.
+   semantic breadth — `NOT_STARTED`.
 
 Each slice gets property/state-machine evidence and a new implementation SHA.
 Targeted reruns receive new run IDs and immutable directories; no result is

@@ -292,7 +292,8 @@ EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
 PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 `IN_PROGRESS /
 M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C
-COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT`.
+COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D
+COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED`.
 The M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`;
 the accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`.
 Implementation Status is authoritative.
@@ -326,7 +327,7 @@ at a time. Any targeted or full rerun is a new immutable record and cannot
 amend, resume or merge any exact run above. Zero unclassified typed outcomes
 remains an attribution gate, not permission to rewrite prior evidence.
 
-M4.6-D is a bounded control-feedback/repair/no-gain gate, not a new planner or
+M4.6-D is a completed bounded control-feedback/repair/no-gain gate, not a new planner or
 reflection benchmark. Its primary proof is a reducer/loop state machine with
 deterministic fake ports:
 
