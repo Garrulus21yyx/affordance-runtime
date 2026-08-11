@@ -45,7 +45,13 @@ M45_C_STATUS = (
     "PERFORMANCE_NOT_CLAIMED",
     "GENERALIZATION_NOT_CLAIMED",
 )
-M46_STATUS = ("M4.6", "NOT_STARTED", "NEXT")
+M46_STATUS = (
+    "M4.6",
+    "IN_PROGRESS",
+    "COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE",
+    "M4.6-B",
+    "NEXT",
+)
 
 VALID_LIFECYCLES = {
     "current",
@@ -129,7 +135,7 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
         "P5-M4.5-A observation acquisition lifecycle — complete",
         "P5-M4.5-B control/failure contract — reopened convergence review",
         "P5-M4.5-C same-profile diagnostic — complete diagnostic evidence",
-        "P5-M4.6 evidence-directed remediation — next",
+        "P5-M4.6 evidence-directed remediation — in progress",
         "## Gates after M4.6",
         "VerifiedTaskState evidence promotion",
     )

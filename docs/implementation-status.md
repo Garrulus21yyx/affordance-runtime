@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `NOT_STARTED / NEXT` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -423,6 +423,14 @@ decisions. Their implementation/evidence identities are
 tracked without rewriting the old run in the
 [M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md).
 
+M4.6-A is implemented at
+`896508eaf7737cd86289f93a30e5737c6b1cdf76`. Canonical/currentness
+properties, the command-scoped Python 3.12 pinned real gate, the full repository
+suite and a final fresh-context adversarial review passed. No immutable
+targeted run artifact was produced, so its Verification run ID is `NONE`.
+This is non-default declared-currentness closure only; it is not a performance,
+generalization, MiniWoB-60 outcome or M4.5-B closure claim.
+
 ## Control-transition and long-horizon gap status
 
 The current M4.5-B candidate includes a bounded pure reducer, strict boundary
@@ -440,8 +448,9 @@ exist, and current validated evaluations can project evidence-linked facts.
 The target production loop does not initialize or mutate plan/objective, and no
 verified milestone promotion/current frontier/replanning lifecycle exists.
 `ProgressController` remains an integrated fill/select local liveness guard;
-general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is the
-next evidence-directed short-loop work; M4.7 multi-seed remains blocked by its
+general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is
+`IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`
+and M4.6-B is `NEXT`; M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.

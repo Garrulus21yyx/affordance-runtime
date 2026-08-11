@@ -22,8 +22,9 @@ diagnostic are independent records. They are not merged into a trend claim.
 ## Current queue
 
 ```text
-M4.6-A canonical AX semantics/currentness: NEXT
-M4.6-B verifier/task-terminal truth: NOT_STARTED
+M4.6 overall: IN_PROGRESS
+M4.6-A canonical AX semantics/currentness: COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE
+M4.6-B verifier/task-terminal truth: NEXT
 M4.6-C semantic inventory truth: NOT_STARTED
 M4.6-D bounded control no-gain: NOT_STARTED
 M4.6-E stable target identity and semantic breadth: NOT_STARTED
@@ -43,7 +44,7 @@ ledger, a replay source or execution truth.
 
 | Remediation | Trigger run / Git SHA | Observed cohort | Source mechanism | Claim limit | Implementation SHA | Verification run ID | Exit property |
 |---|---|---|---|---|---|---|---|
-| M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently own role/name/state; whole-page select options and incomplete availability are adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `NONE` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
+| M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
 | M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable | `NONE` | `NONE` | supported verifier algebra is total; task terminal is orthogonal to Runtime failure; new run separates terminal failure from unavailable |
 | M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering precedes target creation and coverage calculation | baseline does not prove the task-required missing role or that more targets guarantee success | `NONE` | `NONE` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty |
 | M4.6-D bounded control no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | unchanged page only continues; observation freshness uses identity rather than public semantic gain | case JSON stores only the last decision and no per-turn semantic digest | `NONE` | `NONE` | first exact no-gain gives typed feedback; second consecutive identical request/result terminates; Runtime refresh is exempt |
@@ -57,11 +58,12 @@ Neither column ever points to the docs-only archive commit.
 
 | Owner | Responsibility |
 |---|---|
-| `browsergym_semantics` | canonical AX role/name/state, availability, owner-scoped option domain and private/public fingerprints |
-| `browsergym_semantic_profile` | finite BrowserGym observable/executable role algebra and conformed adapter capability snapshot |
+| `browsergym_semantics` | immutable canonical AX control, computed role/name/typed state, availability, owner-scoped public/private option domain, public/private fingerprints, exact deduplication and typed conflict rejection |
+| `browsergym_semantic_profile` | finite current BrowserGym observable/executable role algebra, semantic action, primitive, currentness fields and primitive availability conditions |
 | `browsergym_currentness` | pure canonical binding/live comparison and bounded adapter-local reason |
-| BrowserGym backend | owner-thread physical reads and step; no semantic inference |
+| BrowserGym backend | owner-thread pinned observation and frame-safe BID physical reads plus step; no AX role/name inference and no public capture ownership |
 | BrowserGym projection | bounded target/fact/binding assembly only |
+| BrowserGym binding | immutable private canonical binding and public-label-to-native-value dispatch mapping only |
 | BrowserGym verifier | pure external verifier fact classification |
 | world semantic projection | generic inventory summary and identity-free public digest |
 | agent control liveness | exact page/policy-observation no-gain transition |
@@ -81,6 +83,39 @@ authority, cohesion and change coupling decide ownership. Projection,
 - no Langfuse/OpenTelemetry authority over Runtime or benchmark facts;
 - no rewriting of the 64 baseline JSON files or their typed outcomes;
 - no full MiniWoB-60 rerun until the targeted gates identify remaining gaps.
+
+## M4.6-A focused evidence
+
+The product implementation is
+`896508eaf7737cd86289f93a30e5737c6b1cdf76`. No new immutable targeted run
+artifact was produced, so the ledger Verification run ID remains `NONE`.
+These focused commands are verification evidence, not a campaign run ID:
+
+- canonical/currentness/execution/projection properties: `40 passed`;
+- all BrowserGym-focused tests: `236 passed, 18 skipped`;
+- Python 3.12 pinned real gate with command-scoped local fixture URL:
+  `18 passed` in 31.62 seconds, covering click-tab, click-tab-2,
+  click-tab-2-hard, click-tab-2-easy, book-flight, choose-list and the
+  login-user-popup terminal path;
+- focused physical-probe latency witness: six probes, 205.80 ms minimum,
+  332.58 ms median and 427.49 ms maximum;
+- full repository suite: `2091 passed, 23 skipped` in 76.48 seconds;
+- `ruff check .`, `mypy src` (431 source files), main and pinned clean-process
+  forward/reverse imports, `git diff --check`, and immutable evidence digest
+  `7a3f60c10896fc2f458afc11874bce866987fb9f1e752c8d164ae4b05d80b318`
+  all passed.
+
+Fresh-context adversarial review generated held-out duplicate/conflicting BID
+and node identity, option-owner/domain, availability, AX order, malformed probe,
+terminal re-entry and private-projection variants. It found shared-owner gaps
+for option ownership, bidless conflict handling, duplicate native option
+values, semantic node identity and explicit BID comparison; each was repaired
+in the shared canonicalizer/comparator with no task-specific branch. The final
+fresh-context verdict was `VERIFIED`.
+
+This attests only canonical currentness on the declared non-default scope. It
+does not claim a MiniWoB success-rate, performance improvement, generalization,
+M4.5-B closure, or completion of M4.6-B through M4.6-E or P5-E.
 
 ## Promotion gate
 

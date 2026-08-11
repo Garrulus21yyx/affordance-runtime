@@ -129,7 +129,7 @@ post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60
 P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT
 P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
 P5-M4.5-C same-profile diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
-P5-M4.6 evidence-directed short-loop remediation: NOT_STARTED / NEXT
+P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT
 P5-M4.7 supported-subset multi-seed: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
 ```
@@ -401,8 +401,9 @@ DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
 DONE: P5-M4.5-A observation acquisition lifecycle
 ACTIVE_REVIEW: P5-M4.5-B bounded control/failure contract convergence; implemented, not verified
 DONE_DIAGNOSTIC: P5-M4.5-C same-profile MiniWoB-60 at `4924ce6`; evidence valid, formal exit/performance/generalization not claimed
-NEXT: P5-M4.6-A canonical AX semantics/currentness
-THEN: P5-M4.6-B–E verifier, inventory, no-gain and staged breadth
+DONE_NON_DEFAULT: P5-M4.6-A canonical AX semantics/currentness — COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE
+NEXT: P5-M4.6-B verifier/task-terminal truth
+THEN: P5-M4.6-C–E inventory, no-gain and staged breadth
 BLOCKED: P5-M4.7 supported-subset multi-seed by M4.6 gates
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
 THEN: P5-F bounded ActionBatch

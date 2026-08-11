@@ -289,8 +289,9 @@ Its convergence contract requires decision-scoped transition accounting:
 Status mirror: M4.5-B `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
 IMPLEMENTED_NOT_VERIFIED`; M4.5-C `COMPLETE_DIAGNOSTIC /
 EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
-PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 `NOT_STARTED /
-NEXT`. Implementation Status is authoritative.
+PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 `IN_PROGRESS /
+M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT`.
+Implementation Status is authoritative.
 
 1. every accepted policy decision produces exactly one bounded
    `ControlTransition`, including AskUser, Abort, RequestObservation, Wait,

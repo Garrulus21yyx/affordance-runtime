@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `NOT_STARTED / NEXT` | first canonical AX semantics/currentness, then verifier truth, semantic inventory, bounded control no-gain, stable identity/breadth |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B NEXT` | canonical AX semantics/currentness complete for its declared non-default scope; next verifier truth, then semantic inventory, bounded control no-gain and stable identity/breadth |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -79,7 +79,8 @@ A separately authorized M4.5-C diagnostic has now completed from clean
 `4924ce61748d8efdec4fcc6de494acf8a9f224cc`: 60/60 cases, 8/60 success,
 valid evidence and no generalization claim. The archive commit `5f8d6ac` is
 docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
-AX semantics/currentness is the next admitted product slice. B assurance review
+AX semantics/currentness is complete for its declared non-default scope;
+M4.6-B is the next admitted product slice. B assurance review
 remains independently open; P5-E, default cutover and old-core deletion remain
 unauthorized.
 
@@ -254,14 +255,14 @@ immutable payload alone does not prove those causes, that all 14 verifier-unknow
 cases were negative terminal outcomes, that broader roles guarantee success,
 or that a later repair improves the score.
 
-## P5-M4.6 evidence-directed remediation — next
+## P5-M4.6 evidence-directed remediation — in progress
 
 Implement one independently measurable slice at a time:
 
 1. M4.6-A canonical AX semantics/currentness, including owner-scoped select
-   options and executable availability;
+   options and executable availability — `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`;
 2. M4.6-B four-state verifier plus task-terminal fact orthogonal to
-   `RuntimeFailure`;
+   `RuntimeFailure` — `NEXT`;
 3. M4.6-C semantic inventory separate from existing projection coverage and
    ActionSpace authority;
 4. M4.6-D exact repeated no-gain containment for action pages and policy

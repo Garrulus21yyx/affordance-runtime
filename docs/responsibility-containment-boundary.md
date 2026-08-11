@@ -241,6 +241,30 @@ returned post acquisition and independent capture; `browsergym_backend` owns
 the pinned page/thread and read-only current-world operation. AgentLoop learns
 no task IDs and adds no backend-specific recovery branch.
 
+M4.6-A narrows BrowserGym currentness authority further. The exact owner map is:
+
+- `browsergym_semantic_profile` alone owns the current finite observable and
+  executable role algebra, semantic action, primitive, currentness state fields
+  and primitive availability requirements;
+- `browsergym_semantics` alone owns immutable canonical AX controls: computed
+  role, accessible name, typed role state, availability, owner-scoped public and
+  private select domains, public/currentness fingerprints, exact duplicate
+  removal and typed same-BID/node/owner conflict rejection;
+- `browsergym_currentness` alone performs the pure captured-versus-live
+  comparison and returns bounded adapter-local reasons;
+- `browsergym_backend` owns only owner-thread pinned observation reads,
+  frame-safe BID physical availability/native option reads and physical step;
+- `browsergym_projection` owns WorldObservation/target/fact assembly only, and
+  `browsergym_binding` owns the immutable private binding plus public-label to
+  native-value dispatch mapping.
+
+The former semantic owners were deleted: projection no longer derives the
+role/action/state/options/fingerprint algebra, binding no longer constructs a
+semantic fingerprint, backend no longer reconstructs role/name/state with a
+DOM heuristic, and whole-page option reuse is removed. No BrowserGym page,
+locator, element handle, BID, selector, native option value or private
+fingerprint crosses into public world/model facts.
+
 ## P5-M4.2 narrow owners
 
 P5-M4.2 adds three narrow owners without changing those imports:
