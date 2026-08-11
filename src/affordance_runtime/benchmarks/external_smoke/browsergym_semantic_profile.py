@@ -75,6 +75,10 @@ _ROLE_SPECS = {
         "menuitem", True, True, "activate", "click", ("expanded", "checked"),
         ("attached", "visible", "enabled"),
     ),
+    "clickable": BrowserGymRoleSpec(
+        "clickable", True, True, "activate", "click", (),
+        ("attached", "visible", "enabled"),
+    ),
     "slider": BrowserGymRoleSpec(
         "slider", True, False, "", "", ("value",), (),
     ),

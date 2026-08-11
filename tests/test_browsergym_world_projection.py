@@ -117,6 +117,24 @@ def test_structural_relations_use_only_current_public_target_ids() -> None:
     assert projected.world.bindings == ()
 
 
+def test_browsergym_clickable_generic_uses_descendant_text_without_exposing_routes() -> None:
+    raw = raw_observation(
+        ax_node("container", "generic", "", child_ids=("label",)),
+        ax_node("label", "StaticText", "Open account", parent_id="container"),
+    )
+    raw["extra_element_properties"]["container"]["clickable"] = True
+    projected = _project(raw)
+
+    clickable = next(item for item in projected.world.targets if item.role == "clickable")
+    label = next(item for item in projected.world.targets if item.role == "StaticText")
+    assert clickable.label == "Open account"
+    assert clickable.relations["child_ids"] == (label.target_id,)
+    assert len(projected.world.bindings) == 1
+    assert projected.world.bindings[0].target_id == clickable.target_id
+    assert projected.world.bindings[0].semantic_action == "activate"
+    assert "container" not in repr(projected.world)
+
+
 def test_screenshot_is_typed_media_but_never_serialized_into_public_context() -> None:
     raw = raw_observation(ax_node("button", "button", "Save"))
     raw["screenshot"] = np.zeros((3, 4, 3), dtype=np.uint8)

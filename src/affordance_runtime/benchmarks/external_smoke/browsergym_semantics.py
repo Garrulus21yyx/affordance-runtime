@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import TypeAlias
 
@@ -129,7 +129,7 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
             BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
             "observation is not a mapping",
         )
-    records = _ax_records(raw)
+    records = _normalized_records(raw, _ax_records(raw))
     physical = _physical_properties(raw)
     by_node_id: dict[str, list[_AxRecord]] = {}
     for record in records:
@@ -143,20 +143,22 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
             spec is None
             or not spec.observable
             or not record.node_id
-            or not record.bid
-            or record.bid in seen_controls
+            or (spec.executable and not record.bid)
         ):
+            continue
+        identity = record.bid or f"node:{record.node_id}"
+        if identity in seen_controls:
             continue
         same_bid = [
             item for item in records
-            if item.bid == record.bid and _is_semantic_record(item)
+            if record.bid and item.bid == record.bid and _is_semantic_record(item)
         ]
         if any(_record_signature(item) != _record_signature(record) for item in same_bid):
             raise BrowserGymSemanticError(
                 BrowserGymSemanticErrorCode.CONFLICTING_BID,
                 f"BID {record.bid!r} has conflicting AX records",
             )
-        seen_controls.add(record.bid)
+        seen_controls.add(identity)
         options = _owned_options(record, by_node_id)
         for option in options:
             identity = option.bid or option.node_id
@@ -248,6 +250,54 @@ def _ax_records(raw: dict[str, object]) -> tuple[_AxRecord, ...]:
         exact.add(signature)
         records.append(record)
     return tuple(records)
+
+
+def _normalized_records(
+    raw: dict[str, object],
+    records: tuple[_AxRecord, ...],
+) -> tuple[_AxRecord, ...]:
+    extra = raw.get("extra_element_properties")
+    extra = extra if isinstance(extra, dict) else {}
+    by_node_id = {item.node_id: item for item in records if item.node_id}
+    normalized = []
+    for record in records:
+        properties = extra.get(record.bid)
+        clickable = (
+            record.role == "generic"
+            and record.bid
+            and isinstance(properties, dict)
+            and properties.get("clickable") is True
+        )
+        if clickable:
+            normalized.append(replace(
+                record,
+                role="clickable",
+                name=_descendant_text(record, by_node_id),
+            ))
+        else:
+            normalized.append(record)
+    return tuple(normalized)
+
+
+def _descendant_text(
+    owner: _AxRecord,
+    by_node_id: dict[str, _AxRecord],
+) -> str:
+    pending = list(reversed(owner.child_ids))
+    visited: set[str] = set()
+    labels: list[str] = []
+    while pending and len(labels) < 8:
+        node_id = pending.pop()
+        if node_id in visited:
+            continue
+        visited.add(node_id)
+        record = by_node_id.get(node_id)
+        if record is None:
+            continue
+        if record.name and record.role in {"StaticText", "InlineTextBox"}:
+            labels.append(record.name)
+        pending.extend(reversed(record.child_ids))
+    return " ".join(dict.fromkeys(labels))[:MAX_SEMANTIC_TEXT]
 
 
 def _record_signature(record: _AxRecord) -> tuple[object, ...]:

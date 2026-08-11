@@ -63,3 +63,13 @@ without creating a second task or action authority.
   read-only table/list/heading/static-text relations. Targeted tests passed;
   the first full run was 2215 passed with only this new plan missing from the
   documentation lifecycle manifest, which is now corrected.
+- 2026-08-11: same-model A/B on the two inventory-v2 declared-supported cases
+  completed with valid public evidence and private raw exchanges. Text-only was
+  0/2 control repetition; screenshot+AX was 0/2 with one control repetition and
+  one provider exhaustion after one actual dispatch. The run falsified success
+  improvement but exposed a shared adapter gap: `click-link` used BrowserGym
+  `generic` nodes with `clickable=true`, producing zero actions. Added a bounded
+  normalization to public `clickable` targets with descendant text labels. A
+  fresh live reset now projects 22/22 targets, 7 actionable and 15 read-only,
+  with zero omissions. Full validation after this repair is 2218 passed and 27
+  skipped; Ruff and mypy pass. A fresh A/B remains required for this new SHA.
