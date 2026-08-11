@@ -6,6 +6,8 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
+from affordance_runtime.agent.decisions import AgentDecisionPackage
+from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
@@ -52,6 +54,7 @@ class BenchmarkInstrumentation:
     environment_reset_acquisitions: int = 0
     environment_capture_calls: int = 0
     environment_post_acquisitions: int = 0
+    policy_trace: list[dict[str, object]] = field(default_factory=list)
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
     def increment(self, name: str, value: int = 1) -> None:
@@ -99,6 +102,12 @@ class CountingPolicy:
         try:
             outcome = await self.wrapped.decide(context)
         except Exception as exc:
+            self.instrumentation.policy_trace.append(
+                _policy_trace_event(
+                    self.instrumentation.policy_calls, context, None, self.wrapped,
+                    exception=type(exc).__name__,
+                )
+            )
             self.instrumentation.record_failure(CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc)
             raise
         metadata = getattr(self.wrapped, "last_metadata", None)
@@ -108,7 +117,197 @@ class CountingPolicy:
             self.instrumentation.completion_tokens += metadata.completion_tokens
             self.instrumentation.total_tokens += metadata.total_tokens
             self.instrumentation.model_latency_ms += metadata.latency_ms
+        self.instrumentation.policy_trace.append(
+            _policy_trace_event(
+                self.instrumentation.policy_calls, context, outcome, self.wrapped,
+            )
+        )
         return outcome
+
+
+def _policy_trace_event(call: int, context, outcome, policy, *, exception: str = ""):
+    frontier = context.progress.task_frontier
+    feedback = context.control_feedback
+    event: dict[str, object] = {
+        "policy_call": call,
+        "context_id": context.context_id,
+        "decision_mode": str(context.decision_mode),
+        "visible_action_count": len(context.actions.options),
+        "frontier": _frontier_trace(frontier),
+        "feedback": (
+            {
+                "kind": feedback.kind,
+                "source": feedback.source,
+                "code": feedback.code,
+                "strategy_change_required": feedback.strategy_transition_required,
+            }
+            if feedback is not None else None
+        ),
+        "provider_attempts": tuple(
+            {
+                "attempt_number": item.attempt_number,
+                "profile_index": item.profile_index,
+                "status": item.status.value,
+                "failure_kind": item.failure_kind.value if item.failure_kind is not None else "",
+                "failure_code": item.failure_code.value if item.failure_code is not None else "",
+                "scheduled_delay_s": item.scheduled_delay_s,
+                "response_id": item.response_id,
+            }
+            for item in getattr(policy, "last_provider_attempts", ())
+        ),
+        "exception": exception,
+    }
+    if isinstance(outcome, AgentDecisionPackage):
+        event["outcome"] = "decision_package"
+        event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
+        event["decision"] = _decision_trace(outcome.decision)
+    elif isinstance(outcome, PolicyFailure):
+        event["outcome"] = "policy_failure"
+        event["policy_failure"] = {
+            "kind": str(outcome.kind),
+            "retryable": outcome.retryable,
+        }
+    else:
+        event["outcome"] = "exception" if exception else type(outcome).__name__
+    return event
+
+
+def _frontier_trace(frontier):
+    if frontier is None:
+        return None
+    active = frontier.active_objective
+    return {
+        "current_frontier": frontier.current_frontier,
+        "active_objective_id": active.objective_id if active is not None else "",
+        "active_predicate_kind": (
+            str(active.predicate.get("kind", "")) if active is not None else ""
+        ),
+        "recent_checkpoints": tuple(
+            {
+                "objective_id": item.objective_id,
+                "status": item.status,
+                "predicate_kind": str(item.predicate.get("kind", "")),
+            }
+            for item in frontier.recent_checkpoints
+        ),
+        "next_objective_required": frontier.next_objective_required,
+        "must_advance_from_objective_id": frontier.must_advance_from_objective_id,
+        "strategy_change_required": frontier.strategy_change_required,
+    }
+
+
+def _objective_operation_trace(operation):
+    value: dict[str, object] = {"kind": operation.kind.value}
+    for name in (
+        "active_objective_id", "replaces_objective_id", "intended_requirement_ids",
+    ):
+        if hasattr(operation, name):
+            value[name] = getattr(operation, name)
+    predicate = getattr(operation, "predicate", None)
+    if predicate is not None:
+        value["predicate"] = _predicate_trace(predicate)
+    return value
+
+
+def _predicate_trace(predicate):
+    value: dict[str, object] = {"kind": predicate.kind.value}
+    for name in ("fact_ref", "target_id", "field_name", "status"):
+        item = getattr(predicate, name, None)
+        if item is not None:
+            value[name] = item.value if hasattr(item, "value") else item
+    expected = getattr(predicate, "expected", None)
+    if expected is not None:
+        value["expected_kind"] = type(expected).__name__
+        if hasattr(expected, "fact_ref"):
+            value["expected_fact_ref"] = expected.fact_ref
+    return value
+
+
+def _decision_trace(decision):
+    value: dict[str, object] = {"kind": type(decision).__name__, "context_id": decision.context_id}
+    for name in (
+        "action_id", "destination_id", "subject_id", "modality", "relevance_role",
+        "cursor", "category",
+    ):
+        item = getattr(decision, name, None)
+        if item not in (None, ""):
+            value[name] = item.value if hasattr(item, "value") else item
+    return value
+
+
+def finalize_policy_trace(instrumentation: BenchmarkInstrumentation, result) -> None:
+    """Join harness policy exchanges to typed Runtime transitions without changing authority."""
+
+    transitions = {
+        item.decision.context_id: item
+        for item in getattr(result, "control_transitions", ())
+    }
+    finalized: list[dict[str, object]] = []
+    for raw in instrumentation.policy_trace:
+        item = dict(raw)
+        transition = transitions.get(str(item.get("context_id") or ""))
+        if transition is not None:
+            item["runtime_transition"] = _runtime_transition_trace(transition)
+        finalized.append(item)
+    instrumentation.policy_trace = finalized
+
+
+def _runtime_transition_trace(transition):
+    feedback = transition.control_feedback
+    intent = transition.intent
+    action = transition.action_evaluation
+    task = transition.task_evaluation
+    return {
+        "transition_id": transition.transition_id,
+        "sequence": transition.sequence,
+        "admission_status": (
+            transition.admission.status.value if transition.admission is not None else ""
+        ),
+        "admission_reason_code": (
+            transition.admission.reason_code if transition.admission is not None else ""
+        ),
+        "dispatch_status": (
+            transition.execution.dispatch_status.value if transition.execution is not None else ""
+        ),
+        "semantic_action": intent.semantic_action if intent is not None else "",
+        "target_id": intent.target_id if intent is not None else "",
+        "destination_id": intent.destination_id if intent is not None else "",
+        "action_evaluation_status": action.status.value if action is not None else "",
+        "action_evidence_fields": (
+            tuple(sorted(str(name) for name in action.evidence)) if action is not None else ()
+        ),
+        "task_evaluation_status": task.status.value if task is not None else "",
+        "task_outcome_kind": (
+            task.outcome.kind.value if task is not None and task.outcome is not None else ""
+        ),
+        "task_outcome_code": (
+            task.outcome.code if task is not None and task.outcome is not None else ""
+        ),
+        "resulting_status": str(transition.resulting_status or ""),
+        "reason_code": transition.reason_code,
+        "feedback": _runtime_feedback_trace(feedback),
+    }
+
+
+def _runtime_feedback_trace(feedback):
+    if feedback is None:
+        return None
+    return {
+        "kind": feedback.kind.value,
+        "source": feedback.source.value,
+        "code": feedback.code,
+        "violation_owner": (
+            feedback.violation.contract_owner if feedback.violation is not None else ""
+        ),
+        "violation_code": feedback.violation.code if feedback.violation is not None else "",
+        "retry_allowed": (
+            feedback.recovery.retry_allowed if feedback.recovery is not None else False
+        ),
+        "strategy_change_required": (
+            feedback.recovery.strategy_change_required
+            if feedback.recovery is not None else False
+        ),
+    }
 
 
 @dataclass

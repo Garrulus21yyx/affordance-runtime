@@ -15,6 +15,11 @@ from typing import Any, Mapping, Protocol, Sequence, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from affordance_runtime.model_capture import (
+    PrivateModelCapture,
+    private_capture_from_environment,
+)
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -187,6 +192,7 @@ class OpenAICompatibleModelPort:
     model: str = "mistral-large-3"
     provider: str = "openai-compatible"
     endpoint_class: str = "remote"
+    private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
     circuit_failure_kind: ProviderFailureKind | None = field(default=None, init=False)
@@ -237,6 +243,7 @@ class OpenAICompatibleModelPort:
                 transient_backoff_s=config.transient_backoff_s,
             )
         except ProviderModelError as exc:
+            self._capture(messages, output_schema, "provider_failure", error=exc.kind.value)
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
@@ -248,6 +255,14 @@ class OpenAICompatibleModelPort:
                 )
             parsed = output_schema.model_validate_json(_structured_json_content(content))
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._capture(
+                messages,
+                output_schema,
+                "schema_error",
+                response_content=locals().get("content"),
+                response_id=str(response.get("id") or ""),
+                error=_schema_failure_summary(exc),
+            )
             raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
             ) from exc
@@ -269,7 +284,36 @@ class OpenAICompatibleModelPort:
             rate_limit_retry_count=rate_limit_retry_count,
             transient_retry_count=transient_retry_count,
         )
+        self._capture(
+            messages,
+            output_schema,
+            "accepted",
+            response_content=content,
+            response_id=str(response.get("id") or ""),
+        )
         return parsed
+
+    def _capture(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[BaseModel],
+        status: str,
+        *,
+        response_content: object | None = None,
+        response_id: str = "",
+        error: str = "",
+    ) -> None:
+        if self.private_capture is not None:
+            self.private_capture.record(
+                provider=self.provider,
+                model=self.model,
+                schema_name=output_schema.__name__,
+                messages=messages,
+                status=status,
+                response_content=response_content,
+                response_id=response_id,
+                error=error,
+            )
 
 
 @dataclass
@@ -278,6 +322,7 @@ class OllamaModelPort:
     base_url: str = "http://127.0.0.1:11434"
     provider: str = "ollama"
     endpoint_class: str = "local"
+    private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
     circuit_failure_kind: ProviderFailureKind | None = field(default=None, init=False)
@@ -323,12 +368,21 @@ class OllamaModelPort:
                 transient_backoff_s=config.transient_backoff_s,
             )
         except ProviderModelError as exc:
+            self._capture(messages, output_schema, "provider_failure", error=exc.kind.value)
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
         try:
-            parsed = output_schema.model_validate_json(str(response["message"]["content"]))
+            content = str(response["message"]["content"])
+            parsed = output_schema.model_validate_json(content)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._capture(
+                messages,
+                output_schema,
+                "schema_error",
+                response_content=locals().get("content"),
+                error=_schema_failure_summary(exc),
+            )
             raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
             ) from exc
@@ -348,7 +402,28 @@ class OllamaModelPort:
             rate_limit_retry_count=rate_limit_retry_count,
             transient_retry_count=transient_retry_count,
         )
+        self._capture(messages, output_schema, "accepted", response_content=content)
         return parsed
+
+    def _capture(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[BaseModel],
+        status: str,
+        *,
+        response_content: object | None = None,
+        error: str = "",
+    ) -> None:
+        if self.private_capture is not None:
+            self.private_capture.record(
+                provider=self.provider,
+                model=self.model,
+                schema_name=output_schema.__name__,
+                messages=messages,
+                status=status,
+                response_content=response_content,
+                error=error,
+            )
 
 
 def model_port_from_environment(environment: Mapping[str, str] | None = None) -> ModelPort:
@@ -359,9 +434,10 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
     """
 
     env = os.environ if environment is None else environment
+    private_capture = private_capture_from_environment(env)
     active_profile = env.get("LLM_ACTIVE_PROFILE", "local").strip().lower()
     if active_profile == "local":
-        return _local_model_port(env)
+        return _local_model_port(env, private_capture)
     if active_profile not in {"mistral", "gemini", "zhipu"}:
         raise ValueError(f"unsupported LLM_ACTIVE_PROFILE: {active_profile}")
     if active_profile == "mistral":
@@ -371,6 +447,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             model=_required_env(env, "LLM_MISTRAL_MODEL"),
             provider="mistral",
             endpoint_class="remote",
+            private_capture=private_capture,
         )
     elif active_profile == "gemini":
         remote = OpenAICompatibleModelPort(
@@ -379,6 +456,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             model=_required_env(env, "LLM_GEMINI_MODEL"),
             provider="gemini",
             endpoint_class="remote",
+            private_capture=private_capture,
         )
     else:
         remote = OpenAICompatibleModelPort(
@@ -387,18 +465,26 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             model=_required_env(env, "LLM_ZHIPU_MODEL"),
             provider="zhipu",
             endpoint_class="remote",
+            private_capture=private_capture,
         )
     if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
-        return FallbackModelPort((remote, _local_model_port(env)))
+        return FallbackModelPort((remote, _local_model_port(env, private_capture)))
     return remote
 
 
-def _local_model_port(env: Mapping[str, str]) -> ModelPort:
+def _local_model_port(
+    env: Mapping[str, str],
+    private_capture: PrivateModelCapture | None = None,
+) -> ModelPort:
     provider = env.get("LLM_LOCAL_PROVIDER", "ollama").strip().lower().replace("-", "_")
     base_url = env.get("LLM_LOCAL_BASE_URL", "http://127.0.0.1:11434").strip()
     model = (env.get("LLM_LOCAL_MODEL_ID") or env.get("LLM_LOCAL_MODEL") or "qwen2.5:7b").strip()
     if provider == "ollama":
-        return OllamaModelPort(model=model, base_url=base_url.removesuffix("/v1"))
+        return OllamaModelPort(
+            model=model,
+            base_url=base_url.removesuffix("/v1"),
+            private_capture=private_capture,
+        )
     if provider == "openai_compatible":
         return OpenAICompatibleModelPort(
             base_url=base_url,
@@ -406,6 +492,7 @@ def _local_model_port(env: Mapping[str, str]) -> ModelPort:
             model=model,
             provider="ollama-openai-compatible",
             endpoint_class="local",
+            private_capture=private_capture,
         )
     raise ValueError(f"unsupported LLM_LOCAL_PROVIDER: {provider}")
 

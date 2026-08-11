@@ -188,6 +188,7 @@ async def run_policy_turn(
             state,
             action_space,
             page,
+            decision=decision if isinstance(decision, SelectAction) else None,
             operation=package.objective_operation,
             issue=objective_admission.issue,
         )

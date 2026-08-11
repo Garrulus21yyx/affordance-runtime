@@ -293,6 +293,7 @@ def objective_repair_feedback(
     action_space: ActionSpace,
     page: InternalActionPage,
     *,
+    decision: SelectAction | None,
     operation: ObjectiveOperation,
     issue: ObjectiveAdmissionIssue,
 ) -> ControlFeedback:
@@ -314,6 +315,7 @@ def objective_repair_feedback(
     )
     proposal = operation if isinstance(operation, ProposeObjective | ReplaceObjective) else None
     already_satisfied = issue.code.value == "objective_already_satisfied"
+    option = action_space.find(decision.action_id) if decision is not None else None
     return ControlFeedback(
         ControlFeedbackKind.REPAIRABLE_REJECTION,
         issue.code.value,
@@ -333,6 +335,11 @@ def objective_repair_feedback(
             else "",
             proposal.intended_requirement_ids if proposal is not None else (),
             predicate_public_value(proposal.predicate) if proposal is not None else {},
+        ),
+        related_decision=(
+            _selection_snapshot(decision, option.target_id if option is not None else None)
+            if decision is not None
+            else None
         ),
         violation=ContractViolationSnapshot(
             "task_frontier",

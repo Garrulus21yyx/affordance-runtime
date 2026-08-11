@@ -200,7 +200,7 @@ def _derived_metrics(result):
     return replace(result, measurements=values)
 
 
-def _record(case, result) -> MiniWobBreadthCaseRecord:
+def _record(case, result, instrumentation=None) -> MiniWobBreadthCaseRecord:
     classified = classify_case(result)
     return MiniWobBreadthCaseRecord(
         case.case_id,
@@ -210,6 +210,9 @@ def _record(case, result) -> MiniWobBreadthCaseRecord:
         classified.outcome,
         classified.source,
         result,
+        tuple(
+            dict(item) for item in getattr(instrumentation, "policy_trace", ())
+        ),
     )
 
 

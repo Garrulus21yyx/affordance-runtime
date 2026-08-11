@@ -29,6 +29,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingActionEvaluator,
     CountingEnvironment,
+    finalize_policy_trace,
     instrument_policy,
     instrument_task_evaluator,
 )
@@ -151,6 +152,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
     if session is not None:
         snapshot = session.snapshot_partial_episode()
     elapsed = (time.perf_counter() - started) * 1000
+    finalize_policy_trace(instrumentation, result)
     return project_case_result(
         case.case_id,
         result,

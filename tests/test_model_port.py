@@ -1,5 +1,6 @@
 import asyncio
 import json
+import stat
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Sequence, TypeVar
@@ -7,6 +8,7 @@ from typing import Any, Sequence, TypeVar
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from affordance_runtime.model_capture import PrivateModelCapture
 from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelConfig,
@@ -16,6 +18,7 @@ from affordance_runtime.model_port import (
     ProviderFailureKind,
     ProviderModelError,
     StructuredModelError,
+    StructuredOutputError,
     model_port_from_environment,
 )
 
@@ -114,6 +117,65 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
     assert port.last_call is not None
     assert port.last_call.provider == "openai-compatible"
     assert port.last_call.total_tokens == 11
+
+
+def test_private_capture_preserves_exact_accepted_exchange_outside_public_evidence(
+    tmp_path,
+) -> None:
+    server, thread, _ = _serve({
+        "id": "response-private",
+        "choices": [{"message": {"content": '{"value":"exact"}'}}],
+        "usage": {},
+    })
+    capture = PrivateModelCapture(tmp_path / "private")
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="remote-test",
+            private_capture=capture,
+        )
+        asyncio.run(port.generate_structured(
+            [ModelMessage(role="user", content="exact prompt")], Answer, ModelConfig(),
+        ))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    record = json.loads(capture.path.read_text(encoding="utf-8"))
+    assert record["status"] == "accepted"
+    assert record["request_messages"][0]["content"] == "exact prompt"
+    assert record["response_content"] == '{"value":"exact"}'
+    assert record["response_id"] == "response-private"
+    assert stat.S_IMODE(capture.path.stat().st_mode) == 0o600
+
+
+def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> None:
+    server, thread, _ = _serve({
+        "id": "response-invalid",
+        "choices": [{"message": {"content": '{"wrong":true}'}}],
+        "usage": {},
+    })
+    capture = PrivateModelCapture(tmp_path / "private")
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="remote-test",
+            private_capture=capture,
+        )
+        with pytest.raises(StructuredOutputError):
+            asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    record = json.loads(capture.path.read_text(encoding="utf-8"))
+    assert record["status"] == "schema_error"
+    assert record["response_content"] == '{"wrong":true}'
+    assert record["error"]
 
 
 def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> None:

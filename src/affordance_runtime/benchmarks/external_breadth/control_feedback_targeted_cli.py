@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("--min-policy-call-interval-s", type=float, required=True)
     parser.add_argument("--implementation-sha", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--private-capture-dir", type=Path)
     parser.add_argument("--validate-existing", type=Path)
     args = parser.parse_args()
     if args.validate_existing is not None:
@@ -51,9 +52,23 @@ def main() -> int:
         errors.append("control-feedback pacing must match the frozen source profile")
     if args.output_dir.exists():
         errors.append("control-feedback output directory must be new")
+    if args.private_capture_dir is not None:
+        output = args.output_dir.resolve()
+        private = args.private_capture_dir.resolve()
+        if private == output or output in private.parents or private in output.parents:
+            errors.append("private model capture must be outside the public evidence tree")
+        if private.exists() and any(private.iterdir()):
+            errors.append("private model capture directory must be new or empty")
     if errors:
         return 1
+    policy_environment = dict(os.environ)
+    if args.private_capture_dir is not None:
+        policy_environment["LLM_ENABLE_PRIVATE_MODEL_CAPTURE"] = "true"
+        policy_environment["LLM_PRIVATE_MODEL_CAPTURE_DIR"] = str(
+            args.private_capture_dir.resolve()
+        )
     policy = model_policy_from_environment(
+        policy_environment,
         grounding_variant="format-only", provider_recovery=True,
     )
     outcome = asyncio.run(run_control_feedback_targeted_diagnostic(

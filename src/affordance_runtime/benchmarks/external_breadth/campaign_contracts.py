@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -120,6 +121,7 @@ class MiniWobBreadthCaseRecord:
     outcome: MiniWobTaskOutcome
     classification_source: str
     result: BenchmarkCaseResult
+    diagnostic_trace: tuple[Mapping[str, object], ...] = ()
 
 
 @dataclass(frozen=True)

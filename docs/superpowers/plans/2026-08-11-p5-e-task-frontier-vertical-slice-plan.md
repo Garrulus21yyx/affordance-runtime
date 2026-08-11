@@ -32,8 +32,9 @@ Constraints:
 | 4 | done | Implement atomic package admission and state commit with zero-dispatch/no-half-install failure semantics. | decision control, loop state, objective admission feedback |
 | 5 | done | Implement verifier-driven objective lifecycle and task frontier projection after authoritative observation/evaluation updates. | `agent/frontier_control.py`, execution/observation/top-loop audit paths |
 | 6 | done | Add focused invariant, privacy and runtime tests, including copy-paste-style fill-to-next-frontier behavior. | `tests/test_task_frontier_vertical_slice.py` and migrated schema/projection tests |
-| 7 | done | Run Ruff, mypy, full pytest and resolve regressions. | Ruff and mypy passed; full pytest 2208 passed, 27 skipped |
-| 8 | in_progress | Run an honest targeted benchmark only after the vertical slice is stable, using a new immutable identity and without imposing a circular pre-implementation success threshold. | clean implementation commit and fresh evidence pending |
+| 7 | done | Run Ruff, mypy, full pytest and resolve regressions. | Ruff and mypy passed; full pytest 2209 passed, 27 skipped |
+| 8 | done | Run an honest targeted benchmark only after the vertical slice is stable, using a new immutable identity and without imposing a circular pre-implementation success threshold. | two clean-SHA runs completed; neither supports a performance claim |
+| 9 | in_progress | Add dual-track diagnostics before another benchmark: public typed policy/Runtime trace plus explicit private exact model exchange capture outside the evidence tree. | model transport, benchmark instrumentation/reporting, CLI and tests |
 
 ## Exit criteria
 
@@ -91,3 +92,17 @@ Constraints:
   showed the model creating and advancing multiple verified objectives instead
   of immediately repeating the first fill; that diagnostic ended in provider
   exhaustion and is not benchmark evidence. A new clean-SHA run remains due.
+- 2026-08-11: second clean-SHA run
+  `miniwob-control-feedback-25:acba7153dd1746e2ac8734225122d690`
+  completed 25/25 with zero successes: 18 control repetitions, five task
+  failures, one provider exhaustion and one structured-output failure. Evidence
+  acceptance was false because objective-admission feedback omitted the related
+  same-package action snapshot for the frozen direct-repair witness. The run
+  also exposed that aggregate-only reports discard the objective rejection code
+  and provider-invalid response needed for causal diagnosis.
+- 2026-08-11: dual-track diagnostic implementation started. Public case reports
+  now receive bounded per-policy-call frontier, objective operation, decision,
+  provider-attempt and matched Runtime transition facts. Exact request messages
+  and provider response content are captured only through explicit opt-in to a
+  separate mode-0700 directory with a mode-0600 JSONL file; this private artifact
+  is never placed under or scanned as public evidence.

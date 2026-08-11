@@ -315,6 +315,10 @@ class _InvalidObjectivePolicy:
         assert feedback.violation.contract_owner == "task_frontier"
         assert feedback.violation.code == "unknown_objective_requirement"
         assert feedback.related_objective_operation.kind == "propose"
+        assert feedback.related_decision is not None
+        assert feedback.related_decision.kind == "select_action"
+        assert feedback.related_decision.action_id
+        assert feedback.related_decision.target_id == "target:text"
         return AgentDecisionPackage(
             NoObjectiveOperation(),
             Abort(context.context_id, "fixture complete", "policy"),

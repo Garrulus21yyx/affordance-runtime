@@ -106,6 +106,11 @@ def test_control_feedback_evidence_validator_redecodes_and_detects_tamper(tmp_pa
     write_targeted_evidence(outcome, output)
 
     assert validate_targeted_evidence(output) == ()
+    first_case = json.loads(
+        (output / "cases" / "miniwob-60-02.json").read_text(encoding="utf-8")
+    )
+    assert first_case["policy_trace"][0]["outcome"] == "decision_package"
+    assert "diagnostic_trace" not in first_case["benchmark_case_evidence"]
 
     case_path = output / "cases" / "miniwob-60-37.json"
     payload = json.loads(case_path.read_text())
@@ -153,6 +158,11 @@ def _outcome() -> MiniWobBreadthCampaignOutcome:
             MiniWobTaskOutcome.SUCCESS,
             "canonical_task_outcome",
             result,
+            ({
+                "policy_call": 1,
+                "context_id": "context:" + "a" * 64,
+                "outcome": "decision_package",
+            },),
         )
         for result in results
     )

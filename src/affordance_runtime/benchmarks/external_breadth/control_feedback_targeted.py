@@ -159,8 +159,10 @@ async def run_control_feedback_targeted_diagnostic(
         _targeted_derived_metrics(item) for item in suite.cases
     ))
     records = tuple(
-        _record(case, result)
-        for case, result in zip(manifest.cases, suite.cases, strict=True)
+        _record(case, result, instrumentation)
+        for case, result, instrumentation in zip(
+            manifest.cases, suite.cases, instrumentations, strict=True,
+        )
     )
     provider, model, grounding = _model_identity(instrumentations, configured_identity)
     final_sha, final_dirty = _final_git_identity()
@@ -224,6 +226,7 @@ def write_targeted_evidence(
             "typed_outcome": record.outcome.value,
             "classification_source": record.classification_source,
             "feedback_metrics": metrics,
+            "policy_trace": record.diagnostic_trace,
             "policy_calls": _metric(record.result, "policy_calls"),
             "provider_attempts": _metric(record.result, "provider_attempts"),
             "prompt_tokens": _metric(record.result, "prompt_tokens"),
