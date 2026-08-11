@@ -118,6 +118,9 @@ class AgentTaskFrontierView:
     active_objective: AgentObjectiveView | None
     recent_checkpoints: tuple[AgentObjectiveCheckpointView, ...]
     verified_fact_refs: tuple[str, ...]
+    next_objective_required: bool
+    must_advance_from_objective_id: str
+    strategy_change_required: bool
 
 
 @dataclass(frozen=True)

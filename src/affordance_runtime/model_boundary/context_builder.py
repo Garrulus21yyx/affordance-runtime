@@ -288,6 +288,13 @@ def _task_frontier_view(state) -> AgentTaskFrontierView | None:
         if isinstance(active, ActiveObjective)
         else None
     )
+    latest = verified.objective_checkpoints[-1] if verified.objective_checkpoints else None
+    must_advance = bool(
+        active_view is None
+        and verified.current_frontier
+        and latest is not None
+        and latest.status.value == "verified"
+    )
     return AgentTaskFrontierView(
         tuple(
             AgentRequirementStateView(
@@ -309,6 +316,9 @@ def _task_frontier_view(state) -> AgentTaskFrontierView | None:
             for item in verified.objective_checkpoints[-8:]
         ),
         tuple(item.fact_ref for item in verified.values[-16:]),
+        must_advance,
+        latest.objective_id if must_advance and latest is not None else "",
+        must_advance,
     )
 
 

@@ -13,7 +13,9 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.task.frontier import (
+    TASK_OUTCOME_REQUIREMENT_ID,
     ObjectiveVerificationDisposition,
+    synchronize_verified_task_state,
     verify_active_objective,
 )
 from affordance_runtime.task.frontier_contracts import (
@@ -178,6 +180,9 @@ class _FrontierPolicy:
         frontier = context.progress.task_frontier
         assert frontier.active_objective is None
         assert frontier.recent_checkpoints[-1].status == "verified"
+        assert frontier.next_objective_required is True
+        assert frontier.must_advance_from_objective_id == "objective:1"
+        assert frontier.strategy_change_required is True
         option = next(item for item in context.actions.options if item.semantic_action == "activate")
         return AgentDecisionPackage(
             ProposeObjective(
@@ -332,3 +337,24 @@ def test_invalid_objective_returns_typed_feedback_and_dispatches_zero() -> None:
         assert session.state.control_feedback_delivery_total_count == 1
 
     asyncio.run(scenario())
+
+
+def test_outcome_only_task_gets_one_runtime_owned_frontier_requirement() -> None:
+    task = TaskGoal("task:outcome-only", "Complete the external task")
+    observation = _world("observation:outcome-only", "", False)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        observation.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "external verifier reports running",
+    )
+
+    state = synchronize_verified_task_state(task, evaluation, observation, None)
+
+    assert state.current_frontier == (TASK_OUTCOME_REQUIREMENT_ID,)
+    assert state.requirements == (
+        VerifiedRequirement(
+            TASK_OUTCOME_REQUIREMENT_ID,
+            CriterionEvaluationStatus.UNSATISFIED,
+        ),
+    )

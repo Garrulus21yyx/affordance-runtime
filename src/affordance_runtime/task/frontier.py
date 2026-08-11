@@ -8,6 +8,7 @@ from enum import StrEnum
 from affordance_runtime.evaluation.contracts import (
     CriterionEvaluationStatus,
     TaskEvaluation,
+    TaskEvaluationStatus,
 )
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.frontier_contracts import (
@@ -33,6 +34,8 @@ from affordance_runtime.task.frontier_contracts import (
 )
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_fact_ref
+
+TASK_OUTCOME_REQUIREMENT_ID = "requirement:task_outcome"
 
 
 class ObjectiveAdmissionCode(StrEnum):
@@ -95,12 +98,23 @@ def synchronize_verified_task_state(
 
     evaluated = {item.criterion_id: item for item in evaluation.criteria}
     requirements_list = []
-    for requirement_id in (criterion_id(item) for item in task.success_criteria):
-        item = evaluated.get(requirement_id)
+    if task.success_criteria:
+        for requirement_id in (criterion_id(item) for item in task.success_criteria):
+            item = evaluated.get(requirement_id)
+            requirements_list.append(VerifiedRequirement(
+                requirement_id,
+                item.status if item is not None else CriterionEvaluationStatus.UNKNOWN,
+                item.evidence_refs if item is not None else (),
+            ))
+    else:
         requirements_list.append(VerifiedRequirement(
-            requirement_id,
-            item.status if item is not None else CriterionEvaluationStatus.UNKNOWN,
-            item.evidence_refs if item is not None else (),
+            TASK_OUTCOME_REQUIREMENT_ID,
+            _outcome_requirement_status(evaluation.status),
+            (
+                evaluation.outcome.evidence_refs
+                if evaluation.outcome is not None
+                else evaluation.completion_evidence_refs
+            ),
         ))
     requirements = tuple(requirements_list)
     frontier = tuple(
@@ -383,6 +397,17 @@ def _verification(
 
 
 _MISSING = object()
+
+
+def _outcome_requirement_status(
+    status: TaskEvaluationStatus,
+) -> CriterionEvaluationStatus:
+    return {
+        TaskEvaluationStatus.COMPLETE: CriterionEvaluationStatus.SATISFIED,
+        TaskEvaluationStatus.INCOMPLETE: CriterionEvaluationStatus.UNSATISFIED,
+        TaskEvaluationStatus.UNKNOWN: CriterionEvaluationStatus.UNKNOWN,
+        TaskEvaluationStatus.BLOCKED: CriterionEvaluationStatus.BLOCKED,
+    }[status]
 
 
 def _expected_value(expected, state):

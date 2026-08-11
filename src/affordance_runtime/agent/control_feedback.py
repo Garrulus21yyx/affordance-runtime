@@ -313,6 +313,7 @@ def objective_repair_feedback(
         public_field_paths=issue.field_paths,
     )
     proposal = operation if isinstance(operation, ProposeObjective | ReplaceObjective) else None
+    already_satisfied = issue.code.value == "objective_already_satisfied"
     return ControlFeedback(
         ControlFeedbackKind.REPAIRABLE_REJECTION,
         issue.code.value,
@@ -343,7 +344,8 @@ def objective_repair_feedback(
         recovery=RecoveryConstraints(
             must_change_fields=issue.field_paths,
             repeat_previous_decision_allowed=False,
-            retry_allowed=True,
+            retry_allowed=not already_satisfied,
+            strategy_change_required=already_satisfied,
             offered_action_ids=page.visible_action_ids,
         ),
     )

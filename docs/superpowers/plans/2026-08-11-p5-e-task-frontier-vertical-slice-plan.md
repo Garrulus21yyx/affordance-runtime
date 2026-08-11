@@ -76,3 +76,18 @@ Constraints:
 - 2026-08-11: Ruff, mypy and full pytest passed (2208 passed, 27 skipped).
   Benchmark execution remains separate from implementation completion and has
   not yet supplied held-out closure evidence.
+- 2026-08-11: first clean-SHA benchmark run
+  `miniwob-control-feedback-25:3a2c917624da468dad895033ca6e41de`
+  completed 25/25 with valid evidence but zero successes: 21 control
+  repetitions, one ordinary repetition and three task failures. A fresh
+  `copy-paste-2` capture showed the shared cause: BrowserGym tasks use an
+  outcome-only TaskGoal with no explicit criteria, so the first implementation
+  exposed an empty requirement frontier and rejected a semantically concrete
+  objective as `unknown_objective_requirement`.
+- 2026-08-11: added one Runtime-owned `requirement:task_outcome` for exactly the
+  no-explicit-criteria profile, with state derived only from TaskEvaluation.
+  Also projected a mechanical next-objective constraint after a verified
+  checkpoint while task outcome remains incomplete. A fresh diagnostic then
+  showed the model creating and advancing multiple verified objectives instead
+  of immediately repeating the first fill; that diagnostic ended in provider
+  exhaustion and is not benchmark evidence. A new clean-SHA run remains due.
