@@ -10,6 +10,7 @@ from affordance_runtime.agent.control_feedback import (
     ControlFeedbackSource,
     current_semantic_scope,
     no_gain_feedback,
+    objective_repair_feedback,
     repair_feedback,
     route_feedback,
 )
@@ -27,14 +28,17 @@ from affordance_runtime.agent.control_transition import (
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
+    AgentDecisionPackage,
     AskUser,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
     Wait,
+    package_decision,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
+from affordance_runtime.agent.frontier_control import audit_task_frontier
 from affordance_runtime.agent.observation_control import (
     capture_admission_failure,
     capture_for_session,
@@ -49,6 +53,12 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task.contracts import criterion_id
+from affordance_runtime.task.frontier import (
+    PreparedObjectiveOperation,
+    prepare_objective_operation,
+    synchronize_verified_task_state,
+)
+from affordance_runtime.task.frontier_contracts import ActiveObjective
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     ObservationRequestKind,
@@ -65,7 +75,13 @@ from affordance_runtime.world.public_semantic_digest import (
 )
 
 SelectionExecutor = Callable[
-    [AgentRunSession, ActionSpace, SelectAction, ControlTransitionScope],
+    [
+        AgentRunSession,
+        ActionSpace,
+        SelectAction,
+        PreparedObjectiveOperation,
+        ControlTransitionScope,
+    ],
     Awaitable[LoopDirective],
 ]
 
@@ -140,10 +156,45 @@ async def run_policy_turn(
             outcome.reason,
             policy_failure=outcome,
         )
-    decision = outcome
+    package = outcome if isinstance(outcome, AgentDecisionPackage) else package_decision(outcome)
+    decision = package.decision
     if not accept_current_decision(session, decision):
         return Continue("stale_decision")
     scope = ControlTransitionScope(state, decision)
+    verified = state.verified_task_state or synchronize_verified_task_state(
+        task, task_evaluation, state.current_observation, None,
+    )
+    state.install_verified_task_state(verified)
+    objective_admission = prepare_objective_operation(
+        package.objective_operation,
+        state=verified,
+        active=(
+            state.active_objective
+            if isinstance(state.active_objective, ActiveObjective)
+            else None
+        ),
+        observation=state.current_observation,
+        evaluation=task_evaluation,
+        context_id=context.context_id,
+        next_sequence=state.objective_sequence + 1,
+    )
+    if objective_admission.issue is not None:
+        if isinstance(decision, SelectAction):
+            scope.record_admission(
+                AdmissionStatus.REJECTED, objective_admission.issue.code.value,
+            )
+        page = session.current_action_page or context_builder.page(action_space, state)
+        feedback = objective_repair_feedback(
+            state,
+            action_space,
+            page,
+            operation=package.objective_operation,
+            issue=objective_admission.issue,
+        )
+        rejected = route_feedback(state, scope, feedback)
+        scope.finalize(state, rejected)
+        return rejected
+    assert objective_admission.prepared is not None
     try:
         routed = await _route_decision(
             session,
@@ -156,6 +207,7 @@ async def run_policy_turn(
             scope,
             action_space_builder,
             task_evaluation,
+            objective_admission.prepared,
         )
     except asyncio.CancelledError:
         scope.set_reason("runtime_cancelled")
@@ -182,8 +234,11 @@ async def _route_decision(
     scope,
     action_space_builder,
     task_evaluation,
+    prepared_objective,
 ) -> LoopDirective:
     state = session.state
+    if not isinstance(decision, SelectAction):
+        state.commit_objective_operation(prepared_objective)
     if isinstance(decision, AskUser):
         scope.set_reason("user_input_requested")
         state.set_pending_question(decision.question)
@@ -220,7 +275,9 @@ async def _route_decision(
             issue=issue,
         )
         return route_feedback(state, scope, feedback)
-    return await execute_selection(session, action_space, decision, scope)
+    return await execute_selection(
+        session, action_space, decision, prepared_objective, scope,
+    )
 
 
 async def _policy_observation(
@@ -271,6 +328,7 @@ async def _policy_observation(
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     state.current_task_evaluation = evaluation
+    audit_task_frontier(session, evaluation)
     scope.record_evaluations(task=evaluation)
     disposition = task_evaluation_disposition(evaluation)
     if disposition.status is not None:

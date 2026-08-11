@@ -22,6 +22,7 @@ from affordance_runtime.agent.evaluation_control import (
     validated_action_evaluation,
     validated_task_evaluation,
 )
+from affordance_runtime.agent.frontier_control import audit_task_frontier
 from affordance_runtime.agent.observation_control import (
     capture_for_session,
     no_fresh_after_result,
@@ -198,6 +199,11 @@ async def _evaluate_after(
         raise
     scope.record_evaluations(task=task_evaluation)
     state.current_task_evaluation = task_evaluation
+    audit_task_frontier(
+        session,
+        task_evaluation,
+        evidence_refs=action_evaluation.evidence_refs,
+    )
     progress_event = record_execution_progress(
         session, selection, action_evaluation, after, task_evaluation,
     )

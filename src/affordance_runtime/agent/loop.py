@@ -29,6 +29,7 @@ from affordance_runtime.agent.decision_control import ensure_current_action_page
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
+from affordance_runtime.agent.frontier_control import audit_task_frontier
 from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
@@ -51,6 +52,7 @@ from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.risk.validation import validate_risk_assessment
 from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.task.frontier import PreparedObjectiveOperation
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -194,6 +196,7 @@ class AgentLoop:
                 )
                 raise
             state.current_task_evaluation = task_evaluation
+            audit_task_frontier(session, task_evaluation)
             if session.confirmation_continuation_scope is not None:
                 session.confirmation_continuation_scope.record_evaluations(
                     task=task_evaluation
@@ -266,6 +269,7 @@ class AgentLoop:
         session: AgentRunSession,
         action_space: ActionSpace,
         decision: SelectAction,
+        prepared_objective: PreparedObjectiveOperation,
         scope: ControlTransitionScope,
     ) -> LoopDirective:
         admitted = self._admit_selection(
@@ -275,7 +279,10 @@ class AgentLoop:
             scope,
         )
         if isinstance(admitted, Continue | Pause | Terminate):
+            if isinstance(admitted, Pause):
+                session.state.commit_objective_operation(prepared_objective)
             return admitted
+        session.state.commit_objective_operation(prepared_objective)
         return (await self._execute_admitted(session, admitted, decision, scope)).routed
 
     async def _execute_confirmed(

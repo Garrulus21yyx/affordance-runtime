@@ -7,6 +7,13 @@ from enum import StrEnum
 from typing import Any, TypeAlias
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.task.frontier_contracts import (
+    NoObjectiveOperation,
+    ObjectiveOperation,
+    ProposeObjective,
+    ReplaceObjective,
+    RetainObjective,
+)
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
@@ -148,3 +155,38 @@ class Abort:
 
 
 AgentDecision: TypeAlias = SelectAction | RequestObservation | RequestActionPage | AskUser | ProposeDone | Wait | Abort
+
+
+@dataclass(frozen=True)
+class AgentDecisionPackage:
+    """One context-bound objective operation and ordinary decision, admitted atomically."""
+
+    objective_operation: ObjectiveOperation
+    decision: AgentDecision
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.objective_operation,
+            (NoObjectiveOperation, ProposeObjective, RetainObjective, ReplaceObjective),
+        ):
+            raise TypeError("decision package requires a typed objective operation")
+        if not isinstance(self.decision, (
+            SelectAction,
+            RequestObservation,
+            RequestActionPage,
+            AskUser,
+            ProposeDone,
+            Wait,
+            Abort,
+        )):
+            raise TypeError("decision package requires a typed agent decision")
+
+    @property
+    def context_id(self) -> str:
+        return self.decision.context_id
+
+
+def package_decision(decision: AgentDecision) -> AgentDecisionPackage:
+    """Compatibility projection for deterministic policies without objective support."""
+
+    return AgentDecisionPackage(NoObjectiveOperation(), decision)

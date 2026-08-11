@@ -12,6 +12,8 @@ from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
+from affordance_runtime.task.frontier import PreparedObjectiveOperation
+from affordance_runtime.task.frontier_contracts import ActiveObjective, VerifiedTaskState
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -45,7 +47,9 @@ class AgentLoopState:
     continued_control_root_ids: tuple[str, ...] = ()
     control_terminal_status: AgentLoopStatus | None = None
     plan: TaskPlan | None = None
-    active_objective: LocalObjective | None = None
+    active_objective: LocalObjective | ActiveObjective | None = None
+    verified_task_state: VerifiedTaskState | None = None
+    objective_sequence: int = 0
     task_revision: int = 1
     progress_revision: int = 0
     pending_revision: int = 0
@@ -139,7 +143,7 @@ class AgentLoopState:
         self.progress_event_total_count += 1
         self.progress_revision += 1
 
-    def set_active_objective(self, objective: LocalObjective) -> None:
+    def set_active_objective(self, objective: LocalObjective | ActiveObjective) -> None:
         if self.active_objective != objective:
             self.active_objective = objective
             self.progress_revision += 1
@@ -147,6 +151,30 @@ class AgentLoopState:
     def clear_active_objective(self) -> None:
         if self.active_objective is not None:
             self.active_objective = None
+            self.progress_revision += 1
+
+    def install_verified_task_state(self, task_state: VerifiedTaskState) -> None:
+        if self.verified_task_state != task_state:
+            self.verified_task_state = task_state
+            self.progress_revision += 1
+
+    def commit_objective_operation(self, prepared: PreparedObjectiveOperation) -> None:
+        """Commit an already validated operation exactly once against current state."""
+
+        current = (
+            self.active_objective
+            if isinstance(self.active_objective, ActiveObjective)
+            else None
+        )
+        current_id = current.objective_id if current is not None else ""
+        if current_id != prepared.expected_active_objective_id:
+            raise ValueError("prepared objective operation is stale")
+        if prepared.allocated_sequence:
+            if prepared.allocated_sequence != self.objective_sequence + 1:
+                raise ValueError("prepared objective sequence is stale")
+            self.objective_sequence = prepared.allocated_sequence
+        if self.active_objective != prepared.next_active_objective:
+            self.active_objective = prepared.next_active_objective
             self.progress_revision += 1
 
     def replace_plan(self, plan: TaskPlan | None) -> None:

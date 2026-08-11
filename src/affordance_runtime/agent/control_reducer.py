@@ -386,16 +386,25 @@ def _transition_lifecycle_error(
     )
     feedback = transition.control_feedback
     if feedback is not None:
-        if feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION and (
-            not is_selection
-            or admission is not AdmissionStatus.REJECTED
-            or feedback.source is not ControlFeedbackSource.ACTION_ADMISSION
-            or has_execution
-            or transition.acquisition_attempts
-            or transition.attempt_receipts
-            or transition.before_observation_id != transition.after_observation_id
-        ):
-            return "repair_feedback_lifecycle_mismatch"
+        if feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION:
+            source_matches = (
+                feedback.source is ControlFeedbackSource.ACTION_ADMISSION
+                and is_selection
+                and admission is AdmissionStatus.REJECTED
+            ) or (
+                feedback.source is ControlFeedbackSource.OBJECTIVE_ADMISSION
+                and admission is (
+                    AdmissionStatus.REJECTED if is_selection else None
+                )
+            )
+            if (
+                not source_matches
+                or has_execution
+                or transition.acquisition_attempts
+                or transition.attempt_receipts
+                or transition.before_observation_id != transition.after_observation_id
+            ):
+                return "repair_feedback_lifecycle_mismatch"
         if feedback.kind is ControlFeedbackKind.NO_INFORMATION_GAIN:
             expected_source = {
                 "RequestActionPage": ControlFeedbackSource.ACTION_PAGE,

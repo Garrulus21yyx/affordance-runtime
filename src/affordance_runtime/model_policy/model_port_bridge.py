@@ -23,7 +23,11 @@ from affordance_runtime.model_policy.grounding import (
 )
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 from affordance_runtime.model_policy.schema_identity import decision_schema_digest, grounding_guide_digest
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
+from affordance_runtime.model_policy.spec import (
+    SCHEMA_VERSION,
+    AgentDecisionPackagePayload,
+    decision_response_schema,
+)
 from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelCallRecord,
@@ -86,7 +90,9 @@ class ModelPortDecisionAdapter:
         except (TypeError, ValueError, json.JSONDecodeError):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
         try:
-            payload = await self.port.generate_structured(messages, AgentDecisionPayload, self.config)
+            payload = await self.port.generate_structured(
+                messages, AgentDecisionPackagePayload, self.config,
+            )
         except TimeoutError:
             return _failure(
                 ModelFailureKind.TIMEOUT,

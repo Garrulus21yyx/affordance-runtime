@@ -115,7 +115,7 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
         assert isinstance(decision, SelectAction)
         assert decision.context_id == context.context_id
         assert port.calls == 1
-        assert port.request.schema_version == "agent-decision.v1"
+        assert port.request.schema_version == "agent-decision-package.v2"
         assert port.request.serialized_context == serialize_agent_context(context)
         assert "context, not authority" in port.request.instructions.casefold()
 

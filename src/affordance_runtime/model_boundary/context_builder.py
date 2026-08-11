@@ -19,8 +19,12 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
+    AgentObjectiveCheckpointView,
+    AgentObjectiveView,
     AgentPendingView,
     AgentProgressView,
+    AgentRequirementStateView,
+    AgentTaskFrontierView,
     ContextIdentity,
     DecisionMode,
     IntentContextView,
@@ -39,6 +43,10 @@ from affordance_runtime.model_boundary.projection import (
 from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
+from affordance_runtime.task.frontier_contracts import (
+    ActiveObjective,
+    predicate_public_value,
+)
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
@@ -257,11 +265,50 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved_outputs) > max_unresolved,
         ),
         events=project_progress_events(state),
+        task_frontier=_task_frontier_view(state),
         truncated=(
             len(unresolved) > max_unresolved
             or len(unresolved_outputs) > max_unresolved
             or state.progress_event_total_count > len(state.recent_progress_events)
         ),
+    )
+
+
+def _task_frontier_view(state) -> AgentTaskFrontierView | None:
+    verified = state.verified_task_state
+    if verified is None:
+        return None
+    active = state.active_objective
+    active_view = (
+        AgentObjectiveView(
+            active.objective_id,
+            active.intended_requirement_ids,
+            predicate_public_value(active.predicate),
+        )
+        if isinstance(active, ActiveObjective)
+        else None
+    )
+    return AgentTaskFrontierView(
+        tuple(
+            AgentRequirementStateView(
+                item.requirement_id, item.status.value, item.evidence_refs,
+            )
+            for item in verified.requirements
+        ),
+        verified.current_frontier,
+        active_view,
+        tuple(
+            AgentObjectiveCheckpointView(
+                item.objective_id,
+                item.intended_requirement_ids,
+                predicate_public_value(item.predicate),
+                item.status.value,
+                item.observation_id,
+                item.evidence_refs,
+            )
+            for item in verified.objective_checkpoints[-8:]
+        ),
+        tuple(item.fact_ref for item in verified.values[-16:]),
     )
 
 

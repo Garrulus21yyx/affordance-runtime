@@ -4,10 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Protocol
 
-from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.world.action_classification import EffectCategory
 from affordance_runtime.world.contracts import ActionOption
+
+
+class ActionObjective(Protocol):
+    @property
+    def direct_target_ids(self) -> tuple[str, ...]: ...
+
+    @property
+    def direct_effects(self) -> tuple[str, ...]: ...
+
+    @property
+    def enabling_target_ids(self) -> tuple[str, ...]: ...
+
+    @property
+    def enabling_action_hints(self) -> tuple[str, ...]: ...
 
 
 class ActionRelevanceRole(StrEnum):
@@ -29,7 +43,7 @@ class ActionRelevancePolicy:
     def classify(
         self,
         option: ActionOption,
-        objective: LocalObjective | None,
+        objective: ActionObjective | None,
     ) -> ActionRelevance:
         if objective is not None and (
             option.target_id in objective.direct_target_ids

@@ -10,6 +10,7 @@ from affordance_runtime.agent.decisions import (
     MAX_RESULT_SUMMARY_CHARS,
     Abort,
     AgentDecision,
+    AgentDecisionPackage,
     AskUser,
     ProposeDone,
     RequestActionPage,
@@ -18,9 +19,23 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads, validate_json_tree
+from affordance_runtime.task.frontier_contracts import (
+    FactAvailable,
+    FactReferenceExpected,
+    LiteralExpected,
+    NoObjectiveOperation,
+    ProposeObjective,
+    ReplaceObjective,
+    RetainObjective,
+    TargetAbsent,
+    TargetFieldEquals,
+    TargetPresent,
+    TaskOutcomeIs,
+    TaskOutcomeStatus,
+)
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
-SCHEMA_VERSION = "agent-decision.v1"
+SCHEMA_VERSION = "agent-decision-package.v2"
 
 ContextId = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 Id240 = Annotated[str, StringConstraints(min_length=1, max_length=240)]
@@ -144,8 +159,131 @@ class AgentDecisionPayload(RootModel[DecisionPayload]):
         return cls.model_validate(strict_json_loads(raw))
 
 
+class _ObjectivePayload(BaseModel):
+    model_config = ConfigDict(
+        strict=True,
+        extra="forbid",
+        frozen=True,
+        revalidate_instances="always",
+    )
+
+
+class FactAvailablePayload(_ObjectivePayload):
+    kind: Literal["fact_available"]
+    fact_ref: Id240
+
+
+class LiteralExpectedPayload(_ObjectivePayload):
+    kind: Literal["literal"]
+    value: str | StrictInt | float | bool | None
+
+
+class FactReferenceExpectedPayload(_ObjectivePayload):
+    kind: Literal["fact_ref"]
+    fact_ref: Id240
+
+
+ExpectedPayload: TypeAlias = Annotated[
+    LiteralExpectedPayload | FactReferenceExpectedPayload,
+    Field(discriminator="kind"),
+]
+
+
+class TargetFieldEqualsPayload(_ObjectivePayload):
+    kind: Literal["target_field_equals"]
+    target_id: Id240
+    field_name: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    expected: ExpectedPayload
+
+
+class TargetPresentPayload(_ObjectivePayload):
+    kind: Literal["target_present"]
+    target_id: Id240
+
+
+class TargetAbsentPayload(_ObjectivePayload):
+    kind: Literal["target_absent"]
+    target_id: Id240
+
+
+class TaskOutcomeIsPayload(_ObjectivePayload):
+    kind: Literal["task_outcome_is"]
+    status: Literal["complete", "incomplete", "unknown", "blocked"]
+
+
+PredicatePayload: TypeAlias = Annotated[
+    FactAvailablePayload
+    | TargetFieldEqualsPayload
+    | TargetPresentPayload
+    | TargetAbsentPayload
+    | TaskOutcomeIsPayload,
+    Field(discriminator="kind"),
+]
+
+
+class NoObjectiveOperationPayload(_ObjectivePayload):
+    kind: Literal["none"]
+
+
+class ProposeObjectivePayload(_ObjectivePayload):
+    kind: Literal["propose"]
+    intended_requirement_ids: Annotated[list[Id240], Field(min_length=1, max_length=32)]
+    predicate: PredicatePayload
+
+
+class RetainObjectivePayload(_ObjectivePayload):
+    kind: Literal["retain"]
+    active_objective_id: Id240
+
+
+class ReplaceObjectivePayload(_ObjectivePayload):
+    kind: Literal["replace"]
+    replaces_objective_id: Id240
+    intended_requirement_ids: Annotated[list[Id240], Field(min_length=1, max_length=32)]
+    predicate: PredicatePayload
+
+
+ObjectiveOperationPayload: TypeAlias = Annotated[
+    NoObjectiveOperationPayload
+    | ProposeObjectivePayload
+    | RetainObjectivePayload
+    | ReplaceObjectivePayload,
+    Field(discriminator="kind"),
+]
+
+
+class AgentDecisionPackagePayload(BaseModel):
+    model_config = ConfigDict(
+        strict=True,
+        extra="forbid",
+        frozen=True,
+        revalidate_instances="always",
+    )
+
+    objective_operation: ObjectiveOperationPayload
+    decision: DecisionPayload
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        _require_json_collection_types(obj)
+        if (
+            isinstance(obj, dict)
+            and "objective_operation" not in obj
+            and "type" in obj
+        ):
+            obj = {"objective_operation": {"kind": "none"}, "decision": obj}
+        kwargs.setdefault("strict", False)
+        return super().model_validate(obj, **kwargs)
+
+    @classmethod
+    def model_validate_json(cls, json_data: str | bytes | bytearray, **kwargs):
+        del kwargs
+        raw = bytes(json_data).decode() if isinstance(json_data, bytes | bytearray) else json_data
+        return cls.model_validate(strict_json_loads(raw))
+
+
 def decision_response_schema() -> dict[str, Any]:
-    return AgentDecisionPayload.model_json_schema()
+    return AgentDecisionPackagePayload.model_json_schema()
 
 
 def _require_json_collection_types(value: object) -> None:
@@ -201,3 +339,49 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
     if isinstance(value, WaitPayload):
         return Wait(value.context_id, value.reason, value.max_wait_ms)
     return Abort(value.context_id, value.reason, value.category)
+
+
+def payload_to_package(
+    payload: AgentDecisionPackagePayload,
+    expected_context_id: str,
+) -> AgentDecisionPackage:
+    decision = payload_to_decision(
+        AgentDecisionPayload(root=payload.decision), expected_context_id,
+    )
+    return AgentDecisionPackage(
+        _payload_to_objective_operation(payload.objective_operation), decision,
+    )
+
+
+def _payload_to_objective_operation(payload):
+    if isinstance(payload, NoObjectiveOperationPayload):
+        return NoObjectiveOperation()
+    if isinstance(payload, RetainObjectivePayload):
+        return RetainObjective(payload.active_objective_id)
+    predicate = _payload_to_predicate(payload.predicate)
+    if isinstance(payload, ProposeObjectivePayload):
+        return ProposeObjective(tuple(payload.intended_requirement_ids), predicate)
+    assert isinstance(payload, ReplaceObjectivePayload)
+    return ReplaceObjective(
+        payload.replaces_objective_id,
+        tuple(payload.intended_requirement_ids),
+        predicate,
+    )
+
+
+def _payload_to_predicate(payload):
+    if isinstance(payload, FactAvailablePayload):
+        return FactAvailable(payload.fact_ref)
+    if isinstance(payload, TargetPresentPayload):
+        return TargetPresent(payload.target_id)
+    if isinstance(payload, TargetAbsentPayload):
+        return TargetAbsent(payload.target_id)
+    if isinstance(payload, TaskOutcomeIsPayload):
+        return TaskOutcomeIs(TaskOutcomeStatus(payload.status))
+    assert isinstance(payload, TargetFieldEqualsPayload)
+    expected = (
+        LiteralExpected(payload.expected.value)
+        if isinstance(payload.expected, LiteralExpectedPayload)
+        else FactReferenceExpected(payload.expected.fact_ref)
+    )
+    return TargetFieldEquals(payload.target_id, payload.field_name, expected)

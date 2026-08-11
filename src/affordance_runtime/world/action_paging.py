@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.world.admission_issue import (
     AdmissionContractOwner,
     AdmissionIssue,
@@ -16,7 +15,12 @@ from affordance_runtime.world.admission_issue import (
 )
 from affordance_runtime.world.contracts import ActionOption, ActionSpace
 from affordance_runtime.world.page_cursor import cursor_fingerprint, decode_cursor, encode_cursor
-from affordance_runtime.world.relevance import ActionRelevance, ActionRelevancePolicy, ActionRelevanceRole
+from affordance_runtime.world.relevance import (
+    ActionObjective,
+    ActionRelevance,
+    ActionRelevancePolicy,
+    ActionRelevanceRole,
+)
 
 _ROLE_ORDER = {
     ActionRelevanceRole.DIRECT: 0,
@@ -122,7 +126,7 @@ class ActionPager:
     def page(
         self,
         action_space: ActionSpace,
-        objective: LocalObjective | None = None,
+        objective: ActionObjective | None = None,
         *,
         query: str = "",
         target_id: str = "",
@@ -203,7 +207,7 @@ class ActionPager:
     def single_action_page(
         self,
         action_space: ActionSpace,
-        objective: LocalObjective | None,
+        objective: ActionObjective | None,
         action_id: str,
         destination_id: str = "",
         *,
@@ -273,7 +277,7 @@ def _page_id(
 
 def _ranked_options(
     action_space: ActionSpace,
-    objective: LocalObjective | None,
+    objective: ActionObjective | None,
     relevance_policy: ActionRelevancePolicy,
     query: str,
     target_id: str,
@@ -340,7 +344,7 @@ def _projected_option_weight(option: ActionOption, max_destinations: int) -> int
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
 
 
-def _objective_digest(objective: LocalObjective | None) -> str:
+def _objective_digest(objective: ActionObjective | None) -> str:
     if objective is None:
         return "objective:none"
     payload = to_json_compatible(objective)

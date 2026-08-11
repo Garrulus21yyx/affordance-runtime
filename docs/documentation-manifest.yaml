@@ -88,6 +88,9 @@ normative:
     lifecycle: current
 
 reference:
+  - role: p5_e_task_frontier_vertical_slice_execution_record
+    path: docs/superpowers/plans/2026-08-11-p5-e-task-frontier-vertical-slice-plan.md
+    lifecycle: current
   - role: m4_6_runtime_recovery_execution_record
     path: docs/superpowers/plans/2026-08-11-m4-6-runtime-recovery-implementation-plan.md
     lifecycle: current

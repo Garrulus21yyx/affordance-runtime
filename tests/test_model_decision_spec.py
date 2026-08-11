@@ -3,16 +3,26 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
+from affordance_runtime.model_policy.spec import (
+    SCHEMA_VERSION,
+    AgentDecisionPackagePayload,
+    AgentDecisionPayload,
+    decision_response_schema,
+)
 
 
-def test_canonical_spec_has_exactly_seven_discriminated_variants() -> None:
+def test_canonical_package_has_four_objective_operations_and_seven_decisions() -> None:
     schema = decision_response_schema()
-    discriminator = schema["discriminator"]
+    objective = schema["properties"]["objective_operation"]
+    decision = schema["properties"]["decision"]
 
-    assert SCHEMA_VERSION == "agent-decision.v1"
-    assert discriminator["propertyName"] == "type"
-    assert set(discriminator["mapping"]) == {
+    assert SCHEMA_VERSION == "agent-decision-package.v2"
+    assert objective["discriminator"]["propertyName"] == "kind"
+    assert set(objective["discriminator"]["mapping"]) == {
+        "none", "propose", "retain", "replace",
+    }
+    assert decision["discriminator"]["propertyName"] == "type"
+    assert set(decision["discriminator"]["mapping"]) == {
         "select_action",
         "request_observation",
         "request_action_page",
@@ -21,8 +31,9 @@ def test_canonical_spec_has_exactly_seven_discriminated_variants() -> None:
         "wait",
         "abort",
     }
-    assert len(schema["oneOf"]) == 7
-    assert AgentDecisionPayload.model_json_schema() == schema
+    assert len(objective["oneOf"]) == 4
+    assert len(decision["oneOf"]) == 7
+    assert AgentDecisionPackagePayload.model_json_schema() == schema
 
 
 def test_provider_schema_encodes_runtime_enums_and_forbids_extra_fields() -> None:

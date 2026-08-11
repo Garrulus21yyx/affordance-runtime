@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Protocol, TypeAlias
 
-from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.agent.decisions import AgentDecision, AgentDecisionPackage
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
 from affordance_runtime.model_boundary.context import AgentContext
@@ -27,7 +27,7 @@ class PolicyFailure:
             raise ValueError("policy failure requires a bounded public reason")
 
 
-AgentPolicyOutcome: TypeAlias = AgentDecision | PolicyFailure
+AgentPolicyOutcome: TypeAlias = AgentDecision | AgentDecisionPackage | PolicyFailure
 
 
 class AgentPolicy(Protocol):

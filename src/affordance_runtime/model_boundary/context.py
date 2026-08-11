@@ -82,6 +82,45 @@ class AgentProgressEventView:
 
 
 @dataclass(frozen=True)
+class AgentRequirementStateView:
+    requirement_id: str
+    status: str
+    evidence_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AgentObjectiveView:
+    objective_id: str
+    intended_requirement_ids: tuple[str, ...]
+    predicate: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "predicate", freeze_json(self.predicate))
+
+
+@dataclass(frozen=True)
+class AgentObjectiveCheckpointView:
+    objective_id: str
+    intended_requirement_ids: tuple[str, ...]
+    predicate: Mapping[str, object]
+    status: str
+    observation_id: str
+    evidence_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "predicate", freeze_json(self.predicate))
+
+
+@dataclass(frozen=True)
+class AgentTaskFrontierView:
+    requirements: tuple[AgentRequirementStateView, ...]
+    current_frontier: tuple[str, ...]
+    active_objective: AgentObjectiveView | None
+    recent_checkpoints: tuple[AgentObjectiveCheckpointView, ...]
+    verified_fact_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AgentProgressView:
     plan_summary: AgentPlanView | None
     active_objective: str
@@ -90,6 +129,7 @@ class AgentProgressView:
     unresolved_criteria: BoundedSection[str]
     unresolved_outputs: BoundedSection[str]
     events: BoundedSection[AgentProgressEventView]
+    task_frontier: AgentTaskFrontierView | None = None
     truncated: bool = False
 
 
