@@ -6,13 +6,16 @@ from hypothesis import given
 from hypothesis import strategies as st
 from test_agent_loop import _task, _world
 
+from affordance_runtime.agent.control_feedback import current_semantic_scope
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.world import ActionSpaceBuilder
 from affordance_runtime.world.public_semantic_digest import (
     action_page_request_digest,
     issue_digest,
+    public_action_contract_digest,
     public_action_page_digest,
+    public_action_page_result_digest,
     public_world_semantic_digest,
     semantic_scope_digest,
     task_progress_fingerprint,
@@ -35,12 +38,12 @@ def test_observation_action_space_page_and_private_identity_churn_do_not_change_
     assert semantic_scope_digest(
         1,
         public_world_semantic_digest(first),
-        public_action_page_digest(first, first_space, first_page),
+        public_action_contract_digest(first, first_space),
         task_progress_fingerprint(None),
     ) == semantic_scope_digest(
         1,
         public_world_semantic_digest(second),
-        public_action_page_digest(second, second_space, second_page),
+        public_action_contract_digest(second, second_space),
         task_progress_fingerprint(None),
     )
 
@@ -129,6 +132,9 @@ def test_casefold_equivalent_queries_have_one_page_and_digest_semantics(query: s
     assert public_action_page_digest(world, space, first) == public_action_page_digest(
         world, space, second,
     )
+    assert public_action_page_result_digest(
+        world, space, first,
+    ) == public_action_page_result_digest(world, space, second)
     assert action_page_request_digest(
         world,
         query=query,
@@ -141,4 +147,42 @@ def test_casefold_equivalent_queries_have_one_page_and_digest_semantics(query: s
         target_id="",
         relevance_role="",
         semantic_offset=second.offset,
+    )
+
+
+@given(
+    st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=30),
+    st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=30),
+)
+def test_request_filters_are_not_page_result_or_control_epoch_facts(
+    first_query: str,
+    second_query: str,
+) -> None:
+    world = _world("obs:query-result", False)
+    state = AgentLoopState(world)
+    space = ActionSpaceBuilder().build(_task(), world)
+    builder = ContextBuilder()
+    first = builder.page(space, state, query=f"no-match-{first_query}")
+    second = builder.page(space, state, query=f"no-match-{second_query}")
+
+    assert first.visible_action_ids == second.visible_action_ids == ()
+    assert first.visible_destinations == second.visible_destinations == ()
+    assert first.total_count == second.total_count == 0
+    assert first.has_more is second.has_more is False
+    assert public_action_page_digest(world, space, first) == public_action_page_digest(
+        world, space, second,
+    )
+    assert current_semantic_scope(state, space, first) == current_semantic_scope(
+        state, space, second,
+    )
+    assert semantic_scope_digest(
+        1,
+        public_world_semantic_digest(world),
+        public_action_contract_digest(world, space),
+        task_progress_fingerprint(None),
+    ) == semantic_scope_digest(
+        1,
+        public_world_semantic_digest(world),
+        public_action_contract_digest(world, space),
+        task_progress_fingerprint(None),
     )

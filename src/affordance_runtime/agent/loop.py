@@ -224,14 +224,18 @@ class AgentLoop:
                 )
             action_space = self.action_space_builder.build(task, state.current_observation)
             ensure_current_action_page(session, action_space, self.context_builder)
-            if state.control_feedback_scope_digest:
-                from affordance_runtime.agent.control_feedback import current_semantic_scope
+            from affordance_runtime.agent.control_feedback import current_semantic_scope
+            from affordance_runtime.world.public_semantic_digest import (
+                public_action_page_result_digest,
+            )
 
-                assert session.current_action_page is not None
-                if current_semantic_scope(
-                    state, action_space, session.current_action_page,
-                ) != state.control_feedback_scope_digest:
-                    state.clear_control_issue_budget()
+            assert session.current_action_page is not None
+            state.begin_control_epoch(
+                current_semantic_scope(state, action_space),
+                public_action_page_result_digest(
+                    state.current_observation, action_space, session.current_action_page,
+                ),
+            )
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
             else:

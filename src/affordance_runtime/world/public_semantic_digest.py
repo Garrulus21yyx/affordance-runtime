@@ -126,7 +126,7 @@ def action_option_semantics(
     )
 
 
-def public_action_page_semantics(
+def public_action_page_result_semantics(
     observation: WorldObservation,
     action_space: ActionSpace,
     page: InternalActionPage,
@@ -152,21 +152,29 @@ def public_action_page_semantics(
             visible_destinations=destination_map.get(action_id, ()),
             relevance=relevance_map.get(action_id),
         ))
-    contract_options = [
-        action_option_semantics(option, target_map)
-        for option in action_space.options
-    ]
-    target_filter = target_map.get(page.target_id, ("none",)) if page.target_id else ("none",)
     return {
         "options": sorted(options, key=_sort_key),
-        "contract_options": sorted(contract_options, key=_sort_key),
         "total_count": page.total_count,
         "has_more": page.has_more,
-        "offset": page.offset,
-        "query": canonical_action_query(page.query),
-        "target_filter": target_filter,
-        "relevance_role": str(page.relevance_role or ""),
     }
+
+
+def public_action_page_result_digest(
+    observation: WorldObservation,
+    action_space: ActionSpace,
+    page: InternalActionPage,
+) -> str:
+    return _digest(public_action_page_result_semantics(observation, action_space, page))
+
+
+def public_action_page_semantics(
+    observation: WorldObservation,
+    action_space: ActionSpace,
+    page: InternalActionPage,
+) -> dict[str, object]:
+    """Compatibility name for request-echo-free page-result semantics."""
+
+    return public_action_page_result_semantics(observation, action_space, page)
 
 
 def public_action_page_digest(
@@ -174,7 +182,36 @@ def public_action_page_digest(
     action_space: ActionSpace,
     page: InternalActionPage,
 ) -> str:
-    return _digest(public_action_page_semantics(observation, action_space, page))
+    """Compatibility name for the canonical page-result digest."""
+
+    return public_action_page_result_digest(observation, action_space, page)
+
+
+def public_action_contract_semantics(
+    observation: WorldObservation,
+    action_space: ActionSpace,
+) -> tuple[object, ...]:
+    """Return the full public action contract, independent of its active view."""
+
+    bases = {
+        target.target_id: (target.role, target.label, to_json_compatible(target.state))
+        for target in observation.targets
+    }
+    target_map = {
+        target.target_id: target_semantics(target, bases)
+        for target in observation.targets
+    }
+    return tuple(sorted(
+        (action_option_semantics(option, target_map) for option in action_space.options),
+        key=_sort_key,
+    ))
+
+
+def public_action_contract_digest(
+    observation: WorldObservation,
+    action_space: ActionSpace,
+) -> str:
+    return _digest(public_action_contract_semantics(observation, action_space))
 
 
 def task_progress_fingerprint(evaluation: TaskEvaluation | None) -> str:
@@ -194,10 +231,10 @@ def task_progress_fingerprint(evaluation: TaskEvaluation | None) -> str:
 def semantic_scope_digest(
     task_revision: int,
     world_digest: str,
-    page_digest: str,
+    action_contract_digest: str,
     progress_digest: str,
 ) -> str:
-    return _digest((task_revision, world_digest, page_digest, progress_digest))
+    return _digest((task_revision, world_digest, action_contract_digest, progress_digest))
 
 
 def issue_digest(
@@ -254,12 +291,11 @@ def observation_request_digest(
 def policy_observation_result_digest(
     observation: WorldObservation,
     action_space: ActionSpace,
-    page: InternalActionPage,
     evaluation: TaskEvaluation | None,
 ) -> str:
     return _digest((
         public_world_semantics(observation),
-        public_action_page_semantics(observation, action_space, page),
+        public_action_contract_semantics(observation, action_space),
         task_progress_fingerprint(evaluation),
     ))
 

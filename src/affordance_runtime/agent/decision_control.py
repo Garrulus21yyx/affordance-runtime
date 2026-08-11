@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from affordance_runtime.agent.attempt_receipt import safe_exception_class
 from affordance_runtime.agent.control_feedback import (
     ControlFeedbackSource,
+    current_semantic_scope,
     no_gain_feedback,
     repair_feedback,
     route_feedback,
@@ -60,7 +61,7 @@ from affordance_runtime.world.public_semantic_digest import (
     action_page_request_digest,
     observation_request_digest,
     policy_observation_result_digest,
-    public_action_page_digest,
+    public_action_page_result_digest,
 )
 
 SelectionExecutor = Callable[
@@ -240,7 +241,6 @@ async def _policy_observation(
         decision.required_assurance,
     )
     state = session.state
-    previous_page = session.current_action_page or context_builder.page(action_space, state)
     request_digest = observation_request_digest(
         state.current_observation,
         subject_id=decision.subject_id,
@@ -250,7 +250,6 @@ async def _policy_observation(
     before_result = policy_observation_result_digest(
         state.current_observation,
         action_space,
-        previous_page,
         prior_task_evaluation,
     )
     acquired = await _fresh_observation(session, decision, request, scope)
@@ -286,10 +285,10 @@ async def _policy_observation(
     session.current_action_space = new_space
     session.current_action_page = new_page
     after_result = policy_observation_result_digest(
-        state.current_observation, new_space, new_page, evaluation,
+        state.current_observation, new_space, evaluation,
     )
     if after_result != before_result:
-        state.clear_control_issue_budget()
+        state.begin_control_epoch(current_semantic_scope(state, new_space))
         return Continue("observation_semantic_gain")
     feedback = no_gain_feedback(
         state,
@@ -477,10 +476,6 @@ def _request_action_page(
     if not _valid_page_request(session, decision):
         scope.set_reason("invalid_action_page_request")
         return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
-    previous_page = session.current_action_page or context_builder.page(action_space, session.state)
-    previous_digest = public_action_page_digest(
-        session.state.current_observation, action_space, previous_page,
-    )
     try:
         session.current_action_page = context_builder.page(
             action_space,
@@ -493,7 +488,7 @@ def _request_action_page(
     except ValueError:
         scope.set_reason("invalid_action_page_request")
         return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
-    result_digest = public_action_page_digest(
+    result_digest = public_action_page_result_digest(
         session.state.current_observation, action_space, session.current_action_page,
     )
     request_digest = action_page_request_digest(
@@ -503,7 +498,7 @@ def _request_action_page(
         relevance_role=decision.relevance_role,
         semantic_offset=session.current_action_page.offset,
     )
-    if result_digest == previous_digest:
+    if not session.state.record_action_page_result(result_digest):
         feedback = no_gain_feedback(
             session.state,
             action_space,
@@ -517,7 +512,6 @@ def _request_action_page(
         )
         scope.record_decision_result("page_unchanged")
         return route_feedback(session.state, scope, feedback)
-    session.state.clear_control_issue_budget()
     result = "page_changed"
     scope.record_decision_result(result)
     scope.set_reason(result)

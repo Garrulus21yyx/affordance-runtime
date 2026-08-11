@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -13,6 +14,15 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
+
+MAX_SEEN_ACTION_PAGE_RESULTS = 64
+_SEMANTIC_DIGEST = re.compile(r"[0-9a-f]{64}")
+
+
+def _require_semantic_digest(value: object) -> str:
+    if not isinstance(value, str) or _SEMANTIC_DIGEST.fullmatch(value) is None:
+        raise ValueError("control semantic digest must be canonical SHA-256")
+    return value
 
 
 class AgentLoopStatus(StrEnum):
@@ -53,6 +63,7 @@ class AgentLoopState:
     progress_event_limit: int = 3
     control_feedback_scope_digest: str = ""
     consumed_control_issue_digests: tuple[str, ...] = ()
+    seen_action_page_result_digests: tuple[str, ...] = ()
     pending_control_feedback: ControlFeedback | None = None
     control_feedback_total_count: int = 0
     control_feedback_delivery_total_count: int = 0
@@ -204,14 +215,61 @@ class AgentLoopState:
             self.pending_revision += 1
         return feedback
 
+    def begin_control_epoch(
+        self,
+        scope_digest: str,
+        initial_page_result_digest: str = "",
+    ) -> bool:
+        """Install an identity-free epoch and seed its bounded page-result set."""
+
+        scope_digest = _require_semantic_digest(scope_digest)
+        if initial_page_result_digest:
+            initial_page_result_digest = _require_semantic_digest(
+                initial_page_result_digest,
+            )
+        changed = self.control_feedback_scope_digest != scope_digest
+        if changed:
+            self.control_feedback_scope_digest = scope_digest
+            self.consumed_control_issue_digests = ()
+            self.seen_action_page_result_digests = ()
+            self.pending_control_feedback = None
+            self.pending_revision += 1
+        if initial_page_result_digest and not self.seen_action_page_result_digests:
+            self.seen_action_page_result_digests = (initial_page_result_digest,)
+        return changed
+
+    def record_action_page_result(self, result_digest: str) -> bool:
+        """Return true exactly once for each bounded result within an epoch."""
+
+        result_digest = _require_semantic_digest(result_digest)
+        if result_digest in self.seen_action_page_result_digests:
+            return False
+        if len(self.seen_action_page_result_digests) >= MAX_SEEN_ACTION_PAGE_RESULTS:
+            return False
+        self.seen_action_page_result_digests = (
+            *self.seen_action_page_result_digests,
+            result_digest,
+        )
+        changed = bool(
+            self.consumed_control_issue_digests
+            or self.pending_control_feedback is not None
+        )
+        self.consumed_control_issue_digests = ()
+        self.pending_control_feedback = None
+        if changed:
+            self.pending_revision += 1
+        return True
+
     def clear_control_issue_budget(self) -> None:
         changed = bool(
             self.control_feedback_scope_digest
             or self.consumed_control_issue_digests
+            or self.seen_action_page_result_digests
             or self.pending_control_feedback is not None
         )
         self.control_feedback_scope_digest = ""
         self.consumed_control_issue_digests = ()
+        self.seen_action_page_result_digests = ()
         self.pending_control_feedback = None
         if changed:
             self.pending_revision += 1

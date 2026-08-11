@@ -11,7 +11,7 @@ from affordance_runtime.world.public_semantic_digest import (
     issue_digest as make_issue_digest,
 )
 from affordance_runtime.world.public_semantic_digest import (
-    public_action_page_digest,
+    public_action_contract_digest,
     public_subject_semantics,
     public_world_semantic_digest,
     semantic_scope_digest,
@@ -173,12 +173,14 @@ def apply_feedback_budget(
 def current_semantic_scope(
     state: AgentLoopState,
     action_space: ActionSpace,
-    page: InternalActionPage,
+    page: InternalActionPage | None = None,
 ) -> str:
+    """Return the control epoch; ``page`` is compatibility-only and ignored."""
+
     return semantic_scope_digest(
         state.task_revision,
         public_world_semantic_digest(state.current_observation),
-        public_action_page_digest(state.current_observation, action_space, page),
+        public_action_contract_digest(state.current_observation, action_space),
         task_progress_fingerprint(state.current_task_evaluation),
     )
 

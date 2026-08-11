@@ -23,6 +23,7 @@ from affordance_runtime.agent.control_reducer import (
 )
 from affordance_runtime.agent.control_transition import AdmissionStatus, AdmissionSummary
 from affordance_runtime.agent.decisions import SelectAction
+from affordance_runtime.agent.state import AgentLoopState
 
 
 def _feedback(scope: str, issue: str, source: ControlFeedbackSource) -> ControlFeedback:
@@ -116,3 +117,29 @@ def test_reducer_accepts_only_zero_call_rejected_root_with_repair_feedback() -> 
     assert isinstance(accepted, ControlAccepted)
     assert isinstance(mismatched, ControlRejected)
     assert mismatched.code == "rejected_admission_lifecycle_mismatch"
+
+
+@given(st.lists(st.integers(min_value=0, max_value=8), min_size=1, max_size=30))
+@settings(max_examples=80)
+def test_page_result_gain_is_once_only_within_a_control_epoch(
+    result_tokens: list[int],
+) -> None:
+    from test_agent_loop import _world
+
+    state = AgentLoopState(_world("epoch", False))
+    epoch = "a" * 64
+    initial = "0" * 64
+    state.begin_control_epoch(epoch, initial)
+    seen = {initial}
+
+    for token in result_tokens:
+        digest = f"{token + 1:064x}"
+        expected_gain = digest not in seen
+        assert state.record_action_page_result(digest) is expected_gain
+        seen.add(digest)
+
+    assert set(state.seen_action_page_result_digests) == seen
+    assert state.begin_control_epoch(epoch, "f" * 64) is False
+    assert set(state.seen_action_page_result_digests) == seen
+    assert state.begin_control_epoch("b" * 64, "f" * 64) is True
+    assert state.seen_action_page_result_digests == ("f" * 64,)

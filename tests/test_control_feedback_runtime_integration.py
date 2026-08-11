@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
 from affordance_runtime.agent import (
@@ -140,6 +142,122 @@ def test_casefold_equivalent_page_queries_are_bounded_as_one_no_gain_issue() -> 
             and not transition.acquisition_attempts
             for transition in result.control_transitions
         )
+
+    asyncio.run(scenario())
+
+
+def test_distinct_requests_with_same_page_result_are_bounded() -> None:
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            query = "no-match-alpha" if self.calls % 2 else "no-match-beta"
+            return RequestActionPage(context.context_id, query=query)
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment([_world("before", False)])
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "no_progress_control_repetition"
+        assert policy.calls <= 4
+        assert result.control_feedback_delivery_count >= 1
+        assert result.control_repetition_count == 1
+        assert result.execution_count == 0
+        assert result.currentness_probe_count == 0
+        assert environment.execute_calls == 0
+        assert environment.capture_calls == 0
+        assert result.control_transitions[0].decision_result == "page_changed"
+        assert result.control_transitions[0].control_feedback is None
+
+    asyncio.run(scenario())
+
+
+@given(st.lists(st.one_of(st.none(), st.integers(min_value=0, max_value=5)), min_size=1, max_size=8))
+@settings(max_examples=40)
+def test_generated_request_view_churn_without_new_facts_is_bounded(
+    pattern: list[int | None],
+) -> None:
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            item = pattern[self.calls % len(pattern)]
+            self.calls += 1
+            if item is None:
+                return RequestObservation(
+                    context.context_id,
+                    "shared-toggle",
+                    "structural",
+                    "structural",
+                    f"echo-{self.calls}",
+                )
+            return RequestActionPage(context.context_id, query=f"no-match-{item}")
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment(
+            initial_observation=_world("before", False),
+            independent_observations=tuple(
+                _world(f"fresh-{index}", False) for index in range(5)
+            ),
+        )
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "no_progress_control_repetition"
+        # One truly unseen page result may grant gain once; thereafter the
+        # shared two-issue budget is absorbing.
+        assert policy.calls <= 5
+        assert result.control_repetition_count == 1
+        assert environment.execute_calls == 0
+        assert result.currentness_probe_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_page_and_unchanged_policy_observation_cannot_reset_each_other() -> None:
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if self.calls % 2:
+                return RequestActionPage(context.context_id, query="no-match")
+            return RequestObservation(
+                context.context_id,
+                "shared-toggle",
+                "structural",
+                "structural",
+                f"request view {self.calls}",
+            )
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment(
+            initial_observation=_world("before", False),
+            independent_observations=tuple(
+                _world(f"fresh-{index}", False) for index in range(6)
+            ),
+        )
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "no_progress_control_repetition"
+        assert policy.calls <= 4
+        assert result.control_repetition_count == 1
+        assert result.execution_count == 0
+        assert result.currentness_probe_count == 0
+        assert environment.execute_calls == 0
+        assert environment.capture_calls <= 2
 
     asyncio.run(scenario())
 
