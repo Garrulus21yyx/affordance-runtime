@@ -196,6 +196,16 @@ def _adapter(policy: ModelBackedAgentPolicy) -> ModelPortDecisionAdapter:
     adapter = composed.primary_port if isinstance(composed, ProviderCallOrchestrator) else composed
     if not isinstance(adapter, ModelPortDecisionAdapter):
         raise TypeError("perception A/B requires the canonical model bridge")
+    if (
+        getattr(adapter.port, "provider", "") != "mistral"
+        or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
+    ):
+        raise ValueError("perception A/B requires the frozen Mistral model identity")
+    if (
+        adapter.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX
+        and not getattr(adapter.port, "supports_multimodal", False)
+    ):
+        raise ValueError("screenshot+AX arm requires a multimodal model port")
     return adapter
 
 
