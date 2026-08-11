@@ -27,6 +27,81 @@ class CoverageState(StrEnum):
     STALE = "stale"
 
 
+class EntityInventoryStatus(StrEnum):
+    UNASSESSED = "unassessed"
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
+
+
+class EntityInventoryIssueCode(StrEnum):
+    ENTITY_CAPACITY_EXCEEDED = "inventory_capacity_exceeded"
+    FACT_CAPACITY_EXCEEDED = "inventory_fact_capacity_exceeded"
+    OPTION_DOMAIN_CAPACITY_EXCEEDED = "inventory_option_domain_capacity_exceeded"
+    COVERAGE_UNAVAILABLE = "coverage_unavailable"
+
+
+@dataclass(frozen=True)
+class EntityInventorySummary:
+    """Conservation metadata for the canonical public inventory of one source."""
+
+    status: EntityInventoryStatus = EntityInventoryStatus.UNASSESSED
+    entity_count: int = 0
+    entity_total_count: int = 0
+    fact_count: int = 0
+    fact_total_count: int = 0
+    relation_count: int = 0
+    relation_total_count: int = 0
+    option_value_count: int = 0
+    option_value_total_count: int = 0
+    issue_codes: tuple[EntityInventoryIssueCode, ...] = ()
+
+    def __post_init__(self) -> None:
+        counts = (
+            self.entity_count,
+            self.entity_total_count,
+            self.fact_count,
+            self.fact_total_count,
+            self.relation_count,
+            self.relation_total_count,
+            self.option_value_count,
+            self.option_value_total_count,
+        )
+        if any(type(value) is not int or value < 0 for value in counts):
+            raise ValueError("entity inventory counts must be non-negative exact integers")
+        if (
+            self.entity_count > self.entity_total_count
+            or self.fact_count > self.fact_total_count
+            or self.relation_count > self.relation_total_count
+            or self.option_value_count > self.option_value_total_count
+        ):
+            raise ValueError("entity inventory retained counts cannot exceed totals")
+        object.__setattr__(self, "issue_codes", tuple(dict.fromkeys(self.issue_codes)))
+        if any(not isinstance(code, EntityInventoryIssueCode) for code in self.issue_codes):
+            raise TypeError("entity inventory issue codes must be typed")
+        truncated = any(
+            retained < total
+            for retained, total in (
+                (self.entity_count, self.entity_total_count),
+                (self.fact_count, self.fact_total_count),
+                (self.relation_count, self.relation_total_count),
+                (self.option_value_count, self.option_value_total_count),
+            )
+        )
+        if self.status is EntityInventoryStatus.UNASSESSED:
+            if any(counts) or self.issue_codes:
+                raise ValueError("unassessed entity inventory cannot carry observations")
+        elif self.status is EntityInventoryStatus.COMPLETE:
+            if truncated or self.issue_codes:
+                raise ValueError("complete entity inventory cannot report omissions")
+        elif self.status is EntityInventoryStatus.PARTIAL:
+            if not truncated or not self.issue_codes:
+                raise ValueError("partial entity inventory requires typed omissions")
+        elif self.status is EntityInventoryStatus.UNAVAILABLE:
+            if any(counts) or self.issue_codes != (EntityInventoryIssueCode.COVERAGE_UNAVAILABLE,):
+                raise ValueError("unavailable entity inventory requires its typed reason only")
+
+
 class ActionRisk(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
@@ -167,10 +242,9 @@ class SurfaceObservation:
     bindings: tuple[ActionBinding, ...] = ()
     coverage: CoverageState = CoverageState.COMPLETE
     artifacts: dict[str, Any] = field(default_factory=dict)
-    semantic_inventory: SemanticInventorySummary = field(
-        default_factory=SemanticInventorySummary.unassessed
-    )
+    semantic_inventory: SemanticInventorySummary = field(default_factory=SemanticInventorySummary.unassessed)
     media: tuple[ObservationMedia, ...] = ()
+    entity_inventory: EntityInventorySummary = field(default_factory=EntityInventorySummary)
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
@@ -187,9 +261,7 @@ class SurfaceObservation:
         if not isinstance(self.semantic_inventory, SemanticInventorySummary):
             raise TypeError("surface semantic inventory must be typed")
         object.__setattr__(self, "media", tuple(self.media))
-        if len(self.media) > 4 or any(
-            not isinstance(item, ObservationMedia) for item in self.media
-        ):
+        if len(self.media) > 4 or any(not isinstance(item, ObservationMedia) for item in self.media):
             raise TypeError("surface media must be a bounded typed tuple")
         if self.semantic_inventory.status is not SemanticInventoryStatus.UNASSESSED:
             if self.semantic_inventory.projected_target_count != len(self.targets):
@@ -197,6 +269,13 @@ class SurfaceObservation:
             actionable = len({binding.target_id for binding in self.bindings})
             if self.semantic_inventory.actionable_target_count != actionable:
                 raise ValueError("assessed semantic inventory must match unique binding targets")
+        if not isinstance(self.entity_inventory, EntityInventorySummary):
+            raise TypeError("surface entity inventory summary must be typed")
+        if self.entity_inventory.status is not EntityInventoryStatus.UNASSESSED:
+            if self.entity_inventory.entity_count != len(self.targets):
+                raise ValueError("entity inventory must match retained surface targets")
+            if self.entity_inventory.fact_count != len(self.facts):
+                raise ValueError("entity inventory must match retained surface facts")
 
 
 @dataclass(frozen=True)
@@ -248,17 +327,20 @@ class ActionOption:
     observation_barrier: bool = True
 
     def __post_init__(self) -> None:
-        if not all(
-            value.strip()
-            for value in (
-                self.action_id,
-                self.observation_id,
-                self.semantic_action,
-                self.target_id,
-                self.effect_category,
-                self.schema_digest,
+        if (
+            not all(
+                value.strip()
+                for value in (
+                    self.action_id,
+                    self.observation_id,
+                    self.semantic_action,
+                    self.target_id,
+                    self.effect_category,
+                    self.schema_digest,
+                )
             )
-        ) or not self.eligible_binding_ids:
+            or not self.eligible_binding_ids
+        ):
             raise ValueError("action option requires current semantic identity")
         validate_parameter_schema_contract(self.parameter_schema)
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))

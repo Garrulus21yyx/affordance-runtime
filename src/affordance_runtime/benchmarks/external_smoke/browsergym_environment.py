@@ -29,6 +29,9 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_diagnostics import 
     BrowserGymDiagnosticSnapshot,
     diagnostic_snapshot,
 )
+from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
 from affordance_runtime.benchmarks.external_smoke.browsergym_execution import browsergym_action
 from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
     BrowserGymProjection,
@@ -106,6 +109,10 @@ class BrowserGymMiniWobEnvironment:
     _terminated: bool = False
     _closed: bool = False
     last_currentness_decision: BrowserGymCurrentnessDecision | None = None
+    entity_identity: BrowserGymEntityIdentityMap = field(
+        default_factory=BrowserGymEntityIdentityMap,
+        repr=False,
+    )
 
     @property
     def observation_capabilities(self) -> ObservationCapabilities:
@@ -302,6 +309,7 @@ class BrowserGymMiniWobEnvironment:
                 page_identity=self._page_identity,
                 episode_identity=self._episode_identity,
                 verifier=snapshot,
+                entity_identity=self.entity_identity,
             )
         except BrowserGymSemanticError as exc:
             return failed_acquisition(origin, f"browsergym_semantic_{exc.code.value}")

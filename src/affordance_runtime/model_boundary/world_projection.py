@@ -9,6 +9,11 @@ from typing import Any
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.model_boundary.observation_paging import (
+    ObservationPager,
+    ObservationTraversalStatus,
+    ObservationTraversalView,
+)
 from affordance_runtime.model_boundary.source_projection import (
     ObservationSourceSummary,
     project_observation_source,
@@ -87,6 +92,7 @@ class ModelWorldView:
     artifact_summaries: BoundedSection[ModelArtifactView]
     sources: tuple[ObservationSourceSummary, ...] = ()
     observation_capabilities: tuple[ObservationCapabilityView, ...] = ()
+    traversal: ObservationTraversalView | None = None
 
 
 def project_model_world(
@@ -95,15 +101,19 @@ def project_model_world(
     pinned_target_ids: tuple[str, ...] = (),
     pinned_output_ids: tuple[str, ...] = (),
     observation_capabilities: tuple[ObservationCapabilityView, ...] = (),
+    observation_cursor: str = "",
+    observation_pager: ObservationPager = ObservationPager(),
 ) -> ModelWorldView:
-    pinned = set(pinned_target_ids)
-    ordered_targets = tuple(item for item in observation.targets if item.target_id in pinned) + tuple(
-        item for item in observation.targets if item.target_id not in pinned
+    basis = observation_pager.begin(
+        observation,
+        pinned_target_ids=pinned_target_ids,
+        cursor=observation_cursor,
+        page_size=budget.max_targets,
+        min_exploration_slots=budget.observation_exploration_slots,
     )
-    targets = tuple(
-        _project_target(item, budget.max_relations_per_target)
-        for item in ordered_targets[: budget.max_targets]
-    )
+    by_id = {item.target_id: item for item in observation.targets}
+    ordered_targets = tuple(by_id[target_id] for target_id in basis.target_ids)
+    targets = tuple(_project_target(item, budget.max_relations_per_target) for item in ordered_targets)
     target_ids = {item.target_id for item in targets}
     fact_counts: dict[str, int] = {}
     projected_facts: list[PublicFactView] = []
@@ -116,7 +126,9 @@ def project_model_world(
         if count >= budget.max_facts_per_target:
             continue
         projected_facts.append(
-            PublicFactView(canonical_fact_ref(fact.fact_id), fact.subject_id, _text(fact.predicate), _public_value(fact.value))
+            PublicFactView(
+                canonical_fact_ref(fact.fact_id), fact.subject_id, _text(fact.predicate), _public_value(fact.value)
+            )
         )
         fact_counts[fact.subject_id] = count + 1
     conflicts = tuple(
@@ -147,6 +159,10 @@ def project_model_world(
         )
         for source in observation.sources
     )
+    provisional_traversal = observation_pager.finish(
+        basis,
+        tuple(item.target_id for item in targets),
+    )
     view = ModelWorldView(
         _section(targets, len(observation.targets)),
         _section(tuple(projected_facts), len(observation.facts)),
@@ -154,9 +170,18 @@ def project_model_world(
         _section(shown_artifacts, len(artifacts)),
         sources=source_summaries,
         observation_capabilities=observation_capabilities,
+        traversal=(
+            None if provisional_traversal.status is ObservationTraversalStatus.COMPLETE else provisional_traversal
+        ),
     )
-    return fit_model_world(
-        view, budget.max_total_serialized_bytes // 2, pinned_target_ids, pinned_output_ids
+    fitted = fit_model_world(view, budget.max_total_serialized_bytes // 2, pinned_target_ids, pinned_output_ids)
+    traversal = observation_pager.finish(
+        basis,
+        tuple(item.target_id for item in fitted.targets.items),
+    )
+    return replace(
+        fitted,
+        traversal=(None if traversal.status is ObservationTraversalStatus.COMPLETE else traversal),
     )
 
 
@@ -165,6 +190,8 @@ def fit_model_world(
     max_bytes: int,
     pinned_target_ids: tuple[str, ...] = (),
     pinned_output_ids: tuple[str, ...] = (),
+    *,
+    allow_target_removal: bool = True,
 ) -> ModelWorldView:
     pinned = set(pinned_target_ids)
     pinned_outputs = set(pinned_output_ids)
@@ -188,7 +215,10 @@ def fit_model_world(
         if view.facts.items:
             view = replace(view, facts=_resize(view.facts, view.facts.items[:-1]))
             continue
-        removable = next((item for item in reversed(view.targets.items) if item.target_id not in pinned), None)
+        removable = next(
+            (item for item in reversed(view.targets.items) if allow_target_removal and item.target_id not in pinned),
+            None,
+        )
         if removable is not None:
             targets = tuple(item for item in view.targets.items if item.target_id != removable.target_id)
             visible = {item.target_id for item in targets}
@@ -234,11 +264,7 @@ def _project_target(target, relation_limit: int) -> ModelTargetView:
 
 
 def _public_items(value: Mapping[str, Any]) -> list[tuple[str, object]]:
-    return [
-        (str(key), _public_value(item))
-        for key, item in value.items()
-        if not _private_key(str(key))
-    ]
+    return [(str(key), _public_value(item)) for key, item in value.items() if not _private_key(str(key))]
 
 
 def _public_mapping(value: Mapping[str, Any], limit: int) -> dict[str, object]:
@@ -261,9 +287,11 @@ def _public_value(value: Any, depth: int = 0) -> Any:
 
 def _private_key(key: str) -> bool:
     normalized = key.casefold().replace("-", "_")
-    return normalized in _PRIVATE_KEYS or any(
-        normalized.endswith(f"_{marker}") for marker in _PRIVATE_KEYS
-    ) or any(normalized.startswith(f"{marker}_") for marker in _ROUTE_KEYS)
+    return (
+        normalized in _PRIVATE_KEYS
+        or any(normalized.endswith(f"_{marker}") for marker in _PRIVATE_KEYS)
+        or any(normalized.startswith(f"{marker}_") for marker in _ROUTE_KEYS)
+    )
 
 
 def _text(value: str) -> str:

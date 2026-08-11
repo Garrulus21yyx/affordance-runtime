@@ -101,13 +101,9 @@ def _append_root(state: ControlState, command: AppendRoot) -> ControlReduction:
     transition = command.transition
     if not isinstance(transition, ControlTransition):
         return ControlRejected("invalid_root_transition")
-    if state.recent_transitions and (
-        state.recent_transitions[-1].pending_kind is PendingKind.CONFIRMATION
-    ):
+    if state.recent_transitions and (state.recent_transitions[-1].pending_kind is PendingKind.CONFIRMATION):
         return ControlRejected("pending_confirmation_must_resolve")
-    if state.recent_transitions and str(
-        state.recent_transitions[-1].resulting_status or ""
-    ) == "waiting_user":
+    if state.recent_transitions and str(state.recent_transitions[-1].resulting_status or "") == "waiting_user":
         return ControlRejected("waiting_state_requires_typed_resume")
     if type(command.recent_limit) is not int or command.recent_limit <= 0:
         return ControlRejected("invalid_recent_transition_limit")
@@ -117,25 +113,18 @@ def _append_root(state: ControlState, command: AppendRoot) -> ControlReduction:
         return ControlRejected("root_identity_sequence_mismatch")
     if (
         state.recent_transitions
-        and transition.before_observation_id
-        != state.recent_transitions[-1].after_observation_id
+        and transition.before_observation_id != state.recent_transitions[-1].after_observation_id
     ):
         return ControlRejected("observation_epoch_discontinuity")
-    if any(
-        item.transition_id == transition.transition_id
-        for item in state.recent_transitions
-    ):
+    if any(item.transition_id == transition.transition_id for item in state.recent_transitions):
         return ControlRejected("duplicate_root_transition")
     outcome_error = _pending_status_error(
         transition.pending_kind, transition.resulting_status, transition.task_evaluation
     )
     if outcome_error:
         return ControlRejected(outcome_error)
-    if (
-        transition.pending_kind is PendingKind.CONFIRMATION
-    ) != bool(
-        transition.admission is not None
-        and transition.admission.status is AdmissionStatus.CONFIRMATION_REQUIRED
+    if (transition.pending_kind is PendingKind.CONFIRMATION) != bool(
+        transition.admission is not None and transition.admission.status is AdmissionStatus.CONFIRMATION_REQUIRED
     ):
         return ControlRejected("confirmation_admission_mismatch")
     transition_error = _transition_fact_error(
@@ -236,9 +225,7 @@ def _apply_continuation(
             *continuation.attempt_receipts,
         ),
         after_observation_id=continuation.after_observation_id,
-        action_evaluation=(
-            continuation.action_evaluation or transition.action_evaluation
-        ),
+        action_evaluation=(continuation.action_evaluation or transition.action_evaluation),
         task_evaluation=_current_task_evaluation(
             continuation.task_evaluation,
             transition.task_evaluation,
@@ -246,8 +233,7 @@ def _apply_continuation(
         ),
         progress=type(transition.progress)(
             transition.progress.event_count + continuation.progress.event_count,
-            continuation.progress.latest_event_type
-            or transition.progress.latest_event_type,
+            continuation.progress.latest_event_type or transition.progress.latest_event_type,
         ),
         pending_kind=continuation.pending_kind,
         resulting_status=continuation.resulting_status,
@@ -263,10 +249,7 @@ def _apply_continuation(
     next_state = replace(
         state,
         recent_transitions=tuple(values),
-        sent_unknown_total_count=(
-            state.sent_unknown_total_count
-            + _sent_unknown(continuation.attempt_receipts)
-        ),
+        sent_unknown_total_count=(state.sent_unknown_total_count + _sent_unknown(continuation.attempt_receipts)),
         continued_root_ids=(
             *state.continued_root_ids,
             continuation.source_transition_id,
@@ -294,8 +277,7 @@ def _current_task_evaluation(continuation, previous, after_observation_id):
 
 def _sent_unknown(receipts) -> int:
     return sum(
-        item.operation is AttemptOperation.EXECUTE
-        and item.dispatch_status is DispatchStatus.SENT_UNKNOWN
+        item.operation is AttemptOperation.EXECUTE and item.dispatch_status is DispatchStatus.SENT_UNKNOWN
         for item in receipts
     )
 
@@ -322,19 +304,14 @@ def _transition_fact_error(execution, executions, acquisition, acquisitions, rec
             if item.attempts != 0 or item.origin is not None:
                 return "acquisition_attempt_status_mismatch"
         elif item.status is AcquisitionStatus.ACQUIRED:
-            if (
-                item.attempts != 1
-                or item.origin is None
-                or item.origin is not item.expected_origin
-            ):
+            if item.attempts != 1 or item.origin is None or item.origin is not item.expected_origin:
                 return "acquisition_attempt_status_mismatch"
         elif item.attempts != 1:
             return "acquisition_attempt_status_mismatch"
     returned = tuple(
         receipt
         for receipt in receipts
-        if receipt.operation is AttemptOperation.EXECUTE
-        and receipt.disposition is AttemptDisposition.RETURNED
+        if receipt.operation is AttemptOperation.EXECUTE and receipt.disposition is AttemptDisposition.RETURNED
     )
     receipt_ids = tuple(receipt.attempt_id for receipt in receipts)
     if len(receipt_ids) != len(set(receipt_ids)):
@@ -368,22 +345,17 @@ def _transition_fact_error(execution, executions, acquisition, acquisitions, rec
 
 
 def _transition_lifecycle_error(
-    transition: ControlTransition, *, confirmation_consumed: bool = False,
+    transition: ControlTransition,
+    *,
+    confirmation_consumed: bool = False,
 ) -> str:
     """Close the supported finalized-record lifecycle cross-product."""
 
     is_selection = isinstance(transition.decision, SelectAction)
     admission = transition.admission.status if transition.admission is not None else None
-    execute_receipts = tuple(
-        item
-        for item in transition.attempt_receipts
-        if item.operation is AttemptOperation.EXECUTE
-    )
+    execute_receipts = tuple(item for item in transition.attempt_receipts if item.operation is AttemptOperation.EXECUTE)
     has_execution = bool(transition.execution_attempts or execute_receipts)
-    has_evaluation = bool(
-        transition.action_evaluation is not None
-        or transition.task_evaluation is not None
-    )
+    has_evaluation = bool(transition.action_evaluation is not None or transition.task_evaluation is not None)
     feedback = transition.control_feedback
     if feedback is not None:
         if feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION:
@@ -393,9 +365,7 @@ def _transition_lifecycle_error(
                 and admission is AdmissionStatus.REJECTED
             ) or (
                 feedback.source is ControlFeedbackSource.OBJECTIVE_ADMISSION
-                and admission is (
-                    AdmissionStatus.REJECTED if is_selection else None
-                )
+                and admission is (AdmissionStatus.REJECTED if is_selection else None)
             )
             if (
                 not source_matches
@@ -405,6 +375,15 @@ def _transition_lifecycle_error(
                 or transition.before_observation_id != transition.after_observation_id
             ):
                 return "repair_feedback_lifecycle_mismatch"
+        if feedback.kind is ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED and (
+            feedback.source is not ControlFeedbackSource.OBSERVATION_COVERAGE
+            or has_execution
+            or transition.acquisition_attempts
+            or transition.attempt_receipts
+            or transition.before_observation_id != transition.after_observation_id
+            or str(transition.resulting_status or "") != ""
+        ):
+            return "observation_traversal_feedback_lifecycle_mismatch"
         if feedback.kind is ControlFeedbackKind.NO_INFORMATION_GAIN:
             expected_source = {
                 "RequestActionPage": ControlFeedbackSource.ACTION_PAGE,
@@ -436,22 +415,16 @@ def _transition_lifecycle_error(
         ):
             return "confirmation_lifecycle_mismatch"
     if admission is AdmissionStatus.REJECTED:
-        repairable = bool(
-            feedback is not None
-            and feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION
-        )
+        repairable = bool(feedback is not None and feedback.kind is ControlFeedbackKind.REPAIRABLE_REJECTION)
         if (
             transition.pending_kind is not PendingKind.NONE
             or has_execution
             or transition.action_evaluation is not None
-            or str(transition.resulting_status or "") not in (
-                {"", "blocked", "failed"} if repairable else {"blocked", "failed"}
-            )
+            or str(transition.resulting_status or "")
+            not in ({"", "blocked", "failed"} if repairable else {"blocked", "failed"})
         ):
             return "rejected_admission_lifecycle_mismatch"
-    if admission is AdmissionStatus.ADMITTED and (
-        transition.pending_kind is PendingKind.CONFIRMATION
-    ):
+    if admission is AdmissionStatus.ADMITTED and (transition.pending_kind is PendingKind.CONFIRMATION):
         return "admitted_lifecycle_mismatch"
     if transition.pending_kind is PendingKind.CONFIRMATION and has_execution:
         return "confirmation_lifecycle_mismatch"
@@ -461,15 +434,25 @@ def _transition_lifecycle_error(
     ):
         return "evaluation_without_dispatched_action"
     if isinstance(transition.decision, AskUser) and (
-        transition.pending_kind is not PendingKind.USER
-        or str(transition.resulting_status) != "waiting_user"
+        transition.pending_kind is not PendingKind.USER or str(transition.resulting_status) != "waiting_user"
     ):
         return "decision_pending_mismatch"
-    if isinstance(transition.decision, Abort) and (
-        transition.pending_kind is not PendingKind.NONE
-        or str(transition.resulting_status) != "failed"
-    ):
-        return "decision_terminal_mismatch"
+    if isinstance(transition.decision, Abort):
+        coverage_advance = bool(
+            feedback is not None
+            and feedback.kind is ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED
+            and str(transition.resulting_status or "") == ""
+        )
+        coverage_unknown = str(transition.resulting_status or "") == "blocked" and transition.reason_code in {
+            "negative_claim_source_coverage_unavailable",
+            "negative_claim_inventory_incomplete",
+            "model_page_capacity_exceeded",
+            "observation_traversal_budget_exhausted",
+        }
+        if transition.pending_kind is not PendingKind.NONE or not (
+            str(transition.resulting_status) == "failed" or coverage_advance or coverage_unknown
+        ):
+            return "decision_terminal_mismatch"
     return ""
 
 
@@ -544,15 +527,9 @@ def _invalid_state_code(state: ControlState) -> str:
     if bool(state.recent_transitions) != bool(state.total_count):
         return "invalid_control_suffix"
     sequences = tuple(item.sequence for item in state.recent_transitions)
-    expected_sequences = tuple(
-        range(state.total_count - len(sequences) + 1, state.total_count + 1)
-    )
-    if (
-        sequences != expected_sequences
-        or any(
-            not _identity_matches_sequence(item.transition_id, item.sequence)
-            for item in state.recent_transitions
-        )
+    expected_sequences = tuple(range(state.total_count - len(sequences) + 1, state.total_count + 1))
+    if sequences != expected_sequences or any(
+        not _identity_matches_sequence(item.transition_id, item.sequence) for item in state.recent_transitions
     ):
         return "invalid_control_suffix"
     if any(
@@ -564,10 +541,7 @@ def _invalid_state_code(state: ControlState) -> str:
         )
     ):
         return "observation_epoch_discontinuity"
-    if any(
-        transition.resulting_status is not None
-        for transition in state.recent_transitions[:-1]
-    ):
+    if any(transition.resulting_status is not None for transition in state.recent_transitions[:-1]):
         return "invalid_nonlatest_stopping_transition"
     if (
         any(not isinstance(item, str) for item in state.continued_root_ids)
@@ -575,50 +549,34 @@ def _invalid_state_code(state: ControlState) -> str:
         or len(state.continued_root_ids) > state.total_count
     ):
         return "invalid_continuation_history"
-    continued_sequences = tuple(
-        _transition_sequence(item) for item in state.continued_root_ids
-    )
-    if any(
-        sequence is None or sequence > state.total_count
-        for sequence in continued_sequences
-    ):
+    continued_sequences = tuple(_transition_sequence(item) for item in state.continued_root_ids)
+    if any(sequence is None or sequence > state.total_count for sequence in continued_sequences):
         return "invalid_continuation_history"
-    valid_continued_sequences = tuple(
-        sequence for sequence in continued_sequences if sequence is not None
-    )
+    valid_continued_sequences = tuple(sequence for sequence in continued_sequences if sequence is not None)
     if valid_continued_sequences != tuple(sorted(valid_continued_sequences)):
         return "invalid_continuation_history"
-    if any(
-        not isinstance(item, tuple) or len(item) != 2
-        for item in state.kind_counts
-    ):
+    if any(not isinstance(item, tuple) or len(item) != 2 for item in state.kind_counts):
         return "invalid_control_kind_totals"
     if any(
-        not isinstance(item[0], str)
-        or item[0] not in _DECISION_KIND_NAMES
-        or type(item[1]) is not int
-        or item[1] <= 0
+        not isinstance(item[0], str) or item[0] not in _DECISION_KIND_NAMES or type(item[1]) is not int or item[1] <= 0
         for item in state.kind_counts
     ):
         return "invalid_control_kind_totals"
     counts = dict(state.kind_counts)
-    if len(counts) != len(state.kind_counts) or any(
-        name not in _DECISION_KIND_NAMES for name in counts
-    ) or sum(counts.values()) != state.total_count:
+    if (
+        len(counts) != len(state.kind_counts)
+        or any(name not in _DECISION_KIND_NAMES for name in counts)
+        or sum(counts.values()) != state.total_count
+    ):
         return "invalid_control_kind_totals"
     suffix_kind_counts: dict[str, int] = {}
     for transition in state.recent_transitions:
         name = type(transition.decision).__name__
         suffix_kind_counts[name] = suffix_kind_counts.get(name, 0) + 1
-    if any(
-        count > counts.get(name, 0)
-        for name, count in suffix_kind_counts.items()
-    ):
+    if any(count > counts.get(name, 0) for name, count in suffix_kind_counts.items()):
         return "invalid_control_kind_totals"
     suffix_receipts = tuple(
-        receipt
-        for transition in state.recent_transitions
-        for receipt in transition.attempt_receipts
+        receipt for transition in state.recent_transitions for receipt in transition.attempt_receipts
     )
     suffix_receipt_ids = tuple(item.attempt_id for item in suffix_receipts)
     if len(suffix_receipt_ids) != len(set(suffix_receipt_ids)):
@@ -641,15 +599,12 @@ def _invalid_state_code(state: ControlState) -> str:
             return fact_error
         lifecycle_error = _transition_lifecycle_error(
             transition,
-            confirmation_consumed=(
-                transition.transition_id in state.continued_root_ids
-            ),
+            confirmation_consumed=(transition.transition_id in state.continued_root_ids),
         )
         if lifecycle_error:
             return lifecycle_error
         confirmation_admission = bool(
-            transition.admission is not None
-            and transition.admission.status is AdmissionStatus.CONFIRMATION_REQUIRED
+            transition.admission is not None and transition.admission.status is AdmissionStatus.CONFIRMATION_REQUIRED
         )
         if transition.pending_kind is PendingKind.CONFIRMATION:
             if not confirmation_admission:
@@ -661,16 +616,12 @@ def _invalid_state_code(state: ControlState) -> str:
         for index, transition in enumerate(state.recent_transitions)
         if transition.pending_kind is PendingKind.CONFIRMATION
     )
-    if pending_confirmation_indexes and pending_confirmation_indexes != (
-        len(state.recent_transitions) - 1,
-    ):
+    if pending_confirmation_indexes and pending_confirmation_indexes != (len(state.recent_transitions) - 1,):
         return "invalid_pending_confirmation_position"
     suffix_sent_unknown = _sent_unknown(suffix_receipts)
     if not suffix_sent_unknown <= state.sent_unknown_total_count <= state.total_count:
         return "invalid_sent_unknown_total"
-    visible_by_id = {
-        item.transition_id: item for item in state.recent_transitions
-    }
+    visible_by_id = {item.transition_id: item for item in state.recent_transitions}
     for root_id in state.continued_root_ids:
         visible = visible_by_id.get(root_id)
         if visible is not None and (

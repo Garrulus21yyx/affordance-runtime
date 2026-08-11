@@ -67,11 +67,14 @@ class RequestObservation:
     modality: str
     required_assurance: str
     reason: str
+    cursor: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_bounded(self.subject_id, 240, "observation subject")
         _require_bounded(self.reason, _MAX_REASON, "observation reason")
+        if len(self.cursor) > 512:
+            raise ValueError("observation cursor exceeds its bound")
         try:
             ObservationModality(self.modality)
             ObservationAssurance(self.required_assurance)
@@ -170,15 +173,18 @@ class AgentDecisionPackage:
             (NoObjectiveOperation, ProposeObjective, RetainObjective, ReplaceObjective),
         ):
             raise TypeError("decision package requires a typed objective operation")
-        if not isinstance(self.decision, (
-            SelectAction,
-            RequestObservation,
-            RequestActionPage,
-            AskUser,
-            ProposeDone,
-            Wait,
-            Abort,
-        )):
+        if not isinstance(
+            self.decision,
+            (
+                SelectAction,
+                RequestObservation,
+                RequestActionPage,
+                AskUser,
+                ProposeDone,
+                Wait,
+                Abort,
+            ),
+        ):
             raise TypeError("decision package requires a typed agent decision")
 
     @property

@@ -90,12 +90,17 @@ class ContextBuilder:
             self.budget.max_destinations_per_option,
         )
         shown_actions = projected_actions.options
-        pinned_targets = _pinned_targets(shown_actions, state, self.budget.max_targets)
+        pinned_targets = _pinned_targets(
+            shown_actions,
+            state,
+            self.budget.observation_pinned_capacity,
+        )
         world = project_model_world(
             state.current_observation,
             self.budget,
             pinned_targets,
             observation_capabilities=project_acquisition_offers(observation_capabilities),
+            observation_cursor=state.observation_cursor,
         )
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
@@ -112,9 +117,7 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        history_items = project_control_transitions(state.recent_control_transitions)[
-            -self.budget.max_history_turns :
-        ]
+        history_items = project_control_transitions(state.recent_control_transitions)[-self.budget.max_history_turns :]
         identity = _context_identity(state, action_space, page, context_generation)
         truncation = {
             "intent": project_intent_context(intent_context, self.budget).excerpts.truncated,
@@ -171,7 +174,7 @@ class ContextBuilder:
             cursor=cursor,
             page_size=self.budget.max_action_options,
             max_destinations_per_option=self.budget.max_destinations_per_option,
-            max_targets=self.budget.max_targets,
+            max_targets=self.budget.observation_pinned_capacity,
         )
 
     def execution_page(
@@ -293,15 +296,14 @@ def _task_frontier_view(state) -> AgentTaskFrontierView | None:
     )
     latest = verified.objective_checkpoints[-1] if verified.objective_checkpoints else None
     must_advance = bool(
-        active_view is None
-        and verified.current_frontier
-        and latest is not None
-        and latest.status.value == "verified"
+        active_view is None and verified.current_frontier and latest is not None and latest.status.value == "verified"
     )
     return AgentTaskFrontierView(
         tuple(
             AgentRequirementStateView(
-                item.requirement_id, item.status.value, item.evidence_refs,
+                item.requirement_id,
+                item.status.value,
+                item.evidence_refs,
             )
             for item in verified.requirements
         ),
@@ -342,12 +344,14 @@ def _image_inputs(state: AgentLoopState) -> tuple[AgentImageInput, ...]:
         for media in reversed(source.media):
             if media.kind != "screenshot":
                 continue
-            images.append(AgentImageInput(
-                canonical_artifact_ref(source.observation_id, media.media_id),
-                media.mime_type,
-                media.data,
-                media.sha256,
-            ))
+            images.append(
+                AgentImageInput(
+                    canonical_artifact_ref(source.observation_id, media.media_id),
+                    media.mime_type,
+                    media.data,
+                    media.sha256,
+                )
+            )
             if len(images) == 2:
                 return tuple(images)
     return tuple(images)
@@ -364,6 +368,7 @@ def _fit_context(
                 context.world,
                 max(1, serialized_size(context.world) - 1),
                 pinned_target_ids,
+                allow_target_removal=False,
             )
         except ValueError:
             smaller_world = context.world
@@ -385,7 +390,7 @@ def _fit_context(
                 progress=replace(context.progress, events=events, truncated=True),
             )
             continue
-        if context.history.items:
+        if len(context.history.items) > 1:
             history = BoundedSection(
                 context.history.items[1:],
                 context.history.total_count,

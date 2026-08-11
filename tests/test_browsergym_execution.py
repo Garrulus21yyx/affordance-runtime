@@ -188,6 +188,7 @@ def test_post_step_observation_is_returned_without_capture_or_second_step() -> N
 def test_independent_capture_is_active_fresh_and_does_not_step() -> None:
     fake, environment, task, world = _fixture()
     before_binding = world.bindings[0].binding_id
+    before_entities = tuple(item.target_id for item in world.targets)
     acquisition = asyncio.run(environment.capture(WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         "refresh current browser world",
@@ -197,10 +198,28 @@ def test_independent_capture_is_active_fresh_and_does_not_step() -> None:
     after = acquisition.observation
     assert after is not None
     assert after.observation_id != world.observation_id
+    assert tuple(item.target_id for item in after.targets) == before_entities
     assert after.bindings[0].binding_id != before_binding
     assert fake.capture_count == 1
     assert fake.actions == [] and environment.step_calls == 0
     assert environment.capture_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_stable_entity_identity_does_not_extend_old_binding_authority() -> None:
+    fake, environment, task, world = _fixture()
+    old_request = request_for(world, task, "activate")
+    acquisition = asyncio.run(environment.capture(WorldObservationRequest(
+        ObservationRequestKind.CURRENTNESS_REFRESH,
+        "advance the observation epoch",
+    )))
+    assert acquisition.observation is not None
+    assert acquisition.observation.targets[0].target_id == world.targets[0].target_id
+
+    result = asyncio.run(environment.execute(old_request)).result
+
+    assert result.dispatch_status is DispatchStatus.NOT_SENT
+    assert fake.actions == [] and environment.step_calls == 0
     asyncio.run(environment.close())
 
 

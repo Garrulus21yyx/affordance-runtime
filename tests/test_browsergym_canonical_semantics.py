@@ -7,6 +7,9 @@ from browsergym_adapter_support import ax_node, raw_observation
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
 from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
     project_browsergym_observation,
 )
@@ -28,6 +31,8 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.world import SemanticInventoryStatus
 
+_IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-canonical-semantics-tests")
+
 
 def _snapshot() -> BrowserGymVerifierSnapshot:
     return BrowserGymVerifierSnapshot(
@@ -44,6 +49,7 @@ def _projection(raw):
         page_identity="page:opaque",
         episode_identity="0",
         verifier=_snapshot(),
+        entity_identity=_IDENTITY,
     )
 
 

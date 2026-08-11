@@ -73,6 +73,7 @@ class AgentLoopState:
     control_feedback_delivery_total_count: int = 0
     control_repetition_total_count: int = 0
     control_issue_consumption_total_count: int = 0
+    observation_cursor: str = ""
 
     @property
     def recent_turns(self) -> tuple[Turn, ...]:
@@ -129,11 +130,7 @@ class AgentLoopState:
         self.control_transition_kind_counts = dict(reduced.kind_counts)
         self.sent_unknown_total_count = reduced.sent_unknown_total_count
         self.continued_control_root_ids = reduced.continued_root_ids
-        self.control_terminal_status = (
-            AgentLoopStatus(reduced.terminal_status)
-            if reduced.terminal_status
-            else None
-        )
+        self.control_terminal_status = AgentLoopStatus(reduced.terminal_status) if reduced.terminal_status else None
 
     def _append_progress_event(self, event: ProgressEvent) -> None:
         self.recent_progress_events = (
@@ -161,11 +158,7 @@ class AgentLoopState:
     def commit_objective_operation(self, prepared: PreparedObjectiveOperation) -> None:
         """Commit an already validated operation exactly once against current state."""
 
-        current = (
-            self.active_objective
-            if isinstance(self.active_objective, ActiveObjective)
-            else None
-        )
+        current = self.active_objective if isinstance(self.active_objective, ActiveObjective) else None
         current_id = current.objective_id if current is not None else ""
         if current_id != prepared.expected_active_objective_id:
             raise ValueError("prepared objective operation is stale")
@@ -223,9 +216,7 @@ class AgentLoopState:
         if len(issue_digests) > 2 or len(set(issue_digests)) != len(issue_digests):
             raise ValueError("control issue budget state is invalid")
         prior = (
-            self.consumed_control_issue_digests
-            if self.control_feedback_scope_digest == feedback.scope_digest
-            else ()
+            self.consumed_control_issue_digests if self.control_feedback_scope_digest == feedback.scope_digest else ()
         )
         if feedback.consumes_issue_budget and feedback.issue_digest not in prior:
             self.control_issue_consumption_total_count += 1
@@ -278,10 +269,7 @@ class AgentLoopState:
             *self.seen_action_page_result_digests,
             result_digest,
         )
-        changed = bool(
-            self.consumed_control_issue_digests
-            or self.pending_control_feedback is not None
-        )
+        changed = bool(self.consumed_control_issue_digests or self.pending_control_feedback is not None)
         self.consumed_control_issue_digests = ()
         self.pending_control_feedback = None
         if changed:
@@ -312,11 +300,17 @@ class AgentLoopState:
             public_world_semantic_digest,
         )
 
-        changed = public_world_semantic_digest(
-            observation
-        ) != public_world_semantic_digest(self.current_observation)
+        changed = public_world_semantic_digest(observation) != public_world_semantic_digest(self.current_observation)
+        snapshot_changed = observation.observation_id != self.current_observation.observation_id
         self.current_observation = observation
         self.current_task_evaluation = None
+        if snapshot_changed:
+            self.observation_cursor = ""
         if changed:
             self.clear_control_issue_budget()
         return changed
+
+    def set_observation_cursor(self, cursor: str) -> None:
+        if not cursor.strip() or len(cursor) > 512:
+            raise ValueError("observation cursor must be a bounded opaque value")
+        self.observation_cursor = cursor

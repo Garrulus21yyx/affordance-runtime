@@ -7,6 +7,9 @@ from affordance_runtime.agent.evaluation_control import validated_action_evaluat
 from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
     BrowserGymMechanicalActionEvaluator,
 )
+from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
 from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
     project_browsergym_observation,
 )
@@ -23,6 +26,8 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import CoverageState, ObservationConflict, ObservationSourceProfile
+
+_IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-action-evaluator-tests")
 
 
 def _task() -> TaskGoal:
@@ -57,6 +62,7 @@ def _world(
         raw_observation(*nodes), observation_id=observation_id,
         source_revision=f"revision:{observation_id}", page_identity="page:opaque",
         episode_identity="0", verifier=snapshot,
+        entity_identity=_IDENTITY,
     ).world
     source = world.sources[0]
     if coverage != CoverageState.COMPLETE:
@@ -127,6 +133,7 @@ def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
             "run:opaque", "obs:after", "obs:after", VerifierFactSource.RESET,
             ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
         ),
+        entity_identity=_IDENTITY,
     ).world
     assert _evaluate(before, missing, "fill", "desired").status is ActionEvaluationStatus.UNKNOWN
 
@@ -165,6 +172,7 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
             "run:opaque", "obs:before", "obs:before", VerifierFactSource.RESET,
             ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
         ),
+        entity_identity=_IDENTITY,
     ).world
     after = replace(before, observation_id="obs:after", bindings=(), sources=())
     request = request_for(before, task, "activate")

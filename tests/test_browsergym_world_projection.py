@@ -4,6 +4,9 @@ import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
 from affordance_runtime.benchmarks.external_smoke import browsergym_projection as projection_module
+from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
 from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
     project_browsergym_observation,
 )
@@ -22,8 +25,15 @@ from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_policy.serialization import serialize_agent_context
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import CoverageState, SemanticInventoryStatus
+from affordance_runtime.world import (
+    CoverageState,
+    EntityInventoryIssueCode,
+    EntityInventoryStatus,
+    SemanticInventoryStatus,
+)
 from affordance_runtime.world.action_space import ActionSpaceBuilder
+
+_IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-world-projection-tests")
 
 
 def test_structural_projection_is_bounded_truthful_and_private() -> None:
@@ -35,12 +45,21 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
         ax_node("private-5", "option", "B"),
     )
     snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
+        "run:opaque",
+        "obs:1",
+        "obs:1",
+        VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE,
+        ExternalVerifierReason.VERIFIED_RUNNING,
     )
     projected = project_browsergym_observation(
-        raw, observation_id="obs:1", source_revision="revision:1",
-        page_identity="page:opaque", episode_identity="0", verifier=snapshot,
+        raw,
+        observation_id="obs:1",
+        source_revision="revision:1",
+        page_identity="page:opaque",
+        episode_identity="0",
+        verifier=snapshot,
+        entity_identity=_IDENTITY,
     )
     assert len(projected.world.targets) == 3
     assert len(projected.world.bindings) == 3
@@ -51,6 +70,8 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     assert "selector" not in public and "bid" not in public
     select = next(item for item in projected.world.bindings if item.semantic_action == "select")
     assert select.parameter_schema["properties"]["value"]["enum"] == ("A", "B")
+    select_target = next(item for item in projected.world.targets if item.role == "combobox")
+    assert select_target.state["option_domain"] == ("A", "B")
     assert dict(projected.private_bindings[-1].option_values) == {"A": "A", "B": "B"}
     inventory = projected.world.sources[0].semantic_inventory
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
@@ -62,6 +83,51 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
         inventory.omitted_target_count,
         inventory.informational_target_count,
     ) == (3, 3, 3, 0, 0, 0)
+    retained = projected.world.sources[0].entity_inventory
+    assert retained.status is EntityInventoryStatus.COMPLETE
+    assert (retained.entity_count, retained.entity_total_count) == (3, 3)
+    assert (retained.option_value_count, retained.option_value_total_count) == (2, 2)
+
+
+def test_entity_identity_is_stable_across_ax_order_and_unrelated_insertions() -> None:
+    identity = BrowserGymEntityIdentityMap(b"stable-entity-identity-test-key")
+    baseline = _project_with_identity(
+        raw_observation(
+            ax_node("save-private", "button", "Save"),
+            ax_node("name-private", "textbox", "Name"),
+        ),
+        identity,
+    )
+    reordered = _project_with_identity(
+        raw_observation(
+            ax_node("unrelated-private", "StaticText", "Noise"),
+            ax_node("name-private", "textbox", "Name"),
+            ax_node("save-private", "button", "Save"),
+        ),
+        identity,
+    )
+
+    first = {item.label: item.target_id for item in baseline.world.targets}
+    second = {item.label: item.target_id for item in reordered.world.targets}
+    assert first["Save"] == second["Save"]
+    assert first["Name"] == second["Name"]
+    assert all(value.startswith("entity:") for value in second.values())
+    assert "private" not in repr(reordered.world)
+
+
+def test_entity_identity_distinguishes_same_label_and_page_incarnations() -> None:
+    identity = BrowserGymEntityIdentityMap(b"scoped-entity-identity-test-key")
+    raw = raw_observation(
+        ax_node("first-private", "button", "Open"),
+        ax_node("second-private", "button", "Open"),
+    )
+    first_page = _project_with_identity(raw, identity, page_identity="page:first")
+    second_page = _project_with_identity(raw, identity, page_identity="page:second")
+
+    first_ids = tuple(item.target_id for item in first_page.world.targets)
+    second_ids = tuple(item.target_id for item in second_page.world.targets)
+    assert len(set(first_ids)) == 2
+    assert set(first_ids).isdisjoint(second_ids)
 
 
 def test_newly_projected_checkbox_is_observable_and_actionable_without_private_routes() -> None:
@@ -77,9 +143,10 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     checkbox = next(item for item in omitted.world.targets if item.role == "checkbox")
     assert checkbox.label == "Remember"
     assert len(omitted.world.bindings) == len(baseline.world.bindings) + 1
-    assert next(
-        item for item in omitted.world.bindings if item.target_id == checkbox.target_id
-    ).semantic_action == "activate"
+    assert (
+        next(item for item in omitted.world.bindings if item.target_id == checkbox.target_id).semantic_action
+        == "activate"
+    )
     assert omitted.world.coverage == baseline.world.coverage == {"browsergym": CoverageState.COMPLETE}
     task = TaskGoal(
         "task:inventory",
@@ -106,11 +173,13 @@ def test_static_text_is_projected_as_read_only_information() -> None:
 
 
 def test_structural_relations_use_only_current_public_target_ids() -> None:
-    projected = _project(raw_observation(
-        ax_node("table", "table", "Results", child_ids=("row",)),
-        ax_node("row", "row", "Ada", parent_id="table", child_ids=("cell",)),
-        ax_node("cell", "cell", "42", parent_id="row"),
-    ))
+    projected = _project(
+        raw_observation(
+            ax_node("table", "table", "Results", child_ids=("row",)),
+            ax_node("row", "row", "Ada", parent_id="table", child_ids=("cell",)),
+            ax_node("cell", "cell", "42", parent_id="row"),
+        )
+    )
     by_role = {item.role: item for item in projected.world.targets}
     assert by_role["row"].relations["parent_id"] == by_role["table"].target_id
     assert by_role["row"].relations["child_ids"] == (by_role["cell"].target_id,)
@@ -146,13 +215,20 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
 
     task = TaskGoal("task:image", "Save", allowed_effects=("external_ui_interaction",))
     state = __import__(
-        "affordance_runtime.agent.state", fromlist=["AgentLoopState"],
+        "affordance_runtime.agent.state",
+        fromlist=["AgentLoopState"],
     ).AgentLoopState(projected.world, remaining_turns=2)
     evaluation = TaskEvaluation(
-        task.task_id, projected.world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing",
+        task.task_id,
+        projected.world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
     )
     context = ContextBuilder().build(
-        task, state, ActionSpaceBuilder().build(task, projected.world), evaluation,
+        task,
+        state,
+        ActionSpaceBuilder().build(task, projected.world),
+        evaluation,
     )
     assert context.image_inputs[0].sha256 == media[0].sha256
     serialized = serialize_agent_context(context)
@@ -179,12 +255,14 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
     assert select_inventory.non_executable_target_count == 1
     assert not select_projection.world.bindings
 
-    monkeypatch.setattr(projection_module, "MAX_TARGETS", 1)
-    truncated = _project(raw_observation(
-        ax_node("one", "button", "One"),
-        ax_node("two", "button", "Two"),
-        ax_node("radio", "radio", "Three"),
-    ))
+    monkeypatch.setattr(projection_module, "MAX_INVENTORY_TARGETS", 1)
+    truncated = _project(
+        raw_observation(
+            ax_node("one", "button", "One"),
+            ax_node("two", "button", "Two"),
+            ax_node("radio", "radio", "Three"),
+        )
+    )
     truncated_inventory = truncated.world.sources[0].semantic_inventory
     assert truncated.world.coverage["browsergym"] is CoverageState.TRUNCATED
     assert truncated_inventory.status is SemanticInventoryStatus.PARTIAL
@@ -193,32 +271,130 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
         truncated_inventory.projected_target_count,
         truncated_inventory.omitted_target_count,
     ) == (3, 1, 2)
+    retained = truncated.world.sources[0].entity_inventory
+    assert retained.status is EntityInventoryStatus.PARTIAL
+    assert EntityInventoryIssueCode.ENTITY_CAPACITY_EXCEEDED in retained.issue_codes
 
 
 def test_fact_only_truncation_does_not_change_target_inventory(monkeypatch) -> None:
-    monkeypatch.setattr(projection_module, "MAX_FACTS", 0)
-    projected = _project(raw_observation(
-        ax_node("field", "textbox", "Name", value="Ada", properties=(("required", True),)),
-    ))
+    monkeypatch.setattr(projection_module, "MAX_INVENTORY_FACTS", 0)
+    projected = _project(
+        raw_observation(
+            ax_node("field", "textbox", "Name", value="Ada", properties=(("required", True),)),
+        )
+    )
     inventory = projected.world.sources[0].semantic_inventory
     assert projected.world.coverage["browsergym"] is CoverageState.TRUNCATED
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
     assert (inventory.recognized_target_count, inventory.projected_target_count) == (1, 1)
+    retained = projected.world.sources[0].entity_inventory
+    assert retained.status is EntityInventoryStatus.PARTIAL
+    assert retained.issue_codes == (EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED,)
+
+
+def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
+    projected = _project(
+        raw_observation(*(ax_node(f"button-{index}", "button", f"Button {index}") for index in range(65)))
+    )
+
+    assert len(projected.world.targets) == 65
+    assert len(projected.world.bindings) == 65
+    assert projected.world.coverage["browsergym"] is CoverageState.COMPLETE
+    assert projected.world.sources[0].entity_inventory.status is EntityInventoryStatus.COMPLETE
+
+    task = TaskGoal("task:paging", "Click Button 64", allowed_effects=("external_ui_interaction",))
+    state = __import__(
+        "affordance_runtime.agent.state",
+        fromlist=["AgentLoopState"],
+    ).AgentLoopState(projected.world, remaining_turns=2)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        projected.world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
+    )
+    context = ContextBuilder().build(
+        task,
+        state,
+        ActionSpaceBuilder().build(task, projected.world),
+        evaluation,
+    )
+    assert context.world.targets.total_count == 65
+    assert len(context.world.targets.items) == 64
+    assert context.world.targets.truncated is True
+    assert context.world.traversal is not None
+    assert context.world.traversal.status == "partial"
+
+    state.set_observation_cursor(context.world.traversal.next_cursor)
+    next_context = ContextBuilder().build(
+        task,
+        state,
+        ActionSpaceBuilder().build(task, projected.world),
+        evaluation,
+    )
+    assert any(item.label == "Button 64" for item in next_context.world.targets.items)
+    assert next_context.world.traversal is None
+
+
+def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> None:
+    projected = _project(
+        raw_observation(
+            *(ax_node(f"noise-{index}", "StaticText", f"Noise {index}") for index in range(70)),
+            ax_node("critical", "button", "Continue task"),
+        )
+    )
+    task = TaskGoal(
+        "task:adversarial-pinning",
+        "Continue task",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    state = __import__(
+        "affordance_runtime.agent.state",
+        fromlist=["AgentLoopState"],
+    ).AgentLoopState(projected.world, remaining_turns=2)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        projected.world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
+    )
+    context = ContextBuilder().build(
+        task,
+        state,
+        ActionSpaceBuilder().build(task, projected.world),
+        evaluation,
+    )
+
+    assert any(item.label == "Continue task" for item in context.world.targets.items)
+    assert context.world.traversal is not None
+    assert context.world.traversal.next_cursor
+    assert len(context.world.targets.items) == 64
 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:
     raw = raw_observation(ax_node("private-1", "button", "okay"))
     snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
+        "run:opaque",
+        "obs:1",
+        "obs:1",
+        VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE,
+        ExternalVerifierReason.VERIFIED_RUNNING,
     )
     world = project_browsergym_observation(
-        raw, observation_id="obs:1", source_revision="revision:1",
-        page_identity="page:opaque", episode_identity="0", verifier=snapshot,
+        raw,
+        observation_id="obs:1",
+        source_revision="revision:1",
+        page_identity="page:opaque",
+        episode_identity="0",
+        verifier=snapshot,
+        entity_identity=_IDENTITY,
     ).world
     task = TaskGoal("task:opaque", raw["goal"], allowed_effects=("external_ui_interaction",))
     state = __import__(
-        "affordance_runtime.agent.state", fromlist=["AgentLoopState"],
+        "affordance_runtime.agent.state",
+        fromlist=["AgentLoopState"],
     ).AgentLoopState(world, remaining_turns=2)
     evaluation = TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
     context = ContextBuilder().build(task, state, ActionSpaceBuilder().build(task, world), evaluation)
@@ -230,12 +406,17 @@ def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() 
     assert source_wire["projection_coverage"] == "complete"
     assert "coverage" not in source_wire
     assert source_wire["semantic_inventory"]["status"] == "represented"
+    assert source_wire["entity_inventory"]["status"] == "complete"
 
 
 def _project(raw):
     snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
+        "run:opaque",
+        "obs:1",
+        "obs:1",
+        VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE,
+        ExternalVerifierReason.VERIFIED_RUNNING,
     )
     return project_browsergym_observation(
         raw,
@@ -244,4 +425,25 @@ def _project(raw):
         page_identity="page:opaque",
         episode_identity="0",
         verifier=snapshot,
+        entity_identity=_IDENTITY,
+    )
+
+
+def _project_with_identity(raw, identity, *, page_identity="page:opaque"):
+    snapshot = BrowserGymVerifierSnapshot(
+        "run:opaque",
+        "obs:identity",
+        "obs:identity",
+        VerifierFactSource.RESET,
+        ExternalVerifierStatus.INCOMPLETE,
+        ExternalVerifierReason.VERIFIED_RUNNING,
+    )
+    return project_browsergym_observation(
+        raw,
+        observation_id="obs:identity",
+        source_revision="revision:identity",
+        page_identity=page_identity,
+        episode_identity="episode:one",
+        verifier=snapshot,
+        entity_identity=identity,
     )

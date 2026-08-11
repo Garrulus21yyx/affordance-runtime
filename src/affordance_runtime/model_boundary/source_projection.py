@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.world import CoverageState, SemanticInventorySummary, SurfaceObservation
+from affordance_runtime.world import (
+    CoverageState,
+    EntityInventorySummary,
+    SemanticInventorySummary,
+    SurfaceObservation,
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +32,7 @@ class ObservationSourceSummary:
     acquisition_cost: str
     projection_coverage: str
     semantic_inventory: ModelSemanticInventoryView
+    entity_inventory: ModelEntityInventoryView
     freshness: str
     conflict_status: str
 
@@ -35,6 +41,20 @@ class ObservationSourceSummary:
         """Non-serialized Python compatibility view."""
 
         return self.projection_coverage
+
+
+@dataclass(frozen=True)
+class ModelEntityInventoryView:
+    status: str
+    entity_count: int
+    entity_total_count: int
+    fact_count: int
+    fact_total_count: int
+    relation_count: int
+    relation_total_count: int
+    option_value_count: int
+    option_value_total_count: int
+    issue_codes: tuple[str, ...]
 
 
 def project_observation_source(
@@ -51,8 +71,24 @@ def project_observation_source(
         str(profile.acquisition_cost),
         str(projection_coverage),
         project_semantic_inventory(source.semantic_inventory),
+        project_entity_inventory(source.entity_inventory),
         "stale" if projection_coverage is CoverageState.STALE else "current",
         "conflicted" if conflicted else "clear",
+    )
+
+
+def project_entity_inventory(summary: EntityInventorySummary) -> ModelEntityInventoryView:
+    return ModelEntityInventoryView(
+        summary.status.value,
+        summary.entity_count,
+        summary.entity_total_count,
+        summary.fact_count,
+        summary.fact_total_count,
+        summary.relation_count,
+        summary.relation_total_count,
+        summary.option_value_count,
+        summary.option_value_total_count,
+        tuple(code.value for code in summary.issue_codes),
     )
 
 

@@ -1,38 +1,61 @@
-# M4.6-E Perception and Requirement Mainline Plan
+# Task-Grounded Perception and Frontier Convergence Plan
 
-Goal: restore a complete enough public GUI observation path before evaluating
-task-frontier competence, then add one bounded task-start requirement proposer
-without creating a second task or action authority.
+Status: `IN_PROGRESS / IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`.
+
+Goal: remove irreversible loss between acquired GUI observations and bounded
+model presentation, then add incremental non-authoritative requirement
+hypotheses without creating a second observation, task, action or completion
+authority.
 
 ## Frozen constraints
 
 - Screenshot bytes are observation evidence, never execution authority.
+- `WorldObservation`/`SurfaceObservation` remain the sole observation truth.
+  Their bounded full `EntityInventory` is projected by `ObservationPager`; no
+  parallel `ObservationSpace` authority is introduced.
+- `ObservedEntity`, `CandidateTarget`, `ActionTarget` and `VerifiedSubject` are
+  roles over one canonical public `entity_id`, not four duplicated entity
+  records. Hypotheses, actions and evidence reference that identity.
+- Stable entity identity and current execution are separate: an
+  `EntityObservationRef` binds entity + snapshot/revision, while every
+  `ActionOption`/binding remains strictly current-epoch and stale use is
+  zero-dispatch.
 - `ActionSpace` remains the only legal-action authority; visual/AX aliases can
   only reference current public targets/actions and expire with the context.
 - Model transport must carry real typed image content; artifact summaries are
   not a substitute for image transport.
 - Public semantic breadth may expose read-only structure without making every
   observed role executable.
-- Requirement initialization produces hypotheses only. Runtime validates the
-  bounded algebra/references, and verifier-owned state transitions remain the
-  only way to verify or invalidate progress.
+- Requirement proposal produces bounded hypotheses only. Runtime assigns
+  hypothesis IDs and owns admission/revision/retirement; verifier assessment
+  owns only predicate `SATISFIED/CONTRADICTED/UNKNOWN`. Only `TaskGoal`, user
+  input or existing criteria define authoritative task requirements, and only
+  `TaskEvaluator` owns terminal task truth.
+- Losslessness is scoped to the finite acquired snapshot, declared semantic
+  profile and hard inventory cap. Capacity exhaustion/partial acquisition fail
+  typed; infinite GUI, canvas and scroll-space completeness is not claimed.
+- Source acquisition coverage, inventory completeness and model-presentation
+  traversal are separate axes. Negative-claim coverage gates never overwrite
+  authoritative source/evaluator facts.
 - No static full-task DAG, task-name production branches, hidden benchmark
   answers, selectors, coordinates, credentials, or oracle state.
-- Benchmark reports separate declared-supported, unassessed and unsupported
-  cohorts; mixed-denominator success is diagnostic only.
+- Benchmark reports separate `capability_covered`, `unassessed` and
+  `declared_gap` cohorts; mixed-denominator success is prohibited.
 
 ## Steps
 
 | Step | Status | Work | Files |
 |---|---|---|---|
-| 1 | completed | Map screenshot acquisition/artifact ownership, model request/transport schemas, BrowserGym AX projection and current benchmark cohort authority; freeze the smallest message/image contract. | this plan and owner notes |
-| 2 | completed | Add typed multimodal `ModelMessage` content with bounded image parts, provider serialization, privacy/private-capture handling and text-only compatibility. | model transport and policy bridge |
-| 3 | completed | Bind current public screenshot evidence into each model decision request without exposing runtime-private routes or hidden benchmark state. | context/request composition |
-| 4 | completed | Expand public BrowserGym observation semantics for checkbox/radio/tab/menuitem and read-only table/list/heading/static-text relations while keeping execution eligibility separate. | BrowserGym semantic profile/projection |
-| 5 | in_progress | Add explicit text-only, screenshot+AX and screenshot+AX+SoM-compatible grounding profiles; SoM remains optional and is not required for the first transport slice. | grounding/profile contracts |
-| 6 | pending | Add task-start bounded requirement hypotheses from public instruction + initial observation; atomically admit references and preserve verifier-only lifecycle authority. | task frontier/initializer |
-| 7 | pending | Add invariant/privacy/unit/integration tests and run Ruff, mypy and full pytest. | tests |
-| 8 | pending | Run predeclared same-model A/B on declared-supported cases first, then report challenge cohorts separately with complete public/private traces. | fresh evidence |
+| 0 | completed | Freeze revised terminology, authority split, scoped completeness and honest implementation statuses. | this plan; implementation status; current queue |
+| 1 | completed | Replace role/label/ordinal identity with run/page-incarnation-scoped opaque entity identity while keeping action bindings epoch-bound. | `browsergym_entity_identity.py`; BrowserGym projection/environment; identity/execution tests |
+| 2 | completed | Retain a bounded full entity/state/fact/relation/option-domain inventory inside `SurfaceObservation`; hard-cap overflow returns typed partial/capacity outcomes. | world contracts and BrowserGym projection |
+| 3 | completed | Add `ObservationPager` and bounded traversal state over one frozen snapshot, with pinned header plus fair exploration slots. | model boundary and loop state |
+| 4 | completed | Add `NegativeClaimCoverageGate` for absence/no-progress/infeasible/unsupported/unsupported-ProposeDone claims only; authoritative success and normal actions bypass it. | decision/progress control |
+| 5 | in_progress | Run a clean current-SHA text-only versus screenshot+AX baseline on the intersection capability-covered cohort, separating run validity, comparison validity and inconclusive pairs. | benchmark profile and fresh evidence |
+| 6 | pending | Add bounded instruction-first incremental `RequirementHypothesis` proposals with optional candidate entity references and unknown set completeness. | model/task hypothesis contracts |
+| 7 | pending | Add Runtime hypothesis admission/lifecycle plus verifier predicate assessment without creating task requirements or terminal truth. | task frontier/runtime admission/evaluation |
+| 8 | pending | Add bounded hypothesis pinning to existing rolling objectives while preserving fair cursor enumeration and ActionSpace authority. | context projection/action relevance |
+| 9 | pending | Run separated capability-covered, unassessed and declared-gap cohorts; decide viewport/OCR/SoM/scroll work only from fresh failure evidence. | benchmark reports/evidence |
 
 ## Exit criteria
 
@@ -42,10 +65,18 @@ without creating a second task or action authority.
   call; private capture can retain exact exchanges outside public evidence.
 - Observable roles and structural nodes can inform policy without silently
   becoming executable actions.
-- Every image/AX/action alias is bound to one context/observation and stale use
-  fails closed through existing admission.
-- Requirement hypotheses are bounded, non-authoritative and independently
-  verifier-updated.
+- Finite-snapshot losslessness: within the declared profile/cap, every retained
+  entity is reachable through bounded paging or traversal ends typed unknown.
+- Scoped stable identity: irrelevant AX order changes do not change an entity
+  ID, while old action bindings remain stale after epoch change.
+- Non-amplification: observation/hypothesis/pinning never creates or legalizes an
+  ActionOption.
+- Negative-claim coverage safety: incomplete model traversal cannot justify an
+  absence/no-progress/infeasible/unsupported conclusion.
+- Hypothesis non-authority: predicate assessment cannot define task necessity,
+  hypothesis-set completeness or terminal success.
+- Bounded traversal liveness: every traversal terminates complete or typed
+  unknown within declared page/byte/policy-call budgets.
 - A/B manifests declare perception profile and readiness cohort before model
   execution; reports do not conflate supported and challenge success rates.
 
@@ -120,3 +151,36 @@ without creating a second task or action authority.
   two provider attempts and one execution, with no evidence/harness errors.
   Public trace and mode-0600 raw exchanges are retained under the local
   `artifacts/m4-6-e-objective-feedback-click-tab-60e9771` diagnostic tree.
+- 2026-08-12: architecture-first convergence review froze the shared
+  task-grounded perception/frontier cause while retaining separate authorities.
+  Screenshot transport, first semantic breadth, diagnostic A/B and the P5-E
+  rolling-objective vertical slice exist; stable entity identity, non-lossy
+  bounded inventory, observation traversal/negative-claim gating and an
+  incremental requirement-hypothesis producer do not. Viewport tiling, OCR, SoM
+  and automatic scrolling are explicitly deferred until fresh evidence makes
+  them the next blocker. Step 1 started.
+- 2026-08-12: step 1 implemented. A Runtime-private keyed identity mapper now
+  derives opaque `entity:*` IDs from page/episode incarnation plus stable
+  private BID/node identity. AX permutation and unrelated insertion preserve
+  IDs; same-label controls remain distinct; page-incarnation changes mint new
+  IDs. Independent capture preserves entity identity while replacing bindings,
+  and replaying the old binding remains zero-dispatch. Modified files:
+  `browsergym_entity_identity.py`, BrowserGym projection/environment and focused
+  identity/execution tests. Validation: 71 focused tests passed, Ruff and mypy
+  passed, and the full suite passed 2224 with 27 skipped. Step 2 started.
+- 2026-08-12: steps 2-4 implemented as one bounded observation slice. BrowserGym
+  now retains up to 512 canonical entities and 4096 facts before any model
+  projection; option domains, relation counts and typed capacity reasons are
+  conserved by `EntityInventorySummary`. The 64-target model limit is now a
+  page size only. `ObservationPager` binds opaque cursors to one frozen
+  snapshot, preserves current action targets in a bounded header and reserves
+  fair exploration slots. A `RequestObservation.cursor` advances only the
+  in-memory page and consumes no acquisition. `NegativeClaimCoverageGate`
+  intercepts absence/no-progress/unsupported and evidence-free completion
+  claims while traversal is partial; incomplete acquisition/inventory becomes
+  typed unknown. Ordinary actions and authoritative evaluator success bypass
+  the gate. Adversarial tests put 70 distractors before a critical action target
+  and retain both the target and a usable exploration cursor. Validation:
+  Ruff passed, mypy passed across 451 source files, the full suite passed 2229
+  with 27 skipped, and all 15 documentation-governance checks passed. The
+  current-SHA perception A/B is the next gate.

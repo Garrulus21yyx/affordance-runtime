@@ -1,5 +1,10 @@
 # P5-E Task Frontier Vertical Slice Plan
 
+Status: `IN_PROGRESS / VERTICAL_SLICE_IMPLEMENTED`. This record covers the
+rolling-objective slice; the incremental requirement-hypothesis producer and
+fair observation pinning are owned by the task-grounded perception/frontier
+convergence plan.
+
 Goal: implement the smallest general task-frontier loop that turns verified
 local effects into an explicit next-objective boundary without introducing a
 task-specific planner, a second action authority, or an extra model call.
@@ -34,7 +39,8 @@ Constraints:
 | 6 | done | Add focused invariant, privacy and runtime tests, including copy-paste-style fill-to-next-frontier behavior. | `tests/test_task_frontier_vertical_slice.py` and migrated schema/projection tests |
 | 7 | done | Run Ruff, mypy, full pytest and resolve regressions. | Ruff and mypy passed; full pytest 2209 passed, 27 skipped |
 | 8 | done | Run an honest targeted benchmark only after the vertical slice is stable, using a new immutable identity and without imposing a circular pre-implementation success threshold. | two clean-SHA runs completed; neither supports a performance claim |
-| 9 | in_progress | Add dual-track diagnostics before another benchmark: public typed policy/Runtime trace plus explicit private exact model exchange capture outside the evidence tree. | model transport, benchmark instrumentation/reporting, CLI and tests |
+| 9 | done | Add dual-track diagnostics before another benchmark: public typed policy/Runtime trace plus explicit private exact model exchange capture outside the evidence tree. | model transport, benchmark instrumentation/reporting, CLI and tests |
+| 10 | pending | Add bounded incremental requirement hypotheses and fair entity pinning without turning hypotheses into task requirements. | owned by the task-grounded perception/frontier convergence plan |
 
 ## Exit criteria
 

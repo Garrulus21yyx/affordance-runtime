@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -10,6 +9,9 @@ from PIL import Image
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
     BrowserGymElementBinding,
+)
+from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+    BrowserGymEntityIdentityMap,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
     informational_browsergym_roles,
@@ -28,6 +30,9 @@ from affordance_runtime.world import (
     ActionBinding,
     ActionRisk,
     CoverageState,
+    EntityInventoryIssueCode,
+    EntityInventoryStatus,
+    EntityInventorySummary,
     ObservationMedia,
     ObservationSourceProfile,
     SemanticInventorySummary,
@@ -37,9 +42,9 @@ from affordance_runtime.world import (
     WorldObservation,
 )
 
-MAX_TARGETS = 64
-MAX_FACTS = 128
-MAX_FACTS_PER_TARGET = 8
+MAX_INVENTORY_TARGETS = 512
+MAX_INVENTORY_FACTS = 4_096
+MAX_INVENTORY_OPTIONS_PER_TARGET = 512
 MAX_SELECT_OPTIONS = 16
 
 
@@ -60,50 +65,82 @@ def project_browsergym_observation(
     page_identity: str,
     episode_identity: str,
     verifier: BrowserGymVerifierSnapshot,
+    entity_identity: BrowserGymEntityIdentityMap,
 ) -> BrowserGymProjection:
     analysis = analyze_browsergym_semantics(raw)
     candidates = list(analysis.controls)
-    projected = candidates[:MAX_TARGETS]
+    projected = candidates[:MAX_INVENTORY_TARGETS]
     targets: list[SemanticTarget] = []
     facts: list[StateFact] = []
     bindings: list[ActionBinding] = []
     private: list[BrowserGymElementBinding] = []
-    fact_total = 0
+    fact_total = sum(len(node.public_state) + bool(node.public_options) for node in candidates)
+    candidate_node_ids = {node.private_node_id for node in candidates}
+    relation_total = sum(
+        bool(node.private_parent_id and node.private_parent_id in candidate_node_ids)
+        + sum(child_id in candidate_node_ids for child_id in node.private_child_ids)
+        for node in candidates
+    )
+    option_value_total = sum(len(node.public_options) for node in candidates)
+    option_value_count = 0
+    issues: list[EntityInventoryIssueCode] = []
+    if len(candidates) > len(projected):
+        issues.append(EntityInventoryIssueCode.ENTITY_CAPACITY_EXCEEDED)
     target_ids = {
-        node.private_node_id: _target_id(node.role, node.accessible_name, ordinal)
-        for ordinal, node in enumerate(projected)
+        node.private_node_id: entity_identity.entity_id(
+            node,
+            page_identity=page_identity,
+            episode_identity=episode_identity,
+        )
+        for node in projected
     }
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
         state = dict(node.public_state)
+        if node.public_options:
+            option_domain = node.public_options[:MAX_INVENTORY_OPTIONS_PER_TARGET]
+            state["option_domain"] = option_domain
+            option_value_count += len(option_domain)
+            if len(option_domain) < len(node.public_options):
+                issues.append(EntityInventoryIssueCode.OPTION_DOMAIN_CAPACITY_EXCEEDED)
         relations: dict[str, object] = {}
         parent = target_ids.get(node.private_parent_id)
-        children = tuple(
-            target_ids[child_id]
-            for child_id in node.private_child_ids
-            if child_id in target_ids
-        )
+        children = tuple(target_ids[child_id] for child_id in node.private_child_ids if child_id in target_ids)
         if parent:
             relations["parent_id"] = parent
         if children:
             relations["child_ids"] = children
         target = SemanticTarget(
-            target_id, node.role, node.accessible_name, state, relations,
+            target_id,
+            node.role,
+            node.accessible_name,
+            state,
+            relations,
         )
         targets.append(target)
-        node_facts = tuple(state.items())
-        fact_total += len(node_facts)
-        for key, value in node_facts[:MAX_FACTS_PER_TARGET]:
-            if len(facts) >= MAX_FACTS:
+        for key, value in state.items():
+            if len(facts) >= MAX_INVENTORY_FACTS:
                 break
             facts.append(StateFact(f"{observation_id}:{target_id}:{key}", target_id, key, value, observation_id))
         public, runtime = _binding_pair(
-            node, target_id, ordinal, observation_id, source_revision, page_identity, episode_identity,
+            node,
+            target_id,
+            ordinal,
+            observation_id,
+            source_revision,
+            page_identity,
+            episode_identity,
         )
         if public is not None and runtime is not None:
             bindings.append(public)
             private.append(runtime)
-    truncated = len(candidates) > len(projected) or fact_total > len(facts)
+    if fact_total > len(facts):
+        issues.append(EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED)
+    relation_count = sum(
+        bool(target.relations.get("parent_id")) + len(target.relations.get("child_ids", ())) for target in targets
+    )
+    issues = list(dict.fromkeys(issues))
+    truncated = bool(issues)
     coverage = CoverageState.TRUNCATED if truncated else CoverageState.COMPLETE
     artifacts = {}
     for evidence_ref in verifier.evidence_refs:
@@ -120,9 +157,19 @@ def project_browsergym_observation(
         actionable_target_count=actionable_target_count,
         non_executable_target_count=projected_target_count - actionable_target_count,
         omitted_target_count=recognized_target_count - projected_target_count,
-        informational_target_count=sum(
-            target.role in informational_browsergym_roles() for target in targets
-        ),
+        informational_target_count=sum(target.role in informational_browsergym_roles() for target in targets),
+    )
+    entity_inventory = EntityInventorySummary(
+        EntityInventoryStatus.PARTIAL if truncated else EntityInventoryStatus.COMPLETE,
+        len(targets),
+        len(candidates),
+        len(facts),
+        fact_total,
+        relation_count,
+        relation_total,
+        option_value_count,
+        option_value_total,
+        tuple(issues),
     )
     source = SurfaceObservation(
         observation_id,
@@ -136,6 +183,7 @@ def project_browsergym_observation(
         artifacts,
         inventory,
         _screenshot_media(raw),
+        entity_inventory,
     )
     world = WorldObservation(
         observation_id,
@@ -146,7 +194,11 @@ def project_browsergym_observation(
         sources=(source,),
     )
     return BrowserGymProjection(
-        world, tuple(private), len(candidates), fact_total, analysis,
+        world,
+        tuple(private),
+        len(candidates),
+        fact_total,
+        analysis,
     )
 
 
@@ -173,25 +225,42 @@ def _binding_pair(
         if semantic == "select":
             value_schema["enum"] = [label for label, _ in options]
         schema = {
-            "type": "object", "properties": {"value": value_schema},
-            "required": ["value"], "additionalProperties": False,
+            "type": "object",
+            "properties": {"value": value_schema},
+            "required": ["value"],
+            "additionalProperties": False,
         }
     public = ActionBinding(
-        binding_id, observation_id, observation_id, revision, node.public_fingerprint,
-        target_id, target_id, "browsergym", "browsergym", semantic, primitive,
-        "local_reversible", ("external_ui_interaction",), schema, {},
-        observation_barrier=True, risk=ActionRisk.LOW,
+        binding_id,
+        observation_id,
+        observation_id,
+        revision,
+        node.public_fingerprint,
+        target_id,
+        target_id,
+        "browsergym",
+        "browsergym",
+        semantic,
+        primitive,
+        "local_reversible",
+        ("external_ui_interaction",),
+        schema,
+        {},
+        observation_barrier=True,
+        risk=ActionRisk.LOW,
     )
     runtime = BrowserGymElementBinding(
-        binding_id, observation_id, revision, page_identity, episode_identity,
-        node.private_bid, target_id, primitive, node,
+        binding_id,
+        observation_id,
+        revision,
+        page_identity,
+        episode_identity,
+        node.private_bid,
+        target_id,
+        primitive,
+        node,
     )
     return public, runtime
-
-
-def _target_id(role: str, label: str, ordinal: int) -> str:
-    digest = hashlib.sha256(f"{role}\0{label}\0{ordinal}".encode()).hexdigest()[:16]
-    return f"target:{digest}"
 
 
 def _screenshot_media(raw: dict[str, object]) -> tuple[ObservationMedia, ...]:

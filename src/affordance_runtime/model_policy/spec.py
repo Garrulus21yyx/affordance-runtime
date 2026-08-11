@@ -82,6 +82,7 @@ class RequestObservationPayload(_Payload):
     modality: Literal["structural", "visual", "environment_state", "user"]
     required_assurance: Literal["weak", "structural", "authoritative"]
     reason: Reason500
+    cursor: Optional512 = ""
 
 
 class RequestActionPagePayload(_Payload):
@@ -212,11 +213,7 @@ class TaskOutcomeIsPayload(_ObjectivePayload):
 
 
 PredicatePayload: TypeAlias = Annotated[
-    FactAvailablePayload
-    | TargetFieldEqualsPayload
-    | TargetPresentPayload
-    | TargetAbsentPayload
-    | TaskOutcomeIsPayload,
+    FactAvailablePayload | TargetFieldEqualsPayload | TargetPresentPayload | TargetAbsentPayload | TaskOutcomeIsPayload,
     Field(discriminator="kind"),
 ]
 
@@ -244,10 +241,7 @@ class ReplaceObjectivePayload(_ObjectivePayload):
 
 
 ObjectiveOperationPayload: TypeAlias = Annotated[
-    NoObjectiveOperationPayload
-    | ProposeObjectivePayload
-    | RetainObjectivePayload
-    | ReplaceObjectivePayload,
+    NoObjectiveOperationPayload | ProposeObjectivePayload | RetainObjectivePayload | ReplaceObjectivePayload,
     Field(discriminator="kind"),
 ]
 
@@ -266,11 +260,7 @@ class AgentDecisionPackagePayload(BaseModel):
     @classmethod
     def model_validate(cls, obj, **kwargs):
         _require_json_collection_types(obj)
-        if (
-            isinstance(obj, dict)
-            and "objective_operation" not in obj
-            and "type" in obj
-        ):
+        if isinstance(obj, dict) and "objective_operation" not in obj and "type" in obj:
             obj = {"objective_operation": {"kind": "none"}, "decision": obj}
         kwargs.setdefault("strict", False)
         return super().model_validate(obj, **kwargs)
@@ -317,6 +307,7 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
             value.modality,
             value.required_assurance,
             value.reason,
+            value.cursor,
         )
     if isinstance(value, RequestActionPagePayload):
         return RequestActionPage(
@@ -346,10 +337,12 @@ def payload_to_package(
     expected_context_id: str,
 ) -> AgentDecisionPackage:
     decision = payload_to_decision(
-        AgentDecisionPayload(root=payload.decision), expected_context_id,
+        AgentDecisionPayload(root=payload.decision),
+        expected_context_id,
     )
     return AgentDecisionPackage(
-        _payload_to_objective_operation(payload.objective_operation), decision,
+        _payload_to_objective_operation(payload.objective_operation),
+        decision,
     )
 
 

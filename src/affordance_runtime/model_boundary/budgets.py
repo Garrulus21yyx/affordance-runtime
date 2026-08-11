@@ -40,6 +40,7 @@ class ContextProjectionBudget:
     max_intent_excerpts: int = 6
     max_intent_chars: int = 2_400
     max_targets: int = 64
+    min_observation_exploration_targets: int = 8
     max_facts: int = 128
     max_facts_per_target: int = 8
     max_relations_per_target: int = 8
@@ -54,6 +55,19 @@ class ContextProjectionBudget:
     def __post_init__(self) -> None:
         if any(value <= 0 for value in self.__dict__.values()):
             raise ValueError("context projection budgets must be positive")
+
+    @property
+    def observation_exploration_slots(self) -> int:
+        return min(
+            self.min_observation_exploration_targets,
+            max(1, self.max_targets // 4),
+        )
+
+    @property
+    def observation_pinned_capacity(self) -> int:
+        if self.max_targets == 1:
+            return 1
+        return self.max_targets - self.observation_exploration_slots
 
 
 def serialized_size(value: object) -> int:

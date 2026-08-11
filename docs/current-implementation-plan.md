@@ -79,11 +79,16 @@ A separately authorized M4.5-C diagnostic has now completed from clean
 `4924ce61748d8efdec4fcc6de494acf8a9f224cc`: 60/60 cases, 8/60 success,
 valid evidence and no generalization claim. The archive commit `5f8d6ac` is
 docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
-AX semantics/currentness, M4.6-B verifier/task-terminal truth, M4.6-C
-semantic inventory truth and M4.6-D bounded control feedback are complete for
-their declared non-default scopes. M4.6-E remains not started. B assurance review
-remains independently open; P5-E, default cutover and old-core deletion remain
-unauthorized.
+    AX semantics/currentness, M4.6-B verifier/task-terminal truth, M4.6-C
+    semantic inventory truth and M4.6-D bounded control feedback are complete for
+    their declared non-default scopes. M4.6-E is
+    `IN_PROGRESS / IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`: real screenshot
+    transport, first semantic breadth and a two-case same-model A/B exist, while
+    stable entity identity, bounded retained inventory and negative-claim
+    traversal safety remain open. P5-E is `IN_PROGRESS /
+    VERTICAL_SLICE_IMPLEMENTED`: typed rolling objectives exist, but the bounded
+    incremental requirement-hypothesis producer does not. B assurance review,
+    default cutover and old-core deletion remain independently open.
 
 The architecture-first causal model, owner map, bounded algebra and evidence
 gates are recorded in the [M4.5-B convergence review](reviews/2026-08-11-p5-m45b-control-failure-convergence.md).

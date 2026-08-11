@@ -34,6 +34,7 @@ class ControlFeedbackKind(StrEnum):
     REPAIRABLE_REJECTION = "repairable_rejection"
     NO_INFORMATION_GAIN = "no_information_gain"
     STRATEGY_TRANSITION_REQUIRED = "strategy_transition_required"
+    OBSERVATION_TRAVERSAL_REQUIRED = "observation_traversal_required"
 
 
 class ControlFeedbackSource(StrEnum):
@@ -43,36 +44,55 @@ class ControlFeedbackSource(StrEnum):
     POLICY_OBSERVATION = "policy_observation"
     ACTION_EVALUATION = "action_evaluation"
     PROGRESS_EVENT = "progress_event"
+    OBSERVATION_COVERAGE = "observation_coverage"
 
 
 class NextDecisionDisposition(StrEnum):
     CORRECT_OR_REPLAN = "correct_or_replan"
     CHANGE_STRATEGY = "change_strategy"
+    INSPECT_NEXT_OBSERVATION_PAGE = "inspect_next_observation_page"
 
 
 _CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
-_PUBLIC_PATHS = frozenset({
-    "action_id",
-    "actions",
-    "destination_id",
-    "observation",
-    "parameters",
-    "parameters.value",
-    "objective_operation.active_objective_id",
-    "objective_operation.intended_requirement_ids",
-    "objective_operation.kind",
-    "objective_operation.predicate.expected.fact_ref",
-    "objective_operation.predicate.target_id",
-    "objective_operation.replaces_objective_id",
-})
+_PUBLIC_PATHS = frozenset(
+    {
+        "action_id",
+        "actions",
+        "destination_id",
+        "observation",
+        "parameters",
+        "parameters.value",
+        "objective_operation.active_objective_id",
+        "objective_operation.intended_requirement_ids",
+        "objective_operation.kind",
+        "objective_operation.predicate.expected.fact_ref",
+        "objective_operation.predicate.target_id",
+        "objective_operation.replaces_objective_id",
+    }
+)
 _PUBLIC_PATH = re.compile(
     r"parameters(?:\.[A-Za-z][A-Za-z0-9_-]{0,63})*|action_id|actions|destination_id|observation|objective_operation(?:\.[A-Za-z][A-Za-z0-9_-]{0,63})*"
 )
-_PRIVATE_PARTS = frozenset({
-    "password", "secret", "token", "credential", "authorization", "api", "key",
-    "selector", "coordinate", "bbox", "point", "href", "method", "backend", "executor",
-})
+_PRIVATE_PARTS = frozenset(
+    {
+        "password",
+        "secret",
+        "token",
+        "credential",
+        "authorization",
+        "api",
+        "key",
+        "selector",
+        "coordinate",
+        "bbox",
+        "point",
+        "href",
+        "method",
+        "backend",
+        "executor",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -103,7 +123,9 @@ class RelatedObjectiveOperationSnapshot:
         if self.kind not in {"none", "propose", "retain", "replace"}:
             raise ValueError("related objective operation kind is unsupported")
         object.__setattr__(
-            self, "intended_requirement_ids", tuple(self.intended_requirement_ids),
+            self,
+            "intended_requirement_ids",
+            tuple(self.intended_requirement_ids),
         )
         object.__setattr__(self, "predicate", freeze_json(self.predicate))
 
@@ -118,7 +140,9 @@ class ContractViolationSnapshot:
 
     def __post_init__(self) -> None:
         if self.contract_owner not in {
-            "current_action_page", "current_action_space", "task_frontier",
+            "current_action_page",
+            "current_action_space",
+            "task_frontier",
         }:
             raise ValueError("feedback violation owner is unsupported")
         if _CODE.fullmatch(self.code) is None:
@@ -144,9 +168,7 @@ class SemanticEffectSnapshot:
     def __post_init__(self) -> None:
         if self.dispatch not in {"not_sent", "sent", "sent_unknown"}:
             raise ValueError("semantic effect dispatch is unsupported")
-        if self.observed_effect not in {
-            "effect_confirmed", "no_effect_confirmed", "unknown", "rejected"
-        }:
+        if self.observed_effect not in {"effect_confirmed", "no_effect_confirmed", "unknown", "rejected"}:
             raise ValueError("observed semantic effect is unsupported")
         for value in (self.world_changed, self.action_space_changed, self.task_progress_changed):
             if type(value) is not bool:
@@ -238,35 +260,50 @@ class ControlFeedback:
 
     @property
     def consumes_issue_budget(self) -> bool:
-        return self.kind is not ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED
+        return self.kind not in {
+            ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED,
+            ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED,
+        }
 
     def _validate_matrix(self) -> None:
         expected = {
             ControlFeedbackKind.REPAIRABLE_REJECTION: (
-                frozenset({
-                    ControlFeedbackSource.ACTION_ADMISSION,
-                    ControlFeedbackSource.OBJECTIVE_ADMISSION,
-                }),
+                frozenset(
+                    {
+                        ControlFeedbackSource.ACTION_ADMISSION,
+                        ControlFeedbackSource.OBJECTIVE_ADMISSION,
+                    }
+                ),
                 NextDecisionDisposition.CORRECT_OR_REPLAN,
                 False,
                 False,
             ),
             ControlFeedbackKind.NO_INFORMATION_GAIN: (
-                frozenset({
-                    ControlFeedbackSource.ACTION_PAGE,
-                    ControlFeedbackSource.POLICY_OBSERVATION,
-                }),
+                frozenset(
+                    {
+                        ControlFeedbackSource.ACTION_PAGE,
+                        ControlFeedbackSource.POLICY_OBSERVATION,
+                    }
+                ),
                 NextDecisionDisposition.CHANGE_STRATEGY,
                 True,
                 True,
             ),
             ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED: (
-                frozenset({
-                    ControlFeedbackSource.ACTION_EVALUATION,
-                    ControlFeedbackSource.PROGRESS_EVENT,
-                }),
+                frozenset(
+                    {
+                        ControlFeedbackSource.ACTION_EVALUATION,
+                        ControlFeedbackSource.PROGRESS_EVENT,
+                    }
+                ),
                 NextDecisionDisposition.CHANGE_STRATEGY,
                 True,
+                False,
+            ),
+            ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED: (
+                frozenset({ControlFeedbackSource.OBSERVATION_COVERAGE}),
+                NextDecisionDisposition.INSPECT_NEXT_OBSERVATION_PAGE,
+                False,
                 False,
             ),
         }[self.kind]
@@ -276,9 +313,9 @@ class ControlFeedback:
             or self.next_decision_disposition is not disposition
             or self.strategy_transition_required is not transition
             or (requires_result and (not self.request_digest or not self.result_digest))
-            or (self.kind is not ControlFeedbackKind.NO_INFORMATION_GAIN and (
-                self.request_digest or self.result_digest
-            ))
+            or (
+                self.kind is not ControlFeedbackKind.NO_INFORMATION_GAIN and (self.request_digest or self.result_digest)
+            )
         ):
             raise ValueError("control feedback kind/source/disposition matrix is invalid")
         if self.kind is ControlFeedbackKind.REPAIRABLE_REJECTION and (
@@ -340,16 +377,15 @@ def objective_repair_feedback(
     objective_repairs: tuple[Mapping[str, object], ...] = ()
     if already_satisfied:
         objective_repairs = ({"kind": "none"},)
-        frontier = (
-            state.verified_task_state.current_frontier
-            if state.verified_task_state is not None else ()
-        )
+        frontier = state.verified_task_state.current_frontier if state.verified_task_state is not None else ()
         if frontier:
-            objective_repairs += ({
-                "kind": "propose",
-                "intended_requirement_ids": frontier,
-                "predicate": {"kind": "task_outcome_is", "status": "complete"},
-            },)
+            objective_repairs += (
+                {
+                    "kind": "propose",
+                    "intended_requirement_ids": frontier,
+                    "predicate": {"kind": "task_outcome_is", "status": "complete"},
+                },
+            )
     option = action_space.find(decision.action_id) if decision is not None else None
     return ControlFeedback(
         ControlFeedbackKind.REPAIRABLE_REJECTION,
@@ -362,12 +398,8 @@ def objective_repair_feedback(
         issue_digest=digest,
         related_objective_operation=RelatedObjectiveOperationSnapshot(
             operation.kind.value,
-            operation.active_objective_id
-            if isinstance(operation, RetainObjective)
-            else "",
-            operation.replaces_objective_id
-            if isinstance(operation, ReplaceObjective)
-            else "",
+            operation.active_objective_id if isinstance(operation, RetainObjective) else "",
+            operation.replaces_objective_id if isinstance(operation, ReplaceObjective) else "",
             proposal.intended_requirement_ids if proposal is not None else (),
             predicate,
         ),
@@ -413,13 +445,49 @@ def apply_feedback_budget(
 ) -> FeedbackBudgetDecision:
     """Apply the frozen two-distinct-issue budget without reconstructing history."""
 
-    if feedback.kind is ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED:
+    if feedback.kind in {
+        ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED,
+        ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED,
+    }:
         return FeedbackBudgetDecision(FeedbackBudgetDisposition.STRATEGY, consumed_issue_digests)
     prior = consumed_issue_digests if current_scope_digest == feedback.scope_digest else ()
     if feedback.issue_digest in prior or len(prior) >= 2:
         return FeedbackBudgetDecision(FeedbackBudgetDisposition.TERMINATE, prior)
     updated = (*prior, feedback.issue_digest)
     return FeedbackBudgetDecision(FeedbackBudgetDisposition.DELIVER, updated)
+
+
+def observation_traversal_feedback(
+    state: AgentLoopState,
+    action_space: ActionSpace,
+    page: InternalActionPage,
+    *,
+    code: str,
+) -> ControlFeedback:
+    scope = current_semantic_scope(state, action_space, page)
+    digest = make_issue_digest(
+        scope_digest=scope,
+        kind=ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED.value,
+        source=ControlFeedbackSource.OBSERVATION_COVERAGE.value,
+        code=code,
+        subject_semantics={},
+        public_field_paths=("observation",),
+    )
+    return ControlFeedback(
+        ControlFeedbackKind.OBSERVATION_TRAVERSAL_REQUIRED,
+        code,
+        ControlFeedbackSource.OBSERVATION_COVERAGE,
+        NextDecisionDisposition.INSPECT_NEXT_OBSERVATION_PAGE,
+        False,
+        public_field_paths=("observation",),
+        scope_digest=scope,
+        issue_digest=digest,
+        recovery=RecoveryConstraints(
+            repeat_previous_decision_allowed=False,
+            retry_allowed=False,
+            offered_action_ids=page.visible_action_ids,
+        ),
+    )
 
 
 def current_semantic_scope(
@@ -448,7 +516,8 @@ def repair_feedback(
 ) -> ControlFeedback:
     scope = current_semantic_scope(state, action_space, page)
     subject = public_subject_semantics(
-        state.current_observation, public_subject_id or "",
+        state.current_observation,
+        public_subject_id or "",
     )
     digest = make_issue_digest(
         scope_digest=scope,
@@ -469,7 +538,9 @@ def repair_feedback(
         scope,
         digest,
         related_decision=_selection_snapshot(
-            decision, public_subject_id, issue.public_field_paths,
+            decision,
+            public_subject_id,
+            issue.public_field_paths,
         ),
         violation=ContractViolationSnapshot(
             issue.contract_owner.value,
@@ -501,7 +572,8 @@ def no_gain_feedback(
 ) -> ControlFeedback:
     scope = current_semantic_scope(state, action_space, page)
     subject = public_subject_semantics(
-        state.current_observation, public_subject_id or "",
+        state.current_observation,
+        public_subject_id or "",
     )
     digest = make_issue_digest(
         scope_digest=scope,
@@ -549,7 +621,8 @@ def strategy_feedback(
 ) -> ControlFeedback:
     scope = current_semantic_scope(state, action_space, page)
     subject = public_subject_semantics(
-        state.current_observation, public_subject_id or "",
+        state.current_observation,
+        public_subject_id or "",
     )
     digest = make_issue_digest(
         scope_digest=scope,
@@ -602,11 +675,7 @@ def _safe_parameters(
 ) -> Mapping[str, object]:
     result: dict[str, object] = {}
     redact_all = "parameters" in redact_fields
-    redacted_names = {
-        path.removeprefix("parameters.")
-        for path in redact_fields
-        if path.startswith("parameters.")
-    }
+    redacted_names = {path.removeprefix("parameters.") for path in redact_fields if path.startswith("parameters.")}
     for key, item in list(value.items())[:12]:
         name = str(key)
         parts = {part.casefold() for part in re.split(r"[_-]", name)}

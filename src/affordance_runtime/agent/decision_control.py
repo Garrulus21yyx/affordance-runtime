@@ -11,6 +11,7 @@ from affordance_runtime.agent.control_feedback import (
     current_semantic_scope,
     no_gain_feedback,
     objective_repair_feedback,
+    observation_traversal_feedback,
     repair_feedback,
     route_feedback,
 )
@@ -39,6 +40,10 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.frontier_control import audit_task_frontier
+from affordance_runtime.agent.negative_claim_coverage import (
+    NegativeClaimCoverageDisposition,
+    NegativeClaimCoverageGate,
+)
 from affordance_runtime.agent.observation_control import (
     capture_admission_failure,
     capture_for_session,
@@ -98,11 +103,7 @@ _DECISION_TYPES = (
 
 def accept_current_decision(session: AgentRunSession, decision: AgentDecision) -> bool:
     context = session.current_context_snapshot
-    if (
-        context is None
-        or not isinstance(decision, _DECISION_TYPES)
-        or decision.context_id != context.context_id
-    ):
+    if context is None or not isinstance(decision, _DECISION_TYPES) or decision.context_id != context.context_id:
         return False
     if session.consumed_context_id == context.context_id:
         return False
@@ -161,18 +162,69 @@ async def run_policy_turn(
     if not accept_current_decision(session, decision):
         return Continue("stale_decision")
     scope = ControlTransitionScope(state, decision)
+    routed: LoopDirective
+    coverage = NegativeClaimCoverageGate().assess(
+        package,
+        context,
+        state.current_observation,
+    )
+    if coverage.disposition is NegativeClaimCoverageDisposition.UNKNOWN:
+        if state.remaining_turns <= 0:
+            routed = Terminate(
+                AgentLoopStatus.BLOCKED,
+                coverage.reason_code,
+                "negative claim remains unknown because observation coverage is incomplete",
+            )
+        else:
+            page = session.current_action_page or context_builder.page(action_space, state)
+            routed = route_feedback(
+                state,
+                scope,
+                observation_traversal_feedback(
+                    state,
+                    action_space,
+                    page,
+                    code=coverage.reason_code,
+                ),
+            )
+        scope.set_reason(coverage.reason_code)
+        scope.finalize(state, routed)
+        return routed
+    if coverage.disposition is NegativeClaimCoverageDisposition.ADVANCE:
+        if state.remaining_turns <= 0:
+            routed = Terminate(
+                AgentLoopStatus.BLOCKED,
+                "observation_traversal_budget_exhausted",
+                "negative claim remains unknown because policy-call budget is exhausted",
+            )
+        else:
+            state.set_observation_cursor(coverage.next_cursor)
+            page = session.current_action_page or context_builder.page(action_space, state)
+            routed = route_feedback(
+                state,
+                scope,
+                observation_traversal_feedback(
+                    state,
+                    action_space,
+                    page,
+                    code=coverage.reason_code,
+                ),
+            )
+            scope.record_decision_result("observation_page_changed")
+        scope.set_reason(routed.reason_code)
+        scope.finalize(state, routed)
+        return routed
     verified = state.verified_task_state or synchronize_verified_task_state(
-        task, task_evaluation, state.current_observation, None,
+        task,
+        task_evaluation,
+        state.current_observation,
+        None,
     )
     state.install_verified_task_state(verified)
     objective_admission = prepare_objective_operation(
         package.objective_operation,
         state=verified,
-        active=(
-            state.active_objective
-            if isinstance(state.active_objective, ActiveObjective)
-            else None
-        ),
+        active=(state.active_objective if isinstance(state.active_objective, ActiveObjective) else None),
         observation=state.current_observation,
         evaluation=task_evaluation,
         context_id=context.context_id,
@@ -181,7 +233,8 @@ async def run_policy_turn(
     if objective_admission.issue is not None:
         if isinstance(decision, SelectAction):
             scope.record_admission(
-                AdmissionStatus.REJECTED, objective_admission.issue.code.value,
+                AdmissionStatus.REJECTED,
+                objective_admission.issue.code.value,
             )
         page = session.current_action_page or context_builder.page(action_space, state)
         feedback = objective_repair_feedback(
@@ -277,7 +330,11 @@ async def _route_decision(
         )
         return route_feedback(state, scope, feedback)
     return await execute_selection(
-        session, action_space, decision, prepared_objective, scope,
+        session,
+        action_space,
+        decision,
+        prepared_objective,
+        scope,
     )
 
 
@@ -291,6 +348,8 @@ async def _policy_observation(
     action_space_builder: ActionSpaceBuilder,
     prior_task_evaluation: TaskEvaluation,
 ):
+    if decision.cursor:
+        return _policy_observation_page(session, decision, scope)
     request = WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         decision.reason,
@@ -315,7 +374,9 @@ async def _policy_observation(
         return acquired
     try:
         evaluation = await validated_task_evaluation(
-            task_evaluator, session.task, state.current_observation,
+            task_evaluator,
+            session.task,
+            state.current_observation,
         )
     except asyncio.CancelledError:
         raise
@@ -344,7 +405,9 @@ async def _policy_observation(
     session.current_action_space = new_space
     session.current_action_page = new_page
     after_result = policy_observation_result_digest(
-        state.current_observation, new_space, evaluation,
+        state.current_observation,
+        new_space,
+        evaluation,
     )
     if after_result != before_result:
         state.begin_control_epoch(current_semantic_scope(state, new_space))
@@ -363,6 +426,26 @@ async def _policy_observation(
     return route_feedback(state, scope, feedback)
 
 
+def _policy_observation_page(
+    session: AgentRunSession,
+    decision: RequestObservation,
+    scope: ControlTransitionScope,
+) -> LoopDirective:
+    context = session.current_context_snapshot
+    traversal = context.world.traversal if context is not None else None
+    if traversal is None or decision.cursor != traversal.next_cursor:
+        scope.set_reason("invalid_observation_page_request")
+        return Terminate(
+            AgentLoopStatus.BLOCKED,
+            "invalid_observation_page_request",
+            "observation cursor does not continue the current frozen snapshot",
+        )
+    session.state.set_observation_cursor(decision.cursor)
+    scope.record_decision_result("observation_page_changed")
+    scope.set_reason("observation_page_changed")
+    return Continue("observation_page_changed")
+
+
 async def _wait_refresh(
     session: AgentRunSession,
     decision: Wait,
@@ -372,11 +455,13 @@ async def _wait_refresh(
     if not _can_observe(session):
         scope.set_reason("observation_budget_exhausted")
         return Terminate(
-            AgentLoopStatus.FAILED, "observation_budget_exhausted",
+            AgentLoopStatus.FAILED,
+            "observation_budget_exhausted",
             "agent loop observation budget exhausted",
         )
     request = WorldObservationRequest(
-        ObservationRequestKind.WAIT_REFRESH, "fresh observation after wait",
+        ObservationRequestKind.WAIT_REFRESH,
+        "fresh observation after wait",
     )
     unavailable = capture_admission_failure(session.environment, request)
     if unavailable is not None:
@@ -389,14 +474,17 @@ async def _wait_refresh(
             expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
         )
         return Terminate(
-            AgentLoopStatus.BLOCKED, unavailable.reason_code, unavailable.reason_code,
+            AgentLoopStatus.BLOCKED,
+            unavailable.reason_code,
+            unavailable.reason_code,
             failure_code=unavailable.failure_code,
         )
     if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
         scope.record_decision_result("wait_budget_exceeded")
         scope.set_reason("wait_budget_exhausted")
         return Terminate(
-            AgentLoopStatus.BLOCKED, "wait_budget_exhausted",
+            AgentLoopStatus.BLOCKED,
+            "wait_budget_exhausted",
             "total wait budget exhausted",
         )
     await waiter.wait(decision.max_wait_ms)
@@ -431,16 +519,14 @@ async def _fresh_observation(
     if not _can_observe(session):
         scope.set_reason("observation_budget_exhausted")
         return Terminate(
-            AgentLoopStatus.FAILED, "observation_budget_exhausted",
+            AgentLoopStatus.FAILED,
+            "observation_budget_exhausted",
             "agent loop observation budget exhausted",
         )
     previous_id = state.current_observation.observation_id
     acquired = await capture_for_session(session, previous_id, request, scope)
     if acquired.observation is None:
-        status = (
-            AgentLoopStatus.BLOCKED
-            if acquired.attempts == 0 else AgentLoopStatus.FAILED
-        )
+        status = AgentLoopStatus.BLOCKED if acquired.attempts == 0 else AgentLoopStatus.FAILED
         return directive(
             status,
             acquired.reason_code,
@@ -460,15 +546,25 @@ async def _propose_done(
     task, state = session.task, session.state
     index = WorldEvidenceIndex.from_observation(state.current_observation)
     known = {criterion_id(item) for item in task.success_criteria}
-    if len(set(decision.claimed_criteria)) != len(decision.claimed_criteria) or not set(decision.claimed_criteria).issubset(known):
+    if len(set(decision.claimed_criteria)) != len(decision.claimed_criteria) or not set(
+        decision.claimed_criteria
+    ).issubset(known):
         scope.set_reason("invalid_completion_claim")
-        return Terminate(AgentLoopStatus.BLOCKED, "invalid_completion_claim", "completion claim contains an unknown or duplicate criterion")
+        return Terminate(
+            AgentLoopStatus.BLOCKED,
+            "invalid_completion_claim",
+            "completion claim contains an unknown or duplicate criterion",
+        )
     if decision.unresolved_items:
         scope.set_reason("invalid_completion_claim")
-        return Terminate(AgentLoopStatus.BLOCKED, "invalid_completion_claim", "completion claim retains unresolved items")
+        return Terminate(
+            AgentLoopStatus.BLOCKED, "invalid_completion_claim", "completion claim retains unresolved items"
+        )
     if any(not index.resolve(item) for item in decision.evidence_refs):
         scope.set_reason("completion_evidence_not_current")
-        return Terminate(AgentLoopStatus.BLOCKED, "completion_evidence_not_current", "completion evidence is not current")
+        return Terminate(
+            AgentLoopStatus.BLOCKED, "completion_evidence_not_current", "completion evidence is not current"
+        )
     try:
         evaluation = await validated_task_evaluation(
             task_evaluator,
@@ -499,11 +595,15 @@ async def _propose_done(
     scope.record_evaluations(task=evaluation)
     scope.set_reason(f"task_{evaluation.status}")
     disposition = task_evaluation_disposition(evaluation)
-    return Continue("task_incomplete") if disposition.status is None else directive(
-        disposition.status,
-        disposition.reason_code,
-        evaluation.reason,
-        task_terminal=disposition.task_terminal,
+    return (
+        Continue("task_incomplete")
+        if disposition.status is None
+        else directive(
+            disposition.status,
+            disposition.reason_code,
+            evaluation.reason,
+            task_terminal=disposition.task_terminal,
+        )
     )
 
 
@@ -548,7 +648,9 @@ def _request_action_page(
         scope.set_reason("invalid_action_page_request")
         return Terminate(AgentLoopStatus.BLOCKED, "invalid_action_page_request", "invalid action page request")
     result_digest = public_action_page_result_digest(
-        session.state.current_observation, action_space, session.current_action_page,
+        session.state.current_observation,
+        action_space,
+        session.current_action_page,
     )
     request_digest = action_page_request_digest(
         session.state.current_observation,

@@ -498,6 +498,25 @@ no retryable failure, the run proves wiring and evidence validity but not live
 retry effectiveness; controlled exceptional-path tests cover retry and typed
 exhaustion. D remains implemented-not-verified pending fresh held-out review.
 
+M4.6-E is `IN_PROGRESS / IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`. BrowserGym
+screenshots are carried as typed private image inputs into real multimodal model
+messages; the public AX profile includes executable checkbox/radio/tab/menuitem
+and bounded read-only table/list/heading/static-text structure. The valid
+`b853a5e` capability-covered two-case A/B reached 1/2 in both text-only and
+screenshot+AX arms; a provider failure makes screenshot-effect comparison
+inconclusive. Current projection still uses role/label/ordinal identity and
+irreversibly slices entities/facts before model paging, so stable identity and
+finite-snapshot losslessness are not implemented. The active convergence plan
+is the [task-grounded perception/frontier record](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
+
+P5-E is `IN_PROGRESS / VERTICAL_SLICE_IMPLEMENTED`. Closed typed objective
+operations, atomic objective/action admission, verifier-backed objective
+assessment, one active rolling objective, repair feedback and bounded repetition
+containment are implemented. A production incremental `RequirementHypothesis`
+producer, Runtime hypothesis lifecycle and hypothesis-conditioned fair pinning
+are not implemented. Model hypotheses cannot define authoritative task
+requirements or terminal completion.
+
 ## Control-transition and long-horizon gap status
 
 The current M4.5-B candidate includes a bounded pure reducer, strict boundary
