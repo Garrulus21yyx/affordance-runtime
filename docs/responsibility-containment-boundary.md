@@ -318,6 +318,16 @@ source-bound requirements, offline overlays, local probes, and rerun readiness.
 Neither capability readiness nor diagnostic disposition enters AgentContext,
 ActionSpace, BrowserGym adapter behavior, Runtime admission, or policy control.
 
+M4.6-C places the generic count/status algebra in `world/semantic_inventory`,
+the finite BrowserGym AX role profile in `browsergym_semantic_profile`, and the
+single canonical AX scan in `browsergym_semantics`. Projection only applies its
+existing quotas and finalizes counts from actual targets/bindings. BrowserGym
+diagnostics and `model_boundary/source_projection` are downstream copies; they
+cannot rescan raw AX or define role taxonomy. The inventory producer cannot
+read TaskGoal, ActionSpace, AgentLoop or model context, and the model-safe view
+cannot contain BID, selector, native option value, private route or raw role
+distribution. ActionSpace alone owns action availability.
+
 ## P5-M4.5 and P5-E narrow owners
 
 M4.5-A keeps operational observation capability/outcome contracts in `world/`,

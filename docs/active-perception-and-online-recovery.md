@@ -11,6 +11,16 @@ bindings, coverage, confidence, and artifacts.
 `WorldFusion` creates one immutable `WorldObservation` with canonical targets,
 facts, coverage, conflicts, and all current bindings.
 
+Each source may additionally publish a frozen `SemanticInventorySummary` for
+one named inventory profile. It reports recognized, actually projected,
+uniquely bound/actionable, projected-non-executable, omitted and informational
+target-like units. `recognized = projected + omitted` and `projected =
+actionable + non_executable`; informational is a subset of non-executable.
+This inventory is orthogonal to projection `CoverageState`: complete projection
+coverage means the existing projection quotas did not truncate that profile,
+not that the page or task is semantically complete. ActionSpace remains the
+only action-availability authority.
+
 Not acquired, failed, truncated, stale, and complete absence are distinct.
 BrowserSession is not a privileged architecture path.
 

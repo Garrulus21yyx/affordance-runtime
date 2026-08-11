@@ -269,6 +269,17 @@ debug_source: optional DOM/Visual/WoT label
 `debug_source` 不决定可信度；observation assurance 不等于 execution authorization。
 authoritative API read 不自动授予 API write。
 
+每个 source 可选携带一个 profile-relative `SemanticInventorySummary`：
+`recognized_target_count = projected_target_count + omitted_target_count`，且
+`projected_target_count = actionable_target_count + non_executable_target_count`；
+`informational_target_count` 只是 non-executable 子集。`UNASSESSED` 表示 adapter
+没有安全完成评估，`EMPTY` 只表示该明确 profile 未识别 target-like unit，
+`REPRESENTED` 表示 recognized 全部投影，`PARTIAL` 表示存在 recognized omission。
+它与 projection `CoverageState` 正交，不是页面完整性、task requirement coverage 或
+ActionSpace availability。模型 source wire 只携带 `projection_coverage` 和上述
+privacy-safe counts；BID、selector、native option value、private route、raw role
+distribution 不得投影。
+
 ### 4.3 Projection budgets
 
 `ContextProjectionBudget` 至少限制 intent excerpts/chars、targets、facts、每 target
@@ -455,6 +466,9 @@ Runtime 负责判定并记录已经成立的 control fact，AgentPolicy 负责�
 下一次正常 policy inference 作为 bounded repair/replan opportunity；是否增加独立
 reflector 属于后续可选 policy composition，必须由 benchmark 增益证明，且永远不取得
 Runtime fact/action authority。
+在模型语义上，feedback 是已发生 outcome 的 observation，不是 Runtime 生成的
+corrective instruction；普通 AgentPolicy 可在自身推理中反思，但修正意图仍是新决策。
+`retry_disposition` 只表示是否允许一次新 policy decision，绝不表示重放旧 request。
 
 ```python
 @dataclass(frozen=True)

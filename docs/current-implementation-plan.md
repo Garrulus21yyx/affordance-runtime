@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT` | residual M4.6-B contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`; next semantic inventory, then bounded model-facing control feedback/repair/no-gain and stable identity/breadth |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT` | M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`; accepted no-model run `miniwob-inventory-17:6220967c47a24532b4140728627e4950`; next bounded model-facing control feedback/repair/no-gain, then stable identity/breadth |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -79,9 +79,9 @@ A separately authorized M4.5-C diagnostic has now completed from clean
 `4924ce61748d8efdec4fcc6de494acf8a9f224cc`: 60/60 cases, 8/60 success,
 valid evidence and no generalization claim. The archive commit `5f8d6ac` is
 docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
-AX semantics/currentness and M4.6-B verifier/task-terminal truth are complete
-for their declared non-default scopes; M4.6-C is the next admitted product
-slice. B assurance review
+AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
+semantic inventory truth are complete for their declared non-default scopes;
+M4.6-D is the next admitted product slice. B assurance review
 remains independently open; P5-E, default cutover and old-core deletion remain
 unauthorized.
 

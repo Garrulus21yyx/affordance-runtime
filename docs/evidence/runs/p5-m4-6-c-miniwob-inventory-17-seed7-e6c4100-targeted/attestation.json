@@ -1,0 +1,15 @@
+{
+  "campaign_profile": "MINIWOB_SEMANTIC_INVENTORY_17_NO_MODEL",
+  "campaign_sha256": "3666c465f26b66e7626aace12dce81ff2ccaccd6d4ea6a5d63a141e2f1ceb07f",
+  "evidence_valid": true,
+  "git_dirty": false,
+  "implementation_sha": "e6c410021d8b9bf11b52f24520a6258ede5d2027",
+  "inventory_profile_id": "browsergym-ax-target-inventory.v1",
+  "manifest_digest": "0025c5d42d32cc07ebc671f536060d214b78b6cb906249d6a02a48584942cc6c",
+  "model_enabled": false,
+  "provider_enabled": false,
+  "run_id": "miniwob-inventory-17:6220967c47a24532b4140728627e4950",
+  "schema_version": "miniwob-semantic-inventory-attestation.v1",
+  "seed": 7,
+  "summary_sha256": "3f486ebdf00311bbbc87ae4befee16ed0e5586dc771ebcb63374774bf7c54841"
+}

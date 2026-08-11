@@ -25,8 +25,8 @@ diagnostic are independent records. They are not merged into a trend claim.
 M4.6 overall: IN_PROGRESS
 M4.6-A canonical AX semantics/currentness: COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE
 M4.6-B verifier/task-terminal truth: COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE
-M4.6-C semantic inventory truth: NEXT
-M4.6-D bounded control feedback/repair/no-gain: NOT_STARTED
+M4.6-C semantic inventory truth: COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE
+M4.6-D bounded control feedback/repair/no-gain: NEXT
 M4.6-E stable target identity and semantic breadth: NOT_STARTED
 M4.7 supported-subset multi-seed: BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: BLOCKED_BY_BREADTH_GATES
@@ -46,7 +46,7 @@ ledger, a replay source or execution truth.
 |---|---|---|---|---|---|---|---|
 | M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
 | M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `880e65fef0c2541be9f4b5af121e610f858685db` residual closure; original/run SHA `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; raw probe facts preserve presence/type; nonterminal task facts do not erase cross-domain control truth |
-| M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering precedes target creation and coverage calculation | baseline does not prove the task-required missing role or that more targets guarantee success | `NONE` | `NONE` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty |
+| M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering preceded target creation and projection-only coverage calculation; diagnostics separately rescanned raw AX | the accepted no-model run proves only `browsergym-ax-target-inventory.v1` counts, not task-relative completeness, success, performance or generalization | `e6c410021d8b9bf11b52f24520a6258ede5d2027` | `miniwob-inventory-17:6220967c47a24532b4140728627e4950` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty; ActionSpace remains the only action-availability authority |
 | M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 (`invalid_action_parameters`, one policy, zero execution/step, three current options); adjacent final current-page action/destination rejection cases 06, 09, 12, 16, 48, 53, 56; page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | source preserves the typed public admission reason but terminalizes before another policy turn; unchanged page only continues; observation freshness uses identity rather than public semantic gain | case 37 proves the direct terminal repair shape, not that a feedback turn would repair it; adjacent cases and no-gain JSON store only final/aggregate facts and no complete per-turn semantic digest | `NONE` | `NONE` | typed source owner → canonical envelope → model-safe feedback reaches one ordinary policy turn; Runtime never edits parameters or chooses an action; a second repairable rejection in one identity-free semantic scope or second identical no-gain request/result terminates typed; Runtime refresh and sent/uncertain requests are exempt from replay |
 | M4.6-E stable identity/breadth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` (source-only adjacent risk) | no direct baseline cohort for ordinal identity; zero-target cohort remains breadth witness | target ID includes ordinal; observable and executable roles are coupled | neither ordinal identity nor a particular unsupported role was shown to cause a baseline failure | `NONE` | `NONE` | identity survives irrelevant AX order changes; read-only semantics cannot grant unsupported execution; quotas preserve actionable controls |
 
@@ -97,7 +97,8 @@ authority, cohesion and change coupling decide ownership. Projection,
 
 ## M4.6-D admitted future contract
 
-This section schedules architecture work only; M4.6-D remains `NOT_STARTED` and
+This section schedules architecture work only; M4.6-D is `NEXT` but remains
+unimplemented, and
 has no implementation SHA or verification run ID.
 
 ### SOTA calibration as of 2026-08-11
@@ -106,7 +107,7 @@ Primary sources show a shared feedback trend, not one standardized Runtime
 contract:
 
 - BrowserGym's official
-  [DemoAgent](https://github.com/ServiceNow/BrowserGym/blob/main/demo_agent/agent.py)
+  [DemoAgent](https://github.com/ServiceNow/BrowserGym/blob/main/demo_agent/agent.py#L248-L329)
   puts `last_action`, `last_action_error`, current page state and action history
   into the next ordinary policy prompt and asks the model to reflect before its
   next action. This supports recurrent feedback, but copying a raw exception is
@@ -115,7 +116,7 @@ contract:
   reasoning/action/environment observation, with self-reflection inside model
   reasoning and recent steps in working memory. It supports feedback-conditioned
   policy improvement but does not define a typed admission-repair standard.
-- [Qwen-UI-Agent](https://arxiv.org/abs/2607.28227) makes CLI stdout, stderr and
+- [Qwen-UI-Agent](https://arxiv.org/html/2607.28227#S2.SS2.SSS3) makes CLI stdout, stderr and
   exit status structured observations alongside the post-action screenshot;
   non-zero exits and timeouts become error observations rather than aborting the
   episode, allowing recovery in the same trajectory. Separately, confirmed
@@ -123,7 +124,7 @@ contract:
   policy-correctable input separate from adapter/environment failure authority.
 - [Agent S2](https://arxiv.org/abs/2504.00906) provides the alternative of an
   optional per-step reflector and hierarchical replanning. Its
-  [reflector/worker implementation](https://github.com/simular-ai/Agent-S/blob/main/gui_agents/s2/agents/worker.py)
+  [reflector/worker implementation](https://github.com/simular-ai/Agent-S/blob/bffdb59c60cbbb38c3a190b2e91da12039e4063c/gui_agents/s2/agents/worker.py#L157-L194)
   flags failed actions or repeated cycles but deliberately does not choose the
   replacement action; the Worker does. A failed subtask returns to the Manager
   with the latest observation for replanning.
@@ -132,9 +133,10 @@ contract:
   remaining work. That mechanism is relevant to P5-E VerifiedTaskState, not a
   reason to add a task-state platform to short-loop M4.6-D.
 
-The bounded project inference is therefore: first establish sanitized typed
-feedback as a dedicated one-way AgentContext channel and let the ordinary policy
-turn choose the correction. A separate reflector remains an evidence-gated
+The bounded project inference is therefore: treat sanitized typed feedback as a
+result observation, not a corrective instruction; expose it through a dedicated
+one-way AgentContext channel and let the ordinary policy turn reflect and choose
+the correction. A separate reflector remains an evidence-gated
 policy extension only if targeted/full benchmark results show that the policy
 receives correct feedback but still repeats; it cannot become Runtime truth or
 action authority.
@@ -282,8 +284,31 @@ running-incomplete fact, so precedence remained orthogonal.
 The old diagnostic remains exactly 64 JSON files with digest
 `7a3f60c10896fc2f458afc11874bce866987fb9f1e752c8d164ae4b05d80b318`.
 No old result or classification was rewritten. M4.6 remains `IN_PROGRESS`,
-M4.6-C is `NEXT`, and M4.5-B reviewed closure SHA remains `NONE`. No
+M4.6-C is `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
+`NEXT`, and M4.5-B reviewed closure SHA remains `NONE`. No
 performance, success-rate or generalization claim is made.
+
+## M4.6-C focused no-model evidence
+
+Implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027` establishes one generic
+frozen semantic-inventory summary, one BrowserGym AX analysis owner and a
+one-way model-safe source projection. `projection_coverage` retains the old
+quota-only meaning; inventory status is relative only to
+`browsergym-ax-target-inventory.v1`. ActionSpace remains the sole authority for
+action availability, and C adds no target role, binding, primitive or action.
+
+The immutable run `miniwob-inventory-17:6220967c47a24532b4140728627e4950`
+completed the fixed 17-case seed-7 cohort with 13 `EMPTY`, 3 `REPRESENTED` and
+1 `PARTIAL`. All 17 acquisitions, projections and cleanups completed; schema,
+count, privacy, harness-integrity and unclassified errors were zero. Policy,
+provider, token, step, currentness-probe and independent-capture totals were
+all zero. Campaign SHA-256 is
+`3666c465f26b66e7626aace12dce81ff2ccaccd6d4ea6a5d63a141e2f1ceb07f`;
+summary SHA-256 is
+`3f486ebdf00311bbbc87ae4befee16ed0e5586dc771ebcb63374774bf7c54841`.
+Fresh-context review found one shared evidence-identity validation gap; forged
+campaign identity and recomputed false aggregates now fail closed in the shared
+validator, after which the new exact-SHA run and held-out re-review passed.
 
 ## M4.6-B residual shared-contract closure
 

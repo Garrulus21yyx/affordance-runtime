@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -448,6 +448,20 @@ full quality gates and a fresh-context held-out review closed the residual
 raw-fact producer and nonterminal task/control precedence seams without a new
 campaign run ID.
 
+M4.6-C is implemented at
+`e6c410021d8b9bf11b52f24520a6258ede5d2027`. The generic frozen inventory
+summary enforces exact bounded counts and the EMPTY/REPRESENTED/PARTIAL/
+UNASSESSED algebra. BrowserGym now performs one canonical AX semantic analysis;
+projection finalizes counts from actual targets and unique binding target IDs,
+and diagnostics/model projection only copy that truth. Existing targets,
+bindings, target IDs, ActionSpace options and `CoverageState` semantics are
+unchanged. The accepted no-model run
+`miniwob-inventory-17:6220967c47a24532b4140728627e4950` completed 17/17 with
+13 EMPTY, 3 REPRESENTED and 1 PARTIAL, with all integrity/privacy errors and
+all policy/provider/token/step/probe/independent-capture totals at zero. This is
+declared inventory-profile closure only, not task-relative completeness or a
+performance/generalization claim.
+
 M4.6-D is not implemented. Current public action parameter/page admission
 records typed rejection and finalizes the accepted decision, but returns
 `BLOCKED` instead of projecting one repair opportunity to the same run's next
@@ -483,8 +497,9 @@ verified milestone promotion/current frontier/replanning lifecycle exists.
 `ProgressController` remains an integrated fill/select local liveness guard;
 general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is
 `IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`,
-M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, and M4.6-C is
-`NEXT`; M4.7 multi-seed remains blocked by its
+M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
+`COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is `NEXT`;
+M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.

@@ -78,7 +78,7 @@ core contracts for every GUI task.
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
-| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE at residual implementation `880e65fef0c2541be9f4b5af121e610f858685db` (targeted run remains at original `07895ede392bdff065ba3b4c0a6384ba18904143`); M4.6-C NEXT; then bounded model-facing control feedback/repair/no-gain and staged breadth |
+| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE; M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE at `e6c410021d8b9bf11b52f24520a6258ede5d2027` with accepted run `miniwob-inventory-17:6220967c47a24532b4140728627e4950`; M4.6-D NEXT; then staged breadth |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
 | P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.6/M4.7 breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
@@ -92,7 +92,7 @@ REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, M4.5-C
 FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED /
 GENERALIZATION_NOT_CLAIMED`, and M4.6 `IN_PROGRESS / M4.6-A
 COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
-COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT`; Implementation
+COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D NEXT`; Implementation
 Status owns current code truth.
 
 ## 4. Product success measures
