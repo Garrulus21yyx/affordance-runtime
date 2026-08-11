@@ -10,6 +10,7 @@ from affordance_runtime.agent.accounting import RunAccounting
 from affordance_runtime.agent.control_outcome import Terminate
 from affordance_runtime.agent.progress_control import ProgressController
 from affordance_runtime.agent.result import AgentResult, project_result
+from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
@@ -32,6 +33,7 @@ class AgentRunSession:
     state: AgentLoopState
     intent_context: IntentContext | None = None
     accounting: RunAccounting = field(default_factory=RunAccounting)
+    pending_runtime_failure: RuntimeFailure | None = None
     approved_confirmation: ConfirmationRequest | None = field(default=None, repr=False)
     approved_confirmation_transition_id: str = field(default="", repr=False)
     confirmation_continuation_scope: ControlContinuationScope | None = field(
@@ -110,10 +112,21 @@ class AgentRunSession:
             raise
         return self.last_result
 
-    def _latch_terminal_exception(self, *, cancelled: bool) -> None:
+    def _latch_terminal_exception(
+        self, *, cancelled: bool,
+    ) -> None:
         status = AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED
         reason = "runtime_cancelled" if cancelled else "runtime_exception"
-        self.last_result = project_result(self, Terminate(status, reason, reason))
+        failure = self.pending_runtime_failure
+        self.pending_runtime_failure = None
+        self.last_result = project_result(self, Terminate(
+            status,
+            reason,
+            reason,
+            failure_stage=failure.stage if failure else None,
+            failure_kind=failure.kind if failure else None,
+            exception_class=failure.exception_class if failure else "",
+        ), runtime_failure=failure)
 
     @property
     def is_terminal(self) -> bool:

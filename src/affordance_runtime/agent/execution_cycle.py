@@ -31,6 +31,11 @@ from affordance_runtime.agent.observation_control import (
 from affordance_runtime.agent.policy import ActionEvaluator, TaskEvaluator
 from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.progress_control import record_execution_progress
+from affordance_runtime.agent.runtime_failure import (
+    FailureKind,
+    FailureStage,
+    RuntimeFailure,
+)
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
@@ -98,12 +103,16 @@ async def execute_cycle(
         return Terminate(
             AgentLoopStatus.FAILED, "invalid_currentness_probe_count",
             "adapter returned invalid currentness probe metadata",
+            failure_stage=FailureStage.EXECUTION,
+            failure_kind=FailureKind.INVALID_OUTPUT,
         )
     if result.request_id != request.request_id or result.backend != request.binding.executor_id:
         scope.set_reason("action_result_lineage_mismatch")
         return Terminate(
             AgentLoopStatus.FAILED, "action_result_lineage_mismatch",
             "action result lineage mismatch",
+            failure_stage=FailureStage.EXECUTION,
+            failure_kind=FailureKind.INVALID_OUTPUT,
         )
     if result.dispatch_status is DispatchStatus.NOT_SENT:
         return await _not_sent_outcome(session, decision, request, result, scope)
@@ -144,16 +153,47 @@ async def _evaluate_after(
         action_evaluation = await validated_action_evaluation(
             action_evaluator, task, before, request, result, after,
         )
+    except asyncio.CancelledError:
+        raise
     except ValueError as exc:
         scope.record_evaluations()
         scope.set_reason("action_evaluation_invalid")
-        return Terminate(AgentLoopStatus.FAILED, "action_evaluation_invalid", str(exc))
+        return Terminate(
+            AgentLoopStatus.FAILED, "action_evaluation_invalid", str(exc),
+            failure_stage=FailureStage.EVALUATION,
+            failure_kind=FailureKind.INVALID_OUTPUT,
+        )
+    except Exception as exc:
+        scope.record_evaluations()
+        scope.set_reason("action_evaluation_call_failed")
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.EVALUATION,
+            FailureKind.CALL_FAILED,
+            "action_evaluation_call_failed",
+            exception_class=safe_exception_class(exc),
+        )
+        raise
     scope.record_evaluations(action=action_evaluation)
     try:
         task_evaluation = await validated_task_evaluation(task_evaluator, task, after)
+    except asyncio.CancelledError:
+        raise
     except ValueError as exc:
         scope.set_reason("task_evaluation_invalid")
-        return Terminate(AgentLoopStatus.FAILED, "task_evaluation_invalid", str(exc))
+        return Terminate(
+            AgentLoopStatus.FAILED, "task_evaluation_invalid", str(exc),
+            failure_stage=FailureStage.EVALUATION,
+            failure_kind=FailureKind.INVALID_OUTPUT,
+        )
+    except Exception as exc:
+        scope.set_reason("task_evaluation_call_failed")
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.EVALUATION,
+            FailureKind.CALL_FAILED,
+            "task_evaluation_call_failed",
+            exception_class=safe_exception_class(exc),
+        )
+        raise
     scope.record_evaluations(task=task_evaluation)
     state.current_task_evaluation = task_evaluation
     record_execution_progress(session, selection, action_evaluation, after, task_evaluation)
@@ -212,6 +252,8 @@ async def _not_sent_outcome(
         return Terminate(
             AgentLoopStatus.FAILED, "action_not_dispatched",
             "action was not dispatched",
+            failure_stage=FailureStage.EXECUTION,
+            failure_kind=FailureKind.CALL_FAILED,
         )
     acquired = await capture_for_session(
         session,
@@ -251,15 +293,27 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         )
         raise
     except Exception as exc:
+        exception_class = safe_exception_class(exc)
         _record_execute_exception(
             session, scope, request, attempt_id,
-            AttemptDisposition.THREW, "execute_exception", safe_exception_class(exc),
+            AttemptDisposition.THREW, "execute_exception", exception_class,
+        )
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.EXECUTION,
+            FailureKind.CALL_FAILED,
+            "execute_exception",
+            exception_class=exception_class,
         )
         raise
     if not isinstance(outcome, ExecutionOutcome) or not isinstance(outcome.result, ActionResult):
         _record_execute_exception(
             session, scope, request, attempt_id,
             AttemptDisposition.MALFORMED, "execute_malformed", "",
+        )
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.EXECUTION,
+            FailureKind.INVALID_OUTPUT,
+            "execute_malformed",
         )
         raise TypeError("WorldEnvironment.execute returned a malformed contract")
     result = outcome.result

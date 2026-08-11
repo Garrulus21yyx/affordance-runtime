@@ -18,9 +18,7 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads, validate_json_tree
-from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
-from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 SCHEMA_VERSION = "agent-decision.v1"
 
@@ -39,7 +37,12 @@ Item512 = Annotated[str, StringConstraints(min_length=1, max_length=512)]
 
 
 class _Payload(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        strict=True,
+        extra="forbid",
+        frozen=True,
+        revalidate_instances="always",
+    )
 
     context_id: ContextId
 
@@ -61,8 +64,8 @@ class SelectActionPayload(_Payload):
 class RequestObservationPayload(_Payload):
     type: Literal["request_observation"]
     subject_id: Id240
-    modality: ObservationModality
-    required_assurance: ObservationAssurance
+    modality: Literal["structural", "visual", "environment_state", "user"]
+    required_assurance: Literal["weak", "structural", "authoritative"]
     reason: Reason500
 
 
@@ -70,7 +73,7 @@ class RequestActionPagePayload(_Payload):
     type: Literal["request_action_page"]
     query: Optional120
     target_id: Optional240
-    relevance_role: ActionRelevanceRole | Literal[""]
+    relevance_role: Literal["direct", "enabling", "information", "other", ""]
     cursor: Optional512
 
 
@@ -93,6 +96,13 @@ class WaitPayload(_Payload):
     reason: Reason500
     max_wait_ms: Annotated[StrictInt, Field(ge=1, le=60_000)]
 
+    @field_validator("max_wait_ms", mode="before")
+    @classmethod
+    def _strict_wait_duration(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("wait duration must be a JSON integer")
+        return value
+
 
 class AbortPayload(_Payload):
     type: Literal["abort"]
@@ -113,7 +123,19 @@ DecisionPayload: TypeAlias = Annotated[
 
 
 class AgentDecisionPayload(RootModel[DecisionPayload]):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True,
+        revalidate_instances="always",
+    )
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        # The discriminated union must first construct its strict frozen payload
+        # model from a JSON object (or an immutable mapping used by deterministic
+        # ports). Field contracts remain strict; no legacy object fallback exists.
+        _require_json_collection_types(obj)
+        kwargs.setdefault("strict", False)
+        return super().model_validate(obj, **kwargs)
 
     @classmethod
     def model_validate_json(cls, json_data: str | bytes | bytearray, **kwargs):
@@ -124,6 +146,24 @@ class AgentDecisionPayload(RootModel[DecisionPayload]):
 
 def decision_response_schema() -> dict[str, Any]:
     return AgentDecisionPayload.model_json_schema()
+
+
+def _require_json_collection_types(value: object) -> None:
+    """Allow immutable mappings at deterministic ports, but never sequence coercion."""
+
+    from collections.abc import Mapping, Sequence
+
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Mapping):
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, Sequence) and not isinstance(item, str | bytes | bytearray):
+            raise TypeError("structured decision arrays must be JSON lists")
+        elif isinstance(item, set | frozenset):
+            raise TypeError("structured decision arrays must be JSON lists")
 
 
 def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str) -> AgentDecision:

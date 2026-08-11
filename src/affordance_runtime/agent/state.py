@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
@@ -12,13 +12,6 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
-
-
-def _current_task_evaluation(continuation, previous, after_observation_id):
-    candidate = continuation or previous
-    if candidate is None or candidate.observation_id != after_observation_id:
-        return None
-    return candidate
 
 
 class AgentLoopStatus(StrEnum):
@@ -38,6 +31,8 @@ class AgentLoopState:
     control_transition_total_count: int = 0
     sent_unknown_total_count: int = 0
     control_transition_kind_counts: dict[str, int] = field(default_factory=dict)
+    continued_control_root_ids: tuple[str, ...] = ()
+    control_terminal_status: AgentLoopStatus | None = None
     plan: TaskPlan | None = None
     active_objective: LocalObjective | None = None
     task_revision: int = 1
@@ -61,82 +56,61 @@ class AgentLoopState:
         return tuple(item.as_turn() for item in self.recent_control_transitions)
 
     def _append_control_transition(self, transition: ControlTransition) -> None:
-        if transition.sequence != self.control_transition_total_count + 1:
-            raise ValueError("control transition sequence is not contiguous")
-        self.recent_control_transitions = (
-            *self.recent_control_transitions,
-            transition,
-        )[-self.recent_turn_limit :]
-        self.control_transition_total_count += 1
-        kind = type(transition.decision).__name__
-        self.control_transition_kind_counts[kind] = (
-            self.control_transition_kind_counts.get(kind, 0) + 1
+        from affordance_runtime.agent.control_reducer import (
+            AppendRoot,
+            ControlAccepted,
+            ControlReductionError,
+            reduce_control,
         )
-        self.sent_unknown_total_count += sum(
-            str(item.dispatch_status) == "sent_unknown"
-            for item in transition.execution_attempts
+
+        reduced = reduce_control(
+            self._control_reducer_state(),
+            AppendRoot(transition, self.recent_turn_limit),
         )
+        if not isinstance(reduced, ControlAccepted):
+            raise ControlReductionError(reduced)
+        self._install_control_reducer_state(reduced.state)
         self.progress_revision += 1
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:
-        for index, transition in enumerate(self.recent_control_transitions):
-            if transition.transition_id != continuation.source_transition_id:
-                continue
-            execution_attempts = (
-                *transition.execution_attempts,
-                *continuation.execution_attempts,
-            )
-            attempts = (
-                *transition.acquisition_attempts,
-                *continuation.acquisition_attempts,
-            )
-            receipts = (
-                *transition.attempt_receipts,
-                *continuation.attempt_receipts,
-            )
-            acquisition = None
-            if attempts:
-                final = attempts[-1]
-                acquisition = replace(
-                    final,
-                    attempts=sum(item.attempts for item in attempts),
-                )
-            updated = replace(
-                transition,
-                execution=continuation.execution or transition.execution,
-                execution_attempts=execution_attempts,
-                acquisition=acquisition,
-                acquisition_attempts=attempts,
-                attempt_receipts=receipts,
-                after_observation_id=continuation.after_observation_id,
-                action_evaluation=(
-                    continuation.action_evaluation or transition.action_evaluation
-                ),
-                task_evaluation=_current_task_evaluation(
-                    continuation.task_evaluation,
-                    transition.task_evaluation,
-                    continuation.after_observation_id,
-                ),
-                progress=type(transition.progress)(
-                    transition.progress.event_count + continuation.progress.event_count,
-                    continuation.progress.latest_event_type
-                    or transition.progress.latest_event_type,
-                ),
-                pending_kind=continuation.pending_kind,
-                resulting_status=continuation.resulting_status,
-                reason_code=continuation.reason_code,
-                intent=continuation.intent or transition.intent,
-                request_id=continuation.request_id or transition.request_id,
-            )
-            values = list(self.recent_control_transitions)
-            values[index] = updated
-            self.recent_control_transitions = tuple(values)
-            self.sent_unknown_total_count += sum(
-                str(item.dispatch_status) == "sent_unknown"
-                for item in continuation.execution_attempts
-            )
-            return
-        raise ValueError("confirmation continuation root is outside the bounded suffix")
+        from affordance_runtime.agent.control_reducer import (
+            ApplyContinuation,
+            ControlAccepted,
+            ControlReductionError,
+            reduce_control,
+        )
+
+        reduced = reduce_control(
+            self._control_reducer_state(),
+            ApplyContinuation(continuation),
+        )
+        if not isinstance(reduced, ControlAccepted):
+            raise ControlReductionError(reduced)
+        self._install_control_reducer_state(reduced.state)
+
+    def _control_reducer_state(self):
+        from affordance_runtime.agent.control_reducer import ControlState
+
+        return ControlState(
+            self.recent_control_transitions,
+            self.control_transition_total_count,
+            tuple(sorted(self.control_transition_kind_counts.items())),
+            self.sent_unknown_total_count,
+            self.continued_control_root_ids,
+            str(self.control_terminal_status or ""),
+        )
+
+    def _install_control_reducer_state(self, reduced) -> None:
+        self.recent_control_transitions = reduced.recent_transitions
+        self.control_transition_total_count = reduced.total_count
+        self.control_transition_kind_counts = dict(reduced.kind_counts)
+        self.sent_unknown_total_count = reduced.sent_unknown_total_count
+        self.continued_control_root_ids = reduced.continued_root_ids
+        self.control_terminal_status = (
+            AgentLoopStatus(reduced.terminal_status)
+            if reduced.terminal_status
+            else None
+        )
 
     def _append_progress_event(self, event: ProgressEvent) -> None:
         self.recent_progress_events = (

@@ -12,6 +12,7 @@ from affordance_runtime.world.acquisition import AcquisitionOrigin, AcquisitionS
 
 _CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
 _EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+_ATTEMPT_ID = re.compile(r"attempt:[1-9][0-9]{0,9}")
 
 
 def safe_exception_class(error: BaseException) -> str:
@@ -93,7 +94,7 @@ class AttemptReceipt:
             self.acquisition_status, AcquisitionStatus
         ):
             raise TypeError("attempt acquisition status must be typed")
-        if not self.attempt_id.startswith("attempt:"):
+        if _ATTEMPT_ID.fullmatch(self.attempt_id) is None:
             raise ValueError("attempt receipt identity is invalid")
         if _CODE.fullmatch(self.reason_code) is None:
             raise ValueError("attempt reason code must be bounded stable snake-case")
@@ -109,3 +110,117 @@ class AttemptReceipt:
             raise ValueError("effectful dispatches cannot exceed execution attempts")
         if self.exception_class and _EXCEPTION_CLASS.fullmatch(self.exception_class) is None:
             raise ValueError("attempt exception class must be bounded")
+        self._validate_operation_matrix()
+
+    def _validate_operation_matrix(self) -> None:
+        returned = self.disposition is AttemptDisposition.RETURNED
+        exceptional = self.disposition in {
+            AttemptDisposition.THREW,
+            AttemptDisposition.CANCELLED,
+        }
+        if exceptional != bool(self.exception_class):
+            raise ValueError("attempt exception class does not match disposition")
+        if self.disposition is AttemptDisposition.MALFORMED and self.exception_class:
+            raise ValueError("malformed return cannot carry an exception class")
+
+        if self.operation is AttemptOperation.RESET:
+            if (
+                self.request_kind != "reset"
+                or self.expected_origin is not AcquisitionOrigin.RESET
+                or (
+                    self.acquisition_attempts,
+                    self.execution_attempts,
+                    self.effectful_dispatches,
+                    self.currentness_probe_count,
+                )
+                != (1, 0, 0, 0)
+                or self.dispatch_status is not None
+                or self.expected_request_id
+                or self.actual_request_id
+                or self.request_lineage_valid is not None
+            ):
+                raise ValueError("reset attempt violates the physical operation matrix")
+            if returned:
+                if (
+                    self.actual_origin is None
+                    or self.acquisition_status is None
+                ):
+                    raise ValueError("returned reset requires typed acquisition truth")
+            elif self.actual_origin is not None or self.acquisition_status is not None:
+                raise ValueError("failed reset cannot fabricate acquisition truth")
+            return
+
+        if self.operation is AttemptOperation.CAPTURE:
+            if (
+                self.expected_origin is not AcquisitionOrigin.INDEPENDENT_CAPTURE
+                or (
+                    self.acquisition_attempts,
+                    self.execution_attempts,
+                    self.effectful_dispatches,
+                    self.currentness_probe_count,
+                )
+                != (1, 0, 0, 0)
+                or self.dispatch_status is not None
+                or self.expected_request_id
+                or self.actual_request_id
+                or self.request_lineage_valid is not None
+            ):
+                raise ValueError("capture attempt violates the physical operation matrix")
+            if returned:
+                if self.actual_origin is None or self.acquisition_status is None:
+                    raise ValueError("returned capture requires typed acquisition truth")
+            elif (
+                self.actual_origin is not None
+                or self.acquisition_status is not AcquisitionStatus.FAILED
+            ):
+                raise ValueError("failed capture requires explicit failed acquisition truth")
+            return
+
+        if (
+            self.operation is not AttemptOperation.EXECUTE
+            or self.expected_origin is not AcquisitionOrigin.POST_ACTION
+            or self.execution_attempts != 1
+            or not self.expected_request_id
+        ):
+            raise ValueError("execute attempt violates the physical operation matrix")
+        if returned:
+            expected_dispatches = int(self.dispatch_status is not DispatchStatus.NOT_SENT)
+            if (
+                self.dispatch_status is None
+                or self.effectful_dispatches != expected_dispatches
+                or self.acquisition_attempts not in {0, 1}
+                or not self.actual_request_id
+                or self.request_lineage_valid is None
+                or self.acquisition_status is None
+            ):
+                raise ValueError("returned execute violates the disposition matrix")
+            if self.request_lineage_valid and (
+                self.actual_request_id != self.expected_request_id
+            ):
+                raise ValueError("valid execute lineage requires matching request identity")
+            expected_acquisition_attempts = {
+                AcquisitionStatus.ACQUIRED: 1,
+                AcquisitionStatus.FAILED: 1,
+                AcquisitionStatus.CAPABILITY_UNAVAILABLE: 0,
+            }[self.acquisition_status]
+            if (
+                self.actual_origin is not AcquisitionOrigin.POST_ACTION
+                or self.acquisition_attempts != expected_acquisition_attempts
+            ):
+                raise ValueError(
+                    "returned execute acquisition truth violates its status matrix"
+                )
+        elif (
+            self.acquisition_attempts,
+            self.effectful_dispatches,
+            self.currentness_probe_count,
+        ) != (0, 0, 0) or any(
+            (
+                self.dispatch_status is not None,
+                bool(self.actual_request_id),
+                self.request_lineage_valid is not None,
+                self.acquisition_status is not None,
+                self.actual_origin is not None,
+            )
+        ):
+            raise ValueError("failed execute cannot fabricate returned facts")

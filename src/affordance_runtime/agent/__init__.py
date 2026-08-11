@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
+    from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
     from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
@@ -48,6 +49,8 @@ _EXPORTS = {
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
+    "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
+    "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
     "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),
     "ControlTransition": ("affordance_runtime.agent.control_transition", "ControlTransition"),
     "PendingKind": ("affordance_runtime.agent.control_transition", "PendingKind"),
@@ -55,6 +58,7 @@ _EXPORTS = {
     "ProgressDelta": ("affordance_runtime.agent.control_transition", "ProgressDelta"),
     "RequestActionPage": ("affordance_runtime.agent.decisions", "RequestActionPage"),
     "RequestObservation": ("affordance_runtime.agent.decisions", "RequestObservation"),
+    "RuntimeFailure": ("affordance_runtime.agent.runtime_failure", "RuntimeFailure"),
     "SelectAction": ("affordance_runtime.agent.decisions", "SelectAction"),
     "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),

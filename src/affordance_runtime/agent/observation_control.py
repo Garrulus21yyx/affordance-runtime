@@ -17,6 +17,11 @@ from affordance_runtime.agent.control_transition import (
     ControlTransitionScope,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
+from affordance_runtime.agent.runtime_failure import (
+    FailureKind,
+    FailureStage,
+    RuntimeFailure,
+)
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -295,15 +300,27 @@ async def capture_for_session(
         )
         raise
     except Exception as exc:
+        exception_class = safe_exception_class(exc)
         _record_capture_exception(
             session, scope, request, attempt_id, "capture_exception",
-            AttemptDisposition.THREW, safe_exception_class(exc),
+            AttemptDisposition.THREW, exception_class,
+        )
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.ACQUISITION,
+            FailureKind.CALL_FAILED,
+            "capture_exception",
+            exception_class=exception_class,
         )
         raise
     if not isinstance(acquisition, ObservationAcquisition):
         _record_capture_exception(
             session, scope, request, attempt_id, "capture_malformed",
             AttemptDisposition.MALFORMED, "",
+        )
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.ACQUISITION,
+            FailureKind.INVALID_OUTPUT,
+            "capture_malformed",
         )
         raise TypeError("WorldEnvironment.capture returned a malformed contract")
     acquired = _with_request(

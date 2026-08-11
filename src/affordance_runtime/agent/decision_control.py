@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from affordance_runtime.agent.attempt_receipt import safe_exception_class
 from affordance_runtime.agent.control_outcome import (
     Continue,
     LoopDirective,
@@ -32,6 +33,7 @@ from affordance_runtime.agent.observation_control import (
     capture_for_session,
 )
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_loop_status
@@ -52,10 +54,24 @@ SelectionExecutor = Callable[
     Awaitable[LoopDirective],
 ]
 
+_DECISION_TYPES = (
+    Abort,
+    AskUser,
+    ProposeDone,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+    Wait,
+)
+
 
 def accept_current_decision(session: AgentRunSession, decision: AgentDecision) -> bool:
     context = session.current_context_snapshot
-    if context is None or decision.context_id != context.context_id:
+    if (
+        context is None
+        or not isinstance(decision, _DECISION_TYPES)
+        or decision.context_id != context.context_id
+    ):
         return False
     if session.consumed_context_id == context.context_id:
         return False
@@ -87,7 +103,18 @@ async def run_policy_turn(
         observation_capabilities=session.environment.observation_capabilities,
     )
     session.current_context_snapshot = context
-    outcome = await policy.decide(context)
+    try:
+        outcome = await policy.decide(context)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.POLICY,
+            FailureKind.CALL_FAILED,
+            "policy_call_failed",
+            exception_class=safe_exception_class(exc),
+        )
+        raise
     state.remaining_turns -= 1
     if isinstance(outcome, PolicyFailure):
         return Terminate(
@@ -286,13 +313,26 @@ async def _propose_done(
             task,
             state.current_observation,
         )
+    except asyncio.CancelledError:
+        raise
     except ValueError as exc:
         scope.set_reason("task_evaluation_invalid")
         return Terminate(
             AgentLoopStatus.FAILED,
             "task_evaluation_invalid",
             str(exc),
+            failure_stage=FailureStage.EVALUATION,
+            failure_kind=FailureKind.INVALID_OUTPUT,
         )
+    except Exception as exc:
+        scope.set_reason("task_evaluation_call_failed")
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.EVALUATION,
+            FailureKind.CALL_FAILED,
+            "task_evaluation_call_failed",
+            exception_class=safe_exception_class(exc),
+        )
+        raise
     state.current_task_evaluation = evaluation
     scope.record_evaluations(task=evaluation)
     scope.set_reason(f"task_{evaluation.status}")

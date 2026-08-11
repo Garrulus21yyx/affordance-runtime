@@ -16,7 +16,12 @@ Reason500 = Annotated[str, StringConstraints(min_length=1, max_length=500)]
 
 
 class SemanticProposalPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        strict=True,
+        extra="forbid",
+        frozen=True,
+        revalidate_instances="always",
+    )
 
     criterion_id: Id240
     status: Literal["satisfied", "unsatisfied", "unknown"]
@@ -25,7 +30,12 @@ class SemanticProposalPayload(BaseModel):
 
 
 class SemanticProposalResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        strict=True,
+        extra="forbid",
+        frozen=True,
+        revalidate_instances="always",
+    )
 
     proposals: Annotated[list[SemanticProposalPayload], Field(max_length=32)]
 

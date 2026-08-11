@@ -32,6 +32,7 @@ from affordance_runtime.benchmarks.external_smoke.pacing import (
     validate_pacing_budget,
 )
 from affordance_runtime.benchmarks.target_loop.contracts import (
+    CASE_SCHEMA_VERSION,
     BenchmarkCase,
     BenchmarkComposition,
     BenchmarkManifest,
@@ -271,7 +272,7 @@ def _accept_campaign(
             errors.append(f"{record.case_id}: cleanup failed")
         if record.result.failure_facts.harness_integrity_code:
             errors.append(f"{record.case_id}: typed harness integrity fact is nonzero")
-        if record.result.case_schema_version != "target-loop-case.v6":
+        if record.result.case_schema_version != CASE_SCHEMA_VERSION:
             errors.append(f"{record.case_id}: case evidence schema is unsupported")
         if record.result.harness_schema_version != "target-loop-harness.v6":
             errors.append(f"{record.case_id}: harness evidence schema is unsupported")

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.control_transition import ControlTransition, Turn
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
+from affordance_runtime.agent.runtime_failure import RuntimeFailure, runtime_failure_from_outcome
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.task.contracts import TaskGoal
@@ -36,12 +37,31 @@ class AgentResult:
     reason_code: str = ""
     control_transition_kind_counts: tuple[tuple[str, int], ...] = ()
     sent_unknown_count: int = 0
+    runtime_failure: RuntimeFailure | None = None
 
 
-def project_result(session: AgentRunSession, outcome: Pause | Terminate) -> AgentResult:
+def project_result(
+    session: AgentRunSession,
+    outcome: Pause | Terminate,
+    *,
+    runtime_failure: RuntimeFailure | None = None,
+) -> AgentResult:
     """Project one public result from authoritative absolute session state."""
 
     state = session.state
+    latest = state.recent_control_transitions[-1] if state.recent_control_transitions else None
+    root_id = latest.transition_id if latest is not None else ""
+    attempt_id = (
+        latest.attempt_receipts[-1].attempt_id
+        if latest is not None and latest.attempt_receipts
+        else ""
+    )
+    if runtime_failure is not None and root_id:
+        runtime_failure = replace(
+            runtime_failure,
+            root_id=root_id,
+            attempt_id=attempt_id,
+        )
     return AgentResult(
         outcome.status,
         session.task,
@@ -60,4 +80,7 @@ def project_result(session: AgentRunSession, outcome: Pause | Terminate) -> Agen
         outcome.reason_code,
         tuple(sorted(state.control_transition_kind_counts.items())),
         state.sent_unknown_total_count,
+        runtime_failure or runtime_failure_from_outcome(
+            outcome, root_id=root_id, attempt_id=attempt_id
+        ),
     )

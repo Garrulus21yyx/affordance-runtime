@@ -135,6 +135,11 @@ async def _run_case(case) -> BenchmarkCaseResult:
         instrumentation.record_failure(
             CaseFailureOrigin.UNKNOWN, "runtime_exception", exc,
         )
+        session = session_holder.get("session")
+        if session is not None and session.last_result is not None:
+            # The session latches canonical typed failure truth before preserving
+            # the component exception behavior. Keep that authority for v7 facts.
+            result = session.last_result
     finally:
         if environment is not None:
             try:

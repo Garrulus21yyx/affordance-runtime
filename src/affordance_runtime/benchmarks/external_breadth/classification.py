@@ -6,6 +6,11 @@ from dataclasses import dataclass
 
 from affordance_runtime.agent import AgentFailureCode
 from affordance_runtime.agent.decisions import AbortCategory
+from affordance_runtime.agent.runtime_failure import (
+    SUPPORTED_RUNTIME_FAILURE_PAIRS,
+    FailureKind,
+    FailureStage,
+)
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
@@ -32,6 +37,37 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
     if _metric(result, "sent_unknown_count"):
         return ClassifiedOutcome(MiniWobTaskOutcome.SENT_UNKNOWN, "typed_metric")
+    if facts.runtime_failure is not None:
+        if (
+            facts.runtime_failure.stage is FailureStage.POLICY
+            and facts.policy_failure_code
+        ):
+            return ClassifiedOutcome(
+                _POLICY_OUTCOMES[ModelFailureKind(facts.policy_failure_code)],
+                "canonical_runtime_failure",
+            )
+        if facts.agent_failure_code:
+            return ClassifiedOutcome(
+                _AGENT_FAILURE_OUTCOMES[AgentFailureCode(facts.agent_failure_code)],
+                "canonical_runtime_failure",
+            )
+        if (
+            facts.runtime_failure.stage is FailureStage.EVALUATION
+            and facts.component_origin
+            in {
+                CaseFailureOrigin.ACTION_EVALUATION,
+                CaseFailureOrigin.TASK_EVALUATION,
+            }
+        ):
+            return ClassifiedOutcome(
+                _ORIGIN_OUTCOMES[facts.component_origin],
+                "canonical_runtime_failure",
+            )
+        outcome = _RUNTIME_FAILURE_OUTCOMES.get(
+            (facts.runtime_failure.stage, facts.runtime_failure.kind),
+            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE,
+        )
+        return ClassifiedOutcome(outcome, "canonical_runtime_failure")
     if facts.runtime_reason_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
     if facts.policy_failure_code:
@@ -142,10 +178,51 @@ _AGENT_FAILURE_OUTCOMES = {
     ),
 }
 
+_RUNTIME_FAILURE_OUTCOMES = {
+    (FailureStage.POLICY, FailureKind.INVALID_OUTPUT): (
+        MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE
+    ),
+    (FailureStage.POLICY, FailureKind.CALL_FAILED): (
+        MiniWobTaskOutcome.POLICY_DECISION_FAILURE
+    ),
+    (FailureStage.ACQUISITION, FailureKind.CAPABILITY_UNAVAILABLE): (
+        MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
+    ),
+    (FailureStage.ACQUISITION, FailureKind.CALL_FAILED): (
+        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
+    ),
+    (FailureStage.ACQUISITION, FailureKind.INVALID_OUTPUT): (
+        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
+    ),
+    (FailureStage.EXECUTION, FailureKind.CALL_FAILED): (
+        MiniWobTaskOutcome.EXECUTION_FAILURE
+    ),
+    (FailureStage.EXECUTION, FailureKind.INVALID_OUTPUT): (
+        MiniWobTaskOutcome.EXECUTION_FAILURE
+    ),
+    (FailureStage.EVALUATION, FailureKind.CALL_FAILED): (
+        MiniWobTaskOutcome.TASK_FAILED
+    ),
+    (FailureStage.EVALUATION, FailureKind.INVALID_OUTPUT): (
+        MiniWobTaskOutcome.TASK_FAILED
+    ),
+    (FailureStage.CONTROL, FailureKind.NO_PROGRESS): (
+        MiniWobTaskOutcome.NO_PROGRESS_REPETITION
+    ),
+    (FailureStage.CONTROL, FailureKind.REJECTED): (
+        MiniWobTaskOutcome.RUNTIME_REJECTED
+    ),
+    (FailureStage.SESSION, FailureKind.CANCELLED): MiniWobTaskOutcome.TASK_FAILED,
+    (FailureStage.SESSION, FailureKind.CALL_FAILED): MiniWobTaskOutcome.TASK_FAILED,
+    (FailureStage.SESSION, FailureKind.INTERNAL): MiniWobTaskOutcome.TASK_FAILED,
+}
+
 if set(_POLICY_OUTCOMES) != set(ModelFailureKind):
     raise RuntimeError("policy failure outcome mapping is not total")
 if set(_AGENT_FAILURE_OUTCOMES) != set(AgentFailureCode):
     raise RuntimeError("agent failure outcome mapping is not total")
+if set(_RUNTIME_FAILURE_OUTCOMES) != SUPPORTED_RUNTIME_FAILURE_PAIRS:
+    raise RuntimeError("Runtime failure outcome mapping is not total")
 
 
 def _metric(result: BenchmarkCaseResult, name: str) -> int | float:

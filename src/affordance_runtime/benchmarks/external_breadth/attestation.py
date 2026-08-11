@@ -24,6 +24,9 @@ from affordance_runtime.benchmarks.external_breadth.runner import (
 from affordance_runtime.benchmarks.target_loop.case_projection import (
     decode_public_case_evidence,
 )
+from affordance_runtime.benchmarks.target_loop.contracts import (
+    SUPPORTED_CASE_SCHEMA_VERSIONS,
+)
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -172,6 +175,10 @@ def _validate_root_identity(
 ) -> None:
     sha = attestation.get("git_sha")
     acceptance = campaign.get("acceptance")
+    case_schema_version = attestation.get("case_schema_version")
+    if case_schema_version not in SUPPORTED_CASE_SCHEMA_VERSIONS:
+        errors.append("attestation case evidence schema is unsupported")
+        return
     expected_attestation = {
         "schema_version": "miniwob-breadth-attestation.v1",
         "classification": "MINIWOB_60_SEEDED_BREADTH_PROFILE",
@@ -182,7 +189,7 @@ def _validate_root_identity(
         "target_manifest_digest": target_digest,
         "profile_id": "mistral-format-only-v1",
         "harness_schema_version": "target-loop-harness.v6",
-        "case_schema_version": "target-loop-case.v6",
+        "case_schema_version": case_schema_version,
         "registry_digest": manifest.registry_digest,
         "capability_inventory_digest": manifest.capability_inventory_digest,
         "package_name": manifest.package_name,
@@ -233,7 +240,7 @@ def _validate_root_identity(
         "target_manifest_digest": target_digest,
         "profile_id": "mistral-format-only-v1",
         "harness_schema_version": "target-loop-harness.v6",
-        "case_schema_version": "target-loop-case.v6",
+        "case_schema_version": case_schema_version,
         "git_sha": sha,
         "git_dirty": False,
         "complete": True,
@@ -271,7 +278,7 @@ def _validate_case_binding(result, case, attestation, target_digest, errors) -> 
         or result.profile_id != attestation.get("profile_id")
         or result.seed != case.seed
         or result.manifest_digest != target_digest
-        or result.case_schema_version != "target-loop-case.v6"
+        or result.case_schema_version != attestation.get("case_schema_version")
         or result.harness_schema_version != "target-loop-harness.v6"
     ):
         errors.append(f"{case.case_id}: formal case identity/schema mismatch")

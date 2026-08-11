@@ -32,6 +32,7 @@ from affordance_runtime.agent.execution_cycle import execute_cycle
 from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.start_error import (
     AgentSessionStartCancelledError,
@@ -176,10 +177,22 @@ class AgentLoop:
                     AgentLoopStatus.FAILED,
                     "task_evaluation_invalid",
                     str(exc),
+                    failure_stage=FailureStage.EVALUATION,
+                    failure_kind=FailureKind.INVALID_OUTPUT,
                 )
                 return self._close_confirmation(
                     session, outcome, "task_evaluation_invalid"
                 )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                session.pending_runtime_failure = RuntimeFailure(
+                    FailureStage.EVALUATION,
+                    FailureKind.CALL_FAILED,
+                    "task_evaluation_call_failed",
+                    exception_class=safe_exception_class(exc),
+                )
+                raise
             state.current_task_evaluation = task_evaluation
             if session.confirmation_continuation_scope is not None:
                 session.confirmation_continuation_scope.record_evaluations(

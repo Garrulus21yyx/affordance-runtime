@@ -25,6 +25,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptOperation,
     AttemptReceipt,
 )
+from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState
@@ -286,7 +287,8 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
 
     async def dry_run(*args):
         nonlocal executions
-        del args
+        scope = args[-1]
+        scope.record_admission(AdmissionStatus.ADMITTED, "dry_run_admitted")
         executions += 1
         return "dry-run-admitted"
 

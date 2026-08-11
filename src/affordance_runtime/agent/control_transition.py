@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 from affordance_runtime.agent.attempt_receipt import AttemptOperation, AttemptReceipt
 from affordance_runtime.agent.control_outcome import Continue, LoopDirective, Pause, Terminate
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from affordance_runtime.world.acquisition import ObservationRequestKind
 
 _REASON = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
+_TRANSITION_ID = re.compile(r"transition:[1-9][0-9]{0,9}(?::[0-9a-f]{20})?")
+_DECISION_TYPES = get_args(AgentDecision)
 
 
 class AdmissionStatus(StrEnum):
@@ -47,6 +49,8 @@ class AdmissionSummary:
     reason_code: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, AdmissionStatus):
+            raise TypeError("admission status must be typed")
         _require_reason_code(self.reason_code)
 
 
@@ -69,6 +73,18 @@ class ExecutionSummary:
             raise TypeError("execution summary transport success must be boolean")
         if type(self.currentness_probe_count) is not int or self.currentness_probe_count < 0:
             raise ValueError("currentness probe count must be a non-negative integer")
+        if not self.expected_request_id.strip():
+            raise ValueError("execution summary requires expected request identity")
+        try:
+            ActionResult(
+                self.request_id,
+                self.dispatch_status,
+                self.backend,
+                self.transport_success,
+                self.error,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("execution summary contradicts ActionResult") from exc
 
 
 @dataclass(frozen=True)
@@ -100,6 +116,8 @@ class ProgressDelta:
     latest_event_type: str = ""
 
     def __post_init__(self) -> None:
+        if type(self.event_count) is not int:
+            raise TypeError("progress event count must be an integer")
         if self.event_count < 0:
             raise ValueError("progress event count cannot be negative")
 
@@ -143,9 +161,58 @@ class ControlTransition:
     decision_result: str = ""
 
     def __post_init__(self) -> None:
-        if self.sequence <= 0 or not self.transition_id.startswith("transition:"):
+        from affordance_runtime.agent.state import AgentLoopStatus
+
+        if (
+            type(self.sequence) is not int
+            or self.sequence <= 0
+            or not isinstance(self.transition_id, str)
+            or _TRANSITION_ID.fullmatch(self.transition_id) is None
+        ):
             raise ValueError("control transition identity is invalid")
-        if not self.before_observation_id or not self.after_observation_id:
+        if not isinstance(self.decision, _DECISION_TYPES):
+            raise TypeError("control transition decision must be typed")
+        if self.admission is not None and not isinstance(self.admission, AdmissionSummary):
+            raise TypeError("control transition admission must be typed")
+        if self.execution is not None and not isinstance(self.execution, ExecutionSummary):
+            raise TypeError("control transition execution must be typed")
+        if any(not isinstance(item, ExecutionSummary) for item in self.execution_attempts):
+            raise TypeError("control transition execution attempts must be typed")
+        if self.acquisition is not None and not isinstance(
+            self.acquisition, AcquisitionSummary
+        ):
+            raise TypeError("control transition acquisition must be typed")
+        if any(
+            not isinstance(item, AcquisitionSummary)
+            for item in self.acquisition_attempts
+        ):
+            raise TypeError("control transition acquisition attempts must be typed")
+        if any(not isinstance(item, AttemptReceipt) for item in self.attempt_receipts):
+            raise TypeError("control transition attempt receipts must be typed")
+        if not isinstance(self.progress, ProgressDelta):
+            raise TypeError("control transition progress must be typed")
+        if not isinstance(self.pending_kind, PendingKind):
+            raise TypeError("control transition pending kind must be typed")
+        if self.resulting_status is not None and not isinstance(
+            self.resulting_status, AgentLoopStatus
+        ):
+            raise TypeError("control transition resulting status must be typed")
+        if self.intent is not None and not isinstance(self.intent, ActionIntent):
+            raise TypeError("control transition intent must be typed")
+        if self.action_evaluation is not None and not isinstance(
+            self.action_evaluation, ActionEvaluation
+        ):
+            raise TypeError("control transition action evaluation must be typed")
+        if self.task_evaluation is not None and not isinstance(
+            self.task_evaluation, TaskEvaluation
+        ):
+            raise TypeError("control transition task evaluation must be typed")
+        if (
+            not isinstance(self.before_observation_id, str)
+            or not isinstance(self.after_observation_id, str)
+            or not self.before_observation_id
+            or not self.after_observation_id
+        ):
             raise ValueError("control transition requires before/after identity")
         if (
             self.action_evaluation is not None
@@ -208,8 +275,59 @@ class ControlContinuation:
     reason_code: str
 
     def __post_init__(self) -> None:
-        if not self.source_transition_id.startswith("transition:"):
+        from affordance_runtime.agent.state import AgentLoopStatus
+
+        if (
+            not isinstance(self.source_transition_id, str)
+            or _TRANSITION_ID.fullmatch(self.source_transition_id) is None
+        ):
             raise ValueError("continuation requires a root transition source")
+        if not isinstance(self.after_observation_id, str) or not self.after_observation_id:
+            raise ValueError("continuation requires after observation identity")
+        if self.acquisition is not None and not isinstance(
+            self.acquisition, AcquisitionSummary
+        ):
+            raise TypeError("continuation acquisition must be typed")
+        if self.execution is not None and not isinstance(
+            self.execution, ExecutionSummary
+        ):
+            raise TypeError("continuation execution must be typed")
+        if any(
+            not isinstance(item, AcquisitionSummary)
+            for item in self.acquisition_attempts
+        ) or any(
+            not isinstance(item, ExecutionSummary)
+            for item in self.execution_attempts
+        ) or any(not isinstance(item, AttemptReceipt) for item in self.attempt_receipts):
+            raise TypeError("continuation attempts must be typed")
+        if not isinstance(self.progress, ProgressDelta):
+            raise TypeError("continuation progress must be typed")
+        if self.intent is not None and not isinstance(self.intent, ActionIntent):
+            raise TypeError("continuation intent must be typed")
+        if self.action_evaluation is not None and not isinstance(
+            self.action_evaluation, ActionEvaluation
+        ):
+            raise TypeError("continuation action evaluation must be typed")
+        if self.task_evaluation is not None and not isinstance(
+            self.task_evaluation, TaskEvaluation
+        ):
+            raise TypeError("continuation task evaluation must be typed")
+        if (
+            self.action_evaluation is not None
+            and self.action_evaluation.after_observation_id != self.after_observation_id
+        ):
+            raise ValueError("action evaluation must match continuation after observation")
+        if (
+            self.task_evaluation is not None
+            and self.task_evaluation.observation_id != self.after_observation_id
+        ):
+            raise ValueError("task evaluation must match continuation after observation")
+        if not isinstance(self.pending_kind, PendingKind):
+            raise TypeError("continuation pending kind must be typed")
+        if self.resulting_status is not None and not isinstance(
+            self.resulting_status, AgentLoopStatus
+        ):
+            raise TypeError("continuation resulting status must be typed")
         _require_reason_code(self.reason_code)
 
 

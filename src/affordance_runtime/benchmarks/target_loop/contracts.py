@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluationStatus
 from affordance_runtime.model_boundary.failures import ModelFailureKind
 from affordance_runtime.risk.policy import RiskPolicy
@@ -25,6 +26,11 @@ from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
+
+CASE_SCHEMA_VERSION = "target-loop-case.v7"
+SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset({"target-loop-case.v6", CASE_SCHEMA_VERSION})
+_FACT_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
+_EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
 
 @dataclass(frozen=True)
@@ -124,7 +130,7 @@ class CaseFailureOrigin(StrEnum):
 
 
 @dataclass(frozen=True)
-class FailureFacts:
+class CaseFacts:
     """Orthogonal privacy-safe facts; primary classification is a projection."""
 
     runtime_reason_code: str = ""
@@ -137,10 +143,15 @@ class FailureFacts:
     cleanup_code: str = ""
     cleanup_exception_class: str = ""
     harness_integrity_code: str = ""
+    runtime_failure: RuntimeFailure | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.component_origin, CaseFailureOrigin):
             raise TypeError("component failure origin must be typed")
+        if self.runtime_failure is not None and not isinstance(
+            self.runtime_failure, RuntimeFailure
+        ):
+            raise TypeError("canonical Runtime failure must be typed")
         for value in (
             self.runtime_reason_code, self.agent_failure_code, self.policy_failure_code,
             self.component_code, self.watchdog_code, self.cleanup_code,
@@ -148,12 +159,12 @@ class FailureFacts:
         ):
             if not isinstance(value, str):
                 raise TypeError("failure fact codes must be strings")
-            if value and (len(value) > 96 or not value.replace("_", "").isalnum()):
+            if value and _FACT_CODE.fullmatch(value) is None:
                 raise ValueError("failure fact codes must be bounded identifiers")
         for value in (self.component_exception_class, self.cleanup_exception_class):
             if not isinstance(value, str):
                 raise TypeError("failure exception classes must be strings")
-            if value and (len(value) > 128 or not value.replace("_", "").isalnum()):
+            if value and _EXCEPTION_CLASS.fullmatch(value) is None:
                 raise ValueError("failure exception classes must be bounded names")
         has_component = self.component_origin is not CaseFailureOrigin.NONE
         if has_component != bool(self.component_code):
@@ -170,6 +181,55 @@ class FailureFacts:
             str(item) for item in ModelFailureKind
         }:
             raise ValueError("policy failure code is outside the closed vocabulary")
+        if self.runtime_failure is not None:
+            if self.policy_failure_code and (
+                self.runtime_failure.stage is not FailureStage.POLICY
+                or self.policy_failure_code != self.runtime_failure.code
+            ):
+                raise ValueError("canonical and legacy policy failure facts conflict")
+            if self.policy_failure_code:
+                policy_kind = ModelFailureKind(self.policy_failure_code)
+                expected_kind = (
+                    FailureKind.INVALID_OUTPUT
+                    if policy_kind in {
+                        ModelFailureKind.INVALID_RESPONSE,
+                        ModelFailureKind.SCHEMA_ERROR,
+                    }
+                    else FailureKind.CALL_FAILED
+                )
+                if self.runtime_failure.kind is not expected_kind:
+                    raise ValueError("canonical policy failure kind contradicts its code")
+            if self.agent_failure_code and self.runtime_failure.code != self.agent_failure_code:
+                raise ValueError("canonical and legacy agent failure facts conflict")
+            if self.agent_failure_code:
+                agent_code = AgentFailureCode(self.agent_failure_code)
+                if agent_code is AgentFailureCode.NO_PROGRESS_REPETITION:
+                    expected_agent_failure = (
+                        FailureStage.CONTROL,
+                        FailureKind.NO_PROGRESS,
+                    )
+                elif agent_code in {
+                    AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE,
+                    AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE,
+                }:
+                    expected_agent_failure = (
+                        FailureStage.ACQUISITION,
+                        FailureKind.CAPABILITY_UNAVAILABLE,
+                    )
+                else:
+                    expected_agent_failure = (
+                        FailureStage.ACQUISITION,
+                        FailureKind.CALL_FAILED,
+                    )
+                if (
+                    self.runtime_failure.stage,
+                    self.runtime_failure.kind,
+                ) != expected_agent_failure:
+                    raise ValueError("canonical agent failure kind contradicts its code")
+
+
+# Compatibility name for the pre-convergence public schema. New owners use CaseFacts.
+FailureFacts = CaseFacts
 
 
 @dataclass(frozen=True)
@@ -301,7 +361,7 @@ class BenchmarkCaseResult:
     harness_integrity_code: str = ""
     harness_integrity_failures: int = 0
     failure_facts: FailureFacts = field(default_factory=FailureFacts)
-    case_schema_version: str = "target-loop-case.v6"
+    case_schema_version: str = CASE_SCHEMA_VERSION
     suite_id: str = ""
     profile_id: str = ""
     seed: int = 0
@@ -384,6 +444,15 @@ class BenchmarkCaseResult:
         }.get(self.pending_kind)
         if expected_pending_status is not None and self.status != expected_pending_status:
             raise ValueError("benchmark pending kind contradicts terminal status")
+        if (
+            self.status == AgentLoopStatus.WAITING_CONFIRMATION
+            and self.pending_kind != "confirmation"
+        ) or (
+            self.status == AgentLoopStatus.WAITING_USER
+            and not self.pending_kind
+            and self.latest_task_status != TaskEvaluationStatus.UNKNOWN
+        ):
+            raise ValueError("benchmark waiting status lacks its typed pending fact")
         if self.latest_task_status not in {"", *(str(item) for item in TaskEvaluationStatus)}:
             raise ValueError("benchmark task status is outside the closed vocabulary")
         if self.latest_action_evaluation_status not in {
@@ -421,21 +490,24 @@ class BenchmarkCaseResult:
         )
         if not blocked and not no_progress and self.terminal_reason_code is not None:
             raise ValueError("non-blocked case result cannot carry a terminal reason code")
-        if self.exception_class and (
-            len(self.exception_class) > 128 or not self.exception_class.replace("_", "").isalnum()
-        ):
+        if self.exception_class and _EXCEPTION_CLASS.fullmatch(self.exception_class) is None:
             raise ValueError("benchmark exception metadata must be a bounded class name")
-        if self.cleanup_exception_class and (
-            len(self.cleanup_exception_class) > 128
-            or not self.cleanup_exception_class.replace("_", "").isalnum()
+        if (
+            self.cleanup_exception_class
+            and _EXCEPTION_CLASS.fullmatch(self.cleanup_exception_class) is None
         ):
             raise ValueError("cleanup exception metadata must be a bounded class name")
         if self.cleanup_failures not in {0, 1}:
             raise ValueError("cleanup failure count must be zero or one")
         if self.harness_integrity_failures not in {0, 1}:
             raise ValueError("harness integrity failure count must be zero or one")
-        if self.case_schema_version != "target-loop-case.v6":
+        if self.case_schema_version not in SUPPORTED_CASE_SCHEMA_VERSIONS:
             raise ValueError("benchmark case evidence schema is unsupported")
+        if (
+            self.case_schema_version == "target-loop-case.v6"
+            and self.failure_facts.runtime_failure is not None
+        ):
+            raise ValueError("legacy case evidence cannot carry canonical RuntimeFailure")
         if self.harness_schema_version != "target-loop-harness.v6":
             raise ValueError("benchmark harness evidence schema is unsupported")
         identity_values = (self.suite_id, self.profile_id, self.manifest_digest)
@@ -460,49 +532,18 @@ class BenchmarkCaseResult:
             or self.exception_class != facts.component_exception_class
         ):
             raise ValueError("benchmark component failure projection is inconsistent")
-        expected_case_failure_code = (
-            facts.watchdog_code
-            or (f"policy_{facts.policy_failure_code}" if facts.policy_failure_code else "")
-            or facts.agent_failure_code
-            or facts.runtime_reason_code
-            or facts.component_code
-            or facts.cleanup_code
-            or facts.harness_integrity_code
+        from affordance_runtime.benchmarks.target_loop.legacy_case_projection import (
+            project_legacy_case_fields,
         )
-        if self.case_failure_code != expected_case_failure_code:
+
+        legacy = project_legacy_case_fields(self.status, facts)
+        if self.case_failure_code != legacy.case_failure_code:
             raise ValueError("benchmark case failure code is inconsistent with failure facts")
-        expected_terminal_reason = terminal_reason_from_facts(
-            self.status, facts.runtime_reason_code, facts.agent_failure_code,
-        )
-        if self.terminal_reason_code is not expected_terminal_reason:
+        if self.terminal_reason_code is not legacy.terminal_reason_code:
             raise ValueError("benchmark terminal reason is inconsistent with failure facts")
         if self.watchdog_triggered != bool(facts.watchdog_code):
             raise ValueError("benchmark watchdog projection is inconsistent")
-        runtime_case_code = bool(
-            self.case_failure_code
-            and self.case_failure_code not in {
-                facts.watchdog_code, facts.cleanup_code, facts.harness_integrity_code,
-            }
-        )
-        has_runtime_truth = bool(
-            facts.runtime_reason_code
-            or facts.agent_failure_code
-            or facts.policy_failure_code
-            or self.terminal_reason_code is not None
-            or runtime_case_code
-        )
-        expected_termination_origin = (
-            "harness_watchdog"
-            if facts.watchdog_code
-            else "component"
-            if facts.component_origin is not CaseFailureOrigin.NONE
-            else "runtime"
-            if has_runtime_truth
-            else "cleanup"
-            if facts.cleanup_code
-            else "runtime"
-        )
-        if self.termination_origin != expected_termination_origin:
+        if self.termination_origin != legacy.termination_origin:
             raise ValueError("benchmark termination origin is inconsistent with failure facts")
         if bool(self.cleanup_failures) != bool(facts.cleanup_code):
             raise ValueError("benchmark cleanup projection is inconsistent")
@@ -510,6 +551,7 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark integrity projection is inconsistent")
         official = self.measurements.get("official_success_count")
         has_failure_fact = any((
+            facts.runtime_failure,
             facts.runtime_reason_code,
             facts.agent_failure_code,
             facts.policy_failure_code,
