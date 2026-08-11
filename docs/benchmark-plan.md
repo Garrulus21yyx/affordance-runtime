@@ -280,7 +280,12 @@ M4.5-A closes observation acquisition before another breadth claim:
 6. a new capture identity never re-labels the previous step's verifier outcome
    as current evidence; verifier state is reacquired or explicitly unavailable.
 
-M4.5-B closes decision-scoped transition accounting:
+M4.5-B is integrated non-default but reopened and implemented-not-verified.
+Its convergence contract requires decision-scoped transition accounting:
+
+Status mirror: M4.5-B `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
+IMPLEMENTED_NOT_VERIFIED`; M4.5-C `NOT_STARTED /
+BLOCKED_BY_M4_5_B_CONVERGENCE`. Implementation Status is authoritative.
 
 1. every accepted policy decision produces exactly one bounded
    `ControlTransition`, including AskUser, Abort, RequestObservation, Wait,
@@ -297,14 +302,14 @@ M4.5-B closes decision-scoped transition accounting:
    custom metrics cannot override canonical counters;
 4. transition storage reports total count plus a bounded suffix and remains
    in-memory, run-scoped, non-replayable, and non-durable.
-5. B.3 distinguishes the harness-owned watchdog from component/provider timeouts,
+5. the bounded contract distinguishes the harness-owned watchdog from component/provider timeouts,
    keeps Runtime/component/cleanup/integrity facts independent, rejects canonical
    metric collisions as evidence-integrity failures, and forbids campaign acceptance
    when any case remains unclassified or violates a frozen safety gate.
 
 M4.5-A and M4.5-B are separate implementation/verification slices so their
-effects remain attributable. Each must pass its focused conformance and safety
-tests before an exact-profile rerun. Any rerun is a new immutable record; it
+effects remain attributable. M4.5-B has not passed its convergence gate, so
+M4.5-C is blocked. Any later admitted rerun is a new immutable record; it
 cannot amend, resume, or merge either exact run above. Zero unclassified typed
 outcomes remains an attribution gate, not permission to rewrite prior evidence.
 

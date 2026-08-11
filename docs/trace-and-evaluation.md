@@ -212,8 +212,9 @@ The later clean `83dc4fa` rerun-v3 is a second immutable exact-run record with
 4/60 success, 7 post-observation failures, 9 unclassified typed failures and 11
 Runtime rejections. It neither replaces nor combines with 6/60. M4.5-A requires
 typed acquisition stage/status so expected unavailable/failed paths cannot
-escape as RuntimeError; M4.5-B now carries every accepted decision's control
-facts into case/snapshot projection without message parsing. Its B.3 closure keeps
-Runtime reason, component origin/code/class, watchdog, cleanup and harness-integrity
-facts independent, while current TaskEvaluation remains AgentLoopState authority. Future reruns
-remain new records rather than rewrites of either archive.
+escape as RuntimeError. The M4.5-B candidate carries accepted-decision facts,
+but reducer legality and failure projection ownership remain under convergence
+review. The required contract keeps Runtime failure, component failure,
+watchdog, cleanup and harness-integrity facts independent, while current
+TaskEvaluation remains AgentLoopState authority. Future reruns remain blocked
+and, if later admitted, are new records rather than archive rewrites.

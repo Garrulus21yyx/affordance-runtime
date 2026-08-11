@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-08-10
+updated: 2026-08-11
 repository: affordance-runtime
 
 authority_precedence:
@@ -199,6 +199,9 @@ reference:
   - role: p5_m4_4_miniwob_breadth_failure_attribution
     path: docs/reviews/2026-08-10-p5-m4-4-miniwob-breadth-failure-attribution.md
     lifecycle: immutable_record
+  - role: p5_m4_5_b_control_failure_convergence_review
+    path: docs/reviews/2026-08-11-p5-m45b-control-failure-convergence.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

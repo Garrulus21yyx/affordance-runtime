@@ -232,13 +232,13 @@ confirmed effect reset the streak. Runtime never chooses Submit or another
 replacement action.
 
 At the pre-M4.5-B baseline this branch had no Turn and was an accounting gap.
-M4.5-B now records the accepted selection and its suppression/progress
-consequence as exactly one ControlTransition while still fabricating no
-execution or observation. The controller remains a fill/select local liveness guard; future
+The M4.5-B candidate records the accepted selection and its suppression/progress
+consequence as one ControlTransition while still fabricating no execution or
+observation; reducer properties must verify this invariant. The controller remains a fill/select local liveness guard; future
 TaskProgressAuditor and planner remain separate P5-E owners.
 
-The B.1/B.2/B.3 closure records ordered dispatch attempts and physical
-acquisition/probe totals at their
+The reopened convergence contract requires ordered dispatch attempts and physical
+acquisition/probe totals to be recorded at their
 actual boundaries, before evaluator completion. RuntimeError or cancellation
 therefore closes and rethrows from the same accepted-decision root. Confirmation
 refresh, binding/currentness refresh and final post acquisition append once in

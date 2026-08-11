@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -22,6 +23,22 @@ AUTHORITATIVE_ARCHITECTURE = (
 )
 IMPLEMENTATION_STATUS = DOCS / "implementation-status.md"
 CURRENT_PLAN = DOCS / "current-implementation-plan.md"
+
+M45_STATUS_PROJECTIONS = (
+    ROOT_INDEX,
+    DOCS_INDEX,
+    CURRENT_PLAN,
+    DOCS / "project-plan.md",
+    DOCS / "benchmark-plan.md",
+    EVOLUTION_PLAN,
+)
+
+M45_B_STATUS = (
+    "INTEGRATED_NON_DEFAULT",
+    "REOPENED_CONVERGENCE_REVIEW",
+    "IMPLEMENTED_NOT_VERIFIED",
+)
+M45_C_STATUS = ("NOT_STARTED", "BLOCKED_BY_M4_5_B_CONVERGENCE")
 
 VALID_LIFECYCLES = {
     "current",
@@ -93,8 +110,8 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
         "COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)"
     ) in text
     assert "P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT" in text
-    assert "P5-M4.5-B ControlTransition accounting: COMPLETE_NON_DEFAULT" in text
-    assert "P5-M4.5-C same-profile rerun: NOT_STARTED / NEXT" in text
+    assert all(marker in text for marker in M45_B_STATUS)
+    assert all(marker in text for marker in M45_C_STATUS)
 
 
 def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
@@ -102,14 +119,81 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
 
     markers = (
         "P5-M4.5-A observation acquisition lifecycle — complete",
-        "P5-M4.5-B lossless ControlTransition — complete",
+        "P5-M4.5-B control/failure contract — reopened convergence review",
         "## Gates after M4.5",
         "VerifiedTaskState evidence promotion",
     )
     positions = [text.index(marker) for marker in markers]
     assert positions == sorted(positions)
     assert "separate clean `83dc4fa` run at 4/60" in text
-    assert "rerun remains blocked" not in text.lower()
+
+
+def test_m45_current_status_has_one_authoritative_source_and_consistent_projections() -> None:
+    manifest = _manifest_text()
+    status_text = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
+
+    assert (
+        "current_code_truth: docs/implementation-status.md" in manifest
+    )
+    assert status_text.count("Current reviewed M4.5-B closure SHA:") == 1
+    assert all(marker in status_text for marker in (*M45_B_STATUS, *M45_C_STATUS))
+
+    for path in M45_STATUS_PROJECTIONS:
+        text = path.read_text(encoding="utf-8")
+        assert all(marker in text for marker in M45_B_STATUS), path
+        assert all(marker in text for marker in M45_C_STATUS), path
+
+
+def test_m45_unverified_or_reopened_b_blocks_c_and_has_no_reviewed_sha() -> None:
+    text = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
+    reviewed = re.search(
+        r"Current reviewed M4\.5-B closure SHA:\*\* `([^`]+)`",
+        text,
+    )
+
+    assert reviewed is not None
+    assert "REOPENED_CONVERGENCE_REVIEW" in text
+    assert "IMPLEMENTED_NOT_VERIFIED" in text
+    assert "BLOCKED_BY_M4_5_B_CONVERGENCE" in text
+    assert reviewed.group(1) == "NONE"
+
+
+def test_normative_architecture_does_not_override_implementation_status() -> None:
+    text = AUTHORITATIVE_ARCHITECTURE.read_text(encoding="utf-8")
+
+    assert "Implementation truth:" in text
+    assert "Current reviewed M4.5-B closure SHA" not in text
+    assert "VERIFIED_CLOSED" not in text
+
+
+def test_reviewed_sha_if_present_is_clean_committed_head() -> None:
+    text = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
+    match = re.search(
+        r"Current reviewed M4\.5-B closure SHA:\*\* `([^`]+)`",
+        text,
+    )
+    assert match is not None
+    reviewed = match.group(1)
+    if reviewed == "NONE":
+        return
+
+    resolved = subprocess.run(
+        ("git", "rev-parse", "--verify", f"{reviewed}^{{commit}}"),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    head = subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=ROOT, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    dirty = subprocess.run(
+        ("git", "status", "--porcelain"), cwd=ROOT, check=True,
+        capture_output=True, text=True,
+    ).stdout
+    assert resolved == head
+    assert not dirty
 
 
 def test_target_contract_keeps_transition_lightweight_and_capture_typed() -> None:

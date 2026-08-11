@@ -1,8 +1,8 @@
 # Affordance Runtime：AgentContext 循环式 E2E Agent 演进计划
 
 > **Lifecycle:** CURRENT AUTHORITATIVE EVOLUTION PLAN
-> **Updated:** 2026-08-10
-> **Reviewed implementation:** `codex/migrate-world-interaction-capabilities@f04cfd5e154b9d0458b65d01f4fe47cae67019fd`
+> **Updated:** 2026-08-11
+> **Review evidence:** none; Implementation Status owns any reviewed closure SHA
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
@@ -123,8 +123,8 @@ P5-M4.3 historical MiniWoB-60 run: COMPLETE_VALID_NEGATIVE_EVIDENCE (6/60)
 P5-M4.4 failure attribution/capability inventory: COMPLETE_FOR_CURRENT_SCOPE
 post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)
 P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT
-P5-M4.5-B ControlTransition accounting: COMPLETE_NON_DEFAULT (B.3 CLOSED)
-P5-M4.5-C same-profile rerun: NOT_STARTED / NEXT
+P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
+P5-M4.5-C same-profile rerun: NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
 ```
 
@@ -377,8 +377,8 @@ DONE: P5-M4.3 historical MiniWoB-60 seed-7 negative run (6/60)
 DONE: P5-M4.4 typed attribution/capability inventory
 DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
 DONE: P5-M4.5-A observation acquisition lifecycle
-DONE: P5-M4.5-B lossless bounded ControlTransition accounting, including B.1/B.2/B.3 edge closure
-NEXT: P5-M4.5-C same-profile MiniWoB-60 rerun
+ACTIVE_REVIEW: P5-M4.5-B bounded control/failure contract convergence; implemented, not verified
+BLOCKED: P5-M4.5-C same-profile MiniWoB-60 rerun by M4.5-B convergence
 THEN: P5-M4.5-D supported-subset multi-seed gate
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
 THEN: P5-F bounded ActionBatch
@@ -473,10 +473,9 @@ and 11 `runtime_rejected` cases. At the P5-M4 baseline, those observation
 failures proved that public active-observation meaning and BrowserGym's
 consume-once post-step cache were not interchangeable. M4.5-A and its A.1
 closure now replace that lifecycle with typed, origin-validated acquisition;
-M4.5-B plus its B.1/B.2/B.3 edge closure now closes ordered execution/acquisition/probe
-facts, terminal non-re-entry, full confirmation/current-risk lifetime, evaluation epochs,
-snapshot authority and independent benchmark Runtime/component/watchdog/cleanup/integrity
-projection. M4.5-C is next; P5-E stays blocked until the
-same-profile rerun and the supported-
-subset multi-seed gate close; provider/model competence remains measured rather
+M4.5-B is integrated non-default but reopened: ordered physical attempts,
+terminal non-re-entry, confirmation/current-risk lifetime, evaluation epochs,
+snapshot authority and benchmark Runtime/component/watchdog/cleanup/integrity
+ownership must converge under one bounded reducer and property model. M4.5-C is
+blocked; P5-E stays blocked. Provider/model competence remains measured rather
 than repaired by Runtime machinery.

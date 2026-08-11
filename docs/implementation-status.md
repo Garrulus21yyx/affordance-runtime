@@ -1,8 +1,8 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-10
-> **Reviewed implementation HEAD:** `codex/migrate-world-interaction-capabilities@f04cfd5e154b9d0458b65d01f4fe47cae67019fd`
+> **Updated:** 2026-08-11
+> **Current reviewed M4.5-B closure SHA:** `NONE`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
 ## Status vocabulary
@@ -31,7 +31,7 @@ The target path now has:
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded transition state | `INTEGRATED_NON_DEFAULT`; evaluations are retained on canonical ControlTransition values |
-| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_B_3`; every accepted decision produces one immutable root; terminal exceptions latch the session; ordered execution/acquisition/probe/evaluation facts are monotonic; confirmation continuation updates that root exactly once |
+| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; every accepted decision produces one immutable root; terminal exceptions latch the session; ordered execution/acquisition/probe/evaluation facts are monotonic; confirmation continuation updates that root exactly once |
 | local ProgressController | `CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS`; other semantic actions are not precondition-contained and this owner is not a planner |
 | SurfaceAdapter / UnifiedWorldEnvironment | complete for DOM, Visual-only, and WoT single-surface minimums; semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
@@ -93,8 +93,8 @@ The target path now has:
 | historical MiniWoB-60 seed-7 run | `VALID_NEGATIVE_EVIDENCE`; clean `b3b64a2`, 6/60 |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE`; clean `83dc4fa`, 4/60, kept separate from the historical run |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
-| P5-M4.5-B ControlTransition accounting | `COMPLETE_NON_DEFAULT / B_3_CLOSED` |
-| P5-M4.5-C same-profile MiniWoB-60 rerun | `NOT_STARTED / NEXT_ADMITTED` |
+| P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
+| P5-M4.5-C same-profile MiniWoB-60 rerun | `NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
 
@@ -398,34 +398,23 @@ The A.1 closure additionally rejects non-independent capture origins, reports
 the final fallback attempt's typed cause and exact attempt count, counts an
 already-performed post acquisition on ActionResult lineage failure, and removes
 package-facade import-order dependence without moving projection authority.
-M4.5-B and B.1/B.2/B.3 now close decision-scoped accounting, terminal re-entry,
-fresh confirmation risk, physical capture truth and benchmark failure attribution;
-M4.5-C is the next admitted run.
-The reviewed implementation gate passed 1,935 tests with 15 skips, Ruff, mypy
-over 417 source files and diff-check. The unchanged pinned Python 3.12
-BrowserGym focused gate passed 9 tests and the real active-capture gate passed
-11 tests. These are regression/conformance results only; no formal MiniWoB-60
-campaign was run for M4.5-B.
+M4.5-B is integrated on the non-default path but reopened for architecture-first
+contract convergence. The previous B.1/B.2/B.3 completion claims and their test
+counts are not current closure evidence. No current reviewed implementation SHA
+exists. M4.5-C is not started and remains blocked; no formal MiniWoB-60 campaign
+may run during this review.
 
 ## Control-transition and long-horizon gap status
 
-M4.5-B installs `agent/control_transition.py` as the single canonical accounting
-owner. AskUser, Abort, RequestObservation, Wait, paging, ProposeDone,
-SelectAction and post-context/schema action-admission rejection each finalize
-exactly one root after decision acceptance. ActionResult and validated after-world
-facts are recorded before evaluator calls; evaluator exception/cancellation
-therefore cannot erase dispatch, acquisition, probe, lineage, after identity or
-session totals. Admission, ordered physical execution/acquisition attempts,
-expected/actual acquisition origins, epoch-matched evaluations, progress,
-pending/status and stable reason code remain on that immutable value.
-Confirmation continuation references the original root, merges facts monotonically
-and does not increment its count. `PartialEpisodeSnapshot` reads current task
-evaluation only from AgentLoopState, while the target benchmark's narrow
-`case_projection.py` applies typed failure/final-snapshot precedence, preserves
-cleanup independently and rejects canonical/custom metric collisions without
-message matching. No raw adapter
-evidence/private binding is retained by ControlTransition, and no ledger,
-replay, event sourcing or state reconstruction was added.
+The current M4.5-B candidate distributes control legality across mutable scopes,
+`AgentLoopState` methods, call sites and projections. That is implemented code,
+not a verified single authority. Convergence requires a small pure reducer to
+own supported transitions; strict untrusted-output adapters; a complete physical
+attempt matrix; canonical terminal Runtime failure; orthogonal `CaseFacts`; and
+one benchmark classification precedence owner. Codecs, legacy fields, privacy
+sanitation and telemetry remain downstream projections and cannot infer or
+override truth. No ledger, replay, event sourcing or state reconstruction is
+admitted.
 
 Long-horizon scaffolding is partial only. `AgentLoopState.plan`,
 `active_objective`, progress revisions/events and AgentContext projections
@@ -433,5 +422,6 @@ exist, and current validated evaluations can project evidence-linked facts.
 The target production loop does not initialize or mutate plan/objective, and no
 verified milestone promotion/current frontier/replanning lifecycle exists.
 `ProgressController` remains an integrated fill/select local liveness guard;
-general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked until the
-same-profile rerun and the supported-subset multi-seed gate close.
+general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.5-C also
+stays blocked until M4.5-B passes reducer properties, held-out review, the full
+verification gate, and a clean reviewed-commit attestation.

@@ -71,7 +71,7 @@ ControlTransition is in-memory run accounting and cannot be replayed to rebuild
 AgentLoopState. VerifiedTaskState, when P5-E adds it, is a specialized field of
 that state rather than another aggregate/store.
 
-The B.2/B.3 closure keeps ordered physical execution/acquisition attempts,
+The reopened M4.5-B contract requires ordered physical execution/acquisition attempts,
 expected/actual acquisition origins, strict probe totals and epoch-matched
 evaluations in that accounting owner. AgentRunSession owns terminal latching and
 non-re-entry; confirmation lifetime and current-risk closure stay in AgentLoop.
@@ -274,14 +274,13 @@ sequencing in `agent/observation_control.py`. Evidence assurance remains in
 WorldObservation/evaluation owners. No owner may infer capability from evidence
 quality or turn a typed unavailable result into a generic recovery transaction.
 
-M4.5-B installs one narrow ControlTransition constructor/accounting owner under
-`agent/`. AgentLoop supplies serial inputs and updates AgentLoopState once; the
-accounting owner normalizes privacy-safe typed facts but cannot execute,
-evaluate, persist, replay or reconstruct state. Session snapshot, model history
-and benchmark reports consume one-way projections instead of separately
-reassembling execution truth.
+M4.5-B must converge on one narrow pure control reducer under `agent/`.
+AgentLoop supplies typed serial inputs and `AgentLoopState` remains current-state
+authority; the reducer validates legal transitions but cannot execute, evaluate,
+persist, replay or reconstruct state. Session snapshot, model history and
+benchmark reports consume one-way projections instead of reassembling truth.
 
-The B.1 closure makes that collector decision-scoped and monotonic: execution,
+The convergence contract makes reducer facts decision-scoped and monotonic: execution,
 acquisition, after identity, evaluation and progress are staged independently;
 `Turn` is only a read-only compatibility projection. AgentLoop owns the single
 confirmation closure path, `session_snapshot.py` reads current evaluation only

@@ -60,15 +60,18 @@ failures and 11 Runtime rejections. At the P5-M4 baseline it confirmed that
 BrowserGym's consume-once reset/step cache did not satisfy the public active-
 observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
 
-M4.5-A typed acquisition lifecycle and M4.5-B bounded lossless
-ControlTransition accounting, including B.1/B.2/B.3 incremental facts, terminal-session latch, continuation,
-ordered execution/acquisition attempts, evaluation epochs, snapshot authority and
-benchmark runtime/component/cleanup/integrity projection closure, are complete. The active queue is M4.5-C: a third
-independent rerun of the same frozen profile, followed by a supported-subset
-multi-seed gate and then P5-E
+M4.5-A typed acquisition lifecycle is complete. M4.5-B control/failure work is
+integrated non-default but reopened for reducer, boundary, failure-authority and
+property convergence; the earlier B.1/B.2/B.3 closure claims are withdrawn.
+M4.5-C is not started and remains blocked by that convergence. Only after
+independent verified closure may a supported-subset multi-seed gate and P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
 ProgressController remains fill/select-only and is not a planner. The default
 Coordinator path is unchanged.
+
+Status mirror: M4.5-B is `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
+IMPLEMENTED_NOT_VERIFIED`; M4.5-C is `NOT_STARTED /
+BLOCKED_BY_M4_5_B_CONVERGENCE`. Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts
 
@@ -226,10 +229,8 @@ The seven rerun-v3 observation failures promoted independent acquisition from a
 conditional idea into the M4.5-A correction. That slice now separates reset
 initial acquisition, capability-aware capture and execute-returned post
 acquisition, validates origin/fallback truth, and has real pinned active-capture
-coverage. M4.5-B now records exactly one privacy-bounded root ControlTransition
-per accepted policy decision. Physical facts are monotonic, confirmation updates
-the same root, and current snapshot/benchmark projections do not reconstruct
-authority from history. This introduces no ledger, replay or second state
-authority. See the [active queue](current-implementation-plan.md) for the
-M4.5-C gates and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
-for ordering into rerun, multi-seed and P5-E.
+coverage. The M4.5-B candidate records bounded ControlTransition facts, but
+reducer legality, attempt matrices and failure/projection ownership are still
+under convergence review. This review introduces no ledger, replay or second
+state authority. See the [active queue](current-implementation-plan.md) for the
+blocked M4.5-C gate and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).

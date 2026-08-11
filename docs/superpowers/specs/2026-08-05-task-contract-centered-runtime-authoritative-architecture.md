@@ -1,7 +1,7 @@
 # Affordance Runtime：AgentContext 循环式 E2E Agent 目标架构
 
 > **Lifecycle:** CURRENT AUTHORITATIVE ARCHITECTURE
-> **Updated:** 2026-08-10
+> **Updated:** 2026-08-11
 > **Scope:** target semantics and invariants only
 > **Implementation truth:** [Implementation Status](../../implementation-status.md)
 > **Migration order:** [Architecture Evolution Plan](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
@@ -10,9 +10,9 @@
 `task-contract-centered` 不再描述当前架构。本文是唯一目标语义权威，但实现状态
 仍以 Implementation Status 为准：AgentContext、model policy 与 declared-minimum
 criterion adjudicator 与 independent observation acquisition 已在 non-default 路径
-落地；lossless control-transition accounting（含 B.3 terminal-session 与
-failure-truth 闭合）也已在 non-default 路径闭合，长程
-verified frontier 尚未落地。
+落地。本文只定义 control/failure 的目标不变量，不覆盖 Implementation Status：
+当前 M4.5-B 已集成但处于 reopened convergence review，尚未 verified closure；
+长程 verified frontier 尚未落地。
 
 ## 0. 系统定位与计算模型
 
