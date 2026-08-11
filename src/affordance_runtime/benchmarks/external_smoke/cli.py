@@ -147,7 +147,9 @@ def main() -> int:
         write_preflight_report(args.output_dir / "preflight.json", evidence, admission, gate)
         if not gate.executed:
             return 1
-        policy = model_policy_from_environment(grounding_variant="format-only")
+        policy = model_policy_from_environment(
+            grounding_variant="format-only", provider_recovery=False,
+        )
         live_outcome = asyncio.run(run_fixed_external_smoke(
             policy, seed=args.seed,
             minimum_policy_call_interval_s=args.min_policy_call_interval_s,

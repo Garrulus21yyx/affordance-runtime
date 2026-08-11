@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from affordance_runtime.agent.control_feedback import (
+    ContractViolationSnapshot,
     ControlFeedback,
     ControlFeedbackKind,
     ControlFeedbackSource,
     FeedbackBudgetDisposition,
     NextDecisionDisposition,
+    RecoveryConstraints,
+    RelatedDecisionSnapshot,
     apply_feedback_budget,
 )
 
@@ -21,6 +24,11 @@ def _feedback(issue: str, *, scope: str = "a" * 64) -> ControlFeedback:
         ("parameters",),
         scope,
         issue * 64,
+        related_decision=RelatedDecisionSnapshot("select_action", "action:1"),
+        violation=ContractViolationSnapshot(
+            "current_action_space", "invalid_action_parameters", ("parameters",), {}, {},
+        ),
+        recovery=RecoveryConstraints(must_change_fields=("parameters",), retry_allowed=True),
     )
 
 

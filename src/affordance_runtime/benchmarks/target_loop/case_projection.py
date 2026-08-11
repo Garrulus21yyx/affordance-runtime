@@ -194,7 +194,6 @@ def _component_failure(instrumentation) -> tuple[CaseFailureOrigin, str]:
 
 
 def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | float | None]:
-    metadata = state.model_metadata
     values = {
         "observations": result.observation_count if result else snapshot.observation_count if snapshot else 0,
         "executions": result.execution_count if result else snapshot.execution_count if snapshot else 0,
@@ -213,10 +212,8 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "reset_acquisitions": state.environment_reset_acquisitions,
         "independent_capture_calls": state.environment_capture_calls,
         "post_action_acquisitions": state.environment_post_acquisitions,
-        "provider_retry_count": (
-            metadata.rate_limit_retry_count + metadata.transient_retry_count
-            if metadata is not None else state.configured_provider_retry_count
-        ),
+        "provider_retry_count": state.provider_retry_count,
+        "fallback_count": state.fallback_count,
         "prompt_tokens": state.prompt_tokens,
         "completion_tokens": state.completion_tokens,
         "total_tokens": state.total_tokens,
@@ -260,6 +257,10 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
     kind_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}
     code_counts: dict[str, int] = {}
+    related_decision_count = 0
+    contract_violation_count = 0
+    semantic_effect_count = 0
+    recovery_constraints_count = 0
     opportunity_counts = {1: 0, 2: 0}
     corrected_counts = {1: 0, 2: 0}
     scope_ordinals: dict[str, int] = {}
@@ -268,6 +269,10 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
         kind_counts[item.kind.value] = kind_counts.get(item.kind.value, 0) + 1
         source_counts[item.source.value] = source_counts.get(item.source.value, 0) + 1
         code_counts[item.code] = code_counts.get(item.code, 0) + 1
+        related_decision_count += int(item.related_decision is not None)
+        contract_violation_count += int(item.violation is not None)
+        semantic_effect_count += int(item.semantic_effect is not None)
+        recovery_constraints_count += int(item.recovery is not None)
         if not item.consumes_issue_budget:
             continue
         ordinal = scope_ordinals.get(item.scope_digest, 0) + 1
@@ -294,6 +299,10 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
             if result is not None else snapshot.control_feedback_delivery_count
             if snapshot is not None else 0
         ),
+        "feedback_related_decision_snapshot_count": related_decision_count,
+        "feedback_contract_violation_snapshot_count": contract_violation_count,
+        "feedback_semantic_effect_snapshot_count": semantic_effect_count,
+        "feedback_recovery_constraints_count": recovery_constraints_count,
         "control_issue_budget_consumption_count": (
             getattr(result, "control_issue_consumption_count", 0)
             if result is not None else snapshot.control_issue_consumption_count

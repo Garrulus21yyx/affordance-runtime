@@ -10,6 +10,9 @@ from pathlib import Path
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import ProviderCapacityEvidence
 from affordance_runtime.benchmarks.external_breadth.cli import _configuration_errors
 from affordance_runtime.benchmarks.external_breadth.control_feedback_targeted import (
+    PROVIDER_FALLBACK_COUNT,
+    PROVIDER_MAX_ATTEMPTS,
+    PROVIDER_MAX_RETRIES,
     TARGETED_PROFILE,
     run_control_feedback_targeted_diagnostic,
     targeted_manifest,
@@ -36,7 +39,7 @@ def main() -> int:
     if args.validate_existing is not None:
         return int(bool(validate_targeted_evidence(args.validate_existing)))
     manifest = targeted_manifest(build_breadth_manifest(load_registry_census()))
-    errors = _configuration_errors(manifest)
+    errors = _configuration_errors(manifest, provider_recovery=True)
     capacity = _provider_capacity(manifest)
     if not capacity.sufficient:
         errors.append("declared provider attempt capacity is insufficient")
@@ -50,7 +53,9 @@ def main() -> int:
         errors.append("control-feedback output directory must be new")
     if errors:
         return 1
-    policy = model_policy_from_environment(grounding_variant="format-only")
+    policy = model_policy_from_environment(
+        grounding_variant="format-only", provider_recovery=True,
+    )
     outcome = asyncio.run(run_control_feedback_targeted_diagnostic(
         manifest,
         policy,
@@ -65,9 +70,9 @@ def main() -> int:
 def _provider_capacity(manifest) -> ProviderCapacityEvidence:
     raw = os.environ.get("MINIWOB_PROVIDER_ATTEMPT_BUDGET", "").strip()
     declared = int(raw) if raw.isdecimal() else 0
-    required = sum(item.max_turns for item in manifest.cases)
+    required = sum(item.max_turns for item in manifest.cases) * PROVIDER_MAX_ATTEMPTS
     return ProviderCapacityEvidence(
-        "provider-capacity-preflight.v1",
+        "provider-capacity-preflight.v2",
         "mistral",
         manifest.model_profile,
         breadth_manifest_digest(manifest),
@@ -75,8 +80,8 @@ def _provider_capacity(manifest) -> ProviderCapacityEvidence:
         declared,
         bool(raw) and declared >= required,
         manifest.grounding_profile,
-        0,
-        0,
+        PROVIDER_MAX_RETRIES,
+        PROVIDER_FALLBACK_COUNT,
     )
 
 

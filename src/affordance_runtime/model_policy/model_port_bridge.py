@@ -7,7 +7,11 @@ import json
 from dataclasses import dataclass
 
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
-from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.model_boundary.failures import (
+    ModelFailure,
+    ModelFailureKind,
+    ProviderFailureCode,
+)
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
 from affordance_runtime.model_policy.grounding import (
     DecisionGroundingVariant,
@@ -51,6 +55,22 @@ class ModelPortDecisionAdapter:
         return grounding_profile_version(self.grounding_variant)
 
     @property
+    def provider_id(self) -> str:
+        return _public_id(self.port.provider)
+
+    @property
+    def model_id(self) -> str:
+        return _public_id(self.port.model)
+
+    @property
+    def compatibility_key(self) -> str:
+        return ":".join((
+            SCHEMA_VERSION,
+            self.grounding_profile_version,
+            decision_schema_digest(),
+        ))
+
+    @property
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
@@ -68,16 +88,40 @@ class ModelPortDecisionAdapter:
         try:
             payload = await self.port.generate_structured(messages, AgentDecisionPayload, self.config)
         except TimeoutError:
-            return _failure(ModelFailureKind.TIMEOUT, "model transport timed out")
+            return _failure(
+                ModelFailureKind.TIMEOUT,
+                "model transport timed out",
+                retryable=True,
+                provider_code=ProviderFailureCode.TIMEOUT,
+            )
         except ProviderModelError as exc:
-            kind = ModelFailureKind.REFUSED if exc.kind == ProviderFailureKind.QUOTA_EXHAUSTED else ModelFailureKind.PROVIDER_UNAVAILABLE
-            return _failure(kind, "model provider declined the request", retryable=exc.resumable)
+            if exc.kind is ProviderFailureKind.QUOTA_EXHAUSTED:
+                return _failure(
+                    ModelFailureKind.REFUSED,
+                    "model provider quota is exhausted",
+                    provider_code=ProviderFailureCode.QUOTA_EXHAUSTED,
+                )
+            provider_code = (
+                ProviderFailureCode.RATE_LIMITED
+                if exc.kind is ProviderFailureKind.RATE_LIMIT_TRANSIENT
+                else ProviderFailureCode.UNAVAILABLE
+            )
+            return _failure(
+                ModelFailureKind.PROVIDER_UNAVAILABLE,
+                "model provider declined the request",
+                retryable=exc.resumable,
+                provider_code=provider_code,
+                retry_after_s=exc.retry_after_s,
+            )
         except StructuredOutputError:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "model provider returned invalid structured output")
         except StructuredModelError:
             return _failure(ModelFailureKind.INVALID_RESPONSE, "model provider returned an invalid response")
         except Exception:
-            return _failure(ModelFailureKind.PROVIDER_UNAVAILABLE, "model provider adapter failed")
+            return _failure(
+                ModelFailureKind.INTERNAL_ERROR,
+                "model provider adapter failed",
+            )
         metadata = _metadata(
             self.port.last_call,
             self.port,
@@ -140,8 +184,15 @@ def _public_id(value: str) -> str:
     return "" if not value else f"id-{hashlib.sha256(value.encode()).hexdigest()}"
 
 
-def _failure(kind: ModelFailureKind, reason: str, *, retryable: bool = False) -> ModelFailure:
-    return ModelFailure(kind, reason, retryable)
+def _failure(
+    kind: ModelFailureKind,
+    reason: str,
+    *,
+    retryable: bool = False,
+    provider_code: ProviderFailureCode | None = None,
+    retry_after_s: float | None = None,
+) -> ModelFailure:
+    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s)
 
 
 def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVariant) -> str:

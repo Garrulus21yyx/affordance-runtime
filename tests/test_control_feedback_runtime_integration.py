@@ -8,6 +8,7 @@ from hypothesis import strategies as st
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
 from affordance_runtime.agent import (
+    Abort,
     AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
@@ -48,7 +49,11 @@ def test_invalid_parameters_reach_next_normal_policy_context_once_then_correct()
         feedback = policy.contexts[1].control_feedback
         assert feedback is not None
         assert feedback.kind == ControlFeedbackKind.REPAIRABLE_REJECTION.value
-        assert feedback.public_field_paths == ("parameters",)
+        assert feedback.public_field_paths == ("parameters.unknown",)
+        assert feedback.violation is not None
+        assert feedback.violation.contract_owner == "current_action_space"
+        assert feedback.recovery is not None
+        assert feedback.recovery.must_change_fields == ("parameters.unknown",)
         assert "private-value" not in repr(feedback)
         first = result.control_transitions[0]
         assert first.control_feedback is not None
@@ -392,6 +397,78 @@ def test_adapter_invalid_parameters_after_admission_is_not_policy_repair() -> No
         assert result.control_transitions[0].control_feedback is None
         assert result.runtime_failure is not None
         assert result.runtime_failure.stage.value == "execution"
+
+    asyncio.run(scenario())
+
+
+def test_no_effect_feedback_carries_expected_observed_delta_and_mechanical_recovery() -> None:
+    class Policy:
+        contexts = []
+
+        async def decide(self, context):
+            self.contexts.append(context)
+            if len(self.contexts) == 1:
+                return SelectAction(context.context_id, context.actions.options[0].action_id)
+            return Abort(context.context_id, "verified no effect", "no_progress")
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment(
+            [_world("before", False), _world("after", False)],
+            [_sent(DispatchStatus.SENT, True)],
+        )
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        feedback = policy.contexts[1].control_feedback
+        assert feedback is not None
+        assert feedback.code == "action_no_effect_change_strategy"
+        assert feedback.related_decision is not None
+        assert feedback.semantic_effect is not None
+        assert feedback.semantic_effect.dispatch == "sent"
+        assert feedback.semantic_effect.observed_effect == "no_effect_confirmed"
+        assert feedback.semantic_effect.expected_effects == ("shared_state_enabled",)
+        assert feedback.recovery is not None
+        assert feedback.recovery.retry_allowed is False
+        assert feedback.recovery.rollback_available is False
+        assert feedback.recovery.strategy_change_required is True
+        assert result.execution_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_empty_no_gain_filter_restores_default_recovery_page_without_new_epoch() -> None:
+    class Policy:
+        contexts = []
+
+        async def decide(self, context):
+            self.contexts.append(context)
+            if len(self.contexts) <= 2:
+                return RequestActionPage(context.context_id, query="no-match")
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment(
+            [_world("before", False), _world("after", True)],
+            [_sent(DispatchStatus.SENT, True)],
+        )
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        recovery = policy.contexts[2]
+        assert recovery.control_feedback is not None
+        assert recovery.control_feedback.code == "action_page_no_information_gain"
+        assert recovery.actions.options
+        assert recovery.actions.active_query == ""
+        assert recovery.control_feedback.recovery is not None
+        assert recovery.control_feedback.recovery.offered_action_ids == tuple(
+            option.action_id for option in recovery.actions.options
+        )
+        assert result.status is AgentLoopStatus.DONE
+        assert result.control_repetition_count == 0
 
     asyncio.run(scenario())
 

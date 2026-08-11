@@ -48,13 +48,17 @@ from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest a
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 
-TARGETED_CAMPAIGN_ID = "miniwob-control-feedback-25-targeted-seed7-v1"
-TARGETED_PROFILE = "MINIWOB_CONTROL_FEEDBACK_25_TARGETED"
-SELECTION_NAMESPACE = "m4.6-d-control-feedback-targeted.v1"
-CASE_SCHEMA = "miniwob-control-feedback-targeted-case.v1"
-CAMPAIGN_SCHEMA = "miniwob-control-feedback-targeted-campaign.v1"
-SUMMARY_SCHEMA = "miniwob-control-feedback-targeted-summary.v1"
-ATTESTATION_SCHEMA = "miniwob-control-feedback-targeted-attestation.v1"
+TARGETED_CAMPAIGN_ID = "miniwob-control-feedback-25-targeted-seed7-v2"
+TARGETED_PROFILE = "MINIWOB_CONTROL_FEEDBACK_25_TARGETED_RECOVERY"
+SELECTION_NAMESPACE = "m4.6-d-control-feedback-targeted.v2"
+CASE_SCHEMA = "miniwob-control-feedback-targeted-case.v2"
+CAMPAIGN_SCHEMA = "miniwob-control-feedback-targeted-campaign.v2"
+SUMMARY_SCHEMA = "miniwob-control-feedback-targeted-summary.v2"
+ATTESTATION_SCHEMA = "miniwob-control-feedback-targeted-attestation.v2"
+PROVIDER_MAX_ATTEMPTS = 3
+PROVIDER_MAX_RETRIES = PROVIDER_MAX_ATTEMPTS - 1
+PROVIDER_FALLBACK_COUNT = 0
+PROVIDER_RECOVERY_PROFILE = "bounded-provider-recovery.v1"
 TARGETED_CASE_IDS = tuple(
     f"miniwob-60-{number}"
     for number in (
@@ -66,7 +70,6 @@ TARGETED_CASE_IDS = tuple(
 _RUN_ID = re.compile(r"miniwob-control-feedback-25:[0-9a-f]{32}")
 _SHA = re.compile(r"[0-9a-f]{40}")
 _SAFETY_METRICS = (
-    "provider_retry_count",
     "fallback_count",
     "cleanup_failures",
     "forbidden_effect_attempts",
@@ -84,6 +87,10 @@ _FEEDBACK_METRICS = (
     "feedback_action_evaluation_source_count",
     "feedback_progress_event_source_count",
     "feedback_context_delivery_count",
+    "feedback_related_decision_snapshot_count",
+    "feedback_contract_violation_snapshot_count",
+    "feedback_semantic_effect_snapshot_count",
+    "feedback_recovery_constraints_count",
     "control_issue_budget_consumption_count",
     "control_repetition_termination_count",
     "first_opportunity_policy_decision_count",
@@ -256,6 +263,7 @@ def write_targeted_evidence(
         ),
         "generalization_claim": "NOT_CLAIMED",
         "performance_claim": "NOT_CLAIMED",
+        "provider_recovery_profile": PROVIDER_RECOVERY_PROFILE,
     }
     _atomic_json(summary_path, summary)
     campaign_path = output_dir / "campaign.json"
@@ -270,6 +278,7 @@ def write_targeted_evidence(
         "provider_id": outcome.provider_id,
         "model_id": outcome.model_id,
         "grounding_profile": outcome.grounding_profile,
+        "provider_recovery_profile": PROVIDER_RECOVERY_PROFILE,
         "minimum_policy_call_interval_s": outcome.manifest.minimum_policy_call_interval_s,
         "seed": 7,
         "manifest_digest": outcome.manifest_digest,
@@ -292,6 +301,7 @@ def write_targeted_evidence(
         "provider_id": outcome.provider_id,
         "model_id": outcome.model_id,
         "grounding_profile": outcome.grounding_profile,
+        "provider_recovery_profile": PROVIDER_RECOVERY_PROFILE,
         "seed": 7,
         "manifest_digest": outcome.manifest_digest,
         "target_manifest_digest": outcome.suite.identity.manifest_digest,
@@ -355,6 +365,9 @@ def validate_targeted_evidence(output_dir: Path) -> tuple[str, ...]:
         or campaign.get("provider_id") != "mistral"
         or campaign.get("model_id") != "mistral-medium-3-5"
         or campaign.get("grounding_profile") != "format-only.v1"
+        or campaign.get("provider_recovery_profile") != PROVIDER_RECOVERY_PROFILE
+        or attestation.get("provider_recovery_profile") != PROVIDER_RECOVERY_PROFILE
+        or summary.get("provider_recovery_profile") != PROVIDER_RECOVERY_PROFILE
         or campaign.get("seed") != 7
         or campaign.get("complete") is not True
         or campaign.get("evidence_valid") is not True
@@ -363,6 +376,18 @@ def validate_targeted_evidence(output_dir: Path) -> tuple[str, ...]:
         or progress.get("complete") is not True
     ):
         errors.append("control-feedback evidence identity is inconsistent")
+    capacity = attestation.get("provider_capacity")
+    required_capacity = 250 * PROVIDER_MAX_ATTEMPTS
+    if (
+        not isinstance(capacity, dict)
+        or capacity.get("required_attempt_budget") != required_capacity
+        or not isinstance(capacity.get("declared_attempt_budget"), int)
+        or capacity.get("declared_attempt_budget", 0) < required_capacity
+        or capacity.get("sufficient") is not True
+        or capacity.get("provider_retry_count") != PROVIDER_MAX_RETRIES
+        or capacity.get("fallback_count") != PROVIDER_FALLBACK_COUNT
+    ):
+        errors.append("control-feedback provider recovery capacity is invalid")
     hashes = attestation.get("case_report_sha256")
     if not isinstance(hashes, dict) or tuple(hashes) != TARGETED_CASE_IDS:
         return (*errors, "control-feedback case hash set/order is invalid")
@@ -418,11 +443,23 @@ def validate_targeted_evidence(output_dir: Path) -> tuple[str, ...]:
         for name in _SAFETY_METRICS:
             if _metric(result, name) != 0:
                 errors.append(f"{case_id}: safety metric {name} is nonzero")
+        policy_calls = _metric(result, "policy_calls")
+        provider_attempts = _metric(result, "provider_attempts")
+        provider_retries = _metric(result, "provider_retry_count")
+        if (
+            provider_attempts < policy_calls
+            or provider_attempts > policy_calls * PROVIDER_MAX_ATTEMPTS
+            or provider_retries != provider_attempts - policy_calls
+        ):
+            errors.append(f"{case_id}: provider recovery accounting is invalid")
         if result.harness_integrity_failures or result.cleanup_failures:
             errors.append(f"{case_id}: integrity or cleanup gate failed")
         if case_id == "miniwob-60-37" and (
             _metric(result, "first_policy_repair_feedback_count") != 1
             or _metric(result, "feedback_context_delivery_count") < 1
+            or _metric(result, "feedback_related_decision_snapshot_count") < 1
+            or _metric(result, "feedback_contract_violation_snapshot_count") < 1
+            or _metric(result, "feedback_recovery_constraints_count") < 1
             or _metric(result, "repair_feedback_zero_call_violation_count") != 0
         ):
             errors.append("miniwob-60-37: direct repair witness is absent")
@@ -471,15 +508,15 @@ def _acceptance_errors(
         "mistral", "mistral-medium-3-5", "format-only.v1",
     ):
         errors.append("control-feedback provider/model/grounding identity is invalid")
-    required = sum(item.max_turns for item in manifest.cases)
+    required = sum(item.max_turns for item in manifest.cases) * PROVIDER_MAX_ATTEMPTS
     if (
         capacity.manifest_digest != breadth_manifest_digest(manifest)
         or capacity.required_attempt_budget != required
         or capacity.provider_id != provider
         or capacity.model_id != model
         or capacity.grounding_profile != grounding
-        or capacity.retry_count != 0
-        or capacity.fallback_count != 0
+        or capacity.retry_count != PROVIDER_MAX_RETRIES
+        or capacity.fallback_count != PROVIDER_FALLBACK_COUNT
         or not capacity.sufficient
     ):
         errors.append("control-feedback provider capacity is absent or insufficient")
@@ -503,10 +540,22 @@ def _acceptance_errors(
         for name in _SAFETY_METRICS:
             if _metric(record.result, name) != 0:
                 errors.append(f"{record.case_id}: safety metric {name} is nonzero")
+        policy_calls = _metric(record.result, "policy_calls")
+        provider_attempts = _metric(record.result, "provider_attempts")
+        provider_retries = _metric(record.result, "provider_retry_count")
+        if (
+            provider_attempts < policy_calls
+            or provider_attempts > policy_calls * PROVIDER_MAX_ATTEMPTS
+            or provider_retries != provider_attempts - policy_calls
+        ):
+            errors.append(f"{record.case_id}: provider recovery accounting is invalid")
     case37 = next((item.result for item in records if item.case_id == "miniwob-60-37"), None)
     if case37 is None or (
         _metric(case37, "first_policy_repair_feedback_count") != 1
         or _metric(case37, "feedback_context_delivery_count") < 1
+        or _metric(case37, "feedback_related_decision_snapshot_count") < 1
+        or _metric(case37, "feedback_contract_violation_snapshot_count") < 1
+        or _metric(case37, "feedback_recovery_constraints_count") < 1
     ):
         errors.append("miniwob-60-37: required direct repair witness is absent")
     return errors

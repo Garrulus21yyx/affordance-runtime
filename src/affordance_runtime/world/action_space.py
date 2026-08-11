@@ -195,6 +195,10 @@ class ActionSpaceBuilder:
             return ActionAdmissionResult(issue=AdmissionIssue(
                 AdmissionIssueCode.ACTION_OUTSIDE_ACTION_SPACE,
                 ("action_id",),
+                expected={"offered_action_ids": tuple(
+                    item.action_id for item in action_space.options[:32]
+                )},
+                actual={"action_id_offered": False},
             ))
         return self.try_admit(option, parameters, destination_id)
 
@@ -204,9 +208,11 @@ class ActionSpaceBuilder:
         parameters: dict[str, Any],
     ) -> AdmissionIssue | None:
         if _FORBIDDEN_PARAMETER_KEYS.intersection(parameters):
-            return AdmissionIssue(
-                AdmissionIssueCode.INVALID_ACTION_PARAMETERS,
-                ("parameters",),
+            from affordance_runtime.world.admission_issue import invalid_parameters_issue
+
+            return invalid_parameters_issue(
+                expected={"private_fields_allowed": False},
+                actual={"contains_private_field": True},
             )
         return validate_value_issue(parameters, option.parameter_schema)
 
@@ -260,5 +266,10 @@ def _destination_issue(option: ActionOption, destination_id: str) -> AdmissionIs
         return AdmissionIssue(
             AdmissionIssueCode.INVALID_ACTION_PARAMETERS,
             ("destination_id",),
+            expected={
+                "required": option.destination_required,
+                "offered_destination_ids": option.eligible_destination_ids,
+            },
+            actual={"destination_id_offered": destination_id in option.eligible_destination_ids},
         )
     return None

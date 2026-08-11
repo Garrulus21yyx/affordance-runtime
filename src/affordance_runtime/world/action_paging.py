@@ -9,7 +9,11 @@ from dataclasses import dataclass
 
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.planning_contracts import LocalObjective
-from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIssueCode
+from affordance_runtime.world.admission_issue import (
+    AdmissionContractOwner,
+    AdmissionIssue,
+    AdmissionIssueCode,
+)
 from affordance_runtime.world.contracts import ActionOption, ActionSpace
 from affordance_runtime.world.page_cursor import cursor_fingerprint, decode_cursor, encode_cursor
 from affordance_runtime.world.relevance import ActionRelevance, ActionRelevancePolicy, ActionRelevanceRole
@@ -88,11 +92,17 @@ class InternalActionPage:
             return AdmissionIssue(
                 AdmissionIssueCode.ACTION_OUTSIDE_CURRENT_PAGE,
                 ("actions",),
+                AdmissionContractOwner.CURRENT_ACTION_PAGE,
+                {"offered_action_ids": self.visible_action_ids},
+                {"action_id_offered": False},
             )
         if destination_id and destination_id not in self.visible_destination_ids(action_id):
             return AdmissionIssue(
                 AdmissionIssueCode.DESTINATION_OUTSIDE_CURRENT_PAGE,
                 ("destination_id",),
+                AdmissionContractOwner.CURRENT_ACTION_PAGE,
+                {"offered_destination_ids": self.visible_destination_ids(action_id)},
+                {"destination_id_offered": False},
             )
         return None
 

@@ -15,6 +15,8 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
 )
 from affordance_runtime.benchmarks.external_breadth.control_feedback_targeted import (
     _FEEDBACK_METRICS,
+    PROVIDER_MAX_ATTEMPTS,
+    PROVIDER_MAX_RETRIES,
     TARGETED_CAMPAIGN_ID,
     TARGETED_CASE_IDS,
     _targeted_derived_metrics,
@@ -49,7 +51,7 @@ def test_control_feedback_provider_capacity_preflight_checks_declared_budget(
     monkeypatch,
 ) -> None:
     manifest = targeted_manifest(_manifest())
-    required = sum(item.max_turns for item in manifest.cases)
+    required = sum(item.max_turns for item in manifest.cases) * PROVIDER_MAX_ATTEMPTS
     monkeypatch.setenv("MINIWOB_PROVIDER_ATTEMPT_BUDGET", str(required - 1))
 
     insufficient = _provider_capacity(manifest)
@@ -102,6 +104,9 @@ def _outcome() -> MiniWobBreadthCampaignOutcome:
         if case_id == "miniwob-60-37":
             metrics["first_policy_repair_feedback_count"] = MetricMeasurement(1, True)
             metrics["feedback_context_delivery_count"] = MetricMeasurement(1, True)
+            metrics["feedback_related_decision_snapshot_count"] = MetricMeasurement(1, True)
+            metrics["feedback_contract_violation_snapshot_count"] = MetricMeasurement(1, True)
+            metrics["feedback_recovery_constraints_count"] = MetricMeasurement(1, True)
             metrics["feedback_repairable_rejection_count"] = MetricMeasurement(1, True)
             metrics["feedback_action_admission_source_count"] = MetricMeasurement(1, True)
             metrics["feedback_invalid_action_parameters_code_count"] = MetricMeasurement(1, True)
@@ -140,15 +145,15 @@ def _outcome() -> MiniWobBreadthCampaignOutcome:
         "test",
     )
     capacity = ProviderCapacityEvidence(
-        "provider-capacity-preflight.v1",
+        "provider-capacity-preflight.v2",
         "mistral",
         "mistral-medium-3-5",
         breadth_manifest_digest(manifest),
-        sum(item.max_turns for item in manifest.cases),
-        sum(item.max_turns for item in manifest.cases),
+        sum(item.max_turns for item in manifest.cases) * PROVIDER_MAX_ATTEMPTS,
+        sum(item.max_turns for item in manifest.cases) * PROVIDER_MAX_ATTEMPTS,
         True,
         "format-only.v1",
-        0,
+        PROVIDER_MAX_RETRIES,
         0,
     )
     return MiniWobBreadthCampaignOutcome(

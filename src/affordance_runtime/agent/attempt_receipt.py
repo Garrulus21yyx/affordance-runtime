@@ -19,7 +19,7 @@ def safe_exception_class(error: BaseException) -> str:
     """Return a stable bounded token without trusting a foreign class name."""
 
     name = type(error).__name__
-    if _EXCEPTION_CLASS.fullmatch(name) is not None:
+    if _EXCEPTION_CLASS.fullmatch(name) is not None and name.replace("_", "").isalnum():
         return name
     digest = hashlib.sha256(name.encode("utf-8", errors="surrogatepass")).hexdigest()
     return f"ExceptionClass_{digest}"

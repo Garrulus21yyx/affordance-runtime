@@ -7,11 +7,14 @@ from hypothesis import strategies as st
 from test_control_state_machine_properties import _root
 
 from affordance_runtime.agent.control_feedback import (
+    ContractViolationSnapshot,
     ControlFeedback,
     ControlFeedbackKind,
     ControlFeedbackSource,
     FeedbackBudgetDisposition,
     NextDecisionDisposition,
+    RecoveryConstraints,
+    RelatedDecisionSnapshot,
     apply_feedback_budget,
 )
 from affordance_runtime.agent.control_reducer import (
@@ -28,6 +31,19 @@ from affordance_runtime.agent.state import AgentLoopState
 
 def _feedback(scope: str, issue: str, source: ControlFeedbackSource) -> ControlFeedback:
     no_gain = source is not ControlFeedbackSource.ACTION_ADMISSION
+    extra = (
+        {"recovery": RecoveryConstraints(strategy_change_required=True)}
+        if no_gain
+        else {
+            "related_decision": RelatedDecisionSnapshot("select_action", "action:1"),
+            "violation": ContractViolationSnapshot(
+                "current_action_space", "invalid_action_parameters", ("parameters",), {}, {},
+            ),
+            "recovery": RecoveryConstraints(
+                must_change_fields=("parameters",), retry_allowed=True,
+            ),
+        }
+    )
     return ControlFeedback(
         ControlFeedbackKind.NO_INFORMATION_GAIN if no_gain else ControlFeedbackKind.REPAIRABLE_REJECTION,
         "control_no_gain" if no_gain else "invalid_action_parameters",
@@ -42,6 +58,7 @@ def _feedback(scope: str, issue: str, source: ControlFeedbackSource) -> ControlF
         issue,
         "c" * 64 if no_gain else "",
         "d" * 64 if no_gain else "",
+        **extra,
     )
 
 

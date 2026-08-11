@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.public_semantic_digest import (
     issue_digest as make_issue_digest,
 )
@@ -19,8 +21,10 @@ from affordance_runtime.world.public_semantic_digest import (
 )
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.decisions import SelectAction
     from affordance_runtime.agent.state import AgentLoopState
     from affordance_runtime.world.action_paging import InternalActionPage
+    from affordance_runtime.world.admission_issue import AdmissionIssue
     from affordance_runtime.world.contracts import ActionSpace
 
 
@@ -53,6 +57,98 @@ _PUBLIC_PATHS = frozenset({
     "parameters",
     "parameters.value",
 })
+_PUBLIC_PATH = re.compile(
+    r"parameters(?:\.[A-Za-z][A-Za-z0-9_-]{0,63})*|action_id|actions|destination_id|observation"
+)
+_PRIVATE_PARTS = frozenset({
+    "password", "secret", "token", "credential", "authorization", "api", "key",
+    "selector", "coordinate", "bbox", "point", "href", "method", "backend", "executor",
+})
+
+
+@dataclass(frozen=True)
+class RelatedDecisionSnapshot:
+    kind: str
+    action_id: str = ""
+    target_id: str = ""
+    destination_id: str = ""
+    parameters: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.kind != "select_action":
+            raise ValueError("related decision snapshot kind is unsupported")
+        if not self.action_id or len(self.action_id) > 240:
+            raise ValueError("related decision requires a bounded action id")
+        object.__setattr__(self, "parameters", freeze_json(self.parameters or {}))
+
+
+@dataclass(frozen=True)
+class ContractViolationSnapshot:
+    contract_owner: str
+    code: str
+    field_paths: tuple[str, ...]
+    expected: Mapping[str, object]
+    actual: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        if self.contract_owner not in {"current_action_page", "current_action_space"}:
+            raise ValueError("feedback violation owner is unsupported")
+        if _CODE.fullmatch(self.code) is None:
+            raise ValueError("feedback violation code is invalid")
+        paths = tuple(sorted(set(self.field_paths)))
+        if not paths or any(not _public_path(path) for path in paths):
+            raise ValueError("feedback violation paths are invalid")
+        object.__setattr__(self, "field_paths", paths)
+        object.__setattr__(self, "expected", freeze_json(self.expected))
+        object.__setattr__(self, "actual", freeze_json(self.actual))
+
+
+@dataclass(frozen=True)
+class SemanticEffectSnapshot:
+    dispatch: str
+    expected_effects: tuple[str, ...]
+    observed_effect: str
+    world_changed: bool
+    action_space_changed: bool
+    task_progress_changed: bool
+    changed_public_fields: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.dispatch not in {"not_sent", "sent", "sent_unknown"}:
+            raise ValueError("semantic effect dispatch is unsupported")
+        if self.observed_effect not in {
+            "effect_confirmed", "no_effect_confirmed", "unknown", "rejected"
+        }:
+            raise ValueError("observed semantic effect is unsupported")
+        for value in (self.world_changed, self.action_space_changed, self.task_progress_changed):
+            if type(value) is not bool:
+                raise TypeError("semantic effect delta flags must be boolean")
+        object.__setattr__(self, "expected_effects", tuple(self.expected_effects))
+        object.__setattr__(self, "changed_public_fields", tuple(self.changed_public_fields))
+
+
+@dataclass(frozen=True)
+class RecoveryConstraints:
+    must_change_fields: tuple[str, ...] = ()
+    repeat_previous_decision_allowed: bool = False
+    retry_allowed: bool = False
+    rollback_available: bool = False
+    strategy_change_required: bool = False
+    offered_action_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if any(not _public_path(path) for path in self.must_change_fields):
+            raise ValueError("recovery change fields are invalid")
+        flags = (
+            self.repeat_previous_decision_allowed,
+            self.retry_allowed,
+            self.rollback_available,
+            self.strategy_change_required,
+        )
+        if any(type(value) is not bool for value in flags):
+            raise TypeError("recovery flags must be boolean")
+        object.__setattr__(self, "must_change_fields", tuple(self.must_change_fields))
+        object.__setattr__(self, "offered_action_ids", tuple(self.offered_action_ids[:32]))
 
 
 @dataclass(frozen=True)
@@ -68,6 +164,10 @@ class ControlFeedback:
     issue_digest: str = ""
     request_digest: str = ""
     result_digest: str = ""
+    related_decision: RelatedDecisionSnapshot | None = None
+    violation: ContractViolationSnapshot | None = None
+    semantic_effect: SemanticEffectSnapshot | None = None
+    recovery: RecoveryConstraints | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ControlFeedbackKind):
@@ -87,7 +187,7 @@ class ControlFeedback:
         ):
             raise ValueError("public feedback subject is invalid")
         paths = tuple(sorted(set(self.public_field_paths)))
-        if len(paths) > 6 or any(path not in _PUBLIC_PATHS for path in paths):
+        if len(paths) > 6 or any(not _public_path(path) for path in paths):
             raise ValueError("control feedback field paths are not public and bounded")
         object.__setattr__(self, "public_field_paths", paths)
         for value in (self.scope_digest, self.issue_digest):
@@ -140,6 +240,20 @@ class ControlFeedback:
             ))
         ):
             raise ValueError("control feedback kind/source/disposition matrix is invalid")
+        if self.kind is ControlFeedbackKind.REPAIRABLE_REJECTION and (
+            self.related_decision is None
+            or self.violation is None
+            or self.recovery is None
+            or self.semantic_effect is not None
+        ):
+            raise ValueError("repairable rejection requires decision, violation, and recovery snapshots")
+        if self.kind is ControlFeedbackKind.NO_INFORMATION_GAIN and self.recovery is None:
+            raise ValueError("no-information-gain feedback requires recovery constraints")
+        if self.kind is ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED and (
+            self.source is ControlFeedbackSource.ACTION_EVALUATION
+            and (self.related_decision is None or self.semantic_effect is None or self.recovery is None)
+        ):
+            raise ValueError("action-effect feedback requires decision, effect, and recovery snapshots")
 
 
 class FeedbackBudgetDisposition(StrEnum):
@@ -190,8 +304,8 @@ def repair_feedback(
     action_space: ActionSpace,
     page: InternalActionPage,
     *,
-    code: str,
-    public_field_paths: tuple[str, ...],
+    decision: SelectAction,
+    issue: AdmissionIssue,
     public_subject_id: str | None = None,
 ) -> ControlFeedback:
     scope = current_semantic_scope(state, action_space, page)
@@ -202,20 +316,36 @@ def repair_feedback(
         scope_digest=scope,
         kind=ControlFeedbackKind.REPAIRABLE_REJECTION.value,
         source=ControlFeedbackSource.ACTION_ADMISSION.value,
-        code=code,
+        code=issue.code.value,
         subject_semantics=subject,
-        public_field_paths=public_field_paths,
+        public_field_paths=issue.public_field_paths,
     )
     return ControlFeedback(
         ControlFeedbackKind.REPAIRABLE_REJECTION,
-        code,
+        issue.code.value,
         ControlFeedbackSource.ACTION_ADMISSION,
         NextDecisionDisposition.CORRECT_OR_REPLAN,
         False,
         public_subject_id,
-        public_field_paths,
+        issue.public_field_paths,
         scope,
         digest,
+        related_decision=_selection_snapshot(
+            decision, public_subject_id, issue.public_field_paths,
+        ),
+        violation=ContractViolationSnapshot(
+            issue.contract_owner.value,
+            issue.code.value,
+            issue.public_field_paths,
+            issue.expected,
+            issue.actual,
+        ),
+        recovery=RecoveryConstraints(
+            must_change_fields=issue.public_field_paths,
+            repeat_previous_decision_allowed=False,
+            retry_allowed=True,
+            offered_action_ids=page.visible_action_ids,
+        ),
     )
 
 
@@ -257,6 +387,13 @@ def no_gain_feedback(
         digest,
         request_digest,
         result_digest,
+        recovery=RecoveryConstraints(
+            repeat_previous_decision_allowed=False,
+            retry_allowed=False,
+            rollback_available=False,
+            strategy_change_required=True,
+            offered_action_ids=page.visible_action_ids,
+        ),
     )
 
 
@@ -268,6 +405,9 @@ def strategy_feedback(
     source: ControlFeedbackSource,
     code: str,
     public_subject_id: str | None = None,
+    related_decision: RelatedDecisionSnapshot | None = None,
+    semantic_effect: SemanticEffectSnapshot | None = None,
+    recovery: RecoveryConstraints | None = None,
 ) -> ControlFeedback:
     scope = current_semantic_scope(state, action_space, page)
     subject = public_subject_semantics(
@@ -291,7 +431,65 @@ def strategy_feedback(
         (),
         scope,
         digest,
+        related_decision=related_decision,
+        semantic_effect=semantic_effect,
+        recovery=recovery,
     )
+
+
+def selection_snapshot(
+    decision: SelectAction,
+    public_subject_id: str | None = None,
+) -> RelatedDecisionSnapshot:
+    return _selection_snapshot(decision, public_subject_id)
+
+
+def _selection_snapshot(
+    decision: SelectAction,
+    public_subject_id: str | None,
+    redact_fields: tuple[str, ...] = (),
+) -> RelatedDecisionSnapshot:
+    return RelatedDecisionSnapshot(
+        "select_action",
+        decision.action_id,
+        public_subject_id or "",
+        decision.destination_id,
+        _safe_parameters(decision.parameters, redact_fields),
+    )
+
+
+def _safe_parameters(
+    value: Mapping[str, object],
+    redact_fields: tuple[str, ...] = (),
+) -> Mapping[str, object]:
+    result: dict[str, object] = {}
+    redact_all = "parameters" in redact_fields
+    redacted_names = {
+        path.removeprefix("parameters.")
+        for path in redact_fields
+        if path.startswith("parameters.")
+    }
+    for key, item in list(value.items())[:12]:
+        name = str(key)
+        parts = {part.casefold() for part in re.split(r"[_-]", name)}
+        if redact_all or name in redacted_names or parts & _PRIVATE_PARTS:
+            result[name] = "[REDACTED]"
+        elif isinstance(item, str):
+            result[name] = item[:240]
+        elif item is None or isinstance(item, bool | int | float):
+            result[name] = item
+        else:
+            result[name] = "[STRUCTURED]"
+    return result
+
+
+def _public_path(path: str) -> bool:
+    if path in _PUBLIC_PATHS:
+        return True
+    if _PUBLIC_PATH.fullmatch(path) is None:
+        return False
+    parts = {part.casefold() for part in re.split(r"[._-]", path)}
+    return not bool(parts & _PRIVATE_PARTS)
 
 
 def route_feedback(state, scope, feedback: ControlFeedback):

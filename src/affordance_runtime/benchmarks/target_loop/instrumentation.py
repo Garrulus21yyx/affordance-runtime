@@ -24,6 +24,8 @@ class BenchmarkInstrumentation:
     action_evaluator_calls: int = 0
     task_evaluator_calls: int = 0
     provider_attempts: int = 0
+    provider_retry_count: int = 0
+    fallback_count: int = 0
     configured_provider_retry_count: int | None = None
     semantic_judge_calls: int = 0
     confirmations_submitted: int = 0
@@ -151,8 +153,16 @@ class CountingDecisionPort:
         return getattr(self.wrapped, "transport_timeout_s", None)
 
     async def generate(self, request):
-        self.instrumentation.provider_attempts += 1
-        return await self.wrapped.generate(request)
+        try:
+            return await self.wrapped.generate(request)
+        finally:
+            attempts = tuple(getattr(self.wrapped, "last_attempts", ()))
+            attempt_count = len(attempts) or 1
+            self.instrumentation.provider_attempts += attempt_count
+            self.instrumentation.provider_retry_count += max(0, attempt_count - 1)
+            self.instrumentation.fallback_count += int(
+                getattr(self.wrapped, "last_fallback_count", 0)
+            )
 
 
 @dataclass
@@ -267,6 +277,9 @@ def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):
 
 
 def _configured_retry_count(port: object) -> int | None:
+    configured = getattr(port, "configured_retry_count", None)
+    if type(configured) is int:
+        return configured
     config = getattr(port, "config", None)
     rate_limit = getattr(config, "rate_limit_retries", None)
     transient = getattr(config, "transient_retries", None)

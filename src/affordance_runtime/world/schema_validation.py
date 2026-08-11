@@ -146,9 +146,71 @@ def validate_value_issue(
 ) -> AdmissionIssue | None:
     """Return the public rejection fact without exposing a value or private path."""
 
-    try:
-        reject_private_parameter_values(value, path=path)
-        validate_value(value, schema, path=path)
-    except (TypeError, ValueError):
-        return invalid_parameters_issue()
+    violation = _value_violation(value, schema, path)
+    if violation is None:
+        return None
+    field_path, expected, actual = violation
+    return invalid_parameters_issue(
+        field_path=field_path,
+        expected=expected,
+        actual=actual,
+    )
+
+
+def _value_violation(
+    value: Any,
+    schema: Mapping[str, Any],
+    path: str,
+) -> tuple[str, Mapping[str, object], Mapping[str, object]] | None:
+    if isinstance(value, Mapping):
+        private = next((str(key) for key in value if _private_name(str(key))), None)
+        if private is not None:
+            return path, {"private_fields_allowed": False}, {"contains_private_field": True}
+    expected_type = schema.get("type")
+    actual_type = _json_type(value)
+    if expected_type != actual_type and not (
+        expected_type == "number" and actual_type == "integer"
+    ):
+        return path, {"type": expected_type}, {"type": actual_type}
+    if expected_type == "object":
+        assert isinstance(value, Mapping)
+        properties = schema.get("properties") or {}
+        required = tuple(schema.get("required", ()))
+        missing = next((str(key) for key in required if key not in value), None)
+        if missing is not None:
+            child = properties.get(missing, {}) if isinstance(properties, Mapping) else {}
+            return f"{path}.{missing}", dict(child), {"missing": True}
+        if not isinstance(properties, Mapping):
+            return path, {"type": "object"}, {"schema_invalid": True}
+        unknown = next((str(key) for key in value if key not in properties), None)
+        if unknown is not None and schema.get("additionalProperties", False) is not True:
+            safe_path = f"{path}.{unknown}" if not _private_name(unknown) else path
+            return safe_path, {"declared_property": True}, {"unknown_property": True}
+        for key, item in value.items():
+            if key in properties:
+                issue = _value_violation(item, properties[key], f"{path}.{key}")
+                if issue is not None:
+                    return issue
+        return None
+    if "enum" in schema and value not in schema["enum"]:
+        return path, {"enum": tuple(schema["enum"])}, {"type": actual_type, "enum_member": False}
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            return path, {"minimum": schema["minimum"]}, {"below_minimum": True}
+        if "maximum" in schema and value > schema["maximum"]:
+            return path, {"maximum": schema["maximum"]}, {"above_maximum": True}
     return None
+
+
+def _json_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, Mapping):
+        return "object"
+    return type(value).__name__

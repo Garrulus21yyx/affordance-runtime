@@ -81,7 +81,10 @@ class ProviderCapacityEvidence:
         return self.checked and self.declared_attempt_budget >= self.required_attempt_budget
 
     def __post_init__(self) -> None:
-        if self.schema_version != "provider-capacity-preflight.v1":
+        if self.schema_version not in {
+            "provider-capacity-preflight.v1",
+            "provider-capacity-preflight.v2",
+        }:
             raise ValueError("provider capacity schema is unsupported")
         if (
             not self.provider_id
@@ -100,8 +103,12 @@ class ProviderCapacityEvidence:
             or type(self.fallback_count) is not int
         ):
             raise ValueError("provider capacity budgets are invalid")
-        if self.retry_count != 0 or self.fallback_count != 0:
-            raise ValueError("formal provider preflight requires zero retry and fallback")
+        if self.retry_count < 0 or self.fallback_count < 0:
+            raise ValueError("provider recovery counts must be nonnegative")
+        if self.schema_version == "provider-capacity-preflight.v1" and (
+            self.retry_count != 0 or self.fallback_count != 0
+        ):
+            raise ValueError("v1 provider preflight requires zero retry and fallback")
 
 
 @dataclass(frozen=True)

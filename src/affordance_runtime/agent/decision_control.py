@@ -216,8 +216,8 @@ async def _route_decision(
             state,
             action_space,
             page,
-            code=issue.code.value,
-            public_field_paths=issue.public_field_paths,
+            decision=decision,
+            issue=issue,
         )
         return route_feedback(state, scope, feedback)
     return await execute_selection(session, action_space, decision, scope)
@@ -499,10 +499,14 @@ def _request_action_page(
         semantic_offset=session.current_action_page.offset,
     )
     if not session.state.record_action_page_result(result_digest):
+        recovery_page = session.current_action_page
+        if not recovery_page.visible_action_ids:
+            recovery_page = context_builder.page(action_space, session.state)
+            session.current_action_page = recovery_page
         feedback = no_gain_feedback(
             session.state,
             action_space,
-            session.current_action_page,
+            recovery_page,
             source=ControlFeedbackSource.ACTION_PAGE,
             code="action_page_no_information_gain",
             request_digest=request_digest,

@@ -149,6 +149,8 @@ async def _evaluate_after(
     scope,
 ) -> LoopDirective:
     task, state = session.task, session.state
+    prior_task_evaluation = state.current_task_evaluation
+    prior_action_space = session.current_action_space
     try:
         action_evaluation = await validated_action_evaluation(
             action_evaluator, task, before, request, result, after,
@@ -206,8 +208,16 @@ async def _evaluate_after(
     if isinstance(outcome, Continue) and progress_event is not None and progress_event.strategy_transition_required:
         from affordance_runtime.agent.control_feedback import (
             ControlFeedbackSource,
+            RecoveryConstraints,
+            SemanticEffectSnapshot,
             route_feedback,
+            selection_snapshot,
             strategy_feedback,
+        )
+        from affordance_runtime.world.public_semantic_digest import (
+            public_action_contract_digest,
+            public_world_semantic_digest,
+            task_progress_fingerprint,
         )
 
         action_space = session.agent_loop.action_space_builder.build(task, after)
@@ -221,6 +231,25 @@ async def _evaluate_after(
             source=ControlFeedbackSource.ACTION_EVALUATION,
             code="action_no_effect_change_strategy",
             public_subject_id=selection.target_id,
+            related_decision=selection_snapshot(decision, selection.target_id),
+            semantic_effect=SemanticEffectSnapshot(
+                result.dispatch_status.value,
+                selection.semantic_effects,
+                action_evaluation.status.value,
+                public_world_semantic_digest(before) != public_world_semantic_digest(after),
+                prior_action_space is None
+                or public_action_contract_digest(before, prior_action_space)
+                != public_action_contract_digest(after, action_space),
+                task_progress_fingerprint(prior_task_evaluation)
+                != task_progress_fingerprint(task_evaluation),
+            ),
+            recovery=RecoveryConstraints(
+                repeat_previous_decision_allowed=False,
+                retry_allowed=False,
+                rollback_available=False,
+                strategy_change_required=True,
+                offered_action_ids=page.visible_action_ids,
+            ),
         )
         outcome = route_feedback(state, scope, feedback)
     scope.set_reason(outcome.reason_code)

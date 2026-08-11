@@ -472,8 +472,8 @@ class AgentLoop:
                 state,
                 action_space,
                 page,
-                code=issue.code.value,
-                public_field_paths=issue.public_field_paths,
+                decision=decision,
+                issue=issue,
                 public_subject_id=option.target_id if option is not None else None,
             )
             return route_feedback(state, scope, feedback)

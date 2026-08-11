@@ -4,10 +4,13 @@ import pytest
 from test_destination_contract import _option
 
 from affordance_runtime.agent.control_feedback import (
+    ContractViolationSnapshot,
     ControlFeedback,
     ControlFeedbackKind,
     ControlFeedbackSource,
     NextDecisionDisposition,
+    RecoveryConstraints,
+    RelatedDecisionSnapshot,
 )
 from affordance_runtime.world import ActionSpace, ActionSpaceBuilder
 from affordance_runtime.world.admission_issue import AdmissionIssueCode
@@ -26,6 +29,17 @@ def _feedback(**changes) -> ControlFeedback:
         "public_field_paths": ("parameters",),
         "scope_digest": DIGEST,
         "issue_digest": "b" * 64,
+        "related_decision": RelatedDecisionSnapshot("select_action", "action:1"),
+        "violation": ContractViolationSnapshot(
+            "current_action_space",
+            "invalid_action_parameters",
+            ("parameters",),
+            {"type": "object"},
+            {"type": "object"},
+        ),
+        "recovery": RecoveryConstraints(
+            must_change_fields=("parameters",), retry_allowed=True,
+        ),
     }
     values.update(changes)
     return ControlFeedback(**values)
@@ -45,6 +59,9 @@ def test_control_feedback_closed_matrix_and_canonical_paths() -> None:
             source=ControlFeedbackSource.ACTION_PAGE,
             next_decision_disposition=NextDecisionDisposition.CHANGE_STRATEGY,
             strategy_transition_required=True,
+            related_decision=None,
+            violation=None,
+            recovery=RecoveryConstraints(strategy_change_required=True),
         )
 
 
@@ -98,8 +115,13 @@ def test_typed_action_admission_rejects_parameter_shapes_without_values(paramete
     assert result.admitted is None
     assert result.issue is not None
     assert result.issue.code is AdmissionIssueCode.INVALID_ACTION_PARAMETERS
-    assert result.issue.public_field_paths == ("parameters",)
-    assert not any(str(value) in repr(result.issue) for value in parameters.values())
+    assert result.issue.public_field_paths in {
+        ("parameters",),
+        ("parameters.value",),
+        ("parameters.unknown",),
+    }
+    assert "outside-enum" not in repr(result.issue)
+    assert "#private" not in repr(result.issue)
 
 
 def test_typed_action_admission_preserves_valid_values_and_raising_compatibility() -> None:
