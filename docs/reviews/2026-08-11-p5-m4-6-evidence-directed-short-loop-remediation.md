@@ -45,7 +45,7 @@ ledger, a replay source or execution truth.
 | Remediation | Trigger run / Git SHA | Observed cohort | Source mechanism | Claim limit | Implementation SHA | Verification run ID | Exit property |
 |---|---|---|---|---|---|---|---|
 | M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
-| M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; task terminal is orthogonal to Runtime failure; new run separates terminal failure from unavailable |
+| M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `880e65fef0c2541be9f4b5af121e610f858685db` residual closure; original/run SHA `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; raw probe facts preserve presence/type; nonterminal task facts do not erase cross-domain control truth |
 | M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering precedes target creation and coverage calculation | baseline does not prove the task-required missing role or that more targets guarantee success | `NONE` | `NONE` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty |
 | M4.6-D bounded control no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | unchanged page only continues; observation freshness uses identity rather than public semantic gain | case JSON stores only the last decision and no per-turn semantic digest | `NONE` | `NONE` | first exact no-gain gives typed feedback; second consecutive identical request/result terminates; Runtime refresh is exempt |
 | M4.6-E stable identity/breadth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` (source-only adjacent risk) | no direct baseline cohort for ordinal identity; zero-target cohort remains breadth witness | target ID includes ordinal; observable and executable roles are coupled | neither ordinal identity nor a particular unsupported role was shown to cause a baseline failure | `NONE` | `NONE` | identity survives irrelevant AX order changes; read-only semantics cannot grant unsupported execution; quotas preserve actionable controls |
@@ -166,6 +166,45 @@ The old diagnostic remains exactly 64 JSON files with digest
 No old result or classification was rewritten. M4.6 remains `IN_PROGRESS`,
 M4.6-C is `NEXT`, and M4.5-B reviewed closure SHA remains `NONE`. No
 performance, success-rate or generalization claim is made.
+
+## M4.6-B residual shared-contract closure
+
+The original M4.6-B implementation and targeted evidence remain bound to
+`07895ede392bdff065ba3b4c0a6384ba18904143`. Residual contract implementation
+`880e65fef0c2541be9f4b5af121e610f858685db` closes two shared seams without
+reinterpreting that run or creating a replacement campaign ID:
+
+- the BrowserGym owner-thread producer preserves the presence and raw type of
+  `ready`, `done` and raw-reward facts; `browsergym_verifier` remains the only
+  validation and four-state classification owner;
+- `post_action_policy` owns cross-domain precedence, so supported terminal task
+  truth is absorbing while `SENT_UNKNOWN` or an actual action failure remains
+  authoritative over nonterminal task facts; `control_reducer` validates that
+  final disposition and constrains only canonical terminal task outcomes.
+
+The producer and AgentLoop witnesses failed before the shared-owner change and
+passed afterward. Focused verifier/control/benchmark properties passed 184
+tests. The command-scoped Python 3.12 pinned BrowserGym/Playwright gate passed
+18 tests, including raw missing/wrong-type producer facts, valid official
+ongoing/success/terminal facts and the deterministic terminal task path. The
+full repository suite passed `2119` tests with `27` skipped; Ruff, mypy over 433
+source files, main and pinned clean-process imports, documentation/architecture
+governance and `git diff --check` passed.
+
+An independent fresh-context review generated all seven missing-key subsets,
+13 undefined/wrong-type facts, three non-finite values, 12 valid typed truth
+states, six malformed containers and 29 task-outcome/dispatch/action/control
+stopping combinations. It verified terminal absorption, unknown-effect
+no-replay, independent failure precedence and finalized re-entry without a new
+production branch. Verdict: `VERIFIED`.
+
+No new targeted run ID was produced. The accepted ID remains
+`miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015`, explicitly at the
+original implementation SHA. Its evidence directory remained byte-identical
+(sorted file-manifest digest
+`7c80e6c0533f396268b2531587b27d5420db3fbd72500ad6ebf9a0071df433ae`).
+The old diagnostic remains 64 JSON files with digest
+`7a3f60c10896fc2f458afc11874bce866987fb9f1e752c8d164ae4b05d80b318`.
 
 ## Promotion gate
 

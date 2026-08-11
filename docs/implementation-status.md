@@ -431,9 +431,11 @@ targeted run artifact was produced, so its Verification run ID is `NONE`.
 This is non-default declared-currentness closure only; it is not a performance,
 generalization, MiniWoB-60 outcome or M4.5-B closure claim.
 
-M4.6-B is implemented at
-`07895ede392bdff065ba3b4c0a6384ba18904143` and verified by immutable targeted
-run `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015`. Four-state
+The original M4.6-B implementation is
+`07895ede392bdff065ba3b4c0a6384ba18904143`; its immutable targeted run remains
+valid as `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015`. Residual
+producer/control closure is implemented at
+`880e65fef0c2541be9f4b5af121e610f858685db`. Four-state
 source-aware BrowserGym verifier truth now maps through canonical
 `TaskOutcomeFact`, one task-evaluation control disposition, current-epoch
 AgentResult/snapshot/CaseFacts v8 projection and unique benchmark precedence.
@@ -441,7 +443,10 @@ The frozen previous-verifier-unknown run completed 14/14 with valid evidence:
 12 terminal-task-failure and 2 running-incomplete canonical facts; 13
 TASK_FAILED and 1 RUNTIME_REJECTED outcomes. This is declared verifier-scope
 closure only, with no full MiniWoB-60, performance/generalization or M4.5-B
-closure claim.
+closure claim. Generated fault-injection, state-machine, pinned real producer,
+full quality gates and a fresh-context held-out review closed the residual
+raw-fact producer and nonterminal task/control precedence seams without a new
+campaign run ID.
 
 ## Control-transition and long-horizon gap status
 

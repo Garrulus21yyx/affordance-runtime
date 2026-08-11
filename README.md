@@ -98,6 +98,7 @@ P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 → P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
 → P5-M4.5-C diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
 → P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT
+  (M4.6-B residual contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`)
 → P5-M4.7 supported-subset multi-seed gate: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
 ```

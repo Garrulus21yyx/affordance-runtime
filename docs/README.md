@@ -68,6 +68,8 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `IN_PROGRESS`: M4.6-A canonical AX semantics/currentness is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`, M4.6-B is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, and M4.6-C is `NEXT`;
+the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
+while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.7 multi-seed and P5-E remain blocked by
 their targeted/breadth gates. Only after those gates may P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local

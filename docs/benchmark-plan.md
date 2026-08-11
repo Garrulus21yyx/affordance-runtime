@@ -292,6 +292,8 @@ EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
 PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 `IN_PROGRESS /
 M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT`.
+The M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`;
+the accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`.
 Implementation Status is authoritative.
 
 1. every accepted policy decision produces exactly one bounded
