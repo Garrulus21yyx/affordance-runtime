@@ -163,6 +163,7 @@ class RecoveryConstraints:
     rollback_available: bool = False
     strategy_change_required: bool = False
     offered_action_ids: tuple[str, ...] = ()
+    admissible_objective_operations: tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         if any(not _public_path(path) for path in self.must_change_fields):
@@ -177,6 +178,14 @@ class RecoveryConstraints:
             raise TypeError("recovery flags must be boolean")
         object.__setattr__(self, "must_change_fields", tuple(self.must_change_fields))
         object.__setattr__(self, "offered_action_ids", tuple(self.offered_action_ids[:32]))
+        repairs = tuple(self.admissible_objective_operations)
+        if len(repairs) > 4:
+            raise ValueError("objective repair alternatives must be bounded")
+        object.__setattr__(
+            self,
+            "admissible_objective_operations",
+            tuple(freeze_json(item) for item in repairs),
+        )
 
 
 @dataclass(frozen=True)
@@ -287,9 +296,10 @@ class ControlFeedback:
                 or self.recovery.must_change_fields != ("objective_operation.predicate",)
                 or self.recovery.retry_allowed
                 or not self.recovery.strategy_change_required
+                or not self.recovery.admissible_objective_operations
             )
         ):
-            raise ValueError("already-satisfied objective feedback must require predicate replacement")
+            raise ValueError("already-satisfied objective feedback requires an admissible replacement")
         if self.kind is ControlFeedbackKind.NO_INFORMATION_GAIN and self.recovery is None:
             raise ValueError("no-information-gain feedback requires recovery constraints")
         if self.kind is ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED and (
@@ -327,6 +337,19 @@ def objective_repair_feedback(
         public_field_paths=issue.field_paths,
     )
     already_satisfied = issue.code.value == "objective_already_satisfied"
+    objective_repairs: tuple[Mapping[str, object], ...] = ()
+    if already_satisfied:
+        objective_repairs = ({"kind": "none"},)
+        frontier = (
+            state.verified_task_state.current_frontier
+            if state.verified_task_state is not None else ()
+        )
+        if frontier:
+            objective_repairs += ({
+                "kind": "propose",
+                "intended_requirement_ids": frontier,
+                "predicate": {"kind": "task_outcome_is", "status": "complete"},
+            },)
     option = action_space.find(decision.action_id) if decision is not None else None
     return ControlFeedback(
         ControlFeedbackKind.REPAIRABLE_REJECTION,
@@ -366,6 +389,7 @@ def objective_repair_feedback(
             retry_allowed=not already_satisfied,
             strategy_change_required=already_satisfied,
             offered_action_ids=page.visible_action_ids,
+            admissible_objective_operations=objective_repairs,
         ),
     )
 

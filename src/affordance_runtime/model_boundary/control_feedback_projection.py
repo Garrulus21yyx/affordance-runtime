@@ -66,6 +66,7 @@ class AgentRecoveryConstraintsView:
     rollback_available: bool
     strategy_change_required: bool
     offered_action_ids: tuple[str, ...]
+    admissible_objective_operations: tuple[Mapping[str, object], ...]
 
 
 @dataclass(frozen=True)
@@ -136,5 +137,9 @@ def project_control_feedback(
             feedback.recovery.rollback_available,
             feedback.recovery.strategy_change_required,
             feedback.recovery.offered_action_ids,
+            tuple(
+                project_public_value(item)
+                for item in feedback.recovery.admissible_objective_operations
+            ),
         ) if feedback.recovery is not None else None,
     )

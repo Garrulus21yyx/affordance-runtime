@@ -148,6 +148,10 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
                     feedback.recovery.must_change_fields
                     if feedback.recovery is not None else ()
                 ),
+                "admissible_objective_operations": (
+                    feedback.recovery.admissible_objective_operations
+                    if feedback.recovery is not None else ()
+                ),
             }
             if feedback is not None else None
         ),

@@ -92,3 +92,13 @@ without creating a second task or action authority.
   regression properties prove that a changed predicate receives the next
   bounded repair turn while an identical predicate is still mechanically
   terminated. Full validation is 2220 passed and 27 skipped; Ruff and mypy pass.
+- 2026-08-11: a clean-SHA directed `click-tab-2` rerun proved that Mistral
+  received the corrected fields but repeated the exact objective/action package.
+  The remaining contract gap was actionable replacement data: “change this
+  predicate” did not identify a currently admissible replacement. Recovery now
+  projects bounded Runtime-derived `admissible_objective_operations`: no
+  objective operation, or a proposal for the current frontier with
+  `task_outcome_is: complete`. The model is told to copy one complete candidate;
+  Runtime still independently admits the objective and current ActionSpace
+  remains the only action authority. Full validation remains 2220 passed and 27
+  skipped; Ruff and mypy pass. A fresh clean-SHA directed rerun is required.

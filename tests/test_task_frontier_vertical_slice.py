@@ -366,6 +366,14 @@ def test_changed_already_satisfied_predicate_gets_second_repair_turn() -> None:
                 )
                 assert feedback.recovery.retry_allowed is False
                 assert feedback.recovery.strategy_change_required is True
+                assert feedback.recovery.admissible_objective_operations == (
+                    {"kind": "none"},
+                    {
+                        "kind": "propose",
+                        "intended_requirement_ids": ["criterion:submitted"],
+                        "predicate": {"kind": "task_outcome_is", "status": "complete"},
+                    },
+                )
                 target_id = "target:submit"
             else:
                 assert context.control_feedback is not None
