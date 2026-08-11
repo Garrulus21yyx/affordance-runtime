@@ -86,8 +86,18 @@ def _context_id(messages: Sequence[Any]) -> str:
     for message in reversed(messages):
         if getattr(message, "role", "") != "user":
             continue
+        content = getattr(message, "content", "")
+        if not isinstance(content, str):
+            content = next(
+                (
+                    getattr(item, "text", "")
+                    for item in content
+                    if getattr(item, "type", "") == "text"
+                ),
+                "",
+            )
         try:
-            value = json.loads(str(getattr(message, "content", "")))
+            value = json.loads(content)
         except (TypeError, ValueError, json.JSONDecodeError):
             return ""
         if isinstance(value, dict) and isinstance(value.get("agent_context"), dict):

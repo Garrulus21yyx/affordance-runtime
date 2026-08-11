@@ -19,6 +19,7 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
+    AgentImageInput,
     AgentObjectiveCheckpointView,
     AgentObjectiveView,
     AgentPendingView,
@@ -51,6 +52,7 @@ from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 from affordance_runtime.world.view import build_agent_world_view
 
 if TYPE_CHECKING:
@@ -144,6 +146,7 @@ class ContextBuilder:
             ),
             DecisionMode.ACT,
             project_control_feedback(state.pending_control_feedback),
+            _image_inputs(state),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
@@ -333,12 +336,29 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
     )
 
 
+def _image_inputs(state: AgentLoopState) -> tuple[AgentImageInput, ...]:
+    images: list[AgentImageInput] = []
+    for source in reversed(state.current_observation.sources):
+        for media in reversed(source.media):
+            if media.kind != "screenshot":
+                continue
+            images.append(AgentImageInput(
+                canonical_artifact_ref(source.observation_id, media.media_id),
+                media.mime_type,
+                media.data,
+                media.sha256,
+            ))
+            if len(images) == 2:
+                return tuple(images)
+    return tuple(images)
+
+
 def _fit_context(
     context: AgentContext,
     max_bytes: int,
     pinned_target_ids: tuple[str, ...],
 ) -> AgentContext:
-    while serialized_size(context) > max_bytes:
+    while _semantic_serialized_size(context) > max_bytes:
         try:
             smaller_world = fit_model_world(
                 context.world,
@@ -393,3 +413,7 @@ def _fit_context(
         progress_events=context.progress.events.truncated,
     )
     return replace(context, budgets=replace(context.budgets, section_truncation=flags))
+
+
+def _semantic_serialized_size(context: AgentContext) -> int:
+    return serialized_size(replace(context, image_inputs=()))

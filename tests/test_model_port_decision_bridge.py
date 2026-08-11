@@ -1,6 +1,7 @@
 import asyncio
+import base64
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
@@ -9,9 +10,13 @@ from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopSta
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
+from affordance_runtime.model_boundary.context import AgentImageInput
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.factory import model_policy_from_environment
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model_policy.model_port_bridge import (
+    DecisionPerceptionProfile,
+    ModelPortDecisionAdapter,
+)
 from affordance_runtime.model_policy.policy import _build_request
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPackagePayload
 from affordance_runtime.model_port import (
@@ -50,6 +55,7 @@ class RecordingModelPort:
     messages: list[ModelMessage] = field(default_factory=list)
     output_schema: object | None = None
     config: ModelConfig | None = None
+    supports_multimodal: bool = True
 
     async def generate_structured(self, messages, output_schema, config):
         self.calls += 1
@@ -58,7 +64,10 @@ class RecordingModelPort:
         self.config = config
         if isinstance(self.outcome, BaseException):
             raise self.outcome
-        context = json.loads(messages[1].content)
+        content = messages[1].content
+        if not isinstance(content, str):
+            content = next(item.text for item in content if item.type == "text")
+        context = json.loads(content)
         payload = self.outcome or {
             "type": "abort",
             "context_id": context["context_id"],
@@ -109,6 +118,54 @@ def test_bridge_reuses_model_port_once_with_separate_system_and_user_messages() 
         assert response.metadata.grounding_profile_version == "format-only.v1"
         assert response.metadata.decision_schema_digest.startswith("sha256:")
         assert response.metadata.result_summary_max_chars == 1_024
+
+    asyncio.run(scenario())
+
+
+def test_screenshot_ax_profile_sends_exact_typed_image_and_attests_profile() -> None:
+    async def scenario() -> None:
+        image = b"\x89PNG\r\n\x1a\nfixture"
+        context = replace(
+            await _context(),
+            image_inputs=(AgentImageInput(
+                "artifact:obs:screen", "image/png", image,
+                __import__("hashlib").sha256(image).hexdigest(),
+            ),),
+        )
+        transport = RecordingModelPort()
+        adapter = ModelPortDecisionAdapter(
+            transport,
+            _zero_retry_config(),
+            perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
+        )
+
+        response = await adapter.generate(_build_request(context))
+
+        assert not isinstance(response, ModelFailure)
+        content = transport.messages[1].content
+        assert not isinstance(content, str)
+        assert content[0].type == "text"
+        assert json.loads(content[0].text)["context_id"] == context.context_id
+        assert content[1].image_url == (
+            "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+        )
+        assert response.metadata.perception_profile == "screenshot-ax.v1"
+
+    asyncio.run(scenario())
+
+
+def test_screenshot_ax_profile_fails_before_provider_when_image_is_missing() -> None:
+    async def scenario() -> None:
+        transport = RecordingModelPort()
+        adapter = ModelPortDecisionAdapter(
+            transport,
+            _zero_retry_config(),
+            perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
+        )
+        outcome = await adapter.generate(_build_request(await _context()))
+        assert isinstance(outcome, ModelFailure)
+        assert outcome.kind is ModelFailureKind.INTERNAL_ERROR
+        assert transport.calls == 0
 
     asyncio.run(scenario())
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from dataclasses import dataclass
+from enum import StrEnum
 
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model_boundary.failures import (
@@ -32,8 +34,10 @@ from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelCallRecord,
     ModelConfig,
+    ModelImageURLPart,
     ModelMessage,
     ModelPort,
+    ModelTextPart,
     ProviderFailureKind,
     ProviderModelError,
     StructuredModelError,
@@ -41,11 +45,17 @@ from affordance_runtime.model_port import (
 )
 
 
+class DecisionPerceptionProfile(StrEnum):
+    TEXT_ONLY = "text-only.v1"
+    SCREENSHOT_AX = "screenshot-ax.v1"
+
+
 @dataclass(frozen=True)
 class ModelPortDecisionAdapter:
     port: ModelPort
     config: ModelConfig
     grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.FORMAT_ONLY
+    perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.TEXT_ONLY
 
     def __post_init__(self) -> None:
         if isinstance(self.port, FallbackModelPort):
@@ -53,6 +63,7 @@ class ModelPortDecisionAdapter:
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("model policy bridge requires a zero retry configuration")
         object.__setattr__(self, "grounding_variant", DecisionGroundingVariant(self.grounding_variant))
+        object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
 
     @property
     def grounding_profile_version(self) -> str:
@@ -71,6 +82,7 @@ class ModelPortDecisionAdapter:
         return ":".join((
             SCHEMA_VERSION,
             self.grounding_profile_version,
+            self.perception_profile.value,
             decision_schema_digest(),
         ))
 
@@ -83,9 +95,10 @@ class ModelPortDecisionAdapter:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
         try:
             user_message = _user_message(request, self.grounding_variant)
+            user_content = _user_content(request, user_message, self.perception_profile, self.port)
             messages = (
                 ModelMessage(role="system", content=_system_message(self.grounding_variant)),
-                ModelMessage(role="user", content=user_message),
+                ModelMessage(role="user", content=user_content),
             )
         except (TypeError, ValueError, json.JSONDecodeError):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
@@ -133,6 +146,7 @@ class ModelPortDecisionAdapter:
             self.port,
             self.grounding_variant,
             self.grounding_profile_version,
+            self.perception_profile,
             *_guide_identity(user_message, self.grounding_variant),
         )
         if metadata.rate_limit_retry_count or metadata.transient_retry_count:
@@ -145,6 +159,7 @@ def _metadata(
     port: ModelPort,
     grounding_variant: DecisionGroundingVariant,
     profile_version: str,
+    perception_profile: DecisionPerceptionProfile,
     guide_schema_version: str,
     guide_digest: str,
 ) -> ModelMetadata:
@@ -156,6 +171,7 @@ def _metadata(
             schema_version=SCHEMA_VERSION,
             grounding_variant=grounding_variant.value,
             grounding_profile_version=profile_version,
+            perception_profile=perception_profile.value,
             grounding_guide_schema_version=guide_schema_version,
             grounding_guide_digest=guide_digest,
             decision_schema_digest=decision_schema_digest(),
@@ -176,6 +192,7 @@ def _metadata(
         transient_retry_count=record.transient_retry_count,
         grounding_variant=grounding_variant.value,
         grounding_profile_version=profile_version,
+        perception_profile=perception_profile.value,
         grounding_guide_schema_version=guide_schema_version,
         grounding_guide_digest=guide_digest,
         decision_schema_digest=decision_schema_digest(),
@@ -218,6 +235,27 @@ def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVaria
         {"agent_context": context, "decision_guide": guide},
         sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     )
+
+
+def _user_content(
+    request: ModelDecisionRequest,
+    text: str,
+    profile: DecisionPerceptionProfile,
+    port: ModelPort,
+) -> str | tuple[ModelTextPart | ModelImageURLPart, ...]:
+    if profile is DecisionPerceptionProfile.TEXT_ONLY:
+        return text
+    if not request.image_inputs:
+        raise ValueError("screenshot perception requires a current image input")
+    if not getattr(port, "supports_multimodal", False):
+        raise ValueError("configured model port does not support multimodal messages")
+    parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
+    for image in request.image_inputs:
+        encoded = base64.b64encode(image.data).decode("ascii")
+        parts.append(ModelImageURLPart(
+            image_url=f"data:{image.mime_type};base64,{encoded}",
+        ))
+    return tuple(parts)
 
 
 def _system_message(variant: DecisionGroundingVariant) -> str:

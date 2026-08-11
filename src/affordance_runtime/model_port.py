@@ -5,15 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from enum import StrEnum
 from time import perf_counter
-from typing import Any, Mapping, Protocol, Sequence, TypeVar
+from typing import Any, Literal, Mapping, Protocol, Sequence, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from affordance_runtime.model_capture import (
     PrivateModelCapture,
@@ -23,11 +24,43 @@ from affordance_runtime.model_capture import (
 T = TypeVar("T", bound=BaseModel)
 
 
+class ModelTextPart(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["text"] = "text"
+    text: str = Field(min_length=1, max_length=128 * 1024)
+
+
+class ModelImageURLPart(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["image_url"] = "image_url"
+    image_url: str = Field(min_length=32, max_length=7 * 1024 * 1024)
+
+    @field_validator("image_url")
+    @classmethod
+    def _bounded_data_image(cls, value: str) -> str:
+        if re.fullmatch(r"data:image/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}", value) is None:
+            raise ValueError("model image must be a bounded PNG/JPEG data URL")
+        return value
+
+
 class ModelMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     role: str
-    content: str
+    content: str | tuple[ModelTextPart | ModelImageURLPart, ...]
+
+    @field_validator("content")
+    @classmethod
+    def _content_is_nonempty(cls, value):
+        if isinstance(value, str):
+            if not value:
+                raise ValueError("model message content cannot be empty")
+            return value
+        if not value or not any(isinstance(item, ModelTextPart) for item in value):
+            raise ValueError("multimodal model message requires a text part")
+        return tuple(value)
 
 
 class ModelConfig(BaseModel):
@@ -102,6 +135,8 @@ class ModelPort(Protocol):
     model: str
     endpoint_class: str
     last_call: ModelCallRecord | None
+    @property
+    def supports_multimodal(self) -> bool: ...
 
     async def generate_structured(
         self,
@@ -127,6 +162,10 @@ class FallbackModelPort:
     def __post_init__(self) -> None:
         if not self.ports:
             raise ValueError("FallbackModelPort requires at least one model port")
+
+    @property
+    def supports_multimodal(self) -> bool:
+        return all(getattr(port, "supports_multimodal", False) for port in self.ports)
 
     @property
     def active_profile_ref(self) -> str:
@@ -192,6 +231,7 @@ class OpenAICompatibleModelPort:
     model: str = "mistral-large-3"
     provider: str = "openai-compatible"
     endpoint_class: str = "remote"
+    supports_multimodal: bool = field(default=True, init=False)
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
@@ -322,6 +362,7 @@ class OllamaModelPort:
     base_url: str = "http://127.0.0.1:11434"
     provider: str = "ollama"
     endpoint_class: str = "local"
+    supports_multimodal: bool = field(default=False, init=False)
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)

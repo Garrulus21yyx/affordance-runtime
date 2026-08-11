@@ -35,6 +35,28 @@ class ActionRisk(StrEnum):
 
 
 @dataclass(frozen=True)
+class ObservationMedia:
+    media_id: str
+    kind: str
+    mime_type: str
+    data: bytes = field(repr=False)
+    sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.media_id.strip()
+            or len(self.media_id) > 120
+            or self.kind != "screenshot"
+            or self.mime_type not in {"image/png", "image/jpeg"}
+            or not isinstance(self.data, bytes)
+            or not self.data
+            or len(self.data) > 5 * 1024 * 1024
+        ):
+            raise ValueError("observation media is invalid or exceeds its bound")
+        object.__setattr__(self, "sha256", hashlib.sha256(self.data).hexdigest())
+
+
+@dataclass(frozen=True)
 class SemanticTarget:
     target_id: str
     role: str
@@ -148,6 +170,7 @@ class SurfaceObservation:
     semantic_inventory: SemanticInventorySummary = field(
         default_factory=SemanticInventorySummary.unassessed
     )
+    media: tuple[ObservationMedia, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
@@ -163,6 +186,11 @@ class SurfaceObservation:
         object.__setattr__(self, "artifacts", freeze_json(self.artifacts))
         if not isinstance(self.semantic_inventory, SemanticInventorySummary):
             raise TypeError("surface semantic inventory must be typed")
+        object.__setattr__(self, "media", tuple(self.media))
+        if len(self.media) > 4 or any(
+            not isinstance(item, ObservationMedia) for item in self.media
+        ):
+            raise TypeError("surface media must be a bounded typed tuple")
         if self.semantic_inventory.status is not SemanticInventoryStatus.UNASSESSED:
             if self.semantic_inventory.projected_target_count != len(self.targets):
                 raise ValueError("assessed semantic inventory must match projected targets")

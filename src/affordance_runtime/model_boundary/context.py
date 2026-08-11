@@ -155,6 +155,25 @@ class AgentBudgetView:
 
 
 @dataclass(frozen=True)
+class AgentImageInput:
+    evidence_ref: str
+    mime_type: str
+    data: bytes = field(repr=False)
+    sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if (
+            not self.evidence_ref.startswith("artifact:")
+            or self.mime_type not in {"image/png", "image/jpeg"}
+            or not isinstance(self.data, bytes)
+            or not self.data
+            or len(self.data) > 5 * 1024 * 1024
+            or len(self.sha256) != 64
+        ):
+            raise ValueError("agent image input is invalid")
+
+
+@dataclass(frozen=True)
 class AgentContext:
     context_id: str
     task: AgentTaskView
@@ -167,7 +186,13 @@ class AgentContext:
     budgets: AgentBudgetView
     decision_mode: DecisionMode
     control_feedback: AgentControlFeedbackView | None = None
+    image_inputs: tuple[AgentImageInput, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
             raise ValueError("AgentContext requires opaque context identity")
+        object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
+        if len(self.image_inputs) > 2 or any(
+            not isinstance(item, AgentImageInput) for item in self.image_inputs
+        ):
+            raise TypeError("AgentContext image inputs must be bounded and typed")

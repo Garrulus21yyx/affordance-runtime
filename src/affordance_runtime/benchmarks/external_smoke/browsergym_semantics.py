@@ -74,6 +74,9 @@ class CanonicalBrowserControl:
     private_options: tuple[tuple[str, str], ...]
     public_fingerprint: str
     currentness_fingerprint: str
+    private_node_id: str
+    private_parent_id: str
+    private_child_ids: tuple[str, ...]
 
     @property
     def role_spec(self) -> BrowserGymRoleSpec:
@@ -350,6 +353,9 @@ def _canonical_control(
         private_options,
         _fingerprint(public_payload),
         _fingerprint(private_payload),
+        record.node_id,
+        record.parent_id,
+        record.child_ids,
     )
 
 

@@ -4,17 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID = "browsergym-ax-target-inventory.v1"
+BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID = "browsergym-ax-target-inventory.v2"
 
-_RECOGNIZED_UNPROJECTED_TARGET_ROLES = frozenset({
-    "checkbox",
-    "menuitem",
-    "radio",
-    "slider",
-    "spinbutton",
-    "tab",
-})
+_RECOGNIZED_UNPROJECTED_TARGET_ROLES: frozenset[str] = frozenset()
 _DOMAIN_CHILD_ROLES = frozenset({"option"})
+_INFORMATIONAL_ROLES = frozenset({
+    "StaticText",
+    "cell",
+    "columnheader",
+    "heading",
+    "list",
+    "listitem",
+    "row",
+    "rowheader",
+    "table",
+})
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,32 @@ _ROLE_SPECS = {
         ("value", "expanded", "required", "selected_options"),
         ("attached", "visible", "enabled", "not_readonly", "editable"),
     ),
+    "checkbox": BrowserGymRoleSpec(
+        "checkbox", True, True, "activate", "click", ("checked",),
+        ("attached", "visible", "enabled"),
+    ),
+    "radio": BrowserGymRoleSpec(
+        "radio", True, True, "activate", "click", ("checked",),
+        ("attached", "visible", "enabled"),
+    ),
+    "tab": BrowserGymRoleSpec(
+        "tab", True, True, "activate", "click", ("selected",),
+        ("attached", "visible", "enabled"),
+    ),
+    "menuitem": BrowserGymRoleSpec(
+        "menuitem", True, True, "activate", "click", ("expanded", "checked"),
+        ("attached", "visible", "enabled"),
+    ),
+    "slider": BrowserGymRoleSpec(
+        "slider", True, False, "", "", ("value",), (),
+    ),
+    "spinbutton": BrowserGymRoleSpec(
+        "spinbutton", True, False, "", "", ("value",), (),
+    ),
+    **{
+        role: BrowserGymRoleSpec(role, True, False, "", "", (), ())
+        for role in _INFORMATIONAL_ROLES
+    },
 }
 
 
@@ -68,6 +98,10 @@ def observable_browsergym_roles() -> frozenset[str]:
 
 def executable_browsergym_roles() -> frozenset[str]:
     return frozenset(role for role, spec in _ROLE_SPECS.items() if spec.executable)
+
+
+def informational_browsergym_roles() -> frozenset[str]:
+    return _INFORMATIONAL_ROLES
 
 
 def inventory_target_browsergym_roles() -> frozenset[str]:

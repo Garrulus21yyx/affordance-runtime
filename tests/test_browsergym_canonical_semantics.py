@@ -82,7 +82,7 @@ def test_inventory_analysis_is_permutation_duplicate_and_option_invariant(permut
 
     analysis = analyze_browsergym_semantics(raw)
 
-    assert len(analysis.controls) == 1
+    assert len(analysis.controls) == 2
     assert analysis.inventory.recognized_target_count == 2
     assert dict(analysis.diagnostic_role_distribution) == {
         "button": 1,

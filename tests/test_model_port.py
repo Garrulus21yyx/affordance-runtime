@@ -12,7 +12,9 @@ from affordance_runtime.model_capture import PrivateModelCapture
 from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelConfig,
+    ModelImageURLPart,
     ModelMessage,
+    ModelTextPart,
     OllamaModelPort,
     OpenAICompatibleModelPort,
     ProviderFailureKind,
@@ -117,6 +119,38 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
     assert port.last_call is not None
     assert port.last_call.provider == "openai-compatible"
     assert port.last_call.total_tokens == 11
+
+
+def test_openai_compatible_adapter_serializes_multimodal_content_parts() -> None:
+    server, thread, requests = _serve({
+        "id": "response-vision",
+        "choices": [{"message": {"content": '{"value":"seen"}'}}],
+        "usage": {},
+    })
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="vision-test",
+        )
+        answer = asyncio.run(port.generate_structured(
+            [ModelMessage(role="user", content=(
+                ModelTextPart(text='{"context_id":"context:vision"}'),
+                ModelImageURLPart(image_url="data:image/png;base64,iVBORw0KGgo="),
+            ))],
+            Answer,
+            ModelConfig(),
+        ))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "seen"
+    assert requests[0]["messages"][0]["content"] == [
+        {"type": "text", "text": '{"context_id":"context:vision"}'},
+        {"type": "image_url", "image_url": "data:image/png;base64,iVBORw0KGgo="},
+    ]
 
 
 def test_private_capture_preserves_exact_accepted_exchange_outside_public_evidence(

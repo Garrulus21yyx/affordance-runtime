@@ -88,6 +88,9 @@ normative:
     lifecycle: current
 
 reference:
+  - role: m4_6_e_perception_requirement_mainline_execution_record
+    path: docs/superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md
+    lifecycle: current
   - role: p5_e_task_frontier_vertical_slice_execution_record
     path: docs/superpowers/plans/2026-08-11-p5-e-task-frontier-vertical-slice-plan.md
     lifecycle: current

@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.model_boundary.context import AgentImageInput
 
 MAX_MODEL_RESPONSE_BYTES = 32 * 1024
 _MAX_CONTEXT_BYTES = 64 * 1024
@@ -34,6 +35,7 @@ class ModelMetadata:
     grounding_guide_digest: str = ""
     decision_schema_digest: str = ""
     result_summary_max_chars: int = 0
+    perception_profile: str = ""
 
     def __post_init__(self) -> None:
         for value in (
@@ -48,6 +50,7 @@ class ModelMetadata:
             self.grounding_guide_schema_version,
             self.grounding_guide_digest,
             self.decision_schema_digest,
+            self.perception_profile,
         ):
             if value and (_SAFE_METADATA.fullmatch(value) is None or "://" in value):
                 raise ValueError("model metadata must contain only bounded public identifiers")
@@ -70,6 +73,7 @@ class ModelDecisionRequest:
     schema_version: str
     instructions: str
     decision_schema: Mapping[str, object]
+    image_inputs: tuple[AgentImageInput, ...] = ()
 
     def __post_init__(self) -> None:
         if _SAFE_METADATA.fullmatch(self.request_id) is None:
@@ -81,6 +85,11 @@ class ModelDecisionRequest:
         if not self.serialized_context.strip() or len(self.serialized_context.encode()) > _MAX_CONTEXT_BYTES:
             raise ValueError("serialized AgentContext exceeds the model request bound")
         object.__setattr__(self, "decision_schema", freeze_json(self.decision_schema))
+        object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
+        if len(self.image_inputs) > 2 or any(
+            not isinstance(item, AgentImageInput) for item in self.image_inputs
+        ):
+            raise TypeError("model request image inputs must be bounded and typed")
 
 
 @dataclass(frozen=True)

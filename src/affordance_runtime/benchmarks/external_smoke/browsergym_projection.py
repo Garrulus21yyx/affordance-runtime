@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from io import BytesIO
+
+from PIL import Image
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
     BrowserGymElementBinding,
+)
+from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+    informational_browsergym_roles,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     BrowserGymSemanticAnalysis,
@@ -22,6 +28,7 @@ from affordance_runtime.world import (
     ActionBinding,
     ActionRisk,
     CoverageState,
+    ObservationMedia,
     ObservationSourceProfile,
     SemanticInventorySummary,
     SemanticTarget,
@@ -62,10 +69,27 @@ def project_browsergym_observation(
     bindings: list[ActionBinding] = []
     private: list[BrowserGymElementBinding] = []
     fact_total = 0
+    target_ids = {
+        node.private_node_id: _target_id(node.role, node.accessible_name, ordinal)
+        for ordinal, node in enumerate(projected)
+    }
     for ordinal, node in enumerate(projected):
-        target_id = _target_id(node.role, node.accessible_name, ordinal)
+        target_id = target_ids[node.private_node_id]
         state = dict(node.public_state)
-        target = SemanticTarget(target_id, node.role, node.accessible_name, state)
+        relations: dict[str, object] = {}
+        parent = target_ids.get(node.private_parent_id)
+        children = tuple(
+            target_ids[child_id]
+            for child_id in node.private_child_ids
+            if child_id in target_ids
+        )
+        if parent:
+            relations["parent_id"] = parent
+        if children:
+            relations["child_ids"] = children
+        target = SemanticTarget(
+            target_id, node.role, node.accessible_name, state, relations,
+        )
         targets.append(target)
         node_facts = tuple(state.items())
         fact_total += len(node_facts)
@@ -96,7 +120,9 @@ def project_browsergym_observation(
         actionable_target_count=actionable_target_count,
         non_executable_target_count=projected_target_count - actionable_target_count,
         omitted_target_count=recognized_target_count - projected_target_count,
-        informational_target_count=0,
+        informational_target_count=sum(
+            target.role in informational_browsergym_roles() for target in targets
+        ),
     )
     source = SurfaceObservation(
         observation_id,
@@ -109,6 +135,7 @@ def project_browsergym_observation(
         coverage,
         artifacts,
         inventory,
+        _screenshot_media(raw),
     )
     world = WorldObservation(
         observation_id,
@@ -165,3 +192,16 @@ def _binding_pair(
 def _target_id(role: str, label: str, ordinal: int) -> str:
     digest = hashlib.sha256(f"{role}\0{label}\0{ordinal}".encode()).hexdigest()[:16]
     return f"target:{digest}"
+
+
+def _screenshot_media(raw: dict[str, object]) -> tuple[ObservationMedia, ...]:
+    screenshot = raw.get("screenshot")
+    if screenshot is None:
+        return ()
+    try:
+        image = Image.fromarray(screenshot)  # type: ignore[arg-type]
+        output = BytesIO()
+        image.save(output, format="PNG", optimize=True)
+        return (ObservationMedia("screenshot", "screenshot", "image/png", output.getvalue()),)
+    except (AttributeError, TypeError, ValueError, OSError) as exc:
+        raise ValueError("BrowserGym screenshot could not be encoded") from exc

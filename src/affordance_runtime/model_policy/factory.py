@@ -6,7 +6,10 @@ import os
 from collections.abc import Mapping
 
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model_policy.model_port_bridge import (
+    DecisionPerceptionProfile,
+    ModelPortDecisionAdapter,
+)
 from affordance_runtime.model_policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderCallOrchestrator,
@@ -21,6 +24,7 @@ def model_policy_from_environment(
     call_timeout_s: float = 90.0,
     grounding_variant: DecisionGroundingVariant | str | None = None,
     provider_recovery: bool = True,
+    perception_profile: DecisionPerceptionProfile | str | None = None,
 ) -> ModelBackedAgentPolicy:
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
@@ -43,6 +47,16 @@ def model_policy_from_environment(
         and not _enabled(env.get("LLM_ENABLE_EXPERIMENTAL_GROUNDING", "false"))
     ):
         raise ValueError("experimental compact-contract-v2 grounding is not admitted")
+    configured_perception = perception_profile
+    if configured_perception is None:
+        configured_perception = env.get(
+            "LLM_DECISION_PERCEPTION",
+            DecisionPerceptionProfile.TEXT_ONLY.value,
+        )
+    try:
+        selected_perception = DecisionPerceptionProfile(configured_perception)
+    except ValueError as exc:
+        raise ValueError("unsupported model decision perception profile") from exc
     orchestrator_deadline = max(0.001, call_timeout_s - min(1.0, call_timeout_s * 0.05))
     transport_timeout = min(30.0, max(0.001, orchestrator_deadline / 3))
     config = ModelConfig(
@@ -51,7 +65,12 @@ def model_policy_from_environment(
         transient_retries=0,
         prompt_version="p5-m1.1",
     )
-    adapter = ModelPortDecisionAdapter(port, config, grounding_variant=selected_grounding)
+    adapter = ModelPortDecisionAdapter(
+        port,
+        config,
+        grounding_variant=selected_grounding,
+        perception_profile=selected_perception,
+    )
     if not provider_recovery:
         return ModelBackedAgentPolicy(adapter, call_timeout_s=call_timeout_s)
     orchestrator = ProviderCallOrchestrator(
