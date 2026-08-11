@@ -51,8 +51,8 @@ authority.
 | 2 | completed | Retain a bounded full entity/state/fact/relation/option-domain inventory inside `SurfaceObservation`; hard-cap overflow returns typed partial/capacity outcomes. | world contracts and BrowserGym projection |
 | 3 | completed | Add `ObservationPager` and bounded traversal state over one frozen snapshot, with pinned header plus fair exploration slots. | model boundary and loop state |
 | 4 | completed | Add `NegativeClaimCoverageGate` for absence/no-progress/infeasible/unsupported/unsupported-ProposeDone claims only; authoritative success and normal actions bypass it. | decision/progress control |
-| 5 | in_progress | Run a clean current-SHA text-only versus screenshot+AX baseline on the intersection capability-covered cohort, separating run validity, comparison validity and inconclusive pairs. | benchmark profile and fresh evidence |
-| 6 | pending | Add bounded instruction-first incremental `RequirementHypothesis` proposals with optional candidate entity references and unknown set completeness. | model/task hypothesis contracts |
+| 5 | completed | Run a clean current-SHA text-only versus screenshot+AX baseline on the intersection capability-covered cohort, separating run validity, comparison validity and inconclusive pairs. | benchmark profile and fresh evidence |
+| 6 | in_progress | Add bounded instruction-first incremental `RequirementHypothesis` proposals with optional candidate entity references and unknown set completeness. | model/task hypothesis contracts |
 | 7 | pending | Add Runtime hypothesis admission/lifecycle plus verifier predicate assessment without creating task requirements or terminal truth. | task frontier/runtime admission/evaluation |
 | 8 | pending | Add bounded hypothesis pinning to existing rolling objectives while preserving fair cursor enumeration and ActionSpace authority. | context projection/action relevance |
 | 9 | pending | Run separated capability-covered, unassessed and declared-gap cohorts; decide viewport/OCR/SoM/scroll work only from fresh failure evidence. | benchmark reports/evidence |
@@ -192,3 +192,16 @@ authority.
   separate. A provider-contaminated pair can no longer be presented as a valid
   perception comparison even when its archived run evidence is structurally
   valid.
+- 2026-08-12: step 5 ran from clean implementation SHA `b892c3a` on 15
+  capability-covered paired cases. The archive is structurally valid, but the
+  overall comparison is invalid because 7 pairs contain provider failures.
+  Text-only produced 11 success and 4 provider-unavailable outcomes;
+  screenshot+AX produced 9 success, 5 provider-unavailable and 1
+  no-progress-control-repetition outcome. Among the 8 uncontaminated pairs,
+  text-only was 8/8 and screenshot+AX was 7/8; this neither demonstrates a
+  screenshot gain nor supports a clean overall regression claim. Every one of
+  37 captured screenshot-arm requests contained an image part, while 0/32
+  text-only requests did. Public evidence is under
+  `docs/evidence/runs/m4-6-e-perception-ab-capability-covered-b892c3a`; exact
+  raw exchanges remain private outside the repository with directory mode 0700
+  and file mode 0600. Step 6 started; viewport/OCR/SoM remains deferred.

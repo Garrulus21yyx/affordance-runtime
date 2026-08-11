@@ -1,7 +1,7 @@
 # Current Implementation Plan
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
-> **Updated:** 2026-08-11
+> **Updated:** 2026-08-12
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
 > **Review evidence:** none; Implementation Status owns any reviewed closure SHA
 > **Implementation truth:** [Implementation Status](implementation-status.md)
@@ -49,9 +49,9 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE` | runtime-recovery implementation `1c00e331e4f310f904b70f454dad7cc55c8b47e2`; valid v2 run `miniwob-control-feedback-25:58be2cd216a24c4bb4fb7786dbebb9e6` (25/25, zero provider terminal failures, zero actual retries); independent held-out review remains required |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED` | stable identity, bounded retained inventory, observation paging and negative-claim coverage are implemented at `703108d`; current-SHA capability-covered perception A/B is archived at `b892c3a`, run-valid but comparison-invalid due to 7 provider-contaminated pairs |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
-| P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
+| P5-E | `IN_PROGRESS / VERTICAL_SLICE_IMPLEMENTED` | VerifiedTaskState and rolling objective admission/audit exist; bounded incremental RequirementHypothesis production remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
@@ -83,9 +83,10 @@ docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
     semantic inventory truth and M4.6-D bounded control feedback are complete for
     their declared non-default scopes. M4.6-E is
     `IN_PROGRESS / IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`: real screenshot
-    transport, first semantic breadth and a two-case same-model A/B exist, while
-    stable entity identity, bounded retained inventory and negative-claim
-    traversal safety remain open. P5-E is `IN_PROGRESS /
+    transport, first semantic breadth, stable identity, retained inventory,
+    paging and negative-claim traversal safety exist. The current-SHA 15-pair
+    A/B archive is valid but its comparison is provider-contaminated, so no
+    screenshot gain is claimed. P5-E is `IN_PROGRESS /
     VERTICAL_SLICE_IMPLEMENTED`: typed rolling objectives exist, but the bounded
     incremental requirement-hypothesis producer does not. B assurance review,
     default cutover and old-core deletion remain independently open.

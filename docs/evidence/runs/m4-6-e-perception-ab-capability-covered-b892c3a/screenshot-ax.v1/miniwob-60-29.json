@@ -1,0 +1,551 @@
+{
+  "case": {
+    "agent_failure_code": "",
+    "case_failure_code": "policy_provider_exhausted",
+    "case_id": "miniwob-60-29",
+    "case_schema_version": "target-loop-case.v8",
+    "cleanup_exception_class": "",
+    "cleanup_failure_code": "",
+    "cleanup_failures": 0,
+    "exception_class": "",
+    "execution_completed": true,
+    "failure_code": "",
+    "failure_facts": {
+      "agent_failure_code": "",
+      "cleanup_code": "",
+      "cleanup_exception_class": "",
+      "component_code": "",
+      "component_exception_class": "",
+      "component_origin": "none",
+      "harness_integrity_code": "",
+      "policy_failure_code": "provider_exhausted",
+      "runtime_failure": {
+        "attempt_id": "",
+        "code": "provider_exhausted",
+        "exception_class": "",
+        "kind": "call_failed",
+        "root_id": "",
+        "stage": "policy"
+      },
+      "runtime_reason_code": "provider_exhausted",
+      "task_outcome_code": "verified_running",
+      "task_outcome_kind": "running_incomplete",
+      "watchdog_code": ""
+    },
+    "failure_origin": "none",
+    "harness_integrity_code": "",
+    "harness_integrity_failures": 0,
+    "harness_schema_version": "target-loop-harness.v6",
+    "last_action_space_option_count": 2,
+    "last_decision_type": "SelectAction",
+    "last_policy_failure_code": "provider_exhausted",
+    "last_progress_event_type": "action_effect_evaluated",
+    "last_world_coverage": "complete",
+    "last_world_target_count": 4,
+    "latency_ms": 65995.22819556296,
+    "latest_action_evaluation_status": "effect_confirmed",
+    "latest_semantic_attempt_key_digest": "",
+    "latest_task_status": "incomplete",
+    "manifest_digest": "fb4298be234b55e1d537aca04db984d10096b4e3509122fa0131d59a7f942f75",
+    "measurements": {
+      "already_satisfied_suppressions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "browsergym_probe_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_reset_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_step_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "cleanup_failures": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "click_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "completion_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 818
+      },
+      "currentness_probes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "duplicate_unknown_attempts": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "executions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "fallback_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "fill_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "forbidden_effect_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "model_latency_ms": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 12509.430999999999
+      },
+      "no_progress_terminations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observation_contract_exceptions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "official_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "policy_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 5
+      },
+      "prompt_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 14347
+      },
+      "provider_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 7
+      },
+      "provider_retry_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "select_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "sent_unknown_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_zero_call_violations": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "total_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 15165
+      },
+      "turns": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 4
+      }
+    },
+    "no_progress_count": 0,
+    "partial_episode_available": false,
+    "pending_kind": "",
+    "profile_id": "mistral-format-only-screenshot-ax.v1",
+    "runtime_reason_code": "provider_exhausted",
+    "same_attempt_streak": 0,
+    "schema_version": "target-loop-case.v8",
+    "seed": 7,
+    "status": "failed",
+    "suite_id": "miniwob-60-seed7-v1",
+    "terminal_reason_code": null,
+    "termination_origin": "runtime",
+    "watchdog_triggered": false
+  },
+  "cohort": "capability_covered",
+  "perception_profile": "screenshot-ax.v1",
+  "policy_trace": [
+    {
+      "context_id": "context:b8b9c5862157e6223991d73eddbfbf3fc4f5cae5529cc83175e4ea9d20a653ef",
+      "decision": {
+        "action_id": "action:5be829548af9becd",
+        "context_id": "context:b8b9c5862157e6223991d73eddbfbf3fc4f5cae5529cc83175e4ea9d20a653ef",
+        "destination_id": "entity:ce131bb97ce48ec3c9b8aa9511fd3e6f",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": null,
+      "frontier": {
+        "active_objective_id": "",
+        "active_predicate_kind": "",
+        "current_frontier": [
+          "requirement:task_outcome"
+        ],
+        "must_advance_from_objective_id": "",
+        "next_objective_required": false,
+        "recent_checkpoints": [],
+        "strategy_change_required": false
+      },
+      "objective_operation": {
+        "intended_requirement_ids": [
+          "requirement:task_outcome"
+        ],
+        "kind": "propose",
+        "predicate": {
+          "expected_kind": "LiteralExpected",
+          "field_name": "value",
+          "kind": "target_field_equals",
+          "target_id": "entity:ce131bb97ce48ec3c9b8aa9511fd3e6f"
+        }
+      },
+      "outcome": "decision_package",
+      "policy_call": 1,
+      "provider_attempts": [],
+      "runtime_transition": {
+        "action_evaluation_status": "",
+        "action_evidence_fields": [],
+        "admission_reason_code": "destination_outside_current_page",
+        "admission_status": "rejected",
+        "destination_id": "",
+        "dispatch_status": "",
+        "feedback": {
+          "code": "destination_outside_current_page",
+          "kind": "repairable_rejection",
+          "retry_allowed": true,
+          "source": "action_admission",
+          "strategy_change_required": false,
+          "violation_code": "destination_outside_current_page",
+          "violation_owner": "current_action_page"
+        },
+        "reason_code": "destination_outside_current_page",
+        "resulting_status": "",
+        "semantic_action": "",
+        "sequence": 1,
+        "target_id": "",
+        "task_evaluation_status": "",
+        "task_outcome_code": "",
+        "task_outcome_kind": "",
+        "transition_id": "transition:1:927a238ff54df76c67c8"
+      },
+      "visible_action_count": 2
+    },
+    {
+      "context_id": "context:24e2cee5a0ce8b5be5b094f991008ad910bcbb67a5cbf1ce1c156ee44c550879",
+      "decision": {
+        "action_id": "action:5be829548af9becd",
+        "context_id": "context:24e2cee5a0ce8b5be5b094f991008ad910bcbb67a5cbf1ce1c156ee44c550879",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": {
+        "admissible_objective_operations": [],
+        "code": "destination_outside_current_page",
+        "kind": "repairable_rejection",
+        "must_change_fields": [
+          "destination_id"
+        ],
+        "source": "action_admission",
+        "strategy_change_required": false,
+        "strategy_transition_required": false
+      },
+      "frontier": {
+        "active_objective_id": "",
+        "active_predicate_kind": "",
+        "current_frontier": [
+          "requirement:task_outcome"
+        ],
+        "must_advance_from_objective_id": "",
+        "next_objective_required": false,
+        "recent_checkpoints": [],
+        "strategy_change_required": false
+      },
+      "objective_operation": {
+        "intended_requirement_ids": [
+          "requirement:task_outcome"
+        ],
+        "kind": "propose",
+        "predicate": {
+          "expected_kind": "LiteralExpected",
+          "field_name": "value",
+          "kind": "target_field_equals",
+          "target_id": "entity:ce131bb97ce48ec3c9b8aa9511fd3e6f"
+        }
+      },
+      "outcome": "decision_package",
+      "policy_call": 2,
+      "provider_attempts": [],
+      "runtime_transition": {
+        "action_evaluation_status": "effect_confirmed",
+        "action_evidence_fields": [],
+        "admission_reason_code": "action_admitted",
+        "admission_status": "admitted",
+        "destination_id": "",
+        "dispatch_status": "sent",
+        "feedback": null,
+        "reason_code": "action_effect_confirmed",
+        "resulting_status": "",
+        "semantic_action": "fill",
+        "sequence": 2,
+        "target_id": "entity:ce131bb97ce48ec3c9b8aa9511fd3e6f",
+        "task_evaluation_status": "incomplete",
+        "task_outcome_code": "verified_running",
+        "task_outcome_kind": "running_incomplete",
+        "transition_id": "transition:2:c8bb8a98c5aba361d116"
+      },
+      "visible_action_count": 2
+    },
+    {
+      "context_id": "context:518670d465fe8e9b8b8dc3d2608459690cb6dcb6fda565fd16c988202c58e3c6",
+      "decision": {
+        "action_id": "action:61ed7f18c47160c7",
+        "context_id": "context:518670d465fe8e9b8b8dc3d2608459690cb6dcb6fda565fd16c988202c58e3c6",
+        "destination_id": "entity:bad27dcb3c73ce2cb118c6c68ec289d6",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": null,
+      "frontier": {
+        "active_objective_id": "",
+        "active_predicate_kind": "",
+        "current_frontier": [
+          "requirement:task_outcome"
+        ],
+        "must_advance_from_objective_id": "objective:1",
+        "next_objective_required": true,
+        "recent_checkpoints": [
+          {
+            "objective_id": "objective:1",
+            "predicate_kind": "target_field_equals",
+            "status": "verified"
+          }
+        ],
+        "strategy_change_required": true
+      },
+      "objective_operation": {
+        "intended_requirement_ids": [
+          "requirement:task_outcome"
+        ],
+        "kind": "propose",
+        "predicate": {
+          "kind": "target_present",
+          "target_id": "entity:bad27dcb3c73ce2cb118c6c68ec289d6"
+        }
+      },
+      "outcome": "decision_package",
+      "policy_call": 3,
+      "provider_attempts": [],
+      "runtime_transition": {
+        "action_evaluation_status": "",
+        "action_evidence_fields": [],
+        "admission_reason_code": "objective_already_satisfied",
+        "admission_status": "rejected",
+        "destination_id": "",
+        "dispatch_status": "",
+        "feedback": {
+          "code": "objective_already_satisfied",
+          "kind": "repairable_rejection",
+          "retry_allowed": false,
+          "source": "objective_admission",
+          "strategy_change_required": true,
+          "violation_code": "objective_already_satisfied",
+          "violation_owner": "task_frontier"
+        },
+        "reason_code": "objective_already_satisfied",
+        "resulting_status": "",
+        "semantic_action": "",
+        "sequence": 3,
+        "target_id": "",
+        "task_evaluation_status": "",
+        "task_outcome_code": "",
+        "task_outcome_kind": "",
+        "transition_id": "transition:3:cd6dc5265d4e67254ff8"
+      },
+      "visible_action_count": 2
+    },
+    {
+      "context_id": "context:f1beb7162699e647c0d3a5a540e32bfac2cb0f8192fd548bf498387bf9d9e930",
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": {
+        "admissible_objective_operations": [
+          {
+            "kind": "none"
+          },
+          {
+            "intended_requirement_ids": [
+              "requirement:task_outcome"
+            ],
+            "kind": "propose",
+            "predicate": {
+              "kind": "task_outcome_is",
+              "status": "complete"
+            }
+          }
+        ],
+        "code": "objective_already_satisfied",
+        "kind": "repairable_rejection",
+        "must_change_fields": [
+          "objective_operation.predicate"
+        ],
+        "source": "objective_admission",
+        "strategy_change_required": true,
+        "strategy_transition_required": false
+      },
+      "frontier": {
+        "active_objective_id": "",
+        "active_predicate_kind": "",
+        "current_frontier": [
+          "requirement:task_outcome"
+        ],
+        "must_advance_from_objective_id": "objective:1",
+        "next_objective_required": true,
+        "recent_checkpoints": [
+          {
+            "objective_id": "objective:1",
+            "predicate_kind": "target_field_equals",
+            "status": "verified"
+          }
+        ],
+        "strategy_change_required": true
+      },
+      "outcome": "SelectAction",
+      "policy_call": 4,
+      "provider_attempts": [],
+      "runtime_transition": {
+        "action_evaluation_status": "",
+        "action_evidence_fields": [],
+        "admission_reason_code": "destination_outside_current_page",
+        "admission_status": "rejected",
+        "destination_id": "",
+        "dispatch_status": "",
+        "feedback": {
+          "code": "destination_outside_current_page",
+          "kind": "repairable_rejection",
+          "retry_allowed": true,
+          "source": "action_admission",
+          "strategy_change_required": false,
+          "violation_code": "destination_outside_current_page",
+          "violation_owner": "current_action_page"
+        },
+        "reason_code": "destination_outside_current_page",
+        "resulting_status": "",
+        "semantic_action": "",
+        "sequence": 4,
+        "target_id": "",
+        "task_evaluation_status": "",
+        "task_outcome_code": "",
+        "task_outcome_kind": "",
+        "transition_id": "transition:4:49ddb6b86d12d0bfcf8b"
+      },
+      "visible_action_count": 2
+    },
+    {
+      "context_id": "context:b8b8164711fca5b5134f7e41742db8428e71f5c33b31e780a9428162dc533e9a",
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": {
+        "admissible_objective_operations": [],
+        "code": "destination_outside_current_page",
+        "kind": "repairable_rejection",
+        "must_change_fields": [
+          "destination_id"
+        ],
+        "source": "action_admission",
+        "strategy_change_required": false,
+        "strategy_transition_required": false
+      },
+      "frontier": {
+        "active_objective_id": "",
+        "active_predicate_kind": "",
+        "current_frontier": [
+          "requirement:task_outcome"
+        ],
+        "must_advance_from_objective_id": "objective:1",
+        "next_objective_required": true,
+        "recent_checkpoints": [
+          {
+            "objective_id": "objective:1",
+            "predicate_kind": "target_field_equals",
+            "status": "verified"
+          }
+        ],
+        "strategy_change_required": true
+      },
+      "outcome": "policy_failure",
+      "policy_call": 5,
+      "policy_failure": {
+        "kind": "provider_exhausted",
+        "retryable": false
+      },
+      "provider_attempts": [],
+      "visible_action_count": 2
+    }
+  ],
+  "typed_outcome": "provider_unavailable"
+}

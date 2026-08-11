@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -502,12 +502,14 @@ M4.6-E is `IN_PROGRESS / IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`. BrowserGym
 screenshots are carried as typed private image inputs into real multimodal model
 messages; the public AX profile includes executable checkbox/radio/tab/menuitem
 and bounded read-only table/list/heading/static-text structure. The valid
-`b853a5e` capability-covered two-case A/B reached 1/2 in both text-only and
-screenshot+AX arms; a provider failure makes screenshot-effect comparison
-inconclusive. Current projection still uses role/label/ordinal identity and
-irreversibly slices entities/facts before model paging, so stable identity and
-finite-snapshot losslessness are not implemented. The active convergence plan
-is the [task-grounded perception/frontier record](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
+`b892c3a` capability-covered 15-pair A/B is run-evidence-valid but
+comparison-invalid because 7 pairs contain provider failures. The 8 comparable
+pairs were 8/8 text-only and 7/8 screenshot+AX, so screenshot benefit is not
+demonstrated. Stable opaque entity identity, a bounded retained
+entity/state/fact/relation/option inventory, fair frozen-snapshot paging and
+negative-claim coverage gating are implemented. The remaining active gap is a
+bounded non-authoritative requirement-hypothesis producer and lifecycle. The
+active convergence plan is the [task-grounded perception/frontier record](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
 
 P5-E is `IN_PROGRESS / VERTICAL_SLICE_IMPLEMENTED`. Closed typed objective
 operations, atomic objective/action admission, verifier-backed objective
