@@ -23,6 +23,12 @@ from affordance_runtime.world import (
 )
 
 CAMPAIGN_PROFILE = "MINIWOB_SEMANTIC_INVENTORY_17_NO_MODEL"
+CAMPAIGN_SCHEMA = "miniwob-semantic-inventory-targeted.v1"
+SUMMARY_SCHEMA = "miniwob-semantic-inventory-summary.v1"
+ATTESTATION_SCHEMA = "miniwob-semantic-inventory-attestation.v1"
+MANIFEST_DIGEST_ALGORITHM = (
+    "sha256 of UTF-8 canonical JSON records with case_id, task_family_label, seed"
+)
 SEED = 7
 CASE_MANIFEST = (
     ("miniwob-60-04", "email-inbox-forward-nl"),
@@ -88,7 +94,7 @@ async def run_targeted_inventory(
         for case_id, slug in CASE_MANIFEST
     ]
     campaign = {
-        "schema_version": "miniwob-semantic-inventory-targeted.v1",
+        "schema_version": CAMPAIGN_SCHEMA,
         "campaign_profile": CAMPAIGN_PROFILE,
         "run_id": run_id,
         "implementation_sha": implementation_sha,
@@ -96,9 +102,7 @@ async def run_targeted_inventory(
         "seed": SEED,
         "inventory_profile_id": BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
         "manifest_digest": manifest_digest(),
-        "manifest_digest_algorithm": (
-            "sha256 of UTF-8 canonical JSON records with case_id, task_family_label, seed"
-        ),
+        "manifest_digest_algorithm": MANIFEST_DIGEST_ALGORITHM,
         "case_manifest": [
             {"case_id": case_id, "task_family_label": slug}
             for case_id, slug in CASE_MANIFEST
@@ -106,74 +110,14 @@ async def run_targeted_inventory(
         "cases": cases,
     }
     case_errors = validate_campaign(campaign)
-    statuses = Counter(str(case["inventory_status"]) for case in cases)
-    count_shapes = Counter(
-        (
-            _exact_int(case["recognized_target_count"]),
-            _exact_int(case["projected_target_count"]),
-            _exact_int(case["actionable_target_count"]),
-            _exact_int(case["non_executable_target_count"]),
-            _exact_int(case["omitted_target_count"]),
-            _exact_int(case["informational_target_count"]),
-        )
-        for case in cases
-    )
-    summary = {
-        "schema_version": "miniwob-semantic-inventory-summary.v1",
-        "run_id": run_id,
-        "implementation_sha": implementation_sha,
-        "case_count": len(cases),
-        "completed_case_count": sum(
-            bool(case["acquisition_complete"])
-            and bool(case["projection_complete"])
-            and bool(case["cleanup_complete"])
-            for case in cases
-        ),
-        "inventory_status_counts": dict(sorted(statuses.items())),
-        "inventory_count_shape_counts": [
-            {
-                "counts": list(shape),
-                "case_count": count,
-            }
-            for shape, count in sorted(count_shapes.items())
-        ],
-        "policy_calls": sum(_exact_int(case["policy_calls"]) for case in cases),
-        "provider_attempts": sum(
-            _exact_int(case["provider_attempts"]) for case in cases
-        ),
-        "tokens": sum(_exact_int(case["tokens"]) for case in cases),
-        "step_calls": sum(_exact_int(case["step_calls"]) for case in cases),
-        "currentness_probe_calls": sum(
-            _exact_int(case["currentness_probe_calls"]) for case in cases
-        ),
-        "independent_capture_calls": sum(
-            _exact_int(case["independent_capture_calls"]) for case in cases
-        ),
-        "schema_count_invariant_errors": len(case_errors),
-        "privacy_errors": 0,
-        "harness_integrity_errors": 0,
-        "unclassified_errors": sum(
-            bool(case["diagnostic_error_code"])
-            and str(case["diagnostic_error_code"]) not in _BOUNDED_ERROR_CODES
-            for case in cases
-        ),
-    }
+    campaign_privacy_errors = privacy_scan(campaign)
+    summary = _build_summary(campaign, case_errors, len(campaign_privacy_errors))
     campaign_bytes = _json_bytes(campaign)
     _write_new(output_dir / "campaign.json", campaign_bytes)
-    privacy_errors = privacy_scan(campaign) + privacy_scan(summary)
-    summary["privacy_errors"] = len(privacy_errors)
-    evidence_valid = not any((
-        case_errors,
-        privacy_errors,
-        summary["harness_integrity_errors"],
-        summary["unclassified_errors"],
-        summary["completed_case_count"] != len(CASE_MANIFEST),
-    ))
-    summary["evidence_valid"] = evidence_valid
     summary_bytes = _json_bytes(summary)
     _write_new(output_dir / "summary.json", summary_bytes)
     attestation = {
-        "schema_version": "miniwob-semantic-inventory-attestation.v1",
+        "schema_version": ATTESTATION_SCHEMA,
         "run_id": run_id,
         "implementation_sha": implementation_sha,
         "git_dirty": False,
@@ -185,7 +129,7 @@ async def run_targeted_inventory(
         "summary_sha256": _sha256(summary_bytes),
         "model_enabled": False,
         "provider_enabled": False,
-        "evidence_valid": evidence_valid,
+        "evidence_valid": summary["evidence_valid"],
     }
     _write_new(output_dir / "attestation.json", _json_bytes(attestation))
     validation_errors = validate_evidence_directory(output_dir)
@@ -296,6 +240,25 @@ def validate_campaign(campaign: object) -> tuple[str, ...]:
     if not isinstance(campaign, dict):
         return ("campaign_not_mapping",)
     errors: list[str] = []
+    expected_identity = {
+        "schema_version": CAMPAIGN_SCHEMA,
+        "campaign_profile": CAMPAIGN_PROFILE,
+        "git_dirty": False,
+        "seed": SEED,
+        "inventory_profile_id": BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
+        "manifest_digest_algorithm": MANIFEST_DIGEST_ALGORITHM,
+    }
+    if any(campaign.get(key) != value for key, value in expected_identity.items()):
+        errors.append("campaign_identity_mismatch")
+    run_id = campaign.get("run_id")
+    implementation_sha = campaign.get("implementation_sha")
+    if not isinstance(run_id, str) or not isinstance(implementation_sha, str):
+        errors.append("campaign_identity_invalid")
+    else:
+        try:
+            _validate_identity(run_id, implementation_sha)
+        except ValueError:
+            errors.append("campaign_identity_invalid")
     expected_manifest = [
         {"case_id": case_id, "task_family_label": slug}
         for case_id, slug in CASE_MANIFEST
@@ -307,8 +270,6 @@ def validate_campaign(campaign: object) -> tuple[str, ...]:
     cases = campaign.get("cases")
     if not isinstance(cases, list) or len(cases) != len(CASE_MANIFEST):
         return (*errors, "case_count_mismatch")
-    run_id = campaign.get("run_id")
-    implementation_sha = campaign.get("implementation_sha")
     for expected, case in zip(CASE_MANIFEST, cases, strict=True):
         errors.extend(_validate_case(case, expected, run_id, implementation_sha))
     return tuple(errors)
@@ -415,19 +376,110 @@ def validate_evidence_directory(path: Path) -> tuple[str, ...]:
         attestation = json.loads((path / "attestation.json").read_bytes())
     except (OSError, json.JSONDecodeError):
         return ("evidence_read_failed",)
-    errors.extend(validate_campaign(campaign))
+    campaign_errors = validate_campaign(campaign)
+    errors.extend(campaign_errors)
     if attestation.get("campaign_sha256") != _sha256(campaign_bytes):
         errors.append("campaign_hash_mismatch")
     if attestation.get("summary_sha256") != _sha256(summary_bytes):
         errors.append("summary_hash_mismatch")
-    for key in ("run_id", "implementation_sha", "manifest_digest"):
-        if attestation.get(key) != campaign.get(key):
-            errors.append(f"attestation_{key}_mismatch")
-    if summary.get("evidence_valid") is not True or attestation.get("evidence_valid") is not True:
+    if not campaign_errors and isinstance(campaign, dict):
+        expected_summary = _build_summary(
+            campaign,
+            campaign_errors,
+            len(privacy_scan(campaign)),
+        )
+        if summary != expected_summary:
+            errors.append("summary_aggregate_mismatch")
+    expected_attestation = {
+        "schema_version": ATTESTATION_SCHEMA,
+        "run_id": campaign.get("run_id"),
+        "implementation_sha": campaign.get("implementation_sha"),
+        "git_dirty": False,
+        "seed": SEED,
+        "campaign_profile": CAMPAIGN_PROFILE,
+        "inventory_profile_id": BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
+        "manifest_digest": manifest_digest(),
+        "campaign_sha256": _sha256(campaign_bytes),
+        "summary_sha256": _sha256(summary_bytes),
+        "model_enabled": False,
+        "provider_enabled": False,
+        "evidence_valid": summary.get("evidence_valid"),
+    }
+    if attestation != expected_attestation:
+        errors.append("attestation_identity_mismatch")
+    if summary.get("evidence_valid") is not True:
         errors.append("evidence_not_valid")
     if privacy_scan(campaign) or privacy_scan(summary) or privacy_scan(attestation):
         errors.append("privacy_scan_failed")
     return tuple(errors)
+
+
+def _build_summary(
+    campaign: dict[str, object],
+    case_errors: tuple[str, ...],
+    privacy_error_count: int,
+) -> dict[str, object]:
+    cases = campaign["cases"]
+    if not isinstance(cases, list):
+        raise TypeError("campaign cases must be a list")
+    statuses = Counter(str(case["inventory_status"]) for case in cases)
+    count_shapes = Counter(
+        (
+            _exact_int(case["recognized_target_count"]),
+            _exact_int(case["projected_target_count"]),
+            _exact_int(case["actionable_target_count"]),
+            _exact_int(case["non_executable_target_count"]),
+            _exact_int(case["omitted_target_count"]),
+            _exact_int(case["informational_target_count"]),
+        )
+        for case in cases
+    )
+    completed = sum(
+        case["acquisition_complete"] is True
+        and case["projection_complete"] is True
+        and case["cleanup_complete"] is True
+        for case in cases
+    )
+    unclassified = sum(
+        bool(case["diagnostic_error_code"])
+        and str(case["diagnostic_error_code"]) not in _BOUNDED_ERROR_CODES
+        for case in cases
+    )
+    summary: dict[str, object] = {
+        "schema_version": SUMMARY_SCHEMA,
+        "run_id": campaign["run_id"],
+        "implementation_sha": campaign["implementation_sha"],
+        "case_count": len(cases),
+        "completed_case_count": completed,
+        "inventory_status_counts": dict(sorted(statuses.items())),
+        "inventory_count_shape_counts": [
+            {"counts": list(shape), "case_count": count}
+            for shape, count in sorted(count_shapes.items())
+        ],
+        "policy_calls": sum(_exact_int(case["policy_calls"]) for case in cases),
+        "provider_attempts": sum(
+            _exact_int(case["provider_attempts"]) for case in cases
+        ),
+        "tokens": sum(_exact_int(case["tokens"]) for case in cases),
+        "step_calls": sum(_exact_int(case["step_calls"]) for case in cases),
+        "currentness_probe_calls": sum(
+            _exact_int(case["currentness_probe_calls"]) for case in cases
+        ),
+        "independent_capture_calls": sum(
+            _exact_int(case["independent_capture_calls"]) for case in cases
+        ),
+        "schema_count_invariant_errors": len(case_errors),
+        "privacy_errors": privacy_error_count,
+        "harness_integrity_errors": 0,
+        "unclassified_errors": unclassified,
+    }
+    summary["evidence_valid"] = not any((
+        case_errors,
+        privacy_error_count,
+        unclassified,
+        completed != len(CASE_MANIFEST),
+    ))
+    return summary
 
 
 def privacy_scan(value: object) -> tuple[str, ...]:

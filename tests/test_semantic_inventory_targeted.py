@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+from pathlib import Path
 
 from affordance_runtime.benchmarks.external_breadth.semantic_inventory_targeted import (
     CASE_MANIFEST,
@@ -8,6 +11,7 @@ from affordance_runtime.benchmarks.external_breadth.semantic_inventory_targeted 
     manifest_digest,
     privacy_scan,
     validate_campaign,
+    validate_evidence_directory,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
     BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
@@ -53,9 +57,17 @@ def _campaign() -> dict[str, object]:
             "diagnostic_error_code": "",
         })
     return {
+        "schema_version": "miniwob-semantic-inventory-targeted.v1",
+        "campaign_profile": "MINIWOB_SEMANTIC_INVENTORY_17_NO_MODEL",
         "run_id": RUN_ID,
         "implementation_sha": IMPLEMENTATION,
+        "git_dirty": False,
+        "seed": SEED,
+        "inventory_profile_id": BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
         "manifest_digest": manifest_digest(),
+        "manifest_digest_algorithm": (
+            "sha256 of UTF-8 canonical JSON records with case_id, task_family_label, seed"
+        ),
         "case_manifest": [
             {"case_id": case_id, "task_family_label": slug}
             for case_id, slug in CASE_MANIFEST
@@ -94,3 +106,74 @@ def test_targeted_validator_rejects_control_activity_and_false_inventory_truth()
     private = copy.deepcopy(campaign)
     private["cases"][0]["selector"] = "#secret"  # type: ignore[index]
     assert privacy_scan(private)
+
+
+def test_targeted_validator_rejects_forged_campaign_identity() -> None:
+    mutations = {
+        "schema_version": "forged",
+        "campaign_profile": "forged",
+        "run_id": "invalid",
+        "implementation_sha": "not-a-sha",
+        "git_dirty": True,
+        "seed": 8,
+        "inventory_profile_id": "forged",
+        "manifest_digest_algorithm": "forged",
+    }
+    for key, value in mutations.items():
+        campaign = _campaign()
+        campaign[key] = value
+        if key in {"run_id", "implementation_sha"}:
+            for case in campaign["cases"]:  # type: ignore[union-attr]
+                case[key] = value
+        assert validate_campaign(campaign), key
+
+
+def test_evidence_validator_recomputes_summary_and_fixed_attestation(
+    tmp_path: Path,
+) -> None:
+    campaign = _campaign()
+    summary = {
+        "schema_version": "miniwob-semantic-inventory-summary.v1",
+        "run_id": RUN_ID,
+        "implementation_sha": IMPLEMENTATION,
+        "case_count": 17,
+        "completed_case_count": 17,
+        "inventory_status_counts": {"empty": 17},
+        "inventory_count_shape_counts": [
+            {"counts": [1, 0, 0, 0, 1, 0], "case_count": 17}
+        ],
+        "policy_calls": 0,
+        "provider_attempts": 0,
+        "tokens": 0,
+        "step_calls": 0,
+        "currentness_probe_calls": 0,
+        "independent_capture_calls": 0,
+        "schema_count_invariant_errors": 0,
+        "privacy_errors": 0,
+        "harness_integrity_errors": 0,
+        "unclassified_errors": 0,
+        "evidence_valid": True,
+    }
+    campaign_bytes = (json.dumps(campaign, indent=2, sort_keys=True) + "\n").encode()
+    summary_bytes = (json.dumps(summary, indent=2, sort_keys=True) + "\n").encode()
+    attestation = {
+        "schema_version": "miniwob-semantic-inventory-attestation.v1",
+        "run_id": RUN_ID,
+        "implementation_sha": IMPLEMENTATION,
+        "git_dirty": False,
+        "seed": SEED,
+        "campaign_profile": "MINIWOB_SEMANTIC_INVENTORY_17_NO_MODEL",
+        "inventory_profile_id": BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
+        "manifest_digest": manifest_digest(),
+        "campaign_sha256": hashlib.sha256(campaign_bytes).hexdigest(),
+        "summary_sha256": hashlib.sha256(summary_bytes).hexdigest(),
+        "model_enabled": False,
+        "provider_enabled": False,
+        "evidence_valid": True,
+    }
+    (tmp_path / "campaign.json").write_bytes(campaign_bytes)
+    (tmp_path / "summary.json").write_bytes(summary_bytes)
+    (tmp_path / "attestation.json").write_text(
+        json.dumps(attestation, indent=2, sort_keys=True) + "\n"
+    )
+    assert "summary_aggregate_mismatch" in validate_evidence_directory(tmp_path)
