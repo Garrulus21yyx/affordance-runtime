@@ -21,13 +21,16 @@ _PHYSICAL_PROPERTIES_SCRIPT = """el => ({
   })) : []
 })"""
 
-_VERIFIER_PROBE_SCRIPT = """() => ({
-  ready: window.WOB_TASK_READY === true,
-  done: window.WOB_DONE_GLOBAL === true,
-  raw_reward: window.WOB_RAW_REWARD_GLOBAL,
-  episode: String(window.WOB_EPISODE_ID),
-  url: location.href
-})"""
+_VERIFIER_PROBE_SCRIPT = """() => {
+  const facts = {
+    episode: String(window.WOB_EPISODE_ID),
+    url: location.href
+  };
+  if ('WOB_TASK_READY' in window) facts.ready = window.WOB_TASK_READY;
+  if ('WOB_DONE_GLOBAL' in window) facts.done = window.WOB_DONE_GLOBAL;
+  if ('WOB_RAW_REWARD_GLOBAL' in window) facts.raw_reward = window.WOB_RAW_REWARD_GLOBAL;
+  return facts;
+}"""
 
 
 class ThreadBoundBrowserGym:

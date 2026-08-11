@@ -38,7 +38,6 @@ from affordance_runtime.agent.runtime_failure import (
 )
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
-from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -201,13 +200,7 @@ async def _evaluate_after(
     outcome = post_action_result(
         task, state, request, result, action_evaluation, task_evaluation,
     )
-    task_disposition = task_evaluation_disposition(task_evaluation)
-    if task_disposition.status is not None:
-        scope.set_reason(task_disposition.reason_code)
-    elif not isinstance(outcome, Continue) and state.pending_unknown_request is not None:
-        scope.set_reason("effect_unknown")
-    elif not isinstance(outcome, Continue):
-        scope.set_reason("action_rejected")
+    scope.set_reason(outcome.reason_code)
     return outcome
 
 

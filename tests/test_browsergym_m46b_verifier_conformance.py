@@ -11,6 +11,9 @@ from affordance_runtime.benchmarks.external_breadth.classification import classi
 from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
     BrowserGymMechanicalActionEvaluator,
 )
+from affordance_runtime.benchmarks.external_smoke.browsergym_backend import (
+    _VERIFIER_PROBE_SCRIPT,
+)
 from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
     BrowserGymMiniWobEnvironment,
 )
@@ -163,3 +166,63 @@ def test_pinned_malformed_read_only_probe_is_typed_unavailable() -> None:
     assert snapshot.status is ExternalVerifierStatus.UNAVAILABLE
     assert snapshot.reason is ExternalVerifierReason.MISSING_FACTS
     assert snapshot.evidence_refs == ()
+
+
+def test_real_playwright_probe_preserves_presence_and_types_for_verifier() -> None:
+    from playwright.sync_api import sync_playwright
+
+    cases = (
+        (
+            "window.WOB_DONE_GLOBAL = false; window.WOB_RAW_REWARD_GLOBAL = 0",
+            ExternalVerifierReason.MISSING_FACTS,
+        ),
+        (
+            "window.WOB_TASK_READY = true; window.WOB_RAW_REWARD_GLOBAL = 0",
+            ExternalVerifierReason.MISSING_FACTS,
+        ),
+        (
+            "window.WOB_TASK_READY = 'yes'; window.WOB_DONE_GLOBAL = false; "
+            "window.WOB_RAW_REWARD_GLOBAL = 0",
+            ExternalVerifierReason.INVALID_FACTS,
+        ),
+        (
+            "window.WOB_TASK_READY = true; window.WOB_DONE_GLOBAL = 'no'; "
+            "window.WOB_RAW_REWARD_GLOBAL = 0",
+            ExternalVerifierReason.INVALID_FACTS,
+        ),
+    )
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        try:
+            for index, (setup, expected_reason) in enumerate(cases):
+                page.goto("about:blank")
+                page.evaluate(setup)
+                probe = page.evaluate(_VERIFIER_PROBE_SCRIPT)
+                snapshot = verifier_snapshot_from_current_probe(
+                    task_run_id="run:pinned-producer",
+                    observation_id=f"observation:pinned-producer:{index}",
+                    source_observation_id=f"observation:pinned-producer:{index}",
+                    probe=probe,
+                )
+                assert snapshot.status is ExternalVerifierStatus.UNAVAILABLE
+                assert snapshot.reason is expected_reason
+
+            page.goto("about:blank")
+            page.evaluate(
+                "window.WOB_TASK_READY = true; window.WOB_DONE_GLOBAL = false; "
+                "window.WOB_RAW_REWARD_GLOBAL = 0"
+            )
+            valid_probe = page.evaluate(_VERIFIER_PROBE_SCRIPT)
+            assert valid_probe["ready"] is True
+            assert valid_probe["done"] is False
+            valid = verifier_snapshot_from_current_probe(
+                task_run_id="run:pinned-producer",
+                observation_id="observation:pinned-producer:valid",
+                source_observation_id="observation:pinned-producer:valid",
+                probe=valid_probe,
+            )
+            assert valid.status is ExternalVerifierStatus.INCOMPLETE
+            assert valid.reason is ExternalVerifierReason.VERIFIED_RUNNING
+        finally:
+            browser.close()

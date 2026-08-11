@@ -21,7 +21,11 @@ def post_action_result(
     task_evaluation: TaskEvaluation,
 ) -> LoopDirective:
     task_disposition = task_evaluation_disposition(task_evaluation)
-    if task_disposition.status is not None:
+    if (
+        task_disposition.status is AgentLoopStatus.DONE
+        or task_disposition.task_terminal is not None
+    ):
+        assert task_disposition.status is not None
         return directive(
             task_disposition.status,
             task_disposition.reason_code,
@@ -35,12 +39,19 @@ def post_action_result(
             "effect_unknown",
             "effect remains unknown after transport uncertainty; request will not be replayed",
         )
+    if action_evaluation.status == ActionEvaluationStatus.REJECTED:
+        return directive(AgentLoopStatus.FAILED, "action_rejected", action_evaluation.reason)
+    if task_disposition.status is not None:
+        return directive(
+            task_disposition.status,
+            task_disposition.reason_code,
+            task_evaluation.reason,
+            task_terminal=task_disposition.task_terminal,
+        )
     if action_evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
         return Continue("action_effect_confirmed")
     if action_evaluation.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED:
         return Continue("action_no_effect_confirmed")
-    if action_evaluation.status == ActionEvaluationStatus.REJECTED:
-        return directive(AgentLoopStatus.FAILED, "action_rejected", action_evaluation.reason)
     low_local = str(request.selection.risk) == "low" and request.selection.effect_category in {
         "observation", "local_reversible",
     }

@@ -40,6 +40,8 @@ from affordance_runtime.benchmarks.target_loop.failure_origin import (
     observation_failure_origin,
 )
 from affordance_runtime.evaluation import (
+    ActionEvaluation,
+    ActionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
     TaskOutcomeFact,
@@ -727,6 +729,80 @@ def test_pending_status_and_attempt_identity_algebras_are_closed() -> None:
     assert reduce_control(
         ControlState(), AppendRoot(invalid_acquisition_root, 1)
     ) == ControlRejected("acquisition_attempt_status_mismatch")
+
+
+@given(
+    kind=st.sampled_from(tuple(TaskOutcomeKind)),
+    dispatch=st.sampled_from((DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN)),
+    action_status=st.sampled_from(tuple(ActionEvaluationStatus)),
+    runtime_failure=st.booleans(),
+)
+def test_task_outcome_cross_domain_precedence_is_closed(
+    kind: TaskOutcomeKind,
+    dispatch: DispatchStatus,
+    action_status: ActionEvaluationStatus,
+    runtime_failure: bool,
+) -> None:
+    task_status = {
+        TaskOutcomeKind.RUNNING_INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
+        TaskOutcomeKind.TERMINAL_SUCCESS: TaskEvaluationStatus.COMPLETE,
+        TaskOutcomeKind.TERMINAL_FAILURE: TaskEvaluationStatus.BLOCKED,
+        TaskOutcomeKind.VERIFIER_UNAVAILABLE: TaskEvaluationStatus.UNKNOWN,
+    }[kind]
+    terminal_ref = "fact:observation:2:task-status"
+    evidence_refs = (terminal_ref,) if kind in {
+        TaskOutcomeKind.TERMINAL_SUCCESS,
+        TaskOutcomeKind.TERMINAL_FAILURE,
+    } else ()
+    task_evaluation = TaskEvaluation(
+        "task:state-machine",
+        "observation:2",
+        task_status,
+        "generated task fact",
+        completion_evidence_refs=(
+            evidence_refs if kind is TaskOutcomeKind.TERMINAL_SUCCESS else ()
+        ),
+        outcome=TaskOutcomeFact(kind, f"generated_{kind.value}", evidence_refs),
+    )
+    action_evaluation = ActionEvaluation(
+        "request:1",
+        "observation:1",
+        "observation:2",
+        action_status,
+        "generated action fact",
+        ("fact:observation:2:action",)
+        if action_status in {
+            ActionEvaluationStatus.EFFECT_CONFIRMED,
+            ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+        }
+        else (),
+    )
+
+    if kind is TaskOutcomeKind.TERMINAL_SUCCESS:
+        pending, resulting = PendingKind.NONE, AgentLoopStatus.DONE
+    elif kind is TaskOutcomeKind.TERMINAL_FAILURE:
+        pending, resulting = PendingKind.NONE, AgentLoopStatus.BLOCKED
+    elif runtime_failure:
+        pending, resulting = PendingKind.NONE, AgentLoopStatus.FAILED
+    elif dispatch is DispatchStatus.SENT_UNKNOWN:
+        pending, resulting = PendingKind.UNKNOWN_EFFECT, AgentLoopStatus.WAITING_USER
+    elif action_status is ActionEvaluationStatus.REJECTED:
+        pending, resulting = PendingKind.NONE, AgentLoopStatus.FAILED
+    elif kind is TaskOutcomeKind.VERIFIER_UNAVAILABLE:
+        pending, resulting = PendingKind.NONE, AgentLoopStatus.WAITING_USER
+    else:
+        pending, resulting = PendingKind.NONE, None
+
+    generated = replace(
+        _root(1, dispatch=dispatch),
+        action_evaluation=action_evaluation,
+        task_evaluation=task_evaluation,
+        pending_kind=pending,
+        resulting_status=resulting,
+        reason_code="generated_precedence",
+    )
+    reduced = reduce_control(ControlState(), AppendRoot(generated, 1))
+    assert isinstance(reduced, ControlAccepted), reduced
 
 
 def test_observation_failure_origin_mapping_is_total_and_path_independent() -> None:

@@ -14,6 +14,7 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.control_transition import PendingKind
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -21,6 +22,8 @@ from affordance_runtime.evaluation import (
     CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
 )
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
@@ -200,6 +203,126 @@ def test_sent_unknown_unconfirmed_effect_waits_without_replay() -> None:
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.execution_count == 1
         assert len(environment.executed_requests) == 1
+        assert environment.execute_calls == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("status", "kind", "code"),
+    (
+        (
+            TaskEvaluationStatus.INCOMPLETE,
+            TaskOutcomeKind.RUNNING_INCOMPLETE,
+            "verified_running",
+        ),
+        (
+            TaskEvaluationStatus.UNKNOWN,
+            TaskOutcomeKind.VERIFIER_UNAVAILABLE,
+            "source_insufficient",
+        ),
+    ),
+)
+def test_nonterminal_task_fact_preserves_sent_unknown_pending_without_replay(
+    status: TaskEvaluationStatus,
+    kind: TaskOutcomeKind,
+    code: str,
+) -> None:
+    class CanonicalTaskEvaluator:
+        async def evaluate(self, task, observation):
+            if observation.observation_id == "obs-1":
+                return TaskEvaluation(
+                    task.task_id,
+                    observation.observation_id,
+                    TaskEvaluationStatus.INCOMPLETE,
+                    "verified_running",
+                    outcome=TaskOutcomeFact(
+                        TaskOutcomeKind.RUNNING_INCOMPLETE,
+                        "verified_running",
+                    ),
+                )
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                status,
+                code,
+                outcome=TaskOutcomeFact(kind, code),
+            )
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [_world("obs-1", False), _world("obs-2", False)],
+            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
+        )
+        policy = ScriptedPolicy(["first"])
+        runner = AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), CanonicalTaskEvaluator())
+        )
+        session = await runner.start(environment, _task())
+        result = await session.run_until_pause()
+        repeated = await session.run_until_pause()
+
+        assert repeated is result
+        assert result.status is AgentLoopStatus.WAITING_USER
+        assert result.reason_code == "effect_unknown"
+        assert result.execution_count == 1
+        assert environment.execute_calls == 1
+        assert len(environment.executed_requests) == 1
+        assert len(result.control_transitions) == 1
+        assert result.control_transitions[0].pending_kind is PendingKind.UNKNOWN_EFFECT
+
+    asyncio.run(scenario())
+
+
+def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> None:
+    class CanonicalTaskEvaluator:
+        async def evaluate(self, task, observation):
+            kind = (
+                TaskOutcomeKind.RUNNING_INCOMPLETE
+                if observation.observation_id == "obs-1"
+                else TaskOutcomeKind.VERIFIER_UNAVAILABLE
+            )
+            status = (
+                TaskEvaluationStatus.INCOMPLETE
+                if kind is TaskOutcomeKind.RUNNING_INCOMPLETE
+                else TaskEvaluationStatus.UNKNOWN
+            )
+            code = "verified_running" if status is TaskEvaluationStatus.INCOMPLETE else "source_insufficient"
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                status,
+                code,
+                outcome=TaskOutcomeFact(kind, code),
+            )
+
+    class RejectingActionEvaluator:
+        async def evaluate(self, task, before, request, result, after):
+            del task, result
+            return ActionEvaluation(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ActionEvaluationStatus.REJECTED,
+                "action evidence rejected",
+            )
+
+    async def scenario() -> None:
+        environment = StaticEnvironment(
+            [_world("obs-1", False), _world("obs-2", False)],
+            [_sent()],
+        )
+        result = await AgentEpisodeRunner(AgentLoop(
+            ScriptedPolicy(["first"]),
+            RejectingActionEvaluator(),
+            CanonicalTaskEvaluator(),
+        )).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.FAILED
+        assert result.reason_code == "action_rejected"
+        assert result.runtime_failure is not None
+        assert result.task_outcome is not None
+        assert result.task_outcome.kind is TaskOutcomeKind.VERIFIER_UNAVAILABLE
         assert environment.execute_calls == 1
 
     asyncio.run(scenario())

@@ -456,13 +456,11 @@ def validate_control_state(state: object) -> ControlRejected | None:
 def _pending_status_error(pending_kind, resulting_status, task_evaluation=None) -> str:
     status = str(resulting_status or "")
     if task_evaluation is not None and task_evaluation.outcome is not None:
-        expected_outcome = {
+        terminal_outcome = {
             TaskOutcomeKind.TERMINAL_SUCCESS: (PendingKind.NONE, "done"),
-            TaskOutcomeKind.RUNNING_INCOMPLETE: (PendingKind.NONE, ""),
             TaskOutcomeKind.TERMINAL_FAILURE: (PendingKind.NONE, "blocked"),
-            TaskOutcomeKind.VERIFIER_UNAVAILABLE: (PendingKind.NONE, "waiting_user"),
-        }[task_evaluation.outcome.kind]
-        if (pending_kind, status) != expected_outcome:
+        }.get(task_evaluation.outcome.kind)
+        if terminal_outcome is not None and (pending_kind, status) != terminal_outcome:
             return "task_outcome_disposition_mismatch"
     expected = {
         PendingKind.NONE: {"", *_TERMINAL},
