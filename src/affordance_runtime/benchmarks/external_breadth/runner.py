@@ -45,6 +45,7 @@ from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest a
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
 
 REQUIRED_METRICS = (
     "observations", "executions", "turns", "currentness_probes",
@@ -337,12 +338,22 @@ def _model_identity(
 def _validate_formal_policy(
     policy: object,
     manifest: MiniWobBreadthManifest,
+    *,
+    provider_recovery: bool = False,
 ) -> tuple[str, str, str]:
-    if not isinstance(policy, ModelBackedAgentPolicy) or not isinstance(
-        policy.port, ModelPortDecisionAdapter
-    ):
+    if not isinstance(policy, ModelBackedAgentPolicy):
         raise TypeError("formal breadth campaign requires ModelBackedAgentPolicy")
-    adapter = policy.port
+    composed = policy.port
+    if provider_recovery:
+        if not isinstance(composed, ProviderCallOrchestrator):
+            raise TypeError("formal recovery campaign requires ProviderCallOrchestrator")
+        if len(composed.ports) != 1 or composed.configured_retry_count != 2:
+            raise ValueError("formal recovery policy is not the frozen profile")
+        adapter = composed.primary_port
+    else:
+        adapter = composed
+    if not isinstance(adapter, ModelPortDecisionAdapter):
+        raise TypeError("formal breadth campaign requires the one-attempt model bridge")
     provider = getattr(adapter.port, "provider", "")
     model = getattr(adapter.port, "model", "")
     identity = provider, model, adapter.grounding_profile_version

@@ -135,7 +135,9 @@ async def run_control_feedback_targeted_diagnostic(
         validate_pacing_budget(
             case.max_turns, manifest.minimum_policy_call_interval_s, case.timeout_s, 5.0,
         )
-    configured_identity = _validate_formal_policy(policy, manifest)
+    configured_identity = _validate_formal_policy(
+        policy, manifest, provider_recovery=True,
+    )
     output_dir.mkdir(parents=True, exist_ok=False)
     digest = breadth_manifest_digest(manifest)
     run_id = f"miniwob-control-feedback-25:{uuid.uuid4().hex}"

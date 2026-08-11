@@ -61,3 +61,7 @@ Constraints:
   suite passed (129 tests); Ruff passed; full pytest exposed one documentation
   registration gap from this plan and one pre-existing exception-token property
   counterexample, both corrected before rerunning the suite.
+- 2026-08-11: first formal launch stopped before directory creation because the
+  legacy formal-policy identity gate accepted only the one-attempt adapter. The
+  gate now explicitly distinguishes legacy one-attempt campaigns from the
+  frozen recovery wrapper; focused identity/runner tests passed (19 tests).

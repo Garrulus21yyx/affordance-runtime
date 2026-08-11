@@ -4,7 +4,9 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from test_miniwob_breadth_reporting import _manifest, _result
+from test_miniwob_breadth_runner import _policy
 
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCampaignAcceptance,
@@ -29,12 +31,20 @@ from affordance_runtime.benchmarks.external_breadth.control_feedback_targeted_cl
 )
 from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
 from affordance_runtime.benchmarks.external_breadth.progress import CampaignProgressWriter
-from affordance_runtime.benchmarks.external_breadth.runner import expected_target_manifest_digest
+from affordance_runtime.benchmarks.external_breadth.runner import (
+    _validate_formal_policy,
+    expected_target_manifest_digest,
+)
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkAcceptance,
     BenchmarkRunIdentity,
     BenchmarkSuiteResult,
     MetricMeasurement,
+)
+from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.provider_orchestrator import (
+    ProviderCallOrchestrator,
+    ProviderCallPolicy,
 )
 
 
@@ -60,6 +70,21 @@ def test_control_feedback_provider_capacity_preflight_checks_declared_budget(
 
     assert insufficient.sufficient is False
     assert sufficient.sufficient is True
+
+
+def test_control_feedback_formal_identity_accepts_only_frozen_recovery_wrapper() -> None:
+    manifest = targeted_manifest(_manifest())
+    legacy = _policy()
+    recovered = ModelBackedAgentPolicy(ProviderCallOrchestrator(
+        (legacy.port,),
+        ProviderCallPolicy(backoff_s=(0.0, 0.0), jitter_ratio=0.0),
+    ))
+
+    assert _validate_formal_policy(
+        recovered, manifest, provider_recovery=True,
+    ) == ("mistral", "mistral-medium-3-5", "format-only.v1")
+    with pytest.raises(TypeError, match="ProviderCallOrchestrator"):
+        _validate_formal_policy(legacy, manifest, provider_recovery=True)
 
 
 def test_control_feedback_targeted_derivation_preserves_canonical_d_metrics() -> None:
