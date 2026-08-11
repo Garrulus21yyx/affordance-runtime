@@ -2,6 +2,10 @@ import asyncio
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent import Abort, AgentDecisionPackage, AgentLoop, SelectAction
+from affordance_runtime.benchmarks.target_loop.instrumentation import (
+    BenchmarkInstrumentation,
+    CountingPolicy,
+)
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -25,6 +29,7 @@ from affordance_runtime.task.frontier_contracts import (
     ObjectiveCheckpointStatus,
     ProposeObjective,
     TargetFieldEquals,
+    TargetPresent,
     VerifiedRequirement,
     VerifiedTaskState,
 )
@@ -339,6 +344,88 @@ def test_invalid_objective_returns_typed_feedback_and_dispatches_zero() -> None:
         assert session.state.active_objective is None
         assert session.state.objective_sequence == 0
         assert session.state.control_feedback_delivery_total_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_changed_already_satisfied_predicate_gets_second_repair_turn() -> None:
+    class Policy:
+        contexts = []
+
+        async def decide(self, context):
+            self.contexts.append(context)
+            requirement = context.progress.task_frontier.current_frontier[0]
+            if len(self.contexts) == 1:
+                target_id = "target:text"
+            elif len(self.contexts) == 2:
+                feedback = context.control_feedback
+                assert feedback is not None
+                assert feedback.code == "objective_already_satisfied"
+                assert feedback.recovery.must_change_fields == (
+                    "objective_operation.predicate",
+                )
+                assert feedback.recovery.retry_allowed is False
+                assert feedback.recovery.strategy_change_required is True
+                target_id = "target:submit"
+            else:
+                assert context.control_feedback is not None
+                assert context.control_feedback.code == "objective_already_satisfied"
+                return AgentDecisionPackage(
+                    NoObjectiveOperation(),
+                    Abort(context.context_id, "two distinct repairs delivered", "policy"),
+                )
+            option = context.actions.options[0]
+            return AgentDecisionPackage(
+                ProposeObjective((requirement,), TargetPresent(target_id)),
+                SelectAction(context.context_id, option.action_id, {"value": "desired"}),
+            )
+
+    async def scenario() -> None:
+        policy = Policy()
+        instrumentation = BenchmarkInstrumentation()
+        environment = StaticEnvironment([_world("observation:before", "", False)])
+        result = await AgentLoop(
+            CountingPolicy(policy, instrumentation), _ActionEvaluator(), _TaskEvaluator(),
+        ).run(_task(), environment)
+
+        assert len(policy.contexts) == 3
+        assert result.execution_count == 0
+        assert result.reason_code == "abort_policy"
+        repair_trace = instrumentation.policy_trace[1]["feedback"]
+        assert repair_trace["strategy_transition_required"] is False
+        assert repair_trace["strategy_change_required"] is True
+        assert repair_trace["must_change_fields"] == (
+            "objective_operation.predicate",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_repeated_already_satisfied_predicate_is_mechanically_terminated() -> None:
+    class Policy:
+        contexts = []
+
+        async def decide(self, context):
+            self.contexts.append(context)
+            requirement = context.progress.task_frontier.current_frontier[0]
+            option = context.actions.options[0]
+            return AgentDecisionPackage(
+                ProposeObjective((requirement,), TargetPresent("target:text")),
+                SelectAction(context.context_id, option.action_id, {"value": "desired"}),
+            )
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment([_world("observation:before", "", False)])
+        result = await AgentLoop(
+            policy, _ActionEvaluator(), _TaskEvaluator(),
+        ).run(_task(), environment)
+
+        assert len(policy.contexts) == 2
+        assert result.execution_count == 0
+        assert result.reason_code == "no_progress_control_repetition"
+        assert result.control_feedback_delivery_count == 1
+        assert result.control_repetition_count == 1
 
     asyncio.run(scenario())
 

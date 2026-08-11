@@ -81,3 +81,14 @@ without creating a second task or action authority.
   The screenshot arm carried one image part on every recorded request and
   completed `click-link` in one policy call/one execution. This does not show a
   screenshot success-rate advantage on the two-case cohort.
+- 2026-08-11: corrected the `click-tab-2` objective-repair diagnosis. The model
+  projection already carried `recovery.strategy_change_required=true`, but the
+  benchmark trace mislabeled the top-level transition flag as that recovery
+  field. More importantly, objective issue identity omitted the rejected typed
+  predicate, so two different already-satisfied predicates collided and the
+  second repair was terminated as repetition. Issue identity now includes the
+  public predicate, the trace records both flags plus `must_change_fields`, and
+  the feedback contract requires predicate replacement for this code. Paired
+  regression properties prove that a changed predicate receives the next
+  bounded repair turn while an identical predicate is still mechanically
+  terminated. Full validation is 2220 passed and 27 skipped; Ruff and mypy pass.

@@ -139,7 +139,15 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
                 "kind": feedback.kind,
                 "source": feedback.source,
                 "code": feedback.code,
-                "strategy_change_required": feedback.strategy_transition_required,
+                "strategy_transition_required": feedback.strategy_transition_required,
+                "strategy_change_required": (
+                    feedback.recovery.strategy_change_required
+                    if feedback.recovery is not None else False
+                ),
+                "must_change_fields": (
+                    feedback.recovery.must_change_fields
+                    if feedback.recovery is not None else ()
+                ),
             }
             if feedback is not None else None
         ),

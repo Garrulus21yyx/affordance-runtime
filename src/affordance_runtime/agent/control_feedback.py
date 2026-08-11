@@ -279,6 +279,17 @@ class ControlFeedback:
             or self.semantic_effect is not None
         ):
             raise ValueError("repairable rejection requires decision, violation, and recovery snapshots")
+        if (
+            self.source is ControlFeedbackSource.OBJECTIVE_ADMISSION
+            and self.code == "objective_already_satisfied"
+            and (
+                self.recovery is None
+                or self.recovery.must_change_fields != ("objective_operation.predicate",)
+                or self.recovery.retry_allowed
+                or not self.recovery.strategy_change_required
+            )
+        ):
+            raise ValueError("already-satisfied objective feedback must require predicate replacement")
         if self.kind is ControlFeedbackKind.NO_INFORMATION_GAIN and self.recovery is None:
             raise ValueError("no-information-gain feedback requires recovery constraints")
         if self.kind is ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED and (
@@ -305,15 +316,16 @@ def objective_repair_feedback(
     )
 
     scope = current_semantic_scope(state, action_space, page)
+    proposal = operation if isinstance(operation, ProposeObjective | ReplaceObjective) else None
+    predicate = predicate_public_value(proposal.predicate) if proposal is not None else {}
     digest = make_issue_digest(
         scope_digest=scope,
         kind=ControlFeedbackKind.REPAIRABLE_REJECTION.value,
         source=ControlFeedbackSource.OBJECTIVE_ADMISSION.value,
         code=issue.code.value,
-        subject_semantics=(),
+        subject_semantics=predicate,
         public_field_paths=issue.field_paths,
     )
-    proposal = operation if isinstance(operation, ProposeObjective | ReplaceObjective) else None
     already_satisfied = issue.code.value == "objective_already_satisfied"
     option = action_space.find(decision.action_id) if decision is not None else None
     return ControlFeedback(
@@ -334,7 +346,7 @@ def objective_repair_feedback(
             if isinstance(operation, ReplaceObjective)
             else "",
             proposal.intended_requirement_ids if proposal is not None else (),
-            predicate_public_value(proposal.predicate) if proposal is not None else {},
+            predicate,
         ),
         related_decision=(
             _selection_snapshot(decision, option.target_id if option is not None else None)
