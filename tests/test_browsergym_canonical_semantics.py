@@ -14,6 +14,7 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
     BrowserGymSemanticError,
     BrowserGymSemanticErrorCode,
+    analyze_browsergym_semantics,
     canonical_control_for_bid,
     canonicalize_browsergym_controls,
 )
@@ -25,6 +26,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalVerifierStatus,
     VerifierFactSource,
 )
+from affordance_runtime.world import SemanticInventoryStatus
 
 
 def _snapshot() -> BrowserGymVerifierSnapshot:
@@ -65,6 +67,44 @@ def test_canonical_record_is_invariant_to_ax_permutation_and_unrelated_nodes(per
     assert actual is not None
     assert actual.public_fingerprint == expected.public_fingerprint
     assert actual.currentness_fingerprint == expected.currentness_fingerprint
+
+
+@given(st.permutations((0, 1, 2, 3, 4)))
+def test_inventory_analysis_is_permutation_duplicate_and_option_invariant(permutation) -> None:
+    button = ax_node("button", "button", "Save")
+    checkbox = ax_node("check", "checkbox", "Remember")
+    option = ax_node("option", "option", "Choice")
+    ignored = ax_node("ignored", "radio", "Ignored")
+    ignored["ignored"] = True
+    raw = raw_observation(button, copy.deepcopy(button), checkbox, option, ignored)
+    nodes = raw["axtree_object"]["nodes"]
+    raw["axtree_object"]["nodes"] = [nodes[index] for index in permutation]
+
+    analysis = analyze_browsergym_semantics(raw)
+
+    assert len(analysis.controls) == 1
+    assert analysis.inventory.recognized_target_count == 2
+    assert dict(analysis.diagnostic_role_distribution) == {
+        "button": 1,
+        "checkbox": 1,
+        "option": 1,
+    }
+
+
+def test_bidless_recognized_interactive_unit_is_not_empty_or_projected() -> None:
+    missing_identity = ax_node("missing", "tab", "Details")
+    raw = raw_observation(missing_identity)
+    raw["axtree_object"]["nodes"][0].pop("browsergym_id")
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY].pop("missing")
+
+    analysis = analyze_browsergym_semantics(raw)
+    projection = _projection(raw)
+    inventory = projection.world.sources[0].semantic_inventory
+
+    assert analysis.inventory.recognized_target_count == 1
+    assert inventory.status is SemanticInventoryStatus.PARTIAL
+    assert inventory.recognized_target_count == inventory.omitted_target_count == 1
+    assert projection.world.targets == projection.world.bindings == ()
 
 
 def test_dom_heuristic_fields_cannot_change_canonical_ax_equality() -> None:

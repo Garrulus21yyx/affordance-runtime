@@ -77,7 +77,8 @@ async def run_local_diagnostics(
         status = item.get("verifier_initial_status")
         if isinstance(status, str) and status:
             verifier_statuses[status] += 1
-    raw_interactive = sum(_integer(item.get("raw_interactive_node_count")) for item in reports)
+    recognized_targets = sum(_integer(item.get("recognized_target_count")) for item in reports)
+    omitted_targets = sum(_integer(item.get("omitted_target_count")) for item in reports)
     projected_targets = sum(_integer(item.get("projected_target_count")) for item in reports)
     summary = {
         "schema_version": "miniwob-m4-4-diagnostics.v1",
@@ -89,11 +90,9 @@ async def run_local_diagnostics(
         "projection_failure_count": sum(not bool(item.get("projection_success")) for item in reports),
         "disposition_counts": dict(sorted(dispositions.items())),
         "unresolved_diagnostic_count": dispositions.get("unresolved", 0),
-        "raw_interactive_node_count": raw_interactive,
+        "recognized_target_count": recognized_targets,
+        "omitted_target_count": omitted_targets,
         "projected_target_count": projected_targets,
-        "interactive_projection_coverage_rate": (
-            projected_targets / raw_interactive if raw_interactive else None
-        ),
         "blank_label_count": sum(_integer(item.get("blank_label_count")) for item in reports),
         "duplicate_label_count": sum(_integer(item.get("duplicate_label_count")) for item in reports),
         "action_option_count": sum(_integer(item.get("action_option_count")) for item in reports),

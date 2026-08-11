@@ -1,44 +1,44 @@
-"""Immutable benchmark-private diagnostics derived during BrowserGym acquisition."""
+"""Benchmark-private copies of the canonical BrowserGym semantic analysis."""
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 
-_INTERACTIVE_ROLES = frozenset({
-    "button", "link", "textbox", "searchbox", "combobox", "listbox", "checkbox",
-    "radio", "option", "menuitem", "tab", "spinbutton", "slider",
-})
+from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+    BrowserGymSemanticAnalysis,
+)
+from affordance_runtime.world import SemanticInventorySummary
 
 
 @dataclass(frozen=True)
 class BrowserGymDiagnosticSnapshot:
-    raw_interactive_node_count: int
-    raw_actionable_node_count: int
-    raw_role_distribution: tuple[tuple[str, int], ...]
+    semantic_inventory: SemanticInventorySummary
+    diagnostic_role_distribution: tuple[tuple[str, int], ...]
 
     def as_metrics(self) -> dict[str, object]:
+        inventory = self.semantic_inventory
         return {
-            "raw_interactive_node_count": self.raw_interactive_node_count,
-            "raw_actionable_node_count": self.raw_actionable_node_count,
-            "raw_role_distribution": dict(self.raw_role_distribution),
+            "inventory_profile_id": inventory.profile_id,
+            "inventory_status": inventory.status.value,
+            "recognized_target_count": inventory.recognized_target_count,
+            "projected_target_count": inventory.projected_target_count,
+            "actionable_target_count": inventory.actionable_target_count,
+            "non_executable_target_count": inventory.non_executable_target_count,
+            "omitted_target_count": inventory.omitted_target_count,
+            "informational_target_count": inventory.informational_target_count,
+            "diagnostic_role_distribution": dict(self.diagnostic_role_distribution),
         }
 
 
-def diagnostic_snapshot(raw: dict[str, object]) -> BrowserGymDiagnosticSnapshot:
-    tree = raw.get("axtree_object")
-    nodes = tree.get("nodes", ()) if isinstance(tree, dict) else ()
-    roles: Counter[str] = Counter()
-    actionable = 0
-    interactive = 0
-    for node in nodes if isinstance(nodes, list) else ():
-        if not isinstance(node, dict) or node.get("ignored") is True:
-            continue
-        value = node.get("role")
-        role = value.get("value", "") if isinstance(value, dict) else ""
-        if role not in _INTERACTIVE_ROLES:
-            continue
-        interactive += 1
-        roles[str(role)] += 1
-        actionable += int(role != "option")
-    return BrowserGymDiagnosticSnapshot(interactive, actionable, tuple(sorted(roles.items())))
+def diagnostic_snapshot(
+    analysis: BrowserGymSemanticAnalysis,
+    inventory: SemanticInventorySummary,
+) -> BrowserGymDiagnosticSnapshot:
+    if inventory.profile_id != analysis.inventory.profile_id:
+        raise ValueError("BrowserGym diagnostic inventory profile mismatch")
+    if inventory.recognized_target_count != analysis.inventory.recognized_target_count:
+        raise ValueError("BrowserGym diagnostic recognized count mismatch")
+    return BrowserGymDiagnosticSnapshot(
+        inventory,
+        analysis.diagnostic_role_distribution,
+    )

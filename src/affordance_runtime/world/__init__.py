@@ -31,6 +31,11 @@ from affordance_runtime.world.relevance import (
     ActionRelevancePolicy,
     ActionRelevanceRole,
 )
+from affordance_runtime.world.semantic_inventory import (
+    MAX_SEMANTIC_INVENTORY_COUNT,
+    SemanticInventoryStatus,
+    SemanticInventorySummary,
+)
 from affordance_runtime.world.source_profile import (
     AcquisitionCost,
     ObservationAssurance,
@@ -71,6 +76,9 @@ __all__ = [
     "ObservationRequestKind",
     "ObservationSourceProfile",
     "SemanticTarget",
+    "SemanticInventoryStatus",
+    "SemanticInventorySummary",
+    "MAX_SEMANTIC_INVENTORY_COUNT",
     "StateFact",
     "SurfaceObservation",
     "WorldObservation",

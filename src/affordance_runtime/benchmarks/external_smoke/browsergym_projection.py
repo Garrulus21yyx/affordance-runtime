@@ -9,8 +9,9 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
     BrowserGymElementBinding,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+    BrowserGymSemanticAnalysis,
     CanonicalBrowserControl,
-    canonicalize_browsergym_controls,
+    analyze_browsergym_semantics,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     MECHANICAL_EVIDENCE_KEY,
@@ -22,6 +23,7 @@ from affordance_runtime.world import (
     ActionRisk,
     CoverageState,
     ObservationSourceProfile,
+    SemanticInventorySummary,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -40,6 +42,7 @@ class BrowserGymProjection:
     private_bindings: tuple[BrowserGymElementBinding, ...]
     target_count_total: int
     fact_count_total: int
+    semantic_analysis: BrowserGymSemanticAnalysis
 
 
 def project_browsergym_observation(
@@ -51,7 +54,8 @@ def project_browsergym_observation(
     episode_identity: str,
     verifier: BrowserGymVerifierSnapshot,
 ) -> BrowserGymProjection:
-    candidates = list(canonicalize_browsergym_controls(raw))
+    analysis = analyze_browsergym_semantics(raw)
+    candidates = list(analysis.controls)
     projected = candidates[:MAX_TARGETS]
     targets: list[SemanticTarget] = []
     facts: list[StateFact] = []
@@ -82,6 +86,18 @@ def project_browsergym_observation(
         key = evidence_ref.rsplit(":", 1)[-1]
         if key in {MECHANICAL_EVIDENCE_KEY, MECHANICAL_STATUS_EVIDENCE_KEY}:
             artifacts[key] = {"public_summary": ""}
+    actionable_target_count = len({binding.target_id for binding in bindings})
+    projected_target_count = len(targets)
+    recognized_target_count = analysis.inventory.recognized_target_count
+    inventory = SemanticInventorySummary.assessed(
+        analysis.inventory.profile_id,
+        recognized_target_count=recognized_target_count,
+        projected_target_count=projected_target_count,
+        actionable_target_count=actionable_target_count,
+        non_executable_target_count=projected_target_count - actionable_target_count,
+        omitted_target_count=recognized_target_count - projected_target_count,
+        informational_target_count=0,
+    )
     source = SurfaceObservation(
         observation_id,
         "browsergym",
@@ -92,6 +108,7 @@ def project_browsergym_observation(
         tuple(bindings),
         coverage,
         artifacts,
+        inventory,
     )
     world = WorldObservation(
         observation_id,
@@ -101,7 +118,9 @@ def project_browsergym_observation(
         {"browsergym": coverage},
         sources=(source,),
     )
-    return BrowserGymProjection(world, tuple(private), len(candidates), fact_total)
+    return BrowserGymProjection(
+        world, tuple(private), len(candidates), fact_total, analysis,
+    )
 
 
 def _binding_pair(

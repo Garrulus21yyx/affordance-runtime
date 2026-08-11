@@ -8,11 +8,6 @@ from enum import StrEnum
 from affordance_runtime.benchmarks.external_breadth.diagnostic_selection import DiagnosticSelection
 from affordance_runtime.benchmarks.external_breadth.requirements import TaskReadiness
 
-_INTERACTIVE_ROLES = frozenset({
-    "button", "link", "textbox", "searchbox", "combobox", "listbox", "checkbox", "radio",
-    "option", "menuitem", "tab", "spinbutton", "slider",
-})
-
 
 class BreadthDiagnosticDisposition(StrEnum):
     ENVIRONMENT_LIFECYCLE_GAP = "environment_lifecycle_gap"
@@ -31,7 +26,7 @@ def diagnostic_disposition(
     readiness: TaskReadiness,
     lifecycle_success: bool,
     projection_success: bool,
-    raw_actionable_count: int,
+    recognized_target_count: int,
     action_option_count: int,
 ) -> BreadthDiagnosticDisposition:
     if readiness is TaskReadiness.DECLARED_UNSUPPORTED:
@@ -42,7 +37,7 @@ def diagnostic_disposition(
         return BreadthDiagnosticDisposition.ENVIRONMENT_LIFECYCLE_GAP
     if not projection_success:
         return BreadthDiagnosticDisposition.PROJECTION_GAP
-    if raw_actionable_count and not action_option_count:
+    if recognized_target_count and not action_option_count:
         return BreadthDiagnosticDisposition.ACTION_SPACE_GAP
     return BreadthDiagnosticDisposition.POLICY_OR_REASONING_CANDIDATE
 
@@ -76,10 +71,10 @@ async def probe_case(
         stage = "task_evaluation"
         verifier = environment.current_result(task_id)
         metrics = _projected_metrics(world, action_space)
-        raw_actionable = raw_metrics["raw_actionable_node_count"]
-        assert isinstance(raw_actionable, int)
+        recognized = raw_metrics["recognized_target_count"]
+        assert type(recognized) is int
         disposition = diagnostic_disposition(
-            readiness, True, True, raw_actionable, len(action_space.options),
+            readiness, True, True, recognized, len(action_space.options),
         )
         stage = "cleanup"
         await environment.close()
@@ -130,7 +125,7 @@ def _projected_metrics(world, action_space) -> dict[str, object]:
         "blank_label_count": sum(not value.strip() for value in labels),
         "duplicate_label_count": len(labels) - len(set(labels)),
         "select_option_counts": select_domains,
-        "coverage": {key: str(value) for key, value in world.coverage.items()},
+        "projection_coverage": {key: str(value) for key, value in world.coverage.items()},
     }
 
 

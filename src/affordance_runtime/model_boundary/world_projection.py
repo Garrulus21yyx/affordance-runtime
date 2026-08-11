@@ -9,6 +9,10 @@ from typing import Any
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.model_boundary.source_projection import (
+    ObservationSourceSummary,
+    project_observation_source,
+)
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 
@@ -65,17 +69,6 @@ class ConflictSummary:
     subject_id: str
     predicate: str
     summary: str
-
-
-@dataclass(frozen=True)
-class ObservationSourceSummary:
-    modality: str
-    assurance: str
-    verification_strength: str
-    acquisition_cost: str
-    coverage: str
-    freshness: str
-    conflict_status: str
 
 
 @dataclass(frozen=True)
@@ -147,16 +140,10 @@ def project_model_world(
     )
     shown_artifacts = artifacts[: budget.max_artifact_summaries]
     source_summaries = tuple(
-        ObservationSourceSummary(
-            source.source_profile.modality,
-            source.source_profile.assurance,
-            source.source_profile.verification_strength,
-            source.source_profile.acquisition_cost,
+        project_observation_source(
+            source,
             observation.coverage.get(source.surface, source.coverage),
-            "stale"
-            if str(observation.coverage.get(source.surface, source.coverage)) == "stale"
-            else "current",
-            "conflicted" if observation.conflicts else "clear",
+            conflicted=bool(observation.conflicts),
         )
         for source in observation.sources
     )

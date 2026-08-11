@@ -4,6 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID = "browsergym-ax-target-inventory.v1"
+
+_RECOGNIZED_UNPROJECTED_TARGET_ROLES = frozenset({
+    "checkbox",
+    "menuitem",
+    "radio",
+    "slider",
+    "spinbutton",
+    "tab",
+})
+_DOMAIN_CHILD_ROLES = frozenset({"option"})
+
 
 @dataclass(frozen=True)
 class BrowserGymRoleSpec:
@@ -56,6 +68,20 @@ def observable_browsergym_roles() -> frozenset[str]:
 
 def executable_browsergym_roles() -> frozenset[str]:
     return frozenset(role for role, spec in _ROLE_SPECS.items() if spec.executable)
+
+
+def inventory_target_browsergym_roles() -> frozenset[str]:
+    """Target-like roles recognized by the bounded BrowserGym AX inventory v1."""
+
+    return observable_browsergym_roles() | _RECOGNIZED_UNPROJECTED_TARGET_ROLES
+
+
+def diagnostic_browsergym_roles() -> frozenset[str]:
+    return inventory_target_browsergym_roles() | _DOMAIN_CHILD_ROLES
+
+
+def is_inventory_target_browsergym_role(role: str) -> bool:
+    return role in inventory_target_browsergym_roles()
 
 
 def primitive_is_compatible(role: str, primitive: str) -> bool:

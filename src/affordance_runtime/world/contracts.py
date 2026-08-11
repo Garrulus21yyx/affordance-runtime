@@ -10,6 +10,10 @@ from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.schema_validation import validate_parameter_schema_contract
+from affordance_runtime.world.semantic_inventory import (
+    SemanticInventoryStatus,
+    SemanticInventorySummary,
+)
 from affordance_runtime.world.source_profile import ObservationSourceProfile
 
 _PRIVATE_DESTINATION_MARKERS = ("selector", "coordinate", "bbox", "href", "http://", "https://")
@@ -141,6 +145,9 @@ class SurfaceObservation:
     bindings: tuple[ActionBinding, ...] = ()
     coverage: CoverageState = CoverageState.COMPLETE
     artifacts: dict[str, Any] = field(default_factory=dict)
+    semantic_inventory: SemanticInventorySummary = field(
+        default_factory=SemanticInventorySummary.unassessed
+    )
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
@@ -154,6 +161,14 @@ class SurfaceObservation:
         object.__setattr__(self, "facts", tuple(self.facts))
         object.__setattr__(self, "bindings", tuple(self.bindings))
         object.__setattr__(self, "artifacts", freeze_json(self.artifacts))
+        if not isinstance(self.semantic_inventory, SemanticInventorySummary):
+            raise TypeError("surface semantic inventory must be typed")
+        if self.semantic_inventory.status is not SemanticInventoryStatus.UNASSESSED:
+            if self.semantic_inventory.projected_target_count != len(self.targets):
+                raise ValueError("assessed semantic inventory must match projected targets")
+            actionable = len({binding.target_id for binding in self.bindings})
+            if self.semantic_inventory.actionable_target_count != actionable:
+                raise ValueError("assessed semantic inventory must match unique binding targets")
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -24,11 +24,60 @@ from affordance_runtime.world import (
     CoverageState,
     ObservationConflict,
     ObservationSourceProfile,
+    SemanticInventorySummary,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
     WorldObservation,
 )
+
+
+def test_source_inventory_projection_is_one_way_wire_truth_and_budget_invariant() -> None:
+    targets = (
+        SemanticTarget("target:inventory:1", "button", "Disabled one"),
+        SemanticTarget("target:inventory:2", "button", "Disabled two"),
+    )
+    inventory = SemanticInventorySummary.assessed(
+        "fixture-profile.v1",
+        recognized_target_count=3,
+        projected_target_count=2,
+        actionable_target_count=0,
+        non_executable_target_count=2,
+        omitted_target_count=1,
+        informational_target_count=0,
+    )
+    source = SurfaceObservation(
+        "source:inventory",
+        "dom",
+        "revision:inventory",
+        ObservationSourceProfile.dom(),
+        targets=targets,
+        coverage=CoverageState.COMPLETE,
+        semantic_inventory=inventory,
+    )
+    observation = WorldObservation(
+        "world:inventory",
+        targets,
+        (),
+        (),
+        {"dom": CoverageState.COMPLETE},
+        sources=(source,),
+    )
+
+    full = project_model_world(observation, ContextProjectionBudget(max_targets=2))
+    clipped = project_model_world(observation, ContextProjectionBudget(max_targets=1))
+
+    assert full.sources == clipped.sources
+    summary = full.sources[0]
+    assert summary.projection_coverage == "complete"
+    assert summary.coverage == "complete"
+    assert summary.semantic_inventory.profile_id == "fixture-profile.v1"
+    assert summary.semantic_inventory.status == "partial"
+    assert summary.semantic_inventory.recognized_target_count == 3
+    wire = asdict(summary)
+    assert "projection_coverage" in wire
+    assert "coverage" not in wire
+    assert "semantic_inventory" in wire
 
 
 def test_model_world_projection_is_bounded_and_route_free() -> None:

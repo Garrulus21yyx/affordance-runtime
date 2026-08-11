@@ -309,7 +309,10 @@ class BrowserGymMiniWobEnvironment:
         self._current_observation_id = observation_id
         self._current_source_revision = revision
         self._verifier = snapshot
-        self._diagnostic = diagnostic_snapshot(raw)
+        self._diagnostic = diagnostic_snapshot(
+            projection.semantic_analysis,
+            projection.world.sources[0].semantic_inventory,
+        )
         self.full_observation_count += 1
         return ObservationAcquisition(
             AcquisitionStatus.ACQUIRED, origin, projection.world, "browsergym_observation_acquired",

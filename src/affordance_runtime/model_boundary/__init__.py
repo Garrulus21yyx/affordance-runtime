@@ -42,6 +42,10 @@ if TYPE_CHECKING:
         project_plan,
         project_turns,
     )
+    from affordance_runtime.model_boundary.source_projection import (
+        ModelSemanticInventoryView,
+        ObservationSourceSummary,
+    )
     from affordance_runtime.model_boundary.task_projection import project_task
 
 _EXPORTS = {
@@ -67,6 +71,14 @@ _EXPORTS = {
     "IntentContextView": ("affordance_runtime.model_boundary.context", "IntentContextView"),
     "ModelFailure": ("affordance_runtime.model_boundary.failures", "ModelFailure"),
     "ModelFailureKind": ("affordance_runtime.model_boundary.failures", "ModelFailureKind"),
+    "ModelSemanticInventoryView": (
+        "affordance_runtime.model_boundary.source_projection",
+        "ModelSemanticInventoryView",
+    ),
+    "ObservationSourceSummary": (
+        "affordance_runtime.model_boundary.source_projection",
+        "ObservationSourceSummary",
+    ),
     "project_action_page": ("affordance_runtime.model_boundary.projection", "project_action_page"),
     "project_action_space": ("affordance_runtime.model_boundary.projection", "project_action_space"),
     "project_control_transitions": (

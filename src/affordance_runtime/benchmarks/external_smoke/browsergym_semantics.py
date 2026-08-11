@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from typing import TypeAlias
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+    BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
     BrowserGymRoleSpec,
     browsergym_role_spec,
+    diagnostic_browsergym_roles,
+    is_inventory_target_browsergym_role,
 )
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
@@ -93,6 +97,19 @@ class CanonicalBrowserControl:
 
 
 @dataclass(frozen=True)
+class BrowserGymInventoryAnalysis:
+    profile_id: str
+    recognized_target_count: int
+
+
+@dataclass(frozen=True)
+class BrowserGymSemanticAnalysis:
+    controls: tuple[CanonicalBrowserControl, ...]
+    inventory: BrowserGymInventoryAnalysis
+    diagnostic_role_distribution: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
 class _AxRecord:
     node_id: str
     parent_id: str
@@ -103,7 +120,7 @@ class _AxRecord:
     state: tuple[tuple[str, SemanticScalar], ...]
 
 
-def canonicalize_browsergym_controls(raw: object) -> tuple[CanonicalBrowserControl, ...]:
+def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
     if not isinstance(raw, dict):
         raise BrowserGymSemanticError(
             BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
@@ -122,6 +139,7 @@ def canonicalize_browsergym_controls(raw: object) -> tuple[CanonicalBrowserContr
         if (
             spec is None
             or not spec.observable
+            or not record.node_id
             or not record.bid
             or record.bid in seen_controls
         ):
@@ -146,12 +164,30 @@ def canonicalize_browsergym_controls(raw: object) -> tuple[CanonicalBrowserContr
                     f"option {identity!r} is reachable from multiple owners",
                 )
         controls.append(_canonical_control(record, spec, options, physical.get(record.bid)))
-    return tuple(controls)
+    diagnostic_roles = diagnostic_browsergym_roles()
+    distribution = Counter(
+        record.role for record in records if record.role in diagnostic_roles
+    )
+    recognized = sum(
+        is_inventory_target_browsergym_role(record.role) for record in records
+    )
+    return BrowserGymSemanticAnalysis(
+        tuple(controls),
+        BrowserGymInventoryAnalysis(
+            BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
+            recognized,
+        ),
+        tuple(sorted(distribution.items())),
+    )
+
+
+def canonicalize_browsergym_controls(raw: object) -> tuple[CanonicalBrowserControl, ...]:
+    return analyze_browsergym_semantics(raw).controls
 
 
 def canonical_control_for_bid(raw: object, bid: str) -> CanonicalBrowserControl | None:
     return next(
-        (item for item in canonicalize_browsergym_controls(raw) if item.private_bid == bid),
+        (item for item in analyze_browsergym_semantics(raw).controls if item.private_bid == bid),
         None,
     )
 
@@ -183,8 +219,6 @@ def _ax_records(raw: dict[str, object]) -> tuple[_AxRecord, ...]:
             str(value) for value in children_value
             if isinstance(value, str | int)
         ) if isinstance(children_value, list) else ()
-        if not node_id:
-            continue
         spec = browsergym_role_spec(role)
         state = _role_state(node, spec) if spec is not None else _option_state(node, role)
         record = _AxRecord(
@@ -199,7 +233,7 @@ def _ax_records(raw: dict[str, object]) -> tuple[_AxRecord, ...]:
                     BrowserGymSemanticErrorCode.CONFLICTING_BID,
                     f"BID {bid!r} has conflicting AX records",
                 )
-        if _is_semantic_record(record):
+        if node_id and _is_semantic_record(record):
             previous = semantic_node_signatures.setdefault(node_id, signature)
             if previous != signature:
                 raise BrowserGymSemanticError(
@@ -221,7 +255,7 @@ def _record_signature(record: _AxRecord) -> tuple[object, ...]:
 
 
 def _is_semantic_record(record: _AxRecord) -> bool:
-    return browsergym_role_spec(record.role) is not None or record.role == "option"
+    return is_inventory_target_browsergym_role(record.role) or record.role == "option"
 
 
 def _role_state(
