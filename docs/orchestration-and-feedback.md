@@ -101,18 +101,21 @@ unchanged identity-free public semantic scope. An identical issue terminates on
 its second occurrence; a third distinct issue terminates with zero
 bind/probe/execute/capture. Issue identity excludes invalid parameter values and
 fresh Runtime IDs, preventing both value enumeration and alternating invalid
-action/page/observation loops. Only effectful `SENT` or relevant public semantic,
-task-progress or action-page gain resets the budget; a merely valid no-gain
+action/page/observation loops. Request keys, request-echo-free page results and
+the control epoch are separate facts. Only effectful `SENT`, a new epoch from
+public-world/full-action-contract/task-progress change, or a page result not yet
+seen in that epoch resets the issue budget; a merely valid no-gain
 control decision does not. Runtime binding/currentness/confirmation/post-action
 refresh,
 risk/safety/task/session terminal, budget/cancel, `SENT_UNKNOWN`, component/
 integrity failure and post-admission adapter-contract mismatch are not model
 repair paths. No fresh identity alone resets a semantic streak.
 
-The declared bounded feedback path is implemented at
-`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` and verified by the fixed run
-`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`; correction
-measurements remain distinct from task success.
+The convergence implementation is
+`9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`; valid fixed run
+`miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44` remains
+evidence, while D stays implemented-not-verified pending independent held-out
+review. Correction measurements remain distinct from task success.
 
 ## 4. Confirmation
 

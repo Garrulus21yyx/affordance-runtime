@@ -26,8 +26,8 @@ M4.6 overall: IN_PROGRESS
 M4.6-A canonical AX semantics/currentness: COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE
 M4.6-B verifier/task-terminal truth: COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE
 M4.6-C semantic inventory truth: COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE
-M4.6-D bounded control feedback/repair/no-gain: COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE
-M4.6-E stable target identity and semantic breadth: NOT_STARTED
+M4.6-D bounded control feedback/repair/no-gain: REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
+M4.6-E stable target identity and semantic breadth: BLOCKED_BY_M4_6_D_CONVERGENCE
 M4.7 supported-subset multi-seed: BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: BLOCKED_BY_BREADTH_GATES
 ```
@@ -47,7 +47,7 @@ ledger, a replay source or execution truth.
 | M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
 | M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `880e65fef0c2541be9f4b5af121e610f858685db` residual closure; original/run SHA `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; raw probe facts preserve presence/type; nonterminal task facts do not erase cross-domain control truth |
 | M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering preceded target creation and projection-only coverage calculation; diagnostics separately rescanned raw AX | the accepted no-model run proves only `browsergym-ax-target-inventory.v1` counts, not task-relative completeness, success, performance or generalization | `e6c410021d8b9bf11b52f24520a6258ede5d2027` | `miniwob-inventory-17:6220967c47a24532b4140728627e4950` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty; ActionSpace remains the only action-availability authority |
-| M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 (`invalid_action_parameters`, one policy, zero execution/step, three current options); adjacent final current-page action/destination rejection cases 06, 09, 12, 16, 48, 53, 56; page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | source preserves the typed public admission reason but terminalizes before another policy turn; unchanged page only continues; observation freshness uses identity rather than public semantic gain | the accepted targeted run proves bounded feedback delivery/correction facts for this exact profile, not task success, performance, generalization or M4.5-B closure | `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` | `miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983` | typed source owner → canonical envelope → model-safe feedback reaches an ordinary policy turn; Runtime never edits parameters or chooses an action; same issue fingerprint repeats terminate immediately and the initial profile permits at most two distinct repair/no-gain issues per identity-free scope; Runtime refresh and sent/uncertain requests are exempt from replay |
+| M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 plus page/observation cohorts; post-closure review additionally falsified request/result and projection-view equivalence | request filters and page results shared a digest; the active page also entered the liveness scope, so request/view churn could fabricate gain | the valid targeted run proves bounded feedback/correction facts for this exact profile, not task success, performance, generalization, independent held-out closure or M4.5-B closure | `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903` | `miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44` | request key, request-echo-free page result and control epoch have distinct owners; unseen result gains once per epoch; different requests with the same result and page/observation view churn terminate under the shared budget; sent/terminal precedence and zero-replay remain intact |
 | M4.6-E stable identity/breadth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` (source-only adjacent risk) | no direct baseline cohort for ordinal identity; zero-target cohort remains breadth witness | target ID includes ordinal; observable and executable roles are coupled | neither ordinal identity nor a particular unsupported role was shown to cause a baseline failure | `NONE` | `NONE` | identity survives irrelevant AX order changes; read-only semantics cannot grant unsupported execution; quotas preserve actionable controls |
 
 `Implementation SHA` is filled only after a clean product commit exists.
@@ -95,11 +95,12 @@ authority, cohesion and change coupling decide ownership. Projection,
 - no rewriting of the 64 baseline JSON files or their typed outcomes;
 - no full MiniWoB-60 rerun until the targeted gates identify remaining gaps.
 
-## M4.6-D frozen implemented contract
+## M4.6-D convergence contract
 
-This section froze the architecture before implementation. M4.6-D is now
-`COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE`; its exact product
-and run identities are recorded in the ledger and focused evidence below.
+Two post-closure defects shared one semantic-owner cause, so D is
+`REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` and E is
+`BLOCKED_BY_M4_6_D_CONVERGENCE`. Implementation and valid run identities are
+recorded below, but closure still requires independent held-out review.
 
 ### SOTA calibration as of 2026-08-11
 
@@ -147,6 +148,47 @@ the correction. A separate reflector remains an evidence-gated
 policy extension only if targeted/full benchmark results show that the policy
 receives correct feedback but still repeats; it cannot become Runtime truth or
 action authority.
+
+The convergence boundary is also consistent with the underlying environment
+interfaces: [Gymnasium `Env.step`](https://gymnasium.farama.org/api/env/)
+accepts an action and returns the resulting observation/reward/termination
+facts; BrowserGym's official
+[agent loop](https://github.com/ServiceNow/BrowserGym/blob/main/README.md)
+keeps `action` separate from the observation returned by `step`; and
+[WebArena](https://arxiv.org/abs/2307.13854) models an action through the
+environment transition to the next state and observation. The bounded inference
+is not that these systems prescribe this project's repair budget, but that a
+request/action is not itself evidence of a new result/world state.
+
+### Reopen causal model and closed supported algebra
+
+The casefold defect and the later different-query/same-result defect are not
+independent. Both came from one ambiguous `public_action_page_semantics` owner:
+it mixed request filters, full action-contract facts and visible result facts,
+then the feedback scope reused that mixed digest as progress authority. The
+first patch aligned one request representation but left the authority mixing in
+place; the old example-only gate therefore missed cross-request and
+cross-projection equivalence classes.
+
+The supported algebra is now:
+
+```text
+PageRequestKey = canonical query + semantic target/relevance + semantic offset
+PageResult = visible option/destination semantics + result count + continuation
+ControlEpoch = task revision + public world + full public action contract
+             + validated task-progress fingerprint
+InformationGain = effectful SENT, new ControlEpoch, or a PageResult not yet
+                  seen in the current epoch
+```
+
+Request echoes, active filters, cursor/page/context/action identities and
+projection-view switches are excluded from result and epoch truth. Each epoch
+stores at most 64 result digests. A result grants page gain once; a previously
+seen result is no-gain. Capacity exhaustion fails closed as no-gain rather than
+evicting history and regranting progress. The existing two-distinct-issue budget
+remains shared by admission, page and policy-observation issues. Effectful
+`SENT`, world/action-contract/task-progress change starts a new epoch; terminal
+and `SENT_UNKNOWN` precedence remain unchanged.
 
 The exact `4924ce6` diagnostic contains ten cases whose final outcome is
 `runtime_rejected`: four `action_outside_current_page`, three
@@ -308,8 +350,8 @@ The old diagnostic remains exactly 64 JSON files with digest
 `7a3f60c10896fc2f458afc11874bce866987fb9f1e752c8d164ae4b05d80b318`.
 No old result or classification was rewritten. M4.6 remains `IN_PROGRESS`,
 M4.6-C is `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
-`COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE`, M4.6-E is
-`NOT_STARTED`, and M4.5-B reviewed closure SHA remains `NONE`. No
+`REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, M4.6-E is
+`BLOCKED_BY_M4_6_D_CONVERGENCE`, and M4.5-B reviewed closure SHA remains `NONE`. No
 performance, success-rate or generalization claim is made.
 
 ## M4.6-C focused no-model evidence
@@ -373,54 +415,51 @@ original implementation SHA. Its evidence directory remained byte-identical
 The old diagnostic remains 64 JSON files with digest
 `7a3f60c10896fc2f458afc11874bce866987fb9f1e752c8d164ae4b05d80b318`.
 
-## M4.6-D bounded control-feedback evidence
+## M4.6-D convergence implementation and evidence
 
-Residual implementation `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` establishes
-typed ActionSpace/page/schema admission issues, the closed three-kind
-`ControlFeedback` matrix, identity-free public world/action/task scope digests,
-and an AgentLoopState-owned shared budget of two distinct repair/no-gain issues.
-An exact repeat or third distinct issue terminates as
-`no_progress_control_repetition`; effectful `SENT` or relevant world/task/page
-gain resets the budget. Strategy-transition feedback does not consume it.
-Feedback is projected once into the next ordinary policy context without an
-extra call, replay or Runtime parameter/action choice. `ActionPager` now owns
-one bounded `canonical_action_query`; filtering, page/cursor identity,
-continuation validation and public request/result digests consume that exact
-casefolded value. Equivalent query casing is therefore no-gain rather than a
-scope reset.
+Implementation `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903` separates the
+request key, request-echo-free page result, full action contract and control
+epoch. `AgentLoopState` owns a bounded same-epoch set of seen page results in
+addition to the existing shared two-distinct-issue budget. Different requests
+with the same result, identity churn and page/observation view alternation can
+no longer reset the budget. A genuinely unseen result grants page gain once;
+effectful `SENT` or a public-world/action-contract/task-progress change starts a
+new epoch. Runtime still performs no parameter correction, replacement action,
+request replay or extra model call.
 
-The accepted immutable run
-`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`
+The valid immutable run
+`miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`
 completed 25/25 at seed 7 with profile `mistral-format-only-v1`, provider
 `mistral`, model `mistral-medium-3-5` and grounding `format-only.v1`.
-Outcome distribution was 18 `NO_PROGRESS_CONTROL_REPETITION`, one
-`NO_PROGRESS_REPETITION`, four `TASK_FAILED`, one `RUNTIME_REJECTED` and one
-`SUCCESS`. It recorded 42 feedback facts, 24 context deliveries, 22 issue
-consumptions, 18 bounded control terminations, 22 first feedback opportunities,
-three admitted first-opportunity corrections, and two strategy-transition
-feedback facts. Case 37
-records its first repair on policy root one with zero execution, step, probe or
-capture, followed by exactly one feedback delivery. Provider retry/fallback,
+Outcome distribution was 12 `NO_PROGRESS_CONTROL_REPETITION`, nine
+`PROVIDER_UNAVAILABLE`, two `TASK_FAILED`, one `RUNTIME_REJECTED` and one
+`SUCCESS`. It recorded 27 feedback facts, 15 context deliveries, 15 issue
+consumptions and 12 bounded control terminations. Across the run it recorded 41
+policy/provider attempts, four executions/steps/probes, zero independent
+captures and 25 resets. Provider retry/fallback,
 privacy, schema, harness-integrity, cleanup, duplicate-unknown,
 stale-zero-call, forbidden-effect and repair-zero-call violations were zero.
 Campaign, summary and attestation SHA-256 values are respectively
-`e301d2a2fa887d105a46a77df266abc80e623968993de4c168dca5a9287f7f16`,
-`5f6f5cc46775eb364f5c6f2f0aaffdfc3670d9bac3a239d6b15847553c30a271` and
-`88d11790eb6ccbc6d965595454aa8683cef99bc795aec41470b7c6763ed8aa90`.
+`20bbd6eedb846ba89fd6118bf4f542d73097ca4e31f4317e91ebc46e8fdca676`,
+`39351275a12e6fed4de76c4a2dbcaa27b2213eca92c76a96507c200f84a819d7` and
+`3b383d918f7b304c7e91bde87fde085d1883f8798bdb9e4093c24e9d4625f50e`.
 
-Focused D properties passed 42 tests; the full suite passed 2191 with 27
-skipped. Ruff, mypy over 442 source files, architecture/documentation gates,
-compose validation, clean-process imports and `git diff --check` passed. The
-command-scoped pinned Python 3.12 BrowserGym gate passed 22 tests. Clean-SHA
-full-validation was accepted with SHA-256
-`6670c6409bff2b531aa2699e61565a1889497d099109a3c22c9879dae8469d88`.
+Focused D and affected regression gates passed 221 tests; the generated
+request/view-churn and once-only page-result properties passed within that
+gate. The full suite passed 2196 with 27 skipped. Ruff, mypy over 442 source
+files, architecture/documentation gates, compose validation, clean-process
+imports and `git diff --check` passed. The command-scoped pinned Python 3.12
+BrowserGym gate passed 17 tests. Clean-SHA full-validation was accepted with
+SHA-256
+`8ea097422eebca0af7a1273a533c8a3c11ceb116cbdca37336e036e2601bb4f1`.
 This evidence measures bounded feedback delivery and admission correction; it
 does not prove a success-rate, performance or generalization improvement.
 
-The earlier implementation `ccb682a8ef4acb00973e5c6a14c7c69c91d073fc`
-and run `miniwob-control-feedback-25:ca6cfffdf3334844958b38210a5043bd`
-remain immutable historical evidence. They do not validate the residual query
-owner fix and are not the current closure identity.
+The earlier `ccb682a` and `8b92d13` implementations and their runs remain
+immutable historical evidence. Neither validates the convergence patch. The
+new run is valid implementation evidence, but D remains implemented-not-verified
+until an independent fresh-context held-out review confirms the frozen algebra;
+therefore this section does not attest closure or admit E.
 
 ## Promotion gate
 

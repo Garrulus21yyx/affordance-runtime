@@ -78,7 +78,7 @@ core contracts for every GUI task.
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
-| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE; M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE; M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE at `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` with accepted run `miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`; M4.6-E NOT_STARTED |
+| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE; M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE; M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED at `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903` with valid run `miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`; M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
 | P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.6/M4.7 breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
@@ -92,7 +92,7 @@ REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, M4.5-C
 FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED /
 GENERALIZATION_NOT_CLAIMED`, and M4.6 `IN_PROGRESS / M4.6-A
 COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
-COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED`; Implementation
+COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE`; Implementation
 Status owns current code truth.
 
 ## 4. Product success measures

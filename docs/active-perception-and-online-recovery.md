@@ -113,7 +113,9 @@ policy-origin `RequestObservation`. Its result digest covers canonical public
 targets/facts/state/relations/conflicts/inventory, public action semantics and
 current validated task status; it excludes observation/target/fact/evidence/
 binding/action/action-space/page IDs, context generation, free-form request
-reason and private BID/route. An ID-only capture is therefore fresh acquisition
+reason and private BID/route. It also excludes the active action-page
+query/filter/view; the full public action contract is the action component. An
+ID-only capture is therefore fresh acquisition
 but no semantic gain. Runtime binding/currentness/confirmation/post-action
 refresh is exempt because unchanged public semantics may still refresh private
 currentness or evaluation lineage. Task terminal truth is evaluated before any
@@ -122,9 +124,10 @@ two-distinct-issue same-scope budget: the same request/result fingerprint
 repeating stops immediately, while a different no-gain control request consumes
 the remaining budget rather than resetting it.
 
-This declared policy-origin no-gain contract is implemented at
-`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51` and verified by targeted run
-`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`.
+This convergence contract is implemented at
+`9e92bd2d3b55a696f06ae77fd029b4bc6db9a903` with valid targeted run
+`miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`; independent
+held-out review remains required before restoring D closure.
 
 ## 5. Bounded recovery
 

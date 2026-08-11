@@ -97,7 +97,7 @@ The next target slices are deliberately narrow and separate:
 P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 → P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
 → P5-M4.5-C diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
-→ P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED
+→ P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE
   (M4.6-B residual contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`)
 → P5-M4.7 supported-subset multi-seed gate: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
@@ -109,10 +109,10 @@ bounded zero-dispatch ordinary-policy repair budget, plus page/policy-observatio
 no-gain containment. Its initial profile permits two distinct same-scope issues
 but terminates an identical issue on repeat. Runtime states the validated fact;
 AgentPolicy chooses the correction. It does not auto-edit parameters, replay a
-request or add a mandatory reflection agent. The implementation is
-`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`; the accepted targeted run is
-`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`. M4.6-E remains
-not started.
+request or add a mandatory reflection agent. The convergence implementation is
+`9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`; the valid targeted run is
+`miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`. D remains
+implemented-not-verified pending independent held-out review, so M4.6-E is blocked.
 `ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
 acquisition and after-world facts are recorded monotonically before evaluator
 completion; confirmation continuation updates the same root. AgentLoopState

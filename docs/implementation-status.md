@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE / M4.6-E NOT_STARTED` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E BLOCKED_BY_M4_6_D_CONVERGENCE` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -462,24 +462,26 @@ all policy/provider/token/step/probe/independent-capture totals at zero. This is
 declared inventory-profile closure only, not task-relative completeness or a
 performance/generalization claim.
 
-M4.6-D is implemented at `8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`.
+M4.6-D convergence implementation is `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`.
 Typed ActionSpace/page/schema owners now produce public-safe admission facts;
 one canonical `ControlFeedback` envelope projects once into the next ordinary
-policy context. Identity-free world/page/task digests own the shared two-distinct
-issue budget: an exact repeat or third distinct issue terminates as
-`no_progress_control_repetition`, while effectful SENT or relevant semantic gain
-resets it. Runtime neither edits parameters nor replays requests. Adapter-side
+policy context. Request keys, request-echo-free page results and an identity-free
+world/full-action-contract/task-progress epoch are distinct. AgentLoopState owns
+a bounded seen-result set and the shared two-distinct-issue budget: an exact
+repeat or third distinct issue terminates as `no_progress_control_repetition`,
+while an unseen result grants gain once. Runtime neither edits parameters nor replays requests. Adapter-side
 INVALID_PARAMETERS after Runtime admission remains execution failure truth.
-ActionPager owns the sole bounded casefolded query semantics used by filtering,
-page/cursor identity and D request/result digests, so case-only query changes
-cannot reset the issue budget.
-The accepted fixed run
-`miniwob-control-feedback-25:944934f01ca1487385bb7b175c7b1983`
+ActionPager owns the sole bounded casefolded request semantics used by filtering,
+page/cursor identity and the request digest. Page results and the control epoch
+exclude request echoes and active filters, so request/view churn cannot reset the issue budget.
+The valid fixed run
+`miniwob-control-feedback-25:98e8fff597d94badb82a44f6ed1a4c44`
 completed 25/25 with valid schema, identity, privacy, safety, integrity and
 cleanup gates. Its feedback/correction measurements are not task-success,
 performance or generalization evidence.
-The earlier `ccb682a` run remains immutable but is not current verification for
-this residual owner fix.
+The earlier `ccb682a` and `8b92d13` runs remain immutable. The new run validates
+the implementation identity but is not independent held-out closure evidence;
+D remains implemented-not-verified and E blocked.
 
 ## Control-transition and long-horizon gap status
 
@@ -502,8 +504,8 @@ general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is
 `IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`,
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
-`COMPLETE_NON_DEFAULT_FOR_DECLARED_CONTROL_FEEDBACK_SCOPE`, and M4.6-E is
-`NOT_STARTED`;
+`REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
+`BLOCKED_BY_M4_6_D_CONVERGENCE`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit

@@ -355,16 +355,19 @@ validators return typed, public-safe admission issues instead of making a
 feedback owner parse `ValueError` text. ActionEvaluation/ProgressEvent retain
 no-effect/already-satisfied truth. A small `ControlFeedbackPolicy` owns only the
 delivery envelope, identity-free semantic-scope/issue keys, a frozen budget of
-two distinct repair/no-gain issues and exact-repeat containment in bounded
-AgentLoopState. The same root
+two distinct repair/no-gain issues, a bounded same-epoch set of seen page-result
+fingerprints and exact-repeat containment in AgentLoopState. The same root
 ControlTransition stores the envelope; a dedicated model-boundary projector
 removes internal digests/private data; ContextBuilder only assembles it. The
 ordinary AgentPolicy chooses the next action. No feedback owner may duplicate
 ActionSpace schema, choose a replacement, invoke a reflector, become a retry
 manager, or reinterpret benchmark outcomes.
 
-That owner map is implemented for the declared M4.6-D non-default scope at
-`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`; M4.6-E breadth remains outside it.
+`public_semantic_digest.py` alone separates request keys, request-echo-free page
+results, the full public action contract and the control epoch. Active filters
+and projection-view changes cannot create progress. That owner map is
+implemented at `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`, but D remains
+implemented-not-verified pending held-out review and M4.6-E stays blocked.
 
 P5-E reuses `task/planning_contracts.py`. VerifiedTaskState/milestone promotion
 and TaskProgressAuditor stay under task/evaluation ownership; ObjectivePolicy

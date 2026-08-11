@@ -111,14 +111,16 @@ progress from validated evidence.
 M4.6-D adds a narrow ControlFeedbackPolicy with a frozen two-distinct-issue
 same-scope budget for zero-dispatch public admission repair and
 action-page/policy-observation no-gain; exact issue repetition stops immediately.
-It envelopes rather than re-owns source facts, stores only identity-free semantic scope and
-streak state in AgentLoopState, and projects once through `model_boundary/`.
+It envelopes rather than re-owns source facts, separates request keys from
+request-echo-free results and an identity-free control epoch, stores only bounded
+issue/seen-result state in AgentLoopState, and projects once through `model_boundary/`.
 Risk/safety/task terminal, `SENT_UNKNOWN`, component/integrity failure and an
 adapter parameter mismatch after successful Runtime admission remain terminal
 or paused according to their owning contracts and are never model-repair replay.
-This bounded contract is implemented at
-`8b92d1357bd4582b1dd82c8bf26a4202e57bbd51`; it does not cut over the default
-path.
+The convergence implementation is
+`9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`; D remains
+implemented-not-verified pending held-out review, and it does not cut over the
+default path.
 
 ## 6. Benchmark boundary
 
