@@ -38,7 +38,14 @@ M45_B_STATUS = (
     "REOPENED_CONVERGENCE_REVIEW",
     "IMPLEMENTED_NOT_VERIFIED",
 )
-M45_C_STATUS = ("NOT_STARTED", "BLOCKED_BY_M4_5_B_CONVERGENCE")
+M45_C_STATUS = (
+    "COMPLETE_DIAGNOSTIC",
+    "EVIDENCE_VALID_AT_4924CE6",
+    "FORMAL_EXIT_NOT_ATTESTED",
+    "PERFORMANCE_NOT_CLAIMED",
+    "GENERALIZATION_NOT_CLAIMED",
+)
+M46_STATUS = ("M4.6", "NOT_STARTED", "NEXT")
 
 VALID_LIFECYCLES = {
     "current",
@@ -112,6 +119,7 @@ def test_evolution_plan_has_one_current_phase_truth() -> None:
     assert "P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT" in text
     assert all(marker in text for marker in M45_B_STATUS)
     assert all(marker in text for marker in M45_C_STATUS)
+    assert all(marker in text for marker in M46_STATUS)
 
 
 def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
@@ -120,7 +128,9 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
     markers = (
         "P5-M4.5-A observation acquisition lifecycle — complete",
         "P5-M4.5-B control/failure contract — reopened convergence review",
-        "## Gates after M4.5",
+        "P5-M4.5-C same-profile diagnostic — complete diagnostic evidence",
+        "P5-M4.6 evidence-directed remediation — next",
+        "## Gates after M4.6",
         "VerifiedTaskState evidence promotion",
     )
     positions = [text.index(marker) for marker in markers]
@@ -136,15 +146,19 @@ def test_m45_current_status_has_one_authoritative_source_and_consistent_projecti
         "current_code_truth: docs/implementation-status.md" in manifest
     )
     assert status_text.count("Current reviewed M4.5-B closure SHA:") == 1
-    assert all(marker in status_text for marker in (*M45_B_STATUS, *M45_C_STATUS))
+    assert all(
+        marker in status_text
+        for marker in (*M45_B_STATUS, *M45_C_STATUS, *M46_STATUS)
+    )
 
     for path in M45_STATUS_PROJECTIONS:
         text = path.read_text(encoding="utf-8")
         assert all(marker in text for marker in M45_B_STATUS), path
         assert all(marker in text for marker in M45_C_STATUS), path
+        assert all(marker in text for marker in M46_STATUS), path
 
 
-def test_m45_unverified_or_reopened_b_blocks_c_and_has_no_reviewed_sha() -> None:
+def test_m45_open_b_does_not_rewrite_completed_diagnostic_or_reviewed_sha() -> None:
     text = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
     reviewed = re.search(
         r"Current reviewed M4\.5-B closure SHA:\*\* `([^`]+)`",
@@ -154,8 +168,33 @@ def test_m45_unverified_or_reopened_b_blocks_c_and_has_no_reviewed_sha() -> None
     assert reviewed is not None
     assert "REOPENED_CONVERGENCE_REVIEW" in text
     assert "IMPLEMENTED_NOT_VERIFIED" in text
-    assert "BLOCKED_BY_M4_5_B_CONVERGENCE" in text
+    assert all(marker in text for marker in M45_C_STATUS)
+    assert "BLOCKED_BY_M4_5_B_CONVERGENCE" not in text
     assert reviewed.group(1) == "NONE"
+
+
+def test_m45_c_run_and_m46_remediation_identities_are_not_conflated() -> None:
+    attribution = (
+        DOCS / "reviews" / "2026-08-11-p5-m4-5-miniwob-60-diagnostic.md"
+    ).read_text(encoding="utf-8")
+    remediation = (
+        DOCS
+        / "reviews"
+        / "2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md"
+    ).read_text(encoding="utf-8")
+
+    run_sha = "4924ce61748d8efdec4fcc6de494acf8a9f224cc"
+    archive_sha = "5f8d6acf3700831a05d73f93a5c66488a6298fd7"
+    run_id = "miniwob-60:e9551acfcd31466e91481ee5923fc9af"
+    for text in (attribution, remediation):
+        assert run_sha in text
+        assert archive_sha in text
+        assert run_id in text
+        assert "generalization" in text.casefold()
+    assert "docs-only" in remediation
+    assert "Implementation SHA" in remediation
+    assert "Verification run ID" in remediation
+    assert "must never be edited or backfilled" in remediation
 
 
 def test_normative_architecture_does_not_override_implementation_status() -> None:

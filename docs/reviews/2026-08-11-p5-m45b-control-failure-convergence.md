@@ -1,5 +1,13 @@
 # P5-M4.5-B control/failure convergence review
 
+> Historical convergence snapshot. Its M4.5-C scheduling gate records the
+> pre-run state and remains evidence that M4.5-B was not verified. A separately
+> authorized diagnostic was subsequently executed at `4924ce6`; current status
+> and attribution are owned by the
+> [M4.5-C diagnostic record](2026-08-11-p5-m4-5-miniwob-60-diagnostic.md) and the
+> [active implementation plan](../current-implementation-plan.md). This review
+> is no longer the current execution-queue owner.
+
 > **Lifecycle:** CURRENT REVIEW
 > **Date:** 2026-08-11
 > **Status authority:** [Implementation Status](../implementation-status.md)
@@ -7,9 +15,9 @@
 
 ## Decision
 
-M4.5-B remains `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
-IMPLEMENTED_NOT_VERIFIED`. M4.5-C remains `NOT_STARTED /
-BLOCKED_BY_M4_5_B_CONVERGENCE`. The ten commits after `f04cfd5` and the baseline
+At the time of this snapshot, M4.5-B was `INTEGRATED_NON_DEFAULT /
+REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` and M4.5-C was
+`NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE`. The ten commits after `f04cfd5` and the baseline
 dirty tree are implementation candidates, not reviewed closure evidence.
 
 ## Causal model
@@ -203,4 +211,5 @@ closure evidence until the final reviewer, environment gate, clean commit and
 reviewed SHA all agree.
 
 Until all items pass, this document is a convergence review, not a closure
-attestation, and M4.5-C remains blocked.
+attestation. Its original queue blocked M4.5-C; the later separately authorized
+diagnostic is recorded by the superseding status owners linked at the top.

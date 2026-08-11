@@ -94,7 +94,9 @@ The target path now has:
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE`; clean `83dc4fa`, 4/60, kept separate from the historical run |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
-| P5-M4.5-C same-profile MiniWoB-60 rerun | `NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE` |
+| P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
+| P5-M4.6 evidence-directed short-loop remediation | `NOT_STARTED / NEXT` |
+| P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
 
@@ -401,20 +403,36 @@ package-facade import-order dependence without moving projection authority.
 M4.5-B is integrated on the non-default path but reopened for architecture-first
 contract convergence. The previous B.1/B.2/B.3 completion claims and their test
 counts are not current closure evidence. No current reviewed implementation SHA
-exists. M4.5-C is not started and remains blocked; no formal MiniWoB-60 campaign
-may run during this review.
+exists.
+
+A separately authorized M4.5-C diagnostic nevertheless executed from clean Git
+SHA `4924ce61748d8efdec4fcc6de494acf8a9f224cc` and completed 60/60 with
+8/60 success, valid evidence, 290 provider attempts and 555,164 tokens. Its run
+ID is `miniwob-60:e9551acfcd31466e91481ee5923fc9af`; the docs-only archive
+commit is `5f8d6acf3700831a05d73f93a5c66488a6298fd7` and is neither the run SHA
+nor a reviewed B closure SHA. The diagnostic has no predeclared formal exit,
+performance or generalization claim. Its immutable attribution and exact cohort
+boundaries are recorded in the
+[M4.5-C diagnostic review](reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md).
+
+Patterns in that run, joined with exact `4924ce6` source review, support four
+next product gaps: AX-versus-DOM currentness ownership, semantic
+inventory/action projection coupling, verifier terminal information loss, and
+missing exact no-gain containment for action-page and policy-observation
+decisions. Their implementation/evidence identities are
+tracked without rewriting the old run in the
+[M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md).
 
 ## Control-transition and long-horizon gap status
 
-The current M4.5-B candidate distributes control legality across mutable scopes,
-`AgentLoopState` methods, call sites and projections. That is implemented code,
-not a verified single authority. Convergence requires a small pure reducer to
-own supported transitions; strict untrusted-output adapters; a complete physical
-attempt matrix; canonical terminal Runtime failure; orthogonal `CaseFacts`; and
-one benchmark classification precedence owner. Codecs, legacy fields, privacy
-sanitation and telemetry remain downstream projections and cannot infer or
-override truth. No ledger, replay, event sourcing or state reconstruction is
-admitted.
+The current M4.5-B candidate includes a bounded pure reducer, strict boundary
+validation, a physical-attempt matrix, canonical terminal Runtime failure,
+orthogonal `CaseFacts` and one benchmark classification precedence owner.
+`AgentLoopState` remains current-state authority. Those owners are implemented
+but their whole-loop exceptional-path and fresh held-out assurance is not a
+reviewed closure. Codecs, legacy fields, privacy sanitation and telemetry remain
+downstream projections and cannot infer or override truth. No ledger, replay,
+event sourcing or state reconstruction is admitted.
 
 Long-horizon scaffolding is partial only. `AgentLoopState.plan`,
 `active_objective`, progress revisions/events and AgentContext projections
@@ -422,6 +440,8 @@ exist, and current validated evaluations can project evidence-linked facts.
 The target production loop does not initialize or mutate plan/objective, and no
 verified milestone promotion/current frontier/replanning lifecycle exists.
 `ProgressController` remains an integrated fill/select local liveness guard;
-general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.5-C also
-stays blocked until M4.5-B passes reducer properties, held-out review, the full
-verification gate, and a clean reviewed-commit attestation.
+general `TaskProgressAuditor` is `NOT_STARTED`. P5-E stays blocked. M4.6 is the
+next evidence-directed short-loop work; M4.7 multi-seed remains blocked by its
+targeted gates. M4.5-B independently remains reopened until reducer properties,
+held-out review, the full verification gate and a clean reviewed-commit
+attestation pass; the executed diagnostic does not close it.

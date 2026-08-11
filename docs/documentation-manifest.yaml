@@ -201,6 +201,12 @@ reference:
     lifecycle: immutable_record
   - role: p5_m4_5_b_control_failure_convergence_review
     path: docs/reviews/2026-08-11-p5-m45b-control-failure-convergence.md
+    lifecycle: immutable_record
+  - role: p5_m4_5_c_miniwob_60_diagnostic_attribution
+    path: docs/reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md
+    lifecycle: immutable_record
+  - role: p5_m4_6_evidence_directed_short_loop_remediation
+    path: docs/reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md
     lifecycle: current
 
 immutable_records:

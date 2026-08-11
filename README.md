@@ -80,9 +80,10 @@ harness, and the pinned `browsergym-miniwob==0.14.3` adapter are closed for thei
 declared non-default profiles. General semantic entailment, semantic fusion,
 default cutover, and broad autonomous GUI competence remain open.
 
-The BrowserGym breadth evidence now contains two immutable, non-combinable
-exact runs: the historical clean `b3b64a2` run at 6/60 and the later clean
-`83dc4fa` rerun-v3 at 4/60. Neither is a generalization or trend claim.
+The BrowserGym breadth evidence now contains three immutable, non-combinable
+exact runs: the historical clean `b3b64a2` run at 6/60, the clean `83dc4fa`
+rerun-v3 at 4/60, and the separately authorized clean `4924ce6` diagnostic at
+8/60. None is a generalization or trend claim.
 Rerun-v3 retains seven historical post-observation failures, nine unclassified
 typed failures, and eleven Runtime rejections. The observation cases confirmed
 the P5-M4 mismatch between public active observation and a consume-once
@@ -95,8 +96,9 @@ The next target slices are deliberately narrow and separate:
 ```text
 P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 → P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
-→ P5-M4.5-C same frozen MiniWoB-60 profile rerun: NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE
-→ supported-subset multi-seed gate
+→ P5-M4.5-C diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
+→ P5-M4.6 evidence-directed short-loop remediation: NOT_STARTED / NEXT
+→ P5-M4.7 supported-subset multi-seed gate: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
 ```
 
@@ -289,5 +291,10 @@ contract gap; nine failures remain unclassified despite typed metadata. M4.5-A
 acquisition is now closed, including real owner-thread active capture, origin
 validation and final-fallback truth. M4.5-B control/failure work is integrated
 non-default but reopened for architecture-first convergence; its earlier
-edge-closure claims are not current review evidence. M4.5-C is not started and
-remains blocked before any multi-seed supported subset or P5-E work.
+edge-closure claims are not current review evidence. The clean `4924ce6`
+M4.5-C diagnostic completed 60/60 at 8/60 with valid evidence but no formal
+performance or generalization claim. Its run patterns plus exact-source review
+support AX currentness, semantic-inventory, verifier and non-effect-control gaps; M4.6 repairs them in
+separate attributable slices before any M4.7 multi-seed or P5-E work. See the
+[immutable attribution](docs/reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md)
+and [current remediation record](docs/reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md).

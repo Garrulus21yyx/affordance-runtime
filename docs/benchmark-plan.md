@@ -244,7 +244,7 @@ provider-available, and infrastructure-clean denominators, with zero
 denominators represented as null. The classification is
 `MINIWOB_60_SEEDED_BREADTH_PROFILE`; generalization remains unclaimed.
 
-Two completed MiniWoB-60 executions are separate immutable exact-run records:
+Three completed MiniWoB-60 executions are separate immutable exact-run records:
 
 - [P5-M4.3 at `b3b64a2c338f0bc76af5d7a16dfddfed513152c4`](evidence/runs/p5-m4-3-miniwob-60-seed7-b3b64a2/README.md)
   completed 60/60 with 6 successes.
@@ -252,11 +252,14 @@ Two completed MiniWoB-60 executions are separate immutable exact-run records:
   completed 60/60 with 4 successes. It retains nine
   `unclassified_typed_failure` cases and seven observation failures requiring
   refresh-stage ownership.
+- [P5-M4.5-C diagnostic at `4924ce61748d8efdec4fcc6de494acf8a9f224cc`](reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md)
+  completed 60/60 with 8 successes and valid evidence. Its formal exit,
+  performance and generalization are not attested.
 
-Neither result replaces the other. They differ in exact source and
-instrumentation and must not be merged into a 10/120 aggregate, treated as one
-continuous campaign, or converted into a model-capability percentage. Both are
-negative breadth measurements with `generalization_claim=NOT_CLAIMED`.
+No result replaces another. They differ in exact source and instrumentation and
+must not be aggregated, treated as one continuous campaign, converted into a
+model-capability percentage or presented as a trend. All retain
+`generalization_claim=NOT_CLAIMED`.
 
 The v1 inventory is primitive-only and insufficient for task readiness.
 Inventory v2 separately declares interaction, observation, reasoning, and
@@ -265,7 +268,7 @@ diagnostics never execute a policy: they compare raw structural interactive
 counts with projected targets and ActionSpace counts, query only the initial
 mechanical verifier, and close resources.
 
-### P5-M4.5 correction gates
+### P5-M4.5 and M4.6 correction gates
 
 M4.5-A closes observation acquisition before another breadth claim:
 
@@ -284,8 +287,10 @@ M4.5-B is integrated non-default but reopened and implemented-not-verified.
 Its convergence contract requires decision-scoped transition accounting:
 
 Status mirror: M4.5-B `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
-IMPLEMENTED_NOT_VERIFIED`; M4.5-C `NOT_STARTED /
-BLOCKED_BY_M4_5_B_CONVERGENCE`. Implementation Status is authoritative.
+IMPLEMENTED_NOT_VERIFIED`; M4.5-C `COMPLETE_DIAGNOSTIC /
+EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
+PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 `NOT_STARTED /
+NEXT`. Implementation Status is authoritative.
 
 1. every accepted policy decision produces exactly one bounded
    `ControlTransition`, including AskUser, Abort, RequestObservation, Wait,
@@ -308,12 +313,15 @@ BLOCKED_BY_M4_5_B_CONVERGENCE`. Implementation Status is authoritative.
    when any case remains unclassified or violates a frozen safety gate.
 
 M4.5-A and M4.5-B are separate implementation/verification slices so their
-effects remain attributable. M4.5-B has not passed its convergence gate, so
-M4.5-C is blocked. Any later admitted rerun is a new immutable record; it
-cannot amend, resume, or merge either exact run above. Zero unclassified typed
-outcomes remains an attribution gate, not permission to rewrite prior evidence.
+effects remain attributable. M4.5-B has not passed its convergence gate. A
+separately authorized M4.5-C diagnostic nevertheless executed at `4924ce6`;
+that immutable fact does not close B or satisfy a formal performance gate.
+M4.6 applies its evidence-directed repairs one independently measurable slice
+at a time. Any targeted or full rerun is a new immutable record and cannot
+amend, resume or merge any exact run above. Zero unclassified typed outcomes
+remains an attribution gate, not permission to rewrite prior evidence.
 
-After an accepted same-profile rerun, a pre-result admitted supported subset
+After M4.6 targeted gates and a new accepted same-profile rerun, a pre-result admitted supported subset
 must run across multiple seeds before P5-E. Its immutable manifest, exact seed
 set, numeric provider-availability/capacity floor, success floor and maximum
 seed variance are frozen before execution. Its cases are derived from the

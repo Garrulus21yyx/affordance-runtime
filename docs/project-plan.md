@@ -77,16 +77,21 @@ core contracts for every GUI task.
 | post-M4.4 separately authorized rerun-v3 | Re-execute the frozen profile with expanded typed evidence | valid clean `83dc4fa` negative run at 4/60; separate from M4.3 |
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
-| P5-M4.5-C | Same-profile MiniWoB-60 rerun | not started; blocked by M4.5-B convergence |
-| P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.5 and breadth gates |
+| P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
+| P5-M4.6 | Evidence-directed short-loop remediation | not started; next; canonical AX currentness, verifier truth, semantic inventory, bounded control no-gain and staged breadth |
+| P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
+| P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.6/M4.7 breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
 | P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
 
 The detailed order and exit/deletion gates live only in the evolution plan.
 Current status tokens are M4.5-B `INTEGRATED_NON_DEFAULT /
-REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` and M4.5-C `NOT_STARTED /
-BLOCKED_BY_M4_5_B_CONVERGENCE`; Implementation Status owns current code truth.
+REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, M4.5-C
+`COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 /
+FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED /
+GENERALIZATION_NOT_CLAIMED`, and M4.6 `NOT_STARTED / NEXT`; Implementation
+Status owns current code truth.
 
 ## 4. Product success measures
 
@@ -219,16 +224,20 @@ multi-axis capability requirements, and local no-model coverage diagnostics.
 That slice's rerun-blocked decision remains historical. A later separately
 authorized rerun-v3 completed at clean `83dc4fa` with valid 4/60 evidence,
 including 7 post-observation failures and 9 still-unclassified typed failures.
-It remains separate from 6/60 and does not establish a trend.
+It remains separate from 6/60 and does not establish a trend. A third,
+separately authorized clean diagnostic at `4924ce6` completed 60/60 at 8/60;
+it is also independent and claims neither performance acceptance nor trend.
 
 P5-M4.5 now precedes P5-E. M4.5-A has separated reset/independent capture from
 execute-returned post-action acquisition and closed origin/fallback/counting
 semantics with real pinned active-capture evidence. M4.5-B is an integrated
 candidate whose reducer legality, ordered physical attempts, confirmation,
 evaluation epochs, current snapshot authority and typed benchmark fact owners
-remain under convergence review. M4.5-C is blocked, so no unchanged MiniWoB-60
-profile rerun is currently admitted; a later accepted rerun would precede a
-supported-subset multi-seed gate whose immutable manifest, exact seed set,
+remain under convergence review. M4.5-C diagnostic execution is complete; its
+run patterns plus exact-source review support AX currentness, verifier,
+semantic-inventory and non-effect-control gaps without closing B. M4.6 repairs those gaps in independently
+measurable slices; its targeted gates and a new immutable full run precede the
+M4.7 supported-subset multi-seed gate, whose immutable manifest, exact seed set,
 numeric provider-availability/capacity floor, success floor and maximum seed
 variance are frozen before execution. P5-E then reuses the existing TaskPlan
 contracts while adding validated VerifiedTaskState frontier promotion and a

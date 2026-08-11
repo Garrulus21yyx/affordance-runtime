@@ -48,7 +48,9 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
-| P5-M4.5-C same-profile rerun | `NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE` | no campaign is admitted until B has independent verified closure |
+| P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
+| P5-M4.6 evidence-directed remediation | `NOT_STARTED / NEXT` | first canonical AX semantics/currentness, then verifier truth, semantic inventory, bounded control no-gain, stable identity/breadth |
+| P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
@@ -71,12 +73,22 @@ M4.5-B is an integrated non-default implementation candidate under reopened
 convergence review. No commit is current reviewed closure evidence. The work
 must converge the control reducer, strict external boundaries, terminal failure
 authority, benchmark fact/classification owners, and state-machine properties
-before an independent review can attest it. M4.5-C is not started and remains
-blocked by that convergence. P5-E, default cutover and old-core deletion remain
+before an independent review can attest it.
+
+A separately authorized M4.5-C diagnostic has now completed from clean
+`4924ce61748d8efdec4fcc6de494acf8a9f224cc`: 60/60 cases, 8/60 success,
+valid evidence and no generalization claim. The archive commit `5f8d6ac` is
+docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
+AX semantics/currentness is the next admitted product slice. B assurance review
+remains independently open; P5-E, default cutover and old-core deletion remain
 unauthorized.
 
 The architecture-first causal model, owner map, bounded algebra and evidence
 gates are recorded in the [M4.5-B convergence review](reviews/2026-08-11-p5-m45b-control-failure-convergence.md).
+The diagnostic facts and claim limits are frozen in the
+[M4.5-C attribution](reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md);
+implementation and later run identities are tracked in the
+[M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md).
 
 ## Frozen work
 
@@ -84,7 +96,7 @@ gates are recorded in the [M4.5-B convergence review](reviews/2026-08-11-p5-m45b
 - ledger, checkpoint/resume, event sourcing, generic recovery transaction;
 - global approval/capability/token registry or worker fencing;
 - ActionBatch integration and P5-E long-horizon plan/frontier mutation before
-  the M4.5, same-profile rerun and supported-subset multi-seed gates;
+  the M4.6 targeted/full rerun and M4.7 supported-subset multi-seed gates;
 - default cutover or deletion before the positive cross-surface gates.
 - any AgentContext ownership of Runtime state, private route projection, or
   LocalObjective-based legality/risk change.
@@ -211,24 +223,62 @@ current verifier evidence must be reacquired or explicitly unavailable.
 ## P5-M4.5-B control/failure contract — reopened convergence review
 
 The current code is only an integrated non-default implementation candidate.
-`AgentLoopState` remains the intended current-state authority, but legality of
-cross-step transitions must move to one bounded pure reducer, and terminal
-Runtime failure plus benchmark case facts/classification must have explicit,
-non-inferential owners. Existing edge and held-out examples are witnesses, not
-closure proof.
+`AgentLoopState` remains the current-state authority and a bounded pure reducer,
+canonical Runtime failure, orthogonal benchmark facts and one classification
+owner are implemented. Their repository-wide exceptional-path and loop-level
+property assurance is not independently verified. Existing edge and held-out
+examples are witnesses, not closure proof.
 
 The exit gate requires strict typed external adapters, a closed supported
 state/command/outcome algebra, deterministic rejection of unsupported input,
 an operation/disposition/count matrix for physical attempts, monotonic committed
 facts, epoch-coherent evaluations, orthogonal Runtime/watchdog/cleanup/harness
 facts, one classification precedence owner, and a real Hypothesis reference
-state machine. No reviewed implementation SHA exists. M4.5-C remains blocked;
-no formal MiniWoB-60 campaign may run during this review.
+state machine. No reviewed implementation SHA exists. The former B gate was
+not satisfied before M4.5-C, but the separately authorized diagnostic execution
+is now an immutable fact; it does not change B assurance status or provide a B
+closure SHA.
 
-## Gates after M4.5
+## P5-M4.5-C same-profile diagnostic — complete diagnostic evidence
 
-Run the same frozen MiniWoB-60 seed-7 profile first and preserve it as a third
-independent exact-run record. Required gates are zero observation contract
+The immutable run ID is `miniwob-60:e9551acfcd31466e91481ee5923fc9af` at
+executed Git SHA `4924ce61748d8efdec4fcc6de494acf8a9f224cc`. It completed
+60/60 with 8/60 success, 290 provider attempts and 555,164 tokens. Formal exit,
+performance and generalization were not predeclared or attested.
+
+Run patterns joined with exact `4924ce6` source review support four bounded
+remediation families: AX/DOM currentness ownership, verifier task-terminal
+information loss, semantic inventory/action projection coupling, and missing
+exact no-gain containment for action-page and policy-observation decisions. The
+immutable payload alone does not prove those causes, that all 14 verifier-unknown
+cases were negative terminal outcomes, that broader roles guarantee success,
+or that a later repair improves the score.
+
+## P5-M4.6 evidence-directed remediation — next
+
+Implement one independently measurable slice at a time:
+
+1. M4.6-A canonical AX semantics/currentness, including owner-scoped select
+   options and executable availability;
+2. M4.6-B four-state verifier plus task-terminal fact orthogonal to
+   `RuntimeFailure`;
+3. M4.6-C semantic inventory separate from existing projection coverage and
+   ActionSpace authority;
+4. M4.6-D exact repeated no-gain containment for action pages and policy
+   observations, with Runtime refresh exempt;
+5. M4.6-E stable opaque target identity followed by staged observable/executable
+   semantic breadth.
+
+Each slice gets property/state-machine evidence and a new implementation SHA.
+Targeted reruns receive new run IDs and immutable directories; no result is
+backfilled into the `4924ce6` archive. LOC is only a review signal. Owner
+boundaries and forbidden scope are normative in the M4.6 remediation record.
+
+## Gates after M4.6
+
+After the M4.6 targeted cohorts pass, run the same frozen MiniWoB-60 seed-7
+profile and preserve it as a new independent exact-run record. Required gates
+are zero observation contract
 exceptions, complete typed classification, clean privacy/safety, zero retry/
 fallback and explicitly sufficient provider capacity. If that short-loop run is
 free of lifecycle/accounting hard-gate failures, freeze a supported-subset

@@ -53,9 +53,9 @@ DOM/Visual/WoT matrix, semantic confirmation, disposable AgentContext, strict
 model-policy boundary, declared-minimum evaluators, internal harness and pinned
 BrowserGym adapter for their declared scopes.
 
-Two exact MiniWoB-60 runs are current immutable evidence and must not be
-combined: historical clean `b3b64a2` at 6/60, and clean `83dc4fa` rerun-v3 at
-4/60. Rerun-v3 records 7 post-observation failures, 9 unclassified typed
+Three exact MiniWoB-60 runs are current immutable evidence and must not be
+combined: historical clean `b3b64a2` at 6/60, clean `83dc4fa` rerun-v3 at
+4/60, and clean `4924ce6` M4.5-C diagnostic at 8/60. Rerun-v3 records 7 post-observation failures, 9 unclassified typed
 failures and 11 Runtime rejections. At the P5-M4 baseline it confirmed that
 BrowserGym's consume-once reset/step cache did not satisfy the public active-
 observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
@@ -63,15 +63,19 @@ observation meaning; M4.5-A has replaced that lifecycle on the non-default path.
 M4.5-A typed acquisition lifecycle is complete. M4.5-B control/failure work is
 integrated non-default but reopened for reducer, boundary, failure-authority and
 property convergence; the earlier B.1/B.2/B.3 closure claims are withdrawn.
-M4.5-C is not started and remains blocked by that convergence. Only after
-independent verified closure may a supported-subset multi-seed gate and P5-E
+M4.5-C diagnostic execution is complete with valid `4924ce6` evidence, while
+formal exit, performance and generalization remain unclaimed. M4.6-A canonical
+AX semantics/currentness is next; M4.7 multi-seed and P5-E remain blocked by
+their targeted/breadth gates. Only after those gates may P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
 ProgressController remains fill/select-only and is not a planner. The default
 Coordinator path is unchanged.
 
 Status mirror: M4.5-B is `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW /
-IMPLEMENTED_NOT_VERIFIED`; M4.5-C is `NOT_STARTED /
-BLOCKED_BY_M4_5_B_CONVERGENCE`. Implementation Status is authoritative.
+IMPLEMENTED_NOT_VERIFIED`; M4.5-C is `COMPLETE_DIAGNOSTIC /
+EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED /
+PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED`; M4.6 is `NOT_STARTED /
+NEXT`. Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts
 
@@ -223,7 +227,8 @@ M4.2 implements fill/select-only local repeated-action containment; it is not a
 general progress auditor. M4.3's clean historical MiniWoB-60 result is 6/60.
 M4.4 added typed attribution/capability inventory, and a later separately
 authorized clean rerun-v3 completed at 4/60. The evidence archives are distinct
-and neither is a general capability estimate.
+and neither is a general capability estimate. The later `4924ce6` diagnostic
+completed 60/60 at 8/60 with valid evidence and no generalization claim.
 
 The seven rerun-v3 observation failures promoted independent acquisition from a
 conditional idea into the M4.5-A correction. That slice now separates reset
@@ -233,4 +238,7 @@ coverage. The M4.5-B candidate records bounded ControlTransition facts, but
 reducer legality, attempt matrices and failure/projection ownership are still
 under convergence review. This review introduces no ledger, replay or second
 state authority. See the [active queue](current-implementation-plan.md) for the
-blocked M4.5-C gate and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).
+M4.6-A next slice, the
+[immutable M4.5-C attribution](reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md),
+the [current M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md),
+and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).

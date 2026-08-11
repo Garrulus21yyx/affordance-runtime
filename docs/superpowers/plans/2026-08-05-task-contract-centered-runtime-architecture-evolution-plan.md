@@ -32,7 +32,8 @@ freeze target contracts
 → disposable AgentContext + context identity + paging
 → model-backed AgentPolicy + production evaluators + new-loop harness
 → observation acquisition lifecycle + lossless control-transition accounting
-→ same-profile breadth rerun + supported-subset multi-seed gate
+→ same-profile diagnostic + evidence-directed semantic/currentness remediation
+→ new same-profile breadth run + supported-subset multi-seed gate
 → optional milestone planning and long-horizon loop
 → bounded ActionBatch
 → evaluated memory/skill sidecars
@@ -85,12 +86,15 @@ AgentContext/model policy、declared-minimum evaluation、new-AgentLoop harness 
 BrowserGym adapter 已闭合在 non-default path。M4.4 后续 formal rerun-v3 在 clean
 `83dc4fa` 完成 60/60、成功 4/60；它与历史 M4.3 `b3b64a2` 的 6/60 是两个不可合并的
 exact-run records。新运行直接暴露 7 个 `post_observation_failure`，并保留 9 个
-`unclassified_typed_failure`。
+`unclassified_typed_failure`。随后单独授权的 `4924ce6` M4.5-C diagnostic 完成
+60/60、成功 8/60；它是第三个独立 record，不形成 trend 或 generalization claim。
 
 因此当前首要缺口不是再加 transaction/safety machinery，也不是立即进入 P5-E；而是
-先闭合 independent acquisition lifecycle 与 lossless control-transition accounting，
-再按相同 profile 重跑，随后做 supported-subset multi-seed。所有阶段继续以 completed
-behavior 为主证据。
+independent acquisition lifecycle 与 control-transition accounting 已进入当前实现；
+`4924ce6` 诊断进一步将下一步收敛到 AX currentness、verifier truth、semantic
+inventory 和 non-effect control liveness。M4.6 按独立切片修复并产生新 evidence，
+随后才做新的 same-profile run 和 supported-subset multi-seed。所有阶段继续以
+completed behavior 为主证据。
 
 ## 3. P5 阶段与切片
 
@@ -124,7 +128,9 @@ P5-M4.4 failure attribution/capability inventory: COMPLETE_FOR_CURRENT_SCOPE
 post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)
 P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT
 P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
-P5-M4.5-C same-profile rerun: NOT_STARTED / BLOCKED_BY_M4_5_B_CONVERGENCE
+P5-M4.5-C same-profile diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
+P5-M4.6 evidence-directed short-loop remediation: NOT_STARTED / NEXT
+P5-M4.7 supported-subset multi-seed: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
 ```
 
@@ -254,13 +260,29 @@ M4.5 只修 rerun-v3 已证实的通用 short-loop contract gaps，并拆成两�
 |---|---|---|
 | `M4.5-A` | `reset -> initial ObservationAcquisition`；capability-aware `capture()`；`execute() -> ExecutionOutcome` | BrowserGym RequestObservation、Wait、stale/currentness、confirmation refresh 不再消费空 post-step cache；unsupported/failed typed；normal action 直接消费 returned post observation；SENT_UNKNOWN/one-send invariants unchanged |
 | `M4.5-B` | bounded in-memory `ControlTransition` for every accepted policy decision | action/non-action/pause/post-context-schema action-admission rejection branches retain typed admission/execution/acquisition/evaluation/progress/pending/status; exact total count + bounded suffix; pre-decision provider and stale/schema-invalid inputs do not fabricate transitions |
-| `M4.5-C` | same frozen MiniWoB-60 seed-7 profile rerun after A+B | new exact run kept separate from both 6/60 and 4/60 archives; zero observation contract exceptions; all failures typed; no causal claim across changed revisions |
-| `M4.5-D` | supported-subset multi-seed run | immutable manifest, exact seed set, numeric provider-availability/capacity floor, success floor and maximum seed variance frozen before execution; all thresholds met before P5-E |
+| `M4.5-C` | same frozen MiniWoB-60 seed-7 diagnostic | completed at clean `4924ce6`, 60/60 and 8/60, with valid immutable evidence; no formal exit, performance or generalization attestation; does not close B |
 
 M4.5-A 与 M4.5-B 分开提交、分别跑 focused conformance，并分别保留 before/after
 evidence，避免同时改 perception lifecycle 和 accounting 后无法归因。`ControlTransition`
 只回答刚发生什么；AgentLoopState 仍是 authority，禁止 durable ledger、replay、global
 event taxonomy 或 state reconstruction。
+
+### P5-M4.6 — Evidence-directed short-loop remediation
+
+M4.6 只消费 `4924ce6` 的 immutable facts 和同树源码归因；修复后不得回写旧 run。
+
+| Slice | Deliverable | Exit gate |
+|---|---|---|
+| `M4.6-A` | shared canonical AX semantics/currentness；owner-scoped select options；executable availability | unchanged canonical binding is current；bound drift/probe failure is typed and zero-step；probe/accounting identities exact |
+| `M4.6-B` | four-state verifier and typed task-terminal fact orthogonal to Runtime failure | supported algebra total；terminal task failure never becomes `RuntimeFailure(CONTROL, REJECTED)`；previous-unknown cohort gets a new run ID |
+| `M4.6-C` | semantic inventory separate from projection coverage and ActionSpace | recognized omission cannot appear as represented/empty；model sees bounded inventory counts without task-completeness inference |
+| `M4.6-D` | exact repeated no-gain containment for action pages and policy observations | first no-gain returns typed feedback；second identical request/result terminates；Runtime refresh remains exempt |
+| `M4.6-E` | stable opaque target identity and staged observable/executable breadth | irrelevant AX order does not change identity；read-only semantics grants no execution；quotas preserve controls |
+| `M4.7` | supported-subset multi-seed run | immutable manifest, exact seed set, provider-capacity floor, success floor and maximum seed variance frozen before execution; all thresholds met before P5-E |
+
+每个 M4.6 slice 独立提交、property 验收并记录 implementation SHA；targeted/full rerun 使用
+新 run ID 和 immutable directory。职责、authority、cohesion 和 change coupling 决定 owner，
+不得按 LOC 机械拆分或形成 projection/ContextBuilder/benchmark god file。
 
 ### P5-E — Long-horizon planning
 
@@ -378,8 +400,10 @@ DONE: P5-M4.4 typed attribution/capability inventory
 DONE: post-M4.4 separately authorized formal rerun-v3 (4/60)
 DONE: P5-M4.5-A observation acquisition lifecycle
 ACTIVE_REVIEW: P5-M4.5-B bounded control/failure contract convergence; implemented, not verified
-BLOCKED: P5-M4.5-C same-profile MiniWoB-60 rerun by M4.5-B convergence
-THEN: P5-M4.5-D supported-subset multi-seed gate
+DONE_DIAGNOSTIC: P5-M4.5-C same-profile MiniWoB-60 at `4924ce6`; evidence valid, formal exit/performance/generalization not claimed
+NEXT: P5-M4.6-A canonical AX semantics/currentness
+THEN: P5-M4.6-B–E verifier, inventory, no-gain and staged breadth
+BLOCKED: P5-M4.7 supported-subset multi-seed by M4.6 gates
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars
@@ -477,5 +501,8 @@ M4.5-B is integrated non-default but reopened: ordered physical attempts,
 terminal non-re-entry, confirmation/current-risk lifetime, evaluation epochs,
 snapshot authority and benchmark Runtime/component/watchdog/cleanup/integrity
 ownership must converge under one bounded reducer and property model. M4.5-C is
-blocked; P5-E stays blocked. Provider/model competence remains measured rather
-than repaired by Runtime machinery.
+complete as separately authorized diagnostic evidence at `4924ce6`; it does
+not close B. Its source-confirmed AX currentness, verifier, inventory and
+non-effect-control gaps define M4.6-A–E. M4.7 and P5-E stay blocked by their
+targeted/breadth gates. Provider/model competence remains measured rather than
+repaired by Runtime machinery.
