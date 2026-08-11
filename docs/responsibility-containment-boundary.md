@@ -28,6 +28,7 @@
 | `AgentLoopState` | authoritative current run control state and bounded transition suffix/total | durable log, replay reconstruction, surface/evaluator algorithms |
 | `ControlTransition` accounting | one privacy-safe typed control boundary per accepted decision | state authority, event bus, persistence, low-level event taxonomy |
 | `ProgressController` | local semantic-attempt digest and declared postcondition repetition containment | planner, milestone promotion, general task progress |
+| `ControlFeedbackPolicy` | envelope typed admission/no-gain source facts, consume one bounded ordinary-policy repair opportunity and enforce control repetition disposition | parsing exception text, owning schemas/evaluation facts, editing parameters, choosing actions, reflection, planning or replay |
 | `Executor` | one BoundActionRequest → ActionResult | effect/task success judgment |
 | `ActionEvaluator` | before/request/result/after → effect status | task completion |
 | `WorldEvidenceIndex` | current fact IDs and controlled artifact refs for one observation | artifact values, global provenance, or persistence |
@@ -38,7 +39,7 @@
 | `LoopPolicy` | continue/reobserve/ask/stop | domain observation or execution |
 | `TurnRecorder` | optional projection of transitions/current state for telemetry | admission, execution, transition/state authority |
 | `BindingCache` / Skill sidecars | currentness-checked hints and offline-evaluated templates | bypassing ActionSpace/RiskPolicy/evaluation or online publication |
-| `model_boundary/` | disposable AgentContext, one-way projection, ContextIdentity, budgets, paging, model-safe views and typed future provider failures | Runtime state, concrete adapters, binders/executors, provider SDKs or fixtures |
+| `model_boundary/` | disposable AgentContext, one-way projection, ContextIdentity, budgets, paging, model-safe control-feedback views and typed future provider failures | Runtime state, feedback/retry inference, concrete adapters, binders/executors, provider SDKs or fixtures |
 
 ## 2. Dependency direction
 
@@ -338,6 +339,18 @@ confirmation closure path, `session_snapshot.py` reads current evaluation only
 from AgentLoopState, and `benchmarks/target_loop/case_projection.py` alone owns
 benchmark-specific typed precedence. Model projection does not import or serve
 the benchmark projection.
+
+M4.6-D keeps source facts with their existing owners. ActionSpace/page
+validators return typed, public-safe admission issues instead of making a
+feedback owner parse `ValueError` text. ActionEvaluation/ProgressEvent retain
+no-effect/already-satisfied truth. A small `ControlFeedbackPolicy` owns only the
+delivery envelope, identity-free semantic-scope key, one repair consumption and
+page/policy-observation no-gain streak in bounded AgentLoopState. The same root
+ControlTransition stores the envelope; a dedicated model-boundary projector
+removes internal digests/private data; ContextBuilder only assembles it. The
+ordinary AgentPolicy chooses the next action. No feedback owner may duplicate
+ActionSpace schema, choose a replacement, invoke a reflector, become a retry
+manager, or reinterpret benchmark outcomes.
 
 P5-E reuses `task/planning_contracts.py`. VerifiedTaskState/milestone promotion
 and TaskProgressAuditor stay under task/evaluation ownership; ObjectivePolicy

@@ -277,7 +277,7 @@ M4.6 只消费 `4924ce6` 的 immutable facts 和同树源码归因；修复后�
 | `M4.6-A` | shared canonical AX semantics/currentness；owner-scoped select options；executable availability | unchanged canonical binding is current；bound drift/probe failure is typed and zero-step；probe/accounting identities exact |
 | `M4.6-B` | four-state verifier and typed task-terminal fact orthogonal to Runtime failure | supported algebra total；terminal task failure never becomes `RuntimeFailure(CONTROL, REJECTED)`；previous-unknown cohort gets a new run ID |
 | `M4.6-C` | semantic inventory separate from projection coverage and ActionSpace | recognized omission cannot appear as represented/empty；model sees bounded inventory counts without task-completeness inference |
-| `M4.6-D` | exact repeated no-gain containment for action pages and policy observations | first no-gain returns typed feedback；second identical request/result terminates；Runtime refresh remains exempt |
+| `M4.6-D` | canonical model-facing control feedback, one bounded zero-dispatch policy repair, explicit projection of existing validated no-effect strategy feedback, and exact no-gain containment for action pages/policy observations | typed source owners feed one sanitized envelope into the next ordinary AgentContext；AgentPolicy—not Runtime—chooses the correction；a second repairable rejection in one identity-free public semantic scope or a second identical no-gain request/result terminates typed；existing ProgressController remains local；Runtime refresh and any sent/uncertain request are never replayed |
 | `M4.6-E` | stable opaque target identity and staged observable/executable breadth | irrelevant AX order does not change identity；read-only semantics grants no execution；quotas preserve controls |
 | `M4.7` | supported-subset multi-seed run | immutable manifest, exact seed set, provider-capacity floor, success floor and maximum seed variance frozen before execution; all thresholds met before P5-E |
 
@@ -405,7 +405,7 @@ DONE_DIAGNOSTIC: P5-M4.5-C same-profile MiniWoB-60 at `4924ce6`; evidence valid,
 DONE_NON_DEFAULT: P5-M4.6-A canonical AX semantics/currentness — COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE
 DONE_NON_DEFAULT: P5-M4.6-B verifier/task-terminal truth — COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE
 NEXT: P5-M4.6-C semantic inventory truth
-THEN: P5-M4.6-D–E no-gain and staged breadth
+THEN: P5-M4.6-D bounded control feedback/repair/no-gain; M4.6-E staged breadth
 BLOCKED: P5-M4.7 supported-subset multi-seed by M4.6 gates
 THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
 THEN: P5-F bounded ActionBatch

@@ -74,6 +74,32 @@ or complete a task. Sensitive binding payloads and credentials are excluded.
 The stream and optional TurnRecorder project ControlTransition/current state;
 they are not a second execution truth and recorder failure is behavior-neutral.
 
+Model-facing control feedback is not telemetry, but it keeps the same one-way
+authority direction. The owning admission/evaluation/no-gain boundary first
+produces a typed fact; a small control-feedback policy may envelope it on that
+accepted decision's root `ControlTransition` and decide whether one ordinary
+policy repair opportunity remains. A dedicated model-boundary projector copies
+only the public-safe category/code/subject/field refs, retry disposition and
+`strategy_transition_required` into the next disposable AgentContext.
+ContextBuilder only assembles that view.
+
+AgentPolicy—not Runtime—uses the next normal `decide()` call to correct public
+parameters or change strategy. Runtime never parses exception text into advice,
+rewrites parameters, selects a replacement action, or automatically replays a
+request. M4.6-D does not add a separate reflector call; a reflector remains an
+evidence-gated policy extension if later benchmark results show that explicit
+feedback is delivered but ignored.
+
+For repairable zero-dispatch public admission mismatch, one opportunity is
+available per unchanged identity-free public semantic scope. Another
+repairable rejection before valid admission or semantic gain terminates typed
+and zero-call, preventing enumeration of different bad parameters. Page and
+policy-observation no-gain use first-feedback/second-identical-request-result
+containment. Runtime binding/currentness/confirmation/post-action refresh,
+risk/safety/task/session terminal, budget/cancel, `SENT_UNKNOWN`, component/
+integrity failure and post-admission adapter-contract mismatch are not model
+repair paths. No fresh identity alone resets a semantic streak.
+
 ## 4. Confirmation
 
 WaitingConfirmation carries a typed `ConfirmationRequest`: confirmation ID,
@@ -236,6 +262,11 @@ The M4.5-B candidate records the accepted selection and its suppression/progress
 consequence as one ControlTransition while still fabricating no execution or
 observation; reducer properties must verify this invariant. The controller remains a fill/select local liveness guard; future
 TaskProgressAuditor and planner remain separate P5-E owners.
+
+M4.6-D makes this existing ActionEvaluation/ProgressEvent strategy-transition
+feedback explicit in the model-facing channel, but does not turn
+ProgressController into a universal effectful-action retry controller. A
+different action remains the AgentPolicy's choice.
 
 The reopened convergence contract requires ordered dispatch attempts and physical
 acquisition/probe totals to be recorded at their

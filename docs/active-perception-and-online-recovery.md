@@ -98,6 +98,17 @@ capture only when that capability is offered. If neither path can satisfy the
 evaluator, Runtime fails closed through typed control/evaluation policy; it
 does not reuse the before observation or fabricate acquisition identity.
 
+M4.6-D distinguishes acquisition freshness from information gain only for
+policy-origin `RequestObservation`. Its result digest covers canonical public
+targets/facts/state/relations/conflicts/inventory, public action semantics and
+current validated task status; it excludes observation/target/fact/evidence/
+binding/action/action-space/page IDs, context generation, free-form request
+reason and private BID/route. An ID-only capture is therefore fresh acquisition
+but no semantic gain. Runtime binding/currentness/confirmation/post-action
+refresh is exempt because unchanged public semantics may still refresh private
+currentness or evaluation lineage. Task terminal truth is evaluated before any
+no-gain disposition.
+
 ## 5. Bounded recovery
 
 Public recovery decisions are only:

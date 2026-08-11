@@ -78,7 +78,7 @@ core contracts for every GUI task.
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
-| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE at residual implementation `880e65fef0c2541be9f4b5af121e610f858685db` (targeted run remains at original `07895ede392bdff065ba3b4c0a6384ba18904143`); M4.6-C NEXT; then bounded control no-gain and staged breadth |
+| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE; M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE at residual implementation `880e65fef0c2541be9f4b5af121e610f858685db` (targeted run remains at original `07895ede392bdff065ba3b4c0a6384ba18904143`); M4.6-C NEXT; then bounded model-facing control feedback/repair/no-gain and staged breadth |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
 | P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | not started; blocked by M4.6/M4.7 breadth gates |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
@@ -237,7 +237,8 @@ candidate whose reducer legality, ordered physical attempts, confirmation,
 evaluation epochs, current snapshot authority and typed benchmark fact owners
 remain under convergence review. M4.5-C diagnostic execution is complete; its
 run patterns plus exact-source review support AX currentness, verifier,
-semantic-inventory and non-effect-control gaps without closing B. M4.6 repairs those gaps in independently
+semantic-inventory and bounded control-feedback/repair/no-gain gaps without
+closing B. M4.6 repairs those gaps in independently
 measurable slices; its targeted gates and a new immutable full run precede the
 M4.7 supported-subset multi-seed gate, whose immutable manifest, exact seed set,
 numeric provider-availability/capacity floor, success floor and maximum seed

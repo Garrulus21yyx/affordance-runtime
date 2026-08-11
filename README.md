@@ -104,6 +104,12 @@ P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 ```
 
 `ProgressController` remains a fill/select local liveness guard, not a planner.
+Planned M4.6-D adds a typed, sanitized control-feedback channel and one bounded
+zero-dispatch ordinary-policy repair opportunity, plus page/policy-observation
+no-gain containment. Runtime states the validated failure/no-gain fact;
+AgentPolicy chooses the correction. It does not auto-edit parameters, replay a
+request or add a mandatory reflection agent. M4.6-D is not implemented and does
+not change M4.6-C's current `NEXT` status.
 `ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
 acquisition and after-world facts are recorded monotonically before evaluator
 completion; confirmation continuation updates the same root. AgentLoopState

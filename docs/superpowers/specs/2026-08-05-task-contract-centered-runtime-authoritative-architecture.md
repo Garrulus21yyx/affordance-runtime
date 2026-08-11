@@ -212,6 +212,7 @@ class ContextIdentity:
     action_page_id: str
     progress_revision: int
     pending_revision: int
+    context_generation: int
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -222,6 +223,7 @@ class AgentContext:
     world: ModelWorldView
     actions: AgentActionPageView | None
     history: tuple[AgentTurnView, ...]
+    control_feedback: AgentControlFeedbackView | None
     pending: AgentPendingView
     budgets: AgentBudgetView
     decision_mode: DecisionMode
@@ -242,6 +244,10 @@ AgentDecision 都必须携带它。任何不等于 current context ID 的 decisi
   observation modalities；不暴露 selector、coordinate、href、credential 或 route handle。
 - `AgentTurnView`：只保留 decision kind、semantic action、bounded public parameters、
   dispatch/evaluation status 和短 reason。
+- `AgentControlFeedbackView`：只投影最近一次 canonical control feedback 的公开错误类别、
+  reason code、公开 subject/invalid-field 摘要、retry disposition 和
+  `strategy_transition_required`；它不是第二份 Runtime truth，也不包含 raw exception、
+  private binding、selector、native value 或 backend payload。
 - `AgentPendingView`：只给 waiting/question/confirmation/uncertain-effect 摘要；不暴露
   private BoundActionRequest。
 
@@ -441,6 +447,78 @@ execution/acquisition attempts、expected/actual acquisition origin、evaluation
 observation epoch；pre-execution evaluation 不能冒充 post-action after evaluation。
 `Turn` 仅是 bounded suffix 的兼容只读投影，不是事实写入容器。
 
+### 8.2 Typed control feedback and bounded repair
+
+Runtime 负责判定并记录已经成立的 control fact，AgentPolicy 负责在下一次普通
+`decide(AgentContext)` 中选择修正参数、改选 action、请求 observation/page、改变策略或
+停止。Runtime 不猜测模型原意、不自动改写参数、不替模型选择替代 action。M4.6-D 先把
+下一次正常 policy inference 作为 bounded repair/replan opportunity；是否增加独立
+reflector 属于后续可选 policy composition，必须由 benchmark 增益证明，且永远不取得
+Runtime fact/action authority。
+
+```python
+@dataclass(frozen=True)
+class ControlFeedback:
+    kind: ControlFeedbackKind
+    code: str
+    source: ControlFeedbackSource
+    retry_disposition: RetryDisposition
+    strategy_transition_required: bool
+    public_subject_id: str
+    public_field_paths: tuple[str, ...]
+    scope_digest: str       # Runtime-only
+    request_digest: str     # Runtime-only
+    result_digest: str      # Runtime-only
+```
+
+Admission、ActionEvaluation/ProgressEvent 和 no-gain comparator 仍分别拥有底层事实；
+`ControlFeedback` 只是同一 root `ControlTransition` 内“当前如何投递以及是否还有一次 policy
+opportunity”的 typed envelope，不成为第二事实 owner。`AgentControlFeedbackView` 是它与
+current public contract 的一次性、bounded、model-safe 投影，省略所有 digest。结构化
+schema/action page/criteria 本身仍由 current AgentContext 的既有 owner 投影，feedback 只
+引用这些公开 owner，不复制或重建另一套 action contract。reason message、raw exception、
+历史 reason 和 benchmark classification 不能被反向解析为 feedback truth。
+
+ActionSpace/page/criterion admission owner 必须直接返回 typed、public-safe issue（包括稳定
+code 和允许公开的 field paths），而不是让 feedback owner 解析 `ValueError`/message。
+feedback owner 只决定投递、一次 repair consumption 和 control disposition；
+ContextBuilder 只组装，独立 model-boundary projector 只做安全复制。
+
+M4.6-D 新增两类 feedback envelope：
+
+1. `REPAIRABLE_REJECTION`：current typed decision 已被 Runtime 接受处理，但在任何
+   effectful dispatch 前因公开 action-selection/page/parameter/destination contract 不匹配
+   而被拒绝；首次在同一 identity-free public semantic scope 内返回下一 policy turn，且
+   bind/probe/execute/capture 均为零。
+2. `NO_INFORMATION_GAIN`：action-page 或 policy-origin observation 请求返回与请求键匹配的
+   identity-free public result；首次反馈，第二次连续相同 request/result typed 结束。
+
+validated `NO_EFFECT_CONFIRMED` 与 already-satisfied local postcondition 继续由既有
+ActionEvaluation/ProgressEvent/ProgressController 拥有并投影；它们必须让下一 policy turn
+看到 `strategy_transition_required=true`，但 M4.6-D 不新建 universal effectful-action retry
+controller。当前 fill/select exact repetition invariant 保持不变；其它 action repetition 只有
+新的运行证据出现后才扩展。
+
+repair semantic scope 由 task revision、identity-free public-world semantic digest、public
+action-contract/page digest 和 task-progress fingerprint 决定，显式排除 `observation_id`、
+`action_space_id`、`page_id`、`context_id`、context generation、target/fact/evidence/binding
+identity 和 private BID/route。一次 repair opportunity 被消费后，同一 scope 内再次产生
+repairable rejection 即 typed `no_progress_control_repetition`；合法 admitted decision 或
+relevant public semantic gain 才清除该 repair state。这样禁止模型通过更换错误参数枚举绕过
+上限，也不让 fresh identity 掩盖语义不变。
+
+下列结果不进入 model repair：risk/safety block、task/session terminal、budget exhaustion、
+cancel、`SENT_UNKNOWN`、invalid evaluator/component output、capability/integrity failure，以及
+已经通过 ActionSpace admission 后才由 adapter 报告的 parameter-domain mismatch。最后一种
+是 typed adapter-contract failure，不要求 Agent 猜测 private adapter contract。任何可能已
+发送的请求都不得借 feedback 重放；turn budget 已耗尽时也不承诺产生 repair policy call。
+
+AgentLoopState 只保存 bounded repair/no-gain key、streak/consumption state；
+ControlTransition 保存本次 feedback envelope；AgentContext 做单向投影。旧 history feedback
+不授予新的 repair opportunity。ProgressController 继续拥有 local semantic-attempt
+containment，新的 control-feedback owner 不取得 planner、TaskProgressAuditor、ActionSpace、
+evaluation 或 benchmark authority。
+
 ## 9. Evaluation 与 criterion-specific completion
 
 `ActionEvaluationValidator` 处理动作是否发送及效果是否出现，至少绑定 request ID、
@@ -577,8 +655,13 @@ observation、询问用户或停止。core 不建设通用 prompt-injection plat
     AgentLoopState 不由 transition replay 重建。
 18. VerifiedTaskState 只由 validated evidence promotion；TaskPlan 与模型自述不是 verified frontier。
 19. local ProgressController 与 TaskProgressAuditor 分离，二者都不替代 planner/policy。
-20. recorder failure 不改变行为；benchmark metadata 不进入 product decision。
-21. core 不依赖 event sourcing、global transaction 或 approval registry。
+20. Runtime 只投影 canonical typed control feedback；AgentPolicy 自行修正，Runtime 不自动
+    改参或选替代 action；独立 reflector 是 evidence-gated policy extension，不是 D 前置或 authority。
+21. 首次 repairable zero-dispatch rejection 只有一次 bounded repair；同一 identity-free public
+    semantic scope 的再次 repairable rejection typed 结束，任何 fresh identity、已发送或不确定
+    请求均不能绕过该边界或触发重放。
+22. recorder failure 不改变行为；benchmark metadata 不进入 product decision。
+23. core 不依赖 event sourcing、global transaction 或 approval registry。
 
 ## 14. 明确非目标
 

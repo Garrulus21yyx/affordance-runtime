@@ -325,6 +325,40 @@ at a time. Any targeted or full rerun is a new immutable record and cannot
 amend, resume or merge any exact run above. Zero unclassified typed outcomes
 remains an attribution gate, not permission to rewrite prior evidence.
 
+M4.6-D is a bounded control-feedback/repair/no-gain gate, not a new planner or
+reflection benchmark. Its primary proof is a reducer/loop state machine with
+deterministic fake ports:
+
+1. a typed public parameter/page admission issue produces exactly one finalized
+   zero-bind/probe/execute/capture root and one model-safe feedback view;
+2. the next ordinary policy call may return a corrected decision; Runtime never
+   edits it, recommends a replacement or replays the rejected decision;
+3. another repairable rejection before valid admission or identity-free public
+   semantic gain terminates `no_progress_control_repetition`, even when the
+   invalid payload or fresh Runtime identities differ;
+4. adapter parameter rejection after successful Runtime admission is a typed
+   adapter-contract mismatch, not model repair; risk/task terminal,
+   `SENT_UNKNOWN`, budget/cancel and component/integrity failures remain outside
+   repair;
+5. first page/policy-observation no-gain gives feedback, the second consecutive
+   same request/result terminates, semantic gain resets, and Runtime refresh is
+   exempt;
+6. existing validated no-effect/already-satisfied strategy feedback remains
+   visible without creating a universal action retry controller; and
+7. serialized feedback contains no raw exception, parameter value, private
+   binding/BID/route or internal digest, and ContextBuilder/classification infer
+   no repairability.
+
+Because AgentContext gains a declared field, the gate includes its focused
+serializer/parser/real-policy conformance witness. A new targeted run covers the
+direct case-37 parameter witness, the declared current-page selection witnesses
+and page/observation cohorts. It records feedback delivery, repair consumption,
+corrected-decision rate, policy attempts/tokens and final outcomes; stochastic
+success improvement is measured but is not substituted for the control
+properties or required from one case. A separate reflector is considered only
+after these measurements show correct feedback delivery but persistent policy
+repetition.
+
 After M4.6 targeted gates and a new accepted same-profile rerun, a pre-result admitted supported subset
 must run across multiple seeds before P5-E. Its immutable manifest, exact seed
 set, numeric provider-availability/capacity floor, success floor and maximum

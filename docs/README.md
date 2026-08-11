@@ -70,6 +70,9 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, and M4.6-C is `NEXT`;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
+M4.6-D is planned as bounded typed control feedback/ordinary-policy repair and
+page/policy-observation no-gain containment, not Runtime autocorrection or a
+mandatory reflection agent;
 M4.7 multi-seed and P5-E remain blocked by
 their targeted/breadth gates. Only after those gates may P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local
@@ -245,7 +248,7 @@ coverage. The M4.5-B candidate records bounded ControlTransition facts, but
 reducer legality, attempt matrices and failure/projection ownership are still
 under convergence review. This review introduces no ledger, replay or second
 state authority. See the [active queue](current-implementation-plan.md) for the
-M4.6-A next slice, the
+M4.6-C next slice and the admitted M4.6-D feedback contract, the
 [immutable M4.5-C attribution](reviews/2026-08-11-p5-m4-5-miniwob-60-diagnostic.md),
 the [current M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md),
 and the [evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).

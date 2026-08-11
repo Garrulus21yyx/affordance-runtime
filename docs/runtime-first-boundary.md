@@ -26,6 +26,15 @@ Every typed decision carries an opaque current context ID; stale context means
 zero execution. Runtime alone retains Internal ActionSpace membership and
 private routes.
 
+The disposable context may carry one current, public-safe control-feedback
+view sourced from typed admission/no-gain facts and existing validated
+evaluation/progress facts. Runtime states what failed, whether any dispatch
+occurred, and whether one new policy decision is admitted; AgentPolicy chooses
+the correction. Runtime never parses exception text into advice, edits
+parameters, selects a substitute action, or treats a new policy decision as
+replay. M4.6-D uses the ordinary next policy call; an optional reflector is a
+later evidence-gated policy implementation, not Runtime authority.
+
 Text from pages, email, documents, screenshots, tools, or providers is observed
 data. It may inform state and decisions but cannot create confirmation or widen
 the requested effect.
@@ -98,6 +107,14 @@ authority. TaskPlan remains a replaceable hypothesis. The local
 ProgressController continues to contain exact `fill`/`select` repetition;
 TaskProgressAuditor separately evaluates criterion, milestone, and frontier
 progress from validated evidence.
+
+M4.6-D adds a narrow ControlFeedbackPolicy for one bounded zero-dispatch public
+admission repair and exact action-page/policy-observation no-gain. It envelopes
+rather than re-owns source facts, stores only identity-free semantic scope and
+streak state in AgentLoopState, and projects once through `model_boundary/`.
+Risk/safety/task terminal, `SENT_UNKNOWN`, component/integrity failure and an
+adapter parameter mismatch after successful Runtime admission remain terminal
+or paused according to their owning contracts and are never model-repair replay.
 
 ## 6. Benchmark boundary
 

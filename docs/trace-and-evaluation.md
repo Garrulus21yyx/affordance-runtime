@@ -30,6 +30,12 @@ user, and never enters ordinary execution for that intent. `REJECTED` fails or
 stops according to loop policy. Evidence must concern the requested target and
 effect and come from the fresh observation or an authoritative external check.
 
+M4.6-D does not redefine these statuses. It requires the existing validated
+`NO_EFFECT_CONFIRMED`/ProgressEvent strategy-transition fact to be explicit in
+the next disposable AgentContext so AgentPolicy can choose another action. A
+ControlFeedback envelope may carry delivery/disposition, but it cannot infer
+effect, recommend an action or become a universal action retry controller.
+
 Every target-path `ActionEvaluation` binds a non-empty request ID and distinct,
 non-empty before/after observation IDs. `EFFECT_CONFIRMED` and
 `NO_EFFECT_CONFIRMED` additionally require at least one authoritative evidence
@@ -105,7 +111,8 @@ INCOMPLETE rather than an immediate WAITING_USER.
 `ControlTransition` is mandatory lightweight run accounting for an accepted
 policy decision. It retains privacy-safe typed control facts: before/after
 observation identity, decision, admission, execution/acquisition, validated
-evaluations, progress, pending state, resulting status and Runtime-owned reason
+evaluations, progress, optional control-feedback envelope, pending state,
+resulting status and Runtime-owned reason
 code. One accepted policy decision has exactly one root transition. The recent
 window is bounded while AgentLoopState retains an exact total count.
 

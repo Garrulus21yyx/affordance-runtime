@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT` | residual M4.6-B contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`; next semantic inventory, then bounded control no-gain and stable identity/breadth |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C NEXT` | residual M4.6-B contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`; next semantic inventory, then bounded model-facing control feedback/repair/no-gain and stable identity/breadth |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` | VerifiedTaskState, task-level auditing and long-horizon plan execution |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -248,13 +248,19 @@ executed Git SHA `4924ce61748d8efdec4fcc6de494acf8a9f224cc`. It completed
 60/60 with 8/60 success, 290 provider attempts and 555,164 tokens. Formal exit,
 performance and generalization were not predeclared or attested.
 
-Run patterns joined with exact `4924ce6` source review support four bounded
-remediation families: AX/DOM currentness ownership, verifier task-terminal
-information loss, semantic inventory/action projection coupling, and missing
-exact no-gain containment for action-page and policy-observation decisions. The
-immutable payload alone does not prove those causes, that all 14 verifier-unknown
-cases were negative terminal outcomes, that broader roles guarantee success,
-or that a later repair improves the score.
+Run patterns joined with exact `4924ce6` source review support four scheduled
+remediation slices: AX/DOM currentness ownership, verifier task-terminal
+information loss, semantic inventory/action projection coupling, and bounded
+control feedback/repair/no-gain. Its direct repair witness is case 37: one
+policy call, zero execution/step, three current options and terminal
+`invalid_action_parameters` despite a canonical rejection fact. The same run
+has seven adjacent final current-page action/destination rejections and two
+invalid completion claims, but some cases dispatched earlier and the completion
+claims remain outside D. Page and observation no-gain shapes could continue
+without an information-gain bound. The immutable payload alone does not prove
+that a repair turn would succeed,
+that all 14 verifier-unknown cases were negative terminal outcomes, that broader
+roles guarantee success, or that a later repair improves the score.
 
 ## P5-M4.6 evidence-directed remediation — in progress
 
@@ -266,8 +272,13 @@ Implement one independently measurable slice at a time:
    `RuntimeFailure` — `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`;
 3. M4.6-C semantic inventory separate from existing projection coverage and
    ActionSpace authority — `NEXT`;
-4. M4.6-D exact repeated no-gain containment for action pages and policy
-   observations, with Runtime refresh exempt;
+4. M4.6-D typed admission/no-gain source facts → canonical model-facing
+   feedback, one bounded zero-dispatch ordinary-policy repair opportunity,
+   explicit projection of existing validated no-effect strategy feedback, plus
+   exact repeated no-gain containment for action pages and policy observations;
+   AgentPolicy chooses the correction, Runtime never parses exception text or
+   edits parameters, Runtime refresh is exempt, and sent/uncertain requests are
+   never replayed;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth.
 

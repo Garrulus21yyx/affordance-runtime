@@ -418,8 +418,8 @@ boundaries are recorded in the
 Patterns in that run, joined with exact `4924ce6` source review, support four
 next product gaps: AX-versus-DOM currentness ownership, semantic
 inventory/action projection coupling, verifier terminal information loss, and
-missing exact no-gain containment for action-page and policy-observation
-decisions. Their implementation/evidence identities are
+missing bounded control feedback/repair plus exact no-gain containment for
+action-page and policy-observation decisions. Their implementation/evidence identities are
 tracked without rewriting the old run in the
 [M4.6 remediation record](reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md).
 
@@ -447,6 +447,22 @@ closure claim. Generated fault-injection, state-machine, pinned real producer,
 full quality gates and a fresh-context held-out review closed the residual
 raw-fact producer and nonterminal task/control precedence seams without a new
 campaign run ID.
+
+M4.6-D is not implemented. Current public action parameter/page admission
+records typed rejection and finalizes the accepted decision, but returns
+`BLOCKED` instead of projecting one repair opportunity to the same run's next
+policy context. The direct `4924ce6` witness is case 37:
+`invalid_action_parameters`, one policy call, zero execution/step and three
+current options. A parameter-domain rejection reported by an adapter after
+successful Runtime admission remains an internal adapter-contract mismatch,
+not policy repair. `NO_EFFECT_CONFIRMED` and already-satisfied fill/select
+already enter ActionEvaluation/progress history and the first verified local
+no-progress event carries strategy-transition feedback; exact unchanged
+fill/select repetition is bounded. There is no general action retry controller.
+`page_unchanged` continues without a repetition bound, and policy observation
+freshness still uses acquisition identity rather than identity-free semantic
+gain. No dedicated `AgentContext.control_feedback`, typed admission-issue
+producer, bounded repair state or M4.6-D verification run exists yet.
 
 ## Control-transition and long-horizon gap status
 
