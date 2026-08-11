@@ -28,7 +28,7 @@
 | `AgentLoopState` | authoritative current run control state and bounded transition suffix/total | durable log, replay reconstruction, surface/evaluator algorithms |
 | `ControlTransition` accounting | one privacy-safe typed control boundary per accepted decision | state authority, event bus, persistence, low-level event taxonomy |
 | `ProgressController` | local semantic-attempt digest and declared postcondition repetition containment | planner, milestone promotion, general task progress |
-| `ControlFeedbackPolicy` | envelope typed admission/no-gain source facts, consume one bounded ordinary-policy repair opportunity and enforce control repetition disposition | parsing exception text, owning schemas/evaluation facts, editing parameters, choosing actions, reflection, planning or replay |
+| `ControlFeedbackPolicy` | envelope typed admission/no-gain/strategy-transition source facts, consume a frozen two-distinct-issue same-scope budget and enforce exact-repeat/shared-scope disposition | parsing exception text, owning schemas/evaluation facts, editing parameters, choosing actions, reflection, planning or replay |
 | `Executor` | one BoundActionRequest → ActionResult | effect/task success judgment |
 | `ActionEvaluator` | before/request/result/after → effect status | task completion |
 | `WorldEvidenceIndex` | current fact IDs and controlled artifact refs for one observation | artifact values, global provenance, or persistence |
@@ -354,8 +354,9 @@ M4.6-D keeps source facts with their existing owners. ActionSpace/page
 validators return typed, public-safe admission issues instead of making a
 feedback owner parse `ValueError` text. ActionEvaluation/ProgressEvent retain
 no-effect/already-satisfied truth. A small `ControlFeedbackPolicy` owns only the
-delivery envelope, identity-free semantic-scope key, one repair consumption and
-page/policy-observation no-gain streak in bounded AgentLoopState. The same root
+delivery envelope, identity-free semantic-scope/issue keys, a frozen budget of
+two distinct repair/no-gain issues and exact-repeat containment in bounded
+AgentLoopState. The same root
 ControlTransition stores the envelope; a dedicated model-boundary projector
 removes internal digests/private data; ContextBuilder only assembles it. The
 ordinary AgentPolicy chooses the next action. No feedback owner may duplicate

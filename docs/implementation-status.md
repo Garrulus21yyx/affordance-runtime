@@ -464,7 +464,7 @@ performance/generalization claim.
 
 M4.6-D is not implemented. Current public action parameter/page admission
 records typed rejection and finalizes the accepted decision, but returns
-`BLOCKED` instead of projecting one repair opportunity to the same run's next
+`BLOCKED` instead of projecting a bounded repair opportunity to the same run's next
 policy context. The direct `4924ce6` witness is case 37:
 `invalid_action_parameters`, one policy call, zero execution/step and three
 current options. A parameter-domain rejection reported by an adapter after
@@ -476,7 +476,7 @@ fill/select repetition is bounded. There is no general action retry controller.
 `page_unchanged` continues without a repetition bound, and policy observation
 freshness still uses acquisition identity rather than identity-free semantic
 gain. No dedicated `AgentContext.control_feedback`, typed admission-issue
-producer, bounded repair state or M4.6-D verification run exists yet.
+producer, frozen same-scope issue budget or M4.6-D verification run exists yet.
 
 ## Control-transition and long-horizon gap status
 

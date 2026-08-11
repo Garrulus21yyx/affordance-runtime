@@ -117,7 +117,10 @@ reason and private BID/route. An ID-only capture is therefore fresh acquisition
 but no semantic gain. Runtime binding/currentness/confirmation/post-action
 refresh is exempt because unchanged public semantics may still refresh private
 currentness or evaluation lineage. Task terminal truth is evaluated before any
-no-gain disposition.
+no-gain disposition. Policy-origin observation no-gain shares M4.6-D's frozen
+two-distinct-issue same-scope budget: the same request/result fingerprint
+repeating stops immediately, while a different no-gain control request consumes
+the remaining budget rather than resetting it.
 
 ## 5. Bounded recovery
 

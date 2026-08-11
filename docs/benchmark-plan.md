@@ -334,16 +334,19 @@ deterministic fake ports:
    zero-bind/probe/execute/capture root and one model-safe feedback view;
 2. the next ordinary policy call may return a corrected decision; Runtime never
    edits it, recommends a replacement or replays the rejected decision;
-3. another repairable rejection before valid admission or identity-free public
-   semantic gain terminates `no_progress_control_repetition`, even when the
-   invalid payload or fresh Runtime identities differ;
+3. the initial profile freezes a shared budget of two distinct repair/no-gain
+   issue fingerprints per identity-free scope; an identical issue terminates on
+   repeat and a third distinct issue terminates
+   `no_progress_control_repetition`, even when invalid values, control-request
+   kinds or fresh Runtime identities alternate;
 4. adapter parameter rejection after successful Runtime admission is a typed
    adapter-contract mismatch, not model repair; risk/task terminal,
    `SENT_UNKNOWN`, budget/cancel and component/integrity failures remain outside
    repair;
-5. first page/policy-observation no-gain gives feedback, the second consecutive
-   same request/result terminates, semantic gain resets, and Runtime refresh is
-   exempt;
+5. page/policy-observation no-gain shares that budget; an identical
+   request/result terminates on repeat, effectful `SENT` or semantic/task/page
+   gain resets, a merely admitted no-gain decision does not, and Runtime refresh
+   is exempt;
 6. existing validated no-effect/already-satisfied strategy feedback remains
    visible without creating a universal action retry controller; and
 7. serialized feedback contains no raw exception, parameter value, private
@@ -354,9 +357,12 @@ Because AgentContext gains a declared field, the gate includes its focused
 serializer/parser/real-policy conformance witness. A new targeted run covers the
 direct case-37 parameter witness, the declared current-page selection witnesses
 and page/observation cohorts. It records feedback delivery, repair consumption,
-corrected-decision rate, policy attempts/tokens and final outcomes; stochastic
-success improvement is measured but is not substituted for the control
-properties or required from one case. A separate reflector is considered only
+first- and second-opportunity corrected-decision rate, policy attempts/tokens
+and final outcomes; stochastic success improvement is measured but is not
+substituted for the control
+properties or required from one case. The value two is an initial falsifiable
+profile choice, not a SOTA constant; changing it requires these measurements,
+not a newly enumerated counterexample. A separate reflector is considered only
 after these measurements show correct feedback delivery but persistent policy
 repetition.
 

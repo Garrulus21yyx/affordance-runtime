@@ -104,9 +104,10 @@ P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 ```
 
 `ProgressController` remains a fill/select local liveness guard, not a planner.
-Planned M4.6-D adds a typed, sanitized control-feedback channel and one bounded
-zero-dispatch ordinary-policy repair opportunity, plus page/policy-observation
-no-gain containment. Runtime states the validated failure/no-gain fact;
+Planned M4.6-D adds a typed, sanitized control-feedback channel and a tiny
+bounded zero-dispatch ordinary-policy repair budget, plus page/policy-observation
+no-gain containment. Its initial profile permits two distinct same-scope issues
+but terminates an identical issue on repeat. Runtime states the validated fact;
 AgentPolicy chooses the correction. It does not auto-edit parameters, replay a
 request or add a mandatory reflection agent. M4.6-D is not implemented and is
 the only next M4.6 slice.

@@ -74,9 +74,9 @@ while its accepted targeted run remains bound to original `07895ede392bdff065ba3
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`
 is verified by no-model run
 `miniwob-inventory-17:6220967c47a24532b4140728627e4950`;
-M4.6-D is planned as bounded typed control feedback/ordinary-policy repair and
-page/policy-observation no-gain containment, not Runtime autocorrection or a
-mandatory reflection agent;
+M4.6-D is planned as typed control feedback with a frozen two-distinct-issue
+same-scope repair/no-gain budget and immediate exact-repeat containment, not
+Runtime autocorrection or a mandatory reflection agent;
 M4.7 multi-seed and P5-E remain blocked by
 their targeted/breadth gates. Only after those gates may P5-E
 VerifiedTaskState/TaskProgressAuditor/milestone planning. The local

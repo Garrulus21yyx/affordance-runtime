@@ -47,7 +47,7 @@ ledger, a replay source or execution truth.
 | M4.6-A canonical AX semantics/currentness | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | no-step cases 18, 35, 48, 50, 55, 58; post-run review found 41 false + 1 terminal stale | AX projection and DOM heuristic probe independently owned role/name/state; whole-page select options and incomplete availability were adjacent same-owner defects | immutable JSON proves the 42 no-step shape, not the per-attempt 41/1 probe payload or a future success-rate gain | `896508eaf7737cd86289f93a30e5737c6b1cdf76` | `NONE` | unchanged canonical binding is current; any bound drift is typed `NOT_SENT` with zero step; probe/accounting identity remains exact |
 | M4.6-B verifier/task-terminal truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | previous verifier-unknown cases 01, 03, 08, 10, 11, 21, 22, 32, 35, 41, 42, 46, 54, 59 | three-state verifier collapses non-success/non-ongoing combinations into unavailable/task unknown | the baseline does not reveal how many cases are negative terminal, ongoing, malformed or unavailable; the targeted run does not claim performance or generalization | `880e65fef0c2541be9f4b5af121e610f858685db` residual closure; original/run SHA `07895ede392bdff065ba3b4c0a6384ba18904143` | `miniwob-verifier-14:27950832769b49cf8e3c82d8cb827015` | supported verifier algebra is total; raw probe facts preserve presence/type; nonterminal task facts do not erase cross-domain control truth |
 | M4.6-C semantic inventory truth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | zero-target/action cases 04, 05, 07, 14, 17, 26, 28, 33, 34, 36, 38, 43, 44, 47, 49, 52, 57 | executable-role filtering preceded target creation and projection-only coverage calculation; diagnostics separately rescanned raw AX | the accepted no-model run proves only `browsergym-ax-target-inventory.v1` counts, not task-relative completeness, success, performance or generalization | `e6c410021d8b9bf11b52f24520a6258ede5d2027` | `miniwob-inventory-17:6220967c47a24532b4140728627e4950` | projection coverage and semantic inventory are distinct; recognized omission cannot be reported as represented/empty; ActionSpace remains the only action-availability authority |
-| M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 (`invalid_action_parameters`, one policy, zero execution/step, three current options); adjacent final current-page action/destination rejection cases 06, 09, 12, 16, 48, 53, 56; page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | source preserves the typed public admission reason but terminalizes before another policy turn; unchanged page only continues; observation freshness uses identity rather than public semantic gain | case 37 proves the direct terminal repair shape, not that a feedback turn would repair it; adjacent cases and no-gain JSON store only final/aggregate facts and no complete per-turn semantic digest | `NONE` | `NONE` | typed source owner → canonical envelope → model-safe feedback reaches one ordinary policy turn; Runtime never edits parameters or chooses an action; a second repairable rejection in one identity-free semantic scope or second identical no-gain request/result terminates typed; Runtime refresh and sent/uncertain requests are exempt from replay |
+| M4.6-D bounded control feedback/repair/no-gain | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` | direct repair witness 37 (`invalid_action_parameters`, one policy, zero execution/step, three current options); adjacent final current-page action/destination rejection cases 06, 09, 12, 16, 48, 53, 56; page shape 07, 14, 17, 26, 28, 33, 34, 38, 43, 44, 49, 52; observation shape 02, 13, 20, 39, 60 | source preserves the typed public admission reason but terminalizes before another policy turn; unchanged page only continues; observation freshness uses identity rather than public semantic gain | case 37 proves that zero repair opportunities is inadequate, not that exactly one is sufficient; adjacent cases and no-gain JSON store only final/aggregate facts and no complete per-turn semantic digest | `NONE` | `NONE` | typed source owner → canonical envelope → model-safe feedback reaches an ordinary policy turn; Runtime never edits parameters or chooses an action; same issue fingerprint repeats terminate immediately and the initial profile permits at most two distinct repair/no-gain issues per identity-free scope; Runtime refresh and sent/uncertain requests are exempt from replay |
 | M4.6-E stable identity/breadth | `miniwob-60:e9551acfcd31466e91481ee5923fc9af` / `4924ce6` (source-only adjacent risk) | no direct baseline cohort for ordinal identity; zero-target cohort remains breadth witness | target ID includes ordinal; observable and executable roles are coupled | neither ordinal identity nor a particular unsupported role was shown to cause a baseline failure | `NONE` | `NONE` | identity survives irrelevant AX order changes; read-only semantics cannot grant unsupported execution; quotas preserve actionable controls |
 
 `Implementation SHA` is filled only after a clean product commit exists.
@@ -70,7 +70,7 @@ Neither column ever points to the docs-only archive commit.
 | world semantic projection | generic inventory summary and identity-free public digest |
 | typed admission/page validators | produce public-safe issue facts directly; no `ValueError`/message parsing and no feedback-owned duplicate schema |
 | action evaluation/progress | retain ownership of no-effect/already-satisfied facts and existing local repetition semantics |
-| agent control-feedback/liveness | envelope canonical repairable/no-gain facts, consume one bounded policy-repair opportunity and enforce control repetition bounds; no policy reasoning or action choice |
+| agent control-feedback/liveness | envelope canonical repairable/no-gain/strategy-transition facts, consume a frozen two-distinct-issue budget and enforce exact-repeat/shared-scope bounds; no policy reasoning or action choice |
 | `AgentLoopState` | current task evaluation and bounded repair/no-gain state authority |
 | `ControlTransition` | preserve the canonical feedback fact on the accepted-decision root; never become a repair log or state-reconstruction source |
 | model control-feedback projection | one-way public-safe `AgentControlFeedbackView`; no inference from reason text, benchmark outcome or raw exception |
@@ -107,11 +107,17 @@ Primary sources show a shared feedback trend, not one standardized Runtime
 contract:
 
 - BrowserGym's official
-  [DemoAgent](https://github.com/ServiceNow/BrowserGym/blob/main/demo_agent/agent.py#L248-L329)
-  puts `last_action`, `last_action_error`, current page state and action history
+  DemoAgent builds the
+  [current-page description](https://github.com/ServiceNow/BrowserGym/blob/main/demo_agent/agent.py#L156-L224)
+  and puts it with a
+  [turn history containing prior actions/errors](https://github.com/ServiceNow/BrowserGym/blob/main/demo_agent/agent.py#L248-L329)
   into the next ordinary policy prompt and asks the model to reflect before its
-  next action. This supports recurrent feedback, but copying a raw exception is
-  not an acceptable privacy/authority boundary for this project.
+  next action; the environment observation also exposes
+  [`last_action`](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/env.py#L625-L630)
+  and
+  [`last_action_error`](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/env.py#L681-L686).
+  This supports recurrent feedback, but copying a raw exception is not an
+  acceptable privacy/authority boundary for this project.
 - [UI-TARS-2](https://arxiv.org/abs/2509.02544) formulates every ReAct step as
   reasoning/action/environment observation, with self-reflection inside model
   reasoning and recent steps in working memory. It supports feedback-conditioned
@@ -125,8 +131,9 @@ contract:
 - [Agent S2](https://arxiv.org/abs/2504.00906) provides the alternative of an
   optional per-step reflector and hierarchical replanning. Its
   [reflector/worker implementation](https://github.com/simular-ai/Agent-S/blob/bffdb59c60cbbb38c3a190b2e91da12039e4063c/gui_agents/s2/agents/worker.py#L157-L194)
-  flags failed actions or repeated cycles but deliberately does not choose the
-  replacement action; the Worker does. A failed subtask returns to the Manager
+  flags failed actions or repeated cycles, while the
+  [reflection contract](https://github.com/simular-ai/Agent-S/blob/bffdb59c60cbbb38c3a190b2e91da12039e4063c/gui_agents/s2/memory/procedural_memory.py#L103-L116)
+  deliberately does not choose the replacement action; the Worker does. A failed subtask returns to the Manager
   with the latest observation for replanning.
 - [LongHorizon-Harness](https://arxiv.org/abs/2608.01964) externalizes unresolved
   failures into independently audited task state and gives a fresh executor the
@@ -158,7 +165,9 @@ M4.6-D introduces a canonical `ControlFeedback` envelope on the same root
 `ControlTransition` and a bounded, model-safe projection in the next ordinary
 AgentContext. The owning ActionSpace/page validator must first produce a typed,
 public-safe issue; feedback may report its kind, stable code, public subject/
-field paths, retry disposition and `strategy_transition_required`, but may not
+field paths, next-decision disposition and `strategy_transition_required`, but subject
+is optional for page/observation feedback and the model view never receives
+internal scope/issue/request/result digests. Feedback may not
 parse exception strings. Current ActionSpace/page owners retain their schemas
 and domains; feedback references them rather than copying a second contract.
 Raw exception text, private binding/native values, selectors, routes, provider
@@ -173,21 +182,32 @@ first current zero-dispatch public-contract rejection in one public semantic sco
 → project feedback into one fresh AgentContext
 → one ordinary AgentPolicy decision chooses correction or another strategy
 
-another repairable rejection before valid admission or public semantic gain
+same typed issue fingerprint before effectful dispatch or public gain
+→ NO_PROGRESS_CONTROL_REPETITION typed terminal; zero dispatch
+
+second distinct repair/no-gain issue in the same scope
+→ one final bounded feedback opportunity
+third distinct repair/no-gain issue in the same scope
 → NO_PROGRESS_CONTROL_REPETITION typed terminal; zero dispatch
 
 first exact action-page/policy-observation no-gain
 → typed feedback and continue
-second consecutive same request + same identity-free public result
+same request + same identity-free public result again
 → NO_PROGRESS_CONTROL_REPETITION
 ```
 
 The semantic scope is defined from task revision, identity-free public-world
 semantic digest, public action-contract/page digest and task-progress
 fingerprint. It explicitly excludes observation/action-space/page/context IDs,
-context generation and every private identity. A valid admitted decision or
-relevant semantic gain clears repair state. Risk or safety block, terminal
-task/session, cancellation, budget exhaustion,
+context generation, invalid parameter values, free-form reason text and every
+private identity. The initial M4.6-D profile freezes one shared budget of two
+distinct repair/no-gain issue fingerprints per scope. An identical issue repeat
+terminates immediately; a third distinct issue terminates, so alternating
+invalid action/page/observation cannot enumerate forever. Only an effectful
+`SENT` or relevant public semantic/task-progress/action-page gain clears repair
+state; a merely admitted no-gain control decision does not. The value two is a
+falsifiable initial benchmark choice, not a claimed SOTA constant. Risk or
+safety block, terminal task/session, cancellation, budget exhaustion,
 `SENT_UNKNOWN`, evaluator/component invalid output, capability/integrity failure
 and an adapter parameter mismatch after successful ActionSpace admission remain
 non-repairable. The last case is an adapter-contract failure, not a request for
@@ -198,8 +218,11 @@ D makes its strategy-transition meaning unambiguous to policy but does not add a
 universal effectful-action retry controller.
 
 Primary verification is property/state-machine based: one root per accepted
-decision; first repair is zero-call and visible exactly once; a second rejection
-cannot enumerate alternate bad parameters indefinitely; typed admission issues
+decision; every rejected decision remains zero bind/probe/execute/capture while
+its feedback is visible once in the next ordinary policy context; identical
+issues terminate on repeat and a third distinct same-scope issue terminates, so
+alternate bad parameters/control requests cannot enumerate indefinitely; typed
+admission issues
 are never reconstructed from messages; private/raw data never projects;
 identity-only refresh cannot reset the scope; semantic gain permits a new
 decision; task terminal and unknown-effect precedence remain absorbing; Runtime

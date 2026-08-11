@@ -271,14 +271,15 @@ Implement one independently measurable slice at a time:
 2. M4.6-B four-state verifier plus task-terminal fact orthogonal to
    `RuntimeFailure` — `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`;
 3. M4.6-C semantic inventory separate from existing projection coverage and
-   ActionSpace authority — `NEXT`;
+   ActionSpace authority — `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`;
 4. M4.6-D typed admission/no-gain source facts → canonical model-facing
-   feedback, one bounded zero-dispatch ordinary-policy repair opportunity,
+   feedback, a frozen two-distinct-issue same-scope zero-dispatch repair/no-gain
+   budget with immediate exact-repeat containment,
    explicit projection of existing validated no-effect strategy feedback, plus
    exact repeated no-gain containment for action pages and policy observations;
    AgentPolicy chooses the correction, Runtime never parses exception text or
    edits parameters, Runtime refresh is exempt, and sent/uncertain requests are
-   never replayed;
+   never replayed — `NEXT`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth.
 

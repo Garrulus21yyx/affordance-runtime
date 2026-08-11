@@ -77,15 +77,15 @@ they are not a second execution truth and recorder failure is behavior-neutral.
 Model-facing control feedback is not telemetry, but it keeps the same one-way
 authority direction. The owning admission/evaluation/no-gain boundary first
 produces a typed fact; a small control-feedback policy may envelope it on that
-accepted decision's root `ControlTransition` and decide whether one ordinary
-policy repair opportunity remains. A dedicated model-boundary projector copies
-only the public-safe category/code/subject/field refs, retry disposition and
+accepted decision's root `ControlTransition` and decide whether the small frozen
+policy-repair budget remains. A dedicated model-boundary projector copies
+only the public-safe category/code/subject/field refs, next-decision disposition and
 `strategy_transition_required` into the next disposable AgentContext.
 ContextBuilder only assembles that view.
 
 The policy consumes this as an outcome observation, not as a Runtime-authored
 correction. It may reflect inside its ordinary inference, but any correction is
-a new AgentDecision. `retry_disposition` means only that a new policy decision
+a new AgentDecision. `next_decision_disposition` means only that a new policy decision
 is admitted; it never authorizes replay of the rejected request.
 
 AgentPolicy—not Runtime—uses the next normal `decide()` call to correct public
@@ -95,12 +95,16 @@ request. M4.6-D does not add a separate reflector call; a reflector remains an
 evidence-gated policy extension if later benchmark results show that explicit
 feedback is delivered but ignored.
 
-For repairable zero-dispatch public admission mismatch, one opportunity is
-available per unchanged identity-free public semantic scope. Another
-repairable rejection before valid admission or semantic gain terminates typed
-and zero-call, preventing enumeration of different bad parameters. Page and
-policy-observation no-gain use first-feedback/second-identical-request-result
-containment. Runtime binding/currentness/confirmation/post-action refresh,
+For repairable zero-dispatch public admission mismatch and policy-origin
+no-gain, M4.6-D freezes one shared budget of two distinct issue fingerprints per
+unchanged identity-free public semantic scope. An identical issue terminates on
+its second occurrence; a third distinct issue terminates with zero
+bind/probe/execute/capture. Issue identity excludes invalid parameter values and
+fresh Runtime IDs, preventing both value enumeration and alternating invalid
+action/page/observation loops. Only effectful `SENT` or relevant public semantic,
+task-progress or action-page gain resets the budget; a merely valid no-gain
+control decision does not. Runtime binding/currentness/confirmation/post-action
+refresh,
 risk/safety/task/session terminal, budget/cancel, `SENT_UNKNOWN`, component/
 integrity failure and post-admission adapter-contract mismatch are not model
 repair paths. No fresh identity alone resets a semantic streak.

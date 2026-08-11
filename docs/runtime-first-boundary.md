@@ -108,9 +108,10 @@ ProgressController continues to contain exact `fill`/`select` repetition;
 TaskProgressAuditor separately evaluates criterion, milestone, and frontier
 progress from validated evidence.
 
-M4.6-D adds a narrow ControlFeedbackPolicy for one bounded zero-dispatch public
-admission repair and exact action-page/policy-observation no-gain. It envelopes
-rather than re-owns source facts, stores only identity-free semantic scope and
+M4.6-D adds a narrow ControlFeedbackPolicy with a frozen two-distinct-issue
+same-scope budget for zero-dispatch public admission repair and
+action-page/policy-observation no-gain; exact issue repetition stops immediately.
+It envelopes rather than re-owns source facts, stores only identity-free semantic scope and
 streak state in AgentLoopState, and projects once through `model_boundary/`.
 Risk/safety/task terminal, `SENT_UNKNOWN`, component/integrity failure and an
 adapter parameter mismatch after successful Runtime admission remain terminal
