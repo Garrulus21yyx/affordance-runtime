@@ -102,3 +102,12 @@ without creating a second task or action authority.
   Runtime still independently admits the objective and current ActionSpace
   remains the only action authority. Full validation remains 2220 passed and 27
   skipped; Ruff and mypy pass. A fresh clean-SHA directed rerun is required.
+- 2026-08-11: that rerun still returned the exact rejected package despite the
+  typed candidates, proving prompt compliance alone is insufficient for this
+  model. The bridge now narrows only an `objective_already_satisfied` repair
+  call's provider JSON Schema to the Runtime-projected objective candidates and
+  revalidates the same subset locally. The canonical package schema and action
+  schema are otherwise unchanged, and Runtime admission remains final. Full
+  validation is 2221 passed and 27 skipped; Ruff and mypy pass. A fresh
+  clean-SHA directed rerun is required to verify provider schema compatibility
+  and actual dispatch.

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
+
+from pydantic import model_validator
 
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model_boundary.failures import (
@@ -103,8 +106,9 @@ class ModelPortDecisionAdapter:
         except (TypeError, ValueError, json.JSONDecodeError):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
         try:
+            output_schema = _decision_output_schema(request.serialized_context)
             payload = await self.port.generate_structured(
-                messages, AgentDecisionPackagePayload, self.config,
+                messages, output_schema, self.config,
             )
         except TimeoutError:
             return _failure(
@@ -152,6 +156,49 @@ class ModelPortDecisionAdapter:
         if metadata.rate_limit_retry_count or metadata.transient_retry_count:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model transport violated the one-attempt profile")
         return ModelDecisionResponse(payload.model_dump_json(), metadata)
+
+
+def _decision_output_schema(serialized_context: str) -> type[AgentDecisionPackagePayload]:
+    """Narrow one repair turn to Runtime-projected objective alternatives."""
+
+    try:
+        context = json.loads(serialized_context)
+        feedback = context.get("control_feedback")
+        recovery = feedback.get("recovery") if isinstance(feedback, dict) else None
+        raw_repairs = (
+            recovery.get("admissible_objective_operations")
+            if isinstance(recovery, dict) else None
+        )
+    except (AttributeError, TypeError, json.JSONDecodeError):
+        return AgentDecisionPackagePayload
+    if (
+        not isinstance(feedback, dict)
+        or feedback.get("code") != "objective_already_satisfied"
+        or not isinstance(raw_repairs, list)
+        or not raw_repairs
+        or len(raw_repairs) > 4
+        or any(not isinstance(item, dict) for item in raw_repairs)
+    ):
+        return AgentDecisionPackagePayload
+    repairs = tuple(copy.deepcopy(item) for item in raw_repairs)
+
+    class RepairConstrainedAgentDecisionPackagePayload(AgentDecisionPackagePayload):
+        @model_validator(mode="after")
+        def _require_projected_objective_repair(self):
+            selected = self.objective_operation.model_dump(mode="json")
+            if selected not in repairs:
+                raise ValueError("objective operation is outside projected repair alternatives")
+            return self
+
+        @classmethod
+        def model_json_schema(cls, *args, **kwargs):
+            schema = super().model_json_schema(*args, **kwargs)
+            schema["properties"]["objective_operation"] = {
+                "enum": copy.deepcopy(list(repairs)),
+            }
+            return schema
+
+    return RepairConstrainedAgentDecisionPackagePayload
 
 
 def _metadata(
