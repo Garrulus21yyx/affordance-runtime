@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
+
+from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+    CanonicalBrowserControl,
+)
 
 
 @dataclass(frozen=True)
@@ -17,17 +19,17 @@ class BrowserGymElementBinding:
     private_element_id: str
     semantic_target_id: str
     supported_primitive: str
-    role: str
-    label: str
-    state_fingerprint: str
-    state_keys: tuple[str, ...] = ()
-    option_values: tuple[tuple[str, str], ...] = ()
+    canonical_control: CanonicalBrowserControl
 
     def option_value(self, public_label: str) -> str:
         try:
-            return dict(self.option_values)[public_label]
+            return dict(self.canonical_control.private_options)[public_label]
         except KeyError as exc:
             raise ValueError("select value is outside the current finite option domain") from exc
+
+    @property
+    def option_values(self) -> tuple[tuple[str, str], ...]:
+        return self.canonical_control.private_options
 
 
 @dataclass
@@ -48,8 +50,3 @@ class BrowserGymBindingStore:
     @property
     def count(self) -> int:
         return len(self._bindings)
-
-
-def semantic_fingerprint(role: str, label: str, state: dict[str, object]) -> str:
-    encoded = json.dumps((role, label, state), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return "sha256:" + hashlib.sha256(encoded.encode()).hexdigest()

@@ -13,10 +13,15 @@ from affordance_runtime.world import (
 )
 
 
-def not_sent_outcome(request: BoundActionRequest, error: ActionError) -> ExecutionOutcome:
+def not_sent_outcome(
+    request: BoundActionRequest,
+    error: ActionError,
+    *,
+    probe_count: int = 1,
+) -> ExecutionOutcome:
     result = ActionResult(
         request.request_id, DispatchStatus.NOT_SENT, "browsergym", False, error,
-        {"currentness_probe_count": 1, "effectful_dispatch_count": 0},
+        {"currentness_probe_count": probe_count, "effectful_dispatch_count": 0},
     )
     post = ObservationAcquisition(
         AcquisitionStatus.CAPABILITY_UNAVAILABLE,

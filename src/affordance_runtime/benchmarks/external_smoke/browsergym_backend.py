@@ -4,25 +4,22 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from concurrent.futures import Future
+from typing import cast
 
-_PROBE_SCRIPT = """bid => {
-const el = document.querySelector(`[bid="${CSS.escape(bid)}"]`);
-if (!el) return {exists: false};
-const tag = el.tagName.toLowerCase();
-const type = (el.getAttribute('type') || '').toLowerCase();
-const role = el.getAttribute('role') || (tag === 'button' ? 'button' :
-  tag === 'a' ? 'link' : tag === 'select' ? 'combobox' :
-  (tag === 'textarea' || (tag === 'input' && !['button','submit'].includes(type))) ? 'textbox' : '');
-const labelled = el.getAttribute('aria-label') || (el.labels && el.labels[0] ? el.labels[0].innerText.trim() : '');
-const label = labelled || ((role === 'button' || role === 'link') ? (el.innerText || el.value || '').trim() : '');
-const options = tag === 'select' ? Array.from(el.options).map(o => o.text.trim()) : [];
-return {exists: true, url: location.href, episode: String(window.WOB_EPISODE_ID),
-  ready: window.WOB_TASK_READY === true, done: window.WOB_DONE_GLOBAL === true,
-  role, label, state: {value: 'value' in el ? String(el.value) : '', checked: !!el.checked,
-    disabled: !!el.disabled, expanded: el.getAttribute('aria-expanded') === 'true',
-    required: !!el.required, selected: !!el.selected, option_count: options.length}, options};
-}"""
+from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+    PRIVATE_CONTROL_PROPERTIES_KEY,
+)
+
+_PHYSICAL_PROPERTIES_SCRIPT = """el => ({
+  readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
+  options: (el instanceof HTMLSelectElement) ? Array.from(el.options).map(option => ({
+    label: String(option.label || option.textContent || '').trim(),
+    value: String(option.value),
+    selected: Boolean(option.selected)
+  })) : []
+})"""
 
 _VERIFIER_PROBE_SCRIPT = """() => ({
   ready: window.WOB_TASK_READY === true,
@@ -33,7 +30,7 @@ _VERIFIER_PROBE_SCRIPT = """() => ({
 
 
 class ThreadBoundBrowserGym:
-    """Small synchronous facade; no page or element handle crosses the thread."""
+    """Small synchronous facade; no page, locator, or element handle crosses the thread."""
 
     def __init__(self, task_id: str, *, headless: bool = True) -> None:
         self._commands: queue.Queue[
@@ -43,6 +40,8 @@ class ThreadBoundBrowserGym:
         self._thread = threading.Thread(target=self._run, args=(task_id, headless), daemon=True)
         self.owner_thread_ident: int | None = None
         self.last_capture_thread_ident: int | None = None
+        self.last_currentness_probe_thread_ident: int | None = None
+        self.currentness_probe_calls = 0
         self._thread.start()
         ready = self._ready.result(timeout=60)
         self.supports_capture_current = bool(ready)
@@ -60,9 +59,8 @@ class ThreadBoundBrowserGym:
             environment = gym.make(task_id, headless=headless)
             unwrapped = getattr(environment, "unwrapped", environment)
             getter = getattr(unwrapped, "_get_obs", None)
-            # BrowserGym creates its page during reset. Capability inventory happens
-            # before that preparation reset, so the pinned read-only API itself is
-            # the stable capability signal; capture still executes only after reset.
+            # BrowserGym creates its page during reset. The pinned read-only API
+            # itself is the capability signal; it is called only after reset.
             self._ready.set_result(callable(getter))
         except BaseException as exc:
             self._ready.set_exception(exc)
@@ -70,21 +68,44 @@ class ThreadBoundBrowserGym:
         while (command := self._commands.get()) is not None:
             name, args, kwargs, outcome = command
             try:
-                if name == "probe_element":
-                    unwrapped = getattr(environment, "unwrapped", environment)
-                    value = unwrapped.page.evaluate(_PROBE_SCRIPT, *args)
-                elif name == "capture_current":
-                    self.last_capture_thread_ident = threading.get_ident()
-                    unwrapped = getattr(environment, "unwrapped", environment)
+                unwrapped = getattr(environment, "unwrapped", environment)
+                value: object
+                if name == "currentness_probe":
+                    self.currentness_probe_calls += 1
+                    self.last_currentness_probe_thread_ident = threading.get_ident()
                     getter = getattr(unwrapped, "_get_obs", None)
                     if not callable(getter):
                         raise RuntimeError("pinned BrowserGym has no read-only observation API")
-                    raw = getter()
+                    started = time.perf_counter()
+                    raw = _with_private_control_properties(unwrapped.page, getter())
+                    verifier = unwrapped.page.evaluate(_VERIFIER_PROBE_SCRIPT)
+                    value = {
+                        "raw": raw,
+                        "task": verifier,
+                        "latency_ms": (time.perf_counter() - started) * 1000,
+                    }
+                elif name == "capture_current":
+                    self.last_capture_thread_ident = threading.get_ident()
+                    getter = getattr(unwrapped, "_get_obs", None)
+                    if not callable(getter):
+                        raise RuntimeError("pinned BrowserGym has no read-only observation API")
+                    raw = _with_private_control_properties(unwrapped.page, getter())
                     verifier = unwrapped.page.evaluate(_VERIFIER_PROBE_SCRIPT)
                     value = (raw, verifier)
                 else:
                     value = getattr(environment, name)(*args, **kwargs)
-                    if name == "close":
+                    if name == "reset":
+                        reset_raw, info = cast(tuple[object, object], value)
+                        value = (_with_private_control_properties(unwrapped.page, reset_raw), info)
+                    elif name == "step":
+                        step_raw, reward, terminated, truncated, info = cast(
+                            tuple[object, object, object, object, object], value,
+                        )
+                        value = (
+                            _with_private_control_properties(unwrapped.page, step_raw),
+                            reward, terminated, truncated, info,
+                        )
+                    elif name == "close":
                         import browsergym.core as browsergym_core  # type: ignore[import-not-found]
 
                         playwright = browsergym_core._get_global_playwright()
@@ -107,8 +128,8 @@ class ThreadBoundBrowserGym:
     def step(self, action: str):
         return self._call("step", action)
 
-    def probe_element(self, bid: str):
-        return self._call("probe_element", bid)
+    def currentness_probe(self, bid: str):
+        return self._call("currentness_probe", bid)
 
     def capture_current(self):
         if not self.supports_capture_current:
@@ -130,3 +151,64 @@ class ThreadBoundBrowserGym:
             self.context = None
         if self._thread.is_alive():
             raise RuntimeError("BrowserGym owner thread remained alive after cleanup")
+
+
+def _with_private_control_properties(page: object, raw: object) -> dict[str, object]:
+    if not isinstance(raw, dict):
+        raise RuntimeError("BrowserGym observation is not a mapping")
+    tree = raw.get("axtree_object")
+    nodes = tree.get("nodes") if isinstance(tree, dict) else None
+    if not isinstance(nodes, list):
+        raise RuntimeError("BrowserGym observation omitted AX nodes")
+    from browsergym.core.action.utils import get_elem_by_bid  # type: ignore[import-not-found]
+
+    bids = tuple(dict.fromkeys(
+        bid for node in nodes if isinstance(node, dict)
+        for bid in (node.get("browsergym_id"),)
+        if isinstance(bid, str) and bid
+    ))
+    properties: dict[str, object] = {}
+    for bid in bids:
+        try:
+            locator = get_elem_by_bid(page, bid)
+            attached = locator.count() > 0
+        except BaseException:
+            properties[bid] = {
+                "attached": False,
+                "visible": False,
+                "enabled": None,
+                "readonly": None,
+                "editable": None,
+                "options": [],
+            }
+            continue
+        try:
+            visible: bool | None = locator.is_visible(timeout=500)
+        except BaseException:
+            visible = None
+        try:
+            enabled: bool | None = locator.is_enabled(timeout=500)
+        except BaseException:
+            enabled = None
+        try:
+            editable: bool | None = locator.is_editable(timeout=500)
+        except BaseException:
+            editable = None
+        try:
+            physical = locator.evaluate(_PHYSICAL_PROPERTIES_SCRIPT)
+        except BaseException:
+            physical = {}
+        physical = physical if isinstance(physical, dict) else {}
+        readonly = physical.get("readonly")
+        options = physical.get("options")
+        properties[bid] = {
+            "attached": attached,
+            "visible": visible,
+            "enabled": enabled,
+            "readonly": readonly if isinstance(readonly, bool) else None,
+            "editable": editable,
+            "options": options if isinstance(options, list) else [],
+        }
+    enriched = dict(raw)
+    enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
+    return enriched

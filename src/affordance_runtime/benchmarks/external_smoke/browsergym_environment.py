@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_acquisition import (
-    digest_text,
     episode_identity,
     failed_acquisition,
     not_sent_outcome,
@@ -18,7 +17,13 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_acquisition import 
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
     BrowserGymBindingStore,
-    semantic_fingerprint,
+)
+from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import (
+    BrowserGymCurrentnessContext,
+    BrowserGymCurrentnessDecision,
+    BrowserGymCurrentnessStatus,
+    compare_browsergym_currentness,
+    unavailable_currentness,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_diagnostics import (
     BrowserGymDiagnosticSnapshot,
@@ -28,6 +33,10 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_execution import br
 from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
     BrowserGymProjection,
     project_browsergym_observation,
+)
+from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+    BrowserGymSemanticError,
+    canonical_control_for_bid,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     BrowserGymVerifierSnapshot,
@@ -55,7 +64,7 @@ class BrowserGymPort(Protocol):
     def reset(self, *, seed: int) -> tuple[dict[str, object], dict[str, object]]: ...
     def step(self, action: str) -> tuple[dict[str, object], object, object, object, dict[str, object]]: ...
     def capture_current(self) -> tuple[dict[str, object], dict[str, object]]: ...
-    def probe_element(self, bid: str) -> object: ...
+    def currentness_probe(self, bid: str) -> object: ...
     def close(self) -> None: ...
 
 
@@ -78,6 +87,7 @@ class BrowserGymMiniWobEnvironment:
     capture_calls: int = 0
     step_calls: int = 0
     probe_calls: int = 0
+    currentness_probe_latencies_ms: list[float] = field(default_factory=list)
     full_observation_count: int = 0
     dom_action_calls: int = 0
     fill_calls: int = 0
@@ -92,6 +102,7 @@ class BrowserGymMiniWobEnvironment:
     _task: TaskGoal | None = None
     _terminated: bool = False
     _closed: bool = False
+    last_currentness_decision: BrowserGymCurrentnessDecision | None = None
 
     @property
     def observation_capabilities(self) -> ObservationCapabilities:
@@ -197,9 +208,9 @@ class BrowserGymMiniWobEnvironment:
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:
         private = self.bindings.get(request.binding.binding_id)
-        error = self._probe_currentness(request, private)
+        error, physical_probe_count = self._probe_currentness(request, private)
         if error is not None:
-            return not_sent_outcome(request, error)
+            return not_sent_outcome(request, error, probe_count=physical_probe_count)
         assert private is not None
         try:
             action = browsergym_action(request, private)
@@ -278,14 +289,17 @@ class BrowserGymMiniWobEnvironment:
                 raise RuntimeError("BrowserGym cleanup left an owned browser resource open")
 
     def _project(self, raw, snapshot, origin, observation_id, revision) -> ObservationAcquisition:
-        projection: BrowserGymProjection = project_browsergym_observation(
-            raw,
-            observation_id=observation_id,
-            source_revision=revision,
-            page_identity=self._page_identity,
-            episode_identity=self._episode_identity,
-            verifier=snapshot,
-        )
+        try:
+            projection: BrowserGymProjection = project_browsergym_observation(
+                raw,
+                observation_id=observation_id,
+                source_revision=revision,
+                page_identity=self._page_identity,
+                episode_identity=self._episode_identity,
+                verifier=snapshot,
+            )
+        except BrowserGymSemanticError as exc:
+            return failed_acquisition(origin, f"browsergym_semantic_{exc.code.value}")
         self.bindings.replace(projection.private_bindings)
         self._current_observation_id = observation_id
         self._current_source_revision = revision
@@ -303,31 +317,60 @@ class BrowserGymMiniWobEnvironment:
         revision = source_revision(self._page_identity, self._episode_identity, self._observation_serial)
         return observation_id, revision
 
-    def _probe_currentness(self, request, private) -> ActionError | None:
+    def _probe_currentness(self, request, private) -> tuple[ActionError | None, int]:
+        if private is None:
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 0
         self.probe_calls += 1
-        if private is None or not self.is_current(request) or self._terminated:
-            return ActionError.STALE_BINDING
         try:
-            live = self.gym_environment.probe_element(private.private_element_id)
+            result = self.gym_environment.currentness_probe(private.private_element_id)
         except BaseException:
-            return ActionError.CURRENTNESS_UNAVAILABLE
-        if not isinstance(live, dict):
-            return ActionError.CURRENTNESS_UNAVAILABLE
-        if live.get("exists") is not True or live.get("ready") is not True or live.get("done") is True:
-            return ActionError.STALE_BINDING
-        raw_state = live.get("state")
-        state: dict[object, object] = raw_state if isinstance(raw_state, dict) else {}
-        selected = {key: state.get(key) for key in private.state_keys}
-        fingerprint = semantic_fingerprint(str(live.get("role", "")), str(live.get("label", "")), selected)
-        matches = (
-            digest_text(str(live.get("url", ""))) == private.page_identity
-            and str(live.get("episode", "")) == private.episode_identity
-            and str(live.get("role", "")) == private.role
-            and str(live.get("label", "")) == private.label
-            and fingerprint == private.state_fingerprint
-            and request.binding.primitive_action == private.supported_primitive
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        if not isinstance(result, dict):
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        latency = result.get("latency_ms")
+        if isinstance(latency, int | float) and not isinstance(latency, bool) and latency >= 0:
+            self.currentness_probe_latencies_ms.append(float(latency))
+        raw = result.get("raw")
+        task = result.get("task")
+        if not isinstance(raw, dict) or not isinstance(task, dict):
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        ready, done = task.get("ready"), task.get("done")
+        episode = task.get("episode")
+        if (
+            not isinstance(ready, bool)
+            or not isinstance(done, bool)
+            or not isinstance(episode, str | int)
+            or isinstance(episode, bool)
+        ):
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        try:
+            live = canonical_control_for_bid(raw, private.private_element_id)
+            live_page = page_identity(raw)
+        except (BrowserGymSemanticError, RuntimeError):
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        context = BrowserGymCurrentnessContext(
+            self.is_current(request),
+            private.page_identity,
+            live_page,
+            private.episode_identity,
+            str(episode),
+            ready,
+            done or self._terminated,
+            request.binding.primitive_action,
         )
-        return None if matches else ActionError.STALE_BINDING
+        decision = compare_browsergym_currentness(private.canonical_control, live, context)
+        self.last_currentness_decision = decision
+        if decision.status is BrowserGymCurrentnessStatus.CURRENT:
+            return None, 1
+        if decision.status is BrowserGymCurrentnessStatus.UNAVAILABLE:
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        return ActionError.STALE_BINDING, 1
 
     def _record_dispatch(self, request: BoundActionRequest) -> None:
         self.step_calls += 1
