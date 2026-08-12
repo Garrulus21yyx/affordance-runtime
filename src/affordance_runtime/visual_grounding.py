@@ -344,7 +344,7 @@ def _validated_point_candidate(instruction: str, role: str) -> bool:
         r"\b(click|select|choose|pick|press|tap)\b",
         instruction.casefold(),
     ) is not None
-    return point_intent and role in {"button", "option", "cell", "gridcell", "shape", "img", "region"}
+    return point_intent and role in {"button", "option", "cell", "gridcell", "shape", "img"}
 
 
 def _first_json_object(content: Any) -> dict[str, Any]:
