@@ -45,7 +45,10 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model_policy.model_port_bridge import (
+    DecisionPerceptionProfile,
+    ModelPortDecisionAdapter,
+)
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.visual_grounding import VisualGrounderPort, VisualRegionProposerPort
@@ -268,6 +271,9 @@ def _target_case(
                 visual_region_proposer=visual_region_proposer,
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
+                marked_candidate_policy_available=_marked_candidate_policy_available(
+                    base_policy
+                ),
             )
         except BaseException as exc:
             _initialize_custom_metrics(instrumentation)
@@ -323,6 +329,29 @@ def _target_case(
         case.seed,
         REQUIRED_METRICS,
     )
+
+
+def _marked_candidate_policy_available(policy: object) -> bool:
+    """Detect one screenshot+AX policy without coupling the environment to it."""
+
+    pending = [policy]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        profile = getattr(item, "perception_profile", None)
+        if profile is DecisionPerceptionProfile.SCREENSHOT_AX:
+            return True
+        for name in ("wrapped", "port"):
+            nested = getattr(item, name, None)
+            if nested is not None:
+                pending.append(nested)
+        ports = getattr(item, "ports", None)
+        if isinstance(ports, tuple):
+            pending.extend(ports)
+    return False
 
 
 class _BreadthEnvironment(InstrumentedBrowserGymEnvironment):

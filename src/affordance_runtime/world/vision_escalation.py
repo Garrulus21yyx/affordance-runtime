@@ -55,6 +55,7 @@ def decide_visual_escalation(
     candidate_verification_available: bool | None = None,
     discovery_available: bool | None = None,
     diagnosis_available: bool | None = None,
+    marked_candidate_policy_available: bool = False,
     explicitly_requested: bool = False,
     terminal: bool = False,
     postcondition_unresolved: bool = False,
@@ -94,6 +95,17 @@ def decide_visual_escalation(
                 VisionEscalationMode.SKIP,
                 "visual_value_reasoning_delegated_to_screenshot_policy",
                 VisionEvidenceNeed.VISUAL_VALUE_REASONING,
+            )
+        if marked_candidate_policy_available:
+            evidence_need = (
+                VisionEvidenceNeed.NEXT_MATCHING_TARGET
+                if _requires_multiple_visual_targets(task_instruction)
+                else VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
+            )
+            return VisionEscalationDecision(
+                VisionEscalationMode.SKIP,
+                "marked_candidate_choice_delegated_to_screenshot_policy",
+                evidence_need,
             )
         requested_mode = VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
         if _requires_multiple_visual_targets(task_instruction):

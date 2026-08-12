@@ -27,7 +27,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary import ContextBuilder, ModelFailure
+from affordance_runtime.model_boundary import AgentTurnView, ContextBuilder, ModelFailure
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
@@ -349,6 +349,54 @@ def test_compact_singleton_operation_does_not_require_or_trust_redundant_target(
         assert adapter.last_argument_repair_count == 0
 
     asyncio.run(scenario())
+
+
+def test_confirmed_current_fill_is_removed_from_next_model_tool_menu() -> None:
+    context = _context()
+    username = next(item for item in context.grounding.entities if item.label == "Username")
+    entities = tuple(
+        replace(item, state={"value": "10"}) if item.ref == username.ref else item
+        for item in context.grounding.entities
+    )
+    target_id = next(
+        target_id
+        for target_id, ref in context.grounding.target_refs.items()
+        if ref == username.ref
+    )
+    turn = AgentTurnView(
+        "selectaction",
+        "fill",
+        target_id,
+        public_parameters={"value": "10"},
+        dispatch_status="sent",
+        action_evaluation_status="effect_confirmed",
+        task_evaluation_status="incomplete",
+    )
+    context = replace(
+        context,
+        grounding=replace(context.grounding, entities=entities),
+        history=replace(context.history, items=(turn,), total_count=1),
+    )
+
+    catalog = compile_grounded_tool_catalog(context)
+    fill = next(item for item in catalog.specs if item.name == "fill")
+
+    assert "target" not in fill.input_schema["properties"]
+    package = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("fill", {"text": "UV"}),
+        expected_context_id=context.context_id,
+    )
+    password_target = next(
+        target_id
+        for target_id, ref in context.grounding.target_refs.items()
+        if ref == next(item.ref for item in entities if item.label == "Password")
+    )
+    password_action = next(
+        item.action_id for item in context.actions.options if item.target_id == password_target
+    )
+    assert isinstance(package.decision, SelectAction)
+    assert package.decision.action_id == password_action
 
 
 def test_direct_model_select_action_records_selected_public_e_ref() -> None:

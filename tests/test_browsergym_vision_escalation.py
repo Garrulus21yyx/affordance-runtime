@@ -218,6 +218,45 @@ def test_multi_target_visual_selection_is_typed_as_next_matching_entity() -> Non
     asyncio.run(scenario())
 
 
+def test_marked_screenshot_policy_owns_ambiguous_e_ref_choice_without_provider_call() -> None:
+    async def scenario() -> None:
+        raw = _raw_with_buttons(
+            ("left", "", (20, 20, 40, 30)),
+            ("right", "", (120, 20, 40, 30)),
+            goal="Click all the grey shades.",
+        )
+        proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
+        disambiguator = _Disambiguator("E1")
+        environment, task = BrowserGymMiniWobEnvironment.open(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_region_proposer=proposer,
+            visual_candidate_disambiguator=disambiguator,
+            marked_candidate_policy_available=True,
+        )
+        try:
+            acquired = await environment.reset(task)
+
+            assert acquired.observation is not None
+            assert environment.last_visual_escalation is not None
+            assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
+            assert (
+                environment.last_visual_escalation.evidence_need
+                is VisionEvidenceNeed.NEXT_MATCHING_TARGET
+            )
+            assert environment.last_visual_escalation.reason_code == (
+                "marked_candidate_choice_delegated_to_screenshot_policy"
+            )
+            assert disambiguator.calls == []
+            assert len(acquired.observation.bindings) == 2
+            assert {item.surface for item in acquired.observation.bindings} == {"browsergym"}
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
 def test_visual_value_task_stays_with_screenshot_policy_instead_of_e_ref() -> None:
     async def scenario() -> None:
         raw = raw_observation(

@@ -41,7 +41,7 @@ _STRUCTURAL_SVG_WITNESSES = frozenset({
     "browsergym/miniwob.click-pie-nodelay",
     "browsergym/miniwob.click-pie",
 })
-_E_REF_WITNESSES = frozenset({
+_MARKED_AGENT_SELECTION_WITNESSES = frozenset({
     "browsergym/miniwob.grid-coordinate",
     "browsergym/miniwob.click-shades",
 })
@@ -118,7 +118,6 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
         metrics = record.result.measurements
         if _metric(metrics, "invalid_tool_argument_count") != 0:
             errors.append(f"{record.case_id}: structured tool argument failure occurred")
-        first = record.diagnostic_trace[0] if record.diagnostic_trace else {}
         if _metric(metrics, "visual_point_grounder_calls") != 0:
             errors.append(f"{record.case_id}: BrowserGym target loop invoked a point grounder")
         if _metric(metrics, "visual_binding_acquired_count") != 0 or _metric(
@@ -130,15 +129,18 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
                 errors.append(f"{record.case_id}: no structural identity binding was dispatched")
             if not any(item.get("selected_grounding") for item in record.diagnostic_trace):
                 errors.append(f"{record.case_id}: selected public E-ref evidence is absent")
-        if task_id in _E_REF_WITNESSES:
-            if _metric(metrics, "visual_source_acquired_count") < 1:
-                errors.append(f"{record.case_id}: E-ref visual evidence was not acquired")
-            elif first and "visual" not in tuple(first.get("selected_source_modalities", ())):
-                errors.append(f"{record.case_id}: first policy context omitted E-ref visual evidence")
-            if _metric(metrics, "visual_disambiguator_calls") < 1:
-                errors.append(f"{record.case_id}: E-ref disambiguator was not called")
-            if _metric(metrics, "visual_disambiguator_selection_count") < 1:
-                errors.append(f"{record.case_id}: no visual candidate was selected")
+        if task_id in _MARKED_AGENT_SELECTION_WITNESSES:
+            if _metric(metrics, "visual_disambiguator_calls") != 0:
+                errors.append(f"{record.case_id}: a redundant pre-policy E-ref call occurred")
+            if _metric(metrics, "visual_source_acquired_count") != 0:
+                errors.append(f"{record.case_id}: candidate choice created a second visual source")
+            selected = tuple(
+                item.get("selected_grounding")
+                for item in record.diagnostic_trace
+                if isinstance(item.get("selected_grounding"), dict)
+            )
+            if not selected or not all(item.get("marked") is True for item in selected):
+                errors.append(f"{record.case_id}: main policy selected no marked public E-ref")
         for index, item in enumerate(record.diagnostic_trace[:-1]):
             transition = item.get("runtime_transition")
             if not isinstance(transition, dict) or transition.get("action_evaluation_status") != "no_effect_confirmed":

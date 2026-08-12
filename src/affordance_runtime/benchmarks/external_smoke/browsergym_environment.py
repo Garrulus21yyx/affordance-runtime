@@ -124,6 +124,7 @@ class BrowserGymMiniWobEnvironment:
         default=None,
         repr=False,
     )
+    marked_candidate_policy_available: bool = False
     bindings: BrowserGymBindingStore = field(default_factory=BrowserGymBindingStore)
     dispatched_request_ids: list[str] = field(default_factory=list)
     backend_reset_calls: int = 1
@@ -207,6 +208,7 @@ class BrowserGymMiniWobEnvironment:
         visual_region_proposer: VisualRegionProposerPort | None = None,
         visual_point_grounder: VisualGrounderPort | None = None,
         visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
+        marked_candidate_policy_available: bool = False,
     ) -> tuple[BrowserGymMiniWobEnvironment, TaskGoal]:
         from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
 
@@ -237,6 +239,7 @@ class BrowserGymMiniWobEnvironment:
                 visual_region_proposer=visual_region_proposer,
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
+                marked_candidate_policy_available=marked_candidate_policy_available,
             )
             task = TaskGoal(
                 f"task:{uuid.uuid4().hex}", goal,
@@ -613,6 +616,7 @@ class BrowserGymMiniWobEnvironment:
             candidate_verification_available=self.visual_candidate_disambiguator is not None,
             discovery_available=self.visual_region_proposer is not None,
             diagnosis_available=self.visual_region_proposer is not None,
+            marked_candidate_policy_available=self.marked_candidate_policy_available,
             explicitly_requested=explicit_visual,
             terminal=terminal,
             task_instruction=self._task.instruction if self._task is not None else "",

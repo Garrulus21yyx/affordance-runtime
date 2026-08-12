@@ -61,9 +61,12 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
     _reject_ambiguous_unmarked_targets(context, ref_by_target, entity_by_ref)
+    settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
 
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
+        if (option.target_id, option.semantic_action) in settled_effects:
+            continue
         ref = ref_by_target.get(option.target_id)
         if ref is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -233,6 +236,52 @@ def _reject_ambiguous_unmarked_targets(
         signatures.setdefault(signature, []).append(entity)
     if any(len(values) > 1 and not all(item.marked for item in values) for values in signatures.values()):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.GROUNDING_GAP)
+
+
+def _settled_parameter_effects(
+    context: AgentContext,
+    ref_by_target: Mapping[str, str],
+    entity_by_ref: Mapping[str, AgentGroundingEntityView],
+) -> set[tuple[str, str]]:
+    """Hide a confirmed current fill/select from the next model tool menu.
+
+    Runtime legality is unchanged.  This removes only a model-facing duplicate
+    while the exact value produced by the previous action is still observable.
+    Explicit repair/strategy feedback reopens the operation.
+    """
+
+    feedback = context.control_feedback
+    if feedback is not None and (
+        feedback.strategy_transition_required
+        or (
+            feedback.recovery is not None
+            and feedback.recovery.strategy_change_required
+        )
+    ):
+        return set()
+    settled: set[tuple[str, str]] = set()
+    inspected: set[tuple[str, str]] = set()
+    for turn in reversed(context.history.items):
+        key = (turn.target_id, turn.semantic_action)
+        if key in inspected or turn.semantic_action not in {"fill", "select"}:
+            continue
+        inspected.add(key)
+        if (
+            str(turn.dispatch_status) != "sent"
+            or str(turn.action_evaluation_status) != "effect_confirmed"
+        ):
+            continue
+        requested = turn.public_parameters.get("value")
+        ref = ref_by_target.get(turn.target_id)
+        entity = entity_by_ref.get(ref or "")
+        if not isinstance(requested, str) or entity is None:
+            continue
+        current = entity.state.get("value")
+        if current is None and turn.semantic_action == "select":
+            current = entity.state.get("selected")
+        if current == requested:
+            settled.add(key)
+    return settled
 
 
 def _verb(semantic_action: str) -> str:
