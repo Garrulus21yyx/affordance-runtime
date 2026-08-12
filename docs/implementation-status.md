@@ -611,7 +611,7 @@ calls; the displayed ref changed to `E25` while row 4/column 3 remained stable.
 The full suite passes (`2379 passed, 24 skipped`). Multi-seed and broad layout
 generalization remain explicitly unclaimed.
 
-Phase 6 is implemented but awaits a fresh clean live gate. `ScopeSpec`, closed
+Phase 6 has a clean bounded live witness. `ScopeSpec`, closed
 candidate universes, a compositional three-valued predicate algebra, per-member
 effect obligations, bounded scheduling, stability and
 `SetCompletionCertificate` now form one deterministic reducer. Grounded Catalog
@@ -620,8 +620,14 @@ next-matching-target branches were removed. Mechanically mentioned public
 facts use the structural evaluator. When those facts cannot express a universal
 predicate, the optional GLM batch port classifies every supplied E-ref exactly
 once as `true/false/unknown`; it cannot claim scope completeness or return an
-action/point, and correspondence maps its evidence back to DOM identity. The
-full repository suite passes (`2381 passed, 27 skipped`).
+action/point, and correspondence maps its evidence back to DOM identity. Clean
+commit `fb19bc2` passes all five targeted cases with valid evidence. In
+`click-shades`, five blue member effects are confirmed before Submit is
+released; all six dispatches use structural DOM identity, with zero visual
+classifier, point, invalid-argument or repair calls. The evidence is persisted
+under `docs/evidence/runs/m4-6-e-phase6-set-completion-zhipu-fb19bc2/`.
+The final full suite passes (`2383 passed, 27 skipped`). Independent broad
+generalization review remains open.
 
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,

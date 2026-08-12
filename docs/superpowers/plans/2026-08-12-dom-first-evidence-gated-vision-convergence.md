@@ -6,7 +6,7 @@ Date: 2026-08-12
 
 ## 2026-08-13 Phase 6 — scope-relative set completion convergence
 
-Status: `IN_PROGRESS / DEPENDENT_SET_CLOSURE_UNVERIFIED`
+Status: `BOUNDED_WITNESS_VERIFIED / INDEPENDENT_GENERALIZATION_REVIEW_OPEN`
 
 Repeated live runs exposed one shared contract gap after local color/grid
 filters had each appeared closed: the model-facing catalog can expose a
@@ -49,10 +49,10 @@ Bounded implementation plan:
    omitted/duplicate/unknown refs fail typed and providers cannot declare scope
    coverage. Integrate GLM only behind that port when structural evidence is
    insufficient.
-6. `in_progress` — verify reducer properties across permutation, stale epochs,
+6. `completed` — verify reducer properties across permutation, stale epochs,
    dynamic membership, no/effect-unknown paths, ambiguous scope and scheduling
    authority; then run focused/full tests and a clean real five-case gate.
-7. `pending` — update maintained architecture/evidence, remove temporary
+7. `in_progress` — update maintained architecture/evidence, remove temporary
    witness-only catalog helpers after behavioral parity, and obtain a fresh-
    context review before restoring a closed status.
 
@@ -61,10 +61,16 @@ scroll/pagination closure in the first slice; runtime scheduling when order,
 parameters, risk or member semantics are not independent; task slug/case ID
 branches; or importing another agent runtime.
 
-Current verification: focused objective/Vision/Catalog tests pass (`42 passed`)
-and the full repository suite passes (`2381 passed, 27 skipped`). The clean
-real five-case gate and fresh-context review remain required before this phase
-can move from `DEPENDENT_SET_CLOSURE_UNVERIFIED`.
+Current verification: focused objective/Vision/Catalog tests pass (`44 passed`)
+and the final full repository suite passes (`2383 passed, 27 skipped`). The
+clean `fb19bc2` five-case gate is evidence-valid at `5/5`: `click-shades`
+confirmed five blue member effects before exposing Submit, used six structural
+dispatches total, and recorded zero visual-classifier, point, invalid-argument
+or repair calls. The persisted report is
+`docs/evidence/runs/m4-6-e-phase6-set-completion-zhipu-fb19bc2/report.json`
+(SHA-256 `947adddd962da291c73fa49436de8d155ad469201b7f8afeaed08615b1135fd2`).
+Independent fresh-context/generalization review remains open, so this is a
+bounded witness result rather than a broad closure claim.
 
 ## 2026-08-13 Phase 5 — observation-derived lattice semantics
 
