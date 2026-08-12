@@ -1,6 +1,6 @@
 # Dynamic Tools v1 Protocol Experiment
 
-Status: IN_PROGRESS — bounded transport experiment
+Status: A/B_EXECUTED_INCONCLUSIVE — SELECTED_TOOL_ARGUMENT_REPAIR_OPEN
 
 ## Goal
 
@@ -71,8 +71,35 @@ silently switch protocol.
 | Compact transport and exact model routing | implemented | adapter tests |
 | Policy integration and metrics/trace | implemented | integration tests |
 | Full repository validation | implemented | 2289 passed, 27 skipped; Ruff clean |
-| Same-Zhipu two-case A/B | pending | clean-SHA evidence |
-| Fresh authority review | pending | review record |
+| Same-Zhipu two-case A/B | inconclusive | `p5-e-zhipu-dynamic-tools-ab-84a9466` |
+| Selected-tool argument repair | in progress | same catalog/context/tool; one shared repair budget |
+| Targeted case-15 rerun | pending | fresh clean-SHA evidence |
+| Fresh authority review | completed diagnostic | resolver authority remains unchanged |
+
+## First A/B result
+
+The clean-SHA `84a9466` run is valid execution evidence but not a valid
+protocol-effect comparison:
+
+- both arms completed two cases and each succeeded on `miniwob-60-31`;
+- both arms failed `miniwob-60-15` before dispatch;
+- the structured arm failed its decision package schema;
+- the dynamic arm selected a known `act_02` but supplied `{}` where the
+  catalog required `value: string`; the resolver correctly rejected it with
+  zero dispatch;
+- `comparison_valid=false` and the case-15 pair is inconclusive.
+
+The archived aggregate token and latency fields omit failed-call usage because
+the existing metadata projection only commits accepted call records. They may
+describe the accepted case-31 path, but must not be interpreted as total
+two-case arm cost.
+
+The next bounded change is argument-only repair after a known tool fails its
+declared input schema. It must retain the same catalog, context, and tool;
+expose the selected `ToolSpec` schema plus a safe typed violation; consume the
+same single repair budget used by outer-format repair; and return to the
+existing resolver for final validation. It must not create a GUI turn,
+decision, transition, dispatch, or guessed parameter value.
 
 ## A/B gate
 
