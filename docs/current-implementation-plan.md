@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_NEXT` | stable identity, retained inventory, paging, screenshot transport and dynamic-tools v1 exist; the stopped clean-`7c14190` 8/60 mixed-cohort diagnostic exposed a shared screenshot/tool grounding gap and excessive short-loop call topology, so no performance claim is admitted |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT` | grounded-tools v2 shares screenshot/index/tool/result refs, keeps ActionSpace authority, disables the short-loop proposer and passed its four-case targeted gate at `b9ad39a`; visual binding remains next |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -82,7 +82,7 @@ docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
 AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
 semantic inventory truth are complete for their declared non-default scopes;
 M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
-`IN_PROGRESS / GROUNDED_TOOLS_V2_NEXT`: real screenshot transport, first
+`IN_PROGRESS / GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`: real screenshot transport, first
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
@@ -91,7 +91,7 @@ HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`: typed rolling
 objectives plus bounded non-authoritative hypothesis proposal, atomic Runtime
 admission, verifier assessment and fair observation pinning exist.
 
-The next admitted M4.6-E slice is `grounded_tools.v2`: reuse the existing SoM
+The completed targeted M4.6-E slice is `grounded_tools.v2`: reuse the existing SoM
 renderer in the current BrowserGym/tool path, give screenshot marks, the public
 entity index, tool parameters and previous results one shared call-local `E*`
 namespace, construct an allowlist `ToolPolicyView`, group schema-equivalent
@@ -299,7 +299,7 @@ Implement one independently measurable slice at a time:
    never replayed — `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth and a referentially closed grounded-tool policy surface —
-   `GROUNDED_TOOLS_V2_NEXT`. Existing SoM utilities are to be reused as a
+   `GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`. Existing SoM utilities are reused as a
    deterministic current-screenshot projection, not reimplemented and not made
    an execution authority.
 

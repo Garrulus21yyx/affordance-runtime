@@ -183,6 +183,23 @@ def test_indistinguishable_unmarked_controls_fail_grounding_gap() -> None:
     assert gap.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
 
+def test_duplicate_label_controls_remain_distinct_when_both_are_marked() -> None:
+    context = _context()
+    entities = tuple(
+        replace(item, label="Repeated field", state={})
+        if item.role == "textbox" else item
+        for item in context.grounding.entities
+    )
+    context = replace(context, grounding=replace(context.grounding, entities=entities))
+
+    catalog = compile_grounded_tool_catalog(context)
+    fill = next(item for item in catalog.specs if item.name == "fill")
+
+    assert set(fill.input_schema["properties"]["target"]["enum"]) == {
+        item.ref for item in entities if item.role == "textbox"
+    }
+
+
 @dataclass
 class _CompactPort:
     commands: list[dict[str, object]]

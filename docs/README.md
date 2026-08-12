@@ -70,7 +70,7 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; M4.6-E is
-`GROUNDED_TOOLS_V2_NEXT` with the task-grounded perception and
+`GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT` with the task-grounded perception and
 non-authoritative hypothesis vertical slices implemented. The next slice
 reuses the existing SoM renderer to give screenshots, entity summaries, tools
 and results one shared current-context `E*` reference without changing
@@ -98,7 +98,7 @@ M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C
 COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D
 REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E
-GROUNDED_TOOLS_V2_NEXT`.
+GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`.
 Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts

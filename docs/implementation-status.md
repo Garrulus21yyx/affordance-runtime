@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_NEXT` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -503,7 +503,7 @@ no retryable failure, the run proves wiring and evidence validity but not live
 retry effectiveness; controlled exceptional-path tests cover retry and typed
 exhaustion. D remains implemented-not-verified pending fresh held-out review.
 
-M4.6-E is `IN_PROGRESS / GROUNDED_TOOLS_V2_NEXT`. BrowserGym
+M4.6-E is `IN_PROGRESS / GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`. BrowserGym
 screenshots are carried as typed private image inputs into real multimodal model
 messages; the public AX profile includes executable checkbox/radio/tab/menuitem
 and bounded read-only table/list/heading/static-text structure. The valid
@@ -600,7 +600,7 @@ vertical slice. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`GROUNDED_TOOLS_V2_NEXT`;
+`GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
