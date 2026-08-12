@@ -11,6 +11,7 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _
 
 from affordance_runtime.agent import AgentDecisionPackage, AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
 from affordance_runtime.benchmarks.external_smoke.browsergym_projection import project_browsergym_observation
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import PRIVATE_CONTROL_PROPERTIES_KEY
@@ -48,8 +49,8 @@ _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
 def _context(*, with_boxes=True):
     raw = raw_observation(
-        ax_node("username", "textbox", "Username"),
-        ax_node("password", "textbox", "Password"),
+        ax_node("username", "textbox", ""),
+        ax_node("password", "textbox", ""),
         ax_node("login", "button", "Login"),
         goal='Enter username "donovan", password "UV", then press Login.',
     )
@@ -58,6 +59,8 @@ def _context(*, with_boxes=True):
         raw[PRIVATE_CONTROL_PROPERTIES_KEY]["username"]["bbox"] = [10, 10, 140, 30]
         raw[PRIVATE_CONTROL_PROPERTIES_KEY]["password"]["bbox"] = [10, 55, 140, 30]
         raw[PRIVATE_CONTROL_PROPERTIES_KEY]["login"]["bbox"] = [10, 100, 80, 30]
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["username"]["label_hint"] = "Username"
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["password"]["label_hint"] = "Password"
     projection = project_browsergym_observation(
         raw,
         observation_id="observation:grounded",
@@ -115,6 +118,11 @@ def test_grounding_index_and_marked_screenshot_share_refs_without_private_geomet
     assert '"E1"' in public and '"E2"' in public and '"E3"' in public
     assert "bbox" not in public
     assert "entity:" not in public and "action:" not in public and "binding:" not in public
+
+
+def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:
+    assert _effective_visibility(True, {"ariaHiddenByAncestor": True}) is False
+    assert _effective_visibility(True, {"ariaHiddenByAncestor": False}) is True
 
 
 def test_schema_equivalent_actions_are_grouped_into_small_verb_tools_and_resolve_privately() -> None:

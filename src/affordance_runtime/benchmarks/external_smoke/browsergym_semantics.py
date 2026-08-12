@@ -390,14 +390,15 @@ def _canonical_control(
         public_state.append(("selected_options", selected))
     private_options = _private_options(labels, physical)
     public_options = labels
-    public_payload = (record.role, record.name, tuple(public_state), public_options)
+    public_name = record.name or _private_label_hint(physical)
+    public_payload = (record.role, public_name, tuple(public_state), public_options)
     private_payload = (
         public_payload, availability.as_tuple(), private_options, spec.primitive,
     )
     return CanonicalBrowserControl(
         record.bid,
         record.role,
-        record.name,
+        public_name,
         tuple(public_state),
         availability,
         public_options,
@@ -473,6 +474,13 @@ def _private_bbox(physical: object) -> tuple[int, int, int, int] | None:
     if x < 0 or y < 0 or width <= 0 or height <= 0:
         return None
     return x, y, width, height
+
+
+def _private_label_hint(physical: object) -> str:
+    if not isinstance(physical, dict):
+        return ""
+    value = physical.get("label_hint")
+    return value[:MAX_SEMANTIC_TEXT] if isinstance(value, str) else ""
 
 
 def _properties(node: dict[str, object]) -> dict[str, object]:

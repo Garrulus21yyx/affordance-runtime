@@ -175,6 +175,9 @@ def test_no_effect_records_no_progress_but_unknown_alone_does_not() -> None:
     )
     assert controller.no_progress_count == 1
     assert controller.latest_attempt_key == SemanticAttemptKey.from_selection(selection)
+    repeated = controller.assess(selection, world, evaluation)
+    assert repeated.disposition is SelectionProgressDisposition.TERMINATE_NO_PROGRESS
+    assert controller.same_attempt_streak == 2
 
     controller = ProgressController()
     controller.record_action_outcome(selection, ActionEvaluationStatus.UNKNOWN, world, evaluation)

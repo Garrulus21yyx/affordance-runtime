@@ -103,26 +103,29 @@ class ProgressController:
     ) -> SelectionProgressResult:
         key = SemanticAttemptKey.from_selection(selection)
         fingerprint = _progress_fingerprint(selection, observation, evaluation)
-        if not _postcondition_is_satisfied(selection, observation):
-            if key != self.latest_attempt_key:
-                self.reset()
-            return SelectionProgressResult(SelectionProgressDisposition.EXECUTE)
         repeated = key == self.latest_attempt_key and fingerprint == self.latest_progress_fingerprint
         if repeated:
             self.same_attempt_streak += 1
             self.no_progress_count += 1
-        else:
-            self.latest_attempt_key = key
-            self.latest_progress_fingerprint = fingerprint
-            self.same_attempt_streak = 1
-            self.no_progress_count = 1
+            event = (
+                _already_satisfied_event(key, selection, evaluation)
+                if _postcondition_is_satisfied(selection, observation)
+                else _repeated_no_progress_event(key, selection, evaluation)
+            )
+            return SelectionProgressResult(
+                SelectionProgressDisposition.TERMINATE_NO_PROGRESS,
+                event,
+            )
+        if not _postcondition_is_satisfied(selection, observation):
+            if key != self.latest_attempt_key:
+                self.reset()
+            return SelectionProgressResult(SelectionProgressDisposition.EXECUTE)
+        self.latest_attempt_key = key
+        self.latest_progress_fingerprint = fingerprint
+        self.same_attempt_streak = 1
+        self.no_progress_count = 1
         event = _already_satisfied_event(key, selection, evaluation)
-        disposition = (
-            SelectionProgressDisposition.TERMINATE_NO_PROGRESS
-            if repeated
-            else SelectionProgressDisposition.ALREADY_SATISFIED
-        )
-        return SelectionProgressResult(disposition, event)
+        return SelectionProgressResult(SelectionProgressDisposition.ALREADY_SATISFIED, event)
 
     def record_action_outcome(
         self,
@@ -295,6 +298,22 @@ def _already_satisfied_event(
         selection.target_id,
         key.digest,
         "already_satisfied",
+        str(evaluation.status),
+        True,
+    )
+
+
+def _repeated_no_progress_event(
+    key: SemanticAttemptKey,
+    selection: AdmittedActionSelection,
+    evaluation: TaskEvaluation,
+) -> ProgressEvent:
+    return ProgressEvent(
+        "repeated_no_progress_selection",
+        selection.semantic_action,
+        selection.target_id,
+        key.digest,
+        "no_effect_confirmed",
         str(evaluation.status),
         True,
     )

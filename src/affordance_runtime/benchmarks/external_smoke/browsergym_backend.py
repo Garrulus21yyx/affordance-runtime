@@ -14,6 +14,21 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
 
 _PHYSICAL_PROPERTIES_SCRIPT = """el => ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
+  ariaHiddenByAncestor: Boolean(el.closest('[aria-hidden="true"]')),
+  labelHint: (() => {
+    const explicit = String(el.getAttribute('aria-label') || '').trim();
+    if (explicit) return explicit;
+    if ('labels' in el && el.labels && el.labels.length) {
+      const value = Array.from(el.labels).map(label => label.textContent || '').join(' ').trim();
+      if (value) return value;
+    }
+    const group = el.parentElement;
+    if (group && group.querySelectorAll('input,textarea,select').length === 1) {
+      const label = group.querySelector('label');
+      if (label) return String(label.textContent || '').trim();
+    }
+    return '';
+  })(),
   bbox: (() => {
     const rect = el.getBoundingClientRect();
     return [rect.x, rect.y, rect.width, rect.height];
@@ -210,15 +225,23 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         readonly = physical.get("readonly")
         options = physical.get("options")
         bbox = physical.get("bbox")
+        label_hint = physical.get("labelHint")
         properties[bid] = {
             "attached": attached,
-            "visible": visible,
+            "visible": _effective_visibility(visible, physical),
             "enabled": enabled,
             "readonly": readonly if isinstance(readonly, bool) else None,
             "editable": editable,
             "options": options if isinstance(options, list) else [],
             "bbox": bbox if isinstance(bbox, list) else [],
+            "label_hint": label_hint if isinstance(label_hint, str) else "",
         }
     enriched = dict(raw)
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
     return enriched
+
+
+def _effective_visibility(visible: bool | None, physical: dict[str, object]) -> bool | None:
+    """Fail closed when an otherwise laid-out control is inside aria-hidden content."""
+
+    return False if physical.get("ariaHiddenByAncestor") is True else visible

@@ -438,6 +438,33 @@ def test_no_effect_feedback_carries_expected_observed_delta_and_mechanical_recov
     asyncio.run(scenario())
 
 
+def test_exact_replay_after_confirmed_no_effect_is_zero_dispatch() -> None:
+    class Policy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    async def scenario() -> None:
+        policy = Policy()
+        environment = StaticEnvironment(
+            [_world("before", False), _world("after", False)],
+            [_sent(DispatchStatus.SENT, True)],
+        )
+        result = await AgentEpisodeRunner(
+            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
+        ).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.FAILED
+        assert result.reason_code == "no_progress_repetition"
+        assert policy.calls == 2
+        assert environment.execute_calls == 1
+        assert result.execution_count == 1
+
+    asyncio.run(scenario())
+
+
 def test_empty_no_gain_filter_restores_default_recovery_page_without_new_epoch() -> None:
     class Policy:
         contexts = []

@@ -65,7 +65,7 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
         specs.append(ToolSpec(
             name,
-            f"{verb} one currently offered target from the shared grounding index.",
+            _tool_description(verb, refs, entity_by_ref),
             schema,
         ))
         bindings.append(_VerbBinding(
@@ -194,6 +194,23 @@ def _verb(semantic_action: str) -> str:
     return {"activate": "click", "fill": "fill", "select": "select"}.get(semantic_action, semantic_action)
 
 
+def _tool_description(verb, refs, entity_by_ref) -> str:
+    values = []
+    for ref in refs:
+        entity = entity_by_ref[ref]
+        state = ",".join(
+            f"{key}={json.dumps(to_json_compatible(value), ensure_ascii=False, separators=(',', ':'))}"
+            for key, value in entity.state.items()
+            if key in {"value", "selected", "checked", "expanded"}
+        )
+        relations = ",".join(entity.relation_hints[:2])
+        details = ",".join(item for item in (entity.role, repr(entity.label), state, relations) if item)
+        values.append(f"{ref}({details})")
+    targets = "; ".join(values)
+    description = f"{verb} one current target. Targets: {targets}"
+    return description[:500]
+
+
 def _shape_key(verb: str, schema: Mapping[str, object]) -> str:
     return verb + ":" + json.dumps(to_json_compatible(schema), sort_keys=True, separators=(",", ":"))
 
@@ -278,8 +295,16 @@ def _previous_result(context, ref_by_target):
             ),
         }
         if feedback.related_decision is not None:
+            previous_semantic_action = next(
+                (
+                    item.semantic_action
+                    for item in reversed(context.history.items)
+                    if item.target_id == feedback.related_decision.target_id and item.semantic_action
+                ),
+                "",
+            )
             result["related_action"] = {
-                "verb": _verb(feedback.related_decision.kind),
+                "verb": _verb(previous_semantic_action or feedback.related_decision.kind),
                 "target": ref_by_target.get(feedback.related_decision.target_id, ""),
                 "parameters": to_json_compatible(feedback.related_decision.parameters),
             }
