@@ -27,6 +27,7 @@ class BenchmarkInstrumentation:
     requirement_hypothesis_calls: int = 0
     requirement_hypothesis_schema_repair_count: int = 0
     policy_schema_repair_count: int = 0
+    tool_argument_repair_count: int = 0
     valid_tool_call_count: int = 0
     zero_tool_call_count: int = 0
     multiple_tool_call_count: int = 0
@@ -194,6 +195,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         )
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
+        event["tool_argument_repair_count"] = int(
+            getattr(adapter, "last_argument_repair_count", 0)
+        )
     if isinstance(outcome, AgentDecisionPackage):
         event["outcome"] = "decision_package"
         event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
@@ -453,6 +457,9 @@ def _record_dynamic_tool_metrics(instrumentation, port: object) -> None:
             setattr(instrumentation, field, getattr(instrumentation, field) + 1)
         instrumentation.tool_catalog_count += int(getattr(adapter, "last_catalog_count", 0))
         instrumentation.tool_catalog_bytes += int(getattr(adapter, "last_catalog_bytes", 0))
+        instrumentation.tool_argument_repair_count += int(
+            getattr(adapter, "last_argument_repair_count", 0)
+        )
 
 
 @dataclass

@@ -46,7 +46,7 @@ from affordance_runtime.model_port import (
     StructuredOutputError,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
-from affordance_runtime.world.schema_validation import reject_private_parameter_values
+from affordance_runtime.world.schema_validation import reject_private_parameter_values, validate_value_issue
 
 _SYSTEM_PROMPT = """
 Select exactly one currently offered tool that advances the public GUI task.
@@ -84,6 +84,7 @@ class DynamicToolDecisionAdapter:
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.TEXT_ONLY
     grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.FORMAT_ONLY
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
+    last_argument_repair_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: ToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
@@ -124,6 +125,7 @@ class DynamicToolDecisionAdapter:
 
     async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
+        object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
@@ -141,12 +143,34 @@ class DynamicToolDecisionAdapter:
             if len(calls) != 1:
                 object.__setattr__(self, "last_resolution_code", ToolResolutionCode.MULTIPLE_CALLS)
                 return _failure(ModelFailureKind.SCHEMA_ERROR, "model returned multiple tool calls")
-            package = resolve_tool_call(
-                catalog,
-                calls[0],
-                expected_context_id=catalog.context_id,
-                expected_catalog_id=catalog.catalog_id,
-            )
+            call = calls[0]
+            try:
+                package = resolve_tool_call(
+                    catalog,
+                    call,
+                    expected_context_id=catalog.context_id,
+                    expected_catalog_id=catalog.catalog_id,
+                )
+            except ToolResolutionError as exc:
+                if exc.code is not ToolResolutionCode.INVALID_ARGUMENTS or self.last_schema_repair_count:
+                    raise
+                spec = next((item for item in catalog.specs if item.name == call.name), None)
+                if spec is None:
+                    raise
+                issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
+                if issue is None:
+                    raise
+                object.__setattr__(self, "last_schema_repair_count", 1)
+                object.__setattr__(self, "last_argument_repair_count", 1)
+                repaired = await self._repair_selected_tool_arguments(messages, spec, issue)
+                if repaired.name != call.name:
+                    raise ToolResolutionError(ToolResolutionCode.INVALID_ARGUMENTS)
+                package = resolve_tool_call(
+                    catalog,
+                    repaired,
+                    expected_context_id=catalog.context_id,
+                    expected_catalog_id=catalog.catalog_id,
+                )
         except ToolResolutionError as exc:
             object.__setattr__(self, "last_resolution_code", exc.code)
             return _failure(ModelFailureKind.SCHEMA_ERROR, "dynamic tool proposal was rejected")
@@ -189,7 +213,7 @@ class DynamicToolDecisionAdapter:
             except StructuredOutputError:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _repair_messages(messages),
+                    _format_repair_messages(messages),
                     CompactToolCallPayload,
                     self.config,
                 )
@@ -207,11 +231,19 @@ class DynamicToolDecisionAdapter:
         except StructuredOutputError:
             object.__setattr__(self, "last_schema_repair_count", 1)
             return await generate(
-                _repair_messages(messages),
+                _format_repair_messages(messages),
                 specs,
                 self.config,
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
             )
+
+    async def _repair_selected_tool_arguments(self, messages, spec, issue) -> ToolCall:
+        payload = await self.port.generate_structured(
+            _argument_repair_messages(messages, spec, issue),
+            CompactToolCallPayload,
+            self.config,
+        )
+        return ToolCall(payload.tool, payload.args)
 
 
 def _messages(request, catalog, perception_profile, supports_multimodal):
@@ -245,7 +277,7 @@ def _messages(request, catalog, perception_profile, supports_multimodal):
     )
 
 
-def _repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMessage, ...]:
+def _format_repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMessage, ...]:
     system = messages[0]
     if not isinstance(system.content, str):
         raise ValueError("tool repair requires a text system message")
@@ -254,8 +286,43 @@ def _repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMessage, 
             role="system",
             content=(
                 system.content
-                + '\n\nThe previous proposal was malformed. Return exactly {"tool":"offered_name","args":{}} '
-                "with one offered tool name and only its declared arguments."
+                + "\n\nThe previous proposal was malformed. Return exactly one JSON object with only "
+                'the keys "tool" and "args". Copy one offered tool name exactly. The args object must '
+                "satisfy that tool's input_schema, including every required property."
+            ),
+        ),
+        *messages[1:],
+    )
+
+
+def _argument_repair_messages(messages: tuple[ModelMessage, ...], spec, issue) -> tuple[ModelMessage, ...]:
+    system = messages[0]
+    if not isinstance(system.content, str):
+        raise ValueError("tool argument repair requires a text system message")
+    contract = {
+        "repair_kind": "selected_tool_arguments",
+        "selected_tool": spec.name,
+        "input_schema": to_json_compatible(spec.input_schema),
+        "violation": {
+            "contract_owner": issue.contract_owner.value,
+            "code": issue.code.value,
+            "field_paths": list(issue.public_field_paths),
+            "expected": to_json_compatible(issue.expected),
+            "actual": to_json_compatible(issue.actual),
+        },
+        "recovery": {
+            "tool_must_remain": spec.name,
+            "only_args_may_change": True,
+        },
+    }
+    return (
+        ModelMessage(
+            role="system",
+            content=(
+                system.content
+                + "\n\nThe selected offered tool is fixed. Repair only its arguments according to this "
+                "public contract, then return one object with exactly tool and args: "
+                + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             ),
         ),
         *messages[1:],

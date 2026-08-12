@@ -70,9 +70,9 @@ silently switch protocol.
 | Pure catalog compiler and resolver | implemented | property/state tests |
 | Compact transport and exact model routing | implemented | adapter tests |
 | Policy integration and metrics/trace | implemented | integration tests |
-| Full repository validation | implemented | 2289 passed, 27 skipped; Ruff clean |
+| Full repository validation | implemented | 2294 passed, 27 skipped; Ruff clean |
 | Same-Zhipu two-case A/B | inconclusive | `p5-e-zhipu-dynamic-tools-ab-84a9466` |
-| Selected-tool argument repair | in progress | same catalog/context/tool; one shared repair budget |
+| Selected-tool argument repair | implemented | same catalog/context/tool; one shared repair budget; focused tests |
 | Targeted case-15 rerun | pending | fresh clean-SHA evidence |
 | Fresh authority review | completed diagnostic | resolver authority remains unchanged |
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from test_model_port_decision_bridge import _context, _zero_retry_config
 
@@ -16,6 +16,21 @@ from affordance_runtime.model_policy.tool_port_bridge import (
     DynamicToolDecisionAdapter,
 )
 from affordance_runtime.model_port import ModelCallRecord, StructuredOutputError
+
+
+def _required_value_request(context):
+    request = _build_request(context)
+    raw = json.loads(request.serialized_context)
+    raw["actions"]["options"][0]["parameter_schema"] = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    return replace(
+        request,
+        serialized_context=json.dumps(raw, separators=(",", ":"), ensure_ascii=False),
+    )
 
 
 @dataclass
@@ -108,6 +123,96 @@ def test_compact_transport_repairs_format_once_without_changing_gui_turn() -> No
         assert not isinstance(outcome, ModelFailure)
         assert port.calls == 2
         assert adapter.last_schema_repair_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_known_tool_invalid_arguments_are_repaired_once_with_fixed_public_contract() -> None:
+    class ArgumentRepairPort(_CompactPort):
+        history: list = []
+
+        async def generate_structured(self, messages, output_schema, config):
+            self.payload = {
+                "tool": "act_01",
+                "args": {} if self.calls == 0 else {"value": "hello"},
+            }
+            outcome = await super().generate_structured(messages, output_schema, config)
+            self.history.append(tuple(messages))
+            return outcome
+
+    async def scenario() -> None:
+        port = ArgumentRepairPort()
+        port.history = []
+        adapter = DynamicToolDecisionAdapter(port, _zero_retry_config())
+
+        outcome = await adapter.generate(_required_value_request(await _context()))
+
+        assert not isinstance(outcome, ModelFailure)
+        assert port.calls == 2
+        assert adapter.last_schema_repair_count == 1
+        assert adapter.last_argument_repair_count == 1
+        repair_system = port.history[1][0].content
+        assert isinstance(repair_system, str)
+        assert '"selected_tool":"act_01"' in repair_system
+        assert '"required":["value"]' in repair_system
+        assert '"field_paths":["parameters.value"]' in repair_system
+        assert '"actual":{"missing":true}' in repair_system
+        assert '"value":"hello"' not in repair_system
+
+    asyncio.run(scenario())
+
+
+def test_argument_repair_remains_zero_package_when_repair_is_invalid_or_changes_tool() -> None:
+    class InvalidRepairPort(_CompactPort):
+        repaired_tool = "act_01"
+
+        async def generate_structured(self, messages, output_schema, config):
+            self.payload = {
+                "tool": "act_01" if self.calls == 0 else self.repaired_tool,
+                "args": {},
+            }
+            return await super().generate_structured(messages, output_schema, config)
+
+    async def scenario() -> None:
+        request = _required_value_request(await _context())
+        invalid = InvalidRepairPort()
+        adapter = DynamicToolDecisionAdapter(invalid, _zero_retry_config())
+        outcome = await adapter.generate(request)
+        assert isinstance(outcome, ModelFailure)
+        assert invalid.calls == 2
+        assert adapter.last_resolution_code is ToolResolutionCode.INVALID_ARGUMENTS
+
+        changed = InvalidRepairPort()
+        changed.repaired_tool = "not_offered"
+        adapter = DynamicToolDecisionAdapter(changed, _zero_retry_config())
+        outcome = await adapter.generate(request)
+        assert isinstance(outcome, ModelFailure)
+        assert changed.calls == 2
+        assert adapter.last_resolution_code is ToolResolutionCode.INVALID_ARGUMENTS
+
+    asyncio.run(scenario())
+
+
+def test_outer_format_and_argument_repair_share_one_request_budget() -> None:
+    class FormatThenInvalidPort(_CompactPort):
+        async def generate_structured(self, messages, output_schema, config):
+            if self.calls == 0:
+                self.calls += 1
+                raise StructuredOutputError("malformed compact proposal")
+            self.payload = {"tool": "act_01", "args": {}}
+            return await super().generate_structured(messages, output_schema, config)
+
+    async def scenario() -> None:
+        port = FormatThenInvalidPort()
+        adapter = DynamicToolDecisionAdapter(port, _zero_retry_config())
+
+        outcome = await adapter.generate(_required_value_request(await _context()))
+
+        assert isinstance(outcome, ModelFailure)
+        assert port.calls == 2
+        assert adapter.last_schema_repair_count == 1
+        assert adapter.last_argument_repair_count == 0
+        assert adapter.last_resolution_code is ToolResolutionCode.INVALID_ARGUMENTS
 
     asyncio.run(scenario())
 

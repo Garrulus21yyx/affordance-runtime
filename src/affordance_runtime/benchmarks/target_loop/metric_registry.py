@@ -10,6 +10,7 @@ CANONICAL_METRICS = frozenset(
         "turns",
         "policy_calls",
         "policy_schema_repair_count",
+        "tool_argument_repair_count",
         "requirement_hypothesis_calls",
         "requirement_hypothesis_schema_repair_count",
         "requirement_hypothesis_accepted_count",

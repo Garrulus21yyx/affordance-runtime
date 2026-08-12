@@ -184,6 +184,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "turns": result.control_transition_total_count if result else snapshot.completed_turn_count if snapshot else 0,
         "policy_calls": state.policy_calls,
         "policy_schema_repair_count": state.policy_schema_repair_count,
+        "tool_argument_repair_count": state.tool_argument_repair_count,
         "requirement_hypothesis_calls": state.requirement_hypothesis_calls,
         "requirement_hypothesis_schema_repair_count": (state.requirement_hypothesis_schema_repair_count),
         "requirement_hypothesis_accepted_count": (
