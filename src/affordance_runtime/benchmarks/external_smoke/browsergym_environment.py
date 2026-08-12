@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Protocol
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_acquisition import (
@@ -51,18 +51,31 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     verifier_snapshot,
     verifier_snapshot_from_current_probe,
 )
+from affordance_runtime.benchmarks.external_smoke.browsergym_visual_disambiguation import (
+    project_browsergym_visual_disambiguation_source,
+)
 from affordance_runtime.benchmarks.external_smoke.browsergym_visual_projection import (
+    VisualCorrespondenceStatus,
     browsergym_visual_frame,
     project_browsergym_visual_source,
 )
 from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalVerifierResult,
+    ExternalVerifierStatus,
     VerifierFactSource,
 )
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
-from affordance_runtime.visual_grounding import VisualRegionProposerPort
+from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.visual_grounding import (
+    VisualGrounderPort,
+    VisualProviderFailure,
+    VisualProviderFailureCode,
+    VisualProviderStage,
+    VisualRegionProposerPort,
+    classify_visual_provider_failure,
+)
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -75,7 +88,10 @@ from affordance_runtime.world import (
     SourceAcquisitionStatus,
     SourceRequirement,
     SourceSelection,
+    VisionEscalationDecision,
+    VisionEscalationMode,
     WorldObservationRequest,
+    decide_visual_escalation,
 )
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
@@ -103,6 +119,11 @@ class BrowserGymMiniWobEnvironment:
     _page_identity: str
     _episode_identity: str
     visual_region_proposer: VisualRegionProposerPort | None = field(default=None, repr=False)
+    visual_point_grounder: VisualGrounderPort | None = field(default=None, repr=False)
+    visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = field(
+        default=None,
+        repr=False,
+    )
     bindings: BrowserGymBindingStore = field(default_factory=BrowserGymBindingStore)
     dispatched_request_ids: list[str] = field(default_factory=list)
     backend_reset_calls: int = 1
@@ -117,9 +138,28 @@ class BrowserGymMiniWobEnvironment:
     fill_calls: int = 0
     select_calls: int = 0
     visual_proposer_calls: int = 0
+    visual_point_grounder_calls: int = 0
+    visual_point_grounder_success_count: int = 0
+    visual_disambiguator_calls: int = 0
+    visual_disambiguator_selection_count: int = 0
+    visual_provider_failure_count: int = 0
+    visual_provider_structured_output_failure_count: int = 0
+    visual_provider_abstained_count: int = 0
+    visual_provider_transport_failure_count: int = 0
+    visual_provider_other_failure_count: int = 0
+    visual_point_grounding_failure_count: int = 0
+    visual_region_proposal_failure_count: int = 0
+    visual_candidate_disambiguation_failure_count: int = 0
+    visual_provider_failures: list[VisualProviderFailure] = field(default_factory=list)
     structural_source_acquired_count: int = 0
     visual_source_acquired_count: int = 0
     visual_binding_acquired_count: int = 0
+    visual_gate_selected_count: int = 0
+    visual_gate_skipped_count: int = 0
+    visual_correspondence_matched_count: int = 0
+    visual_correspondence_unmatched_count: int = 0
+    visual_correspondence_ambiguous_count: int = 0
+    visual_correspondence_conflict_count: int = 0
     structural_binding_dispatch_count: int = 0
     visual_binding_dispatch_count: int = 0
     verifier_queries: int = 0
@@ -127,13 +167,13 @@ class BrowserGymMiniWobEnvironment:
     _observation_serial: int = 0
     _current_observation_id: str = ""
     _current_source_revision: str = ""
-    _visual_selected: bool = False
     _verifier: BrowserGymVerifierSnapshot | None = None
     _diagnostic: BrowserGymDiagnosticSnapshot | None = None
     _task: TaskGoal | None = None
     _terminated: bool = False
     _closed: bool = False
     last_currentness_decision: BrowserGymCurrentnessDecision | None = None
+    last_visual_escalation: VisionEscalationDecision | None = None
     entity_identity: BrowserGymEntityIdentityMap = field(
         default_factory=BrowserGymEntityIdentityMap,
         repr=False,
@@ -146,7 +186,11 @@ class BrowserGymMiniWobEnvironment:
         if independent:
             group = f"browsergym:{self.task_run_id}"
             offers = (ObservationOffer("browsergym", "structural", "structural", "medium", group),)
-            if self.visual_region_proposer is not None:
+            if any((
+                self.visual_region_proposer,
+                self.visual_point_grounder,
+                self.visual_candidate_disambiguator,
+            )):
                 offers += (ObservationOffer(
                     "browsergym_visual", "visual", "weak", "high", group,
                 ),)
@@ -162,6 +206,8 @@ class BrowserGymMiniWobEnvironment:
         max_turns: int = 20,
         admitted_task_ids: frozenset[str] | None = None,
         visual_region_proposer: VisualRegionProposerPort | None = None,
+        visual_point_grounder: VisualGrounderPort | None = None,
+        visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
     ) -> tuple[BrowserGymMiniWobEnvironment, TaskGoal]:
         from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
 
@@ -180,9 +226,18 @@ class BrowserGymMiniWobEnvironment:
             if not isinstance(goal, str) or not goal.strip():
                 raise RuntimeError("BrowserGym reset omitted the public task instruction")
             environment = cls(
-                benchmark_task_id, seed, gym_environment, f"run:{uuid.uuid4().hex}", goal,
-                raw, prepared_info, page_identity(raw), episode_identity(prepared_info),
-                visual_region_proposer,
+                benchmark_task_id=benchmark_task_id,
+                seed=seed,
+                gym_environment=gym_environment,
+                task_run_id=f"run:{uuid.uuid4().hex}",
+                goal_instruction=goal,
+                _prepared_initial_raw=raw,
+                _prepared_task_info=prepared_info,
+                _page_identity=page_identity(raw),
+                _episode_identity=episode_identity(prepared_info),
+                visual_region_proposer=visual_region_proposer,
+                visual_point_grounder=visual_point_grounder,
+                visual_candidate_disambiguator=visual_candidate_disambiguator,
             )
             task = TaskGoal(
                 f"task:{uuid.uuid4().hex}", goal,
@@ -221,13 +276,6 @@ class BrowserGymMiniWobEnvironment:
         selections = [
             SourceSelection("browsergym", SourceRequirement.REQUIRED, "primary_grounding"),
         ]
-        # An explicitly configured bounded proposer is an acquisition capability,
-        # not a policy ritual. Make its first frame available before the first
-        # policy call; ``observe_visual`` remains available for fresh recovery.
-        if self.visual_region_proposer is not None:
-            selections.append(SourceSelection(
-                "browsergym_visual", SourceRequirement.OPTIONAL, "initial_visual_augmentation",
-            ))
         plan = ObservationSelectionPlan(tuple(selections), 2)
         return self._project(
             raw, snapshot, AcquisitionOrigin.RESET, observation_id, revision, plan,
@@ -387,6 +435,14 @@ class BrowserGymMiniWobEnvironment:
             )
         except BrowserGymSemanticError as exc:
             return failed_acquisition(origin, f"browsergym_semantic_{exc.code.value}")
+        plan = self._evidence_gated_plan(
+            plan,
+            projection.world.sources[0],
+            terminal=snapshot.status in {
+                ExternalVerifierStatus.SUCCESS,
+                ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
+            },
+        )
         selected = {item.source: item for item in plan.selections}
         sources = [projection.world.sources[0]]
         private_bindings: list[BrowserGymPrivateBinding] = list(projection.private_bindings)
@@ -399,7 +455,13 @@ class BrowserGymMiniWobEnvironment:
         )]
         self.structural_source_acquired_count += 1
         visual_selection = selected.get("browsergym_visual")
-        if self.visual_region_proposer is not None and visual_selection is None:
+        candidate_binding_filter: set[str] | None = None
+        visual_capable = any((
+            self.visual_region_proposer,
+            self.visual_point_grounder,
+            self.visual_candidate_disambiguator,
+        ))
+        if visual_capable and visual_selection is None:
             results.append(SourceAcquisitionResult(
                 "browsergym_visual",
                 SourceRequirement.UNSELECTED,
@@ -408,29 +470,83 @@ class BrowserGymMiniWobEnvironment:
             ))
         elif visual_selection is not None:
             try:
-                assert self._task is not None and self.visual_region_proposer is not None
-                self.visual_proposer_calls += 1
-                visual = project_browsergym_visual_source(
-                    raw,
-                    observation_id=f"{observation_id}:visual",
-                    acquisition_root_id=observation_id,
-                    page_identity=self._page_identity,
-                    episode_identity=self._episode_identity,
-                    task=self._task,
-                    proposer=self.visual_region_proposer,
-                )
-                sources.append(visual.source)
-                private_bindings.extend(visual.private_bindings)
+                assert self._task is not None and self.last_visual_escalation is not None
+                visual_observation_id = f"{observation_id}:visual"
+                if (
+                    self.last_visual_escalation.mode
+                    is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
+                ):
+                    assert self.visual_candidate_disambiguator is not None
+                    self.visual_disambiguator_calls += 1
+                    disambiguation = project_browsergym_visual_disambiguation_source(
+                        raw,
+                        observation_id=visual_observation_id,
+                        acquisition_root_id=observation_id,
+                        instruction=self._task.instruction,
+                        structured_source=projection.world.sources[0],
+                        disambiguator=self.visual_candidate_disambiguator,
+                        evidence_need=self.last_visual_escalation.evidence_need,
+                    )
+                    visual_source = disambiguation.source
+                    if disambiguation.selected_target_id:
+                        self.visual_disambiguator_selection_count += 1
+                        self.visual_correspondence_matched_count += 1
+                    candidate_binding_filter = {
+                        binding.binding_id
+                        for binding in sources[0].bindings
+                        if binding.target_id == disambiguation.selected_target_id
+                    }
+                    private_bindings = [
+                        binding
+                        for binding in private_bindings
+                        if binding.binding_id in candidate_binding_filter
+                    ]
+                    visual_private_bindings: tuple[BrowserGymVisualBinding, ...] = ()
+                else:
+                    if self.visual_region_proposer is not None:
+                        self.visual_proposer_calls += 1
+                    visual = project_browsergym_visual_source(
+                        raw,
+                        observation_id=visual_observation_id,
+                        acquisition_root_id=observation_id,
+                        page_identity=self._page_identity,
+                        episode_identity=self._episode_identity,
+                        task=self._task,
+                        proposer=self.visual_region_proposer,
+                        point_grounder=self.visual_point_grounder,
+                        structured_source=projection.world.sources[0],
+                    )
+                    visual_source = visual.source
+                    visual_private_bindings = visual.private_bindings
+                    if visual.point_grounding_attempted:
+                        self.visual_point_grounder_calls += 1
+                    if visual.point_grounding_succeeded:
+                        self.visual_point_grounder_success_count += 1
+                    if visual.provider_failure is not None:
+                        self._record_visual_provider_failure(visual.provider_failure)
+                    self._record_correspondence_metrics(visual.correspondence_decisions)
+                sources.append(visual_source)
+                private_bindings.extend(visual_private_bindings)
                 results.append(SourceAcquisitionResult(
                     "browsergym_visual",
                     visual_selection.requirement,
                     SourceAcquisitionStatus.ACQUIRED,
                     "source_acquired",
-                    visual.source,
+                    visual_source,
                 ))
                 self.visual_source_acquired_count += 1
-                self.visual_binding_acquired_count += len(visual.private_bindings)
-            except Exception:
+                self.visual_binding_acquired_count += len(visual_private_bindings)
+            except Exception as exc:
+                stage = (
+                    VisualProviderStage.CANDIDATE_DISAMBIGUATION
+                    if self.last_visual_escalation is not None
+                    and self.last_visual_escalation.mode
+                    is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
+                    else VisualProviderStage.REGION_PROPOSAL
+                )
+                self._record_visual_provider_failure(
+                    classify_visual_provider_failure(stage, exc)
+                )
                 results.append(SourceAcquisitionResult(
                     "browsergym_visual",
                     visual_selection.requirement,
@@ -441,14 +557,18 @@ class BrowserGymMiniWobEnvironment:
         if fused.status is not FusionStatus.FUSED or fused.observation is None:
             return failed_acquisition(origin, fused.reason_code)
         world = fused.observation
+        if candidate_binding_filter is not None:
+            world = replace(
+                world,
+                bindings=tuple(
+                    binding
+                    for binding in world.bindings
+                    if binding.binding_id in candidate_binding_filter
+                ),
+            )
         self.bindings.replace(tuple(private_bindings))
         self._current_observation_id = world.observation_id
         self._current_source_revision = revision
-        self._visual_selected = any(
-            item.source == "browsergym_visual"
-            and item.status is SourceAcquisitionStatus.ACQUIRED
-            for item in results
-        )
         self._verifier = snapshot
         self._diagnostic = diagnostic_snapshot(
             projection.semantic_analysis,
@@ -471,14 +591,85 @@ class BrowserGymMiniWobEnvironment:
         )
 
     def _current_selection_plan(self) -> ObservationSelectionPlan:
-        values = [SourceSelection(
+        return ObservationSelectionPlan((SourceSelection(
             "browsergym", SourceRequirement.REQUIRED, "post_action_grounding",
-        )]
-        if self._visual_selected:
-            values.append(SourceSelection(
-                "browsergym_visual", SourceRequirement.OPTIONAL, "visual_augmentation",
+        ),), 2)
+
+    def _evidence_gated_plan(
+        self,
+        plan: ObservationSelectionPlan,
+        structured_source,
+        *,
+        terminal: bool,
+    ) -> ObservationSelectionPlan:
+        explicit_visual = any(item.source == "browsergym_visual" for item in plan.selections)
+        decision = decide_visual_escalation(
+            structured_source,
+            visual_available=any((
+                self.visual_region_proposer,
+                self.visual_point_grounder,
+                self.visual_candidate_disambiguator,
+            )),
+            candidate_verification_available=self.visual_candidate_disambiguator is not None,
+            discovery_available=(
+                self.visual_region_proposer is not None
+                or self.visual_point_grounder is not None
+            ),
+            diagnosis_available=(
+                self.visual_region_proposer is not None
+                or self.visual_point_grounder is not None
+            ),
+            explicitly_requested=explicit_visual,
+            terminal=terminal,
+            task_instruction=self._task.instruction if self._task is not None else "",
+        )
+        self.last_visual_escalation = decision
+        if decision.selects_visual:
+            self.visual_gate_selected_count += 1
+        else:
+            self.visual_gate_skipped_count += 1
+        structural = next(item for item in plan.selections if item.source == "browsergym")
+        selections = [structural]
+        if decision.selects_visual:
+            existing = next(
+                (item for item in plan.selections if item.source == "browsergym_visual"),
+                None,
+            )
+            selections.append(existing or SourceSelection(
+                "browsergym_visual",
+                SourceRequirement.OPTIONAL,
+                decision.reason_code,
             ))
-        return ObservationSelectionPlan(tuple(values), 2)
+        return ObservationSelectionPlan(tuple(selections), plan.max_source_calls)
+
+    def _record_correspondence_metrics(self, decisions) -> None:
+        for item in decisions:
+            if item.status is VisualCorrespondenceStatus.MATCHED:
+                self.visual_correspondence_matched_count += 1
+            elif item.status is VisualCorrespondenceStatus.UNMATCHED:
+                self.visual_correspondence_unmatched_count += 1
+            elif item.status is VisualCorrespondenceStatus.AMBIGUOUS:
+                self.visual_correspondence_ambiguous_count += 1
+            elif item.status is VisualCorrespondenceStatus.CONFLICT:
+                self.visual_correspondence_conflict_count += 1
+
+    def _record_visual_provider_failure(self, failure: VisualProviderFailure) -> None:
+        self.visual_provider_failures.append(failure)
+        self.visual_provider_failure_count += 1
+        if failure.stage is VisualProviderStage.POINT_GROUNDING:
+            self.visual_point_grounding_failure_count += 1
+        elif failure.stage is VisualProviderStage.REGION_PROPOSAL:
+            self.visual_region_proposal_failure_count += 1
+        else:
+            self.visual_candidate_disambiguation_failure_count += 1
+        if failure.code is VisualProviderFailureCode.STRUCTURED_OUTPUT:
+            self.visual_provider_structured_output_failure_count += 1
+        elif failure.code is VisualProviderFailureCode.ABSTAINED:
+            self.visual_provider_abstained_count += 1
+        elif failure.code is VisualProviderFailureCode.TRANSPORT:
+            self.visual_provider_transport_failure_count += 1
+        else:
+            self.visual_provider_other_failure_count += 1
 
     def _next_identity(self) -> tuple[str, str]:
         self._observation_serial += 1

@@ -21,7 +21,11 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
 )
 from affordance_runtime.model_policy import model_policy_from_environment
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.visual_grounding import visual_region_proposer_from_environment
+from affordance_runtime.visual_disambiguation import visual_candidate_disambiguator_from_environment
+from affordance_runtime.visual_grounding import (
+    configured_visual_region_proposer_from_environment,
+    glm_visual_point_grounder_from_environment,
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _FROZEN_MANIFEST = _ROOT / "docs/benchmarks/miniwob-60-seed7-v1-manifest.json"
@@ -32,7 +36,12 @@ _WITNESSES = frozenset({
     "browsergym/miniwob.click-pie",
     "browsergym/miniwob.visual-addition",
 })
-_VISUAL_POINTER_WITNESSES = _WITNESSES - {"browsergym/miniwob.visual-addition"}
+_VISUAL_POINTER_WITNESSES = frozenset({
+    "browsergym/miniwob.grid-coordinate",
+    "browsergym/miniwob.click-pie-nodelay",
+    "browsergym/miniwob.click-pie",
+})
+_E_REF_WITNESSES = frozenset({"browsergym/miniwob.click-shades"})
 
 
 def main() -> int:
@@ -64,7 +73,11 @@ def main() -> int:
         manifest,
         policy,
         DecisionPerceptionProfile.SCREENSHOT_AX,
-        visual_region_proposer=visual_region_proposer_from_environment(),
+        visual_region_proposer=configured_visual_region_proposer_from_environment(),
+        visual_point_grounder=glm_visual_point_grounder_from_environment(),
+        visual_candidate_disambiguator=visual_candidate_disambiguator_from_environment(),
+        progress_dir=args.output_dir,
+        progress_profile="M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
     ))
     report = write_provider_cohort_arm(
         args.output_dir,
@@ -100,20 +113,29 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
         slug = task_id.removeprefix("browsergym/miniwob.")
         record = by_task[slug]
         metrics = record.result.measurements
-        if _metric(metrics, "visual_proposer_calls") < 1:
-            errors.append(f"{record.case_id}: visual proposer was not called")
         if _metric(metrics, "invalid_tool_argument_count") != 0:
             errors.append(f"{record.case_id}: structured tool argument failure occurred")
         first = record.diagnostic_trace[0] if record.diagnostic_trace else {}
-        if _metric(metrics, "visual_source_acquired_count") < 1:
+        if task_id != "browsergym/miniwob.visual-addition" and _metric(
+            metrics, "visual_source_acquired_count"
+        ) < 1:
             errors.append(f"{record.case_id}: initial visual source was not acquired")
-        elif first and "visual" not in tuple(first.get("selected_source_modalities", ())):
+        elif task_id != "browsergym/miniwob.visual-addition" and first and "visual" not in tuple(
+            first.get("selected_source_modalities", ())
+        ):
             errors.append(f"{record.case_id}: first policy context omitted acquired visual source")
         if task_id in _VISUAL_POINTER_WITNESSES:
+            if _metric(metrics, "visual_point_grounder_calls") < 1:
+                errors.append(f"{record.case_id}: GLM point grounder was not called")
             if _metric(metrics, "visual_binding_dispatch_count") < 1:
                 errors.append(f"{record.case_id}: no visual binding was dispatched")
             if not any(item.get("selected_grounding") for item in record.diagnostic_trace):
                 errors.append(f"{record.case_id}: selected public E-ref evidence is absent")
+        if task_id in _E_REF_WITNESSES:
+            if _metric(metrics, "visual_disambiguator_calls") < 1:
+                errors.append(f"{record.case_id}: E-ref disambiguator was not called")
+            if _metric(metrics, "visual_disambiguator_selection_count") < 1:
+                errors.append(f"{record.case_id}: no visual candidate was selected")
         for index, item in enumerate(record.diagnostic_trace[:-1]):
             transition = item.get("runtime_transition")
             if not isinstance(transition, dict) or transition.get("action_evaluation_status") != "no_effect_confirmed":

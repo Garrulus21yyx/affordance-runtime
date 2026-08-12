@@ -10,7 +10,10 @@ from target_agent_loop_support import (
     run_immediate,
     shared_state_task,
 )
-from test_visual_agent_loop_e2e import ScreenshotOnlySharedStateProposer
+from test_visual_agent_loop_e2e import (
+    ScreenshotOnlySharedStateGrounder,
+    ScreenshotOnlySharedStateProposer,
+)
 from test_wot_agent_loop_e2e import shared_state_server
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
@@ -89,7 +92,11 @@ def profile_environment(profile: str):
         else:
             proposer = ScreenshotOnlySharedStateProposer()
             environment = UnifiedWorldEnvironment(
-                (VisualSurfaceAdapter(counted, proposer),)  # type: ignore[arg-type]
+                (
+                    VisualSurfaceAdapter(
+                        counted, proposer, ScreenshotOnlySharedStateGrounder(),
+                    ),  # type: ignore[arg-type]
+                )
             )
             metrics = {
                 "actions": lambda: counted.pointer_clicks,

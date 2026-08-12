@@ -47,6 +47,9 @@ class WorldFusion:
     def fuse(self, sources: tuple[SurfaceObservation, ...]) -> WorldFusionResult:
         if not sources:
             return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, (), "no_acquired_source")
+        authority_error = _visual_authority_error(sources)
+        if authority_error:
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, (), authority_error)
         for source in sources:
             local_ids = {item.target_id for item in source.targets}
             if any(item.subject_id not in local_ids for item in source.facts) or any(
@@ -82,6 +85,10 @@ class WorldFusion:
                     targets[canonical_id] = rewritten
                 else:
                     conflicts.extend(_target_conflicts(canonical_id, prior, rewritten))
+                    targets[canonical_id] = _merge_non_authoritative_target_evidence(
+                        prior,
+                        rewritten,
+                    )
                 provenance.setdefault(canonical_id, []).append(
                     (source.surface, target.target_id, source.acquisition_root_id or source.observation_id)
                 )
@@ -153,6 +160,58 @@ def _world_id(sources: tuple[SurfaceObservation, ...]) -> str:
     return sources[0].observation_id if len(sources) == 1 else f"world:{hashlib.sha256(payload.encode()).hexdigest()}"
 
 
+def _visual_authority_error(
+    sources: tuple[SurfaceObservation, ...],
+) -> str:
+    structural_sources = tuple(
+        item for item in sources if item.source_profile.modality.value == "structural"
+    )
+    if not structural_sources:
+        return ""
+    structural_roots = {
+        item.acquisition_root_id
+        for item in structural_sources
+        if item.acquisition_root_id
+    }
+    structural_target_ids = {
+        correspondence.canonical_target_id
+        for source in structural_sources
+        for correspondence in source.correspondences
+    } | {
+        target.target_id
+        for source in structural_sources
+        for target in source.targets
+        if target.target_id not in {
+            correspondence.source_target_id for correspondence in source.correspondences
+        }
+    }
+    for source in sources:
+        if source.source_profile.modality.value != "visual":
+            continue
+        if source.correspondences:
+            if (
+                not source.acquisition_root_id
+                or source.acquisition_root_id not in structural_roots
+            ):
+                return "visual_correspondence_requires_shared_acquisition"
+            if any(
+                item.canonical_target_id not in structural_target_ids
+                for item in source.correspondences
+            ):
+                return "visual_correspondence_target_unresolved"
+        if not source.bindings:
+            continue
+        bound_ids = {item.target_id for item in source.bindings}
+        corresponded_ids = {item.source_target_id for item in source.correspondences}
+        if bound_ids.intersection(corresponded_ids):
+            return "corresponded_visual_binding_forbidden"
+        if not bound_ids.issubset(source.visual_only_target_ids):
+            return "visual_binding_identity_unclassified"
+        if not source.acquisition_root_id or source.acquisition_root_id not in structural_roots:
+            return "visual_binding_requires_shared_acquisition"
+    return ""
+
+
 def _canonical_maps(sources: tuple[SurfaceObservation, ...]) -> dict[str, dict[str, str]]:
     used: dict[str, tuple[str, str]] = {}
     values: dict[str, dict[str, str]] = {}
@@ -194,6 +253,21 @@ def _target_conflicts(subject: str, left: SemanticTarget, right: SemanticTarget)
         if left.state[key] != right.state[key]:
             conflicts.append(ObservationConflict(_conflict_id(subject, key), subject, key, "material source claims disagree"))
     return conflicts
+
+
+def _merge_non_authoritative_target_evidence(
+    authoritative: SemanticTarget,
+    projection: SemanticTarget,
+) -> SemanticTarget:
+    """Add non-overlapping projection fields without replacing control identity."""
+
+    state = dict(authoritative.state)
+    for key, value in projection.state.items():
+        state.setdefault(key, value)
+    relations = dict(authoritative.relations)
+    for key, value in projection.relations.items():
+        relations.setdefault(key, value)
+    return replace(authoritative, state=state, relations=relations)
 
 
 def _conflict_id(subject: str, predicate: str) -> str:

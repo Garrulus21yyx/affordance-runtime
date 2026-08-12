@@ -1,0 +1,367 @@
+# DOM-First Evidence-Gated Vision Convergence Plan
+
+Status: `PHASE_2_PROVIDER_COMPLETION_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`
+
+Date: 2026-08-12
+
+Scope: replace the Step-13 configure-and-stick visual acquisition behavior with
+a DOM/AX-first control plane, evidence-gated visual augmentation, explicit
+entity correspondence, and coordinate execution only for current visual-only
+entities. Reuse external perception and grounding implementations behind the
+existing ports instead of importing another agent runtime.
+
+Supersedes in this scope:
+`docs/superpowers/plans/2026-08-12-step13-visual-binding-implementation.md`.
+That record remains useful implementation history, but its initial automatic
+visual augmentation and sticky post-action selection are not target behavior.
+
+## 1. Objective and bounded contract
+
+The supported control algebra is:
+
+```text
+fresh DOM/AX observation
+-> sufficient structured evidence
+   -> DOM identity + DOM binding only
+-> typed evidence gap
+   -> one bounded visual acquisition for the current epoch
+      -> visual evidence explicitly corresponds to DOM identity
+         -> merge evidence into the DOM canonical target; DOM binding remains authoritative
+      -> visual evidence is explicitly unmatched and actionable
+         -> retain a visual-only target; coordinate binding may be admitted
+      -> ambiguous, conflicting, stale, unsupported, or low-confidence
+         -> no executable visual binding; reobserve or fail closed
+```
+
+Vision availability never implies Vision selection. Screenshot capture never
+implies a VLM call. A prior visual acquisition never makes the next acquisition
+visual. Every visual call is justified by current typed evidence and consumes a
+bounded current-epoch budget.
+
+## 2. Root causes being corrected
+
+1. `BrowserGymMiniWobEnvironment.reset()` currently selects visual augmentation
+   whenever a proposer is configured, before policy or runtime evidence shows a
+   gap.
+2. `_visual_selected` turns a successful visual acquisition into sticky
+   post-action selection, so provider configuration becomes an implicit
+   per-frame policy.
+3. the visual proposer receives screenshot plus task instruction but no DOM
+   candidates, and publishes source-local `visual-region:*` entities without
+   producing `EntityCorrespondence`.
+4. source fusion therefore unions DOM and visual entities rather than merging
+   representations of the same entity.
+5. every admitted actionable visual region currently receives a coordinate
+   binding before DOM correspondence is established. Observation authority and
+   execution authority are conflated.
+6. BrowserSession and the target-loop BrowserGym environment use different
+   visual-trigger policies, leaving two contradictory production semantics.
+
+## 3. Responsibility and externalization decisions
+
+| Capability | Owner / reused implementation | Decision |
+|---|---|---|
+| DOM/AX, bbox, stable browser identity | BrowserGym/Playwright | retain; authoritative browser control plane |
+| DOM bbox to same-ID marks | current BrowserGym grounding regions and mark projection | retain; correspondence exists by construction |
+| open-world visual entity proposal | `VisualRegionProposerPort`; add an OmniParser-compatible adapter seam | outsource parser/model; do not import OmniTool or another agent loop |
+| DOM-candidate visual disambiguation | main VLM with bounded E-ref/SoM choice | output an existing E-ref, never a coordinate |
+| visual-only query to point | existing GLM `VisualGrounderPort` | retain as optional last-stage fallback; ShowUI/GUI-Actor remain benchmarkable alternatives |
+| on-demand acquisition pattern | browser-use/SenseAct reference semantics | borrow the evidence-gated pattern; Runtime remains decision owner |
+| correspondence and execution authority | project `EntityCorrespondence`, fusion, action-space admission | project-owned because it binds current identities and private routes |
+
+External projects are provider implementations, not architecture authorities.
+OmniParser integration is optional and configuration-gated. The coherent first
+implementation may continue using GLM through the existing proposer and
+grounder ports while the external adapter is added or evaluated independently.
+
+## 4. Typed visual escalation
+
+Introduce one pure current-observation decision with these outcomes:
+
+- `SKIP`: structured evidence is sufficient.
+- `VERIFY_STRUCTURED_CANDIDATES`: DOM candidates exist but require visual
+  disambiguation; expose same-ID marks and require an E-ref result.
+- `DISCOVER_VISUAL_ENTITIES`: the relevant structured inventory/action space is
+  missing or incomplete; call the bounded region proposer.
+- `DIAGNOSE_POSTCONDITION`: a sent action lacks its expected current observable
+  effect and visual evidence can discriminate the failure.
+- `UNAVAILABLE`: no admitted visual source or budget exists.
+
+Admission evidence is limited to current public facts:
+
+- required visual/spatial property is absent from structured evidence;
+- no current executable binding exists for the relevant target/action;
+- several current structured candidates remain semantically ambiguous;
+- relevant structured coverage/inventory is partial or conflicted;
+- a sent action's expected postcondition is unresolved or contradicted.
+
+Task slug, benchmark cohort, provider presence, prior visual success, and raw
+request prose alone are not admission evidence.
+
+## 5. Correspondence contract
+
+Correspondence is evaluated only inside one coherent acquisition root and one
+current screenshot/viewport identity.
+
+1. DOM-derived marks retain their DOM target ID directly; no inferred match is
+   required.
+2. externally proposed visual regions are compared with DOM grounding regions
+   using bounded geometry and compatible public semantics. A correspondence is
+   emitted only for one deterministic unique match.
+3. `MATCHED` visual entities publish `EntityCorrespondence(visual_id, dom_id)`
+   and no coordinate binding. Fusion rewrites their evidence onto the DOM
+   canonical target.
+4. `UNMATCHED` is admissible only when no compatible DOM region meets the
+   matching floor. A current actionable region may receive a visual coordinate
+   binding.
+5. `AMBIGUOUS`, `CONFLICT`, stale, low-confidence, and unsupported primitives
+   remain observable but non-executable.
+
+The first matcher is deterministic and bounded. It uses overlap/containment,
+center inclusion, normalized text, and role compatibility. It does not add a
+learned fusion model. If one-to-one global assignment becomes necessary,
+standard assignment tooling may replace the bounded matcher without changing
+the contract.
+
+## 6. Implementation work items
+
+1. `completed` — inventory all visual acquisition, projection, fusion,
+   action-space, route, currentness, provider, benchmark, and documentation
+   consumers; record contradictions.
+2. `completed` — remove reset-time automatic visual selection and sticky
+   post-action visual selection from the target-loop BrowserGym environment.
+3. `completed` — introduce the typed pure visual-escalation decision and use it in
+   the current target-loop acquisition path without task-family routing.
+4. `completed` — add DOM/visual region correspondence projection for shared raw
+   BrowserGym captures.
+5. `completed` — admit coordinate bindings only for explicitly unmatched current
+   visual-only targets; matched/ambiguous/conflicting targets are non-coordinate.
+6. `completed` — use the dedicated GLM grounder as the default visual-only
+   point implementation; add a thin optional OmniParser proposer adapter behind
+   `VisualRegionProposerPort`; and keep open-world proposal disabled unless its
+   role is explicitly configured. No external runtime or dependency is added.
+7. `completed` — add invariant, property, integration, and regression tests for
+   call gating, correspondence, action authority, stale handling, and no-vision
+   DOM cases.
+8. `completed` — update authoritative, normative, status, and reference
+   documentation and mark the old
+   Step-13 automatic/sticky statements superseded.
+9. `completed_for_non_live_scope` — focused tests, full repository tests,
+   documentation checks, static checks, and the final contradiction search pass.
+   Live provider/benchmark runs remain separate evidence and must not be
+   fabricated from unit results.
+
+## 7. Migration impact and compatibility
+
+- `--visual-grounding` changes from "augment every selected frame" to "make an
+  admitted visual capability available".
+- explicit policy `RequestObservation(modality="visual")` remains supported,
+  but Runtime may return typed unavailable/failed and still applies
+  correspondence and execution-authority rules.
+- existing DOM bindings, currentness probes, screenshot digest validation,
+  action evaluation, and GLM provider configuration remain compatible.
+- tests that asserted automatic reset/sticky calls must be replaced with
+  evidence-gated expectations.
+- visual-only benchmark cases need either an explicit current evidence gap or a
+  runtime-derived discovery decision before a proposer call.
+
+## 8. Observability
+
+Record per acquisition/episode:
+
+- visual gate outcome and reason code;
+- relevant structured target/action/coverage counts;
+- proposer and point-grounder call counts separately;
+- matched, unmatched, ambiguous, conflicting, and non-executable visual counts;
+- DOM versus visual-only binding admission and dispatch counts;
+- coordinate execution ratio and whether every coordinate dispatch referenced
+  an explicitly unmatched current visual identity;
+- visual latency and currentness rejection counts.
+
+## 9. Explicit non-goals
+
+- no training or fine-tuning;
+- no replacement of BrowserGym/Playwright, policy loop, fusion, or routing with
+  ShowUI, OmniTool, browser-use, SeeAct, or another full agent framework;
+- no probabilistic long-lived identity tracker;
+- no automatic coordinate fallback for a target that has a DOM identity;
+- no unrelated scroll, keypress, drag-generalization, or benchmark-specific
+  solver work.
+
+## 10. Falsifiable exit criteria
+
+- zero provider calls on complete, uniquely actionable DOM-only witnesses;
+- exactly one bounded visual call on witnesses with an admitted current gap;
+- a prior visual call does not select Vision for the next post-action frame;
+- same-frame DOM and overlapping visual proposals yield one canonical target
+  with DOM execution authority and no visual coordinate binding;
+- unique visual-only proposals yield a current coordinate binding;
+- ambiguous/conflicting/stale/low-confidence proposals yield zero coordinate
+  bindings and a typed non-success path;
+- every coordinate dispatch is traceable to an explicitly unmatched current
+  visual identity;
+- GLM remains usable as the default point grounder without becoming acquisition
+  or correspondence authority; enabling point grounding does not implicitly
+  enable GLM region proposal;
+- focused and full tests pass, maintained docs agree, and a fresh search finds
+  no live code or normative prose that treats provider presence or prior visual
+  selection as evidence.
+
+## 11. Files changed by work item
+
+| Work item | Files | Status |
+|---|---|---|
+| Plan creation | this file | done |
+| Typed escalation | `world/vision_escalation.py`, BrowserGym target environment | full-suite verified |
+| Explicit correspondence | BrowserGym visual projection, World contracts/fusion | full-suite verified |
+| Coordinate authority | `SurfaceObservation.visual_only_target_ids`, fusion fail-closed checks | full-suite verified |
+| Metrics | external smoke/breadth and target-loop metric contracts | full-suite verified |
+| Regression properties | BrowserGym Vision and Unified fusion tests | full-suite verified |
+| Documentation convergence | authoritative architecture/evolution, active perception, status/index/old Step 13 | governance tests passed |
+
+Verification record:
+
+- focused Vision/fusion/documentation suite: `70 passed`;
+- full repository suite: `2340 passed, 27 skipped`;
+- Phase 2 provider/authority/documentation suite: `98 passed`;
+- Phase 2 full repository suite: `2348 passed, 27 skipped`;
+- affected-source Ruff checks and `git diff --check`: passed;
+- live GLM/BrowserGym five-witness rerun: not run in this change and still pending.
+
+## 12. Residual audit and bounded follow-up
+
+### Current non-default Unified path
+
+- no live `_visual_selected` state or reset-time provider-presence trigger remains;
+- BrowserGym structural projection precedes the visual gate on every acquisition;
+- matched visual evidence has explicit correspondence and zero coordinate binding;
+- visual-only coordinate binding requires a shared acquisition root and fails
+  closed when its identity is unclassified, corresponded, unresolved, or from a
+  different acquisition;
+- gate and correspondence dispositions are observable as bounded counters.
+
+### Known migration debt, not hidden closure
+
+1. Legacy `BrowserSession` / generic perception coordination still derives
+   task-level visual needs and performs heuristic semantic grouping. It is used
+   by older/default compatibility and benchmark paths, but is not the Unified
+   correspondence or execution authority. Migrate or delete it at default
+   cutover; do not extend it with new Vision fusion semantics.
+2. `VERIFY_STRUCTURED_CANDIDATES` now uses a bounded main-VLM E-ref/SoM chooser
+   in the SeeAct `text_choice_som` style. Its successful output is one offered
+   E-ref; coordinates and new identities are unrepresentable.
+3. GLM is the default `visual-only query -> point` implementation. ShowUI and
+   GUI-Actor remain optional benchmark adapters at the same port, not required
+   dependencies.
+4. The optional OmniParser HTTP adapter normalizes official parser output into
+   bounded, observation-only source-local regions. OmniTool's agent loop,
+   planner, memory, and executor remain out of scope.
+5. Postcondition diagnosis is represented in the typed gate, but the current
+   BrowserGym call site does not yet feed an unresolved-postcondition signal.
+   Wire it only when evaluator evidence can supply that typed fact; request prose
+   or prior failure alone is insufficient.
+
+These items keep the status non-closed until the live gate passes. They
+do not require replacing BrowserGym/Playwright, WorldFusion, or EntityCorrespondence.
+
+## 13. Phase 2 provider completion
+
+User-directed provider choice: GLM is the initial and default implementation of
+`visual-only query -> point`. It must consume a current visual-only entity/query
+and return a bounded point proposal; it must not decide whether Vision runs,
+create DOM correspondence, merge identity, or grant execution authority.
+
+Work items:
+
+1. `completed` — inventory the current proposer/grounder/provider ports and
+   identify the smallest production seams for open-world proposal and E-ref
+   disambiguation.
+2. `completed` — make the GLM point-grounder role explicit in configuration and
+   route only admitted visual-only targets through it.
+3. `completed` — add an OmniParser-compatible `VisualRegionProposerPort` adapter
+   without importing OmniTool or another agent runtime.
+4. `completed` — add a bounded DOM-candidate visual disambiguation port whose only
+   successful output is one supplied E-ref; wire `VERIFY_STRUCTURED_CANDIDATES`
+   to it without coordinate fallback.
+5. `deferred_by_authority_boundary` — connect typed unresolved-postcondition
+   evidence to `DIAGNOSE_POSTCONDITION` only when the current evaluator owns and
+   supplies that fact. No such pre-acquisition owner exists in the BrowserGym
+   call site; request prose and guessed failure state remain forbidden inputs.
+6. `full_suite_verified / live_gate_failed_diagnostic` — configuration,
+   privacy/authority, unit, integration and provider-contract tests pass; docs
+   and status are aligned. The real five-witness GLM run completed with valid
+   evidence at `0/5`; the bounded causal record is
+   `docs/evidence/2026-08-12-provider-split-live-diagnostic.md`.
+
+Phase 2 non-goals: training/fine-tuning, importing external planner/memory/
+executor loops, making OmniParser mandatory, or allowing any provider output to
+bypass `EntityCorrespondence`, `WorldFusion`, admission, currentness or route
+selection.
+
+| Audit | complete | provider roles and authority consumers enumerated |
+| Implementation | complete | GLM point, optional OmniParser, E-ref chooser wired |
+| Verification | full suite pass / live fail | `2348 passed, 27 skipped`; valid live diagnostic `0/5` |
+| Documentation alignment | complete | normative, status, integration and plan docs updated |
+
+## 14. Phase 3 live-gate remediation
+
+Input evidence:
+`docs/evidence/2026-08-12-provider-split-live-diagnostic.md` (`0/5`, valid
+diagnostic failure evidence).
+
+Work items:
+
+1. `completed` — replace whole-task point requests with a current atomic
+   visual objective derived from current structured evidence and task state,
+   without task-family routing or hidden answers.
+2. `completed` — replace the duplicate-label ambiguity heuristic with a typed
+   visual-need algebra that distinguishes single-candidate verification,
+   visual-only point discovery, multi-target visual selection and visual-value
+   extraction; unsupported needs fail closed rather than entering E-ref.
+3. `completed` — make GLM point/E-ref structured output compatible with thinking
+   models using bounded final-answer capacity and typed abstention/error
+   outcomes; never parse free-form reasoning as authority.
+4. `completed` — preserve authoritative verifier source lineage across
+   `WorldFusion` so optional visual augmentation cannot turn a valid verifier
+   snapshot into `source_insufficient`.
+5. `completed` — retain typed provider failure stage/code/class diagnostics and
+   persist stage/code counters instead of swallowing validation errors.
+6. `completed` — persist every completed case atomically during the live gate and
+   maintain a durable progress index; aggregate reporting failure must not
+   erase per-case evidence.
+7. `completed_with_live_gate_still_failed` — add invariant/property/integration regressions, run the full
+   repository gate, then rerun the exact five-witness live GLM gate. Keep
+   OmniParser quality separately unclaimed while it is unconfigured.
+
+Exit criteria:
+
+- point providers receive an atomic current objective, never an unresolved
+  compound instruction;
+- E-ref is selected only for a typed candidate-verification need; multi-target
+  selection uses an explicit one-current-target-at-a-time mode rather than
+  pretending the overall task has one unique target;
+- multi-target/value-extraction needs are typed and never silently coerced to
+  ordinary single-target E-ref or point grounding;
+- fused observations retain verifier-authoritative source lineage;
+- provider validation failures retain typed stage/code/class diagnostics and
+  persist attributable stage/code counters;
+- after each case, a durable case artifact and progress record exist before the
+  next case begins;
+- the same live witness gate produces attributable results without a new
+  benchmark-specific Runtime branch.
+
+Verification record:
+
+- focused remediation contracts: `67 passed`;
+- full repository suite: `2355 passed, 27 skipped`;
+- exact five-witness snapshot: `98ff366906ff92705b1db7f21cb45de159ea4ddc`;
+- live result: evidence-valid `1/5`, with `visual-addition` successful;
+- durable progress: `5/5`, `complete=true`, plus five atomic case artifacts;
+- report hash: `sha256:aa72a41a9f3a189e10c17dadcfd9b8818a29c8791f36f1749464eb76bacb452e`.
+
+The remediation closes the six diagnosed architecture/runner gaps but does not
+close the live performance gate. Remaining failures are downstream model
+grounding/tool-output quality: three GLM point witnesses did not complete, and
+`click-shades` performed one visually constrained effective DOM selection before
+the main policy emitted invalid tool arguments on the next turn. GLM therefore
+remains a pluggable baseline, not an attested SOTA point grounder.

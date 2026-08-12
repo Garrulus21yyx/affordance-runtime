@@ -259,16 +259,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         from affordance_runtime.generalist_planner import GeneralistPlannerProfile
         from affordance_runtime.model_port import model_port_from_environment
         from affordance_runtime.visual_grounding import (
-            visual_grounder_from_environment,
-            visual_region_proposer_from_environment,
+            configured_visual_region_proposer_from_environment,
+            glm_visual_point_grounder_from_environment,
         )
 
         browsergym_report = run_browsergym_miniwob_generalist_suite(
             args.output,
             profile=args.profile,
             model=model_port_from_environment(),
-            visual_grounder=visual_grounder_from_environment() if args.visual_grounding else None,
-            visual_region_proposer=visual_region_proposer_from_environment() if args.visual_grounding else None,
+            visual_grounder=glm_visual_point_grounder_from_environment() if args.visual_grounding else None,
+            visual_region_proposer=(
+                configured_visual_region_proposer_from_environment()
+                if args.visual_grounding
+                else None
+            ),
             task_ids=args.task or None,
             seed_count=args.seed_count,
             headless=not args.headed,

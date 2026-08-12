@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -503,7 +503,7 @@ no retryable failure, the run proves wiring and evidence validity but not live
 retry effectiveness; controlled exceptional-path tests cover retry and typed
 exhaustion. D remains implemented-not-verified pending fresh held-out review.
 
-M4.6-E is `IN_PROGRESS / VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`. BrowserGym
+M4.6-E is `IN_PROGRESS / DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`. BrowserGym
 screenshots are carried as typed private image inputs into real multimodal model
 messages; the public AX profile includes executable checkbox/radio/tab/menuitem
 and bounded read-only table/list/heading/static-text structure. The valid
@@ -548,20 +548,42 @@ acquisition and DOM+WoT equivalent-route witnesses pass, together with the
 Step-11 regression set and the full repository suite.
 
 Step 13 now bridges the existing `VisualRegionBinding` foundation into the
-current BrowserGym target loop. An explicitly injected bounded proposer adds a
-`visual/weak` offer; grounded-tools can request it even from a zero-action
-workspace; structural and visual projections share one raw capture; and only a
-supported `point_activate` region creates a private screenshot/viewport-bound
-route. That route passes through WorldFusion, existing ActionSpace/admission,
-RouteSelector and exact page/episode/screenshot currentness before BrowserGym
-`mouse_click`. Unsupported regions stay observation-only, optional failure
-preserves the structural world, stale screenshots are zero-dispatch, and
-public payloads contain no geometry. Shared-capture media are sent once with
-unioned canonical marks. Deterministic properties and focused regressions pass.
-The live gate reuses the repository `.env`, pinned BrowserGym 3.12 runtime and
-MiniWoB source, with `glm-4.1v-thinking-flashx` explicitly configured for both
-multimodal policy and visual region proposal. No live result is claimed before
-that clean-SHA run completes.
+current BrowserGym target loop, with a later trigger/authority correction. An
+explicitly injected bounded proposer adds a `visual/weak` capability; provider
+presence and prior selection do not invoke it. Each frame first projects DOM/AX,
+then a pure typed gate selects Vision only for current missing action authority,
+ambiguous structured candidates, explicit visual observation, or admitted
+postcondition diagnosis. Structural and visual projections share one raw
+capture. Unique compatible correspondence emits `EntityCorrespondence` and
+merges visual evidence into DOM identity without a coordinate binding; only an
+explicitly unmatched current visual-only `point_activate` region can create a
+private screenshot/viewport-bound route. Ambiguous/conflicting correspondence,
+unsupported regions, missing shared acquisition identity, and stale screenshots
+are non-executable/fail closed. The route still passes through WorldFusion,
+ActionSpace/admission, RouteSelector and exact page/episode/screenshot
+currentness. The provider-completion slice separates these roles: GLM is the
+default visual-only point grounder; an optional thin OmniParser HTTP adapter
+normalizes official parsed elements as observation-only regions; and a bounded
+SoM disambiguator may return only an offered E-ref for ambiguous current DOM
+candidates. Open-world proposal is disabled unless explicitly configured, so
+`--visual-grounding` no longer makes GLM a region proposer implicitly. No
+OmniTool, ShowUI, GUI-Actor, SeeAct, browser-use or SenseAct runtime has been
+imported. Focused provider/authority tests and the remediation repository gate
+pass (`2355 passed, 27 skipped`). Phase-3 replaces compound point instructions
+with current atomic objectives, distinguishes single-target,
+next-matching-target and visual-value needs, lets E-ref correspondence narrow
+only the current DOM binding catalog, preserves verifier lineage through
+fusion, persists typed provider failure stage/code counters, and writes every
+case plus a progress index atomically. The exact live rerun completed with valid
+evidence at `1/5`: `visual-addition` succeeded without auxiliary E-ref/point
+calls, while GLM point quality and a later main-policy tool-output error kept
+the other cases from completion. `LIVE_GATE_FAILED_DIAGNOSTIC` therefore
+remains honest; no live-provider result is inferred from local verification.
+
+The older `BrowserSession` perception/coordinator path remains migration debt:
+it can derive task-level visual needs and heuristically group semantic entities,
+but it does not own the new evidence gate or explicit correspondence authority.
+It cannot serve as proof that Unified DOM/visual fusion is closed.
 
 Scroll, focus-aware keypress, table/list ownership, dynamic
 semantic deltas, multi-step verified working state and source review of the 14
@@ -626,7 +648,7 @@ vertical slice. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`;
+`DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit

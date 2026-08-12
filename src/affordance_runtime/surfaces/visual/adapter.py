@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
@@ -14,7 +14,13 @@ from affordance_runtime.surfaces.visual.contracts import (
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
 from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, integer_click_point
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.visual_grounding import VisualRegionProposalRequest, VisualRegionProposerPort
+from affordance_runtime.visual_grounding import (
+    VisualGrounderPort,
+    VisualGroundingRequest,
+    VisualRegionProposalRequest,
+    VisualRegionProposerPort,
+    point_grounded_visual_regions,
+)
 from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_surface_action
 from affordance_runtime.world.action_vocabulary import action_metadata
@@ -35,6 +41,7 @@ if TYPE_CHECKING:
 class VisualSurfaceAdapter:
     session: BrowserSession
     proposer: VisualRegionProposerPort
+    point_grounder: VisualGrounderPort | None = field(default=None, repr=False)
     surface: str = field(default="visual", init=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
     _observation_id: str = field(default="", init=False)
@@ -70,7 +77,21 @@ class VisualSurfaceAdapter:
             (frame.image_width, frame.image_height),
             self._task.instruction,
         )
-        proposed = tuple(self.proposer.propose(proposal_request))
+        proposed = tuple(
+            replace(region, primitive_action="observe_only", action_point_xy=None)
+            for region in self.proposer.propose(proposal_request)
+        )
+        if self.point_grounder is not None:
+            point = self.point_grounder.ground(
+                VisualGroundingRequest(
+                    observation_id,
+                    None,
+                    frame.image_bytes,
+                    (frame.image_width, frame.image_height),
+                    self._task.instruction,
+                )
+            )
+            proposed = tuple(point_grounded_visual_regions(proposed, point, proposal_request.image_size))
         if len(proposed) > proposal_request.max_regions:
             raise ValueError("visual proposer exceeded the region bound")
         regions = tuple(
@@ -114,6 +135,7 @@ class VisualSurfaceAdapter:
             else CoverageState.TRUNCATED,
             {"screenshot_ref": frame.screenshot_ref, "unsupported_actions": unsupported},
             acquisition_root_id=f"browser:{frame.source_revision}",
+            visual_only_target_ids=tuple(region.region_id for region in regions),
         )
 
     def is_current(self, request: BoundActionRequest) -> bool:

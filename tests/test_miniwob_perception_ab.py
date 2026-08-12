@@ -9,10 +9,12 @@ from affordance_runtime.benchmarks.external_breadth.manifest import build_breadt
 from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     _adapter,
     _inconclusive_pairs,
+    _write_progress,
     capability_covered_cases,
     readiness_cohorts,
 )
 from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 
@@ -115,3 +117,19 @@ def test_dynamic_provider_cohort_uses_the_dynamic_adapter() -> None:
         _adapter(policy, require_frozen_mistral=False),
         DynamicToolDecisionAdapter,
     )
+
+
+def test_provider_cohort_progress_is_atomically_persisted_per_case(tmp_path) -> None:
+    _write_progress(
+        tmp_path,
+        profile="visual-gate",
+        perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
+        case_ids=("01", "02"),
+        completed_case_ids=("01",),
+        complete=False,
+    )
+
+    payload = json.loads((tmp_path / "progress.json").read_text(encoding="utf-8"))
+    assert payload["completed_cases"] == 1
+    assert payload["completed_case_ids"] == ["01"]
+    assert payload["complete"] is False

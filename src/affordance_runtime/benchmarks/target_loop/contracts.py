@@ -493,6 +493,7 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark decision type is outside the closed vocabulary")
         if self.last_progress_event_type not in {
             "", "already_satisfied_selection", "action_effect_evaluated",
+            "repeated_no_progress_selection",
         }:
             raise ValueError("benchmark progress event is outside the closed vocabulary")
         if self.last_world_coverage not in {"", *(str(item) for item in CoverageState)}:
@@ -686,6 +687,15 @@ _KNOWN_METRICS = frozenset({
     "dom_action_calls", "fill_calls", "select_calls", "official_verifier_queries",
     "structural_source_acquired_count", "visual_source_acquired_count",
     "visual_binding_acquired_count",
+    "visual_gate_selected_count", "visual_gate_skipped_count",
+    "visual_point_grounder_calls", "visual_point_grounder_success_count",
+    "visual_disambiguator_calls", "visual_disambiguator_selection_count",
+    "visual_provider_failure_count", "visual_provider_structured_output_failure_count",
+    "visual_provider_abstained_count", "visual_provider_transport_failure_count",
+    "visual_provider_other_failure_count", "visual_point_grounding_failure_count",
+    "visual_region_proposal_failure_count", "visual_candidate_disambiguation_failure_count",
+    "visual_correspondence_matched_count", "visual_correspondence_unmatched_count",
+    "visual_correspondence_ambiguous_count", "visual_correspondence_conflict_count",
     "structural_binding_dispatch_count", "visual_binding_dispatch_count",
     "official_success_count", "provider_retry_count", "fallback_count", "cleanup_failures",
     "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",

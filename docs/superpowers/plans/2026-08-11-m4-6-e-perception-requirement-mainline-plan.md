@@ -1,6 +1,6 @@
 # Task-Grounded Perception and Frontier Convergence Plan
 
-Status: `IN_PROGRESS / VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`.
+Status: `IN_PROGRESS / DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`.
 
 Goal: remove irreversible loss between acquired GUI observations and bounded
 model presentation, then add incremental non-authoritative requirement
@@ -725,7 +725,7 @@ code, the current step-11 single-source gate remains green, multi-source
 properties pass without task-specific production branches, selected media and
 marks are referentially closed, and an alternate route is never called after a
 possible dispatch. Until then M4.6-E remains
-`VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`.
+`DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`.
 Step 13 product code is implemented, but its live targeted evidence remains the
 only admitted validation work; Step 14 has not started.
 

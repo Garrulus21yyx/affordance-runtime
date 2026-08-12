@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E VISUAL_LIVE_PATH_REMEDIATION_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_RERUN_PENDING` | grounded-tools v2 passed its four-case single-BrowserGym-source gate at `b9ad39a`; Step 12 owns bounded source selection/fusion/route/grounding; Step 13 now auto-augments the first policy-visible observation when a bounded proposer is configured, separates visual facts from point authority, validates activate screenshot/target deltas, and reports per-case route/effect evidence. The same five live witnesses must be rerun with the existing `.env`, pinned BrowserGym runtime and MiniWoB source using explicit `glm-4.1v-thinking-flashx`; Step 14 is not started |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / PROVIDER_SPLIT_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC` | grounded-tools v2 passed its four-case single-BrowserGym-source gate at `b9ad39a`; Step 12 owns bounded source selection/fusion/route/grounding. Step 13 treats visual configuration as capability only: every frame starts from DOM/AX, a typed gate selects optional Vision, explicit correspondence preserves DOM identity, and only unmatched visual-only entities may retain coordinates. Phase-3 adds atomic point objectives, typed single/multi/value needs, E-ref action narrowing, fused verifier lineage, typed provider diagnostics and atomic per-case progress. The full suite passes (`2355 passed, 27 skipped`); the exact live rerun improved from `0/5` to `1/5` with `visual-addition` successful, but GLM point quality and later main-policy tool output keep the live gate failed. Step 14 is not started |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -82,7 +82,7 @@ docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
 AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
 semantic inventory truth are complete for their declared non-default scopes;
 M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
-`IN_PROGRESS / VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`: real screenshot transport, first
+`IN_PROGRESS / DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / PROVIDER_SPLIT_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`: real screenshot transport, first
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
@@ -90,6 +90,15 @@ claimed. P5-E is `IN_PROGRESS /
 HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`: typed rolling
 objectives plus bounded non-authoritative hypothesis proposal, atomic Runtime
 admission, verifier assessment and fair observation pinning exist.
+
+The current provider-completion increment keeps those authorities unchanged.
+GLM is wired through the separate point-grounder port and is the only Vision
+role enabled by `--visual-grounding` without further configuration. OmniParser
+may be enabled explicitly for open-world region proposal; its output remains
+observation-only. Ambiguous DOM candidates use a SoM/E-ref chooser that cannot
+represent a coordinate. Postcondition diagnosis remains typed in the gate but
+is not fed from request prose or guessed failure state; it awaits an evaluator-
+owned unresolved-postcondition fact.
 
 The completed targeted M4.6-E slice is `grounded_tools.v2`: reuse the existing SoM
 renderer in the current BrowserGym/tool path, give screenshot marks, the public
@@ -311,7 +320,7 @@ Implement one independently measurable slice at a time:
    never replayed — `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth and a referentially closed grounded-tool policy surface —
-   `VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`. Existing SoM utilities are reused as a
+   `DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`. Existing SoM utilities are reused as a
    deterministic current-screenshot projection, not reimplemented and not made
    an execution authority.
 

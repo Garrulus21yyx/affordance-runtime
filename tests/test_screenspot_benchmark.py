@@ -19,6 +19,9 @@ from affordance_runtime.visual_grounding import (
     VisualGroundingRequest,
     VisualRegion,
     VisualRegionProposalRequest,
+    configured_visual_region_proposer_from_environment,
+    glm_visual_point_grounder_from_environment,
+    point_grounded_visual_regions,
     visual_grounder_from_environment,
     visual_region_proposer_from_environment,
 )
@@ -281,13 +284,13 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
     assert regions[0].pixel_bbox((200, 100)) == pytest.approx((20.0, 20.0, 50.0, 50.0))
     assert regions[0].label == "target"
     assert regions[0].role == "option"
-    assert regions[0].primitive_action == "point_activate"
+    assert regions[0].primitive_action == "observe_only"
     assert regions[0].state == {
         "color": "blue", "shape": "circle", "row": 2, "column": 3, "selected": False,
     }
 
 
-def test_visual_region_proposer_retries_non_actionable_point_output_and_accepts_xywh_dialect(
+def test_visual_region_proposer_accepts_first_valid_region_without_point_retry(
     tmp_path: Path,
 ) -> None:
     image = tmp_path / "sample.png"
@@ -328,14 +331,15 @@ def test_visual_region_proposer_retries_non_actionable_point_output_and_accepts_
         server.server_close()
         thread.join(timeout=2)
 
-    assert request_count == 2
+    assert request_count == 1
     assert len(regions) == 1
-    assert regions[0].pixel_bbox((200, 100)) == pytest.approx((20.0, 20.0, 50.0, 50.0))
+    assert regions[0].pixel_bbox((200, 100)) == pytest.approx((0.0, 0.0, 200.0, 100.0))
+    assert regions[0].label == "low confidence target"
     assert regions[0].role == "option"
-    assert regions[0].primitive_action == "point_activate"
+    assert regions[0].primitive_action == "observe_only"
 
 
-def test_visual_region_proposer_uses_validated_point_fallback_after_two_observe_only_results(
+def test_visual_region_proposer_never_owns_point_fallback(
     tmp_path: Path,
 ) -> None:
     image = tmp_path / "sample.png"
@@ -349,8 +353,6 @@ def test_visual_region_proposer_uses_validated_point_fallback_after_two_observe_
             content = (
                 '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
                 '"label":"context","confidence":0.9,"role":"region","actionable":false}]}'
-                if request_count <= 2
-                else '{"x":0.4,"y":0.6,"normalized":true}'
             )
             response = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
             self.send_response(200)
@@ -374,10 +376,26 @@ def test_visual_region_proposer_uses_validated_point_fallback_after_two_observe_
         server.server_close()
         thread.join(timeout=2)
 
-    assert request_count == 3
-    assert regions[0].primitive_action == "point_activate"
-    assert regions[0].confidence == 0.5
-    assert regions[0].pixel_bbox((200, 100)) == pytest.approx((78.0, 59.0, 4.0, 2.0))
+    assert request_count == 1
+    assert regions[0].primitive_action == "observe_only"
+
+
+def test_glm_point_attaches_to_smallest_visual_entity_without_replacing_identity() -> None:
+    regions = [
+        VisualRegion((0.1, 0.1, 0.8, 0.8), "panel", 0.9, primitive_action="observe_only"),
+        VisualRegion((0.3, 0.4, 0.2, 0.2), "target", 0.9, primitive_action="observe_only"),
+    ]
+
+    grounded = point_grounded_visual_regions(
+        regions,
+        VisualGroundingPoint((0.4, 0.5), normalized=True),
+        (200, 100),
+    )
+
+    assert [item.primitive_action for item in grounded] == ["observe_only", "point_activate"]
+    assert grounded[1].label == "target"
+    assert grounded[1].action_point_xy == (0.4, 0.5)
+    assert grounded[1].confidence == 0.5
 
 
 def test_visual_grounder_environment_factory_uses_zhipu_vision_model_without_exposing_key() -> None:
@@ -393,6 +411,33 @@ def test_visual_grounder_environment_factory_uses_zhipu_vision_model_without_exp
     assert isinstance(grounder, OpenAICompatibleVisualGrounder)
     assert grounder.model == "glm-vision-test"
     assert "zhipu-secret" not in repr(grounder)
+
+
+def test_dedicated_visual_only_point_factory_is_always_glm() -> None:
+    grounder = glm_visual_point_grounder_from_environment({
+        "LLM_VISUAL_PROFILE": "gemini",
+        "LLM_ZHIPU_BASE_URL": "https://zhipu.invalid/v4/",
+        "LLM_ZHIPU_API_KEY": "zhipu-secret",
+        "LLM_ZHIPU_VISION_MODEL": "glm-4.1v-thinking-flashx",
+    })
+
+    assert grounder.provider == "zhipu"
+    assert grounder.model == "glm-4.1v-thinking-flashx"
+    with pytest.raises(ValueError, match="multimodal GLM"):
+        glm_visual_point_grounder_from_environment({
+            "LLM_ZHIPU_BASE_URL": "https://zhipu.invalid/v4/",
+            "LLM_ZHIPU_API_KEY": "zhipu-secret",
+            "LLM_ZHIPU_VISION_MODEL": "qwen-vl",
+        })
+
+
+def test_region_proposer_is_disabled_without_explicit_role_configuration() -> None:
+    assert configured_visual_region_proposer_from_environment({
+        "LLM_VISUAL_PROFILE": "zhipu",
+        "LLM_ZHIPU_BASE_URL": "https://zhipu.invalid/v4/",
+        "LLM_ZHIPU_API_KEY": "zhipu-secret",
+        "LLM_ZHIPU_VISION_MODEL": "glm-4.1v-thinking-flashx",
+    }) is None
 
 
 def test_visual_factories_support_gemini_profile_without_exposing_key() -> None:

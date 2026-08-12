@@ -137,7 +137,16 @@ class VisualRegionBinding:
             image_width * scale_x,
             image_height * scale_y,
         )
-        point = (bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2)
+        if region.action_point_xy is None:
+            point = (bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2)
+        else:
+            region_point_x, region_point_y = region.action_point_xy
+            image_point = (
+                (region_point_x * frame.image_width, region_point_y * frame.image_height)
+                if region.normalized
+                else (region_point_x, region_point_y)
+            )
+            point = (image_point[0] * scale_x, image_point[1] * scale_y)
         fingerprint = region_fingerprint(frame.screenshot_digest, region_id, region, bbox)
         return cls(
             frame.observation_id,
@@ -194,6 +203,7 @@ def region_fingerprint(
         "label": region.label,
         "role": region.role,
         "primitive": region.primitive_action,
+        "action_point": region.action_point_xy,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()

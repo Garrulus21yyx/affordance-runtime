@@ -83,6 +83,22 @@ def test_non_timeout_exception_uses_final_snapshot_exact_metrics_and_reason() ->
     assert projected.partial_episode_available is True
 
 
+def test_repeated_no_progress_event_is_in_the_benchmark_vocabulary() -> None:
+    projected = project_case_result(
+        "case",
+        None,
+        BenchmarkInstrumentation(),
+        1.0,
+        "stopped",
+        final_snapshot=replace(
+            _snapshot(),
+            last_progress_event_type="repeated_no_progress_selection",
+        ),
+    )
+
+    assert projected.last_progress_event_type == "repeated_no_progress_selection"
+
+
 def test_success_reason_does_not_become_a_failure_code() -> None:
     result = _result("task_complete")
     result.status = AgentLoopStatus.DONE

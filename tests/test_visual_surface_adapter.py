@@ -6,7 +6,7 @@ import pytest
 
 from affordance_runtime.surfaces.visual import VisualFrame, VisualSurfaceAdapter, VisualViewport
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.visual_grounding import VisualRegion
+from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.world import ActionBinder, ActionSpaceBuilder, build_agent_world_view
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
@@ -53,6 +53,21 @@ class Proposer:
         return [VisualRegion(self.bbox, "Shared state", 0.95, True, "button", self.primitive)]
 
 
+class PointGrounder:
+    provider = "test-point"
+    model = "fixed"
+    prompt_version = "v1"
+
+    def __init__(self, point: tuple[float, float] = (0.4, 0.5)) -> None:
+        self.calls = 0
+        self.point = point
+
+    def ground(self, request):
+        del request
+        self.calls += 1
+        return VisualGroundingPoint(self.point, normalized=True)
+
+
 def _task() -> TaskGoal:
     return TaskGoal(
         "shared",
@@ -63,7 +78,7 @@ def _task() -> TaskGoal:
 
 
 async def _bound(session: VisualSession, proposer: Proposer):
-    adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
+    adapter = VisualSurfaceAdapter(session, proposer, PointGrounder())  # type: ignore[arg-type]
     world = UnifiedWorldEnvironment((adapter,))
     task = _task()
     acquisition = await world.reset(task)
@@ -89,6 +104,30 @@ def test_visual_adapter_keeps_coordinates_private_and_uses_one_probe_and_pointer
         assert session.captures == 3
         assert session.clicks == [(40, 40)]
         assert proposer.calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_visual_adapter_uses_separate_point_grounder_for_execution_authority() -> None:
+    async def scenario() -> None:
+        session = VisualSession()
+        proposer = Proposer("observe_only")
+        grounder = PointGrounder((0.3, 0.4))
+        adapter = VisualSurfaceAdapter(session, proposer, grounder)  # type: ignore[arg-type]
+        world = UnifiedWorldEnvironment((adapter,))
+        task = _task()
+        acquisition = await world.reset(task)
+        assert acquisition.observation is not None
+        observed = acquisition.observation
+        option = ActionSpaceBuilder().build(task, observed).options[0]
+        request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), observed, "context:test")
+
+        assert request.binding.payload["action_point_xy"] == (30.0, 32.0)
+        result = (await world.execute(request)).result
+
+        assert result.transport_success
+        assert session.clicks == [(30, 32)]
+        assert grounder.calls == 2
 
     asyncio.run(scenario())
 
@@ -259,15 +298,15 @@ def test_reset_invalidates_old_visual_request_without_probe_or_pointer_call() ->
     asyncio.run(scenario())
 
 
-def test_unsupported_visual_primitive_retains_target_without_action() -> None:
+def test_proposer_action_claim_is_normalized_to_observation_only() -> None:
     async def scenario() -> None:
         session = VisualSession()
-        adapter = VisualSurfaceAdapter(session, Proposer("drag"))  # type: ignore[arg-type]
+        adapter = VisualSurfaceAdapter(session, Proposer("point_activate"))  # type: ignore[arg-type]
         await adapter.reset(_task())
         observed = await adapter.observe("initial")
 
         assert len(observed.targets) == 1
         assert observed.bindings == ()
-        assert observed.artifacts["unsupported_actions"] == ("drag",)
+        assert observed.artifacts["unsupported_actions"] == ("observe_only",)
 
     asyncio.run(scenario())

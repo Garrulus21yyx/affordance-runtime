@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 from target_agent_loop_support import SharedStateActionEvaluator, SharedStateTaskEvaluator
-from test_visual_surface_adapter import Proposer, VisualSession
+from test_visual_surface_adapter import PointGrounder, Proposer, VisualSession
 
 from affordance_runtime.agent import (
     AgentEpisodeRunner,
@@ -102,7 +102,7 @@ class UnknownActionEvaluator:
 
 def _run(session, proposer, task, policy, action_evaluator=None):
     environment = UnifiedWorldEnvironment(
-        (VisualSurfaceAdapter(session, proposer),)  # type: ignore[arg-type]
+        (VisualSurfaceAdapter(session, proposer, PointGrounder()),)  # type: ignore[arg-type]
     )
     loop = AgentLoop(
         policy,
@@ -194,7 +194,9 @@ def test_visual_sent_unknown_and_unknown_evaluation_waits_without_replay() -> No
 def test_visual_effect_legality_and_exact_binding_prevent_route_escape() -> None:
     async def scenario() -> None:
         session = VisualSession()
-        adapter = VisualSurfaceAdapter(session, Proposer())  # type: ignore[arg-type]
+        adapter = VisualSurfaceAdapter(
+            session, Proposer(), PointGrounder(),  # type: ignore[arg-type]
+        )
         world = UnifiedWorldEnvironment((adapter,))
         acquisition_task = TaskGoal(
             "shared",

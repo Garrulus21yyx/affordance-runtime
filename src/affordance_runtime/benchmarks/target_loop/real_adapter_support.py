@@ -26,7 +26,7 @@ from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.transport import HttpWotTransport
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.visual_grounding import VisualRegion
+from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
@@ -141,6 +141,30 @@ class ScreenshotOnlySharedStateProposer:
              (box[2] - box[0]) / image.width, (box[3] - box[1]) / image.height),
             "Shared state", 1.0, True, "button", "point_activate", {"expanded": checked},
         )]
+
+
+class ScreenshotOnlySharedStateGrounder:
+    provider = "internal-fixture"
+    model = "pixel-center"
+    prompt_version = "visual-point-v1"
+
+    def ground(self, request):
+        image = Image.open(BytesIO(request.image_bytes)).convert("RGB")
+        pixels = image.load()
+        matches = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if pixels[x, y] in {(220, 40, 60), (35, 180, 80)}
+        ]
+        if not matches:
+            raise ValueError("visual fixture could not ground its rendered semantic region")
+        xs, ys = [item[0] for item in matches], [item[1] for item in matches]
+        return VisualGroundingPoint(
+            ((min(xs) + max(xs) + 1) / (2 * image.width),
+             (min(ys) + max(ys) + 1) / (2 * image.height)),
+            normalized=True,
+        )
 
 
 @dataclass
@@ -260,7 +284,11 @@ def real_visual_environment(instrumentation: BenchmarkInstrumentation) -> WorldE
     session = ThreadBoundBrowserSession("data:text/html," + quote(_VISUAL_HTML))
     proposer = ScreenshotOnlySharedStateProposer(instrumentation)
     adapter = CountingAdapter(
-        VisualSurfaceAdapter(cast(BrowserSession, session), proposer), instrumentation, "pointer_calls",
+        VisualSurfaceAdapter(
+            cast(BrowserSession, session), proposer, ScreenshotOnlySharedStateGrounder(),
+        ),
+        instrumentation,
+        "pointer_calls",
     )
     return ManagedRealEnvironment(
         UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)), session.close, instrumentation,

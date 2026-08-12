@@ -70,12 +70,17 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; M4.6-E is
-`VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING` with the task-grounded perception and
+`DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC` with task-grounded perception and
 non-authoritative hypothesis vertical slices implemented. Grounded-tools v2
 already reuses the SoM renderer and passed its single-BrowserGym-source targeted
-gate. The next slice adds Runtime-owned source selection, provenance-preserving
-WorldFusion and one-route selection with bounded zero-dispatch reroute before
-VisualRegionBinding enters the Unified path;
+gate. Runtime-owned source selection, provenance-preserving WorldFusion,
+one-route selection, a per-frame visual evidence gate, explicit same-acquisition
+DOM/visual correspondence, and visual-only coordinate authority now exist on
+the non-default target path. GLM is now the default point-only Vision provider;
+open-world region proposal is explicitly configured and may use the thin
+OmniParser adapter, while ambiguous DOM candidates can resolve only to an
+existing E-ref. The provider-completion repository gate passes at
+`2348 passed, 27 skipped`; the live visual gate remains open;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`
@@ -99,7 +104,7 @@ M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C
 COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D
 REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E
-VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`.
+DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`.
 Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts

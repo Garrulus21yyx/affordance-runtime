@@ -11,6 +11,30 @@ bindings, coverage, confidence, and artifacts.
 `WorldFusion` creates one immutable `WorldObservation` with canonical targets,
 facts, coverage, conflicts, and all current bindings.
 
+DOM/AX is the browser control plane. A configured visual provider is only an
+available evidence source: Runtime reevaluates the current structural evidence
+on every acquisition and invokes Vision only for a typed coverage, binding,
+candidate-ambiguity, explicit-observation, or unresolved-postcondition gap.
+Prior visual selection never persists into the next frame.
+
+The provider split is explicit. OmniParser may propose bounded open-world
+regions and is always observation-only. Every region-proposer output is
+normalized to observation-only at each current adapter boundary, even if a
+custom/legacy provider claims an action primitive. The main visual VLM may disambiguate
+current DOM candidates only by choosing an offered call-local E-ref. GLM is the
+default last-stage `visual-only query -> point` provider. A point is attached
+to a proposed visual entity but still creates no route unless correspondence
+classifies that current entity as unmatched visual-only. Region proposal,
+candidate choice and point grounding have separate call/success counters.
+
+Visual evidence and visual execution authority are separate. Same-acquisition
+visual regions merge with DOM entities only through explicit
+`EntityCorrespondence`. A corresponded region cannot retain a coordinate
+binding. Only a current region explicitly classified as visual-only, after no
+DOM correspondence is established, may expose a private coordinate route;
+ambiguous, conflicting, stale, unsupported, or low-confidence regions remain
+non-executable. Missing or incoherent acquisition identity fails closed.
+
 Each source may additionally publish a frozen `SemanticInventorySummary` for
 one named inventory profile. It reports recognized, actually projected,
 uniquely bound/actionable, projected-non-executable, omitted and informational
@@ -174,3 +198,8 @@ capability. M4.5-A replaced that mismatch: logical reset returns the prepared
 initial acquisition, execute returns its post acquisition directly, and
 owner-thread `capture()` performs a fresh read-only current-world acquisition
 with origin/freshness validation and page-native verifier reacquisition.
+The legacy BrowserSession coordinator may still derive task-level visual needs
+and use heuristic semantic grouping; it is not correspondence or execution
+authority for the Unified target path. Until migrated, it must not be used as
+closure evidence for DOM/visual fusion, and new visual capability work belongs
+behind the Unified evidence gate and source ports.

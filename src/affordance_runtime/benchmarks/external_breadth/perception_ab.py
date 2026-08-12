@@ -147,6 +147,10 @@ async def run_provider_cohort_arm(
     *,
     enable_requirement_hypotheses: bool = False,
     visual_region_proposer=None,
+    visual_point_grounder=None,
+    visual_candidate_disambiguator=None,
+    progress_dir: Path | None = None,
+    progress_profile: str = "",
 ) -> PerceptionArmOutcome:
     """Run one explicitly named provider cohort without weakening frozen A/B."""
 
@@ -157,6 +161,10 @@ async def run_provider_cohort_arm(
         enable_requirement_hypotheses=enable_requirement_hypotheses,
         require_frozen_mistral=False,
         visual_region_proposer=visual_region_proposer,
+        visual_point_grounder=visual_point_grounder,
+        visual_candidate_disambiguator=visual_candidate_disambiguator,
+        progress_dir=progress_dir,
+        progress_profile=progress_profile,
     )
 
 
@@ -168,6 +176,10 @@ async def _run_arm(
     enable_requirement_hypotheses,
     require_frozen_mistral,
     visual_region_proposer=None,
+    visual_point_grounder=None,
+    visual_candidate_disambiguator=None,
+    progress_dir: Path | None = None,
+    progress_profile: str = "",
 ):
     adapter = _adapter(policy, require_frozen_mistral=require_frozen_mistral)
     if adapter.perception_profile is not perception_profile:
@@ -196,6 +208,8 @@ async def _run_arm(
         instrumentations,
         proposer,
         visual_region_proposer,
+        visual_point_grounder,
+        visual_candidate_disambiguator,
     )
     target = replace(
         target,
@@ -211,7 +225,50 @@ async def _run_arm(
             + ("-requirement-hypotheses" if enable_requirement_hypotheses else "")
         ),
     )
-    suite = await run_suite(target)
+    case_completed = None
+    completed_case_ids: list[str] = []
+    if progress_dir is not None:
+        if not progress_profile.strip():
+            raise ValueError("provider cohort progress requires a profile")
+        progress_dir.mkdir(parents=True, exist_ok=False)
+        _write_progress(
+            progress_dir,
+            profile=progress_profile,
+            perception_profile=perception_profile,
+            case_ids=tuple(case.case_id for case in manifest.cases),
+            completed_case_ids=(),
+            complete=False,
+        )
+
+        def persist_case(index, result) -> None:
+            derived = _derived_metrics(result)
+            record = _record(
+                manifest.cases[index - 1],
+                derived,
+                instrumentations[index - 1],
+            )
+            _atomic_json(
+                progress_dir / f"{record.case_id}.json",
+                {
+                    "profile": progress_profile,
+                    "perception_profile": perception_profile.value,
+                    "typed_outcome": record.outcome.value,
+                    "policy_trace": record.diagnostic_trace,
+                    "case": public_case_evidence(record.result),
+                },
+            )
+            completed_case_ids.append(record.case_id)
+            _write_progress(
+                progress_dir,
+                profile=progress_profile,
+                perception_profile=perception_profile,
+                case_ids=tuple(case.case_id for case in manifest.cases),
+                completed_case_ids=tuple(completed_case_ids),
+                complete=False,
+            )
+
+        case_completed = persist_case
+    suite = await run_suite(target, case_completed=case_completed)
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
     records = tuple(
         _record(case, result, instrumentation)
@@ -339,7 +396,7 @@ def write_provider_cohort_arm(
 ) -> Path:
     """Persist one provider-cohort diagnostic without an ad-hoc result schema."""
 
-    output_dir.mkdir(parents=True, exist_ok=False)
+    output_dir.mkdir(parents=True, exist_ok=output_dir.exists())
     for record in arm.records:
         _atomic_json(
             output_dir / f"{record.case_id}.json",
@@ -373,7 +430,36 @@ def write_provider_cohort_arm(
         "case_ids": tuple(record.case_id for record in arm.records),
         "generalization_claim_prohibited": True,
     })
+    _write_progress(
+        output_dir,
+        profile=profile,
+        perception_profile=arm.perception_profile,
+        case_ids=tuple(record.case_id for record in arm.records),
+        completed_case_ids=tuple(record.case_id for record in arm.records),
+        complete=True,
+    )
     return report
+
+
+def _write_progress(
+    output_dir: Path,
+    *,
+    profile: str,
+    perception_profile: DecisionPerceptionProfile,
+    case_ids: tuple[str, ...],
+    completed_case_ids: tuple[str, ...],
+    complete: bool,
+) -> None:
+    _atomic_json(output_dir / "progress.json", {
+        "schema_version": SCHEMA_VERSION,
+        "profile": profile,
+        "perception_profile": perception_profile.value,
+        "case_ids": case_ids,
+        "total_cases": len(case_ids),
+        "completed_cases": len(completed_case_ids),
+        "completed_case_ids": completed_case_ids,
+        "complete": complete,
+    })
 
 
 def file_sha256(path: Path) -> str:

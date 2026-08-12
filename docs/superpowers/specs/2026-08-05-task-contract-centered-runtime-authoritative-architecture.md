@@ -159,11 +159,28 @@ route。`WorldFusion` 保留 source-local identity/revision/provenance，将可�
 并拼接 tuple”宣称为完成 fusion。
 
 BrowserGym visual binding 只在显式配置 bounded region proposer 时声明 `visual/weak`
-offer。policy 只能通过公开 `RequestObservation(visual, weak)` 请求增强；Runtime 选择
+offer。该 offer 只表示能力可用，不构成调用证据。每次 acquisition 先取得 structural
+observation；Runtime 再根据当前 typed coverage/action/ambiguity/postcondition gap，或公开
+`RequestObservation(visual, weak)`，独立决定 `SKIP / VERIFY_STRUCTURED_CANDIDATES /
+DISCOVER_VISUAL_ENTITIES / DIAGNOSE_POSTCONDITION / UNAVAILABLE`。provider presence、先前
+visual 成功和 benchmark/task identity 不得触发本帧 visual。选择 visual 时，Runtime 使用
 structural required + visual optional，并让二者共享一次 raw capture 和 acquisition root。
-proposed region 先成为 source-local observed entity；只有支持的 `point_activate` 才创建
-private `VisualRegionBinding` 和 public `ActionBinding`，再经 `WorldFusion -> ActionSpace ->
-admission -> RouteSelector`。SoM、截图或 observed region 自身不创建执行权。
+
+DOM/AX bbox 生成的 SoM mark 直接保留同一 DOM identity。外部 proposer 产生的 region 先是
+source-local observed entity，再以 current shared acquisition 内的显式
+`EntityCorrespondence` 合并：唯一匹配的 visual entity 映射到 DOM canonical target，且
+不得保留 coordinate binding；明确 unmatched 的 current visual-only entity 才可为支持的
+`point_activate` 创建 private `VisualRegionBinding` 和 public `ActionBinding`。ambiguous、
+conflicting、stale、unsupported 或 low-confidence region 只可观察。所有 binding 仍经
+`WorldFusion -> ActionSpace -> admission -> RouteSelector`；SoM、截图、correspondence 或
+observed region 自身不创建执行权。
+
+Vision provider role 必须分离：open-world discovery 可由 OmniParser-compatible
+`VisualRegionProposerPort` 返回 observation-only regions；DOM candidate verification
+由 bounded SoM/E-ref disambiguator 返回一个 supplied E-ref 或 `null`，类型上不能返回坐标；
+visual-only point 由独立 `VisualGrounderPort` 完成，当前默认实现为 GLM。默认启用 point
+不得隐式启用 GLM region proposer；region proposer 必须显式配置。ShowUI/GUI-Actor 未来只能
+替换 point port，任何 provider 都不拥有 gate、correspondence、fusion 或 execution authority。
 
 视觉 route 的 bbox、point、screenshot identity 和 viewport 仅在 private binding 中；公开
 binding payload 和 model intent 不含坐标。dispatch 前必须重新读取当前截图，并同时验证

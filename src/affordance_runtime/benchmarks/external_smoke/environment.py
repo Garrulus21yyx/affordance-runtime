@@ -104,9 +104,15 @@ class ExternalEnvironmentTaskEvaluator:
 
     async def evaluate(self, task, observation) -> TaskEvaluation:
         verifier_result = self.verifier.current_result(self.benchmark_task_id)
-        if (
-            verifier_result.observation_id != observation.observation_id
-            or verifier_result.source_observation_id != observation.observation_id
+        current_source_ids = {item.observation_id for item in observation.sources}
+        verifier_lineage = {
+            verifier_result.observation_id,
+            verifier_result.source_observation_id,
+        }
+        if not (
+            verifier_lineage == {observation.observation_id}
+            or len(verifier_lineage) == 1
+            and verifier_result.source_observation_id in current_source_ids
         ):
             verifier_result = ExternalVerifierResult(
                 verifier_result.source,

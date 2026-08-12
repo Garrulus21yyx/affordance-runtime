@@ -17,6 +17,7 @@ from affordance_runtime.visual_grounding import (
     VisualRegion,
     VisualRegionProposalRequest,
     VisualRegionProposerPort,
+    point_grounded_visual_regions,
 )
 
 _VISUAL_TERMS = frozenset(
@@ -102,11 +103,8 @@ class GenericPerceptionOrchestrator:
             instruction=instruction,
             max_regions=self.max_regions,
         )
-        if self.region_proposer is not None:
-            regions = self.region_proposer.propose(request)
-        else:
-            if self.point_grounder is None:  # guarded by __post_init__
-                return ()
+        regions = self.region_proposer.propose(request) if self.region_proposer is not None else []
+        if self.point_grounder is not None:
             point = self.point_grounder.ground(
                 VisualGroundingRequest(
                     sample_id=observation_epoch_id,
@@ -116,15 +114,9 @@ class GenericPerceptionOrchestrator:
                     instruction=instruction,
                 )
             )
-            x, y = point.pixel_coordinates(image_size)
-            regions = [
-                VisualRegion(
-                    (x - 0.5, y - 0.5, 1.0, 1.0),
-                    label="current visually grounded target",
-                    confidence=1.0,
-                    normalized=False,
-                )
-            ]
+            regions = point_grounded_visual_regions(regions, point, image_size)
+        else:
+            regions = [replace(region, primitive_action="observe_only", action_point_xy=None) for region in regions]
         if len(regions) > self.max_regions:
             raise ValueError("visual region proposer exceeded the bounded region count")
         return tuple(regions)

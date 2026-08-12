@@ -1,6 +1,13 @@
 # Step 13 Unified Visual Binding Implementation
 
-Status: `REMEDIATION_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_TARGETED_RERUN_PENDING`
+Status: `SUPERSEDED_IN_TRIGGER_AND_BINDING_AUTHORITY_SCOPE / HISTORICAL_RECORD`
+
+Superseded by:
+`docs/superpowers/plans/2026-08-12-dom-first-evidence-gated-vision-convergence.md`.
+The visual adapter/currentness work below remains historical implementation
+context. Configure-time initial augmentation, sticky post-action selection,
+and coordinate binding before explicit DOM correspondence are not current
+target behavior and must not be restored from this record.
 
 Scope boundary: connect generic screenshot-region observation and pointer
 activation through the Step-12 Unified source/fusion/route seam into the
@@ -47,18 +54,22 @@ Shared-capture screenshots are deduplicated by public image digest at the model
 boundary and their canonical grounding regions are unioned, so one model call
 receives one marked image rather than conflicting structural and visual copies.
 
-## Bounded live-path remediation
+## Superseded bounded live-path remediation
 
-The initial observation now performs one optional visual augmentation whenever
-the environment was explicitly configured with a bounded visual proposer.
-Visual capability therefore no longer depends on a successful policy-authored
-`observe_visual` schema call; that tool remains available for fresh recovery.
+This implementation previously performed one optional visual augmentation
+whenever the environment was configured with a bounded proposer and retained
+visual selection after acquisition. That trigger policy was incorrect: provider
+configuration is capability, not evidence. The replacement starts with DOM/AX,
+recomputes a typed evidence gate for every current observation, and never makes
+visual selection sticky.
 
-Visual proposals now distinguish observation from action authority. Public
-entities may carry bounded `color`, `text`, `shape`, `row`, `column`, and
-`selected` facts. Only an explicitly actionable point region at or above the
-bounded confidence floor receives a private pointer binding. Informational,
-unsupported, and low-confidence regions remain visible but non-executable.
+Visual proposals distinguish observation from action authority. Public entities
+may carry bounded `color`, `text`, `shape`, `row`, `column`, and `selected`
+facts. In this historical version, an explicitly actionable point region above
+the confidence floor was sufficient for a pointer binding. The replacement
+additionally requires explicit unmatched visual-only identity. A region
+corresponded to DOM merges into the DOM identity and gets no coordinate binding;
+ambiguous or conflicting correspondence also remains non-executable.
 
 `activate` evaluation now compares current public target semantics and the
 before/after screenshot state. The validation boundary recomputes the change

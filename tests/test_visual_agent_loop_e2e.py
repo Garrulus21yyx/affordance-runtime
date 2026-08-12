@@ -15,7 +15,7 @@ from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopSta
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.evaluation import TaskEvaluationStatus
 from affordance_runtime.surfaces.visual import VisualSurfaceAdapter
-from affordance_runtime.visual_grounding import VisualRegion
+from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 
@@ -55,6 +55,30 @@ class ScreenshotOnlySharedStateProposer:
         ]
 
 
+class ScreenshotOnlySharedStateGrounder:
+    provider = "test"
+    model = "pixel-center"
+    prompt_version = "visual-point-v1"
+
+    def ground(self, request):
+        image = Image.open(BytesIO(request.image_bytes)).convert("RGB")
+        pixels = image.load()
+        matches = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if pixels[x, y] in {(220, 40, 60), (35, 180, 80)}
+        ]
+        assert matches
+        xs = [item[0] for item in matches]
+        ys = [item[1] for item in matches]
+        return VisualGroundingPoint(
+            ((min(xs) + max(xs) + 1) / (2 * image.width),
+             (min(ys) + max(ys) + 1) / (2 * image.height)),
+            normalized=True,
+        )
+
+
 def test_real_browser_visual_only_short_loop_completes_with_one_semantic_action() -> None:
     html = """
     <!doctype html><html><body style="margin:0;background:white">
@@ -68,7 +92,9 @@ def test_real_browser_visual_only_short_loop_completes_with_one_semantic_action(
     session = BrowserSession.launch("data:text/html," + quote(html), lease_ttl_ms=30_000)
     try:
         proposer = ScreenshotOnlySharedStateProposer()
-        environment = UnifiedWorldEnvironment((VisualSurfaceAdapter(session, proposer),))
+        environment = UnifiedWorldEnvironment((
+            VisualSurfaceAdapter(session, proposer, ScreenshotOnlySharedStateGrounder()),
+        ))
         task = shared_state_task()
         loop = AgentLoop(FirstOfferedActionPolicy(), SharedStateActionEvaluator(), SharedStateTaskEvaluator())
 
@@ -100,7 +126,9 @@ def test_real_browser_visual_model_policy_completes_through_strict_structured_de
     session = BrowserSession.launch("data:text/html," + quote(html), lease_ttl_ms=30_000)
     try:
         proposer = ScreenshotOnlySharedStateProposer()
-        environment = UnifiedWorldEnvironment((VisualSurfaceAdapter(session, proposer),))
+        environment = UnifiedWorldEnvironment((
+            VisualSurfaceAdapter(session, proposer, ScreenshotOnlySharedStateGrounder()),
+        ))
         policy = first_action_model_policy()
         loop = AgentLoop(policy, SharedStateActionEvaluator(), SharedStateTaskEvaluator())
 

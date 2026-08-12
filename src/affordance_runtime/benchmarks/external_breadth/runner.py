@@ -47,7 +47,8 @@ from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
-from affordance_runtime.visual_grounding import VisualRegionProposerPort
+from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.visual_grounding import VisualGrounderPort, VisualRegionProposerPort
 
 REQUIRED_METRICS = (
     "observations",
@@ -61,9 +62,27 @@ REQUIRED_METRICS = (
     "fill_calls",
     "select_calls",
     "visual_proposer_calls",
+    "visual_point_grounder_calls",
+    "visual_point_grounder_success_count",
+    "visual_disambiguator_calls",
+    "visual_disambiguator_selection_count",
+    "visual_provider_failure_count",
+    "visual_provider_structured_output_failure_count",
+    "visual_provider_abstained_count",
+    "visual_provider_transport_failure_count",
+    "visual_provider_other_failure_count",
+    "visual_point_grounding_failure_count",
+    "visual_region_proposal_failure_count",
+    "visual_candidate_disambiguation_failure_count",
     "structural_source_acquired_count",
     "visual_source_acquired_count",
     "visual_binding_acquired_count",
+    "visual_gate_selected_count",
+    "visual_gate_skipped_count",
+    "visual_correspondence_matched_count",
+    "visual_correspondence_unmatched_count",
+    "visual_correspondence_ambiguous_count",
+    "visual_correspondence_conflict_count",
     "structural_binding_dispatch_count",
     "visual_binding_dispatch_count",
     "policy_calls",
@@ -110,6 +129,8 @@ async def run_breadth_campaign(
     *,
     provider_capacity: ProviderCapacityEvidence | None = None,
     visual_region_proposer: VisualRegionProposerPort | None = None,
+    visual_point_grounder: VisualGrounderPort | None = None,
+    visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -136,6 +157,8 @@ async def run_breadth_campaign(
         pacing_state,
         instrumentations,
         visual_region_proposer=visual_region_proposer,
+        visual_point_grounder=visual_point_grounder,
+        visual_candidate_disambiguator=visual_candidate_disambiguator,
     )
     harness_digest = target_manifest_digest(target_manifest)
     if harness_digest != expected_target_manifest_digest(manifest):
@@ -195,6 +218,8 @@ def _target_manifest(
     instrumentations,
     requirement_hypothesis_proposer=None,
     visual_region_proposer=None,
+    visual_point_grounder=None,
+    visual_candidate_disambiguator=None,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -205,6 +230,8 @@ def _target_manifest(
             instrumentations,
             requirement_hypothesis_proposer,
             visual_region_proposer,
+            visual_point_grounder,
+            visual_candidate_disambiguator,
         )
         for item in manifest.cases
     )
@@ -225,6 +252,8 @@ def _target_case(
     instrumentations,
     requirement_hypothesis_proposer=None,
     visual_region_proposer=None,
+    visual_point_grounder=None,
+    visual_candidate_disambiguator=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -237,6 +266,8 @@ def _target_case(
                 max_turns=case.max_turns,
                 admitted_task_ids=admitted,
                 visual_region_proposer=visual_region_proposer,
+                visual_point_grounder=visual_point_grounder,
+                visual_candidate_disambiguator=visual_candidate_disambiguator,
             )
         except BaseException as exc:
             _initialize_custom_metrics(instrumentation)
@@ -315,9 +346,27 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
         "fill_calls",
         "select_calls",
         "visual_proposer_calls",
+        "visual_point_grounder_calls",
+        "visual_point_grounder_success_count",
+        "visual_disambiguator_calls",
+        "visual_disambiguator_selection_count",
+        "visual_provider_failure_count",
+        "visual_provider_structured_output_failure_count",
+        "visual_provider_abstained_count",
+        "visual_provider_transport_failure_count",
+        "visual_provider_other_failure_count",
+        "visual_point_grounding_failure_count",
+        "visual_region_proposal_failure_count",
+        "visual_candidate_disambiguation_failure_count",
         "structural_source_acquired_count",
         "visual_source_acquired_count",
         "visual_binding_acquired_count",
+        "visual_gate_selected_count",
+        "visual_gate_skipped_count",
+        "visual_correspondence_matched_count",
+        "visual_correspondence_unmatched_count",
+        "visual_correspondence_ambiguous_count",
+        "visual_correspondence_conflict_count",
         "structural_binding_dispatch_count",
         "visual_binding_dispatch_count",
         "official_verifier_queries",

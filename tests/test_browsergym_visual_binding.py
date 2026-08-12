@@ -19,7 +19,12 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
     resolve_grounded_tool_call,
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall
-from affordance_runtime.visual_grounding import VisualRegion, VisualRegionProposalRequest
+from affordance_runtime.visual_grounding import (
+    VisualGroundingPoint,
+    VisualGroundingRequest,
+    VisualRegion,
+    VisualRegionProposalRequest,
+)
 from affordance_runtime.world import (
     ActionSpaceBuilder,
     ObservationRequestKind,
@@ -53,18 +58,46 @@ class _FailingProposer:
         raise RuntimeError("visual source unavailable")
 
 
+@dataclass
+class _Grounder:
+    point: VisualGroundingPoint
+    calls: list[VisualGroundingRequest] = field(default_factory=list)
+    provider: str = "zhipu"
+    model: str = "glm-fixture"
+    prompt_version: str = "visual-grounder-v1"
+
+    def ground(self, request: VisualGroundingRequest) -> VisualGroundingPoint:
+        self.calls.append(request)
+        return self.point
+
+
 def _raw(*, shade: int = 255):
     raw = raw_observation(goal="Click the visible target.")
     raw["screenshot"] = np.full((100, 200, 3), shade, dtype=np.uint8)
     return raw
 
 
-def _open(fake: FakeBrowserGym, proposer: _Proposer):
+def _open(
+    fake: FakeBrowserGym,
+    proposer: _Proposer,
+    *,
+    with_point: bool = True,
+    point: tuple[float, float] | None = None,
+):
+    point_grounder = None
+    if with_point:
+        first = proposer.regions[0]
+        x, y, width, height = first.bbox_xywh
+        point_grounder = _Grounder(VisualGroundingPoint(
+            point or (x + width / 2, y + height / 2),
+            normalized=first.normalized,
+        ))
     return BrowserGymMiniWobEnvironment.open(
         "browsergym/miniwob.click-button",
         7,
         gym_factory=lambda *_args, **_kwargs: fake,
         visual_region_proposer=proposer,
+        visual_point_grounder=point_grounder,
     )
 
 
@@ -85,7 +118,7 @@ def _bind_first(task, world):
     return ActionBinder().bind(selection, world, "context:visual")
 
 
-def test_configured_visual_source_is_automatically_augmented_before_first_policy_call() -> None:
+def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acquisition() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
@@ -144,7 +177,7 @@ def test_visual_binding_routes_through_action_space_and_pointer_execution() -> N
         fake.step_terminated = False
         fake.step_done = False
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
-        environment, task = _open(fake, proposer)
+        environment, task = _open(fake, proposer, point=(0.3, 0.3))
         try:
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
@@ -155,12 +188,13 @@ def test_visual_binding_routes_through_action_space_and_pointer_execution() -> N
 
             outcome = await environment.execute(request)
             assert outcome.result.dispatch_status is DispatchStatus.SENT
-            assert fake.actions == ["mouse_click(70, 35)"]
+            assert fake.actions == ["mouse_click(60, 30)"]
+            assert environment.visual_point_grounder_calls == 3
             assert environment.step_calls == 1
             assert environment.dom_action_calls == 0
             assert environment.structural_binding_dispatch_count == 0
             assert environment.visual_binding_dispatch_count == 1
-            assert len(proposer.calls) == 3  # initial augmentation, requested capture, post-action
+            assert len(proposer.calls) == 3  # evidence gap, explicit capture, renewed evidence gap
         finally:
             await environment.close()
 
@@ -198,7 +232,7 @@ def test_unsupported_visual_primitive_never_creates_action_authority() -> None:
         proposer = _Proposer([
             VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9, primitive_action="drag"),
         ])
-        environment, task = _open(fake, proposer)
+        environment, task = _open(fake, proposer, with_point=False)
         try:
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
@@ -232,7 +266,7 @@ def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
                 state={"selected": False},
             ),
         ])
-        environment, task = _open(fake, proposer)
+        environment, task = _open(fake, proposer, with_point=False)
         try:
             acquired = await environment.reset(task)
             assert acquired.observation is not None
@@ -279,7 +313,7 @@ def test_optional_visual_failure_preserves_structural_world_with_typed_gap() -> 
     asyncio.run(scenario())
 
 
-def test_zero_action_grounded_workspace_can_request_visual_observation() -> None:
+def test_visual_observation_capability_remains_explicitly_requestable() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])

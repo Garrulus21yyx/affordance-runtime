@@ -57,6 +57,7 @@ def _source(
     value: object = False,
     confidence: float = 1.0,
     media: tuple[ObservationMedia, ...] = (),
+    acquisition_root_id: str = "root:shared",
 ) -> SurfaceObservation:
     observation_id = f"{surface}:obs"
     revision = f"{surface}:rev"
@@ -89,8 +90,11 @@ def _source(
         (binding,),
         CoverageState.COMPLETE,
         media=media,
-        acquisition_root_id=f"root:{surface}",
+        acquisition_root_id=acquisition_root_id,
         correspondences=(EntityCorrespondence(local_id, canonical_id),) if canonical_id else (),
+        visual_only_target_ids=(local_id,)
+        if (profile or ObservationSourceProfile.dom()).modality.value == "visual" and not canonical_id
+        else (),
     )
 
 
@@ -222,10 +226,13 @@ def test_post_action_reacquires_route_owner_and_prior_required_source() -> None:
 
 
 def test_fusion_merges_only_explicit_correspondence_and_conserves_provenance() -> None:
-    left = _source("dom", local_id="dom-target", canonical_id="entity:shared")
+    left = _source(
+        "dom", local_id="dom-target", canonical_id="entity:shared",
+        acquisition_root_id="root:dom",
+    )
     right = _source(
         "wot", profile=ObservationSourceProfile.wot(), local_id="wot-target",
-        canonical_id="entity:shared",
+        canonical_id="entity:shared", acquisition_root_id="root:wot",
     )
     result = WorldFusion().fuse((left, right))
 
@@ -238,6 +245,38 @@ def test_fusion_merges_only_explicit_correspondence_and_conserves_provenance() -
     assert len(result.entity_provenance[0].acquisition_roots) == 2
 
 
+def test_visual_correspondence_adds_non_overlapping_state_without_replacing_dom_identity() -> None:
+    dom = _source(
+        "dom",
+        local_id="dom-target",
+        canonical_id="entity:shared",
+        acquisition_root_id="root:shared",
+    )
+    visual = replace(
+        _source(
+            "visual",
+            profile=ObservationSourceProfile.visual(),
+            local_id="visual-target",
+            canonical_id="entity:shared",
+            acquisition_root_id="root:shared",
+        ),
+        bindings=(),
+        targets=(SemanticTarget(
+            "visual-target",
+            dom.targets[0].role,
+            dom.targets[0].label,
+            {"visually_selected": True},
+        ),),
+    )
+
+    result = WorldFusion().fuse((dom, visual))
+
+    assert result.observation is not None
+    target = result.observation.targets[0]
+    assert target.target_id == "entity:shared"
+    assert target.state["visually_selected"] is True
+
+
 def test_duplicate_labels_without_explicit_link_never_merge() -> None:
     result = WorldFusion().fuse((
         _source("dom", local_id="same"),
@@ -247,6 +286,99 @@ def test_duplicate_labels_without_explicit_link_never_merge() -> None:
     assert result.observation is not None
     assert len(result.observation.targets) == 2
     assert len({item.target_id for item in result.observation.targets}) == 2
+
+
+def test_visual_coordinate_binding_requires_explicit_visual_only_classification() -> None:
+    visual = replace(
+        _source("visual", profile=ObservationSourceProfile.visual()),
+        visual_only_target_ids=(),
+    )
+
+    result = WorldFusion().fuse((_source("dom"), visual))
+
+    assert result.observation is None
+    assert result.reason_code == "visual_binding_identity_unclassified"
+
+
+def test_visual_coordinate_binding_requires_shared_structural_acquisition_root() -> None:
+    visual = _source(
+        "visual",
+        profile=ObservationSourceProfile.visual(),
+        acquisition_root_id="root:visual",
+    )
+
+    result = WorldFusion().fuse((
+        _source("dom", acquisition_root_id="root:dom"),
+        visual,
+    ))
+
+    assert result.observation is None
+    assert result.reason_code == "visual_binding_requires_shared_acquisition"
+
+
+def test_visual_coordinate_binding_cannot_bypass_missing_structural_root() -> None:
+    result = WorldFusion().fuse((
+        _source("dom", acquisition_root_id=""),
+        _source("visual", profile=ObservationSourceProfile.visual()),
+    ))
+
+    assert result.observation is None
+    assert result.reason_code == "visual_binding_requires_shared_acquisition"
+
+
+def test_visual_correspondence_requires_shared_acquisition_without_coordinate_binding() -> None:
+    visual = replace(
+        _source(
+            "visual",
+            profile=ObservationSourceProfile.visual(),
+            canonical_id="entity:shared",
+            acquisition_root_id="root:visual",
+        ),
+        bindings=(),
+    )
+
+    result = WorldFusion().fuse((
+        _source(
+            "dom", local_id="dom-target", canonical_id="entity:shared",
+            acquisition_root_id="root:dom",
+        ),
+        visual,
+    ))
+
+    assert result.observation is None
+    assert result.reason_code == "visual_correspondence_requires_shared_acquisition"
+
+
+def test_visual_correspondence_must_resolve_to_structural_identity() -> None:
+    visual = replace(
+        _source(
+            "visual",
+            profile=ObservationSourceProfile.visual(),
+            canonical_id="entity:missing",
+        ),
+        bindings=(),
+    )
+
+    result = WorldFusion().fuse((_source("dom"), visual))
+
+    assert result.observation is None
+    assert result.reason_code == "visual_correspondence_target_unresolved"
+
+
+def test_corresponded_visual_entity_cannot_retain_coordinate_binding() -> None:
+    visual = _source(
+        "visual",
+        profile=ObservationSourceProfile.visual(),
+        canonical_id="entity:shared",
+    )
+
+    result = WorldFusion().fuse((
+        _source("dom", canonical_id="entity:shared"),
+        visual,
+    ))
+
+    assert result.observation is None
+    assert result.reason_code == "corresponded_visual_binding_forbidden"
 
 
 def test_material_conflict_blocks_only_affected_action_option() -> None:

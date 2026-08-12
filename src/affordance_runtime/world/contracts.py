@@ -286,6 +286,7 @@ class SurfaceObservation:
     entity_inventory: EntityInventorySummary = field(default_factory=EntityInventorySummary)
     acquisition_root_id: str = ""
     correspondences: tuple[EntityCorrespondence, ...] = ()
+    visual_only_target_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
@@ -313,11 +314,22 @@ class SurfaceObservation:
         if not isinstance(self.entity_inventory, EntityInventorySummary):
             raise TypeError("surface entity inventory summary must be typed")
         object.__setattr__(self, "correspondences", tuple(self.correspondences))
+        object.__setattr__(self, "visual_only_target_ids", tuple(self.visual_only_target_ids))
         if len({item.source_target_id for item in self.correspondences}) != len(self.correspondences):
             raise ValueError("source entities may have only one explicit correspondence")
         local_ids = {item.target_id for item in self.targets}
         if any(item.source_target_id not in local_ids for item in self.correspondences):
             raise ValueError("entity correspondence must reference a source-local target")
+        if (
+            len(set(self.visual_only_target_ids)) != len(self.visual_only_target_ids)
+            or any(item not in local_ids for item in self.visual_only_target_ids)
+        ):
+            raise ValueError("visual-only identity must be unique and source-local")
+        corresponded = {item.source_target_id for item in self.correspondences}
+        if corresponded.intersection(self.visual_only_target_ids):
+            raise ValueError("a source target cannot be both corresponded and visual-only")
+        if self.source_profile.modality.value != "visual" and self.visual_only_target_ids:
+            raise ValueError("only a visual source may declare visual-only identities")
         if self.entity_inventory.status is not EntityInventoryStatus.UNASSESSED:
             if self.entity_inventory.entity_count != len(self.targets):
                 raise ValueError("entity inventory must match retained surface targets")

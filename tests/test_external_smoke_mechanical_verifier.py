@@ -9,7 +9,12 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.evaluation import TaskEvaluationStatus, TaskOutcomeKind
 from affordance_runtime.task import TaskGoal
-from affordance_runtime.world import CoverageState, WorldObservation
+from affordance_runtime.world import (
+    CoverageState,
+    ObservationSourceProfile,
+    SurfaceObservation,
+    WorldObservation,
+)
 
 
 class Verifier:
@@ -89,3 +94,45 @@ def test_external_task_evaluator_fails_closed_on_latest_pointer_lineage_mismatch
     assert result.outcome is not None
     assert result.outcome.kind is TaskOutcomeKind.VERIFIER_UNAVAILABLE
     assert result.outcome.code == "source_insufficient"
+
+
+def test_external_task_evaluator_accepts_current_structural_lineage_in_fused_world() -> None:
+    structural = SurfaceObservation(
+        "current-source",
+        "browsergym",
+        "revision",
+        ObservationSourceProfile.dom(),
+    )
+    visual = SurfaceObservation(
+        "current-visual",
+        "browsergym_visual",
+        "revision",
+        ObservationSourceProfile.visual(),
+    )
+
+    class FusedVerifier:
+        def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult:
+            del benchmark_task_id
+            return ExternalVerifierResult(
+                VerifierFactSource.POST_ACTION,
+                ExternalVerifierStatus.SUCCESS,
+                ExternalVerifierReason.VERIFIED_SUCCESS,
+                "current-source",
+                "current-source",
+                ("fact:status",),
+            )
+
+    observation = WorldObservation(
+        "world:fused",
+        (),
+        (),
+        (),
+        {"browsergym": CoverageState.COMPLETE, "browsergym_visual": CoverageState.TRUNCATED},
+        sources=(structural, visual),
+    )
+    result = asyncio.run(ExternalEnvironmentTaskEvaluator(
+        "browsergym/miniwob.click-button",
+        FusedVerifier(),
+    ).evaluate(TaskGoal("external", "Complete task"), observation))
+
+    assert result.status is TaskEvaluationStatus.COMPLETE

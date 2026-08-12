@@ -58,7 +58,11 @@ class ObservationOrchestrator:
             selections = []
             if structural is not None:
                 selections.append(SourceSelection(structural.source, SourceRequirement.REQUIRED, "structured_grounding"))
-                selections.append(SourceSelection(visual.source, SourceRequirement.OPTIONAL, "visual_augmentation"))
+                selections.append(SourceSelection(
+                    visual.source,
+                    SourceRequirement.OPTIONAL,
+                    "explicit_visual_assistance",
+                ))
             else:
                 selections.append(SourceSelection(visual.source, SourceRequirement.REQUIRED, "visual_grounding"))
             return self._bounded(selections)
