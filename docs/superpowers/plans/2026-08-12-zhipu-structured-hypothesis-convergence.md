@@ -1,6 +1,6 @@
 # Zhipu Structured Hypothesis Convergence
 
-Status: IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED — fresh live evidence pending
+Status: IMPLEMENTED_DIAGNOSTIC_NOT_CLOSED — held-out comparison recorded
 
 ## Goal
 
@@ -70,8 +70,15 @@ The chain lacks a closed normalization algebra and item-addressed outcomes.
 | Project accepted/rejected outcomes into feedback/evidence | implemented | state/context/result/snapshot/metrics/trace |
 | Property/state-machine regression suite | implemented | permutation, duplicate, replacement-liveness, wrapper, authority tests |
 | Full repository validation | passed | 2272 passed, 24 skipped; Ruff and diff checks pass |
-| Fresh held-out Zhipu cases | pending | clean-SHA evidence |
-| Independent fresh-context review | pending | review record |
+| Fresh held-out Zhipu cases | completed diagnostic | `p5-e-zhipu-convergence-heldout-9d8e3a3`: 0/2, both decision schema failures, zero GUI dispatch |
+| Same-path Mistral comparison | completed diagnostic | `p5-e-mistral-convergence-heldout-48cdcdc`: 2/2, three GUI dispatches |
+| Independent fresh-context review | completed diagnostic | protocol complexity remains the exact Zhipu-profile blocker; cross-model comparison is not causal proof |
+
+The held-out comparison proves that the current Runtime path can complete both
+tasks and that the exact Zhipu profile fails after hypothesis processing but
+before GUI dispatch. Because provider and model changed together, it does not
+prove causality. The bounded same-model protocol experiment is tracked in
+[Dynamic Tools v1 Protocol Experiment](2026-08-12-dynamic-tools-v1-protocol-experiment.md).
 
 ## Provider contract comparison (checked 2026-08-12)
 

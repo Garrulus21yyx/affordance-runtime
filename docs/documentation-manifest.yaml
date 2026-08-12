@@ -88,6 +88,9 @@ normative:
     lifecycle: current
 
 reference:
+  - role: dynamic_tools_v1_protocol_experiment_record
+    path: docs/superpowers/plans/2026-08-12-dynamic-tools-v1-protocol-experiment.md
+    lifecycle: current
   - role: zhipu_structured_hypothesis_convergence_execution_record
     path: docs/superpowers/plans/2026-08-12-zhipu-structured-hypothesis-convergence.md
     lifecycle: current

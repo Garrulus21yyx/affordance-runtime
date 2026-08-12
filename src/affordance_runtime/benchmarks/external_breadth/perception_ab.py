@@ -44,6 +44,7 @@ from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOr
 from affordance_runtime.model_policy.requirement_proposer import (
     ModelRequirementHypothesisProposer,
 )
+from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
 PROFILE_ID = "MINIWOB_CAPABILITY_COVERED_PERCEPTION_AB"
@@ -323,10 +324,10 @@ def _adapter(
     policy: ModelBackedAgentPolicy,
     *,
     require_frozen_mistral: bool = True,
-) -> ModelPortDecisionAdapter:
+) -> ModelPortDecisionAdapter | DynamicToolDecisionAdapter:
     composed = policy.port
     adapter = composed.primary_port if isinstance(composed, ProviderCallOrchestrator) else composed
-    if not isinstance(adapter, ModelPortDecisionAdapter):
+    if not isinstance(adapter, ModelPortDecisionAdapter | DynamicToolDecisionAdapter):
         raise TypeError("perception A/B requires the canonical model bridge")
     if require_frozen_mistral and (
         getattr(adapter.port, "provider", "") != "mistral"

@@ -19,6 +19,7 @@ from affordance_runtime.model_policy.model_port_bridge import (
 )
 from affordance_runtime.model_policy.policy import _build_request
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPackagePayload
+from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelCallRecord,
@@ -218,6 +219,31 @@ def test_screenshot_ax_profile_fails_before_provider_when_image_is_missing() -> 
         assert transport.calls == 0
 
     asyncio.run(scenario())
+
+
+def test_factory_selects_dynamic_tools_only_for_an_exact_admitted_model_profile() -> None:
+    environment = {
+        "LLM_ACTIVE_PROFILE": "zhipu",
+        "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
+        "LLM_ZHIPU_API_KEY": "secret",
+        "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+        "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+    }
+
+    policy = model_policy_from_environment(
+        environment,
+        interaction_protocol="dynamic_tools.v1",
+    )
+
+    assert isinstance(policy.port.primary_port, DynamicToolDecisionAdapter)
+    assert policy.port.primary_port.transport_kind.value == "compact_json"
+
+    environment["LLM_ZHIPU_MODEL"] = "glm-4.1v-thinking"
+    with pytest.raises(ValueError, match="no admitted"):
+        model_policy_from_environment(
+            environment,
+            interaction_protocol="dynamic_tools.v1",
+        )
 
 
 def test_bridge_metadata_hashes_endpoint_or_credential_shaped_identifiers() -> None:

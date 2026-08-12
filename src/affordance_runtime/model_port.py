@@ -256,6 +256,140 @@ class OpenAICompatibleModelPort:
     ) -> T:
         return await asyncio.to_thread(self._generate, messages, output_schema, config)
 
+    async def generate_tool_calls(
+        self,
+        messages: Sequence[ModelMessage],
+        tools: Sequence[object],
+        config: ModelConfig,
+        *,
+        require_one: bool,
+    ) -> tuple[object, ...]:
+        return await asyncio.to_thread(
+            self._generate_tool_calls,
+            messages,
+            tools,
+            config,
+            require_one,
+        )
+
+    def _generate_tool_calls(
+        self,
+        messages: Sequence[ModelMessage],
+        tools: Sequence[object],
+        config: ModelConfig,
+        require_one: bool,
+    ) -> tuple[object, ...]:
+        from affordance_runtime.immutable import to_json_compatible
+        from affordance_runtime.model_policy.strict_json import strict_json_loads
+        from affordance_runtime.model_policy.tool_contracts import ToolCall
+
+        serialized_messages = _serialize_openai_compatible_messages(
+            messages,
+            nested_image_url=self.provider == "zhipu",
+        )
+        serialized_tools = []
+        for tool in tools:
+            name = getattr(tool, "name", "")
+            description = getattr(tool, "description", "")
+            schema = getattr(tool, "input_schema", None)
+            if not isinstance(name, str) or not isinstance(description, str) or schema is None:
+                raise TypeError("native tool transport requires typed ToolSpec values")
+            serialized_tools.append({
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": to_json_compatible(schema),
+                },
+            })
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": serialized_messages,
+            "tools": serialized_tools,
+            "tool_choice": "any" if require_one else "auto",
+            "parallel_tool_calls": False,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+        }
+        if self.thinking_mode is not None:
+            body["thinking"] = {"type": self.thinking_mode}
+        if config.seed is not None:
+            body["seed"] = config.seed
+        _raise_if_model_circuit_open(self)
+        started = perf_counter()
+        try:
+            response, rate_limit_retry_count, transient_retry_count = _post_json(
+                f"{self.base_url.rstrip('/')}/chat/completions",
+                body,
+                timeout_s=config.timeout_s,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                rate_limit_retries=config.rate_limit_retries,
+                rate_limit_backoff_s=config.rate_limit_backoff_s,
+                max_provider_retry_delay_s=config.max_provider_retry_delay_s,
+                transient_retries=config.transient_retries,
+                transient_backoff_s=config.transient_backoff_s,
+            )
+        except ProviderModelError as exc:
+            self._capture_tool(serialized_messages, "provider_failure", serialized_tools, error=exc.kind.value)
+            _trip_model_circuit(self, exc, config)
+            raise
+        latency_ms = round((perf_counter() - started) * 1_000, 3)
+        try:
+            message = response["choices"][0]["message"]
+            raw_calls = message.get("tool_calls") or ()
+            if not isinstance(raw_calls, list):
+                raise TypeError("tool_calls must be a list")
+            calls = []
+            for raw in raw_calls:
+                function = raw.get("function") if isinstance(raw, dict) else None
+                if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+                    raise TypeError("tool call function is malformed")
+                raw_arguments = function.get("arguments", "")
+                arguments = (
+                    strict_json_loads(raw_arguments)
+                    if isinstance(raw_arguments, str)
+                    else raw_arguments
+                )
+                if not isinstance(arguments, Mapping):
+                    raise TypeError("tool call arguments must be an object")
+                calls.append(ToolCall(function["name"], arguments))
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._capture_tool(
+                serialized_messages,
+                "schema_error",
+                serialized_tools,
+                response_content=response,
+                response_id=str(response.get("id") or ""),
+                error=_schema_failure_summary(exc),
+            )
+            raise StructuredOutputError("native tool-call response is invalid") from exc
+        usage = response.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        self.last_call = ModelCallRecord(
+            provider=self.provider,
+            model=self.model,
+            endpoint_class=self.endpoint_class,
+            prompt_version=config.prompt_version,
+            schema_name="dynamic_tools.v1",
+            schema_version="dynamic_tools.v1",
+            latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=int(usage.get("total_tokens") or prompt_tokens + completion_tokens),
+            response_id=str(response.get("id") or ""),
+            rate_limit_retry_count=rate_limit_retry_count,
+            transient_retry_count=transient_retry_count,
+        )
+        self._capture_tool(
+            serialized_messages,
+            "accepted",
+            serialized_tools,
+            response_content=response,
+            response_id=str(response.get("id") or ""),
+        )
+        return tuple(calls)
+
     def _generate(
         self,
         messages: Sequence[ModelMessage],
@@ -376,6 +510,28 @@ class OpenAICompatibleModelPort:
                 messages=messages,
                 status=status,
                 response_content=response_content,
+                response_id=response_id,
+                error=error,
+            )
+
+    def _capture_tool(
+        self,
+        messages: Sequence[ModelMessage | Mapping[str, Any]],
+        status: str,
+        tools: Sequence[Mapping[str, Any]],
+        *,
+        response_content: object | None = None,
+        response_id: str = "",
+        error: str = "",
+    ) -> None:
+        if self.private_capture is not None:
+            self.private_capture.record(
+                provider=self.provider,
+                model=self.model,
+                schema_name="dynamic_tools.v1",
+                messages=messages,
+                status=status,
+                response_content={"tools": tools, "response": response_content},
                 response_id=response_id,
                 error=error,
             )

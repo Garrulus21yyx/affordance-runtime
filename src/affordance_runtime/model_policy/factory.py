@@ -15,7 +15,11 @@ from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderCallOrchestrator,
     ProviderCallPolicy,
 )
+from affordance_runtime.model_policy.tool_contracts import DYNAMIC_TOOLS_PROTOCOL
+from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import FallbackModelPort, ModelConfig, model_port_from_environment
+
+STRUCTURED_PACKAGE_PROTOCOL = "structured_package.v2"
 
 
 def model_policy_from_environment(
@@ -25,6 +29,7 @@ def model_policy_from_environment(
     grounding_variant: DecisionGroundingVariant | str | None = None,
     provider_recovery: bool = True,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    interaction_protocol: str | None = None,
 ) -> ModelBackedAgentPolicy:
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
@@ -65,12 +70,26 @@ def model_policy_from_environment(
         transient_retries=0,
         prompt_version="p5-m1.1",
     )
-    adapter = ModelPortDecisionAdapter(
-        port,
-        config,
-        grounding_variant=selected_grounding,
-        perception_profile=selected_perception,
+    selected_protocol = interaction_protocol or env.get(
+        "LLM_INTERACTION_PROTOCOL",
+        STRUCTURED_PACKAGE_PROTOCOL,
     )
+    if selected_protocol == STRUCTURED_PACKAGE_PROTOCOL:
+        adapter = ModelPortDecisionAdapter(
+            port,
+            config,
+            grounding_variant=selected_grounding,
+            perception_profile=selected_perception,
+        )
+    elif selected_protocol == DYNAMIC_TOOLS_PROTOCOL:
+        adapter = DynamicToolDecisionAdapter(
+            port,
+            config,
+            perception_profile=selected_perception,
+            grounding_variant=selected_grounding,
+        )
+    else:
+        raise ValueError("unsupported model interaction protocol")
     if not provider_recovery:
         return ModelBackedAgentPolicy(adapter, call_timeout_s=call_timeout_s)
     orchestrator = ProviderCallOrchestrator(

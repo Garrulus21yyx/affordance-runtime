@@ -200,6 +200,19 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
             if snapshot
             else 0
         ),
+        "valid_tool_call_count": state.valid_tool_call_count,
+        "admitted_decision_count": sum(
+            1
+            for transition in tuple(getattr(result, "control_transitions", ()))
+            if transition.admission is not None and transition.admission.status.value == "admitted"
+        ),
+        "zero_tool_call_count": state.zero_tool_call_count,
+        "multiple_tool_call_count": state.multiple_tool_call_count,
+        "unknown_tool_call_count": state.unknown_tool_call_count,
+        "invalid_tool_argument_count": state.invalid_tool_argument_count,
+        "stale_tool_catalog_count": state.stale_tool_catalog_count,
+        "tool_catalog_count": state.tool_catalog_count,
+        "tool_catalog_bytes": state.tool_catalog_bytes,
         "semantic_judge_calls": state.semantic_judge_calls,
         "provider_attempts": state.provider_attempts,
         "confirmations": state.confirmations_submitted,

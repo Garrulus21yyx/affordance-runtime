@@ -27,6 +27,14 @@ class BenchmarkInstrumentation:
     requirement_hypothesis_calls: int = 0
     requirement_hypothesis_schema_repair_count: int = 0
     policy_schema_repair_count: int = 0
+    valid_tool_call_count: int = 0
+    zero_tool_call_count: int = 0
+    multiple_tool_call_count: int = 0
+    unknown_tool_call_count: int = 0
+    invalid_tool_argument_count: int = 0
+    stale_tool_catalog_count: int = 0
+    tool_catalog_count: int = 0
+    tool_catalog_bytes: int = 0
     action_evaluator_calls: int = 0
     task_evaluator_calls: int = 0
     provider_attempts: int = 0
@@ -175,6 +183,17 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         ),
         "exception": exception,
     }
+    adapter = _dynamic_tool_adapter(policy)
+    if adapter is not None:
+        event["interaction_protocol"] = "dynamic_tools.v1"
+        event["tool_transport"] = getattr(getattr(adapter, "transport_kind", None), "value", "")
+        event["tool_resolution_code"] = getattr(
+            getattr(adapter, "last_resolution_code", None),
+            "value",
+            "",
+        )
+        event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
+        event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
     if isinstance(outcome, AgentDecisionPackage):
         event["outcome"] = "decision_package"
         event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
@@ -188,6 +207,28 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     else:
         event["outcome"] = "exception" if exception else type(outcome).__name__
     return event
+
+
+def _dynamic_tool_adapter(value):
+    pending = [value]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if hasattr(item, "last_resolution_code") and hasattr(item, "last_catalog_count"):
+            return item
+        wrapped = getattr(item, "wrapped", None)
+        port = getattr(item, "port", None)
+        ports = getattr(item, "ports", None)
+        if wrapped is not None:
+            pending.append(wrapped)
+        if port is not None:
+            pending.append(port)
+        if isinstance(ports, tuple):
+            pending.extend(ports)
+    return None
 
 
 def _frontier_trace(frontier):
@@ -366,6 +407,9 @@ class CountingDecisionPort:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
 
+    def __getattr__(self, name):
+        return getattr(self.wrapped, name)
+
     @property
     def transport_timeout_s(self):
         return getattr(self.wrapped, "transport_timeout_s", None)
@@ -379,6 +423,7 @@ class CountingDecisionPort:
             schema_repairs = _decision_schema_repair_count(self.wrapped)
             self.instrumentation.provider_attempts += attempt_count + schema_repairs
             self.instrumentation.policy_schema_repair_count += schema_repairs
+            _record_dynamic_tool_metrics(self.instrumentation, self.wrapped)
             self.instrumentation.provider_retry_count += max(0, attempt_count - 1)
             self.instrumentation.fallback_count += int(getattr(self.wrapped, "last_fallback_count", 0))
 
@@ -388,6 +433,26 @@ def _decision_schema_repair_count(port: object) -> int:
     if isinstance(values, tuple):
         return sum(int(getattr(item, "last_schema_repair_count", 0)) for item in values)
     return int(getattr(port, "last_schema_repair_count", 0))
+
+
+def _record_dynamic_tool_metrics(instrumentation, port: object) -> None:
+    values = getattr(port, "ports", None)
+    adapters = values if isinstance(values, tuple) else (port,)
+    for adapter in adapters:
+        code = getattr(getattr(adapter, "last_resolution_code", None), "value", "")
+        field = {
+            "accepted": "valid_tool_call_count",
+            "zero_tool_calls": "zero_tool_call_count",
+            "multiple_tool_calls": "multiple_tool_call_count",
+            "unknown_tool": "unknown_tool_call_count",
+            "invalid_tool_arguments": "invalid_tool_argument_count",
+            "unknown_tool_destination": "invalid_tool_argument_count",
+            "stale_tool_catalog": "stale_tool_catalog_count",
+        }.get(code)
+        if field is not None:
+            setattr(instrumentation, field, getattr(instrumentation, field) + 1)
+        instrumentation.tool_catalog_count += int(getattr(adapter, "last_catalog_count", 0))
+        instrumentation.tool_catalog_bytes += int(getattr(adapter, "last_catalog_bytes", 0))
 
 
 @dataclass

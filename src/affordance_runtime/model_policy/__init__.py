@@ -22,6 +22,8 @@ from affordance_runtime.model_policy.requirement_proposer import (
     ModelRequirementHypothesisProposer,
 )
 from affordance_runtime.model_policy.serialization import serialize_agent_context
+from affordance_runtime.model_policy.tool_contracts import DYNAMIC_TOOLS_PROTOCOL
+from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.task.hypothesis_contracts import RequirementHypothesisProposer
 
 __all__ = [
@@ -39,5 +41,7 @@ __all__ = [
     "ProviderCallPolicy",
     "RequirementHypothesisProposer",
     "DecisionGroundingVariant",
+    "DYNAMIC_TOOLS_PROTOCOL",
+    "DynamicToolDecisionAdapter",
     "serialize_agent_context",
 ]

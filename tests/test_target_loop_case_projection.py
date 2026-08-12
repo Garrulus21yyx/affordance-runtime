@@ -158,6 +158,34 @@ def test_custom_metric_cannot_override_canonical_metric() -> None:
         instrumentation.increment("observations", 99)
 
 
+def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
+    instrumentation = BenchmarkInstrumentation(
+        valid_tool_call_count=2,
+        zero_tool_call_count=1,
+        multiple_tool_call_count=1,
+        unknown_tool_call_count=1,
+        invalid_tool_argument_count=1,
+        stale_tool_catalog_count=1,
+        tool_catalog_count=7,
+        tool_catalog_bytes=2048,
+    )
+
+    projected = project_case_result("case", None, instrumentation, 1.0, "display")
+
+    for name, expected in {
+        "valid_tool_call_count": 2,
+        "admitted_decision_count": 0,
+        "zero_tool_call_count": 1,
+        "multiple_tool_call_count": 1,
+        "unknown_tool_call_count": 1,
+        "invalid_tool_argument_count": 1,
+        "stale_tool_catalog_count": 1,
+        "tool_catalog_count": 7,
+        "tool_catalog_bytes": 2048,
+    }.items():
+        assert projected.measurements[name].value == expected
+
+
 def test_projection_defends_against_direct_custom_metric_collision() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.custom_metrics["observations"] = 99
