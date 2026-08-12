@@ -243,7 +243,11 @@ class OpenAICompatibleVisualRegionProposer:
                 if attempt == 0:
                     continue
                 raise StructuredModelError("visual region response failed validation") from exc
-            if regions or attempt == 1:
+            point_ready = any(region.primitive_action == "point_activate" for region in regions)
+            if (
+                attempt == 1
+                or (regions and (not _requires_point_action(request.instruction) or point_ready))
+            ):
                 return regions
         raise StructuredModelError("visual region response failed validation") from validation_error
 
@@ -369,11 +373,16 @@ def _visual_semantic_state(item: Mapping[str, Any]) -> dict[str, Any]:
 def _validated_point_candidate(instruction: str, role: str) -> bool:
     """Grant only a bounded task-relevant point candidate; confidence is checked later."""
 
-    point_intent = re.search(
+    return _requires_point_action(instruction) and role in {
+        "button", "option", "cell", "gridcell", "shape", "img",
+    }
+
+
+def _requires_point_action(instruction: str) -> bool:
+    return re.search(
         r"\b(click|select|choose|pick|press|tap)\b",
         instruction.casefold(),
     ) is not None
-    return point_intent and role in {"button", "option", "cell", "gridcell", "shape", "img"}
 
 
 def _first_json_object(content: Any) -> dict[str, Any]:
