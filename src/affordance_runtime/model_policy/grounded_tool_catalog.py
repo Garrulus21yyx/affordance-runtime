@@ -29,6 +29,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
+from affordance_runtime.world.regular_lattice import requested_grid_coordinate
 from affordance_runtime.world.schema_validation import validate_value
 from affordance_runtime.world.vision_escalation import (
     requested_color_family,
@@ -64,12 +65,19 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
-    _reject_ambiguous_unmarked_targets(context, ref_by_target, entity_by_ref)
+    coordinate_target_id = _unique_requested_grid_target(
+        context, ref_by_target, entity_by_ref,
+    )
+    _reject_ambiguous_unmarked_targets(
+        context, ref_by_target, entity_by_ref, target_filter=coordinate_target_id,
+    )
     settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
     color_family = requested_color_family(context.task.instruction)
 
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
+        if coordinate_target_id and option.target_id != coordinate_target_id:
+            continue
         if (option.target_id, option.semantic_action) in settled_effects:
             continue
         ref = ref_by_target.get(option.target_id)
@@ -115,9 +123,16 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         name = f"{verb}{suffix}"
         refs = [ref for ref, _option in values]
         schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
+        description = _tool_description(verb, refs, entity_by_ref)
+        if coordinate_target_id and len(values) == 1 and values[0][1].target_id == coordinate_target_id:
+            requested = requested_grid_coordinate(context.task.instruction)
+            description = (
+                f"{verb} the unique current DOM target mechanically matched to "
+                f"grid coordinate {requested}."
+            )
         specs.append(ToolSpec(
             name,
-            _tool_description(verb, refs, entity_by_ref),
+            description,
             schema,
         ))
         bindings.append(_VerbBinding(
@@ -237,9 +252,13 @@ def _reject_ambiguous_unmarked_targets(
     context: AgentContext,
     ref_by_target: Mapping[str, str],
     entity_by_ref: Mapping[str, AgentGroundingEntityView],
+    *,
+    target_filter: str = "",
 ) -> None:
     actionable: list[tuple[str, AgentGroundingEntityView]] = []
     for option in context.actions.options:
+        if target_filter and option.target_id != target_filter:
+            continue
         ref = ref_by_target.get(option.target_id)
         entity = entity_by_ref.get(ref or "")
         if entity is None:
@@ -303,6 +322,43 @@ def _settled_parameter_effects(
         if current == requested:
             settled.add(key)
     return settled
+
+
+def _unique_requested_grid_target(
+    context: AgentContext,
+    ref_by_target: Mapping[str, str],
+    entity_by_ref: Mapping[str, AgentGroundingEntityView],
+) -> str:
+    """Close a public coordinate relation only when one current action matches."""
+
+    requested = requested_grid_coordinate(context.task.instruction)
+    if requested is None:
+        return ""
+    actionable_target_ids = {
+        option.target_id for option in context.actions.options
+        if option.semantic_action == "activate"
+    }
+    coordinates = {
+        fact.subject_id: fact.value
+        for fact in context.world.facts.items
+        if fact.predicate == "grid_coordinate"
+    }
+    confidences = {
+        fact.subject_id: fact.value
+        for fact in context.world.facts.items
+        if fact.predicate == "grid_coordinate_confidence"
+    }
+    matches = []
+    for target_id in actionable_target_ids:
+        entity = entity_by_ref.get(ref_by_target.get(target_id, ""))
+        if entity is None or confidences.get(target_id) != 1.0:
+            continue
+        coordinate = coordinates.get(target_id)
+        if not isinstance(coordinate, Mapping):
+            continue
+        if (coordinate.get("x"), coordinate.get("y")) == requested:
+            matches.append(target_id)
+    return matches[0] if len(matches) == 1 else ""
 
 
 def _verb(semantic_action: str) -> str:

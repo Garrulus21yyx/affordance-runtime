@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -44,6 +45,11 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldObservation,
 )
+from affordance_runtime.world.regular_lattice import (
+    SpatialNode,
+    VisibleNumericLabel,
+    derive_regular_lattice,
+)
 
 MAX_INVENTORY_TARGETS = 512
 MAX_INVENTORY_FACTS = 4_096
@@ -74,6 +80,19 @@ def project_browsergym_observation(
     candidates = list(analysis.controls)
     projected = candidates[:MAX_INVENTORY_TARGETS]
     visual_groups = _visual_groups(raw)[: max(0, MAX_INVENTORY_TARGETS - len(projected))]
+    lattice = derive_regular_lattice(
+        tuple(
+            SpatialNode(node.private_node_id, node.private_parent_id, node.private_bbox)
+            for node in projected
+            if (
+                node.private_bbox is not None
+                and node.executable
+                and node.role_spec.semantic_action == "activate"
+            )
+        ),
+        _visible_numeric_labels(raw),
+    )
+    lattice_by_node = {item.node_id: item for item in lattice.memberships}
     targets: list[SemanticTarget] = []
     facts: list[StateFact] = []
     bindings: list[ActionBinding] = []
@@ -81,6 +100,7 @@ def project_browsergym_observation(
     fact_total = (
         sum(len(node.public_state) + bool(node.public_options) for node in candidates)
         + len(visual_groups)
+        + 3 * len(lattice.memberships)
     )
     candidate_node_ids = {node.private_node_id for node in candidates}
     relation_total = sum(
@@ -105,6 +125,17 @@ def project_browsergym_observation(
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
         state = dict(node.public_state)
+        membership = lattice_by_node.get(node.private_node_id)
+        if membership is not None:
+            state.update({
+                "grid_coordinate": {"x": membership.x, "y": membership.y},
+                "grid_membership": {
+                    "grid_id": membership.grid_id,
+                    "row_index": membership.row_index,
+                    "column_index": membership.column_index,
+                },
+                "grid_coordinate_confidence": membership.confidence,
+            })
         if node.public_options:
             option_domain = node.public_options[:MAX_INVENTORY_OPTIONS_PER_TARGET]
             state["option_domain"] = option_domain
@@ -172,6 +203,14 @@ def project_browsergym_observation(
     truncated = bool(issues)
     coverage = CoverageState.TRUNCATED if truncated else CoverageState.COMPLETE
     artifacts = {}
+    artifacts["regular_lattice_semantics"] = {
+        "public_summary": (
+            f"Regular lattice derivation: {lattice.code}; "
+            f"derived targets: {len(lattice.memberships)}."
+        ),
+        "status": lattice.code.value,
+        "derived_target_count": len(lattice.memberships),
+    }
     for evidence_ref in verifier.evidence_refs:
         key = evidence_ref.rsplit(":", 1)[-1]
         if key in {MECHANICAL_EVIDENCE_KEY, MECHANICAL_STATUS_EVIDENCE_KEY}:
@@ -269,6 +308,81 @@ def _visual_groups(raw: dict[str, object]) -> tuple[dict[str, object], ...]:
             continue
         result.append({"count": count, "bbox": (x, y, width, height)})
     return tuple(result)
+
+
+def _visible_numeric_labels(raw: dict[str, object]) -> tuple[VisibleNumericLabel, ...]:
+    """Read visible numeric labels and geometry already present in one AX snapshot."""
+
+    tree = raw.get("axtree_object")
+    nodes = tree.get("nodes") if isinstance(tree, dict) else None
+    extra = raw.get("extra_element_properties")
+    if not isinstance(nodes, list) or not isinstance(extra, dict):
+        return ()
+    records = {
+        str(node.get("nodeId")): node
+        for node in nodes
+        if isinstance(node, dict) and isinstance(node.get("nodeId"), str | int)
+    }
+    result: list[VisibleNumericLabel] = []
+    for node_id, node in records.items():
+        bid = node.get("browsergym_id")
+        parent = node.get("parentId")
+        if not isinstance(bid, str) or not bid or not isinstance(parent, str | int):
+            continue
+        properties = extra.get(bid)
+        if not isinstance(properties, dict) or properties.get("clickable") is True:
+            continue
+        bbox = _numeric_bbox(properties.get("bbox"))
+        text = _descendant_numeric_text(node, records)
+        if bbox is None or text is None:
+            continue
+        value = float(text)
+        normalized: int | float = int(value) if value.is_integer() else value
+        label_digest = hashlib.sha256(f"{node_id}\0{text}\0{bbox}".encode()).hexdigest()[:16]
+        result.append(VisibleNumericLabel(
+            f"label:{label_digest}", str(parent), normalized, bbox,
+        ))
+    return tuple(result)
+
+
+def _descendant_numeric_text(
+    owner: dict[str, object],
+    records: dict[str, dict[str, object]],
+) -> str | None:
+    pending = list(owner.get("childIds", ()))
+    found: list[str] = []
+    visited: set[str] = set()
+    while pending and len(visited) < 16:
+        node_id = str(pending.pop())
+        if node_id in visited:
+            continue
+        visited.add(node_id)
+        node = records.get(node_id)
+        if node is None:
+            continue
+        value = node.get("name")
+        text = value.get("value") if isinstance(value, dict) else value
+        if isinstance(text, str) and text.strip():
+            found.append(text.strip())
+        children = node.get("childIds")
+        if isinstance(children, list):
+            pending.extend(children)
+    unique = tuple(dict.fromkeys(found))
+    if len(unique) != 1 or re.fullmatch(r"[+-]?\d+(?:\.\d+)?", unique[0]) is None:
+        return None
+    return unique[0]
+
+
+def _numeric_bbox(value: object) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    try:
+        x, y, width, height = (float(item) for item in value)
+    except (TypeError, ValueError):
+        return None
+    if x < 0 or y < 0 or width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
 
 
 def _binding_pair(

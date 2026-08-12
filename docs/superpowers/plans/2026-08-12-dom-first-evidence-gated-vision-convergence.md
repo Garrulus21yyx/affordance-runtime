@@ -4,6 +4,38 @@ Status: `PHASE_4_ARCHITECTURE_GATE_ACCEPTED / NAMED_REGRESSIONS_FIXED / GENERALI
 
 Date: 2026-08-12
 
+## 2026-08-13 Phase 5 — observation-derived lattice semantics
+
+Status: `IN_PROGRESS`
+
+Objective: remove the remaining `grid-coordinate` 25-way SoM selection burden
+without introducing point grounding or a benchmark-task branch. Mechanically
+derive regular-lattice membership and visible axis-value mappings from one
+current BrowserGym observation, attach the resulting coordinate as public
+observation evidence to the existing DOM target, parse the requested coordinate
+from the public TaskGoal, and narrow the model-facing action catalog only when
+that relation yields one exact current executable match.
+
+Plan:
+
+1. `completed` — locate the existing geometry, semantic-target, task and
+   grounded-catalog boundaries; record the smallest authority-preserving seam.
+2. `completed` — implement a generic regular-lattice/axis enricher over current
+   page-space geometry and visible labels, with typed ambiguous/unsupported
+   outcomes and no new bindings.
+3. `completed` — project derived lattice facts onto existing DOM entities and
+   exact-match a public requested coordinate to one model-facing action while
+   retaining the unchanged Runtime ActionSpace.
+4. `completed` — add invariant/property regressions for order independence,
+   orientation inference, uniqueness, ambiguity and fail-closed behavior.
+5. `in_progress` — run focused/full tests and a clean real BrowserGym/GLM witness;
+   persist per-case evidence and update maintained status from measured facts.
+
+Non-goals: MiniWoB slug/case branches, fixed 5x5 or `-2..2` assumptions,
+model-produced coordinates, coordinate execution bindings, verifier answer
+inference, or a generalized table/calendar platform beyond the proven regular
+lattice contract.
+
 Scope: replace the Step-13 configure-and-stick visual acquisition behavior with
 a DOM/AX-first control plane, evidence-gated visual augmentation, explicit
 entity correspondence, and coordinate execution only for current visual-only
