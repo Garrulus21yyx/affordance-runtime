@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import re
 import statistics
 from dataclasses import dataclass
 from enum import StrEnum
@@ -67,22 +66,6 @@ class _Lattice:
     rows: tuple[float, ...]
     columns: tuple[float, ...]
     cells: tuple[tuple[str, int, int], ...]
-
-
-_COORDINATE_PATTERN = re.compile(
-    r"\b(?:grid\s+)?coordinate\s*[:=]?\s*\(\s*"
-    r"([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)",
-    re.IGNORECASE,
-)
-
-
-def requested_grid_coordinate(instruction: str) -> tuple[int | float, int | float] | None:
-    """Parse one explicit public Cartesian-coordinate reference."""
-
-    matches = tuple(_COORDINATE_PATTERN.finditer(instruction))
-    if len(matches) != 1:
-        return None
-    return _number(matches[0].group(1)), _number(matches[0].group(2))
 
 
 def derive_regular_lattice(
@@ -294,11 +277,6 @@ def _grid_id(lattice: _Lattice) -> str:
         f"{center:.3f}" for center in (*lattice.columns, *lattice.rows)
     )
     return f"grid:{hashlib.sha256(payload.encode()).hexdigest()[:16]}"
-
-
-def _number(value: str) -> int | float:
-    parsed = float(value)
-    return _normalized_number(parsed)
 
 
 def _normalized_number(value: float) -> int | float:

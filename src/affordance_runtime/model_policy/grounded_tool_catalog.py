@@ -27,14 +27,13 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
     ToolPolicyView,
 )
+from affordance_runtime.model_policy.set_objective_catalog import (
+    CatalogSetProjection,
+    project_catalog_set_objective,
+)
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
-from affordance_runtime.world.regular_lattice import requested_grid_coordinate
 from affordance_runtime.world.schema_validation import validate_value
-from affordance_runtime.world.vision_escalation import (
-    requested_color_family,
-    requires_multiple_visual_targets,
-)
 
 
 @dataclass(frozen=True)
@@ -65,18 +64,20 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
-    coordinate_target_id = _unique_requested_grid_target(
-        context, ref_by_target, entity_by_ref,
-    )
+    set_projection = project_catalog_set_objective(context)
+    admitted_target_ids = set_projection.admitted_target_ids if set_projection is not None else ()
+    completed_member_ids = set_projection.completed_member_ids if set_projection is not None else ()
+    target_filter = admitted_target_ids[0] if len(admitted_target_ids) == 1 else ""
     _reject_ambiguous_unmarked_targets(
-        context, ref_by_target, entity_by_ref, target_filter=coordinate_target_id,
+        context, ref_by_target, entity_by_ref, target_filter=target_filter,
     )
     settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
-    color_family = requested_color_family(context.task.instruction)
 
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
-        if coordinate_target_id and option.target_id != coordinate_target_id:
+        if admitted_target_ids and option.target_id not in admitted_target_ids:
+            continue
+        if option.target_id in completed_member_ids:
             continue
         if (option.target_id, option.semantic_action) in settled_effects:
             continue
@@ -84,22 +85,6 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         if ref is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         verb = _verb(option.semantic_action)
-        entity = entity_by_ref.get(ref)
-        if (
-            verb == "click"
-            and entity is not None
-            and entity.state.get("selected") is True
-            and requires_multiple_visual_targets(context.task.instruction)
-        ):
-            continue
-        if (
-            verb == "click"
-            and color_family
-            and entity is not None
-            and not entity.label.strip()
-            and entity.state.get("color_family") not in {None, color_family}
-        ):
-            continue
         shape = _shape_key(verb, option.parameter_schema)
         grouped.setdefault((verb, shape), []).append((ref, option))
 
@@ -124,12 +109,8 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         refs = [ref for ref, _option in values]
         schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
         description = _tool_description(verb, refs, entity_by_ref)
-        if coordinate_target_id and len(values) == 1 and values[0][1].target_id == coordinate_target_id:
-            requested = requested_grid_coordinate(context.task.instruction)
-            description = (
-                f"{verb} the unique current DOM target mechanically matched to "
-                f"grid coordinate {requested}."
-            )
+        if admitted_target_ids and len(values) == 1:
+            description = f"{verb} the next member admitted by the current quantified objective."
         specs.append(ToolSpec(
             name,
             description,
@@ -159,7 +140,7 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
     view = ToolPolicyView(
         _task_brief(context),
         tuple(_grounding_entity(item) for item in context.grounding.entities),
-        _current_state(context, ref_by_target),
+        _current_state(context, ref_by_target, set_projection),
         _previous_result(context, ref_by_target),
         tuple(specs),
     )
@@ -324,43 +305,6 @@ def _settled_parameter_effects(
     return settled
 
 
-def _unique_requested_grid_target(
-    context: AgentContext,
-    ref_by_target: Mapping[str, str],
-    entity_by_ref: Mapping[str, AgentGroundingEntityView],
-) -> str:
-    """Close a public coordinate relation only when one current action matches."""
-
-    requested = requested_grid_coordinate(context.task.instruction)
-    if requested is None:
-        return ""
-    actionable_target_ids = {
-        option.target_id for option in context.actions.options
-        if option.semantic_action == "activate"
-    }
-    coordinates = {
-        fact.subject_id: fact.value
-        for fact in context.world.facts.items
-        if fact.predicate == "grid_coordinate"
-    }
-    confidences = {
-        fact.subject_id: fact.value
-        for fact in context.world.facts.items
-        if fact.predicate == "grid_coordinate_confidence"
-    }
-    matches = []
-    for target_id in actionable_target_ids:
-        entity = entity_by_ref.get(ref_by_target.get(target_id, ""))
-        if entity is None or confidences.get(target_id) != 1.0:
-            continue
-        coordinate = coordinates.get(target_id)
-        if not isinstance(coordinate, Mapping):
-            continue
-        if (coordinate.get("x"), coordinate.get("y")) == requested:
-            matches.append(target_id)
-    return matches[0] if len(matches) == 1 else ""
-
-
 def _verb(semantic_action: str) -> str:
     return {"activate": "click", "fill": "fill", "select": "select"}.get(semantic_action, semantic_action)
 
@@ -439,9 +383,9 @@ def _grounding_entity(item):
     }
 
 
-def _current_state(context, ref_by_target):
+def _current_state(context, ref_by_target, set_projection: CatalogSetProjection | None):
     frontier = context.progress.task_frontier
-    return {
+    value = {
         "task_status": str(context.progress.validated_task_status),
         "active_objective": context.progress.active_objective,
         "frontier": list(frontier.current_frontier) if frontier is not None else [],
@@ -456,6 +400,17 @@ def _current_state(context, ref_by_target):
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
     }
+    if set_projection is not None:
+        value["quantified_objective"] = {
+            "quantifier": set_projection.objective.quantifier.value,
+            "scope_coverage": set_projection.universe.coverage.value,
+            "disposition": set_projection.reduction.disposition.value,
+            "reason": set_projection.reduction.reason_code,
+            "candidate_count": len(set_projection.universe.entity_ids),
+            "matched_count": len(set_projection.reduction.true_entity_ids),
+            "certified": set_projection.reduction.certificate is not None,
+        }
+    return value
 
 
 def _previous_result(context, ref_by_target):

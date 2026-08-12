@@ -570,9 +570,8 @@ candidates. Open-world proposal is disabled unless explicitly configured, so
 OmniTool, ShowUI, GUI-Actor, SeeAct, browser-use or SenseAct runtime has been
 imported. Focused provider/authority tests and the remediation repository gate
 pass (`2355 passed, 27 skipped`). Phase-3 replaces compound point instructions
-with current atomic objectives, distinguishes single-target,
-next-matching-target and visual-value needs, lets E-ref correspondence narrow
-only the current DOM binding catalog, preserves verifier lineage through
+with current atomic objectives, distinguishes single-target and visual-value
+needs, preserves verifier lineage through
 fusion, persists typed provider failure stage/code counters, and writes every
 case plus a progress index atomically. The exact live rerun completed with valid
 evidence at `1/5`: `visual-addition` succeeded without auxiliary E-ref/point
@@ -601,15 +600,28 @@ color-family increment has not received another complete five-case run.
 Phase-5 follow-up now clusters current executable geometry into a regular
 lattice, fits visible numeric axis-label groups (including screen-down versus
 Cartesian-y orientation), and publishes derived membership/coordinate facts
-only for one fully occupied, uniquely mapped grid. The grounded catalog parses
-one explicit public task coordinate and privately closes one exact current DOM
-action; it does not ask the model to copy an E-ref. Missing axes,
+only for one fully occupied, uniquely mapped grid. A generic task-predicate
+compiler matches the public value and the quantified-objective reducer privately
+closes one exact current DOM action; the lattice provider does not parse task
+text and the model does not copy an E-ref. Missing axes,
 irregular/duplicate cells and multiple candidate lattices publish no derived
 coordinate. Clean `3ccb267` seed-7 `grid-coordinate` succeeds in one model call
 and one structural dispatch with zero auxiliary E-ref, point or visual-binding
 calls; the displayed ref changed to `E25` while row 4/column 3 remained stable.
 The full suite passes (`2379 passed, 24 skipped`). Multi-seed and broad layout
 generalization remain explicitly unclaimed.
+
+Phase 6 is implemented but awaits a fresh clean live gate. `ScopeSpec`, closed
+candidate universes, a compositional three-valued predicate algebra, per-member
+effect obligations, bounded scheduling, stability and
+`SetCompletionCertificate` now form one deterministic reducer. Grounded Catalog
+consumes only reducer dispositions; direct color, grid-coordinate and
+next-matching-target branches were removed. Mechanically mentioned public
+facts use the structural evaluator. When those facts cannot express a universal
+predicate, the optional GLM batch port classifies every supplied E-ref exactly
+once as `true/false/unknown`; it cannot claim scope completeness or return an
+action/point, and correspondence maps its evidence back to DOM identity. The
+full repository suite passes (`2381 passed, 27 skipped`).
 
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,

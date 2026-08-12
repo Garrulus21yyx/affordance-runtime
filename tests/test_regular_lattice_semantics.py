@@ -37,7 +37,6 @@ from affordance_runtime.world.regular_lattice import (
     SpatialNode,
     VisibleNumericLabel,
     derive_regular_lattice,
-    requested_grid_coordinate,
 )
 
 
@@ -108,13 +107,6 @@ def test_irregular_or_duplicate_cells_do_not_publish_coordinates() -> None:
     assert result.memberships == ()
 
 
-def test_requested_coordinate_parser_is_bounded_and_requires_one_explicit_relation() -> None:
-    assert requested_grid_coordinate("Click on the grid coordinate (1,-2).") == (1, -2)
-    assert requested_grid_coordinate("Click coordinate (-1.5, +2).") == (-1.5, 2)
-    assert requested_grid_coordinate("Click the point.") is None
-    assert requested_grid_coordinate("Compare coordinate (1,2) with coordinate (2,1).") is None
-
-
 def test_projection_publishes_derived_facts_and_catalog_closes_unique_target() -> None:
     raw = _raw_grid()
     projection = _projection(raw)
@@ -154,7 +146,7 @@ def test_projection_publishes_derived_facts_and_catalog_closes_unique_target() -
 
     click = next(spec for spec in catalog.specs if spec.name == "click")
     assert click.input_schema["properties"] == {}
-    assert "grid coordinate (1, -2)" in click.description
+    assert "quantified objective" in click.description
     package = resolve_grounded_tool_call(
         catalog,
         ToolCall("click", {}),

@@ -52,6 +52,7 @@ from affordance_runtime.model_policy.model_port_bridge import (
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.visual_grounding import VisualGrounderPort, VisualRegionProposerPort
+from affordance_runtime.visual_predicate_classification import VisualPredicateClassifierPort
 
 REQUIRED_METRICS = (
     "observations",
@@ -69,6 +70,8 @@ REQUIRED_METRICS = (
     "visual_point_grounder_success_count",
     "visual_disambiguator_calls",
     "visual_disambiguator_selection_count",
+    "visual_predicate_classifier_calls",
+    "visual_predicate_assessment_count",
     "visual_provider_failure_count",
     "visual_provider_structured_output_failure_count",
     "visual_provider_abstained_count",
@@ -77,6 +80,7 @@ REQUIRED_METRICS = (
     "visual_point_grounding_failure_count",
     "visual_region_proposal_failure_count",
     "visual_candidate_disambiguation_failure_count",
+    "visual_predicate_classification_failure_count",
     "structural_source_acquired_count",
     "visual_source_acquired_count",
     "visual_binding_acquired_count",
@@ -134,6 +138,7 @@ async def run_breadth_campaign(
     visual_region_proposer: VisualRegionProposerPort | None = None,
     visual_point_grounder: VisualGrounderPort | None = None,
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
+    visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -162,6 +167,7 @@ async def run_breadth_campaign(
         visual_region_proposer=visual_region_proposer,
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
+        visual_predicate_classifier=visual_predicate_classifier,
     )
     harness_digest = target_manifest_digest(target_manifest)
     if harness_digest != expected_target_manifest_digest(manifest):
@@ -223,6 +229,7 @@ def _target_manifest(
     visual_region_proposer=None,
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
+    visual_predicate_classifier=None,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -235,6 +242,7 @@ def _target_manifest(
             visual_region_proposer,
             visual_point_grounder,
             visual_candidate_disambiguator,
+            visual_predicate_classifier,
         )
         for item in manifest.cases
     )
@@ -257,6 +265,7 @@ def _target_case(
     visual_region_proposer=None,
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
+    visual_predicate_classifier=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -271,6 +280,7 @@ def _target_case(
                 visual_region_proposer=visual_region_proposer,
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
+                visual_predicate_classifier=visual_predicate_classifier,
                 marked_candidate_policy_available=_marked_candidate_policy_available(
                     base_policy
                 ),
@@ -379,6 +389,8 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
         "visual_point_grounder_success_count",
         "visual_disambiguator_calls",
         "visual_disambiguator_selection_count",
+        "visual_predicate_classifier_calls",
+        "visual_predicate_assessment_count",
         "visual_provider_failure_count",
         "visual_provider_structured_output_failure_count",
         "visual_provider_abstained_count",
@@ -387,6 +399,7 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
         "visual_point_grounding_failure_count",
         "visual_region_proposal_failure_count",
         "visual_candidate_disambiguation_failure_count",
+        "visual_predicate_classification_failure_count",
         "structural_source_acquired_count",
         "visual_source_acquired_count",
         "visual_binding_acquired_count",

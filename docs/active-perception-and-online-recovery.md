@@ -28,7 +28,10 @@ receives the current screenshot plus marked structural candidates, it owns the
 semantic action and offered E-ref choice in one call; Runtime does not invoke a
 second pre-policy visual disambiguator. A dedicated disambiguator remains an
 optional bounded port for policies that cannot consume that evidence, and may
-return only one offered call-local E-ref. Point
+return only one offered call-local E-ref. Set-valued tasks never use that port:
+the optional predicate-classification port must return one `true/false/unknown`
+assessment for every supplied E-ref, cannot claim candidate coverage, and
+cannot return an action or point. Point
 grounders such as GLM remain isolated benchmark/compatibility arms and are not
 a BrowserGym target-loop observation capability. Region proposal and candidate
 choice have separate call/success counters; point-benchmark counters cannot
@@ -42,18 +45,23 @@ binding already carries the sole identity and Runtime resolves it privately.
 The BrowserGym projection may also expose observation-only repeated-leaf group
 counts, current selected state, and a normalized color family derived from
 visible computed style. These are public current-frame evidence, not bindings
-or hidden task answers. Model-facing catalogs may suppress an already-settled
-fill/select operation or an already-selected toggle, and may narrow unlabeled
-visual controls to one color family explicitly named by the instruction. The
-underlying Runtime action space and DOM authority remain unchanged.
+or hidden task answers. A generic quantified-objective compiler may turn a
+mechanically mentioned public value into `FactEquals`; no color name, task slug
+or widget kind is encoded in Catalog. `CandidateUniverse` keeps scope coverage
+separate from predicate-classification coverage, and the reducer releases one
+independent member at a time. A successor is exposed only after all admitted
+members have confirmed effects and a fresh stable scope produces a
+`SetCompletionCertificate`. The underlying Runtime action space and DOM
+authority remain unchanged.
 
 Mechanically derivable spatial relations are also observation evidence, not a
 reason to call a point grounder. For one bounded regular lattice, the adapter
 clusters current executable element centers into complete rows/columns and fits
 visible numeric label groups independently for each axis. A successful fit
 publishes observation-bound grid membership and Cartesian values on the
-existing DOM targets. One explicit task coordinate may then exact-close the
-model-facing catalog to one current action. Missing axes, irregular spacing,
+existing DOM targets. The same generic public-predicate compiler can match one
+of these values and reduce an `EXACTLY_ONE` objective to one current action.
+The lattice provider does not parse task text. Missing axes, irregular spacing,
 duplicate/empty cells, ambiguous mappings or multiple lattices produce a typed
 non-result and no coordinate fact. No derived fact creates a binding; execution
 still resolves through the current DOM identity.

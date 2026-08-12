@@ -26,6 +26,9 @@ from affordance_runtime.visual_grounding import (
     configured_visual_region_proposer_from_environment,
     glm_visual_point_grounder_from_environment,
 )
+from affordance_runtime.visual_predicate_classification import (
+    visual_predicate_classifier_from_environment,
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _FROZEN_MANIFEST = _ROOT / "docs/benchmarks/miniwob-60-seed7-v1-manifest.json"
@@ -79,6 +82,7 @@ def main() -> int:
         visual_region_proposer=configured_visual_region_proposer_from_environment(),
         visual_point_grounder=glm_visual_point_grounder_from_environment(),
         visual_candidate_disambiguator=visual_candidate_disambiguator_from_environment(),
+        visual_predicate_classifier=visual_predicate_classifier_from_environment(),
         progress_dir=args.output_dir,
         progress_profile="M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
     ))

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.world.contracts import SurfaceObservation
+from affordance_runtime.task.set_objective import has_universal_quantifier
 
 
 class VisionEscalationMode(StrEnum):
@@ -28,7 +29,7 @@ class VisionEvidenceNeed(StrEnum):
     NONE = "none"
     OPEN_WORLD_ENTITY_DISCOVERY = "open_world_entity_discovery"
     SINGLE_TARGET_DISAMBIGUATION = "single_target_disambiguation"
-    NEXT_MATCHING_TARGET = "next_matching_target"
+    OPEN_VOCABULARY_PREDICATE_CLASSIFICATION = "open_vocabulary_predicate_classification"
     VISUAL_VALUE_REASONING = "visual_value_reasoning"
     POSTCONDITION_DIAGNOSIS = "postcondition_diagnosis"
 
@@ -55,6 +56,8 @@ def decide_visual_escalation(
     candidate_verification_available: bool | None = None,
     discovery_available: bool | None = None,
     diagnosis_available: bool | None = None,
+    predicate_classification_available: bool = False,
+    structured_predicate_available: bool = False,
     marked_candidate_policy_available: bool = False,
     explicitly_requested: bool = False,
     terminal: bool = False,
@@ -96,21 +99,28 @@ def decide_visual_escalation(
                 "visual_value_reasoning_delegated_to_screenshot_policy",
                 VisionEvidenceNeed.VISUAL_VALUE_REASONING,
             )
-        if marked_candidate_policy_available:
-            evidence_need = (
-                VisionEvidenceNeed.NEXT_MATCHING_TARGET
-                if requires_multiple_visual_targets(task_instruction)
-                else VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
+        if has_universal_quantifier(task_instruction) and structured_predicate_available:
+            return VisionEscalationDecision(
+                VisionEscalationMode.SKIP,
+                "structured_set_predicate_available",
+                VisionEvidenceNeed.NONE,
             )
+        if has_universal_quantifier(task_instruction) and not predicate_classification_available:
+            return VisionEscalationDecision(
+                VisionEscalationMode.SKIP,
+                "set_predicate_classification_delegated_to_policy",
+                VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION,
+            )
+        if marked_candidate_policy_available and not has_universal_quantifier(task_instruction):
             return VisionEscalationDecision(
                 VisionEscalationMode.SKIP,
                 "marked_candidate_choice_delegated_to_screenshot_policy",
-                evidence_need,
+                VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
             )
         requested_mode = VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
-        if requires_multiple_visual_targets(task_instruction):
-            reason_code = "next_matching_visual_target_required"
-            evidence_need = VisionEvidenceNeed.NEXT_MATCHING_TARGET
+        if has_universal_quantifier(task_instruction):
+            reason_code = "open_vocabulary_predicate_classification_required"
+            evidence_need = VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
         else:
             reason_code = "structured_candidates_ambiguous"
             evidence_need = VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
@@ -124,7 +134,11 @@ def decide_visual_escalation(
     if requested_mode is None:
         return VisionEscalationDecision(VisionEscalationMode.SKIP, reason_code)
     mode_available = {
-        VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES: candidate_verification_available,
+        VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES: (
+            predicate_classification_available
+            if evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
+            else candidate_verification_available
+        ),
         VisionEscalationMode.DISCOVER_VISUAL_ENTITIES: discovery_available,
         VisionEscalationMode.DIAGNOSE_POSTCONDITION: diagnosis_available,
     }[requested_mode]
@@ -153,32 +167,10 @@ def _actionable_targets_are_ambiguous(structured: SurfaceObservation) -> bool:
     return len(set(descriptors)) < len(descriptors)
 
 
-_MULTI_TARGET_PATTERN = re.compile(
-    r"\b(?:all|every|each)\b|\b(?:click|select|choose)\s+(?:the\s+)?(?:shades|items|objects|targets)\b",
-    re.IGNORECASE,
-)
 _VISUAL_VALUE_PATTERN = re.compile(
     r"\b(?:how many|count|sum|total number|calculate|addition|add up)\b",
     re.IGNORECASE,
 )
-_COLOR_FAMILIES = ("red", "yellow", "green", "cyan", "blue", "magenta", "gray")
-
-
-def requires_multiple_visual_targets(instruction: str) -> bool:
-    return bool(_MULTI_TARGET_PATTERN.search(instruction))
-
-
-def requested_color_family(instruction: str) -> str:
-    """Return one explicitly named bounded color family, or no constraint."""
-
-    matches = tuple(
-        family
-        for family in _COLOR_FAMILIES
-        if re.search(rf"\b{family}\b", instruction, re.IGNORECASE)
-    )
-    return matches[0] if len(matches) == 1 else ""
-
-
 def _requires_visual_value_reasoning(
     structured: SurfaceObservation,
     instruction: str,

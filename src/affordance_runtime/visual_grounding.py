@@ -20,6 +20,7 @@ class VisualProviderStage(StrEnum):
     POINT_GROUNDING = "point_grounding"
     REGION_PROPOSAL = "region_proposal"
     CANDIDATE_DISAMBIGUATION = "candidate_disambiguation"
+    PREDICATE_CLASSIFICATION = "predicate_classification"
 
 
 class VisualProviderFailureCode(StrEnum):

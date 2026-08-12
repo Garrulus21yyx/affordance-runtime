@@ -68,12 +68,19 @@ implicitly owns observation, identity and execution:
   labels are rendered outside tiny targets. A singleton semantic operation
   carries its sole target in the ephemeral Runtime binding, so the model does
   not serialize a redundant E-ref or operation name.
+- open-vocabulary set classification: a bounded classifier (GLM under the
+  current Zhipu profile) receives one frozen marked screenshot plus the full
+  supplied E-ref inventory and returns every ref exactly once as
+  `true/false/unknown`. Missing, duplicate or invented refs invalidate the
+  response. The classifier cannot declare scope completeness; BrowserGym's
+  structured inventory owns viewport closure, while Runtime owns membership,
+  item-effect obligations, stability and the completion certificate.
 - point grounding: GLM/ShowUI/UI-TARS-style adapters remain explicit offline
   grounding or legacy-compatibility benchmark arms. They are not offered as a
   BrowserGym target-loop capability and cannot create an ActionBinding.
 
-The target-loop BrowserGym path uses only an explicitly configured region
-proposer and/or E-ref disambiguator. A legacy benchmark option may still build
+The target-loop BrowserGym path uses only explicitly configured region,
+E-ref disambiguation, or predicate-classification providers. A legacy benchmark option may still build
 a GLM point adapter for isolated comparison, but the target-loop environment
 does not call or advertise it. The OmniParser
 adapter consumes the current server schema documented by the
@@ -89,14 +96,15 @@ an unmatched V-ref remains observation-only.
 The BrowserGym adapter may publish current visible computed-style color family,
 selected state, and observation-only repeated DOM leaf-group counts. It does
 not expose fixture `data-*` answers, selectors, CSS classes, or new executable
-bindings. Catalog relevance filtering can use those public facts to omit
-already-settled actions and mismatched unlabeled color controls while leaving
-Runtime admission and DOM identity authoritative.
+bindings. The generic quantified-objective compiler can use those public facts
+as a `FactEquals` predicate. Catalog consumes only the reducer disposition and
+never branches on a color, task name or benchmark case. Runtime admission and
+DOM identity remain authoritative.
 
 Regular-lattice semantics follow the same rule. Current element bboxes and
 visible numeric label bboxes may derive row/column membership and Cartesian
-values. If one explicit public task coordinate matches exactly one current
-actionable entity, the grounded tool compiler exposes a singleton zero-target
+values. If the generic task-predicate compiler matches one public coordinate
+value to exactly one current actionable entity, the reducer exposes a singleton zero-target
 operation and privately retains its DOM action ID. It emits no model coordinate
 or point. Incomplete, irregular, duplicate, ambiguous or multiple-grid evidence
 does not activate this closure.

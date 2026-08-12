@@ -4,6 +4,68 @@ Status: `PHASE_5_BOUNDED_WITNESS_VERIFIED / GENERALIZATION_OPEN`
 
 Date: 2026-08-12
 
+## 2026-08-13 Phase 6 — scope-relative set completion convergence
+
+Status: `IN_PROGRESS / DEPENDENT_SET_CLOSURE_UNVERIFIED`
+
+Repeated live runs exposed one shared contract gap after local color/grid
+filters had each appeared closed: the model-facing catalog can expose a
+successor action before an `ALL` objective's item obligations are effect-
+confirmed. This phase replaces those witness filters with a generic,
+scope-relative and evidence-bounded set-completion algebra. No dependent work
+may claim set completion until the certificate path is verified.
+
+Causal model:
+
+- architecture defect: task quantification, candidate-scope closure,
+  predicate membership and per-item action obligation are not represented as
+  separate authoritative state;
+- duplicated/implicit truth: the main VLM currently guesses both membership
+  and completion while catalog helpers separately infer colors/coordinates;
+- verification defect: dispatch/effect history is available, but no reducer
+  requires every discovered true member to reach item-level
+  `EFFECT_CONFIRMED` before successor admission;
+- boundary defect: parser/VLM outputs have no contract preventing them from
+  implying universe coverage;
+- current witness: clean five-case `e31ee40` is evidence-valid at `4/5`;
+  `click-shades` selected three blue controls and then Submit while two current
+  blue members remained.
+
+Bounded implementation plan:
+
+1. `completed` — define immutable `ScopeSpec`, predicate AST/three-valued
+   evaluation, `CandidateUniverse`, `PredicateAssessment`, independent member
+   obligations, scheduler policy, reducer disposition and completion
+   certificate contracts.
+2. `completed` — implement a deterministic reducer with explicit legal
+   transitions, epoch invalidation after effects, classification/scope
+   separation, item-effect closure and stability check.
+3. `completed` — add structural fact evaluators and a bounded TaskGoal-to-set-
+   objective compiler; color/grid are evidence inputs, never Catalog branches.
+4. `completed` — make grounded Catalog consume only reducer disposition; remove
+   direct color/grid task parsing and prevent successor exposure until the
+   generic objective permits it.
+5. `completed` — add a provider-neutral bounded E-ref batch assessment contract;
+   omitted/duplicate/unknown refs fail typed and providers cannot declare scope
+   coverage. Integrate GLM only behind that port when structural evidence is
+   insufficient.
+6. `in_progress` — verify reducer properties across permutation, stale epochs,
+   dynamic membership, no/effect-unknown paths, ambiguous scope and scheduling
+   authority; then run focused/full tests and a clean real five-case gate.
+7. `pending` — update maintained architecture/evidence, remove temporary
+   witness-only catalog helpers after behavioral parity, and obtain a fresh-
+   context review before restoring a closed status.
+
+Non-goals: proof over an open world; parser/VLM-owned completeness; automatic
+scroll/pagination closure in the first slice; runtime scheduling when order,
+parameters, risk or member semantics are not independent; task slug/case ID
+branches; or importing another agent runtime.
+
+Current verification: focused objective/Vision/Catalog tests pass (`42 passed`)
+and the full repository suite passes (`2381 passed, 27 skipped`). The clean
+real five-case gate and fresh-context review remain required before this phase
+can move from `DEPENDENT_SET_CLOSURE_UNVERIFIED`.
+
 ## 2026-08-13 Phase 5 — observation-derived lattice semantics
 
 Status: `BOUNDED_WITNESS_VERIFIED / GENERALIZATION_OPEN`

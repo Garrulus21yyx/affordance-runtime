@@ -21,6 +21,11 @@ from affordance_runtime.visual_grounding import (
     VisualRegion,
     VisualRegionProposalRequest,
 )
+from affordance_runtime.visual_predicate_classification import (
+    VisualPredicateClassification,
+    VisualPredicateClassificationRequest,
+)
+from affordance_runtime.task.set_objective import PredicateTruth
 from affordance_runtime.world import (
     ActionSpaceBuilder,
     ObservationRequestKind,
@@ -71,6 +76,23 @@ class _Disambiguator:
         return self.selected_ref
 
 
+@dataclass
+class _PredicateClassifier:
+    truths: tuple[PredicateTruth, ...]
+    calls: list[VisualPredicateClassificationRequest] = field(default_factory=list)
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "visual-e-ref-predicate-batch-v1"
+
+    def classify(self, request: VisualPredicateClassificationRequest):
+        self.calls.append(request)
+        assert len(request.candidates) == len(self.truths)
+        return tuple(
+            VisualPredicateClassification(candidate.ref, truth, 0.95)
+            for candidate, truth in zip(request.candidates, self.truths, strict=True)
+        )
+
+
 def _raw_with_buttons(
     *buttons: tuple[str, str, tuple[int, int, int, int]],
     goal: str = "Click the requested target.",
@@ -89,6 +111,7 @@ def _open(
     proposer: _Proposer,
     *,
     disambiguator: _Disambiguator | None = None,
+    classifier: _PredicateClassifier | None = None,
 ):
     first = proposer.regions[0]
     x, y, width, height = first.bbox_xywh
@@ -103,6 +126,7 @@ def _open(
         visual_region_proposer=proposer,
         visual_point_grounder=grounder,
         visual_candidate_disambiguator=disambiguator,
+        visual_predicate_classifier=classifier,
     )
 
 
@@ -196,7 +220,7 @@ def test_visual_selection_is_recomputed_after_action_instead_of_sticking() -> No
     asyncio.run(scenario())
 
 
-def test_multi_target_visual_selection_is_typed_as_next_matching_entity() -> None:
+def test_set_predicate_is_not_misrouted_to_single_e_ref_disambiguation() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(
             ("left", "", (20, 20, 40, 30)),
@@ -210,9 +234,10 @@ def test_multi_target_visual_selection_is_typed_as_next_matching_entity() -> Non
             acquired = await environment.reset(task)
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
-            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.NEXT_MATCHING_TARGET
-            assert disambiguator.calls[0].evidence_need is VisionEvidenceNeed.NEXT_MATCHING_TARGET
-            assert len(acquired.observation.bindings) == 1
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
+            assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
+            assert disambiguator.calls == []
+            assert len(acquired.observation.bindings) == 2
         finally:
             await environment.close()
 
@@ -244,14 +269,43 @@ def test_marked_screenshot_policy_owns_ambiguous_e_ref_choice_without_provider_c
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
             assert (
                 environment.last_visual_escalation.evidence_need
-                is VisionEvidenceNeed.NEXT_MATCHING_TARGET
+                is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
             )
             assert environment.last_visual_escalation.reason_code == (
-                "marked_candidate_choice_delegated_to_screenshot_policy"
+                "set_predicate_classification_delegated_to_policy"
             )
             assert disambiguator.calls == []
             assert len(acquired.observation.bindings) == 2
             assert {item.surface for item in acquired.observation.bindings} == {"browsergym"}
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_batch_visual_predicate_evidence_preserves_all_dom_bindings() -> None:
+    async def scenario() -> None:
+        raw = _raw_with_buttons(
+            ("left", "", (20, 20, 40, 30)),
+            ("right", "", (120, 20, 40, 30)),
+            goal="Click all apples.",
+        )
+        proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
+        disambiguator = _Disambiguator("E1")
+        classifier = _PredicateClassifier((PredicateTruth.TRUE, PredicateTruth.FALSE))
+        environment, task = _open(
+            FakeBrowserGym(raw), proposer, disambiguator=disambiguator, classifier=classifier,
+        )
+        try:
+            acquired = await environment.reset(task)
+
+            assert acquired.observation is not None
+            assert environment.last_visual_escalation is not None
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
+            assert len(classifier.calls) == 1
+            assert disambiguator.calls == []
+            assert len(acquired.observation.bindings) == 2
+            assert {fact.value for fact in acquired.observation.facts if fact.predicate == "task_predicate_truth"} == {"true", "false"}
         finally:
             await environment.close()
 

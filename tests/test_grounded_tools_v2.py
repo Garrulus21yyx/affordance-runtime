@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass, field, replace
 
@@ -28,6 +29,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary import AgentTurnView, ContextBuilder, ModelFailure
+from affordance_runtime.model_boundary.world_projection import PublicFactView
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
@@ -386,7 +388,7 @@ def test_compact_singleton_operation_does_not_require_redundant_operation_name()
     asyncio.run(scenario())
 
 
-def test_selected_multi_target_toggle_is_hidden_from_next_model_menu() -> None:
+def test_unclassified_set_language_does_not_fake_structural_completion() -> None:
     context = _context()
     login = next(item for item in context.grounding.entities if item.label == "Login")
     entities = tuple(
@@ -401,10 +403,10 @@ def test_selected_multi_target_toggle_is_hidden_from_next_model_menu() -> None:
 
     catalog = compile_grounded_tool_catalog(context)
 
-    assert "click" not in {item.name for item in catalog.specs}
+    assert "click" in {item.name for item in catalog.specs}
 
 
-def test_explicit_color_family_narrows_unlabeled_visual_controls_but_keeps_submit() -> None:
+def test_structural_set_objective_admits_one_member_then_releases_successor() -> None:
     context = _context()
     entities = tuple(
         replace(item, label="", state={"color_family": "red"})
@@ -438,10 +440,84 @@ def test_explicit_color_family_narrows_unlabeled_visual_controls_but_keeps_submi
     catalog = compile_grounded_tool_catalog(context)
     click = next(item for item in catalog.specs if item.name == "click")
 
-    assert set(click.input_schema["properties"]["target"]["enum"]) == {
-        next(item.ref for item in entities if item.state.get("color_family") == "blue"),
-        next(item.ref for item in entities if item.label == "Login"),
+    assert click.input_schema["properties"] == {}
+    blue = next(item.ref for item in entities if item.state.get("color_family") == "blue")
+    package = resolve_grounded_tool_call(
+        catalog, ToolCall("click", {}), expected_context_id=context.context_id,
+    )
+    blue_target = next(target_id for target_id, ref in context.grounding.target_refs.items() if ref == blue)
+    assert next(item for item in context.actions.options if item.action_id == package.decision.action_id).target_id == blue_target
+
+    settled = replace(
+        context,
+        history=replace(
+            context.history,
+            items=(AgentTurnView(
+                "selectaction",
+                "activate",
+                blue_target,
+                dispatch_status="sent",
+                action_evaluation_status="effect_confirmed",
+                task_evaluation_status="incomplete",
+            ),),
+            total_count=1,
+        ),
+    )
+    successor_catalog = compile_grounded_tool_catalog(settled)
+    successor_click = next(item for item in successor_catalog.specs if item.name == "click")
+    successor = resolve_grounded_tool_call(
+        successor_catalog, ToolCall("click", {}), expected_context_id=settled.context_id,
+    )
+    login_target = next(
+        target_id for target_id, ref in settled.grounding.target_refs.items()
+        if next(item for item in entities if item.ref == ref).label == "Login"
+    )
+    assert next(item for item in settled.actions.options if item.action_id == successor.decision.action_id).target_id == login_target
+    assert successor_click.input_schema["properties"] == {}
+
+
+def test_open_vocabulary_batch_evidence_admits_true_refs_without_point_execution() -> None:
+    context = _context()
+    instruction = "Click all apples, then press Login."
+    digest = hashlib.sha256(instruction.encode()).hexdigest()
+    target_ids = tuple(context.grounding.target_refs)
+    truth_by_target = {
+        target_id: "true" if index == 0 else "false"
+        for index, target_id in enumerate(target_ids)
     }
+    facts = tuple(
+        PublicFactView(f"fact:{target_id}:{field}", target_id, field, value)
+        for target_id in target_ids
+        for field, value in (
+            ("task_predicate_digest", digest),
+            ("task_predicate_truth", truth_by_target[target_id]),
+            ("task_predicate_confidence", 0.95),
+        )
+    )
+    context = replace(
+        context,
+        task=replace(context.task, instruction=instruction),
+        world=replace(context.world, facts=replace(
+            context.world.facts, items=facts, total_count=len(facts), truncated=False,
+        )),
+        actions=replace(
+            context.actions,
+            options=tuple(replace(
+                item,
+                semantic_action="activate",
+                parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            ) for item in context.actions.options),
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(context)
+    click = next(item for item in catalog.specs if item.name == "click")
+    assert click.input_schema["properties"] == {}
+    package = resolve_grounded_tool_call(
+        catalog, ToolCall("click", {}), expected_context_id=context.context_id,
+    )
+    selected = next(item for item in context.actions.options if item.action_id == package.decision.action_id)
+    assert truth_by_target[selected.target_id] == "true"
 
 
 def test_confirmed_current_fill_is_removed_from_next_model_tool_menu() -> None:
