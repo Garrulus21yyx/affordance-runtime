@@ -1,6 +1,6 @@
 # Dynamic Tools v1 Protocol Experiment
 
-Status: A/B_EXECUTED_INCONCLUSIVE — SELECTED_TOOL_ARGUMENT_REPAIR_OPEN
+Status: ARGUMENT_REPAIR_IMPLEMENTED — TARGETED_PASS_WITHOUT_LIVE_REPAIR_WITNESS
 
 ## Goal
 
@@ -73,7 +73,7 @@ silently switch protocol.
 | Full repository validation | implemented | 2294 passed, 27 skipped; Ruff clean |
 | Same-Zhipu two-case A/B | inconclusive | `p5-e-zhipu-dynamic-tools-ab-84a9466` |
 | Selected-tool argument repair | implemented | same catalog/context/tool; one shared repair budget; focused tests |
-| Targeted case-15 rerun | pending | fresh clean-SHA evidence |
+| Targeted case-15 rerun | completed diagnostic | `p5-e-zhipu-dynamic-tools-argument-repair-case15-3a7c2bc`: 1/1 success |
 | Fresh authority review | completed diagnostic | resolver authority remains unchanged |
 
 ## First A/B result
@@ -100,6 +100,24 @@ expose the selected `ToolSpec` schema plus a safe typed violation; consume the
 same single repair budget used by outer-format repair; and return to the
 existing resolver for final validation. It must not create a GUI turn,
 decision, transition, dispatch, or guessed parameter value.
+
+## Targeted post-fix result
+
+The clean-SHA `3a7c2bc` rerun of `miniwob-60-15` completed successfully:
+
+- the first proposal selected the fill tool with `value: "CHAS"`;
+- Runtime admitted and dispatched fill, then admitted and dispatched submit;
+- the task evaluator returned verified terminal success;
+- two valid tool calls produced two Runtime transitions and two backend steps;
+- safety and harness errors remained zero.
+
+This run did not exercise selected-tool argument repair because the model's
+initial arguments were already valid (`tool_argument_repair_count=0`). It is a
+targeted non-regression and task-success witness, not a live-provider witness
+for the new repair branch. Direct repair-branch evidence remains the focused
+adapter and Runtime integration tests, which verify one shared repair budget,
+fixed tool identity, final resolver validation, and one policy turn/transition
+despite two model calls.
 
 ## A/B gate
 
