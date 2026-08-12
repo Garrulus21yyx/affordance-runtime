@@ -174,6 +174,18 @@ async def run_perception_arm(
     )
     provider, model, grounding = _model_identity(instrumentations, configured_identity)
     errors = _arm_errors(records, suite.identity.git_sha, suite.identity.git_dirty)
+    hypothesis_calls = sum(
+        _integer(item.result, "requirement_hypothesis_calls")
+        for item in records
+    )
+    if enable_requirement_hypotheses:
+        errors.extend(
+            f"{item.case_id}: requirement hypothesis call metric is unavailable"
+            for item in records
+            if _integer(item.result, "requirement_hypothesis_calls") < 1
+        )
+    elif hypothesis_calls:
+        errors.append("disabled requirement-hypothesis profile recorded model calls")
     return PerceptionArmOutcome(
         perception_profile,
         records,
@@ -185,10 +197,7 @@ async def run_perception_arm(
         sum(_integer(item.result, "total_tokens") for item in records),
         sum(_number(item.result, "model_latency_ms") for item in records),
         enable_requirement_hypotheses,
-        sum(
-            _integer(item.result, "requirement_hypothesis_calls")
-            for item in records
-        ),
+        hypothesis_calls,
     )
 
 

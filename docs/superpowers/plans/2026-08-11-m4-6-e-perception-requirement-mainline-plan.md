@@ -234,3 +234,14 @@ authority.
   same bounded attempt/deadline policy before one typed nonterminal hypothesis
   failure is exposed; retries do not create GUI turns. Benchmark
   `provider_attempts` and `provider_retry_count` include these attempts.
+- 2026-08-12: the first clean-SHA capability-covered live run at `6ee97e9`
+  completed 15/15 with 9 success, 4 provider-unavailable, 1 control repetition
+  and 1 case timeout. It exposed a benchmark projection defect:
+  `requirement_hypothesis_calls` existed in canonical target-loop evidence but
+  was removed by the breadth `REQUIRED_METRICS` whitelist, so the generated
+  archive incorrectly reported zero calls. The archive is retained and marked
+  `run_evidence_valid=false`; it is diagnostic execution fact, not comparison
+  evidence. The metric is now required by the breadth profile and an enabled
+  hypothesis arm fails its evidence gate if any case lacks at least one
+  hypothesis call. Full validation after the repair is 2246 passed and 27
+  skipped. A fresh clean-SHA rerun is required before continuing other cohorts.

@@ -420,3 +420,7 @@ def _bind_target_results(results, target_manifest):
         )
         for result in results
     )
+
+
+def test_requirement_hypothesis_call_metric_survives_breadth_projection() -> None:
+    assert "requirement_hypothesis_calls" in REQUIRED_METRICS

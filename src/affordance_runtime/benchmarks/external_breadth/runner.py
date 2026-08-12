@@ -51,7 +51,8 @@ from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOr
 REQUIRED_METRICS = (
     "observations", "executions", "turns", "currentness_probes",
     "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
-    "click_calls", "fill_calls", "select_calls", "policy_calls", "provider_attempts",
+    "click_calls", "fill_calls", "select_calls", "policy_calls",
+    "requirement_hypothesis_calls", "provider_attempts",
     "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
     "already_satisfied_suppressions", "no_progress_terminations", "official_success_count",
     "sent_unknown_count", "duplicate_unknown_attempts", "forbidden_effect_attempts",
