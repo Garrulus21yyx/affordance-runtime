@@ -404,6 +404,46 @@ def test_selected_multi_target_toggle_is_hidden_from_next_model_menu() -> None:
     assert "click" not in {item.name for item in catalog.specs}
 
 
+def test_explicit_color_family_narrows_unlabeled_visual_controls_but_keeps_submit() -> None:
+    context = _context()
+    entities = tuple(
+        replace(item, label="", state={"color_family": "red"})
+        if item.label == "Username"
+        else replace(item, label="", state={"color_family": "blue"})
+        if item.label == "Password"
+        else item
+        for item in context.grounding.entities
+    )
+    context = replace(
+        context,
+        task=replace(context.task, instruction="Select all the blue shades and press Login."),
+        grounding=replace(context.grounding, entities=entities),
+        actions=replace(
+            context.actions,
+            options=tuple(
+                replace(
+                    item,
+                    semantic_action="activate",
+                    parameter_schema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                )
+                for item in context.actions.options
+            ),
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(context)
+    click = next(item for item in catalog.specs if item.name == "click")
+
+    assert set(click.input_schema["properties"]["target"]["enum"]) == {
+        next(item.ref for item in entities if item.state.get("color_family") == "blue"),
+        next(item.ref for item in entities if item.label == "Login"),
+    }
+
+
 def test_confirmed_current_fill_is_removed_from_next_model_tool_menu() -> None:
     context = _context()
     username = next(item for item in context.grounding.entities if item.label == "Username")

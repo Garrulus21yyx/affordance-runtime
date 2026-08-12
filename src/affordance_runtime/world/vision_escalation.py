@@ -161,10 +161,22 @@ _VISUAL_VALUE_PATTERN = re.compile(
     r"\b(?:how many|count|sum|total number|calculate|addition|add up)\b",
     re.IGNORECASE,
 )
+_COLOR_FAMILIES = ("red", "yellow", "green", "cyan", "blue", "magenta", "gray")
 
 
 def requires_multiple_visual_targets(instruction: str) -> bool:
     return bool(_MULTI_TARGET_PATTERN.search(instruction))
+
+
+def requested_color_family(instruction: str) -> str:
+    """Return one explicitly named bounded color family, or no constraint."""
+
+    matches = tuple(
+        family
+        for family in _COLOR_FAMILIES
+        if re.search(rf"\b{family}\b", instruction, re.IGNORECASE)
+    )
+    return matches[0] if len(matches) == 1 else ""
 
 
 def _requires_visual_value_reasoning(

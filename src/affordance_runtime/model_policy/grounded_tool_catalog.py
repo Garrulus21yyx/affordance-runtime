@@ -30,7 +30,10 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
 from affordance_runtime.world.schema_validation import validate_value
-from affordance_runtime.world.vision_escalation import requires_multiple_visual_targets
+from affordance_runtime.world.vision_escalation import (
+    requested_color_family,
+    requires_multiple_visual_targets,
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,7 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
     _reject_ambiguous_unmarked_targets(context, ref_by_target, entity_by_ref)
     settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
+    color_family = requested_color_family(context.task.instruction)
 
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
@@ -78,6 +82,14 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
             and entity is not None
             and entity.state.get("selected") is True
             and requires_multiple_visual_targets(context.task.instruction)
+        ):
+            continue
+        if (
+            verb == "click"
+            and color_family
+            and entity is not None
+            and not entity.label.strip()
+            and entity.state.get("color_family") not in {None, color_family}
         ):
             continue
         shape = _shape_key(verb, option.parameter_schema)
