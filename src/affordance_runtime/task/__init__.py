@@ -8,8 +8,10 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 from affordance_runtime.task.hypothesis_contracts import (
+    HypothesisItemRejection,
     HypothesisPredicateAssessment,
     HypothesisProposalMode,
+    HypothesisRejectionCode,
     HypothesisSetCompleteness,
     RequirementHypothesisFailure,
     RequirementHypothesisFailureKind,
@@ -39,6 +41,8 @@ __all__ = [
     "HypothesisProposalMode",
     "HypothesisSetCompleteness",
     "HypothesisPredicateAssessment",
+    "HypothesisItemRejection",
+    "HypothesisRejectionCode",
     "HypothesisAdmissionCode",
     "HypothesisAdmissionResult",
     "MaterialBinding",

@@ -14,7 +14,10 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.frontier import PreparedObjectiveOperation
 from affordance_runtime.task.frontier_contracts import ActiveObjective, VerifiedTaskState
-from affordance_runtime.task.hypothesis_contracts import RequirementHypothesisState
+from affordance_runtime.task.hypothesis_contracts import (
+    HypothesisItemRejection,
+    RequirementHypothesisState,
+)
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -55,6 +58,10 @@ class AgentLoopState:
         default_factory=RequirementHypothesisState,
     )
     requirement_hypothesis_failure_reason: str = ""
+    recent_requirement_hypothesis_rejections: tuple[HypothesisItemRejection, ...] = ()
+    requirement_hypothesis_accepted_total_count: int = 0
+    requirement_hypothesis_rejected_total_count: int = 0
+    requirement_hypothesis_rejection_code_counts: dict[str, int] = field(default_factory=dict)
     requirement_hypothesis_proposal_count: int = 0
     requirement_hypothesis_last_basis: str = ""
     objective_sequence: int = 0
@@ -169,10 +176,7 @@ class AgentLoopState:
         *,
         failure_reason: str = "",
     ) -> None:
-        if (
-            self.requirement_hypotheses != hypotheses
-            or self.requirement_hypothesis_failure_reason != failure_reason
-        ):
+        if self.requirement_hypotheses != hypotheses or self.requirement_hypothesis_failure_reason != failure_reason:
             self.requirement_hypotheses = hypotheses
             self.requirement_hypothesis_failure_reason = failure_reason
             self.progress_revision += 1
@@ -181,12 +185,34 @@ class AgentLoopState:
         if (
             not basis.strip()
             or len(basis) > 640
-            or self.requirement_hypothesis_proposal_count
-            >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
+            or self.requirement_hypothesis_proposal_count >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
         ):
             raise ValueError("requirement hypothesis proposal budget is invalid")
         self.requirement_hypothesis_proposal_count += 1
         self.requirement_hypothesis_last_basis = basis
+
+    def record_requirement_hypothesis_admission(
+        self,
+        accepted_count: int,
+        rejections: tuple[HypothesisItemRejection, ...],
+    ) -> None:
+        values = tuple(rejections)
+        if (
+            type(accepted_count) is not int
+            or accepted_count < 0
+            or accepted_count + len(values) > 8
+            or any(not isinstance(item, HypothesisItemRejection) for item in values)
+        ):
+            raise ValueError("requirement hypothesis admission outcome is invalid")
+        self.requirement_hypothesis_accepted_total_count += accepted_count
+        self.requirement_hypothesis_rejected_total_count += len(values)
+        for item in values:
+            code = item.code.value
+            self.requirement_hypothesis_rejection_code_counts[code] = (
+                self.requirement_hypothesis_rejection_code_counts.get(code, 0) + 1
+            )
+        self.recent_requirement_hypothesis_rejections = values
+        self.progress_revision += 1
 
     def commit_objective_operation(self, prepared: PreparedObjectiveOperation) -> None:
         """Commit an already validated operation exactly once against current state."""

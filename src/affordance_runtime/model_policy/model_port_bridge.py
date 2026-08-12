@@ -6,7 +6,7 @@ import base64
 import copy
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pydantic import model_validator
@@ -59,6 +59,7 @@ class ModelPortDecisionAdapter:
     config: ModelConfig
     grounding_variant: DecisionGroundingVariant = DecisionGroundingVariant.FORMAT_ONLY
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.TEXT_ONLY
+    last_schema_repair_count: int = field(default=0, init=False, compare=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.port, FallbackModelPort):
@@ -82,18 +83,21 @@ class ModelPortDecisionAdapter:
 
     @property
     def compatibility_key(self) -> str:
-        return ":".join((
-            SCHEMA_VERSION,
-            self.grounding_profile_version,
-            self.perception_profile.value,
-            decision_schema_digest(),
-        ))
+        return ":".join(
+            (
+                SCHEMA_VERSION,
+                self.grounding_profile_version,
+                self.perception_profile.value,
+                decision_schema_digest(),
+            )
+        )
 
     @property
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
     async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
+        object.__setattr__(self, "last_schema_repair_count", 0)
         if request.schema_version != SCHEMA_VERSION or dict(request.decision_schema) != decision_response_schema():
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
         try:
@@ -107,9 +111,19 @@ class ModelPortDecisionAdapter:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
         try:
             output_schema = _decision_output_schema(request.serialized_context)
-            payload = await self.port.generate_structured(
-                messages, output_schema, self.config,
-            )
+            try:
+                payload = await self.port.generate_structured(
+                    messages,
+                    output_schema,
+                    self.config,
+                )
+            except StructuredOutputError:
+                object.__setattr__(self, "last_schema_repair_count", 1)
+                payload = await self.port.generate_structured(
+                    _decision_schema_repair_messages(messages),
+                    output_schema,
+                    self.config,
+                )
         except TimeoutError:
             return _failure(
                 ModelFailureKind.TIMEOUT,
@@ -158,6 +172,24 @@ class ModelPortDecisionAdapter:
         return ModelDecisionResponse(payload.model_dump_json(), metadata)
 
 
+def _decision_schema_repair_messages(
+    messages: tuple[ModelMessage, ...],
+) -> tuple[ModelMessage, ...]:
+    repair_instruction = (
+        "The previous response was rejected because it did not match the required decision package. "
+        "Return exactly one JSON object with top-level keys objective_operation and decision. "
+        "Do not add a schema-name wrapper, repeat the task context, or include explanation."
+    )
+    system = messages[0]
+    if system.role != "system" or not isinstance(system.content, str):
+        raise ValueError("decision repair requires one public text system instruction")
+    repaired_system = ModelMessage(
+        role="system",
+        content=f"{system.content}\n\n{repair_instruction}",
+    )
+    return (repaired_system, *messages[1:])
+
+
 def _decision_output_schema(serialized_context: str) -> type[AgentDecisionPackagePayload]:
     """Narrow one repair turn to Runtime-projected objective alternatives."""
 
@@ -165,10 +197,7 @@ def _decision_output_schema(serialized_context: str) -> type[AgentDecisionPackag
         context = json.loads(serialized_context)
         feedback = context.get("control_feedback")
         recovery = feedback.get("recovery") if isinstance(feedback, dict) else None
-        raw_repairs = (
-            recovery.get("admissible_objective_operations")
-            if isinstance(recovery, dict) else None
-        )
+        raw_repairs = recovery.get("admissible_objective_operations") if isinstance(recovery, dict) else None
     except (AttributeError, TypeError, json.JSONDecodeError):
         return AgentDecisionPackagePayload
     if (
@@ -270,9 +299,7 @@ def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVaria
         return request.serialized_context
     context = json.loads(request.serialized_context)
     if variant is DecisionGroundingVariant.COMPACT_CONTRACT:
-        serialized_guide = serialize_compact_decision_guide(
-            build_compact_decision_guide(request.serialized_context)
-        )
+        serialized_guide = serialize_compact_decision_guide(build_compact_decision_guide(request.serialized_context))
     else:
         serialized_guide = serialize_compact_decision_guide_v2(
             build_compact_decision_guide_v2(request.serialized_context)
@@ -280,7 +307,9 @@ def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVaria
     guide = json.loads(serialized_guide)
     return json.dumps(
         {"agent_context": context, "decision_guide": guide},
-        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     )
 
 
@@ -299,9 +328,11 @@ def _user_content(
     parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
     for image in request.image_inputs:
         encoded = base64.b64encode(image.data).decode("ascii")
-        parts.append(ModelImageURLPart(
-            image_url=f"data:{image.mime_type};base64,{encoded}",
-        ))
+        parts.append(
+            ModelImageURLPart(
+                image_url=f"data:{image.mime_type};base64,{encoded}",
+            )
+        )
     return tuple(parts)
 
 
@@ -310,8 +341,8 @@ def _system_message(variant: DecisionGroundingVariant) -> str:
         return MODEL_POLICY_INSTRUCTIONS
     if variant is DecisionGroundingVariant.COMPACT_CONTRACT:
         return MODEL_POLICY_INSTRUCTIONS + (
-        "\nThe provider enforces a JSON schema. The user message also contains a compact "
-        "decision guide. Copy the current context_id and one currently visible action_id exactly."
+            "\nThe provider enforces a JSON schema. The user message also contains a compact "
+            "decision guide. Copy the current context_id and one currently visible action_id exactly."
         )
     return MODEL_POLICY_INSTRUCTIONS + (
         "\nUse the decision-neutral guide's current public field domains. "

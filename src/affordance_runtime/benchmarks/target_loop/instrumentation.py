@@ -25,6 +25,8 @@ from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, Observ
 class BenchmarkInstrumentation:
     policy_calls: int = 0
     requirement_hypothesis_calls: int = 0
+    requirement_hypothesis_schema_repair_count: int = 0
+    policy_schema_repair_count: int = 0
     action_evaluator_calls: int = 0
     task_evaluator_calls: int = 0
     provider_attempts: int = 0
@@ -106,7 +108,10 @@ class CountingPolicy:
         except Exception as exc:
             self.instrumentation.policy_trace.append(
                 _policy_trace_event(
-                    self.instrumentation.policy_calls, context, None, self.wrapped,
+                    self.instrumentation.policy_calls,
+                    context,
+                    None,
+                    self.wrapped,
                     exception=type(exc).__name__,
                 )
             )
@@ -121,7 +126,10 @@ class CountingPolicy:
             self.instrumentation.model_latency_ms += metadata.latency_ms
         self.instrumentation.policy_trace.append(
             _policy_trace_event(
-                self.instrumentation.policy_calls, context, outcome, self.wrapped,
+                self.instrumentation.policy_calls,
+                context,
+                outcome,
+                self.wrapped,
             )
         )
         return outcome
@@ -143,19 +151,15 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
                 "code": feedback.code,
                 "strategy_transition_required": feedback.strategy_transition_required,
                 "strategy_change_required": (
-                    feedback.recovery.strategy_change_required
-                    if feedback.recovery is not None else False
+                    feedback.recovery.strategy_change_required if feedback.recovery is not None else False
                 ),
-                "must_change_fields": (
-                    feedback.recovery.must_change_fields
-                    if feedback.recovery is not None else ()
-                ),
+                "must_change_fields": (feedback.recovery.must_change_fields if feedback.recovery is not None else ()),
                 "admissible_objective_operations": (
-                    feedback.recovery.admissible_objective_operations
-                    if feedback.recovery is not None else ()
+                    feedback.recovery.admissible_objective_operations if feedback.recovery is not None else ()
                 ),
             }
-            if feedback is not None else None
+            if feedback is not None
+            else None
         ),
         "provider_attempts": tuple(
             {
@@ -193,9 +197,7 @@ def _frontier_trace(frontier):
     return {
         "current_frontier": frontier.current_frontier,
         "active_objective_id": active.objective_id if active is not None else "",
-        "active_predicate_kind": (
-            str(active.predicate.get("kind", "")) if active is not None else ""
-        ),
+        "active_predicate_kind": (str(active.predicate.get("kind", "")) if active is not None else ""),
         "recent_checkpoints": tuple(
             {
                 "objective_id": item.objective_id,
@@ -207,13 +209,27 @@ def _frontier_trace(frontier):
         "next_objective_required": frontier.next_objective_required,
         "must_advance_from_objective_id": frontier.must_advance_from_objective_id,
         "strategy_change_required": frontier.strategy_change_required,
+        "requirement_hypotheses": tuple(
+            {
+                "hypothesis_id": item.hypothesis_id,
+                "predicate_kind": str(item.predicate.get("kind", "")),
+                "assessment": item.assessment,
+            }
+            for item in frontier.requirement_hypotheses
+        ),
+        "hypothesis_rejections": tuple(
+            {"item_index": item.item_index, "code": item.code} for item in frontier.hypothesis_rejections
+        ),
+        "hypothesis_failure_reason": frontier.hypothesis_failure_reason,
     }
 
 
 def _objective_operation_trace(operation):
     value: dict[str, object] = {"kind": operation.kind.value}
     for name in (
-        "active_objective_id", "replaces_objective_id", "intended_requirement_ids",
+        "active_objective_id",
+        "replaces_objective_id",
+        "intended_requirement_ids",
     ):
         if hasattr(operation, name):
             value[name] = getattr(operation, name)
@@ -240,8 +256,13 @@ def _predicate_trace(predicate):
 def _decision_trace(decision):
     value: dict[str, object] = {"kind": type(decision).__name__, "context_id": decision.context_id}
     for name in (
-        "action_id", "destination_id", "subject_id", "modality", "relevance_role",
-        "cursor", "category",
+        "action_id",
+        "destination_id",
+        "subject_id",
+        "modality",
+        "relevance_role",
+        "cursor",
+        "category",
     ):
         item = getattr(decision, name, None)
         if item not in (None, ""):
@@ -252,10 +273,7 @@ def _decision_trace(decision):
 def finalize_policy_trace(instrumentation: BenchmarkInstrumentation, result) -> None:
     """Join harness policy exchanges to typed Runtime transitions without changing authority."""
 
-    transitions = {
-        item.decision.context_id: item
-        for item in getattr(result, "control_transitions", ())
-    }
+    transitions = {item.decision.context_id: item for item in getattr(result, "control_transitions", ())}
     finalized: list[dict[str, object]] = []
     for raw in instrumentation.policy_trace:
         item = dict(raw)
@@ -274,29 +292,17 @@ def _runtime_transition_trace(transition):
     return {
         "transition_id": transition.transition_id,
         "sequence": transition.sequence,
-        "admission_status": (
-            transition.admission.status.value if transition.admission is not None else ""
-        ),
-        "admission_reason_code": (
-            transition.admission.reason_code if transition.admission is not None else ""
-        ),
-        "dispatch_status": (
-            transition.execution.dispatch_status.value if transition.execution is not None else ""
-        ),
+        "admission_status": (transition.admission.status.value if transition.admission is not None else ""),
+        "admission_reason_code": (transition.admission.reason_code if transition.admission is not None else ""),
+        "dispatch_status": (transition.execution.dispatch_status.value if transition.execution is not None else ""),
         "semantic_action": intent.semantic_action if intent is not None else "",
         "target_id": intent.target_id if intent is not None else "",
         "destination_id": intent.destination_id if intent is not None else "",
         "action_evaluation_status": action.status.value if action is not None else "",
-        "action_evidence_fields": (
-            tuple(sorted(str(name) for name in action.evidence)) if action is not None else ()
-        ),
+        "action_evidence_fields": (tuple(sorted(str(name) for name in action.evidence)) if action is not None else ()),
         "task_evaluation_status": task.status.value if task is not None else "",
-        "task_outcome_kind": (
-            task.outcome.kind.value if task is not None and task.outcome is not None else ""
-        ),
-        "task_outcome_code": (
-            task.outcome.code if task is not None and task.outcome is not None else ""
-        ),
+        "task_outcome_kind": (task.outcome.kind.value if task is not None and task.outcome is not None else ""),
+        "task_outcome_code": (task.outcome.code if task is not None and task.outcome is not None else ""),
         "resulting_status": str(transition.resulting_status or ""),
         "reason_code": transition.reason_code,
         "feedback": _runtime_feedback_trace(feedback),
@@ -310,16 +316,11 @@ def _runtime_feedback_trace(feedback):
         "kind": feedback.kind.value,
         "source": feedback.source.value,
         "code": feedback.code,
-        "violation_owner": (
-            feedback.violation.contract_owner if feedback.violation is not None else ""
-        ),
+        "violation_owner": (feedback.violation.contract_owner if feedback.violation is not None else ""),
         "violation_code": feedback.violation.code if feedback.violation is not None else "",
-        "retry_allowed": (
-            feedback.recovery.retry_allowed if feedback.recovery is not None else False
-        ),
+        "retry_allowed": (feedback.recovery.retry_allowed if feedback.recovery is not None else False),
         "strategy_change_required": (
-            feedback.recovery.strategy_change_required
-            if feedback.recovery is not None else False
+            feedback.recovery.strategy_change_required if feedback.recovery is not None else False
         ),
     }
 
@@ -335,7 +336,9 @@ class CountingActionEvaluator:
             return await self.wrapped.evaluate(task, before, request, result, after)
         except Exception as exc:
             self.instrumentation.record_failure(
-                CaseFailureOrigin.ACTION_EVALUATION, "action_evaluator_exception", exc,
+                CaseFailureOrigin.ACTION_EVALUATION,
+                "action_evaluator_exception",
+                exc,
             )
             raise
 
@@ -351,7 +354,9 @@ class CountingTaskEvaluator:
             return await self.wrapped.evaluate(task, observation)
         except Exception as exc:
             self.instrumentation.record_failure(
-                CaseFailureOrigin.TASK_EVALUATION, "task_evaluator_exception", exc,
+                CaseFailureOrigin.TASK_EVALUATION,
+                "task_evaluator_exception",
+                exc,
             )
             raise
 
@@ -371,11 +376,18 @@ class CountingDecisionPort:
         finally:
             attempts = tuple(getattr(self.wrapped, "last_attempts", ()))
             attempt_count = len(attempts) or 1
-            self.instrumentation.provider_attempts += attempt_count
+            schema_repairs = _decision_schema_repair_count(self.wrapped)
+            self.instrumentation.provider_attempts += attempt_count + schema_repairs
+            self.instrumentation.policy_schema_repair_count += schema_repairs
             self.instrumentation.provider_retry_count += max(0, attempt_count - 1)
-            self.instrumentation.fallback_count += int(
-                getattr(self.wrapped, "last_fallback_count", 0)
-            )
+            self.instrumentation.fallback_count += int(getattr(self.wrapped, "last_fallback_count", 0))
+
+
+def _decision_schema_repair_count(port: object) -> int:
+    values = getattr(port, "ports", None)
+    if isinstance(values, tuple):
+        return sum(int(getattr(item, "last_schema_repair_count", 0)) for item in values)
+    return int(getattr(port, "last_schema_repair_count", 0))
 
 
 @dataclass
@@ -413,10 +425,12 @@ class CountingRequirementHypothesisProposer:
             mode=mode,
             observation_cursor=observation_cursor,
         )
+        schema_repairs = int(getattr(self.wrapped, "last_schema_repair_count", 0))
         self.instrumentation.provider_retry_count += max(
             0,
-            int(getattr(self.wrapped, "last_attempt_count", 1)) - 1,
+            int(getattr(self.wrapped, "last_attempt_count", 1)) - 1 - schema_repairs,
         )
+        self.instrumentation.requirement_hypothesis_schema_repair_count += schema_repairs
         return result
 
 
@@ -480,9 +494,7 @@ class CountingEnvironment:
         if not isinstance(outcome, ExecutionOutcome):
             return outcome
         result = outcome.result
-        if not isinstance(result, ActionResult) or not isinstance(
-            outcome.post_acquisition, ObservationAcquisition
-        ):
+        if not isinstance(result, ActionResult) or not isinstance(outcome.post_acquisition, ObservationAcquisition):
             return outcome
         state.environment_post_acquisitions += int(
             outcome.post_acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}

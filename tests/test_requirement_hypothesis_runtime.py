@@ -1,3 +1,5 @@
+from itertools import permutations
+
 import pytest
 
 from affordance_runtime.agent.state import AgentLoopState
@@ -35,8 +37,7 @@ from affordance_runtime.world import (
 
 def _world(*, complete: bool = True, target_count: int = 1) -> WorldObservation:
     targets = tuple(
-        SemanticTarget(f"entity:{index}", "textbox", f"Field {index}", {"value": ""})
-        for index in range(target_count)
+        SemanticTarget(f"entity:{index}", "textbox", f"Field {index}", {"value": ""}) for index in range(target_count)
     )
     inventory = (
         EntityInventorySummary(
@@ -129,8 +130,52 @@ def test_admission_deduplicates_repeated_items_within_one_batch() -> None:
     )
 
     assert admitted.accepted_count == 1
-    assert admitted.rejected_count == 0
+    assert admitted.rejected_count == 1
+    assert admitted.rejected_codes == (HypothesisAdmissionCode.DUPLICATE,)
     assert len(admitted.state.active) == 1
+
+
+@pytest.mark.parametrize(
+    "items",
+    tuple(permutations(("valid", "unknown", "duplicate"))),
+)
+def test_mixed_admission_has_one_item_addressed_outcome_per_input_regardless_of_order(
+    items: tuple[str, ...],
+) -> None:
+    proposals = tuple(_proposal("entity:missing") if item == "unknown" else _proposal("entity:0") for item in items)
+
+    admitted = admit_requirement_hypotheses(
+        RequirementHypothesisState(),
+        RequirementHypothesisProposalBatch(HypothesisProposalMode.INITIAL, proposals),
+        _world(),
+    )
+
+    assert admitted.accepted_count == 1
+    assert admitted.rejected_count == 2
+    assert set(admitted.accepted_item_indices).isdisjoint(item.item_index for item in admitted.rejections)
+    assert sorted((*admitted.accepted_item_indices, *(item.item_index for item in admitted.rejections))) == [0, 1, 2]
+    assert {item.code for item in admitted.rejections} == {
+        HypothesisAdmissionCode.UNKNOWN_ENTITY,
+        HypothesisAdmissionCode.DUPLICATE,
+    }
+
+
+def test_repeated_replace_remains_live_after_retired_history_reaches_capacity() -> None:
+    state = RequirementHypothesisState()
+    for index in range(24):
+        state = admit_requirement_hypotheses(
+            state,
+            RequirementHypothesisProposalBatch(
+                HypothesisProposalMode.REPLACE if index else HypothesisProposalMode.INITIAL,
+                (_proposal("entity:0", f"value-{index}"),),
+            ),
+            _world(),
+        ).state
+
+    assert len(state.hypotheses) <= 16
+    assert len(state.active) == 1
+    assert state.active[0].predicate.expected.value == "value-23"
+    assert state.active[0].hypothesis_id == "hypothesis:24"
 
 
 def test_invalid_replace_batch_does_not_retire_existing_hypotheses() -> None:

@@ -123,25 +123,34 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
 
 
 def test_openai_compatible_adapter_serializes_multimodal_content_parts() -> None:
-    server, thread, requests = _serve({
-        "id": "response-vision",
-        "choices": [{"message": {"content": '{"value":"seen"}'}}],
-        "usage": {},
-    })
+    server, thread, requests = _serve(
+        {
+            "id": "response-vision",
+            "choices": [{"message": {"content": '{"value":"seen"}'}}],
+            "usage": {},
+        }
+    )
     try:
         port = OpenAICompatibleModelPort(
             base_url=f"http://127.0.0.1:{server.server_port}",
             api_key="secret",
             model="vision-test",
         )
-        answer = asyncio.run(port.generate_structured(
-            [ModelMessage(role="user", content=(
-                ModelTextPart(text='{"context_id":"context:vision"}'),
-                ModelImageURLPart(image_url="data:image/png;base64,iVBORw0KGgo="),
-            ))],
-            Answer,
-            ModelConfig(),
-        ))
+        answer = asyncio.run(
+            port.generate_structured(
+                [
+                    ModelMessage(
+                        role="user",
+                        content=(
+                            ModelTextPart(text='{"context_id":"context:vision"}'),
+                            ModelImageURLPart(image_url="data:image/png;base64,iVBORw0KGgo="),
+                        ),
+                    )
+                ],
+                Answer,
+                ModelConfig(),
+            )
+        )
     finally:
         server.shutdown()
         server.server_close()
@@ -157,11 +166,13 @@ def test_openai_compatible_adapter_serializes_multimodal_content_parts() -> None
 def test_private_capture_preserves_exact_accepted_exchange_outside_public_evidence(
     tmp_path,
 ) -> None:
-    server, thread, _ = _serve({
-        "id": "response-private",
-        "choices": [{"message": {"content": '{"value":"exact"}'}}],
-        "usage": {},
-    })
+    server, thread, _ = _serve(
+        {
+            "id": "response-private",
+            "choices": [{"message": {"content": '{"value":"exact"}'}}],
+            "usage": {},
+        }
+    )
     capture = PrivateModelCapture(tmp_path / "private")
     try:
         port = OpenAICompatibleModelPort(
@@ -170,9 +181,13 @@ def test_private_capture_preserves_exact_accepted_exchange_outside_public_eviden
             model="remote-test",
             private_capture=capture,
         )
-        asyncio.run(port.generate_structured(
-            [ModelMessage(role="user", content="exact prompt")], Answer, ModelConfig(),
-        ))
+        asyncio.run(
+            port.generate_structured(
+                [ModelMessage(role="user", content="exact prompt")],
+                Answer,
+                ModelConfig(),
+            )
+        )
     finally:
         server.shutdown()
         server.server_close()
@@ -187,11 +202,13 @@ def test_private_capture_preserves_exact_accepted_exchange_outside_public_eviden
 
 
 def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> None:
-    server, thread, _ = _serve({
-        "id": "response-invalid",
-        "choices": [{"message": {"content": '{"wrong":true}'}}],
-        "usage": {},
-    })
+    server, thread, _ = _serve(
+        {
+            "id": "response-invalid",
+            "choices": [{"message": {"content": '{"wrong":true}'}}],
+            "usage": {},
+        }
+    )
     capture = PrivateModelCapture(tmp_path / "private")
     try:
         port = OpenAICompatibleModelPort(
@@ -216,7 +233,7 @@ def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> 
 def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> None:
     server, thread, _ = _serve(
         {
-            "choices": [{"message": {"content": "```json\n{\"value\":\"fenced\"}\n```"}}],
+            "choices": [{"message": {"content": '```json\n{"value":"fenced"}\n```'}}],
             "usage": {},
         }
     )
@@ -233,6 +250,53 @@ def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> N
     assert answer.value == "fenced"
 
 
+def test_openai_compatible_adapter_unwraps_one_exact_schema_named_object() -> None:
+    server, thread, _ = _serve(
+        {
+            "choices": [{"message": {"content": '{"answer":{"value":"wrapped"}}'}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="remote-test"
+        )
+        answer = asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "wrapped"
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        '{"answer":{"value":"wrapped"},"extra":true}',
+        '{"wrong":{"value":"wrapped"}}',
+        '{"answer":{"answer":{"value":"nested"}}}',
+    ),
+)
+def test_schema_wrapper_normalization_rejects_ambiguous_or_unsupported_shapes(content) -> None:
+    server, thread, _ = _serve(
+        {
+            "choices": [{"message": {"content": content}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="remote-test"
+        )
+        with pytest.raises(StructuredOutputError):
+            asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_openai_compatible_adapter_retries_a_bounded_rate_limit_response() -> None:
     requests = 0
 
@@ -247,9 +311,7 @@ def test_openai_compatible_adapter_retries_a_bounded_rate_limit_response() -> No
                 self.send_header("Retry-After", "0")
                 self.end_headers()
                 return
-            payload = json.dumps(
-                {"choices": [{"message": {"content": '{"value":"retried"}'}}], "usage": {}}
-            ).encode()
+            payload = json.dumps({"choices": [{"message": {"content": '{"value":"retried"}'}}], "usage": {}}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
@@ -404,9 +466,7 @@ def test_openai_compatible_adapter_retries_a_bounded_transient_response() -> Non
                 self.send_response(503)
                 self.end_headers()
                 return
-            payload = json.dumps(
-                {"choices": [{"message": {"content": '{"value":"retried"}'}}], "usage": {}}
-            ).encode()
+            payload = json.dumps({"choices": [{"message": {"content": '{"value":"retried"}'}}], "usage": {}}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))

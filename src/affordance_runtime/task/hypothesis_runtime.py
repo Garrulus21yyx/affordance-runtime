@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from enum import StrEnum
 
 from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task.frontier_contracts import (
@@ -17,8 +16,10 @@ from affordance_runtime.task.frontier_contracts import (
 )
 from affordance_runtime.task.hypothesis_contracts import (
     MAX_TRACKED_HYPOTHESES,
+    HypothesisItemRejection,
     HypothesisPredicateAssessment,
     HypothesisProposalMode,
+    HypothesisRejectionCode,
     RequirementHypothesisProposal,
     RequirementHypothesisProposalBatch,
     RequirementHypothesisState,
@@ -32,25 +33,23 @@ from affordance_runtime.world.contracts import (
 )
 from affordance_runtime.world.evidence_refs import canonical_fact_ref
 
-
-class HypothesisAdmissionCode(StrEnum):
-    ACCEPTED = "accepted"
-    UNKNOWN_ENTITY = "unknown_hypothesis_entity"
-    UNKNOWN_FACT = "unknown_hypothesis_fact"
-    UNKNOWN_FIELD = "unknown_hypothesis_field"
-    CAPACITY_EXCEEDED = "hypothesis_capacity_exceeded"
-    INITIAL_ALREADY_APPLIED = "initial_hypotheses_already_applied"
+HypothesisAdmissionCode = HypothesisRejectionCode
 
 
 @dataclass(frozen=True)
 class HypothesisAdmissionResult:
     state: RequirementHypothesisState
     accepted_count: int
-    rejected_codes: tuple[HypothesisAdmissionCode, ...] = ()
+    accepted_item_indices: tuple[int, ...] = ()
+    rejections: tuple[HypothesisItemRejection, ...] = ()
+
+    @property
+    def rejected_codes(self) -> tuple[HypothesisRejectionCode, ...]:
+        return tuple(item.code for item in self.rejections)
 
     @property
     def rejected_count(self) -> int:
-        return len(self.rejected_codes)
+        return len(self.rejections)
 
 
 def admit_requirement_hypotheses(
@@ -62,50 +61,78 @@ def admit_requirement_hypotheses(
         return HypothesisAdmissionResult(
             current,
             0,
-            (HypothesisAdmissionCode.INITIAL_ALREADY_APPLIED,),
+            (),
+            tuple(
+                sorted(
+                    (
+                        *batch.rejections,
+                        *(
+                            HypothesisItemRejection(
+                                item_index,
+                                HypothesisAdmissionCode.INITIAL_ALREADY_APPLIED,
+                            )
+                            for item_index in batch.proposal_item_indices
+                        ),
+                    ),
+                    key=lambda item: item.item_index,
+                )
+            ),
         )
-    admissible = []
-    rejected_codes = []
-    for proposal in batch.proposals:
+    admissible: list[tuple[int, RequirementHypothesisProposal]] = []
+    rejections = list(batch.rejections)
+    for item_index, proposal in zip(
+        batch.proposal_item_indices,
+        batch.proposals,
+        strict=True,
+    ):
         issue = _admission_issue(proposal, observation)
         if issue is None:
-            admissible.append(proposal)
+            admissible.append((item_index, proposal))
         else:
-            rejected_codes.append(issue)
+            rejections.append(HypothesisItemRejection(item_index, issue))
 
     retained = list(current.hypotheses)
-    if batch.mode is HypothesisProposalMode.REPLACE and (
-        admissible or not rejected_codes
-    ):
+    if batch.mode is HypothesisProposalMode.REPLACE and (admissible or not rejections):
         retained = [
             replace(item, status=TrackedHypothesisStatus.RETIRED)
-            if item.status is TrackedHypothesisStatus.ACTIVE else item
+            if item.status is TrackedHypothesisStatus.ACTIVE
+            else item
             for item in retained
         ]
-    known_digests = {_proposal_key(item) for item in retained}
+    known_digests = {_proposal_key(item) for item in retained if item.status is TrackedHypothesisStatus.ACTIVE}
     novel = []
-    for proposal in admissible:
+    for item_index, proposal in admissible:
         digest = _proposal_key(proposal)
         if digest in known_digests:
+            rejections.append(
+                HypothesisItemRejection(
+                    item_index,
+                    HypothesisAdmissionCode.DUPLICATE,
+                )
+            )
             continue
         known_digests.add(digest)
-        novel.append(proposal)
+        novel.append((item_index, proposal))
+    if batch.mode is HypothesisProposalMode.REPLACE and novel:
+        retained = _retain_recent_history(retained, len(novel))
     available = max(0, MAX_TRACKED_HYPOTHESES - len(retained))
     admitted = novel[:available]
-    rejected_codes.extend(
-        HypothesisAdmissionCode.CAPACITY_EXCEEDED
-        for _ in novel[available:]
+    rejections.extend(
+        HypothesisItemRejection(item_index, HypothesisAdmissionCode.CAPACITY_EXCEEDED)
+        for item_index, _ in novel[available:]
     )
 
     sequence = current.next_sequence
-    for proposal in admitted:
-        retained.append(TrackedRequirementHypothesis(
-            f"hypothesis:{sequence}",
-            proposal.summary,
-            proposal.predicate,
-            proposal.candidate_entity_ids,
-            TrackedHypothesisStatus.ACTIVE,
-        ))
+    for _, proposal in admitted:
+        retained.append(
+            TrackedRequirementHypothesis(
+                f"hypothesis:{sequence}",
+                proposal.summary,
+                proposal.predicate,
+                proposal.candidate_entity_ids,
+                TrackedHypothesisStatus.ACTIVE,
+            )
+        )
         sequence += 1
     changed = tuple(retained) != current.hypotheses
     return HypothesisAdmissionResult(
@@ -115,7 +142,8 @@ def admit_requirement_hypotheses(
             sequence,
         ),
         len(admitted),
-        tuple(rejected_codes),
+        tuple(item_index for item_index, _ in admitted),
+        tuple(sorted(rejections, key=lambda item: item.item_index)),
     )
 
 
@@ -157,8 +185,7 @@ def assess_hypothesis_predicate(predicate, observation, evaluation):
         target = targets.get(predicate.target_id)
         if target is None:
             return (
-                HypothesisPredicateAssessment.CONTRADICTED
-                if complete else HypothesisPredicateAssessment.UNKNOWN,
+                HypothesisPredicateAssessment.CONTRADICTED if complete else HypothesisPredicateAssessment.UNKNOWN,
                 (),
             )
         expected = _expected(predicate, facts)
@@ -167,7 +194,8 @@ def assess_hypothesis_predicate(predicate, observation, evaluation):
         if target.state.get(predicate.field_name, _MISSING) != expected:
             return HypothesisPredicateAssessment.UNKNOWN, ()
         evidence = tuple(
-            ref for ref, fact in facts.items()
+            ref
+            for ref, fact in facts.items()
             if fact.subject_id == predicate.target_id
             and fact.predicate == predicate.field_name
             and fact.value == expected
@@ -177,16 +205,14 @@ def assess_hypothesis_predicate(predicate, observation, evaluation):
         if predicate.target_id in targets:
             return HypothesisPredicateAssessment.SATISFIED, ()
         return (
-            HypothesisPredicateAssessment.CONTRADICTED
-            if complete else HypothesisPredicateAssessment.UNKNOWN,
+            HypothesisPredicateAssessment.CONTRADICTED if complete else HypothesisPredicateAssessment.UNKNOWN,
             (),
         )
     if isinstance(predicate, TargetAbsent):
         if predicate.target_id in targets:
             return HypothesisPredicateAssessment.CONTRADICTED, ()
         return (
-            HypothesisPredicateAssessment.SATISFIED
-            if complete else HypothesisPredicateAssessment.UNKNOWN,
+            HypothesisPredicateAssessment.SATISFIED if complete else HypothesisPredicateAssessment.UNKNOWN,
             (),
         )
     assert isinstance(predicate, TaskOutcomeIs)
@@ -221,13 +247,10 @@ def _admission_issue(
 
 
 def _inventory_complete(observation: WorldObservation) -> bool:
-    if not observation.coverage or any(
-        item is not CoverageState.COMPLETE for item in observation.coverage.values()
-    ):
+    if not observation.coverage or any(item is not CoverageState.COMPLETE for item in observation.coverage.values()):
         return False
     return bool(observation.sources) and all(
-        source.entity_inventory.status is EntityInventoryStatus.COMPLETE
-        for source in observation.sources
+        source.entity_inventory.status is EntityInventoryStatus.COMPLETE for source in observation.sources
     )
 
 
@@ -257,3 +280,15 @@ def _proposal_key(value) -> tuple[object, ...]:
 
 
 _MISSING = object()
+
+
+def _retain_recent_history(
+    retained: list[TrackedRequirementHypothesis],
+    incoming_count: int,
+) -> list[TrackedRequirementHypothesis]:
+    """Bound retired diagnostic history without starving rolling replacement."""
+
+    history_capacity = max(0, MAX_TRACKED_HYPOTHESES - incoming_count)
+    if len(retained) <= history_capacity:
+        return retained
+    return retained[-history_capacity:] if history_capacity else []

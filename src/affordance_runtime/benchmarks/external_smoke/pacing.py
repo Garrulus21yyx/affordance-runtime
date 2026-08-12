@@ -63,6 +63,10 @@ class PacedRequirementHypothesisProposer:
     def last_attempt_count(self) -> int:
         return int(getattr(self.wrapped, "last_attempt_count", 0))
 
+    @property
+    def last_schema_repair_count(self) -> int:
+        return int(getattr(self.wrapped, "last_schema_repair_count", 0))
+
     async def propose(
         self,
         task,

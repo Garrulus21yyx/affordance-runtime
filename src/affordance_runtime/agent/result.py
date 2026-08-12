@@ -44,6 +44,9 @@ class AgentResult:
     control_feedback_delivery_count: int = 0
     control_issue_consumption_count: int = 0
     control_repetition_count: int = 0
+    requirement_hypothesis_accepted_count: int = 0
+    requirement_hypothesis_rejected_count: int = 0
+    requirement_hypothesis_rejection_code_counts: tuple[tuple[str, int], ...] = ()
 
 
 def project_result(
@@ -64,11 +67,7 @@ def project_result(
     )
     latest = state.recent_control_transitions[-1] if state.recent_control_transitions else None
     root_id = latest.transition_id if latest is not None else ""
-    attempt_id = (
-        latest.attempt_receipts[-1].attempt_id
-        if latest is not None and latest.attempt_receipts
-        else ""
-    )
+    attempt_id = latest.attempt_receipts[-1].attempt_id if latest is not None and latest.attempt_receipts else ""
     if runtime_failure is not None and root_id:
         runtime_failure = replace(
             runtime_failure,
@@ -84,8 +83,7 @@ def project_result(
         session.accounting.execution_attempts,
         session.accounting.currentness_probes,
         outcome.message,
-        state.pending_confirmation
-        if outcome.status == AgentLoopStatus.WAITING_CONFIRMATION else None,
+        state.pending_confirmation if outcome.status == AgentLoopStatus.WAITING_CONFIRMATION else None,
         outcome.policy_failure,
         outcome.failure_code,
         state.recent_control_transitions,
@@ -93,12 +91,13 @@ def project_result(
         outcome.reason_code,
         tuple(sorted(state.control_transition_kind_counts.items())),
         state.sent_unknown_total_count,
-        runtime_failure or runtime_failure_from_outcome(
-            outcome, root_id=root_id, attempt_id=attempt_id
-        ),
+        runtime_failure or runtime_failure_from_outcome(outcome, root_id=root_id, attempt_id=attempt_id),
         current_outcome,
         state.control_feedback_total_count,
         state.control_feedback_delivery_total_count,
         state.control_issue_consumption_total_count,
         state.control_repetition_total_count,
+        state.requirement_hypothesis_accepted_total_count,
+        state.requirement_hypothesis_rejected_total_count,
+        tuple(sorted(state.requirement_hypothesis_rejection_code_counts.items())),
     )

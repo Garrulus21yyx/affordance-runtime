@@ -19,6 +19,7 @@ from affordance_runtime.model_port import (
 )
 from affordance_runtime.task import (
     HypothesisProposalMode,
+    HypothesisRejectionCode,
     HypothesisSetCompleteness,
     RequirementHypothesisFailure,
     RequirementHypothesisProposal,
@@ -134,6 +135,61 @@ def test_model_proposer_receives_only_public_context_and_returns_unadmitted_prop
     assert "hypotheses_are_task_requirements" in port.messages[1].content
 
 
+def test_model_proposer_projects_valid_items_when_a_sibling_predicate_contract_is_invalid() -> None:
+    payload = _payload()
+    payload["hypotheses"].insert(
+        0,
+        {
+            "summary": "Invalid fact reference",
+            "predicate": {"kind": "fact_available", "fact_ref": "entity:name"},
+            "candidate_entity_ids": ["entity:name"],
+        },
+    )
+    proposer = ModelRequirementHypothesisProposer(_Port(payload), ModelConfig())
+
+    result = asyncio.run(
+        proposer.propose(
+            TaskGoal("task:1", "Enter Ada in the Name field"),
+            _world(),
+            ActionSpace("observation:1", ()),
+            mode=HypothesisProposalMode.INITIAL,
+        )
+    )
+
+    assert isinstance(result, RequirementHypothesisProposalBatch)
+    assert result.proposal_item_indices == (1,)
+    assert len(result.proposals) == 1
+    assert result.rejections[0].item_index == 0
+    assert result.rejections[0].code is HypothesisRejectionCode.INVALID_PREDICATE_CONTRACT
+
+
+def test_model_proposer_projects_valid_items_when_a_sibling_proposal_contract_is_invalid() -> None:
+    payload = _payload()
+    payload["hypotheses"].insert(
+        0,
+        {
+            "summary": "   ",
+            "predicate": {"kind": "target_present", "target_id": "entity:name"},
+            "candidate_entity_ids": ["entity:name"],
+        },
+    )
+    proposer = ModelRequirementHypothesisProposer(_Port(payload), ModelConfig())
+
+    result = asyncio.run(
+        proposer.propose(
+            TaskGoal("task:1", "Enter Ada in the Name field"),
+            _world(),
+            ActionSpace("observation:1", ()),
+            mode=HypothesisProposalMode.INITIAL,
+        )
+    )
+
+    assert isinstance(result, RequirementHypothesisProposalBatch)
+    assert result.proposal_item_indices == (1,)
+    assert result.rejections[0].item_index == 0
+    assert result.rejections[0].code is HypothesisRejectionCode.INVALID_PROPOSAL_CONTRACT
+
+
 def test_screenshot_profile_transports_image_without_changing_hypothesis_authority() -> None:
     port = _Port(_payload())
     proposer = ModelRequirementHypothesisProposer(
@@ -158,10 +214,7 @@ def test_screenshot_profile_transports_image_without_changing_hypothesis_authori
 
 
 def test_incremental_proposer_receives_the_current_frozen_observation_page() -> None:
-    targets = tuple(
-        SemanticTarget(f"entity:{index}", "statictext", f"Item {index}")
-        for index in range(65)
-    )
+    targets = tuple(SemanticTarget(f"entity:{index}", "statictext", f"Item {index}") for index in range(65))
     source = SurfaceObservation(
         "observation:1",
         "dom",
@@ -239,10 +292,7 @@ def test_requirement_proposer_repairs_one_invalid_structured_response_before_adm
             self.calls += 1
             if self.calls == 1:
                 raise StructuredOutputError("invalid structured output")
-            assert any(
-                message.role == "system" and "Do not repeat" in message.content
-                for message in messages
-            )
+            assert any(message.role == "system" and "Do not repeat" in message.content for message in messages)
             return await super().generate_structured(messages, output_schema, config)
 
     port = RepairingPort(_payload())

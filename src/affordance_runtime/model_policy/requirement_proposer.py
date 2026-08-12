@@ -50,7 +50,9 @@ from affordance_runtime.task.frontier_contracts import (
     TaskOutcomeStatus,
 )
 from affordance_runtime.task.hypothesis_contracts import (
+    HypothesisItemRejection,
     HypothesisProposalMode,
+    HypothesisRejectionCode,
     RequirementHypothesisFailure,
     RequirementHypothesisFailureKind,
     RequirementHypothesisProposal,
@@ -93,6 +95,7 @@ class ModelRequirementHypothesisProposer:
     budget: ContextProjectionBudget = ContextProjectionBudget()
     provider_policy: ProviderCallPolicy = ProviderCallPolicy()
     last_attempt_count: int = field(default=0, init=False, compare=False)
+    last_schema_repair_count: int = field(default=0, init=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -123,16 +126,41 @@ class ModelRequirementHypothesisProposer:
                 RequirementHypothesisBatchPayload,
                 self.config,
             )
-            return RequirementHypothesisProposalBatch(
-                mode,
-                tuple(
-                    RequirementHypothesisProposal(
+            proposals = []
+            proposal_item_indices = []
+            rejections = []
+            for item_index, item in enumerate(output.hypotheses):
+                try:
+                    predicate = _predicate(item.predicate)
+                except (TypeError, ValueError):
+                    rejections.append(
+                        HypothesisItemRejection(
+                            item_index,
+                            HypothesisRejectionCode.INVALID_PREDICATE_CONTRACT,
+                        )
+                    )
+                    continue
+                try:
+                    proposal = RequirementHypothesisProposal(
                         item.summary,
-                        _predicate(item.predicate),
+                        predicate,
                         tuple(item.candidate_entity_ids),
                     )
-                    for item in output.hypotheses
-                ),
+                except (TypeError, ValueError):
+                    rejections.append(
+                        HypothesisItemRejection(
+                            item_index,
+                            HypothesisRejectionCode.INVALID_PROPOSAL_CONTRACT,
+                        )
+                    )
+                    continue
+                proposals.append(proposal)
+                proposal_item_indices.append(item_index)
+            return RequirementHypothesisProposalBatch(
+                mode,
+                tuple(proposals),
+                tuple(proposal_item_indices),
+                tuple(rejections),
             )
         except ProviderModelError:
             return RequirementHypothesisFailure(
@@ -152,13 +180,12 @@ class ModelRequirementHypothesisProposer:
 
     async def _generate_with_recovery(self, messages, output_schema, config):
         object.__setattr__(self, "last_attempt_count", 0)
+        object.__setattr__(self, "last_schema_repair_count", 0)
         started = monotonic()
         active_messages = messages
         schema_repair_used = False
         for attempt in range(self.provider_policy.max_attempts_per_profile):
-            remaining = self.provider_policy.total_elapsed_deadline_s - (
-                monotonic() - started
-            )
+            remaining = self.provider_policy.total_elapsed_deadline_s - (monotonic() - started)
             if remaining <= 0:
                 raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY)
             object.__setattr__(self, "last_attempt_count", attempt + 1)
@@ -173,6 +200,7 @@ class ModelRequirementHypothesisProposer:
                 if schema_repair_used or attempt + 1 >= self.provider_policy.max_attempts_per_profile:
                     raise
                 schema_repair_used = True
+                object.__setattr__(self, "last_schema_repair_count", 1)
                 active_messages = _schema_repair_messages(messages)
                 continue
             except TimeoutError:
@@ -188,9 +216,7 @@ class ModelRequirementHypothesisProposer:
             if not retryable or attempt + 1 >= self.provider_policy.max_attempts_per_profile:
                 raise failure
             delay = self._retry_delay(attempt, failure, messages)
-            remaining = self.provider_policy.total_elapsed_deadline_s - (
-                monotonic() - started
-            )
+            remaining = self.provider_policy.total_elapsed_deadline_s - (monotonic() - started)
             if delay >= remaining:
                 raise failure
             if delay:
@@ -201,9 +227,7 @@ class ModelRequirementHypothesisProposer:
         if failure.retry_after_s is not None:
             return min(self.provider_policy.max_delay_s, failure.retry_after_s)
         base = self.provider_policy.backoff_s[attempt]
-        digest = hashlib.sha256(
-            f"requirement-hypothesis:{attempt}:{messages[-1].content!s}".encode()
-        ).digest()
+        digest = hashlib.sha256(f"requirement-hypothesis:{attempt}:{messages[-1].content!s}".encode()).digest()
         unit = int.from_bytes(digest[:2], "big") / 65_535
         factor = 1 + (unit * 2 - 1) * self.provider_policy.jitter_ratio
         return min(self.provider_policy.max_delay_s, round(base * factor, 3))
@@ -286,13 +310,17 @@ def _predicate(payload: PredicatePayload):
 
 
 def _schema_repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMessage, ...]:
-    repair = ModelMessage(
-        role="system",
-        content=(
-            "The previous response was rejected because it was not one complete valid JSON object. "
-            "Do not repeat, quote, summarize, or explain the supplied task context. "
-            "Return only an object with top-level keys hypotheses and "
-            'hypothesis_set_completeness; hypothesis_set_completeness must be "unknown".'
-        ),
+    repair_instruction = (
+        "The previous response was rejected because it was not one complete valid JSON object. "
+        "Do not repeat, quote, summarize, or explain the supplied task context. "
+        "Return only an object with top-level keys hypotheses and "
+        'hypothesis_set_completeness; hypothesis_set_completeness must be "unknown".'
     )
-    return (*messages[:-1], repair, messages[-1])
+    system = messages[0]
+    if system.role != "system" or not isinstance(system.content, str):
+        raise ValueError("hypothesis repair requires one public text system instruction")
+    repaired_system = ModelMessage(
+        role="system",
+        content=f"{system.content}\n\n{repair_instruction}",
+    )
+    return (repaired_system, *messages[1:])

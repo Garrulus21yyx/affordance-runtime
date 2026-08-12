@@ -46,47 +46,39 @@ def project_case_result(
     metric_collisions = canonical_metric_collisions(instrumentation.custom_metrics)
     metadata = _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot)
     sent_unknown = (
-        result.sent_unknown_count
-        if result is not None
-        else metadata.sent_unknown_count
-        if metadata is not None
-        else 0
+        result.sent_unknown_count if result is not None else metadata.sent_unknown_count if metadata is not None else 0
     )
     values = _metric_values(result, instrumentation, sent_unknown, metadata)
-    measurements = {
-        name: MetricMeasurement(value, value is not None) for name, value in values.items()
-    }
+    measurements = {name: MetricMeasurement(value, value is not None) for name, value in values.items()}
     measurements["duplicate_unknown_attempts"] = MetricMeasurement(
-        values["duplicate_unknown_attempts"], True, sent_unknown,
+        values["duplicate_unknown_attempts"],
+        True,
+        sent_unknown,
     )
     stale_opportunities = values["stale_opportunities"]
     assert isinstance(stale_opportunities, int)
     measurements["stale_zero_call_violations"] = MetricMeasurement(
-        values["stale_zero_call_violations"], True, stale_opportunities,
+        values["stale_zero_call_violations"],
+        True,
+        stale_opportunities,
     )
     agent_failure = _agent_failure_code(result)
     component_origin, normalized_component_code = _component_failure(instrumentation)
     component_code = (
         _safe_code(normalized_component_code, "runtime_failure")
-        if component_origin is not CaseFailureOrigin.NONE else ""
+        if component_origin is not CaseFailureOrigin.NONE
+        else ""
     )
-    exception_class = _safe_exception_class(
-        instrumentation.exception_class
+    exception_class = _safe_exception_class(instrumentation.exception_class)
+    policy_code = str(result.policy_failure.kind) if result is not None and result.policy_failure is not None else ""
+    cleanup_code = (
+        _safe_code(instrumentation.cleanup_failure_code, "cleanup_exception")
+        if instrumentation.cleanup_failures
+        else ""
     )
-    policy_code = (
-        str(result.policy_failure.kind)
-        if result is not None and result.policy_failure is not None else ""
-    )
-    cleanup_code = _safe_code(
-        instrumentation.cleanup_failure_code, "cleanup_exception"
-    ) if instrumentation.cleanup_failures else ""
     integrity_code = "metric_name_collision" if metric_collisions else ""
-    canonical_runtime_failure = (
-        getattr(result, "runtime_failure", None) if result is not None else None
-    )
-    public_runtime_failure = (
-        canonical_runtime_failure.code if canonical_runtime_failure is not None else ""
-    )
+    canonical_runtime_failure = getattr(result, "runtime_failure", None) if result is not None else None
+    public_runtime_failure = canonical_runtime_failure.code if canonical_runtime_failure is not None else ""
     if (
         result is None
         and not public_runtime_failure
@@ -105,11 +97,7 @@ def project_case_result(
         else ""
     )
     task_outcome_code = (
-        task_outcome.code
-        if task_outcome is not None
-        else metadata.task_outcome_code
-        if metadata is not None
-        else ""
+        task_outcome.code if task_outcome is not None else metadata.task_outcome_code if metadata is not None else ""
     )
     facts = FailureFacts(
         public_runtime_failure,
@@ -118,8 +106,7 @@ def project_case_result(
         component_origin,
         component_code,
         exception_class,
-        _safe_code(instrumentation.watchdog_code, "case_timeout")
-        if instrumentation.watchdog_code else "",
+        _safe_code(instrumentation.watchdog_code, "case_timeout") if instrumentation.watchdog_code else "",
         cleanup_code,
         _safe_exception_class(instrumentation.cleanup_exception_class),
         integrity_code,
@@ -140,9 +127,7 @@ def project_case_result(
         termination_origin=legacy.termination_origin,
         case_failure_code=legacy.case_failure_code,
         partial_episode_available=result is None and metadata is not None,
-        latest_semantic_attempt_key_digest=(
-            metadata.latest_semantic_attempt_key_digest if metadata else ""
-        ),
+        latest_semantic_attempt_key_digest=(metadata.latest_semantic_attempt_key_digest if metadata else ""),
         same_attempt_streak=metadata.same_attempt_streak if metadata else 0,
         no_progress_count=metadata.no_progress_count if metadata else 0,
         last_progress_event_type=metadata.last_progress_event_type if metadata else "",
@@ -156,19 +141,13 @@ def project_case_result(
         last_world_coverage=metadata.last_world_coverage if metadata else "",
         pending_kind=metadata.pending_kind if metadata else "",
         latest_task_status=metadata.latest_task_status if metadata else "",
-        latest_action_evaluation_status=(
-            metadata.latest_action_evaluation_status if metadata else ""
-        ),
+        latest_action_evaluation_status=(metadata.latest_action_evaluation_status if metadata else ""),
         runtime_reason_code=public_runtime_failure,
         agent_failure_code=agent_failure,
         cleanup_failure_code=cleanup_code,
-        cleanup_exception_class=_safe_exception_class(
-            instrumentation.cleanup_exception_class
-        ),
+        cleanup_exception_class=_safe_exception_class(instrumentation.cleanup_exception_class),
         cleanup_failures=instrumentation.cleanup_failures,
-        watchdog_triggered=(
-            bool(instrumentation.watchdog_code)
-        ),
+        watchdog_triggered=(bool(instrumentation.watchdog_code)),
         harness_integrity_code=integrity_code,
         harness_integrity_failures=int(bool(metric_collisions)),
         failure_facts=facts,
@@ -197,10 +176,30 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
     values = {
         "observations": result.observation_count if result else snapshot.observation_count if snapshot else 0,
         "executions": result.execution_count if result else snapshot.execution_count if snapshot else 0,
-        "currentness_probes": result.currentness_probe_count if result else snapshot.currentness_probe_count if snapshot else 0,
+        "currentness_probes": result.currentness_probe_count
+        if result
+        else snapshot.currentness_probe_count
+        if snapshot
+        else 0,
         "turns": result.control_transition_total_count if result else snapshot.completed_turn_count if snapshot else 0,
         "policy_calls": state.policy_calls,
+        "policy_schema_repair_count": state.policy_schema_repair_count,
         "requirement_hypothesis_calls": state.requirement_hypothesis_calls,
+        "requirement_hypothesis_schema_repair_count": (state.requirement_hypothesis_schema_repair_count),
+        "requirement_hypothesis_accepted_count": (
+            getattr(result, "requirement_hypothesis_accepted_count", 0)
+            if result
+            else getattr(snapshot, "requirement_hypothesis_accepted_count", 0)
+            if snapshot
+            else 0
+        ),
+        "requirement_hypothesis_rejected_count": (
+            getattr(result, "requirement_hypothesis_rejected_count", 0)
+            if result
+            else getattr(snapshot, "requirement_hypothesis_rejected_count", 0)
+            if snapshot
+            else 0
+        ),
         "semantic_judge_calls": state.semantic_judge_calls,
         "provider_attempts": state.provider_attempts,
         "confirmations": state.confirmations_submitted,
@@ -221,7 +220,8 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "model_latency_ms": state.model_latency_ms,
         "cleanup_failures": state.cleanup_failures,
         "observation_contract_exceptions": int(
-            state.failure_origin in {
+            state.failure_origin
+            in {
                 CaseFailureOrigin.INITIAL_OBSERVATION,
                 CaseFailureOrigin.OBSERVATION_PROJECTION,
                 CaseFailureOrigin.POST_ACTION_OBSERVATION,
@@ -239,11 +239,13 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         if snapshot is not None
         else ()
     )
-    values.update({
-        "ask_user_count": kind_counts.get("AskUser", 0),
-        "wait_count": kind_counts.get("Wait", 0),
-        "page_request_count": kind_counts.get("RequestActionPage", 0),
-    })
+    values.update(
+        {
+            "ask_user_count": kind_counts.get("AskUser", 0),
+            "wait_count": kind_counts.get("Wait", 0),
+            "page_request_count": kind_counts.get("RequestActionPage", 0),
+        }
+    )
     values.update({name: value for name, value in state.custom_metrics.items() if name not in values})
     return values
 
@@ -251,9 +253,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
 def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
     transitions = tuple(getattr(result, "control_transitions", ())) if result is not None else ()
     feedback = tuple(
-        (index, item.control_feedback)
-        for index, item in enumerate(transitions)
-        if item.control_feedback is not None
+        (index, item.control_feedback) for index, item in enumerate(transitions) if item.control_feedback is not None
     )
     kind_counts: dict[str, int] = {}
     source_counts: dict[str, int] = {}
@@ -288,7 +288,8 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
         "feedback_repairable_rejection_count": kind_counts.get("repairable_rejection", 0),
         "feedback_no_information_gain_count": kind_counts.get("no_information_gain", 0),
         "feedback_strategy_transition_required_count": kind_counts.get(
-            "strategy_transition_required", 0,
+            "strategy_transition_required",
+            0,
         ),
         "feedback_action_admission_source_count": source_counts.get("action_admission", 0),
         "feedback_action_page_source_count": source_counts.get("action_page", 0),
@@ -297,8 +298,10 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
         "feedback_progress_event_source_count": source_counts.get("progress_event", 0),
         "feedback_context_delivery_count": (
             getattr(result, "control_feedback_delivery_count", 0)
-            if result is not None else snapshot.control_feedback_delivery_count
-            if snapshot is not None else 0
+            if result is not None
+            else snapshot.control_feedback_delivery_count
+            if snapshot is not None
+            else 0
         ),
         "feedback_related_decision_snapshot_count": related_decision_count,
         "feedback_contract_violation_snapshot_count": contract_violation_count,
@@ -306,27 +309,32 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
         "feedback_recovery_constraints_count": recovery_constraints_count,
         "control_issue_budget_consumption_count": (
             getattr(result, "control_issue_consumption_count", 0)
-            if result is not None else snapshot.control_issue_consumption_count
-            if snapshot is not None else 0
+            if result is not None
+            else snapshot.control_issue_consumption_count
+            if snapshot is not None
+            else 0
         ),
         "control_repetition_termination_count": (
             getattr(result, "control_repetition_count", 0)
-            if result is not None else snapshot.control_repetition_count
-            if snapshot is not None else 0
+            if result is not None
+            else snapshot.control_repetition_count
+            if snapshot is not None
+            else 0
         ),
         "first_opportunity_policy_decision_count": opportunity_counts[1],
         "first_opportunity_admission_corrected_count": corrected_counts[1],
         "second_opportunity_policy_decision_count": opportunity_counts[2],
         "second_opportunity_admission_corrected_count": corrected_counts[2],
         "strategy_transition_feedback_count": kind_counts.get(
-            "strategy_transition_required", 0,
+            "strategy_transition_required",
+            0,
         ),
-        "first_policy_repair_feedback_count": int(any(
-            item is not None
-            and item.kind.value == "repairable_rejection"
-            and transitions[index].sequence == 1
-            for index, item in feedback
-        )),
+        "first_policy_repair_feedback_count": int(
+            any(
+                item is not None and item.kind.value == "repairable_rejection" and transitions[index].sequence == 1
+                for index, item in feedback
+            )
+        ),
         "repair_feedback_zero_call_violation_count": sum(
             bool(
                 item is not None
@@ -340,22 +348,28 @@ def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
             for index, item in feedback
         ),
         "feedback_invalid_action_parameters_code_count": code_counts.get(
-            "invalid_action_parameters", 0,
+            "invalid_action_parameters",
+            0,
         ),
         "feedback_action_outside_action_space_code_count": code_counts.get(
-            "action_outside_action_space", 0,
+            "action_outside_action_space",
+            0,
         ),
         "feedback_action_outside_current_page_code_count": code_counts.get(
-            "action_outside_current_page", 0,
+            "action_outside_current_page",
+            0,
         ),
         "feedback_destination_outside_current_page_code_count": code_counts.get(
-            "destination_outside_current_page", 0,
+            "destination_outside_current_page",
+            0,
         ),
         "feedback_action_page_no_information_gain_code_count": code_counts.get(
-            "action_page_no_information_gain", 0,
+            "action_page_no_information_gain",
+            0,
         ),
         "feedback_observation_no_information_gain_code_count": code_counts.get(
-            "observation_no_information_gain", 0,
+            "observation_no_information_gain",
+            0,
         ),
     }
 
@@ -366,10 +380,10 @@ def _feedback_opportunity_corrected(feedback, following) -> bool:
     if following.control_feedback is not None:
         return False
     if feedback.source.value == "action_admission":
-        return (
-            following.admission is not None
-            and following.admission.status.value in {"admitted", "confirmation_required"}
-        )
+        return following.admission is not None and following.admission.status.value in {
+            "admitted",
+            "confirmation_required",
+        }
     if feedback.source.value == "action_page":
         return following.decision_result == "page_changed"
     if feedback.source.value == "policy_observation":
@@ -397,9 +411,14 @@ def _component_failure_code(
 ) -> str:
     if origin is CaseFailureOrigin.CLEANUP:
         return _safe_code(instrumentation.cleanup_failure_code, "cleanup_exception")
-    if instrumentation.failure_origin not in {
-        CaseFailureOrigin.NONE, CaseFailureOrigin.CLEANUP,
-    } and instrumentation.failure_code:
+    if (
+        instrumentation.failure_origin
+        not in {
+            CaseFailureOrigin.NONE,
+            CaseFailureOrigin.CLEANUP,
+        }
+        and instrumentation.failure_code
+    ):
         return _safe_code(instrumentation.failure_code, "runtime_failure")
     return primary_code
 

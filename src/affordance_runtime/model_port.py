@@ -143,6 +143,7 @@ class ModelPort(Protocol):
     model: str
     endpoint_class: str
     last_call: ModelCallRecord | None
+
     @property
     def supports_multimodal(self) -> bool: ...
 
@@ -314,10 +315,10 @@ class OpenAICompatibleModelPort:
         try:
             content = response["choices"][0]["message"]["content"]
             if isinstance(content, list):
-                content = "".join(
-                    str(item.get("text") or "") for item in content if isinstance(item, dict)
-                )
-            parsed = output_schema.model_validate_json(_structured_json_content(content))
+                content = "".join(str(item.get("text") or "") for item in content if isinstance(item, dict))
+            parsed = output_schema.model_validate_json(
+                _structured_json_content(content, output_schema),
+            )
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self._capture(
                 serialized_messages,
@@ -649,7 +650,10 @@ def _safe_failure_detail(error: StructuredModelError) -> str:
     return detail[:200] if detail.startswith(safe_prefixes) else type(error).__name__
 
 
-def _structured_json_content(content: Any) -> str:
+def _structured_json_content(
+    content: Any,
+    output_schema: type[BaseModel] | None = None,
+) -> str:
     """Normalize a complete Markdown JSON fence while keeping schema validation strict.
 
     Some OpenAI-compatible providers return a complete JSON object inside a
@@ -659,15 +663,60 @@ def _structured_json_content(content: Any) -> str:
     """
 
     text = str(content).strip()
-    if not text.startswith("```") or not text.endswith("```"):
+    if text.startswith("```") and text.endswith("```"):
+        first_newline = text.find("\n")
+        if first_newline >= 0:
+            language = text[3:first_newline].strip().lower()
+            if language in {"", "json", "jsonc", "application/json"}:
+                text = text[first_newline + 1 : -3].strip()
+    if output_schema is None:
         return text
-    first_newline = text.find("\n")
-    if first_newline < 0:
+    try:
+        value = json.loads(
+            text,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
         return text
-    language = text[3:first_newline].strip().lower()
-    if language not in {"", "json", "jsonc", "application/json"}:
+    if not isinstance(value, dict) or len(value) != 1:
         return text
-    return text[first_newline + 1 : -3].strip()
+    wrapper_name, wrapped = next(iter(value.items()))
+    if wrapper_name not in _schema_wrapper_names(output_schema) or not isinstance(wrapped, dict):
+        return text
+    return json.dumps(wrapped, ensure_ascii=False, separators=(",", ":"))
+
+
+def _schema_wrapper_names(output_schema: type[BaseModel]) -> frozenset[str]:
+    names = {
+        item.__name__
+        for item in output_schema.mro()
+        if isinstance(item, type) and issubclass(item, BaseModel) and item is not BaseModel
+    }
+    try:
+        title = output_schema.model_json_schema().get("title")
+    except (AttributeError, TypeError, ValueError):
+        title = None
+    if isinstance(title, str) and title:
+        names.add(title)
+    return frozenset({*names, *(_snake_case(name) for name in names)})
+
+
+def _snake_case(value: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate structured response key")
+        value[key] = item
+    return value
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-standard structured response constant: {value}")
 
 
 def _schema_failure_summary(error: Exception) -> str:
@@ -800,9 +849,9 @@ def _rate_limit_failure_kind(
     error = payload.get("error")
     details = error.get("details", []) if isinstance(error, dict) else []
     quota_failure = any(
-        isinstance(detail, dict)
-        and str(detail.get("@type") or "").endswith("google.rpc.QuotaFailure")
-        for detail in details if isinstance(details, list)
+        isinstance(detail, dict) and str(detail.get("@type") or "").endswith("google.rpc.QuotaFailure")
+        for detail in details
+        if isinstance(details, list)
     )
     if quota_failure and retry_hint_s is None:
         return ProviderFailureKind.QUOTA_EXHAUSTED

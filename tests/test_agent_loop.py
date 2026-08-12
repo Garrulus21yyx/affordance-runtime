@@ -27,8 +27,10 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import (
+    HypothesisItemRejection,
     HypothesisPredicateAssessment,
     HypothesisProposalMode,
+    HypothesisRejectionCode,
     LoopBudget,
     RequirementHypothesisFailure,
     RequirementHypothesisFailureKind,
@@ -38,6 +40,7 @@ from affordance_runtime.task import (
     TaskGoal,
 )
 from affordance_runtime.task.contracts import criterion_id
+from affordance_runtime.task.frontier import synchronize_verified_task_state
 from affordance_runtime.task.frontier_contracts import LiteralExpected, TargetFieldEquals
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
@@ -81,8 +84,13 @@ def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.
     )
     fact = StateFact(f"fact:{observation_id}:enabled", target.target_id, "enabled", enabled, observation_id)
     source = SurfaceObservation(
-        observation_id, "dom", f"revision:{observation_id}", ObservationSourceProfile.dom(),
-        (target,), (fact,), (binding,),
+        observation_id,
+        "dom",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (target,),
+        (fact,),
+        (binding,),
     )
     return WorldObservation(
         observation_id,
@@ -127,9 +135,7 @@ class SharedTaskEvaluator:
         criteria = tuple(
             CriterionEvaluation(
                 criterion_id(item),
-                CriterionEvaluationStatus.SATISFIED
-                if enabled
-                else CriterionEvaluationStatus.UNSATISFIED,
+                CriterionEvaluationStatus.SATISFIED if enabled else CriterionEvaluationStatus.UNSATISFIED,
                 (fact_ref,),
                 "criterion satisfied" if enabled else "criterion unsatisfied",
             )
@@ -161,9 +167,7 @@ class SharedActionEvaluator:
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED
-            if changed
-            else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+            ActionEvaluationStatus.EFFECT_CONFIRMED if changed else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "state changed" if changed else "state did not change",
             (after.facts[0].fact_id,),
         )
@@ -192,9 +196,7 @@ def test_initial_satisfaction_is_zero_execution_done() -> None:
 
 def test_requirement_hypothesis_failure_is_nonterminal_start_metadata() -> None:
     class FailingProposer:
-        async def propose(
-            self, task, observation, action_space, *, mode, observation_cursor=""
-        ):
+        async def propose(self, task, observation, action_space, *, mode, observation_cursor=""):
             del task, observation, action_space, mode, observation_cursor
             return RequirementHypothesisFailure(
                 RequirementHypothesisFailureKind.PROVIDER_UNAVAILABLE,
@@ -213,10 +215,7 @@ def test_requirement_hypothesis_failure_is_nonterminal_start_metadata() -> None:
         )
 
         assert session.state.requirement_hypotheses.hypotheses == ()
-        assert (
-            session.state.requirement_hypothesis_failure_reason
-            == "requirement_hypothesis_provider_unavailable"
-        )
+        assert session.state.requirement_hypothesis_failure_reason == "requirement_hypothesis_provider_unavailable"
         result = await session.run_until_pause()
         assert result.status is AgentLoopStatus.DONE
 
@@ -225,9 +224,7 @@ def test_requirement_hypothesis_failure_is_nonterminal_start_metadata() -> None:
 
 def test_initial_hypothesis_is_admitted_assessed_without_granting_actions() -> None:
     class Proposer:
-        async def propose(
-            self, task, observation, action_space, *, mode, observation_cursor=""
-        ):
+        async def propose(self, task, observation, action_space, *, mode, observation_cursor=""):
             del task, observation, action_space, observation_cursor
             assert mode is HypothesisProposalMode.INITIAL
             return RequirementHypothesisProposalBatch(
@@ -262,10 +259,67 @@ def test_initial_hypothesis_is_admitted_assessed_without_granting_actions() -> N
         assert loop.action_space_builder.build(_task(), world) == actions_before
         result = await session.run_until_pause()
         assert result.status is AgentLoopStatus.DONE
-        assert (
-            session.state.requirement_hypotheses.active[0].assessment
-            is HypothesisPredicateAssessment.SATISFIED
+        assert session.state.requirement_hypotheses.active[0].assessment is HypothesisPredicateAssessment.SATISFIED
+
+    asyncio.run(scenario())
+
+
+def test_mixed_hypothesis_batch_installs_valid_item_and_projects_typed_rejection() -> None:
+    class Proposer:
+        async def propose(self, task, observation, action_space, *, mode, observation_cursor=""):
+            del task, observation, action_space, observation_cursor
+            return RequirementHypothesisProposalBatch(
+                mode,
+                (
+                    RequirementHypothesisProposal(
+                        "Shared state should be enabled",
+                        TargetFieldEquals(
+                            "shared-toggle",
+                            "enabled",
+                            LiteralExpected(True),
+                        ),
+                        ("shared-toggle",),
+                    ),
+                ),
+                (1,),
+                (
+                    HypothesisItemRejection(
+                        0,
+                        HypothesisRejectionCode.INVALID_PREDICATE_CONTRACT,
+                    ),
+                ),
+            )
+
+    async def scenario() -> None:
+        loop = _loop(ScriptedPolicy([]))
+        loop.context_builder = replace(
+            loop.context_builder,
+            requirement_hypothesis_proposer=Proposer(),
         )
+        session = await AgentEpisodeRunner(loop).start(
+            StaticEnvironment([_world("obs-1", False)]),
+            _task(),
+        )
+
+        assert session.state.requirement_hypotheses.active[0].hypothesis_id == "hypothesis:1"
+        assert session.state.requirement_hypothesis_accepted_total_count == 1
+        assert session.state.requirement_hypothesis_rejected_total_count == 1
+        actions = loop.action_space_builder.build(_task(), session.state.current_observation)
+        evaluation = await SharedTaskEvaluator().evaluate(_task(), session.state.current_observation)
+        session.state.install_verified_task_state(
+            synchronize_verified_task_state(_task(), evaluation, session.state.current_observation, None)
+        )
+        context = loop.context_builder.build(
+            _task(),
+            session.state,
+            actions,
+            evaluation,
+        )
+        frontier = context.progress.task_frontier
+        assert frontier is not None
+        assert frontier.requirement_hypotheses[0].hypothesis_id == "hypothesis:1"
+        assert frontier.hypothesis_rejections[0].item_index == 0
+        assert frontier.hypothesis_rejections[0].code == "invalid_hypothesis_predicate_contract"
 
     asyncio.run(scenario())
 
@@ -346,9 +400,7 @@ def test_nonterminal_task_fact_preserves_sent_unknown_pending_without_replay(
             [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
         policy = ScriptedPolicy(["first"])
-        runner = AgentEpisodeRunner(
-            AgentLoop(policy, SharedActionEvaluator(), CanonicalTaskEvaluator())
-        )
+        runner = AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), CanonicalTaskEvaluator()))
         session = await runner.start(environment, _task())
         result = await session.run_until_pause()
         repeated = await session.run_until_pause()
@@ -403,11 +455,13 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
             [_world("obs-1", False), _world("obs-2", False)],
             [_sent()],
         )
-        result = await AgentEpisodeRunner(AgentLoop(
-            ScriptedPolicy(["first"]),
-            RejectingActionEvaluator(),
-            CanonicalTaskEvaluator(),
-        )).run(environment, _task())
+        result = await AgentEpisodeRunner(
+            AgentLoop(
+                ScriptedPolicy(["first"]),
+                RejectingActionEvaluator(),
+                CanonicalTaskEvaluator(),
+            )
+        ).run(environment, _task())
 
         assert result.status is AgentLoopStatus.FAILED
         assert result.reason_code == "action_rejected"
@@ -422,9 +476,7 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
 def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> None:
     async def scenario(decision) -> AgentLoopStatus:
         environment = StaticEnvironment([_world("obs-1", False)])
-        result = await AgentEpisodeRunner(
-            _loop(ScriptedPolicy([decision, decision]))
-        ).run(environment, _task())
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([decision, decision]))).run(environment, _task())
         assert result.execution_count == 0
         return result.status
 
@@ -457,9 +509,7 @@ def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", True)], [_sent()])
         proposal = ProposeDone("context:test", (), (), "claim done", ())
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([proposal, "first"]))).run(
-            environment, _task()
-        )
+        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([proposal, "first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1
         assert isinstance(result.turns[0].decision, ProposeDone)
@@ -535,10 +585,14 @@ def test_read_only_task_cannot_select_an_effectful_option() -> None:
         task = TaskGoal("inspect", "Inspect shared state")
         environment = StaticEnvironment([world])
         result = await AgentEpisodeRunner(
-            _loop(ScriptedPolicy([
-                SelectAction("context:test", effectful_option.action_id),
-                SelectAction("context:test", effectful_option.action_id),
-            ]))
+            _loop(
+                ScriptedPolicy(
+                    [
+                        SelectAction("context:test", effectful_option.action_id),
+                        SelectAction("context:test", effectful_option.action_id),
+                    ]
+                )
+            )
         ).run(environment, task)
 
         assert result.status == AgentLoopStatus.BLOCKED
@@ -579,8 +633,7 @@ def test_recent_turns_are_bounded() -> None:
             source = replace(world.sources[0], targets=(target,))
             observations.append(replace(world, targets=(target,), sources=(source,)))
         decisions = [
-            RequestObservation("context:test", "world", "structural", "structural", "refresh")
-            for _ in range(15)
+            RequestObservation("context:test", "world", "structural", "structural", "refresh") for _ in range(15)
         ] + [Abort("context:test", "enough", "policy")]
         result = await AgentEpisodeRunner(_loop(ScriptedPolicy(decisions))).run(
             StaticEnvironment(observations),
@@ -641,7 +694,9 @@ def test_observation_budget_is_reserved_before_execution() -> None:
     ((True, AgentLoopStatus.DONE), (False, AgentLoopStatus.FAILED)),
 )
 def test_last_turn_refresh_is_evaluated_before_turn_budget(
-    kind: str, fresh_enabled: bool, expected: AgentLoopStatus,
+    kind: str,
+    fresh_enabled: bool,
+    expected: AgentLoopStatus,
 ) -> None:
     class OneRefreshPolicy:
         calls = 0
@@ -650,27 +705,26 @@ def test_last_turn_refresh_is_evaluated_before_turn_budget(
             self.calls += 1
             if kind == "wait":
                 return Wait(context.context_id, "settle", 1)
-            return RequestObservation(
-                context.context_id, "world", "structural", "structural", "refresh"
-            )
+            return RequestObservation(context.context_id, "world", "structural", "structural", "refresh")
 
     async def scenario() -> None:
         task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=2))
         policy = OneRefreshPolicy()
-        environment = StaticEnvironment([
-            _world("initial", False), _world("fresh", fresh_enabled),
-        ])
-        result = await AgentEpisodeRunner(
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, task)
+        environment = StaticEnvironment(
+            [
+                _world("initial", False),
+                _world("fresh", fresh_enabled),
+            ]
+        )
+        result = await AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+            environment, task
+        )
 
         assert result.status is expected
         assert policy.calls == 1
         assert result.observation_count == 2
         assert result.final_observation.observation_id == "fresh"
-        assert result.reason_code == (
-            "task_complete" if fresh_enabled else "turn_budget_exhausted"
-        )
+        assert result.reason_code == ("task_complete" if fresh_enabled else "turn_budget_exhausted")
 
     asyncio.run(scenario())
 

@@ -43,6 +43,29 @@ class HypothesisSetCompleteness(StrEnum):
     UNKNOWN = "unknown"
 
 
+class HypothesisRejectionCode(StrEnum):
+    INVALID_PREDICATE_CONTRACT = "invalid_hypothesis_predicate_contract"
+    INVALID_PROPOSAL_CONTRACT = "invalid_hypothesis_proposal_contract"
+    UNKNOWN_ENTITY = "unknown_hypothesis_entity"
+    UNKNOWN_FACT = "unknown_hypothesis_fact"
+    UNKNOWN_FIELD = "unknown_hypothesis_field"
+    DUPLICATE = "duplicate_hypothesis"
+    CAPACITY_EXCEEDED = "hypothesis_capacity_exceeded"
+    INITIAL_ALREADY_APPLIED = "initial_hypotheses_already_applied"
+
+
+@dataclass(frozen=True)
+class HypothesisItemRejection:
+    item_index: int
+    code: HypothesisRejectionCode
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.item_index < MAX_HYPOTHESES_PER_PROPOSAL:
+            raise ValueError("hypothesis rejection item index is outside the bounded batch")
+        if not isinstance(self.code, HypothesisRejectionCode):
+            raise TypeError("hypothesis rejection code must be typed")
+
+
 @dataclass(frozen=True)
 class RequirementHypothesisProposal:
     summary: str
@@ -68,6 +91,8 @@ class RequirementHypothesisProposal:
 class RequirementHypothesisProposalBatch:
     mode: HypothesisProposalMode
     proposals: tuple[RequirementHypothesisProposal, ...]
+    proposal_item_indices: tuple[int, ...] = ()
+    rejections: tuple[HypothesisItemRejection, ...] = ()
     completeness: HypothesisSetCompleteness = field(
         default=HypothesisSetCompleteness.UNKNOWN,
         init=False,
@@ -77,9 +102,22 @@ class RequirementHypothesisProposalBatch:
         if not isinstance(self.mode, HypothesisProposalMode):
             raise TypeError("hypothesis proposal mode must be typed")
         proposals = tuple(self.proposals)
-        if len(proposals) > MAX_HYPOTHESES_PER_PROPOSAL:
+        indices = tuple(self.proposal_item_indices) or tuple(range(len(proposals)))
+        rejections = tuple(self.rejections)
+        rejected_indices = tuple(item.item_index for item in rejections)
+        if (
+            len(proposals) > MAX_HYPOTHESES_PER_PROPOSAL
+            or len(indices) != len(proposals)
+            or len(set(indices)) != len(indices)
+            or any(not 0 <= item < MAX_HYPOTHESES_PER_PROPOSAL for item in indices)
+            or len(set(rejected_indices)) != len(rejected_indices)
+            or set(indices).intersection(rejected_indices)
+            or len(indices) + len(rejections) > MAX_HYPOTHESES_PER_PROPOSAL
+        ):
             raise ValueError("requirement hypothesis proposal batch exceeds its bound")
         object.__setattr__(self, "proposals", proposals)
+        object.__setattr__(self, "proposal_item_indices", indices)
+        object.__setattr__(self, "rejections", rejections)
 
 
 class RequirementHypothesisFailureKind(StrEnum):
@@ -173,7 +211,4 @@ class RequirementHypothesisState:
 
     @property
     def active(self) -> tuple[TrackedRequirementHypothesis, ...]:
-        return tuple(
-            item for item in self.hypotheses
-            if item.status is TrackedHypothesisStatus.ACTIVE
-        )
+        return tuple(item for item in self.hypotheses if item.status is TrackedHypothesisStatus.ACTIVE)

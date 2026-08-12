@@ -122,15 +122,67 @@ def test_bridge_reuses_model_port_once_with_separate_system_and_user_messages() 
     asyncio.run(scenario())
 
 
+def test_bridge_repairs_one_invalid_decision_schema_without_creating_a_gui_turn() -> None:
+    class RepairingPort(RecordingModelPort):
+        async def generate_structured(self, messages, output_schema, config):
+            if self.calls == 0:
+                self.calls += 1
+                raise StructuredOutputError("invalid decision package")
+            self.calls += 1
+            self.messages = list(messages)
+            assert any(message.role == "system" and "top-level keys" in message.content for message in messages)
+            user = next(message for message in reversed(messages) if message.role == "user")
+            content = user.content
+            assert isinstance(content, str)
+            context = json.loads(content)
+            self.last_call = ModelCallRecord(
+                provider=self.provider,
+                model=self.model,
+                endpoint_class=self.endpoint_class,
+                prompt_version=config.prompt_version,
+                schema_name="AgentDecisionPackagePayload",
+                schema_version=SCHEMA_VERSION,
+                latency_ms=4,
+                response_id="response:repaired",
+            )
+            return output_schema.model_validate(
+                {
+                    "objective_operation": {"kind": "none"},
+                    "decision": {
+                        "type": "abort",
+                        "context_id": context["context_id"],
+                        "reason": "fixture complete",
+                        "category": "policy",
+                    },
+                }
+            )
+
+    async def scenario() -> None:
+        port = RepairingPort()
+        adapter = ModelPortDecisionAdapter(port, _zero_retry_config())
+
+        outcome = await adapter.generate(_build_request(await _context()))
+
+        assert not isinstance(outcome, ModelFailure)
+        assert port.calls == 2
+        assert adapter.last_schema_repair_count == 1
+
+    asyncio.run(scenario())
+
+
 def test_screenshot_ax_profile_sends_exact_typed_image_and_attests_profile() -> None:
     async def scenario() -> None:
         image = b"\x89PNG\r\n\x1a\nfixture"
         context = replace(
             await _context(),
-            image_inputs=(AgentImageInput(
-                "artifact:obs:screen", "image/png", image,
-                __import__("hashlib").sha256(image).hexdigest(),
-            ),),
+            image_inputs=(
+                AgentImageInput(
+                    "artifact:obs:screen",
+                    "image/png",
+                    image,
+                    __import__("hashlib").sha256(image).hexdigest(),
+                ),
+            ),
         )
         transport = RecordingModelPort()
         adapter = ModelPortDecisionAdapter(
@@ -146,9 +198,7 @@ def test_screenshot_ax_profile_sends_exact_typed_image_and_attests_profile() -> 
         assert not isinstance(content, str)
         assert content[0].type == "text"
         assert json.loads(content[0].text)["context_id"] == context.context_id
-        assert content[1].image_url == (
-            "data:image/png;base64," + base64.b64encode(image).decode("ascii")
-        )
+        assert content[1].image_url == ("data:image/png;base64," + base64.b64encode(image).decode("ascii"))
         assert response.metadata.perception_profile == "screenshot-ax.v1"
 
     asyncio.run(scenario())
@@ -178,9 +228,7 @@ def test_bridge_metadata_hashes_endpoint_or_credential_shaped_identifiers() -> N
             model="model with spaces",
             endpoint_class="https://private.example/v1",
         )
-        response = await ModelPortDecisionAdapter(transport, _zero_retry_config()).generate(
-            _build_request(context)
-        )
+        response = await ModelPortDecisionAdapter(transport, _zero_retry_config()).generate(_build_request(context))
 
         assert not isinstance(response, ModelFailure)
         metadata = repr(response.metadata)

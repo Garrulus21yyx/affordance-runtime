@@ -41,38 +41,25 @@ class PartialEpisodeSnapshot:
     control_feedback_delivery_count: int = 0
     control_issue_consumption_count: int = 0
     control_repetition_count: int = 0
+    requirement_hypothesis_accepted_count: int = 0
+    requirement_hypothesis_rejected_count: int = 0
 
 
 def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot:
     state = session.state
     latest_transition = next(
-        (
-            item
-            for item in reversed(state.recent_control_transitions)
-            if item.action_evaluation is not None
-        ),
+        (item for item in reversed(state.recent_control_transitions) if item.action_evaluation is not None),
         None,
     )
-    latest_action = (
-        latest_transition.action_evaluation if latest_transition is not None else None
-    )
+    latest_action = latest_transition.action_evaluation if latest_transition is not None else None
     key = session.progress_controller.latest_attempt_key
     latest_event = state.recent_progress_events[-1] if state.recent_progress_events else None
     latest_task = state.current_task_evaluation
-    if (
-        latest_task is not None
-        and latest_task.observation_id != state.current_observation.observation_id
-    ):
+    if latest_task is not None and latest_task.observation_id != state.current_observation.observation_id:
         latest_task = None
-    latest_control = (
-        state.recent_control_transitions[-1]
-        if state.recent_control_transitions
-        else None
-    )
+    latest_control = state.recent_control_transitions[-1] if state.recent_control_transitions else None
     latest_receipt = (
-        latest_control.attempt_receipts[-1]
-        if latest_control is not None and latest_control.attempt_receipts
-        else None
+        latest_control.attempt_receipts[-1] if latest_control is not None and latest_control.attempt_receipts else None
     )
     return PartialEpisodeSnapshot(
         session.observation_count,
@@ -86,9 +73,7 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         session.progress_controller.no_progress_count,
         latest_event.event_type if latest_event else "",
         state.sent_unknown_total_count,
-        type(state.recent_control_transitions[-1].decision).__name__
-        if state.recent_control_transitions
-        else "",
+        type(state.recent_control_transitions[-1].decision).__name__ if state.recent_control_transitions else "",
         len(session.current_action_space.options) if session.current_action_space is not None else 0,
         len(state.current_observation.targets),
         _coverage_summary(state.current_observation.coverage),
@@ -103,16 +88,14 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         else "",
         str(latest_receipt.operation) if latest_receipt is not None else "",
         latest_receipt.reason_code if latest_receipt is not None else "",
-        str(latest_task.outcome.kind)
-        if latest_task is not None and latest_task.outcome is not None
-        else "",
-        latest_task.outcome.code
-        if latest_task is not None and latest_task.outcome is not None
-        else "",
+        str(latest_task.outcome.kind) if latest_task is not None and latest_task.outcome is not None else "",
+        latest_task.outcome.code if latest_task is not None and latest_task.outcome is not None else "",
         state.control_feedback_total_count,
         state.control_feedback_delivery_total_count,
         state.control_issue_consumption_total_count,
         state.control_repetition_total_count,
+        state.requirement_hypothesis_accepted_total_count,
+        state.requirement_hypothesis_rejected_total_count,
     )
 
 

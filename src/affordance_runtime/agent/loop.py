@@ -1,4 +1,5 @@
 """Observe/select/bind/execute/reobserve/evaluate target AgentLoop."""
+
 from __future__ import annotations
 
 import asyncio
@@ -108,16 +109,20 @@ class AgentLoop:
             acquisition = await environment.reset(task)
         except asyncio.CancelledError as exc:
             receipt = _reset_exception_receipt(
-                attempt_id, AttemptDisposition.CANCELLED, "reset_cancelled", "CancelledError",
+                attempt_id,
+                AttemptDisposition.CANCELLED,
+                "reset_cancelled",
+                "CancelledError",
             )
             accounting.record(receipt)
-            raise AgentSessionStartCancelledError(
-                StartBoundaryEvidence(receipt, accounting.snapshot())
-            ) from exc
+            raise AgentSessionStartCancelledError(StartBoundaryEvidence(receipt, accounting.snapshot())) from exc
         except Exception as exc:
             exception_class = safe_exception_class(exc)
             receipt = _reset_exception_receipt(
-                attempt_id, AttemptDisposition.THREW, "reset_exception", exception_class,
+                attempt_id,
+                AttemptDisposition.THREW,
+                "reset_exception",
+                exception_class,
             )
             accounting.record(receipt)
             raise AgentSessionStartError(
@@ -129,7 +134,10 @@ class AgentLoop:
             ) from exc
         if not isinstance(acquisition, ObservationAcquisition):
             receipt = _reset_exception_receipt(
-                attempt_id, AttemptDisposition.MALFORMED, "reset_malformed", "",
+                attempt_id,
+                AttemptDisposition.MALFORMED,
+                "reset_malformed",
+                "",
             )
             accounting.record(receipt)
             raise AgentSessionStartError(
@@ -160,7 +168,12 @@ class AgentLoop:
             current, remaining_turns=task.loop_budget.max_turns, recent_turn_limit=self.recent_turn_limit
         )
         session = AgentRunSession(
-            self, task, environment, state, intent_context, accounting,
+            self,
+            task,
+            environment,
+            state,
+            intent_context,
+            accounting,
         )
         await self._initialize_requirement_hypotheses(session)
         return session
@@ -189,8 +202,7 @@ class AgentLoop:
         state = session.state
         if (
             self.context_builder.requirement_hypothesis_proposer is None
-            or state.requirement_hypothesis_proposal_count
-            >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
+            or state.requirement_hypothesis_proposal_count >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
             or _hypothesis_basis(state) == state.requirement_hypothesis_last_basis
         ):
             return
@@ -228,6 +240,7 @@ class AgentLoop:
                 "requirement_hypothesis_proposer_failed",
             )
         if isinstance(proposed, RequirementHypothesisFailure):
+            session.state.record_requirement_hypothesis_admission(0, ())
             session.state.install_requirement_hypotheses(
                 state.requirement_hypotheses,
                 failure_reason=proposed.reason_code,
@@ -239,6 +252,10 @@ class AgentLoop:
             state.current_observation,
         )
         reason = admitted.rejected_codes[0].value if admitted.rejected_codes else ""
+        session.state.record_requirement_hypothesis_admission(
+            admitted.accepted_count,
+            admitted.rejections,
+        )
         session.state.install_requirement_hypotheses(
             admitted.state,
             failure_reason=reason,
@@ -263,11 +280,8 @@ class AgentLoop:
                 current = state.current_task_evaluation
                 task_evaluation = (
                     current
-                    if current is not None
-                    and current.observation_id == state.current_observation.observation_id
-                    else await validated_task_evaluation(
-                        self.task_evaluator, task, state.current_observation
-                    )
+                    if current is not None and current.observation_id == state.current_observation.observation_id
+                    else await validated_task_evaluation(self.task_evaluator, task, state.current_observation)
                 )
             except ValueError as exc:
                 outcome = Terminate(
@@ -277,9 +291,7 @@ class AgentLoop:
                     failure_stage=FailureStage.EVALUATION,
                     failure_kind=FailureKind.INVALID_OUTPUT,
                 )
-                return self._close_confirmation(
-                    session, outcome, "task_evaluation_invalid"
-                )
+                return self._close_confirmation(session, outcome, "task_evaluation_invalid")
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -293,9 +305,7 @@ class AgentLoop:
             state.current_task_evaluation = task_evaluation
             audit_task_frontier(session, task_evaluation)
             if session.confirmation_continuation_scope is not None:
-                session.confirmation_continuation_scope.record_evaluations(
-                    task=task_evaluation
-                )
+                session.confirmation_continuation_scope.record_evaluations(task=task_evaluation)
             task_disposition = task_evaluation_disposition(task_evaluation)
             if task_disposition.status is not None:
                 task_outcome = directive(
@@ -305,21 +315,14 @@ class AgentLoop:
                     task_terminal=task_disposition.task_terminal,
                 )
                 assert not isinstance(task_outcome, Continue)
-                return self._close_confirmation(
-                    session, task_outcome, task_disposition.reason_code
-                )
-            if (
-                session.approved_confirmation is None
-                and state.remaining_turns <= 0
-            ):
+                return self._close_confirmation(session, task_outcome, task_disposition.reason_code)
+            if session.approved_confirmation is None and state.remaining_turns <= 0:
                 outcome = Terminate(
                     AgentLoopStatus.FAILED,
                     "turn_budget_exhausted",
                     "agent loop turn budget exhausted",
                 )
-                return self._close_confirmation(
-                    session, outcome, "turn_budget_exhausted"
-                )
+                return self._close_confirmation(session, outcome, "turn_budget_exhausted")
             action_space = self.action_space_builder.build(task, state.current_observation)
             await self._maybe_augment_requirement_hypotheses(session, action_space)
             ensure_current_action_page(session, action_space, self.context_builder)
@@ -332,7 +335,9 @@ class AgentLoop:
             state.begin_control_epoch(
                 current_semantic_scope(state, action_space),
                 public_action_page_result_digest(
-                    state.current_observation, action_space, session.current_action_page,
+                    state.current_observation,
+                    action_space,
+                    session.current_action_page,
                 ),
             )
             if session.approved_confirmation is not None:
@@ -350,12 +355,8 @@ class AgentLoop:
                     self.action_space_builder,
                 )
             scope = session.confirmation_continuation_scope
-            if scope is not None and (
-                scope.has_effectful_execution or not isinstance(outcome, Continue)
-            ):
-                outcome = self._close_confirmation(
-                    session, outcome, scope.reason_code
-                )
+            if scope is not None and (scope.has_effectful_execution or not isinstance(outcome, Continue)):
+                outcome = self._close_confirmation(session, outcome, scope.reason_code)
             if isinstance(outcome, Continue):
                 continue
             return outcome
@@ -382,13 +383,19 @@ class AgentLoop:
         return (await self._execute_admitted(session, admitted, decision, scope)).routed
 
     async def _execute_confirmed(
-        self, session: AgentRunSession, action_space: ActionSpace, task_evaluation,
+        self,
+        session: AgentRunSession,
+        action_space: ActionSpace,
+        task_evaluation,
     ) -> LoopDirective:
         confirmed = session.approved_confirmation
         assert confirmed is not None
         candidates = []
         for option in action_space.options:
-            if option.semantic_action != confirmed.intent.semantic_action or option.target_id != confirmed.intent.target_id:
+            if (
+                option.semantic_action != confirmed.intent.semantic_action
+                or option.target_id != confirmed.intent.target_id
+            ):
                 continue
             try:
                 selection = self.action_space_builder.admit(
@@ -417,9 +424,9 @@ class AgentLoop:
             candidates.append((selection, assessment))
         exact = next(
             (
-                item for item in candidates
-                if item[1].subject == confirmed.subject
-                and item[1].subject_id == confirmed.subject_id
+                item
+                for item in candidates
+                if item[1].subject == confirmed.subject and item[1].subject_id == confirmed.subject_id
             ),
             None,
         )
@@ -431,9 +438,7 @@ class AgentLoop:
                     "risk_blocked_after_confirmation",
                     assessment.reason,
                 )
-                return self._close_confirmation(
-                    session, outcome, "risk_blocked_after_confirmation"
-                )
+                return self._close_confirmation(session, outcome, "risk_blocked_after_confirmation")
             if assessment.decision not in {
                 RiskDecisionKind.ALLOW,
                 RiskDecisionKind.NEEDS_CONFIRMATION,
@@ -443,9 +448,7 @@ class AgentLoop:
                     "risk_invalid_after_confirmation",
                     "fresh risk decision is invalid",
                 )
-                return self._close_confirmation(
-                    session, outcome, "risk_invalid_after_confirmation"
-                )
+                return self._close_confirmation(session, outcome, "risk_invalid_after_confirmation")
             execution_page = self.context_builder.execution_page(
                 action_space,
                 session.state,
@@ -476,18 +479,11 @@ class AgentLoop:
             )
             scope = session.confirmation_continuation_scope
             assert scope is not None
-            admitted_outcome = await self._execute_admitted(
-                session, selection, decision, scope
-            )
+            admitted_outcome = await self._execute_admitted(session, selection, decision, scope)
             routed = admitted_outcome.routed
-            if (
-                admitted_outcome.disposition
-                is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
-            ):
+            if admitted_outcome.disposition is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED:
                 scope.record_evaluations(task=task_evaluation)
-                return self._close_confirmation(
-                    session, routed, "already_satisfied"
-                )
+                return self._close_confirmation(session, routed, "already_satisfied")
             return routed
         self._close_confirmation(
             session,
@@ -507,15 +503,11 @@ class AgentLoop:
         if progress.disposition != progress_control.SelectionProgressDisposition.EXECUTE:
             scope.set_reason(
                 "already_satisfied"
-                if progress.disposition
-                is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
+                if progress.disposition is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
                 else "no_progress_repetition"
             )
             assert progress.terminal_result is not None
-            if (
-                progress.disposition
-                is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED
-            ):
+            if progress.disposition is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED:
                 from affordance_runtime.agent.control_feedback import (
                     ControlFeedbackSource,
                     route_feedback,
@@ -584,7 +576,9 @@ class AgentLoop:
         selection = admission.admitted
         try:
             assessment = validate_risk_assessment(
-                task, selection, self.risk_policy.assess(task, selection),
+                task,
+                selection,
+                self.risk_policy.assess(task, selection),
             )
         except (TypeError, ValueError):
             scope.record_admission(AdmissionStatus.REJECTED, "risk_assessment_invalid")
@@ -607,11 +601,13 @@ class AgentLoop:
                 dict(selection.parameters),
                 selection.destination_id,
             )
-            state.set_pending_confirmation(build_confirmation_request(
-                intent,
-                assessment,
-                build_agent_world_view(state.current_observation),
-            ))
+            state.set_pending_confirmation(
+                build_confirmation_request(
+                    intent,
+                    assessment,
+                    build_agent_world_view(state.current_observation),
+                )
+            )
             return Pause(AgentLoopStatus.WAITING_CONFIRMATION, "confirmation_required", assessment.reason)
         if assessment.decision is RiskDecisionKind.ALLOW:
             scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
@@ -633,41 +629,51 @@ class AgentLoop:
             assert session.last_result is not None
             return session.last_result
         if pending is None:
-            return project_result(session, Terminate(
-                AgentLoopStatus.BLOCKED, "invalid_confirmation_decision",
-                "no confirmation is pending",
-            ))
+            return project_result(
+                session,
+                Terminate(
+                    AgentLoopStatus.BLOCKED,
+                    "invalid_confirmation_decision",
+                    "no confirmation is pending",
+                ),
+            )
         if not isinstance(decision.decision, ConfirmationDecisionKind):
-            return project_result(session, Pause(
-                AgentLoopStatus.WAITING_CONFIRMATION, "invalid_confirmation_decision",
-                "confirmation decision kind is invalid",
-            ))
+            return project_result(
+                session,
+                Pause(
+                    AgentLoopStatus.WAITING_CONFIRMATION,
+                    "invalid_confirmation_decision",
+                    "confirmation decision kind is invalid",
+                ),
+            )
         if decision.confirmation_id in session.resolved_confirmation_ids:
-            return project_result(session, Pause(
-                AgentLoopStatus.WAITING_CONFIRMATION, "invalid_confirmation_decision",
-                "confirmation decision is stale or already resolved",
-            ))
+            return project_result(
+                session,
+                Pause(
+                    AgentLoopStatus.WAITING_CONFIRMATION,
+                    "invalid_confirmation_decision",
+                    "confirmation decision is stale or already resolved",
+                ),
+            )
         if not decision.matches(pending):
-            return project_result(session, Pause(
-                AgentLoopStatus.WAITING_CONFIRMATION, "invalid_confirmation_decision",
-                "confirmation decision identity mismatch",
-            ))
+            return project_result(
+                session,
+                Pause(
+                    AgentLoopStatus.WAITING_CONFIRMATION,
+                    "invalid_confirmation_decision",
+                    "confirmation decision identity mismatch",
+                ),
+            )
         session.resolved_confirmation_ids.add(decision.confirmation_id)
         source_transition_id = session.state.pending_confirmation_transition_id
         root = next(
-            item
-            for item in session.state.recent_control_transitions
-            if item.transition_id == source_transition_id
+            item for item in session.state.recent_control_transitions if item.transition_id == source_transition_id
         )
-        scope = ControlContinuationScope(
-            session.state, root.decision, source_transition_id
-        )
+        scope = ControlContinuationScope(session.state, root.decision, source_transition_id)
         session.confirmation_continuation_scope = scope
         session.state.clear_pending_confirmation()
         try:
-            outcome = await self._continue_confirmation(
-                session, decision, pending, source_transition_id, scope
-            )
+            outcome = await self._continue_confirmation(session, decision, pending, source_transition_id, scope)
             return project_result(session, outcome)
         except asyncio.CancelledError as exc:
             self._close_confirmation_exception(session, exc)
@@ -693,9 +699,7 @@ class AgentLoop:
                 "observation_budget_exhausted",
                 "agent loop observation budget exhausted",
             )
-            return self._close_confirmation(
-                session, outcome, "observation_budget_exhausted"
-            )
+            return self._close_confirmation(session, outcome, "observation_budget_exhausted")
         session.approved_confirmation = pending
         session.approved_confirmation_transition_id = source_transition_id
         previous_id = session.state.current_observation.observation_id
@@ -744,9 +748,7 @@ class AgentLoop:
             return
         cancelled = isinstance(exc, asyncio.CancelledError)
         scope.set_reason("runtime_cancelled" if cancelled else "runtime_exception")
-        scope.set_resulting_status(
-            AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED
-        )
+        scope.set_resulting_status(AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED)
         outcome = Terminate(
             AgentLoopStatus.CANCELLED if cancelled else AgentLoopStatus.FAILED,
             "runtime_cancelled" if cancelled else "runtime_exception",
@@ -755,6 +757,7 @@ class AgentLoop:
         session.approved_confirmation = None
         session.approved_confirmation_transition_id = ""
         session.confirmation_continuation_scope = None
+
 
 @dataclass(frozen=True)
 class _AdmittedOutcome:

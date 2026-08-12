@@ -49,14 +49,37 @@ from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionA
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
 
 REQUIRED_METRICS = (
-    "observations", "executions", "turns", "currentness_probes",
-    "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
-    "click_calls", "fill_calls", "select_calls", "policy_calls",
-    "requirement_hypothesis_calls", "provider_attempts",
-    "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
-    "already_satisfied_suppressions", "no_progress_terminations", "official_success_count",
-    "sent_unknown_count", "duplicate_unknown_attempts", "forbidden_effect_attempts",
-    "stale_zero_call_violations", "provider_retry_count", "fallback_count", "cleanup_failures",
+    "observations",
+    "executions",
+    "turns",
+    "currentness_probes",
+    "browsergym_reset_calls",
+    "browsergym_step_calls",
+    "browsergym_probe_calls",
+    "click_calls",
+    "fill_calls",
+    "select_calls",
+    "policy_calls",
+    "policy_schema_repair_count",
+    "requirement_hypothesis_calls",
+    "requirement_hypothesis_schema_repair_count",
+    "requirement_hypothesis_accepted_count",
+    "requirement_hypothesis_rejected_count",
+    "provider_attempts",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "model_latency_ms",
+    "already_satisfied_suppressions",
+    "no_progress_terminations",
+    "official_success_count",
+    "sent_unknown_count",
+    "duplicate_unknown_attempts",
+    "forbidden_effect_attempts",
+    "stale_zero_call_violations",
+    "provider_retry_count",
+    "fallback_count",
+    "cleanup_failures",
     "observation_contract_exceptions",
 )
 _TERMINAL_STATUSES = tuple(item for item in AgentLoopStatus if item is not AgentLoopStatus.RUNNING)
@@ -78,8 +101,12 @@ async def run_breadth_campaign(
     digest = breadth_manifest_digest(manifest)
     run_id = f"miniwob-60:{uuid.uuid4().hex}"
     progress = CampaignProgressWriter(
-        output_dir / "campaign-progress.json", manifest.campaign_id, run_id,
-        _git_sha(), digest, len(manifest.cases),
+        output_dir / "campaign-progress.json",
+        manifest.campaign_id,
+        run_id,
+        _git_sha(),
+        digest,
+        len(manifest.cases),
     )
     progress.write()
     pacing_state = FixedPacingState()
@@ -90,16 +117,23 @@ async def run_breadth_campaign(
         raise ValueError("target-loop manifest identity is not canonical")
     suite = await run_suite(target_manifest, _progress_callback(progress))
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
-    records = tuple(
-        _record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True)
-    )
+    records = tuple(_record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True))
     provider, model, grounding = _model_identity(
-        instrumentations, configured_identity,
+        instrumentations,
+        configured_identity,
     )
     final_sha, final_dirty = _final_git_identity()
     acceptance = _accept_campaign(
-        manifest, suite, records, provider, model, grounding, provider_capacity,
-        harness_digest, final_sha, final_dirty,
+        manifest,
+        suite,
+        records,
+        provider,
+        model,
+        grounding,
+        provider_capacity,
+        harness_digest,
+        final_sha,
+        final_dirty,
     )
     progress.completed_cases = len(records)
     progress.success_count = acceptance.successful_cases
@@ -109,7 +143,15 @@ async def run_breadth_campaign(
     progress.model_latency_ms = sum(_number(item.result, "model_latency_ms") for item in records)
     progress.write(current_case_id=records[-1].case_id, complete=True)
     return MiniWobBreadthCampaignOutcome(
-        run_id, manifest, digest, suite, records, acceptance, provider, model, grounding,
+        run_id,
+        manifest,
+        digest,
+        suite,
+        records,
+        acceptance,
+        provider,
+        model,
+        grounding,
         provider_capacity,
     )
 
@@ -133,7 +175,11 @@ def _target_manifest(
         for item in manifest.cases
     )
     return BenchmarkManifest(
-        manifest.schema_version, manifest.campaign_id, "mistral-format-only-v1", 7, cases,
+        manifest.schema_version,
+        manifest.campaign_id,
+        "mistral-format-only-v1",
+        7,
+        cases,
     )
 
 
@@ -151,13 +197,18 @@ def _target_case(
     def environment_factory(instrumentation):
         try:
             environment, task = BrowserGymMiniWobEnvironment.open(
-                case.task_id, case.seed, max_turns=case.max_turns, admitted_task_ids=admitted,
+                case.task_id,
+                case.seed,
+                max_turns=case.max_turns,
+                admitted_task_ids=admitted,
             )
         except BaseException as exc:
             _initialize_custom_metrics(instrumentation)
             if isinstance(exc, Exception):
                 instrumentation.record_failure(
-                    CaseFailureOrigin.ENVIRONMENT_RESET, "browsergym_open_exception", exc,
+                    CaseFailureOrigin.ENVIRONMENT_RESET,
+                    "browsergym_open_exception",
+                    exc,
                 )
             raise
         holder.update(environment=environment, task=task)
@@ -172,8 +223,10 @@ def _target_case(
         instrumentations.append(instrumentation)
         observer = ProgressEventObserver(instrumentation)
         paced = PacedAgentPolicy(
-            base_policy, manifest.minimum_policy_call_interval_s,
-            state=pacing_state, context_observer=observer,
+            base_policy,
+            manifest.minimum_policy_call_interval_s,
+            state=pacing_state,
+            context_observer=observer,
         )
         paced_proposer = (
             PacedRequirementHypothesisProposer(
@@ -192,9 +245,16 @@ def _target_case(
         )
 
     return BenchmarkCase(
-        case.case_id, manifest.campaign_id, case.capability_profile,
-        task_factory, environment_factory, composition_factory, _TERMINAL_STATUSES,
-        case.timeout_s, case.seed, REQUIRED_METRICS,
+        case.case_id,
+        manifest.campaign_id,
+        case.capability_profile,
+        task_factory,
+        environment_factory,
+        composition_factory,
+        _TERMINAL_STATUSES,
+        case.timeout_s,
+        case.seed,
+        REQUIRED_METRICS,
     )
 
 
@@ -211,10 +271,18 @@ class _BreadthEnvironment(InstrumentedBrowserGymEnvironment):
 
 def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> None:
     for name in (
-        "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
-        "dom_action_calls", "click_calls", "fill_calls", "select_calls",
-        "official_verifier_queries", "official_success_count", "fallback_count",
-        "already_satisfied_suppressions", "no_progress_terminations",
+        "browsergym_reset_calls",
+        "browsergym_step_calls",
+        "browsergym_probe_calls",
+        "dom_action_calls",
+        "click_calls",
+        "fill_calls",
+        "select_calls",
+        "official_verifier_queries",
+        "official_success_count",
+        "fallback_count",
+        "already_satisfied_suppressions",
+        "no_progress_terminations",
     ):
         if name not in instrumentation.custom_metrics:
             instrumentation.set_custom_metric(name, 0)
@@ -227,7 +295,8 @@ def _derived_metrics(result):
         if name != "no_progress_terminations" and name in result.measurements
     }
     values["no_progress_terminations"] = MetricMeasurement(
-        int(result.terminal_reason_code is TerminalReasonCode.NO_PROGRESS_REPETITION), True,
+        int(result.terminal_reason_code is TerminalReasonCode.NO_PROGRESS_REPETITION),
+        True,
     )
     return replace(result, measurements=values)
 
@@ -242,15 +311,21 @@ def _record(case, result, instrumentation=None) -> MiniWobBreadthCaseRecord:
         classified.outcome,
         classified.source,
         result,
-        tuple(
-            dict(item) for item in getattr(instrumentation, "policy_trace", ())
-        ),
+        tuple(dict(item) for item in getattr(instrumentation, "policy_trace", ())),
     )
 
 
 def _accept_campaign(
-    manifest, suite, records, provider, model, grounding, provider_capacity,
-    harness_digest, final_sha, final_dirty,
+    manifest,
+    suite,
+    records,
+    provider,
+    model,
+    grounding,
+    provider_capacity,
+    harness_digest,
+    final_sha,
+    final_dirty,
 ) -> MiniWobBreadthCampaignAcceptance:
     errors: list[str] = []
     identities = tuple(item.case_id for item in records)
@@ -292,8 +367,7 @@ def _accept_campaign(
         missing = [
             name
             for name in REQUIRED_METRICS
-            if name not in record.result.measurements
-            or not record.result.measurements[name].measured
+            if name not in record.result.measurements or not record.result.measurements[name].measured
         ]
         if missing:
             errors.append(f"{record.case_id}: required metrics are incomplete")
@@ -318,16 +392,18 @@ def _accept_campaign(
             errors.append(f"{record.case_id}: profile identity mismatch")
         if record.result.seed != 7 or record.result.manifest_digest != identity.manifest_digest:
             errors.append(f"{record.case_id}: seed or manifest identity mismatch")
-        observation_exceptions = record.result.measurements.get(
-            "observation_contract_exceptions"
-        )
+        observation_exceptions = record.result.measurements.get("observation_contract_exceptions")
         if observation_exceptions is None or not observation_exceptions.measured:
             errors.append(f"{record.case_id}: observation contract exception gate is unmeasured")
         elif observation_exceptions.value != 0:
             errors.append(f"{record.case_id}: observation contract exception gate is nonzero")
     for name in (
-        "provider_retry_count", "fallback_count", "cleanup_failures",
-        "forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations",
+        "provider_retry_count",
+        "fallback_count",
+        "cleanup_failures",
+        "forbidden_effect_attempts",
+        "duplicate_unknown_attempts",
+        "stale_zero_call_violations",
     ):
         for item in records:
             measurement = item.result.measurements.get(name)
@@ -353,6 +429,7 @@ def _progress_callback(progress: CampaignProgressWriter):
         progress.model_latency_ms += _number(result, "model_latency_ms")
         progress.last_completed_case_digest = case_progress_digest(result)
         progress.write(current_case_id=result.case_id)
+
     return completed
 
 
@@ -417,13 +494,15 @@ def expected_target_manifest_digest(manifest: MiniWobBreadthManifest) -> str:
         )
         for case in manifest.cases
     )
-    return target_manifest_digest(BenchmarkManifest(
-        manifest.schema_version,
-        manifest.campaign_id,
-        "mistral-format-only-v1",
-        7,
-        cases,
-    ))
+    return target_manifest_digest(
+        BenchmarkManifest(
+            manifest.schema_version,
+            manifest.campaign_id,
+            "mistral-format-only-v1",
+            7,
+            cases,
+        )
+    )
 
 
 def _unreachable_factory(*_args):
@@ -462,7 +541,12 @@ def _final_git_identity() -> tuple[str, bool]:
     import subprocess
 
     sha = _git_sha()
-    dirty = bool(subprocess.run(
-        ("git", "status", "--short"), check=True, capture_output=True, text=True,
-    ).stdout.strip())
+    dirty = bool(
+        subprocess.run(
+            ("git", "status", "--short"),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
     return sha, dirty

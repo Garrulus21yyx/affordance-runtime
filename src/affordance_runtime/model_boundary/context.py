@@ -138,6 +138,13 @@ class AgentTaskFrontierView:
     requirement_hypotheses: tuple[AgentRequirementHypothesisView, ...] = ()
     hypothesis_set_completeness: str = "unknown"
     hypothesis_failure_reason: str = ""
+    hypothesis_rejections: tuple["AgentHypothesisRejectionView", ...] = ()
+
+
+@dataclass(frozen=True)
+class AgentHypothesisRejectionView:
+    item_index: int
+    code: str
 
 
 @dataclass(frozen=True)
@@ -209,7 +216,5 @@ class AgentContext:
         if not self.context_id.startswith("context:"):
             raise ValueError("AgentContext requires opaque context identity")
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
-        if len(self.image_inputs) > 2 or any(
-            not isinstance(item, AgentImageInput) for item in self.image_inputs
-        ):
+        if len(self.image_inputs) > 2 or any(not isinstance(item, AgentImageInput) for item in self.image_inputs):
             raise TypeError("AgentContext image inputs must be bounded and typed")

@@ -19,6 +19,7 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
+    AgentHypothesisRejectionView,
     AgentImageInput,
     AgentObjectiveCheckpointView,
     AgentObjectiveView,
@@ -352,6 +353,10 @@ def _task_frontier_view(state) -> AgentTaskFrontierView | None:
         ),
         state.requirement_hypotheses.completeness.value,
         state.requirement_hypothesis_failure_reason,
+        tuple(
+            AgentHypothesisRejectionView(item.item_index, item.code.value)
+            for item in state.recent_requirement_hypothesis_rejections
+        ),
     )
 
 

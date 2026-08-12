@@ -158,7 +158,7 @@ def test_local_http_model_port_bridge_completes_one_safe_runtime_action() -> Non
         (FixtureBehavior(delay_s=0.1), ModelFailureKind.TIMEOUT),
     ),
 )
-def test_local_http_failures_are_one_attempt_typed_and_zero_execution(behavior, expected_kind) -> None:
+def test_local_http_failures_are_bounded_typed_and_zero_execution(behavior, expected_kind) -> None:
     server, thread = _serve(behavior)
     deadline = 0.02 if behavior.delay_s else 2.0
     environment = StaticEnvironment([_world("before", False)])
@@ -171,7 +171,7 @@ def test_local_http_failures_are_one_attempt_typed_and_zero_execution(behavior, 
     finally:
         _close(server, thread)
 
-    assert len(behavior.requests) == 1
+    assert len(behavior.requests) == (2 if behavior.malformed else 1)
     assert result.status == AgentLoopStatus.FAILED
     assert result.policy_failure is not None and result.policy_failure.kind == expected_kind
     assert result.execution_count == 0 and environment.executed_requests == []
