@@ -514,6 +514,15 @@ def _canonical_control(
     public_state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = list(record.state)
     if isinstance(physical, dict) and physical.get("selected") is True:
         public_state.append(("selected", True))
+    if (
+        record.role == "clickable"
+        and not record.name.strip()
+        and isinstance(physical, dict)
+        and physical.get("color_family") in {
+            "red", "yellow", "green", "cyan", "blue", "magenta", "gray",
+        }
+    ):
+        public_state.append(("color_family", physical["color_family"]))
     labels = tuple(sorted(item.name for item in option_records if item.name))
     selected = tuple(sorted(
         item.name for item in option_records if dict(item.state).get("selected") is True and item.name

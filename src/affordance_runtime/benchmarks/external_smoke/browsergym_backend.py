@@ -13,13 +13,31 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_VISUAL_GROUPS_KEY,
 )
 
-_PHYSICAL_PROPERTIES_SCRIPT = """el => ({
+_PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
   selected: Boolean(
     el.classList.contains('selected') ||
     el.getAttribute('aria-selected') === 'true' ||
     el.getAttribute('aria-checked') === 'true'
   ),
+  colorFamily: (() => {
+    const raw = getComputedStyle(el).backgroundColor;
+    const match = raw.match(/rgba?\(([^)]+)\)/);
+    if (!match) return '';
+    const values = match[1].split(',').map(value => Number.parseFloat(value.trim()));
+    if (values.length < 3 || values.slice(0, 3).some(value => !Number.isFinite(value))) return '';
+    if (values.length > 3 && values[3] === 0) return '';
+    const [r, g, b] = values.slice(0, 3).map(value => value / 255);
+    const high = Math.max(r, g, b), low = Math.min(r, g, b), delta = high - low;
+    if (delta < 0.04) return 'gray';
+    let hue = high === r
+      ? 60 * (((g - b) / delta) % 6)
+      : high === g
+        ? 60 * (((b - r) / delta) + 2)
+        : 60 * (((r - g) / delta) + 4);
+    if (hue < 0) hue += 360;
+    return ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta'][Math.round(hue / 60) % 6];
+  })(),
   ariaHiddenByAncestor: Boolean(el.closest('[aria-hidden="true"]')),
   labelHint: (() => {
     const explicit = String(el.getAttribute('aria-label') || '').trim();
@@ -291,6 +309,11 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             "enabled": enabled,
             "readonly": readonly if isinstance(readonly, bool) else None,
             "selected": physical.get("selected") is True,
+            "color_family": (
+                physical.get("colorFamily")
+                if isinstance(physical.get("colorFamily"), str)
+                else ""
+            ),
             "editable": editable,
             "options": options if isinstance(options, list) else [],
             "bbox": bbox if isinstance(bbox, list) else [],

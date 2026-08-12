@@ -582,3 +582,36 @@ def test_dom_selected_class_is_public_current_state_not_private_answer_data() ->
             await environment.close()
 
     asyncio.run(scenario())
+
+
+def test_unlabeled_clickable_computed_color_is_public_without_hidden_dom_attribute() -> None:
+    async def scenario() -> None:
+        raw = raw_observation(
+            ax_node("shade", "graphics-symbol", ""),
+            goal="Select all the blue shades.",
+        )
+        raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
+        raw["extra_element_properties"]["shade"].update({
+            "clickable": True,
+            "visibility": 1.0,
+            "bbox": [20, 20, 18, 18],
+        })
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["shade"].update({
+            "bbox": [20, 20, 18, 18],
+            "color_family": "blue",
+        })
+        proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
+        environment, task = _open(FakeBrowserGym(raw), proposer)
+        try:
+            acquired = await environment.reset(task)
+
+            assert acquired.observation is not None
+            target = next(
+                item for item in acquired.observation.targets if item.role == "clickable"
+            )
+            assert target.state == {"color_family": "blue"}
+            assert "data-color" not in repr(target)
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
