@@ -36,6 +36,7 @@ from affordance_runtime.model_port import (
     ProviderFailureKind,
     ProviderModelError,
     StructuredModelError,
+    StructuredOutputError,
 )
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.frontier_contracts import (
@@ -152,6 +153,8 @@ class ModelRequirementHypothesisProposer:
     async def _generate_with_recovery(self, messages, output_schema, config):
         object.__setattr__(self, "last_attempt_count", 0)
         started = monotonic()
+        active_messages = messages
+        schema_repair_used = False
         for attempt in range(self.provider_policy.max_attempts_per_profile):
             remaining = self.provider_policy.total_elapsed_deadline_s - (
                 monotonic() - started
@@ -161,11 +164,17 @@ class ModelRequirementHypothesisProposer:
             object.__setattr__(self, "last_attempt_count", attempt + 1)
             try:
                 return await asyncio.wait_for(
-                    self.port.generate_structured(messages, output_schema, config),
+                    self.port.generate_structured(active_messages, output_schema, config),
                     timeout=remaining,
                 )
             except asyncio.CancelledError:
                 raise
+            except StructuredOutputError:
+                if schema_repair_used or attempt + 1 >= self.provider_policy.max_attempts_per_profile:
+                    raise
+                schema_repair_used = True
+                active_messages = _schema_repair_messages(messages)
+                continue
             except TimeoutError:
                 failure = ProviderModelError(
                     ProviderFailureKind.PROVIDER_CAPACITY,
@@ -274,3 +283,16 @@ def _predicate(payload: PredicatePayload):
     )
     assert isinstance(expected, FactReferenceExpectedPayload | LiteralExpectedPayload)
     return TargetFieldEquals(payload.target_id, payload.field_name, projected)
+
+
+def _schema_repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMessage, ...]:
+    repair = ModelMessage(
+        role="system",
+        content=(
+            "The previous response was rejected because it was not one complete valid JSON object. "
+            "Do not repeat, quote, summarize, or explain the supplied task context. "
+            "Return only an object with top-level keys hypotheses and "
+            'hypothesis_set_completeness; hypothesis_set_completeness must be "unknown".'
+        ),
+    )
+    return (*messages[:-1], repair, messages[-1])

@@ -10,7 +10,13 @@ from affordance_runtime.model_policy.requirement_proposer import (
     ModelRequirementHypothesisProposer,
     RequirementHypothesisBatchPayload,
 )
-from affordance_runtime.model_port import ModelConfig, ModelImageURLPart, ProviderFailureKind, ProviderModelError
+from affordance_runtime.model_port import (
+    ModelConfig,
+    ModelImageURLPart,
+    ProviderFailureKind,
+    ProviderModelError,
+    StructuredOutputError,
+)
 from affordance_runtime.task import (
     HypothesisProposalMode,
     HypothesisSetCompleteness,
@@ -221,5 +227,62 @@ def test_requirement_proposer_recovers_provider_failure_without_a_gui_turn() -> 
     )
 
     assert isinstance(result, RequirementHypothesisProposalBatch)
+    assert port.calls == 2
+    assert proposer.last_attempt_count == 2
+
+
+def test_requirement_proposer_repairs_one_invalid_structured_response_before_admission() -> None:
+    class RepairingPort(_Port):
+        calls = 0
+
+        async def generate_structured(self, messages, output_schema, config):
+            self.calls += 1
+            if self.calls == 1:
+                raise StructuredOutputError("invalid structured output")
+            assert any(
+                message.role == "system" and "Do not repeat" in message.content
+                for message in messages
+            )
+            return await super().generate_structured(messages, output_schema, config)
+
+    port = RepairingPort(_payload())
+    proposer = ModelRequirementHypothesisProposer(port, ModelConfig())
+
+    result = asyncio.run(
+        proposer.propose(
+            TaskGoal("task:1", "Enter Ada in the Name field"),
+            _world(),
+            ActionSpace("observation:1", ()),
+            mode=HypothesisProposalMode.INITIAL,
+        )
+    )
+
+    assert isinstance(result, RequirementHypothesisProposalBatch)
+    assert port.calls == 2
+    assert proposer.last_attempt_count == 2
+
+
+def test_requirement_proposer_never_installs_after_repeated_invalid_structured_output() -> None:
+    class InvalidPort(_Port):
+        calls = 0
+
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
+            self.calls += 1
+            raise StructuredOutputError("invalid structured output")
+
+    port = InvalidPort(_payload())
+    proposer = ModelRequirementHypothesisProposer(port, ModelConfig())
+
+    result = asyncio.run(
+        proposer.propose(
+            TaskGoal("task:1", "Enter Ada in the Name field"),
+            _world(),
+            ActionSpace("observation:1", ()),
+            mode=HypothesisProposalMode.INITIAL,
+        )
+    )
+
+    assert isinstance(result, RequirementHypothesisFailure)
     assert port.calls == 2
     assert proposer.last_attempt_count == 2
