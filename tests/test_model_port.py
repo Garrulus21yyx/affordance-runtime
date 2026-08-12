@@ -21,6 +21,7 @@ from affordance_runtime.model_port import (
     ProviderModelError,
     StructuredModelError,
     StructuredOutputError,
+    StructuredOutputMode,
     model_port_from_environment,
 )
 
@@ -508,13 +509,108 @@ def test_environment_factory_selects_zhipu_profile_without_exposing_key() -> Non
             "LLM_ACTIVE_PROFILE": "zhipu",
             "LLM_ZHIPU_BASE_URL": "https://zhipu.invalid/v4/",
             "LLM_ZHIPU_API_KEY": "zhipu-secret",
-            "LLM_ZHIPU_MODEL": "glm-test",
+            "LLM_ZHIPU_MODEL": "glm-4.7-flash",
         }
     )
 
     assert port.provider == "zhipu"
-    assert port.model == "glm-test"
+    assert port.model == "glm-4.7-flash"
+    assert port.supports_multimodal is False
+    assert port.structured_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
+    assert port.thinking_mode == "disabled"
     assert "zhipu-secret" not in repr(port)
+
+
+def test_zhipu_text_profile_requests_json_object_and_embeds_schema_in_prompt() -> None:
+    server, thread, requests = _serve(
+        {
+            "id": "response-zhipu-text",
+            "choices": [{"message": {"content": '{"value":"zhipu"}'}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = model_port_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "zhipu",
+                "LLM_ZHIPU_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                "LLM_ZHIPU_API_KEY": "zhipu-secret",
+                "LLM_ZHIPU_MODEL": "glm-4.7-flash",
+            }
+        )
+        answer = asyncio.run(
+            port.generate_structured(
+                [ModelMessage(role="user", content="answer")],
+                Answer,
+                ModelConfig(),
+            )
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "zhipu"
+    request = requests[0]
+    assert request["response_format"] == {"type": "json_object"}
+    assert request["thinking"] == {"type": "disabled"}
+    assert request["messages"][0]["role"] == "system"
+    assert '"value"' in request["messages"][0]["content"]
+    assert request["messages"][1] == {"role": "user", "content": "answer"}
+
+
+def test_zhipu_visual_profile_uses_prompt_schema_without_text_only_response_format(tmp_path) -> None:
+    server, thread, requests = _serve(
+        {
+            "id": "response-zhipu-vlm",
+            "choices": [{"message": {"content": '{"value":"seen"}'}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = model_port_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "zhipu",
+                "LLM_ZHIPU_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                "LLM_ZHIPU_API_KEY": "zhipu-secret",
+                "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+                "LLM_ENABLE_PRIVATE_MODEL_CAPTURE": "true",
+                "LLM_PRIVATE_MODEL_CAPTURE_DIR": str(tmp_path / "zhipu-private"),
+            }
+        )
+        answer = asyncio.run(
+            port.generate_structured(
+                [
+                    ModelMessage(
+                        role="user",
+                        content=(
+                            ModelTextPart(text="answer from the screenshot"),
+                            ModelImageURLPart(image_url="data:image/png;base64,iVBORw0KGgo="),
+                        ),
+                    )
+                ],
+                Answer,
+                ModelConfig(),
+            )
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "seen"
+    assert port.supports_multimodal is True
+    assert port.structured_output_mode is StructuredOutputMode.PROMPT_JSON_LOCAL_VALIDATION
+    request = requests[0]
+    assert "response_format" not in request
+    assert "thinking" not in request
+    assert request["messages"][0]["role"] == "system"
+    assert '"value"' in request["messages"][0]["content"]
+    assert request["messages"][1]["content"][0]["type"] == "text"
+    assert request["messages"][1]["content"][1]["type"] == "image_url"
+    assert request["messages"][1]["content"][1]["image_url"] == {"url": "data:image/png;base64,iVBORw0KGgo="}
+    capture = json.loads((tmp_path / "zhipu-private/model-exchanges.jsonl").read_text())
+    assert capture["request_messages"] == request["messages"]
 
 
 class _FailedPort:

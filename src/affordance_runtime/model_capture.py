@@ -58,7 +58,7 @@ class PrivateModelCapture:
                     "model-request:" + hashlib.sha256(context_id.encode()).hexdigest()[:24]
                     if context_id else ""
                 ),
-                "request_messages": [item.model_dump() for item in messages],
+                "request_messages": [_message_payload(item) for item in messages],
                 "response_content": response_content,
                 "response_id": response_id,
                 "error": error,
@@ -84,15 +84,31 @@ class PrivateModelCapture:
 
 def _context_id(messages: Sequence[Any]) -> str:
     for message in reversed(messages):
-        if getattr(message, "role", "") != "user":
+        role = (
+            message.get("role", "")
+            if isinstance(message, Mapping)
+            else getattr(message, "role", "")
+        )
+        if role != "user":
             continue
-        content = getattr(message, "content", "")
+        content = (
+            message.get("content", "")
+            if isinstance(message, Mapping)
+            else getattr(message, "content", "")
+        )
         if not isinstance(content, str):
             content = next(
                 (
-                    getattr(item, "text", "")
+                    item.get("text", "")
+                    if isinstance(item, Mapping)
+                    else getattr(item, "text", "")
                     for item in content
-                    if getattr(item, "type", "") == "text"
+                    if (
+                        item.get("type", "")
+                        if isinstance(item, Mapping)
+                        else getattr(item, "type", "")
+                    )
+                    == "text"
                 ),
                 "",
             )
@@ -105,6 +121,12 @@ def _context_id(messages: Sequence[Any]) -> str:
         candidate = value.get("context_id") if isinstance(value, dict) else None
         return candidate if isinstance(candidate, str) and candidate.startswith("context:") else ""
     return ""
+
+
+def _message_payload(message: Any) -> Any:
+    if isinstance(message, Mapping):
+        return dict(message)
+    return message.model_dump()
 
 
 def private_capture_from_environment(

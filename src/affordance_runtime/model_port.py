@@ -107,6 +107,14 @@ class StructuredOutputError(StructuredModelError):
     """A redacted response-content failure eligible for one bounded schema retry."""
 
 
+class StructuredOutputMode(StrEnum):
+    """Provider-declared mechanism for requesting one schema-valid object."""
+
+    NATIVE_JSON_SCHEMA = "native_json_schema"
+    JSON_OBJECT_PROMPT_SCHEMA = "json_object_prompt_schema"
+    PROMPT_JSON_LOCAL_VALIDATION = "prompt_json_local_validation"
+
+
 class ProviderFailureKind(StrEnum):
     RATE_LIMIT_TRANSIENT = "rate_limit_transient"
     QUOTA_EXHAUSTED = "quota_exhausted"
@@ -231,7 +239,9 @@ class OpenAICompatibleModelPort:
     model: str = "mistral-large-3"
     provider: str = "openai-compatible"
     endpoint_class: str = "remote"
-    supports_multimodal: bool = field(default=True, init=False)
+    supports_multimodal: bool = True
+    structured_output_mode: StructuredOutputMode = StructuredOutputMode.NATIVE_JSON_SCHEMA
+    thinking_mode: Literal["enabled", "disabled"] | None = None
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
@@ -252,20 +262,34 @@ class OpenAICompatibleModelPort:
         config: ModelConfig,
     ) -> T:
         schema = output_schema.model_json_schema()
+        request_messages = _messages_with_structured_output_contract(
+            messages,
+            schema,
+            self.structured_output_mode,
+        )
+        serialized_messages = _serialize_openai_compatible_messages(
+            request_messages,
+            nested_image_url=self.provider == "zhipu",
+        )
         body: dict[str, Any] = {
             "model": self.model,
-            "messages": [message.model_dump() for message in messages],
+            "messages": serialized_messages,
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
-            "response_format": {
+        }
+        if self.structured_output_mode is StructuredOutputMode.NATIVE_JSON_SCHEMA:
+            body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": output_schema.__name__,
                     "strict": True,
                     "schema": schema,
                 },
-            },
-        }
+            }
+        elif self.structured_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA:
+            body["response_format"] = {"type": "json_object"}
+        if self.thinking_mode is not None:
+            body["thinking"] = {"type": self.thinking_mode}
         if config.seed is not None:
             body["seed"] = config.seed
         _raise_if_model_circuit_open(self)
@@ -283,7 +307,7 @@ class OpenAICompatibleModelPort:
                 transient_backoff_s=config.transient_backoff_s,
             )
         except ProviderModelError as exc:
-            self._capture(messages, output_schema, "provider_failure", error=exc.kind.value)
+            self._capture(serialized_messages, output_schema, "provider_failure", error=exc.kind.value)
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
@@ -296,7 +320,7 @@ class OpenAICompatibleModelPort:
             parsed = output_schema.model_validate_json(_structured_json_content(content))
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self._capture(
-                messages,
+                serialized_messages,
                 output_schema,
                 "schema_error",
                 response_content=locals().get("content"),
@@ -325,7 +349,7 @@ class OpenAICompatibleModelPort:
             transient_retry_count=transient_retry_count,
         )
         self._capture(
-            messages,
+            serialized_messages,
             output_schema,
             "accepted",
             response_content=content,
@@ -335,7 +359,7 @@ class OpenAICompatibleModelPort:
 
     def _capture(
         self,
-        messages: Sequence[ModelMessage],
+        messages: Sequence[ModelMessage | Mapping[str, Any]],
         output_schema: type[BaseModel],
         status: str,
         *,
@@ -467,6 +491,58 @@ class OllamaModelPort:
             )
 
 
+def _messages_with_structured_output_contract(
+    messages: Sequence[ModelMessage],
+    schema: Mapping[str, Any],
+    mode: StructuredOutputMode,
+) -> tuple[ModelMessage, ...]:
+    if mode is StructuredOutputMode.NATIVE_JSON_SCHEMA:
+        return tuple(messages)
+    encoded_schema = json.dumps(
+        schema,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    instruction = ModelMessage(
+        role="system",
+        content=(
+            "Return exactly one JSON object and no Markdown or explanatory text. "
+            "The object must satisfy this JSON Schema; unknown fields are forbidden: "
+            f"{encoded_schema}"
+        ),
+    )
+    return (instruction, *messages)
+
+
+def _serialize_openai_compatible_messages(
+    messages: Sequence[ModelMessage],
+    *,
+    nested_image_url: bool,
+) -> list[dict[str, Any]]:
+    serialized = [message.model_dump() for message in messages]
+    if not nested_image_url:
+        return serialized
+    for message in serialized:
+        content = message.get("content")
+        if not isinstance(content, (list, tuple)):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "image_url":
+                continue
+            image_url = part.get("image_url")
+            if isinstance(image_url, str):
+                part["image_url"] = {"url": image_url}
+    return serialized
+
+
+def _zhipu_model_supports_multimodal(model: str) -> bool:
+    """Recognize the declared GLM visual-model naming families fail-closed."""
+
+    normalized = model.strip().casefold()
+    return re.match(r"^glm-\d+(?:\.\d+)?v(?:-|$)", normalized) is not None
+
+
 def model_port_from_environment(environment: Mapping[str, str] | None = None) -> ModelPort:
     """Build the selected model profile, optionally falling back to local.
 
@@ -500,12 +576,21 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             private_capture=private_capture,
         )
     else:
+        model = _required_env(env, "LLM_ZHIPU_MODEL")
+        supports_multimodal = _zhipu_model_supports_multimodal(model)
         remote = OpenAICompatibleModelPort(
             base_url=_required_env(env, "LLM_ZHIPU_BASE_URL"),
             api_key=_required_env(env, "LLM_ZHIPU_API_KEY"),
-            model=_required_env(env, "LLM_ZHIPU_MODEL"),
+            model=model,
             provider="zhipu",
             endpoint_class="remote",
+            supports_multimodal=supports_multimodal,
+            structured_output_mode=(
+                StructuredOutputMode.PROMPT_JSON_LOCAL_VALIDATION
+                if supports_multimodal
+                else StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
+            ),
+            thinking_mode=None if supports_multimodal else "disabled",
             private_capture=private_capture,
         )
     if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
