@@ -193,7 +193,12 @@ async def _run_arm(
     target = replace(
         target,
         profile_id=(
-            f"mistral-format-only-{perception_profile.value}"
+            (
+                "dynamic-tools-v1"
+                if isinstance(adapter, DynamicToolDecisionAdapter)
+                else "structured-package-v2"
+            )
+            + f"-{perception_profile.value}"
             + ("-requirement-hypotheses" if enable_requirement_hypotheses else "")
         ),
     )

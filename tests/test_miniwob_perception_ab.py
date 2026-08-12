@@ -13,6 +13,7 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     readiness_cohorts,
 )
 from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 
 def test_perception_ab_selects_only_inventory_v2_capability_covered_cases() -> None:
@@ -95,3 +96,22 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
     with __import__("pytest").raises(ValueError, match="frozen Mistral"):
         _adapter(policy)
     assert _adapter(policy, require_frozen_mistral=False).provider_id == "zhipu"
+
+
+def test_dynamic_provider_cohort_uses_the_dynamic_adapter() -> None:
+    environment = {
+        "LLM_ACTIVE_PROFILE": "zhipu",
+        "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
+        "LLM_ZHIPU_API_KEY": "fixture",
+        "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+        "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+    }
+    policy = model_policy_from_environment(
+        environment,
+        interaction_protocol="dynamic_tools.v1",
+    )
+
+    assert isinstance(
+        _adapter(policy, require_frozen_mistral=False),
+        DynamicToolDecisionAdapter,
+    )
