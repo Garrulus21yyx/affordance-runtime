@@ -1,6 +1,6 @@
 # DOM-First Evidence-Gated Vision Convergence Plan
 
-Status: `PHASE_2_PROVIDER_COMPLETION_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`
+Status: `PHASE_4_ARCHITECTURE_GATE_ACCEPTED / MODEL_PERFORMANCE_PARTIAL`
 
 Date: 2026-08-12
 
@@ -27,8 +27,8 @@ fresh DOM/AX observation
    -> one bounded visual acquisition for the current epoch
       -> visual evidence explicitly corresponds to DOM identity
          -> merge evidence into the DOM canonical target; DOM binding remains authoritative
-      -> visual evidence is explicitly unmatched and actionable
-         -> retain a visual-only target; coordinate binding may be admitted
+      -> visual evidence is explicitly unmatched
+         -> retain an observation-only visual target; no BrowserGym execution binding
       -> ambiguous, conflicting, stale, unsupported, or low-confidence
          -> no executable visual binding; reobserve or fail closed
 ```
@@ -65,7 +65,7 @@ bounded current-epoch budget.
 | DOM bbox to same-ID marks | current BrowserGym grounding regions and mark projection | retain; correspondence exists by construction |
 | open-world visual entity proposal | `VisualRegionProposerPort`; add an OmniParser-compatible adapter seam | outsource parser/model; do not import OmniTool or another agent loop |
 | DOM-candidate visual disambiguation | main VLM with bounded E-ref/SoM choice | output an existing E-ref, never a coordinate |
-| visual-only query to point | existing GLM `VisualGrounderPort` | retain as optional last-stage fallback; ShowUI/GUI-Actor remain benchmarkable alternatives |
+| visual-only query to point | GLM/ShowUI/GUI-Actor-style `VisualGrounderPort` arms | retain for isolated grounding benchmarks; no BrowserGym target-loop authority |
 | on-demand acquisition pattern | browser-use/SenseAct reference semantics | borrow the evidence-gated pattern; Runtime remains decision owner |
 | correspondence and execution authority | project `EntityCorrespondence`, fusion, action-space admission | project-owned because it binds current identities and private routes |
 
@@ -112,8 +112,8 @@ current screenshot/viewport identity.
    and no coordinate binding. Fusion rewrites their evidence onto the DOM
    canonical target.
 4. `UNMATCHED` is admissible only when no compatible DOM region meets the
-   matching floor. A current actionable region may receive a visual coordinate
-   binding.
+   matching floor. It remains observation-only in the BrowserGym target loop;
+   a future safe-region executor requires a separate contract.
 5. `AMBIGUOUS`, `CONFLICT`, stale, low-confidence, and unsupported primitives
    remain observable but non-executable.
 
@@ -134,8 +134,9 @@ the contract.
    the current target-loop acquisition path without task-family routing.
 4. `completed` — add DOM/visual region correspondence projection for shared raw
    BrowserGym captures.
-5. `completed` — admit coordinate bindings only for explicitly unmatched current
-   visual-only targets; matched/ambiguous/conflicting targets are non-coordinate.
+5. `superseded_by_phase_4` — the earlier unmatched-coordinate experiment was
+   removed from the BrowserGym target loop. All proposer outputs are now
+   observation-only; point execution remains an isolated benchmark surface.
 6. `completed` — use the dedicated GLM grounder as the default visual-only
    point implementation; add a thin optional OmniParser proposer adapter behind
    `VisualRegionProposerPort`; and keep open-world proposal disabled unless its
@@ -368,7 +369,7 @@ remains a pluggable baseline, not an attested SOTA point grounder.
 
 ## 15. Phase 4 structural-identity completion and point de-authoring
 
-Status: `IMPLEMENTED_FULL_VERIFIED / FROZEN_LIVE_GATE_PENDING`
+Status: `ARCHITECTURE_GATE_ACCEPTED / MODEL_PERFORMANCE_PARTIAL`
 
 New repository evidence invalidates the Phase-3 classification of
 `grid-coordinate` and likely `click-pie` as inherently visual-only. The pinned
@@ -419,19 +420,25 @@ Work items:
 6. `completed` — add invariant/property/integration coverage for SVG identity,
    nested-control deduplication, no-coordinate public contracts, DOM execution,
    unmatched visual fail-closed behavior and zero point-provider calls.
-7. `full_and_real_probe_verified / frozen_live_gate_pending` — run focused/full tests, a held-out real BrowserGym probe and the
+7. `full_and_real_probe_verified / frozen_live_gate_accepted` — run focused/full tests, a held-out real BrowserGym probe and the
    relevant live benchmark witnesses; update maintained architecture/status
    documents from measured evidence only.
 
 Verification so far:
 
 - focused BrowserGym architecture suite: `50 passed`;
-- full repository suite: `2359 passed, 27 skipped`;
+- full repository suite after the final SoM/tool-contract increment:
+  `2365 passed, 24 skipped`;
 - Ruff on affected Python sources/tests and `git diff --check`: passed;
 - real target-loop seed-7 probes: `grid-coordinate` success and two-step
   `click-pie` success, with zero point-grounder calls; evidence record:
   `docs/evidence/2026-08-12-svg-dom-identity-target-loop-probe.md`;
-- frozen five-witness provider gate: pending a clean implementation SHA.
+- real GLM E-ref probe: `grid-coordinate (1,-2)` selected the correct `E24`,
+  retained one DOM binding, and made zero point calls;
+- clean-SHA frozen five-witness gate at `331ac0d`: evidence-valid `3/5`, with
+  architecture acceptance true, zero point calls, zero visual-binding
+  acquisition/dispatch and zero invalid tool arguments; maintained evidence:
+  `docs/evidence/2026-08-12-phase4-dom-identity-live-gate.md`.
 
 Files changed by work item will be recorded here as implementation proceeds.
 
@@ -450,3 +457,12 @@ Exit criteria:
   are observation-only and fail closed if selected for an action;
 - focused, full and held-out real-browser evidence agree before this phase is
   marked verified.
+
+The architectural exit criteria are satisfied for this bounded five-witness
+gate. Performance/generalization remain open: `click-shades` timed out after
+nine valid DOM actions because each step still performs separate E-ref and main
+policy model calls, and `visual-addition` reached valid structural fill/submit
+actions with the wrong visual value. The next optimization should merge
+candidate choice and semantic action into one main multimodal decision when the
+typed gate selects SoM; it must not reintroduce point output or coordinate
+authority.

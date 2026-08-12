@@ -61,7 +61,10 @@ implicitly owns observation, identity and execution:
   explicitly enables the compatible VLM proposer instead.
 - DOM-candidate visual disambiguation: the configured visual VLM receives a
   bounded SoM screenshot and supplied `E*` inventory, and may return only one
-  offered E-ref or `null`.
+  offered E-ref or `null`. Dense marks are numbered in stable visual reading
+  order and their labels are rendered outside tiny targets. A singleton
+  semantic operation carries its sole target in the ephemeral Runtime binding,
+  so the model does not serialize a redundant E-ref.
 - point grounding: GLM/ShowUI/UI-TARS-style adapters remain explicit offline
   grounding or legacy-compatibility benchmark arms. They are not offered as a
   BrowserGym target-loop capability and cannot create an ActionBinding.

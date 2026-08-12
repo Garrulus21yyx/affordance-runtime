@@ -585,8 +585,17 @@ clickable SVG children receive private BIDs, normalizes them into ordinary
 duplicates. Real read-only/control probes show 25 executable grid circle
 identities and one collapsed pie opener; identity-based clicks complete
 `grid-coordinate` and the two-step `click-pie` witness at reward 1.0 without a
-point-provider call. The full suite passes (`2359 passed, 27 skipped`); the
-frozen provider gate remains pending.
+point-provider call. Dense SoM candidates now receive top-to-bottom,
+left-to-right E-ref numbering and external labels instead of text painted over
+14-pixel SVG targets. Singleton semantic tools bind their sole target inside
+the Runtime catalog, eliminating redundant target serialization without
+expanding authority. The full suite passes (`2365 passed, 24 skipped`). A clean
+`331ac0d` frozen provider gate completed with valid evidence at `3/5` and
+architecture acceptance true: every action used structural bindings, point and
+visual-binding acquisition/dispatch counts were zero, and invalid tool
+arguments were zero. `click-shades` still timed out under separate E-ref and
+policy calls, and `visual-addition` submitted an incorrect visual value, so
+model performance and generalization remain explicitly unclaimed.
 
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,

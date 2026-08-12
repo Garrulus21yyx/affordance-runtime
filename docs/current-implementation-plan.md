@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / PHASE_4 STRUCTURAL_IDENTITY_COMPLETION_IMPLEMENTED_FULL_VERIFIED / FROZEN_LIVE_GATE_PENDING` | grounded-tools v2 and source/fusion foundations remain. Phase 4 marks all BrowserGym DOM elements, projects visible clickable SVG children into the same E-ref/BID control plane, filters non-hittable and duplicate drawing nodes, and keeps Agent output at semantic action + E-ref. BrowserGym target-loop point providers no longer advertise capability or create bindings; OmniParser-compatible unmatched V-refs remain observation-only. Focused BrowserGym tests (`50 passed`), the full suite (`2359 passed, 27 skipped`) and real identity target-loop probes for `grid-coordinate` and `click-pie` pass; the frozen provider gate remains pending. |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / PHASE_4 ARCHITECTURE_GATE_ACCEPTED / MODEL_PERFORMANCE_PARTIAL` | grounded-tools v2 and source/fusion foundations remain. Phase 4 marks all BrowserGym DOM elements, projects visible clickable SVG children into the same E-ref/BID control plane, filters non-hittable and duplicate drawing nodes, and keeps Agent output at semantic action + E-ref. Dense SoM marks now use visual reading order and labels outside tiny targets; singleton operations carry their sole E-ref implicitly. BrowserGym target-loop point providers no longer advertise capability or create bindings; OmniParser-compatible unmatched V-refs remain observation-only. The full suite passes (`2365 passed, 24 skipped`); the clean-SHA five-witness gate is evidence-valid at `3/5` and accepts all bounded authority/schema invariants, while model performance/generalization remain open. |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -95,7 +95,11 @@ The current Phase-4 increment retains point grounders only as explicit
 benchmark/legacy-compatibility arms; the BrowserGym target loop neither
 advertises nor calls them. OmniParser may be enabled explicitly for open-world
 region proposal; its unmatched output remains observation-only. Ambiguous DOM
-candidates use a SoM/E-ref chooser that cannot represent a coordinate.
+candidates use a SoM/E-ref chooser that cannot represent a coordinate. Marks
+use stable visual reading order and place their labels outside tiny controls.
+When an operation has exactly one legal target, the ephemeral tool binding
+carries that E-ref and does not require the model to echo a redundant target
+argument.
 Postcondition diagnosis remains typed in the gate but
 is not fed from request prose or guessed failure state; it awaits an evaluator-
 owned unresolved-postcondition fact.

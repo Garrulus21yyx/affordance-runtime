@@ -30,6 +30,12 @@ a BrowserGym target-loop observation capability. Region proposal and candidate
 choice have separate call/success counters; point-benchmark counters cannot
 grant Runtime action authority.
 
+SoM E-refs are assigned in stable visual reading order and labels are placed
+outside tiny controls, keeping both the target pixels and the reference
+legible. Agent tools require an explicit E-ref only when more than one target
+is legal for that semantic operation; for a singleton, the ephemeral tool
+binding already carries the sole identity and Runtime resolves it privately.
+
 Visual evidence and visual execution authority are separate. Same-acquisition
 visual regions merge with DOM entities only through explicit
 `EntityCorrespondence`. A corresponded region cannot retain a coordinate
