@@ -11,6 +11,7 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_environment import 
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
+    PRIVATE_VISUAL_GROUPS_KEY,
 )
 from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguationRequest
@@ -281,6 +282,43 @@ def test_visual_value_task_stays_with_screenshot_policy_instead_of_e_ref() -> No
     asyncio.run(scenario())
 
 
+def test_repeated_visible_dom_leaf_groups_publish_counts_without_action_authority() -> None:
+    async def scenario() -> None:
+        raw = raw_observation(
+            ax_node("answer", "textbox", ""),
+            ax_node("submit", "button", "Submit"),
+            goal="Count the shapes and enter the total number.",
+        )
+        raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
+        raw[PRIVATE_VISUAL_GROUPS_KEY] = [
+            {"count": 8, "bbox": [20, 20, 50, 40]},
+            {"count": 2, "bbox": [100, 40, 30, 20]},
+        ]
+        proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
+        environment, task = _open(FakeBrowserGym(raw), proposer)
+        try:
+            acquired = await environment.reset(task)
+
+            assert acquired.observation is not None
+            groups = [
+                item for item in acquired.observation.targets if item.role == "visual-group"
+            ]
+            assert [item.state["count"] for item in groups] == [8, 2]
+            assert all(
+                binding.target_id not in {item.target_id for item in groups}
+                for binding in acquired.observation.bindings
+            )
+            assert environment.last_visual_escalation is not None
+            assert environment.last_visual_escalation.evidence_need is (
+                VisionEvidenceNeed.VISUAL_VALUE_REASONING
+            )
+            assert proposer.calls == []
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
 def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None:
     @dataclass
     class FailingGrounder:
@@ -519,6 +557,27 @@ def test_clickable_svg_candidates_use_e_ref_then_dom_binding_without_point() -> 
             assert binding.semantic_action == "activate"
             assert binding.primitive_action == "click"
             assert "point" not in repr(binding).casefold()
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_dom_selected_class_is_public_current_state_not_private_answer_data() -> None:
+    async def scenario() -> None:
+        raw = _raw_with_buttons(("shade", "", (20, 20, 18, 18)))
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["shade"]["selected"] = True
+        proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
+        environment, task = _open(FakeBrowserGym(raw), proposer)
+        try:
+            acquired = await environment.reset(task)
+
+            assert acquired.observation is not None
+            target = next(
+                item for item in acquired.observation.targets if item.role == "button"
+            )
+            assert target.state["selected"] is True
+            assert "color" not in target.state
         finally:
             await environment.close()
 

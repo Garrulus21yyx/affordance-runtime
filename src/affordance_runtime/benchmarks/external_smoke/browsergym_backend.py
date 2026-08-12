@@ -10,10 +10,16 @@ from typing import cast
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
+    PRIVATE_VISUAL_GROUPS_KEY,
 )
 
 _PHYSICAL_PROPERTIES_SCRIPT = """el => ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
+  selected: Boolean(
+    el.classList.contains('selected') ||
+    el.getAttribute('aria-selected') === 'true' ||
+    el.getAttribute('aria-checked') === 'true'
+  ),
   ariaHiddenByAncestor: Boolean(el.closest('[aria-hidden="true"]')),
   labelHint: (() => {
     const explicit = String(el.getAttribute('aria-label') || '').trim();
@@ -49,6 +55,43 @@ _VERIFIER_PROBE_SCRIPT = """() => {
   if ('WOB_DONE_GLOBAL' in window) facts.done = window.WOB_DONE_GLOBAL;
   if ('WOB_RAW_REWARD_GLOBAL' in window) facts.raw_reward = window.WOB_RAW_REWARD_GLOBAL;
   return facts;
+}"""
+
+_VISIBLE_REPEATED_LEAF_GROUPS_SCRIPT = """() => {
+  const grouped = new Map();
+  for (const el of document.querySelectorAll('body *')) {
+    if (el.childElementCount || String(el.textContent || '').trim()) continue;
+    if (el.matches('input,textarea,select,button,a,[role="button"],[contenteditable="true"]')) continue;
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    if (
+      style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0 ||
+      rect.width < 4 || rect.height < 4 || rect.width * rect.height > 4096
+    ) continue;
+    const parent = el.parentElement;
+    if (!parent) continue;
+    const signature = [
+      el.tagName, Math.round(rect.width), Math.round(rect.height),
+      style.backgroundColor, style.borderTopColor, style.borderTopWidth,
+    ].join('|');
+    let bySignature = grouped.get(parent);
+    if (!bySignature) grouped.set(parent, bySignature = new Map());
+    let members = bySignature.get(signature);
+    if (!members) bySignature.set(signature, members = []);
+    members.push([rect.x, rect.y, rect.width, rect.height]);
+  }
+  const result = [];
+  for (const bySignature of grouped.values()) {
+    for (const members of bySignature.values()) {
+      if (members.length < 2 || members.length > 64) continue;
+      const left = Math.min(...members.map(item => item[0]));
+      const top = Math.min(...members.map(item => item[1]));
+      const right = Math.max(...members.map(item => item[0] + item[2]));
+      const bottom = Math.max(...members.map(item => item[1] + item[3]));
+      result.push({count: members.length, bbox: [left, top, right - left, bottom - top]});
+    }
+  }
+  return {viewport: [window.innerWidth, window.innerHeight], groups: result.slice(0, 32)};
 }"""
 
 
@@ -247,6 +290,7 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             "visible": _effective_visibility(visible, physical),
             "enabled": enabled,
             "readonly": readonly if isinstance(readonly, bool) else None,
+            "selected": physical.get("selected") is True,
             "editable": editable,
             "options": options if isinstance(options, list) else [],
             "bbox": bbox if isinstance(bbox, list) else [],
@@ -254,7 +298,55 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         }
     enriched = dict(raw)
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
+    try:
+        group_payload = page.evaluate(_VISIBLE_REPEATED_LEAF_GROUPS_SCRIPT)
+    except BaseException:
+        group_payload = {}
+    enriched[PRIVATE_VISUAL_GROUPS_KEY] = _scaled_visual_groups(group_payload, enriched)
     return enriched
+
+
+def _scaled_visual_groups(payload: object, raw: dict[str, object]) -> list[dict[str, object]]:
+    if not isinstance(payload, dict):
+        return []
+    viewport = payload.get("viewport")
+    groups = payload.get("groups")
+    screenshot = raw.get("screenshot")
+    shape = getattr(screenshot, "shape", ())
+    if (
+        not isinstance(viewport, list)
+        or len(viewport) != 2
+        or not isinstance(groups, list)
+        or not isinstance(shape, tuple)
+        or len(shape) < 2
+    ):
+        return []
+    try:
+        scale_x = float(shape[1]) / float(viewport[0])
+        scale_y = float(shape[0]) / float(viewport[1])
+    except (TypeError, ValueError, ZeroDivisionError):
+        return []
+    result: list[dict[str, object]] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        count, bbox = group.get("count"), group.get("bbox")
+        if not isinstance(count, int) or not 2 <= count <= 64 or not isinstance(bbox, list) or len(bbox) != 4:
+            continue
+        try:
+            x, y, width, height = (float(item) for item in bbox)
+        except (TypeError, ValueError):
+            continue
+        scaled = [
+            int(round(x * scale_x)),
+            int(round(y * scale_y)),
+            int(round(width * scale_x)),
+            int(round(height * scale_y)),
+        ]
+        if scaled[0] < 0 or scaled[1] < 0 or scaled[2] <= 0 or scaled[3] <= 0:
+            continue
+        result.append({"count": count, "bbox": scaled})
+    return result
 
 
 def _effective_visibility(visible: bool | None, physical: dict[str, object]) -> bool | None:

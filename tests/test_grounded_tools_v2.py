@@ -410,7 +410,8 @@ def test_direct_model_select_action_records_selected_public_e_ref() -> None:
         outcome = await CountingPolicy(Policy(), instrumentation).decide(context)
 
         assert isinstance(outcome, SelectAction)
-        assert instrumentation.policy_trace[0]["selected_grounding"]["ref"] == "E1"
+        expected = context.grounding.target_refs[context.actions.options[0].target_id]
+        assert instrumentation.policy_trace[0]["selected_grounding"]["ref"] == expected
         assert "target_id" not in instrumentation.policy_trace[0]["selected_grounding"]
 
     asyncio.run(scenario())

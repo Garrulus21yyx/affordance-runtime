@@ -34,9 +34,6 @@ class GroundingProjection:
         *,
         selected_media_ids: tuple[str, ...] = (),
     ) -> GroundingProjectionResult:
-        target_refs = {
-            item.target_id: f"E{index}" for index, item in enumerate(world.targets.items, 1)
-        }
         offered = {
             target_id
             for option in actions.options
@@ -53,6 +50,25 @@ class GroundingProjection:
             and (not selected_media_ids or media.media_id in selected_media_ids)
         )
         candidates = _deduplicated_media(raw_candidates)[: self.max_images]
+        region_order: dict[str, tuple[int, int, int, int]] = {}
+        for _, media in candidates:
+            for region in media.grounding_regions:
+                region_order.setdefault(region.target_id, region.bbox)
+        target_position = {
+            item.target_id: index for index, item in enumerate(world.targets.items)
+        }
+        ordered_targets = tuple(sorted(
+            world.targets.items,
+            key=lambda item: (
+                0 if item.target_id in region_order else 1,
+                region_order.get(item.target_id, (0, 0, 0, 0))[1],
+                region_order.get(item.target_id, (0, 0, 0, 0))[0],
+                target_position[item.target_id],
+            ),
+        ))
+        target_refs = {
+            item.target_id: f"E{index}" for index, item in enumerate(ordered_targets, 1)
+        }
         selected_regions = {
             region.target_id for _, media in candidates for region in media.grounding_regions
         }
@@ -61,7 +77,7 @@ class GroundingProjection:
         for option in actions.options:
             verbs.setdefault(option.target_id, []).append(_public_verb(option.semantic_action))
         entities = []
-        for target in world.targets.items:
+        for target in ordered_targets:
             hints: list[str] = []
             parent = target.relations.get("parent_id")
             if isinstance(parent, str) and parent in target_refs:

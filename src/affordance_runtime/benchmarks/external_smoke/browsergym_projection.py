@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -17,6 +18,7 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile im
     informational_browsergym_roles,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+    PRIVATE_VISUAL_GROUPS_KEY,
     BrowserGymSemanticAnalysis,
     CanonicalBrowserControl,
     analyze_browsergym_semantics,
@@ -71,11 +73,15 @@ def project_browsergym_observation(
     analysis = analyze_browsergym_semantics(raw)
     candidates = list(analysis.controls)
     projected = candidates[:MAX_INVENTORY_TARGETS]
+    visual_groups = _visual_groups(raw)[: max(0, MAX_INVENTORY_TARGETS - len(projected))]
     targets: list[SemanticTarget] = []
     facts: list[StateFact] = []
     bindings: list[ActionBinding] = []
     private: list[BrowserGymElementBinding] = []
-    fact_total = sum(len(node.public_state) + bool(node.public_options) for node in candidates)
+    fact_total = (
+        sum(len(node.public_state) + bool(node.public_options) for node in candidates)
+        + len(visual_groups)
+    )
     candidate_node_ids = {node.private_node_id for node in candidates}
     relation_total = sum(
         bool(node.private_parent_id and node.private_parent_id in candidate_node_ids)
@@ -137,6 +143,26 @@ def project_browsergym_observation(
         if public is not None and runtime is not None:
             bindings.append(public)
             private.append(runtime)
+    group_regions: list[ObservationGroundingRegion] = []
+    for ordinal, group in enumerate(visual_groups):
+        target_id = "entity:visual-group:" + hashlib.sha256(
+            f"{page_identity}\0{episode_identity}\0{ordinal}\0{group['bbox']}".encode()
+        ).hexdigest()[:24]
+        count = int(group["count"])
+        targets.append(SemanticTarget(
+            target_id,
+            "visual-group",
+            "repeated visible items",
+            {"count": count},
+        ))
+        facts.append(StateFact(
+            f"{observation_id}:{target_id}:count",
+            target_id,
+            "count",
+            count,
+            observation_id,
+        ))
+        group_regions.append(ObservationGroundingRegion(target_id, group["bbox"]))
     if fact_total > len(facts):
         issues.append(EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED)
     relation_count = sum(
@@ -156,7 +182,7 @@ def project_browsergym_observation(
             ObservationGroundingRegion(target_ids[node.private_node_id], node.private_bbox)
             for node in projected
             if node.private_bbox is not None
-        ),
+        ) + tuple(group_regions),
     )
     if screenshot_media:
         artifacts["screenshot_semantic_state"] = {
@@ -172,12 +198,15 @@ def project_browsergym_observation(
         actionable_target_count=actionable_target_count,
         non_executable_target_count=projected_target_count - actionable_target_count,
         omitted_target_count=recognized_target_count - projected_target_count,
-        informational_target_count=sum(target.role in informational_browsergym_roles() for target in targets),
+        informational_target_count=(
+            sum(target.role in informational_browsergym_roles() for target in targets)
+            + len(visual_groups)
+        ),
     )
     entity_inventory = EntityInventorySummary(
         EntityInventoryStatus.PARTIAL if truncated else EntityInventoryStatus.COMPLETE,
         len(targets),
-        len(candidates),
+        len(candidates) + len(visual_groups),
         len(facts),
         fact_total,
         relation_count,
@@ -212,10 +241,34 @@ def project_browsergym_observation(
     return BrowserGymProjection(
         world,
         tuple(private),
-        len(candidates),
+        len(candidates) + len(visual_groups),
         fact_total,
         analysis,
     )
+
+
+def _visual_groups(raw: dict[str, object]) -> tuple[dict[str, object], ...]:
+    value = raw.get(PRIVATE_VISUAL_GROUPS_KEY)
+    if not isinstance(value, list):
+        return ()
+    result: list[dict[str, object]] = []
+    for item in value[:32]:
+        if not isinstance(item, dict):
+            continue
+        count, bbox = item.get("count"), item.get("bbox")
+        if (
+            not isinstance(count, int)
+            or not 2 <= count <= 64
+            or not isinstance(bbox, list)
+            or len(bbox) != 4
+            or any(not isinstance(part, int) for part in bbox)
+        ):
+            continue
+        x, y, width, height = bbox
+        if x < 0 or y < 0 or width <= 0 or height <= 0:
+            continue
+        result.append({"count": count, "bbox": (x, y, width, height)})
+    return tuple(result)
 
 
 def _binding_pair(
