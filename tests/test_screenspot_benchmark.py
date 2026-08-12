@@ -250,7 +250,7 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
                     "choices": [
                         {
                             "message": {
-                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"option","actionable":true,"color":"blue","shape":"circle","row":2,"column":3,"selected":false}]}'
+                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"option","actionable":false,"color":"blue","shape":"circle","row":2,"column":3,"selected":false}]}'
                             }
                         }
                     ]
@@ -285,6 +285,53 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
     assert regions[0].state == {
         "color": "blue", "shape": "circle", "row": 2, "column": 3, "selected": False,
     }
+
+
+def test_visual_region_proposer_retries_empty_output_and_accepts_bounded_xywh_dialect(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "sample.png"
+    Image.new("RGB", (200, 100), "white").save(image)
+    request_count = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            nonlocal request_count
+            request_count += 1
+            content = (
+                '{"regions":[]}'
+                if request_count == 1
+                else '<think>bounded analysis</think>{"regions":[{"x":0.1,"y":0.2,'
+                '"width":0.25,"height":0.5,"label":"target","confidence":0.9,'
+                '"role":"coordinate point"}]}'
+            )
+            response = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        regions = OpenAICompatibleVisualRegionProposer(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="vision-test"
+        ).propose(VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert request_count == 2
+    assert len(regions) == 1
+    assert regions[0].pixel_bbox((200, 100)) == pytest.approx((20.0, 20.0, 50.0, 50.0))
+    assert regions[0].role == "option"
+    assert regions[0].primitive_action == "point_activate"
 
 
 def test_visual_grounder_environment_factory_uses_zhipu_vision_model_without_exposing_key() -> None:
