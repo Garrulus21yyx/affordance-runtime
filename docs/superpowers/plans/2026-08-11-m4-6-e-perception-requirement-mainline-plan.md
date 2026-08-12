@@ -245,3 +245,8 @@ authority.
   hypothesis arm fails its evidence gate if any case lacks at least one
   hypothesis call. Full validation after the repair is 2246 passed and 27
   skipped. A fresh clean-SHA rerun is required before continuing other cohorts.
+- 2026-08-12: cross-provider execution remains a separate cohort profile. The
+  frozen Mistral perception A/B still rejects any other provider identity;
+  `run_provider_cohort_arm` admits a canonical bridge with an explicitly
+  reported provider/model solely for provider-comparison evidence. Focused and
+  full validation pass (2247 passed, 27 skipped) before the Zhipu run.

@@ -129,7 +129,42 @@ async def run_perception_arm(
     *,
     enable_requirement_hypotheses: bool = False,
 ) -> PerceptionArmOutcome:
-    adapter = _adapter(policy)
+    return await _run_arm(
+        manifest,
+        policy,
+        perception_profile,
+        enable_requirement_hypotheses=enable_requirement_hypotheses,
+        require_frozen_mistral=True,
+    )
+
+
+async def run_provider_cohort_arm(
+    manifest: MiniWobBreadthManifest,
+    policy: ModelBackedAgentPolicy,
+    perception_profile: DecisionPerceptionProfile,
+    *,
+    enable_requirement_hypotheses: bool = False,
+) -> PerceptionArmOutcome:
+    """Run one explicitly named provider cohort without weakening frozen A/B."""
+
+    return await _run_arm(
+        manifest,
+        policy,
+        perception_profile,
+        enable_requirement_hypotheses=enable_requirement_hypotheses,
+        require_frozen_mistral=False,
+    )
+
+
+async def _run_arm(
+    manifest,
+    policy,
+    perception_profile,
+    *,
+    enable_requirement_hypotheses,
+    require_frozen_mistral,
+):
+    adapter = _adapter(policy, require_frozen_mistral=require_frozen_mistral)
     if adapter.perception_profile is not perception_profile:
         raise ValueError("perception A/B policy profile does not match its arm")
     configured_identity = (
@@ -284,12 +319,19 @@ def file_sha256(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _adapter(policy: ModelBackedAgentPolicy) -> ModelPortDecisionAdapter:
+def _adapter(
+    policy: ModelBackedAgentPolicy,
+    *,
+    require_frozen_mistral: bool = True,
+) -> ModelPortDecisionAdapter:
     composed = policy.port
     adapter = composed.primary_port if isinstance(composed, ProviderCallOrchestrator) else composed
     if not isinstance(adapter, ModelPortDecisionAdapter):
         raise TypeError("perception A/B requires the canonical model bridge")
-    if getattr(adapter.port, "provider", "") != "mistral" or getattr(adapter.port, "model", "") != "mistral-medium-3-5":
+    if require_frozen_mistral and (
+        getattr(adapter.port, "provider", "") != "mistral"
+        or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
+    ):
         raise ValueError("perception A/B requires the frozen Mistral model identity")
     if adapter.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX and not getattr(
         adapter.port, "supports_multimodal", False
