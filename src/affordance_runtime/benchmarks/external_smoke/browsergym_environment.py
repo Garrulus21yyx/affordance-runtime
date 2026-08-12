@@ -119,6 +119,7 @@ class BrowserGymMiniWobEnvironment:
     visual_proposer_calls: int = 0
     structural_source_acquired_count: int = 0
     visual_source_acquired_count: int = 0
+    visual_binding_acquired_count: int = 0
     structural_binding_dispatch_count: int = 0
     visual_binding_dispatch_count: int = 0
     verifier_queries: int = 0
@@ -428,6 +429,7 @@ class BrowserGymMiniWobEnvironment:
                     visual.source,
                 ))
                 self.visual_source_acquired_count += 1
+                self.visual_binding_acquired_count += len(visual.private_bindings)
             except Exception:
                 results.append(SourceAcquisitionResult(
                     "browsergym_visual",

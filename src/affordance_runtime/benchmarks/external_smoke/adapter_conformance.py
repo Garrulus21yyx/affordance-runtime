@@ -100,6 +100,7 @@ class InstrumentedBrowserGymEnvironment:
                 "visual_proposer_calls": self.wrapped.visual_proposer_calls,
                 "structural_source_acquired_count": self.wrapped.structural_source_acquired_count,
                 "visual_source_acquired_count": self.wrapped.visual_source_acquired_count,
+                "visual_binding_acquired_count": self.wrapped.visual_binding_acquired_count,
                 "structural_binding_dispatch_count": self.wrapped.structural_binding_dispatch_count,
                 "visual_binding_dispatch_count": self.wrapped.visual_binding_dispatch_count,
                 "official_verifier_queries": self.wrapped.verifier_queries,

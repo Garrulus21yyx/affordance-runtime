@@ -685,6 +685,7 @@ _KNOWN_METRICS = frozenset({
     "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
     "dom_action_calls", "fill_calls", "select_calls", "official_verifier_queries",
     "structural_source_acquired_count", "visual_source_acquired_count",
+    "visual_binding_acquired_count",
     "structural_binding_dispatch_count", "visual_binding_dispatch_count",
     "official_success_count", "provider_retry_count", "fallback_count", "cleanup_failures",
     "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
