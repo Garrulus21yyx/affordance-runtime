@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT` | grounded-tools v2 passed its four-case single-BrowserGym-source gate at `b9ad39a`; Step 12 now owns bounded source selection, provenance-preserving fusion, deterministic route selection, zero-dispatch reroute and selected-media-only grounding; visual binding is the only next slice |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING` | grounded-tools v2 passed its four-case single-BrowserGym-source gate at `b9ad39a`; Step 12 owns bounded source selection/fusion/route/grounding; Step 13 now connects explicitly configured BrowserGym visual proposals through that seam to current pointer execution with stale zero-dispatch. Its live witnesses reuse the existing `.env`, pinned BrowserGym runtime and MiniWoB source with `glm-4.1v-thinking-flashx`; Step 14 is not started |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -82,7 +82,7 @@ docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
 AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
 semantic inventory truth are complete for their declared non-default scopes;
 M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
-`IN_PROGRESS / UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`: real screenshot transport, first
+`IN_PROGRESS / VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`: real screenshot transport, first
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
@@ -311,7 +311,7 @@ Implement one independently measurable slice at a time:
    never replayed — `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth and a referentially closed grounded-tool policy surface —
-   `UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`. Existing SoM utilities are reused as a
+   `VISUAL_BINDING_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_VISUAL_GATE_PENDING`. Existing SoM utilities are reused as a
    deterministic current-screenshot projection, not reimplemented and not made
    an execution authority.
 

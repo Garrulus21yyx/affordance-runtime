@@ -167,6 +167,16 @@ class VisualRegionBinding:
             "action_point_xy": self.action_point_xy,
         }
 
+    @property
+    def source_revision(self) -> str:
+        payload = {
+            "screenshot": self.screenshot_digest,
+            "image": [self.image_width, self.image_height],
+            "viewport": self.viewport.private_payload(),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
 
 def region_fingerprint(
     screenshot_digest: str,

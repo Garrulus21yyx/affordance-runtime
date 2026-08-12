@@ -146,6 +146,7 @@ async def run_provider_cohort_arm(
     perception_profile: DecisionPerceptionProfile,
     *,
     enable_requirement_hypotheses: bool = False,
+    visual_region_proposer=None,
 ) -> PerceptionArmOutcome:
     """Run one explicitly named provider cohort without weakening frozen A/B."""
 
@@ -155,6 +156,7 @@ async def run_provider_cohort_arm(
         perception_profile,
         enable_requirement_hypotheses=enable_requirement_hypotheses,
         require_frozen_mistral=False,
+        visual_region_proposer=visual_region_proposer,
     )
 
 
@@ -165,6 +167,7 @@ async def _run_arm(
     *,
     enable_requirement_hypotheses,
     require_frozen_mistral,
+    visual_region_proposer=None,
 ):
     adapter = _adapter(policy, require_frozen_mistral=require_frozen_mistral)
     if adapter.perception_profile is not perception_profile:
@@ -192,6 +195,7 @@ async def _run_arm(
         FixedPacingState(),
         instrumentations,
         proposer,
+        visual_region_proposer,
     )
     target = replace(
         target,

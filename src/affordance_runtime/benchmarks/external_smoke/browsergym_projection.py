@@ -194,6 +194,7 @@ def project_browsergym_observation(
             ),
         ),
         entity_inventory,
+        acquisition_root_id=observation_id,
     )
     world = WorldObservation(
         observation_id,

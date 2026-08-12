@@ -47,6 +47,7 @@ from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
+from affordance_runtime.visual_grounding import VisualRegionProposerPort
 
 REQUIRED_METRICS = (
     "observations",
@@ -102,6 +103,7 @@ async def run_breadth_campaign(
     output_dir: Path,
     *,
     provider_capacity: ProviderCapacityEvidence | None = None,
+    visual_region_proposer: VisualRegionProposerPort | None = None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -122,7 +124,13 @@ async def run_breadth_campaign(
     progress.write()
     pacing_state = FixedPacingState()
     instrumentations: list[BenchmarkInstrumentation] = []
-    target_manifest = _target_manifest(manifest, policy, pacing_state, instrumentations)
+    target_manifest = _target_manifest(
+        manifest,
+        policy,
+        pacing_state,
+        instrumentations,
+        visual_region_proposer=visual_region_proposer,
+    )
     harness_digest = target_manifest_digest(target_manifest)
     if harness_digest != expected_target_manifest_digest(manifest):
         raise ValueError("target-loop manifest identity is not canonical")
@@ -173,6 +181,7 @@ def _target_manifest(
     pacing_state,
     instrumentations,
     requirement_hypothesis_proposer=None,
+    visual_region_proposer=None,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -182,6 +191,7 @@ def _target_manifest(
             pacing_state,
             instrumentations,
             requirement_hypothesis_proposer,
+            visual_region_proposer,
         )
         for item in manifest.cases
     )
@@ -201,6 +211,7 @@ def _target_case(
     pacing_state,
     instrumentations,
     requirement_hypothesis_proposer=None,
+    visual_region_proposer=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -212,6 +223,7 @@ def _target_case(
                 case.seed,
                 max_turns=case.max_turns,
                 admitted_task_ids=admitted,
+                visual_region_proposer=visual_region_proposer,
             )
         except BaseException as exc:
             _initialize_custom_metrics(instrumentation)

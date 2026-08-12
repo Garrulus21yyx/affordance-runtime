@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import json
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_binding import BrowserGymElementBinding
+from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
+    BrowserGymElementBinding,
+    BrowserGymPrivateBinding,
+    BrowserGymVisualBinding,
+)
 from affordance_runtime.execution import BoundActionRequest
+from affordance_runtime.surfaces.visual.execution import integer_click_point
 
 
-def browsergym_action(request: BoundActionRequest, private: BrowserGymElementBinding) -> str:
+def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBinding) -> str:
     primitive = request.binding.primitive_action
+    if isinstance(private, BrowserGymVisualBinding):
+        if primitive != "point_activate":
+            raise ValueError("BrowserGym visual binding uses an unsupported primitive")
+        x, y = integer_click_point(private.region)
+        return f"mouse_click({x}, {y})"
+    assert isinstance(private, BrowserGymElementBinding)
     bid = json.dumps(private.private_element_id, ensure_ascii=False)
     if primitive == "click":
         return f"click({bid})"

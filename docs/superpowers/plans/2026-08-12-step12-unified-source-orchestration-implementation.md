@@ -1,6 +1,6 @@
 # Step 12 Unified Source Orchestration Implementation
 
-Status: `IMPLEMENTED_PROPERTY_AND_INTEGRATION_VERIFIED / STEP_13_VISUAL_BINDING_NEXT`
+Status: `IMPLEMENTED_PROPERTY_AND_INTEGRATION_VERIFIED / SUPERSEDED_BY_STEP13_IMPLEMENTED`
 
 Scope boundary: implement Step 12 only. `VisualRegionBinding` and benchmark
 capability expansion remain Step 13 and are not part of this plan.

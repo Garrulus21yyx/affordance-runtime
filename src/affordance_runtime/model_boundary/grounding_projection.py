@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from affordance_runtime.adapters.som import BoundingBox, VisualMark, annotate_screenshot
 from affordance_runtime.model_boundary.context import (
@@ -45,13 +45,14 @@ class GroundingProjection:
                 *(item.destination_id for item in option.destinations.items),
             )
         }
-        candidates = tuple(
+        raw_candidates = tuple(
             (source, media)
             for source in observation.sources
             for media in source.media
             if media.kind == "screenshot"
             and (not selected_media_ids or media.media_id in selected_media_ids)
-        )[: self.max_images]
+        )
+        candidates = _deduplicated_media(raw_candidates)[: self.max_images]
         selected_regions = {
             region.target_id for _, media in candidates for region in media.grounding_regions
         }
@@ -116,4 +117,28 @@ class GroundingProjection:
 def _public_verb(semantic_action: str) -> str:
     return {"activate": "click", "fill": "fill", "select": "select"}.get(
         semantic_action, semantic_action,
+    )
+
+
+def _deduplicated_media(candidates):
+    """Keep one transmitted image per digest while retaining all public regions."""
+
+    grouped = {}
+    order = []
+    for source, media in candidates:
+        if media.sha256 not in grouped:
+            grouped[media.sha256] = [source, media, {}]
+            order.append(media.sha256)
+        regions = grouped[media.sha256][2]
+        for region in media.grounding_regions:
+            regions.setdefault(region.target_id, region)
+    return tuple(
+        (
+            grouped[digest][0],
+            replace(
+                grouped[digest][1],
+                grounding_regions=tuple(grouped[digest][2].values()),
+            ),
+        )
+        for digest in order
     )

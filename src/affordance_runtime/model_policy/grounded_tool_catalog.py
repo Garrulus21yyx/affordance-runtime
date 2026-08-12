@@ -7,9 +7,18 @@ import json
 from dataclasses import dataclass
 from typing import Mapping
 
-from affordance_runtime.agent.decisions import AgentDecisionPackage, RequestActionPage, SelectAction
+from affordance_runtime.agent.decisions import (
+    AgentDecisionPackage,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+)
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.context import AgentContext
+from affordance_runtime.model_boundary.context import (
+    AgentContext,
+    AgentGroundingEntityView,
+)
+from affordance_runtime.model_boundary.contracts import AgentActionOptionView
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
@@ -38,14 +47,22 @@ class _NextActionsBinding:
     cursor: str
 
 
+@dataclass(frozen=True)
+class _ObserveBinding:
+    modality: str
+    assurance: str
+
+
 def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
-    if not context.grounding.entities or not context.grounding.target_refs:
+    if context.actions.options and (
+        not context.grounding.entities or not context.grounding.target_refs
+    ):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
     _reject_ambiguous_unmarked_targets(context, ref_by_target, entity_by_ref)
 
-    grouped: dict[tuple[str, str], list[tuple[str, object]]] = {}
+    grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
         ref = ref_by_target.get(option.target_id)
         if ref is None:
@@ -56,6 +73,17 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
 
     specs: list[ToolSpec] = []
     bindings: list[object] = []
+    seen_modalities: set[str] = set()
+    for capability in context.world.observation_capabilities:
+        if capability.modality in seen_modalities:
+            continue
+        seen_modalities.add(capability.modality)
+        specs.append(ToolSpec(
+            f"observe_{capability.modality}",
+            f"Acquire a fresh {capability.modality} observation at {capability.assurance} assurance.",
+            _object_schema({}),
+        ))
+        bindings.append(_ObserveBinding(capability.modality, capability.assurance))
     verb_counts: dict[str, int] = {}
     for (verb, _shape), values in grouped.items():
         verb_counts[verb] = verb_counts.get(verb, 0) + 1
@@ -154,6 +182,17 @@ def resolve_grounded_tool_call(
             binding.cursor,
         )
         return AgentDecisionPackage(NoObjectiveOperation(), decision)
+    if isinstance(binding, _ObserveBinding):
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            RequestObservation(
+                expected_context_id,
+                "current_world",
+                binding.modality,
+                binding.assurance,
+                f"acquire fresh {binding.modality} grounding",
+            ),
+        )
     assert isinstance(binding, _VerbBinding)
     ref = str(call.arguments["target"])
     actions = dict(binding.actions)
@@ -168,15 +207,19 @@ def resolve_grounded_tool_call(
     )
 
 
-def _reject_ambiguous_unmarked_targets(context, ref_by_target, entity_by_ref) -> None:
-    actionable = []
+def _reject_ambiguous_unmarked_targets(
+    context: AgentContext,
+    ref_by_target: Mapping[str, str],
+    entity_by_ref: Mapping[str, AgentGroundingEntityView],
+) -> None:
+    actionable: list[tuple[str, AgentGroundingEntityView]] = []
     for option in context.actions.options:
         ref = ref_by_target.get(option.target_id)
         entity = entity_by_ref.get(ref or "")
         if entity is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         actionable.append((option.semantic_action, entity))
-    signatures: dict[tuple[object, ...], list[object]] = {}
+    signatures: dict[tuple[object, ...], list[AgentGroundingEntityView]] = {}
     for semantic_action, entity in actionable:
         signature = (
             semantic_action,

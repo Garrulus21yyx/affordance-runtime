@@ -17,10 +17,14 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_acquisition import 
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
     BrowserGymBindingStore,
+    BrowserGymElementBinding,
+    BrowserGymPrivateBinding,
+    BrowserGymVisualBinding,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import (
     BrowserGymCurrentnessContext,
     BrowserGymCurrentnessDecision,
+    BrowserGymCurrentnessReason,
     BrowserGymCurrentnessStatus,
     compare_browsergym_currentness,
     unavailable_currentness,
@@ -47,12 +51,18 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
     verifier_snapshot,
     verifier_snapshot_from_current_probe,
 )
+from affordance_runtime.benchmarks.external_smoke.browsergym_visual_projection import (
+    browsergym_visual_frame,
+    project_browsergym_visual_source,
+)
 from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalVerifierResult,
     VerifierFactSource,
 )
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.visual_grounding import VisualRegionProposerPort
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -60,8 +70,15 @@ from affordance_runtime.world import (
     ObservationAcquisition,
     ObservationCapabilities,
     ObservationOffer,
+    ObservationSelectionPlan,
+    SourceAcquisitionResult,
+    SourceAcquisitionStatus,
+    SourceRequirement,
+    SourceSelection,
     WorldObservationRequest,
 )
+from affordance_runtime.world.fusion import FusionStatus, WorldFusion
+from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
 
 
 class BrowserGymPort(Protocol):
@@ -85,6 +102,7 @@ class BrowserGymMiniWobEnvironment:
     _prepared_task_info: dict[str, object]
     _page_identity: str
     _episode_identity: str
+    visual_region_proposer: VisualRegionProposerPort | None = field(default=None, repr=False)
     bindings: BrowserGymBindingStore = field(default_factory=BrowserGymBindingStore)
     dispatched_request_ids: list[str] = field(default_factory=list)
     backend_reset_calls: int = 1
@@ -103,6 +121,7 @@ class BrowserGymMiniWobEnvironment:
     _observation_serial: int = 0
     _current_observation_id: str = ""
     _current_source_revision: str = ""
+    _visual_selected: bool = False
     _verifier: BrowserGymVerifierSnapshot | None = None
     _diagnostic: BrowserGymDiagnosticSnapshot | None = None
     _task: TaskGoal | None = None
@@ -119,7 +138,12 @@ class BrowserGymMiniWobEnvironment:
         independent = bool(getattr(self.gym_environment, "supports_capture_current", False))
         offers: tuple[ObservationOffer, ...] = ()
         if independent:
-            offers = (ObservationOffer("browsergym", "structural", "structural", "medium"),)
+            group = f"browsergym:{self.task_run_id}"
+            offers = (ObservationOffer("browsergym", "structural", "structural", "medium", group),)
+            if self.visual_region_proposer is not None:
+                offers += (ObservationOffer(
+                    "browsergym_visual", "visual", "weak", "high", group,
+                ),)
         return ObservationCapabilities(independent, True, offers)
 
     @classmethod
@@ -131,6 +155,7 @@ class BrowserGymMiniWobEnvironment:
         gym_factory: Callable[..., BrowserGymPort] | None = None,
         max_turns: int = 20,
         admitted_task_ids: frozenset[str] | None = None,
+        visual_region_proposer: VisualRegionProposerPort | None = None,
     ) -> tuple[BrowserGymMiniWobEnvironment, TaskGoal]:
         from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
 
@@ -151,6 +176,7 @@ class BrowserGymMiniWobEnvironment:
             environment = cls(
                 benchmark_task_id, seed, gym_environment, f"run:{uuid.uuid4().hex}", goal,
                 raw, prepared_info, page_identity(raw), episode_identity(prepared_info),
+                visual_region_proposer,
             )
             task = TaskGoal(
                 f"task:{uuid.uuid4().hex}", goal,
@@ -186,10 +212,15 @@ class BrowserGymMiniWobEnvironment:
             truncated=False,
             task_info=self._prepared_task_info,
         )
-        return self._project(raw, snapshot, AcquisitionOrigin.RESET, observation_id, revision)
+        plan = ObservationSelectionPlan(
+            (SourceSelection("browsergym", SourceRequirement.REQUIRED, "primary_grounding"),),
+            2,
+        )
+        return self._project(
+            raw, snapshot, AcquisitionOrigin.RESET, observation_id, revision, plan,
+        )
 
     async def capture(self, request: WorldObservationRequest) -> ObservationAcquisition:
-        del request
         if self._closed or self._task is None:
             return failed_acquisition(AcquisitionOrigin.INDEPENDENT_CAPTURE, "environment_not_ready")
         if not self.observation_capabilities.independent_capture:
@@ -200,6 +231,17 @@ class BrowserGymMiniWobEnvironment:
                 "independent_capture_unsupported",
             )
         self.capture_calls += 1
+        selection = ObservationOrchestrator().select(
+            self.observation_capabilities.offers,
+            request,
+        )
+        if selection.plan is None:
+            return ObservationAcquisition(
+                selection.status,
+                AcquisitionOrigin.INDEPENDENT_CAPTURE,
+                None,
+                selection.reason_code,
+            )
         try:
             raw, probe = self.gym_environment.capture_current()
             self._page_identity = page_identity(raw)
@@ -212,7 +254,12 @@ class BrowserGymMiniWobEnvironment:
                 probe=probe,
             )
             return self._project(
-                raw, snapshot, AcquisitionOrigin.INDEPENDENT_CAPTURE, observation_id, revision,
+                raw,
+                snapshot,
+                AcquisitionOrigin.INDEPENDENT_CAPTURE,
+                observation_id,
+                revision,
+                selection.plan,
             )
         except Exception:
             return failed_acquisition(AcquisitionOrigin.INDEPENDENT_CAPTURE, "browsergym_capture_failed")
@@ -260,7 +307,12 @@ class BrowserGymMiniWobEnvironment:
                 task_info=current_task_info,
             )
             post = self._project(
-                raw, snapshot, AcquisitionOrigin.POST_ACTION, observation_id, revision,
+                raw,
+                snapshot,
+                AcquisitionOrigin.POST_ACTION,
+                observation_id,
+                revision,
+                self._current_selection_plan(),
             )
         except Exception:
             post = failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_action_projection_failed")
@@ -271,7 +323,8 @@ class BrowserGymMiniWobEnvironment:
         return bool(
             private
             and request.world_observation_id == self._current_observation_id
-            and request.binding.source_revision == self._current_source_revision
+            and request.binding.source_observation_id == private.source_observation_id
+            and request.binding.source_revision == private.source_revision
         )
 
     def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult:
@@ -300,7 +353,15 @@ class BrowserGymMiniWobEnvironment:
             if getattr(unwrapped, name, None) is not None:
                 raise RuntimeError("BrowserGym cleanup left an owned browser resource open")
 
-    def _project(self, raw, snapshot, origin, observation_id, revision) -> ObservationAcquisition:
+    def _project(
+        self,
+        raw,
+        snapshot,
+        origin,
+        observation_id,
+        revision,
+        plan: ObservationSelectionPlan,
+    ) -> ObservationAcquisition:
         try:
             projection: BrowserGymProjection = project_browsergym_observation(
                 raw,
@@ -313,9 +374,64 @@ class BrowserGymMiniWobEnvironment:
             )
         except BrowserGymSemanticError as exc:
             return failed_acquisition(origin, f"browsergym_semantic_{exc.code.value}")
-        self.bindings.replace(projection.private_bindings)
-        self._current_observation_id = observation_id
+        selected = {item.source: item for item in plan.selections}
+        sources = [projection.world.sources[0]]
+        private_bindings: list[BrowserGymPrivateBinding] = list(projection.private_bindings)
+        results: list[SourceAcquisitionResult] = [SourceAcquisitionResult(
+            "browsergym",
+            selected["browsergym"].requirement,
+            SourceAcquisitionStatus.ACQUIRED,
+            "source_acquired",
+            projection.world.sources[0],
+        )]
+        visual_selection = selected.get("browsergym_visual")
+        if self.visual_region_proposer is not None and visual_selection is None:
+            results.append(SourceAcquisitionResult(
+                "browsergym_visual",
+                SourceRequirement.UNSELECTED,
+                SourceAcquisitionStatus.NOT_ACQUIRED,
+                "source_not_selected",
+            ))
+        elif visual_selection is not None:
+            try:
+                assert self._task is not None and self.visual_region_proposer is not None
+                visual = project_browsergym_visual_source(
+                    raw,
+                    observation_id=f"{observation_id}:visual",
+                    acquisition_root_id=observation_id,
+                    page_identity=self._page_identity,
+                    episode_identity=self._episode_identity,
+                    task=self._task,
+                    proposer=self.visual_region_proposer,
+                )
+                sources.append(visual.source)
+                private_bindings.extend(visual.private_bindings)
+                results.append(SourceAcquisitionResult(
+                    "browsergym_visual",
+                    visual_selection.requirement,
+                    SourceAcquisitionStatus.ACQUIRED,
+                    "source_acquired",
+                    visual.source,
+                ))
+            except Exception:
+                results.append(SourceAcquisitionResult(
+                    "browsergym_visual",
+                    visual_selection.requirement,
+                    SourceAcquisitionStatus.FAILED,
+                    "source_acquisition_failed",
+                ))
+        fused = WorldFusion().fuse(tuple(sources))
+        if fused.status is not FusionStatus.FUSED or fused.observation is None:
+            return failed_acquisition(origin, fused.reason_code)
+        world = fused.observation
+        self.bindings.replace(tuple(private_bindings))
+        self._current_observation_id = world.observation_id
         self._current_source_revision = revision
+        self._visual_selected = any(
+            item.source == "browsergym_visual"
+            and item.status is SourceAcquisitionStatus.ACQUIRED
+            for item in results
+        )
         self._verifier = snapshot
         self._diagnostic = diagnostic_snapshot(
             projection.semantic_analysis,
@@ -323,8 +439,29 @@ class BrowserGymMiniWobEnvironment:
         )
         self.full_observation_count += 1
         return ObservationAcquisition(
-            AcquisitionStatus.ACQUIRED, origin, projection.world, "browsergym_observation_acquired",
+            AcquisitionStatus.ACQUIRED,
+            origin,
+            world,
+            "world_acquired_with_optional_gap"
+            if any(
+                item.requirement is SourceRequirement.OPTIONAL
+                and item.status is not SourceAcquisitionStatus.ACQUIRED
+                for item in results
+            )
+            else "browsergym_observation_acquired",
+            plan,
+            tuple(results),
         )
+
+    def _current_selection_plan(self) -> ObservationSelectionPlan:
+        values = [SourceSelection(
+            "browsergym", SourceRequirement.REQUIRED, "post_action_grounding",
+        )]
+        if self._visual_selected:
+            values.append(SourceSelection(
+                "browsergym_visual", SourceRequirement.OPTIONAL, "visual_augmentation",
+            ))
+        return ObservationSelectionPlan(tuple(values), 2)
 
     def _next_identity(self) -> tuple[str, str]:
         self._observation_serial += 1
@@ -338,6 +475,9 @@ class BrowserGymMiniWobEnvironment:
             self.last_currentness_decision = unavailable_currentness()
             return ActionError.CURRENTNESS_UNAVAILABLE, 0
         self.probe_calls += 1
+        if isinstance(private, BrowserGymVisualBinding):
+            return self._probe_visual_currentness(request, private)
+        assert isinstance(private, BrowserGymElementBinding)
         try:
             result = self.gym_environment.currentness_probe(private.private_element_id)
         except BaseException:
@@ -388,9 +528,53 @@ class BrowserGymMiniWobEnvironment:
             return ActionError.CURRENTNESS_UNAVAILABLE, 1
         return ActionError.STALE_BINDING, 1
 
+    def _probe_visual_currentness(
+        self,
+        request: BoundActionRequest,
+        private: BrowserGymVisualBinding,
+    ) -> tuple[ActionError | None, int]:
+        try:
+            raw, probe = self.gym_environment.capture_current()
+            if not isinstance(probe, dict):
+                raise ValueError("visual currentness probe must be structured")
+            ready = probe.get("ready")
+            done = probe.get("done")
+            if not isinstance(ready, bool) or not isinstance(done, bool):
+                raise ValueError("visual currentness probe omitted task state")
+            live_page = page_identity(raw)
+            live_episode = probe_episode(probe, self._episode_identity)
+            live = browsergym_visual_frame(raw, f"probe:{uuid.uuid4().hex}")
+        except Exception:
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        reason = None
+        if not self.is_current(request):
+            reason = BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
+        elif done or self._terminated:
+            reason = BrowserGymCurrentnessReason.TASK_DONE
+        elif not ready:
+            reason = BrowserGymCurrentnessReason.TASK_NOT_READY
+        elif private.page_identity != live_page:
+            reason = BrowserGymCurrentnessReason.PAGE_CHANGED
+        elif private.episode_identity != live_episode:
+            reason = BrowserGymCurrentnessReason.EPISODE_CHANGED
+        elif not visual_binding_is_current(private.region, live):
+            reason = BrowserGymCurrentnessReason.STATE_CHANGED
+        if reason is None:
+            self.last_currentness_decision = BrowserGymCurrentnessDecision(
+                BrowserGymCurrentnessStatus.CURRENT,
+                BrowserGymCurrentnessReason.CURRENT,
+            )
+            return None, 1
+        self.last_currentness_decision = BrowserGymCurrentnessDecision(
+            BrowserGymCurrentnessStatus.STALE,
+            reason,
+        )
+        return ActionError.STALE_BINDING, 1
+
     def _record_dispatch(self, request: BoundActionRequest) -> None:
         self.step_calls += 1
-        self.dom_action_calls += 1
+        self.dom_action_calls += int(request.binding.surface == "browsergym")
         self.dispatched_request_ids.append(request.request_id)
         self.fill_calls += int(request.binding.primitive_action == "fill")
         self.select_calls += int(request.binding.primitive_action == "select_option")

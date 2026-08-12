@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     CanonicalBrowserControl,
 )
+from affordance_runtime.surfaces.visual.contracts import VisualRegionBinding
 
 
 @dataclass(frozen=True)
@@ -32,16 +33,37 @@ class BrowserGymElementBinding:
         return self.canonical_control.private_options
 
 
+@dataclass(frozen=True)
+class BrowserGymVisualBinding:
+    """Runtime-private screenshot-bound pointer route for BrowserGym."""
+
+    binding_id: str
+    page_identity: str
+    episode_identity: str
+    region: VisualRegionBinding
+
+    @property
+    def source_observation_id(self) -> str:
+        return self.region.source_observation_id
+
+    @property
+    def source_revision(self) -> str:
+        return self.region.source_revision
+
+
+BrowserGymPrivateBinding = BrowserGymElementBinding | BrowserGymVisualBinding
+
+
 @dataclass
 class BrowserGymBindingStore:
-    _bindings: dict[str, BrowserGymElementBinding] = field(default_factory=dict, init=False)
+    _bindings: dict[str, BrowserGymPrivateBinding] = field(default_factory=dict, init=False)
 
-    def replace(self, bindings: tuple[BrowserGymElementBinding, ...]) -> None:
+    def replace(self, bindings: tuple[BrowserGymPrivateBinding, ...]) -> None:
         if len({item.binding_id for item in bindings}) != len(bindings):
             raise ValueError("BrowserGym private binding IDs must be unique")
         self._bindings = {item.binding_id: item for item in bindings}
 
-    def get(self, binding_id: str) -> BrowserGymElementBinding | None:
+    def get(self, binding_id: str) -> BrowserGymPrivateBinding | None:
         return self._bindings.get(binding_id)
 
     def clear(self) -> None:

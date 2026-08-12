@@ -158,6 +158,20 @@ route。`WorldFusion` 保留 source-local identity/revision/provenance，将可�
 未选择、失败、截断、陈旧与有覆盖的缺失保持不同状态。普通实现不得把“观察所有 adapter
 并拼接 tuple”宣称为完成 fusion。
 
+BrowserGym visual binding 只在显式配置 bounded region proposer 时声明 `visual/weak`
+offer。policy 只能通过公开 `RequestObservation(visual, weak)` 请求增强；Runtime 选择
+structural required + visual optional，并让二者共享一次 raw capture 和 acquisition root。
+proposed region 先成为 source-local observed entity；只有支持的 `point_activate` 才创建
+private `VisualRegionBinding` 和 public `ActionBinding`，再经 `WorldFusion -> ActionSpace ->
+admission -> RouteSelector`。SoM、截图或 observed region 自身不创建执行权。
+
+视觉 route 的 bbox、point、screenshot identity 和 viewport 仅在 private binding 中；公开
+binding payload 和 model intent 不含坐标。dispatch 前必须重新读取当前截图，并同时验证
+world epoch、page、episode、exact screenshot digest/dimensions/viewport；任一不一致返回 typed
+`STALE_BINDING` 且 zero dispatch，probe 不可用返回 `CURRENTNESS_UNAVAILABLE`。只有验证后的
+整数点可编码为 BrowserGym `mouse_click`。optional visual acquisition 失败保留 sufficient
+structural world 并报告 typed gap；unsupported primitive 只可观察，不产生 ActionOption。
+
 正常 action path 直接消费 `execute()` 返回的 post-action acquisition。只有
 RequestObservation、Wait、stale/currentness recovery、confirmation refresh，或
 execute 未提供 after observation 时，Runtime 才在 capability 允许下调用

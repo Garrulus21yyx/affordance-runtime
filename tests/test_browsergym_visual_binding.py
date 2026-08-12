@@ -1,0 +1,269 @@
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+
+import numpy as np
+from browsergym_adapter_support import FakeBrowserGym, raw_observation
+
+from affordance_runtime.agent import RequestObservation
+from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
+    BrowserGymMiniWobEnvironment,
+)
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.model_boundary import ContextBuilder
+from affordance_runtime.model_policy.grounded_tool_catalog import (
+    compile_grounded_tool_catalog,
+    resolve_grounded_tool_call,
+)
+from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.visual_grounding import VisualRegion, VisualRegionProposalRequest
+from affordance_runtime.world import (
+    ActionSpaceBuilder,
+    ObservationRequestKind,
+    SourceAcquisitionStatus,
+    WorldObservationRequest,
+)
+from affordance_runtime.world.binder import ActionBinder
+
+
+@dataclass
+class _Proposer:
+    regions: list[VisualRegion]
+    calls: list[VisualRegionProposalRequest] = field(default_factory=list)
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "fixture-v1"
+
+    def propose(self, request: VisualRegionProposalRequest) -> list[VisualRegion]:
+        self.calls.append(request)
+        return list(self.regions)
+
+
+@dataclass
+class _FailingProposer:
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "fixture-v1"
+
+    def propose(self, request: VisualRegionProposalRequest) -> list[VisualRegion]:
+        del request
+        raise RuntimeError("visual source unavailable")
+
+
+def _raw(*, shade: int = 255):
+    raw = raw_observation(goal="Click the visible target.")
+    raw["screenshot"] = np.full((100, 200, 3), shade, dtype=np.uint8)
+    return raw
+
+
+def _open(fake: FakeBrowserGym, proposer: _Proposer):
+    return BrowserGymMiniWobEnvironment.open(
+        "browsergym/miniwob.click-button",
+        7,
+        gym_factory=lambda *_args, **_kwargs: fake,
+        visual_region_proposer=proposer,
+    )
+
+
+def _visual_request():
+    return WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "structural actions do not ground the visible target",
+        subject_id="current_world",
+        modality="visual",
+        required_assurance="weak",
+    )
+
+
+def _bind_first(task, world):
+    space = ActionSpaceBuilder().build(task, world)
+    assert len(space.options) == 1
+    selection = ActionSpaceBuilder().admit(space.options[0], {})
+    return ActionBinder().bind(selection, world, "context:visual")
+
+
+def test_visual_source_is_typed_optional_augmentation_over_one_shared_capture() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
+        environment, task = _open(fake, proposer)
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            assert initial.observation.bindings == ()
+            assert proposer.calls == []
+            assert [(item.source, item.status) for item in initial.source_results] == [
+                ("browsergym", SourceAcquisitionStatus.ACQUIRED),
+                ("browsergym_visual", SourceAcquisitionStatus.NOT_ACQUIRED),
+            ]
+
+            acquired = await environment.capture(_visual_request())
+            assert acquired.observation is not None
+            assert fake.capture_count == 1
+            assert len(proposer.calls) == 1
+            assert {source.surface for source in acquired.observation.sources} == {
+                "browsergym",
+                "browsergym_visual",
+            }
+            assert len(acquired.observation.bindings) == 1
+            assert acquired.observation.bindings[0].surface == "browsergym_visual"
+            assert acquired.observation.bindings[0].payload == {}
+            state = AgentLoopState(acquired.observation, remaining_turns=3)
+            context = ContextBuilder().build(
+                task,
+                state,
+                ActionSpaceBuilder().build(task, acquired.observation),
+                TaskEvaluation(
+                    task.task_id,
+                    acquired.observation.observation_id,
+                    TaskEvaluationStatus.INCOMPLETE,
+                    "ongoing",
+                ),
+                observation_capabilities=environment.observation_capabilities,
+            )
+            assert len(context.image_inputs) == 1
+            assert sum(item.marked for item in context.grounding.entities) == 1
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_visual_binding_routes_through_action_space_and_pointer_execution() -> None:
+    async def scenario() -> None:
+        raw = _raw()
+        fake = FakeBrowserGym(raw)
+        fake.step_terminated = False
+        fake.step_done = False
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
+        environment, task = _open(fake, proposer)
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_visual_request())
+            assert acquired.observation is not None
+            request = _bind_first(task, acquired.observation)
+            assert "bbox" not in request.intent.parameters
+            assert request.binding.payload == {}
+
+            outcome = await environment.execute(request)
+            assert outcome.result.dispatch_status is DispatchStatus.SENT
+            assert fake.actions == ["mouse_click(70, 35)"]
+            assert environment.step_calls == 1
+            assert environment.dom_action_calls == 0
+            assert len(proposer.calls) == 2  # requested capture plus post-action projection
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_changed_screenshot_makes_visual_binding_stale_with_zero_dispatch() -> None:
+    async def scenario() -> None:
+        initial = _raw()
+        fake = FakeBrowserGym(initial, _raw(shade=1))
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
+        environment, task = _open(fake, proposer)
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_visual_request())
+            assert acquired.observation is not None
+            # Capture used ``post`` in the fixture, so change it only after binding.
+            fake.post = _raw(shade=2)
+            request = _bind_first(task, acquired.observation)
+
+            outcome = await environment.execute(request)
+            assert outcome.result.dispatch_status is DispatchStatus.NOT_SENT
+            assert outcome.result.error is ActionError.STALE_BINDING
+            assert fake.actions == []
+            assert environment.step_calls == 0
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_unsupported_visual_primitive_never_creates_action_authority() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([
+            VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9, primitive_action="drag"),
+        ])
+        environment, task = _open(fake, proposer)
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_visual_request())
+            assert acquired.observation is not None
+            assert len(acquired.observation.targets) == 1
+            assert acquired.observation.bindings == ()
+            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_optional_visual_failure_preserves_structural_world_with_typed_gap() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        environment, task = BrowserGymMiniWobEnvironment.open(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: fake,
+            visual_region_proposer=_FailingProposer(),
+        )
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_visual_request())
+            assert acquired.observation is not None
+            assert acquired.reason_code == "world_acquired_with_optional_gap"
+            result = next(
+                item for item in acquired.source_results if item.source == "browsergym_visual"
+            )
+            assert result.status is SourceAcquisitionStatus.FAILED
+            assert acquired.observation.bindings == ()
+            assert fake.capture_count == 1
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_zero_action_grounded_workspace_can_request_visual_observation() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
+        environment, task = _open(fake, proposer)
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            state = AgentLoopState(initial.observation, remaining_turns=3)
+            space = ActionSpaceBuilder().build(task, initial.observation)
+            context = ContextBuilder().build(
+                task,
+                state,
+                space,
+                TaskEvaluation(
+                    task.task_id,
+                    initial.observation.observation_id,
+                    TaskEvaluationStatus.INCOMPLETE,
+                    "ongoing",
+                ),
+                observation_capabilities=environment.observation_capabilities,
+            )
+            catalog = compile_grounded_tool_catalog(context)
+            assert "observe_visual" in {item.name for item in catalog.specs}
+            package = resolve_grounded_tool_call(
+                catalog,
+                ToolCall("observe_visual", {}),
+                expected_context_id=context.context_id,
+            )
+            assert isinstance(package.decision, RequestObservation)
+            assert package.decision.modality == "visual"
+            assert package.decision.required_assurance == "weak"
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
