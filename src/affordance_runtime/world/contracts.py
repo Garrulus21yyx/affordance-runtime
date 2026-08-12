@@ -110,11 +110,29 @@ class ActionRisk(StrEnum):
 
 
 @dataclass(frozen=True)
+class ObservationGroundingRegion:
+    """Observation-bound geometry for model annotation, never execution authority."""
+
+    target_id: str
+    bbox: tuple[int, int, int, int]
+    confidence: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not self.target_id.strip() or len(self.bbox) != 4 or not 0 <= self.confidence <= 1:
+            raise ValueError("observation grounding region is invalid")
+        x, y, width, height = self.bbox
+        if any(type(value) is not int for value in self.bbox) or x < 0 or y < 0 or width <= 0 or height <= 0:
+            raise ValueError("observation grounding bbox is invalid")
+        object.__setattr__(self, "bbox", tuple(self.bbox))
+
+
+@dataclass(frozen=True)
 class ObservationMedia:
     media_id: str
     kind: str
     mime_type: str
     data: bytes = field(repr=False)
+    grounding_regions: tuple[ObservationGroundingRegion, ...] = field(default=(), repr=False)
     sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -129,6 +147,12 @@ class ObservationMedia:
         ):
             raise ValueError("observation media is invalid or exceeds its bound")
         object.__setattr__(self, "sha256", hashlib.sha256(self.data).hexdigest())
+        regions = tuple(self.grounding_regions)
+        if len(regions) > 512 or any(not isinstance(item, ObservationGroundingRegion) for item in regions):
+            raise TypeError("observation grounding regions must be bounded and typed")
+        if len({item.target_id for item in regions}) != len(regions):
+            raise ValueError("observation grounding regions must have unique targets")
+        object.__setattr__(self, "grounding_regions", regions)
 
 
 @dataclass(frozen=True)

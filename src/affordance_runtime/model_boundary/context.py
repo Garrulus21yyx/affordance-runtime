@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -198,6 +199,41 @@ class AgentImageInput:
 
 
 @dataclass(frozen=True)
+class AgentGroundingEntityView:
+    ref: str
+    role: str
+    label: str
+    state: Mapping[str, object] = field(default_factory=dict)
+    relation_hints: tuple[str, ...] = ()
+    verbs: tuple[str, ...] = ()
+    marked: bool = False
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"E[1-9][0-9]{0,2}", self.ref):
+            raise ValueError("grounding entity requires a bounded call-local ref")
+        object.__setattr__(self, "state", freeze_json(self.state))
+        object.__setattr__(self, "relation_hints", tuple(self.relation_hints))
+        object.__setattr__(self, "verbs", tuple(self.verbs))
+
+
+@dataclass(frozen=True)
+class AgentGroundingIndexView:
+    entities: tuple[AgentGroundingEntityView, ...] = ()
+    target_refs: Mapping[str, str] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self) -> None:
+        entities = tuple(self.entities)
+        refs = {item.ref for item in entities}
+        if len(refs) != len(entities):
+            raise ValueError("grounding refs must be unique")
+        mapping = dict(self.target_refs)
+        if set(mapping.values()) != refs or len(mapping) != len(entities):
+            raise ValueError("grounding target/ref mapping must be bijective")
+        object.__setattr__(self, "entities", entities)
+        object.__setattr__(self, "target_refs", freeze_json(mapping))
+
+
+@dataclass(frozen=True)
 class AgentContext:
     context_id: str
     task: AgentTaskView
@@ -211,6 +247,7 @@ class AgentContext:
     decision_mode: DecisionMode
     control_feedback: AgentControlFeedbackView | None = None
     image_inputs: tuple[AgentImageInput, ...] = ()
+    grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -218,3 +255,5 @@ class AgentContext:
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(not isinstance(item, AgentImageInput) for item in self.image_inputs):
             raise TypeError("AgentContext image inputs must be bounded and typed")
+        if not isinstance(self.grounding, AgentGroundingIndexView):
+            raise TypeError("AgentContext grounding index must be typed")

@@ -77,6 +77,7 @@ class CanonicalBrowserControl:
     private_node_id: str
     private_parent_id: str
     private_child_ids: tuple[str, ...]
+    private_bbox: tuple[int, int, int, int] | None = None
 
     @property
     def role_spec(self) -> BrowserGymRoleSpec:
@@ -406,6 +407,7 @@ def _canonical_control(
         record.node_id,
         record.parent_id,
         record.child_ids,
+        _private_bbox(physical),
     )
 
 
@@ -456,6 +458,21 @@ def _private_options(public_labels: tuple[str, ...], physical: object) -> tuple[
     ):
         return ()
     return tuple(sorted(mapped))
+
+
+def _private_bbox(physical: object) -> tuple[int, int, int, int] | None:
+    if not isinstance(physical, dict):
+        return None
+    value = physical.get("bbox")
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    try:
+        x, y, width, height = (int(round(float(item))) for item in value)
+    except (TypeError, ValueError):
+        return None
+    if x < 0 or y < 0 or width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
 
 
 def _properties(node: dict[str, object]) -> dict[str, object]:

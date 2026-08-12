@@ -1,0 +1,52 @@
+{
+  "schema_version": "miniwob-incomplete-diagnostic.v1",
+  "profile": "ZHIPU_DYNAMIC_TOOLS_60_DIAGNOSTIC",
+  "implementation_sha": "7c1419002cfa88353eb5549c887706d63d5778c1",
+  "status": "INCOMPLETE_DIAGNOSTIC_STOPPED",
+  "complete": false,
+  "performance_claim_allowed": false,
+  "mixed_cohort_success_rate_prohibited": true,
+  "planned_cases": 60,
+  "completed_cases": 8,
+  "success_count": 0,
+  "cohort_counts": {
+    "capability_covered": 1,
+    "unassessed": 1,
+    "declared_gap": 6
+  },
+  "outcome_counts": {
+    "task_failed": 4,
+    "structured_output_failure": 2,
+    "no_progress_control_repetition": 1,
+    "case_timeout": 1
+  },
+  "aggregate_metrics": {
+    "policy_calls": 14,
+    "provider_attempts": 47,
+    "valid_tool_call_count": 11,
+    "admitted_decision_count": 7,
+    "executions": 9,
+    "browsergym_step_calls": 9,
+    "tool_argument_repair_count": 1
+  },
+  "cases": [
+    {"case_id": "miniwob-60-01", "task_id": "browsergym/miniwob.login-user", "outcome": "task_failed", "policy_calls": 3, "provider_attempts": 9, "executions": 3},
+    {"case_id": "miniwob-60-02", "task_id": "browsergym/miniwob.stock-market", "outcome": "task_failed", "policy_calls": 1, "provider_attempts": 3, "executions": 1},
+    {"case_id": "miniwob-60-03", "task_id": "browsergym/miniwob.click-collapsible-nodelay", "outcome": "task_failed", "policy_calls": 1, "provider_attempts": 3, "executions": 1},
+    {"case_id": "miniwob-60-04", "task_id": "browsergym/miniwob.email-inbox-forward-nl", "outcome": "structured_output_failure", "policy_calls": 2, "provider_attempts": 7, "executions": 1},
+    {"case_id": "miniwob-60-05", "task_id": "browsergym/miniwob.grid-coordinate", "outcome": "no_progress_control_repetition", "policy_calls": 2, "provider_attempts": 8, "executions": 0},
+    {"case_id": "miniwob-60-06", "task_id": "browsergym/miniwob.form-sequence-2", "outcome": "case_timeout", "policy_calls": 3, "provider_attempts": 9, "executions": 2},
+    {"case_id": "miniwob-60-07", "task_id": "browsergym/miniwob.tic-tac-toe", "outcome": "structured_output_failure", "policy_calls": 1, "provider_attempts": 4, "executions": 0},
+    {"case_id": "miniwob-60-08", "task_id": "browsergym/miniwob.phone-book", "outcome": "task_failed", "policy_calls": 1, "provider_attempts": 4, "executions": 1}
+  ],
+  "diagnostic_findings": [
+    "The run was manually stopped after eight cases and was not resumed.",
+    "The capability-covered login-user witness exposed anonymous action tools without a screenshot-to-tool target reference.",
+    "Requirement hypothesis generation ran on the short path and amplified provider attempts.",
+    "The mixed cohort and incomplete sample cannot support a MiniWoB success-rate claim."
+  ],
+  "privacy_review": "public aggregate and typed case summaries only; no raw model responses, screenshots, credentials, selectors, private bindings, or provider secrets",
+  "evidence_valid": true,
+  "comparison_valid": false,
+  "errors": []
+}

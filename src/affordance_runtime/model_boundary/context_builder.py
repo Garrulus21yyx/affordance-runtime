@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from affordance_runtime.adapters.som import BoundingBox, VisualMark, annotate_screenshot
 from affordance_runtime.agent.progress_projection import project_progress_events
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
 from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
@@ -19,6 +20,8 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
+    AgentGroundingEntityView,
+    AgentGroundingIndexView,
     AgentHypothesisRejectionView,
     AgentImageInput,
     AgentObjectiveCheckpointView,
@@ -157,7 +160,8 @@ class ContextBuilder:
             ),
             DecisionMode.ACT,
             project_control_feedback(state.pending_control_feedback),
-            _image_inputs(state),
+            _grounded_image_inputs(state, world, actions),
+            _grounding_index(world, actions, state),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
@@ -371,23 +375,101 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
     )
 
 
-def _image_inputs(state: AgentLoopState) -> tuple[AgentImageInput, ...]:
+def _grounding_index(world, actions, state: AgentLoopState) -> AgentGroundingIndexView:
+    target_refs = {
+        item.target_id: f"E{index}"
+        for index, item in enumerate(world.targets.items, 1)
+    }
+    verbs: dict[str, list[str]] = {}
+    for option in actions.options:
+        verbs.setdefault(option.target_id, []).append(_public_verb(option.semantic_action))
+    marked_targets = _marked_target_ids(state, target_refs, actions)
+    entities = []
+    for target in world.targets.items:
+        hints: list[str] = []
+        parent = target.relations.get("parent_id")
+        if isinstance(parent, str) and parent in target_refs:
+            hints.append(f"parent:{target_refs[parent]}")
+        children = target.relations.get("child_ids")
+        if isinstance(children, tuple | list):
+            refs = tuple(
+                target_refs[item]
+                for item in children
+                if isinstance(item, str) and item in target_refs
+            )
+            if refs:
+                hints.append("children:" + ",".join(refs[:8]))
+        entities.append(AgentGroundingEntityView(
+            target_refs[target.target_id],
+            target.role,
+            target.label,
+            target.state,
+            tuple(hints),
+            tuple(dict.fromkeys(verbs.get(target.target_id, ()))),
+            target.target_id in marked_targets,
+        ))
+    return AgentGroundingIndexView(tuple(entities), target_refs)
+
+
+def _marked_target_ids(state, target_refs, actions) -> set[str]:
+    offered = {
+        target_id
+        for option in actions.options
+        for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
+    }
+    regions = {
+        region.target_id
+        for source in state.current_observation.sources
+        for media in source.media
+        for region in media.grounding_regions
+    }
+    return offered.intersection(target_refs).intersection(regions)
+
+
+def _grounded_image_inputs(state: AgentLoopState, world, actions) -> tuple[AgentImageInput, ...]:
+    target_refs = {
+        item.target_id: f"E{index}"
+        for index, item in enumerate(world.targets.items, 1)
+    }
+    marked_targets = _marked_target_ids(state, target_refs, actions)
     images: list[AgentImageInput] = []
     for source in reversed(state.current_observation.sources):
         for media in reversed(source.media):
             if media.kind != "screenshot":
                 continue
+            marks = tuple(
+                VisualMark(
+                    target_refs[region.target_id],
+                    target_refs[region.target_id],
+                    BoundingBox(*region.bbox),
+                    region.confidence,
+                    canonical_artifact_ref(source.observation_id, media.media_id),
+                    state.current_observation.observation_id,
+                    source.revision,
+                    f"grounding:{region.target_id}",
+                )
+                for region in media.grounding_regions
+                if region.target_id in marked_targets
+            )
+            data = annotate_screenshot(media.data, marks) if marks else media.data
             images.append(
                 AgentImageInput(
                     canonical_artifact_ref(source.observation_id, media.media_id),
                     media.mime_type,
-                    media.data,
-                    media.sha256,
+                    data,
+                    hashlib.sha256(data).hexdigest(),
                 )
             )
             if len(images) == 2:
                 return tuple(images)
     return tuple(images)
+
+
+def _public_verb(semantic_action: str) -> str:
+    return {"activate": "click", "fill": "fill", "select": "select"}.get(
+        semantic_action,
+        semantic_action,
+    )
 
 
 def _fit_context(

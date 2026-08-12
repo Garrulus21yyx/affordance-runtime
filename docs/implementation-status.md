@@ -1,7 +1,7 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-11
+> **Updated:** 2026-08-12
 > **Current reviewed M4.5-B closure SHA:** `NONE`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_NEXT` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -126,7 +126,12 @@ ActionContract, or ExecutionReceipt.
   unavailable without transport fields, and related write/invoke affordances
   are withheld. The proof uses explicitly referenced `nosec` and Runtime
   `LOCAL_SIMULATION`; remote/physical scopes remain HIGH risk.
-- SoM utilities and smart-room/mock-web assets are implemented.
+- SoM utilities and smart-room/mock-web assets are implemented. The existing
+  SoM adapter still terminates in the legacy `Affordance/AffordanceLease`
+  surface and is not wired into the current BrowserGym
+  `WorldObservation/ActionPage/dynamic-tools` policy path. M4.6-E will reuse its
+  bbox/mark/image-annotation primitives through a thin current-path grounding
+  projection; it will not restore the legacy surface as an authority.
 - Smart-room images use committed lockfiles and `npm ci`. Audit debt remains:
   node-wot 4 vulnerabilities (2 moderate, 2 high); dashboard 2 (1 moderate,
   1 high). Fixes currently require breaking dependency upgrades.
@@ -498,7 +503,7 @@ no retryable failure, the run proves wiring and evidence validity but not live
 retry effectiveness; controlled exceptional-path tests cover retry and typed
 exhaustion. D remains implemented-not-verified pending fresh held-out review.
 
-M4.6-E is `IN_PROGRESS / IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`. BrowserGym
+M4.6-E is `IN_PROGRESS / GROUNDED_TOOLS_V2_NEXT`. BrowserGym
 screenshots are carried as typed private image inputs into real multimodal model
 messages; the public AX profile includes executable checkbox/radio/tab/menuitem
 and bounded read-only table/list/heading/static-text structure. The valid
@@ -514,9 +519,47 @@ is limited to one initial call plus changed-snapshot/page augmentation, with a
 hard four-call run budget. Benchmark accounting separates hypothesis calls
 from GUI policy calls and partitions cases into capability-covered, unassessed
 and declared-gap cohorts. Retryable hypothesis-provider failures use bounded
-attempt/deadline recovery and remain nonterminal after exhaustion. The
-remaining active gate is separated-cohort benchmark validation. The
+attempt/deadline recovery and remain nonterminal after exhaustion.
+Dynamic-tools v1 and its bounded selected-argument repair are implemented, but
+the stopped clean-`7c14190` MiniWoB-60 attempt completed only 8 mixed-cohort
+cases with 0 success and is not a benchmark claim. Its only
+capability-covered case exposed the current shared root: raw screenshots and
+anonymous `act_NN` tools have no common public target reference, while the
+short-loop requirement proposer adds a second model-call path. The next active
+gate is therefore `grounded_tools.v2`, not another v1 repair or resumption of
+that partial run. It must reuse the existing SoM renderer to place the same
+call-local `E*` refs on current screenshot controls that appear in a concise
+allowlist `ToolPolicyView`, schema-equivalent verb tools and the previous tool
+result. A private current-epoch resolver maps those refs to existing
+ActionOptions/bindings; ActionSpace remains the only execution authority. The
+short-loop profile disables the requirement proposer and admits one normal
+policy call per GUI turn. Targeted `login-user` and duplicate-control witnesses
+must pass first. The next required capability slice then bridges the already
+implemented `VisualSurfaceAdapter`/`VisualRegionBinding` foundation into the
+current BrowserGym target loop for screenshot-only targets such as
+`grid-coordinate`; today that bridge does not exist. Scroll, focus-aware
+keypress, table/list ownership, dynamic semantic deltas, multi-step verified
+working state and source review of the 14 readiness-unassessed cases follow as
+explicit shared-capability slices. Targeted cohorts run after each slice before
+one frozen MiniWoB-60 rerun. Declared gaps remain separately reported for
+attribution, but are no longer treated as permanently out of product scope.
+The named tasks are test witnesses only. No Runtime/policy/tool/admission path
+may branch on a MiniWoB task slug, case ID, readiness cohort,
+reviewed-source rule, reward or answer; only benchmark inventory/reporting
+owners may retain that metadata. BrowserGym-specific mechanics remain isolated
+to the environment adapter, while the capability contracts are intended for
+real GUI surfaces. The
 active convergence plan is the [task-grounded perception/frontier record](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
+
+The active plan now also freezes the v1 complexity diagnosis and reuse boundary.
+`grounded_tools.v2` must replace the active full-context scrub + per-turn
+hypothesis + anonymous-tool + multi-repair stack; merely adding another facade
+does not satisfy the slice. Browser/OS acquisition and input, accessibility
+semantics, SoM rendering, optional OCR/visual proposal, provider-native tool
+transport, model reasoning, official task verification and downstream tracing
+are reused or outsourced behind typed ports. Runtime continues to own current
+epoch, ActionSpace/ref resolution, admission, dispatch truth/no-replay,
+risk/confirmation, evidence validation and task disposition.
 
 P5-E is `IN_PROGRESS /
 HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`. Closed typed objective
@@ -557,7 +600,7 @@ vertical slice. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`IMPLEMENTED_DIAGNOSTIC_NOT_VALIDATED`;
+`GROUNDED_TOOLS_V2_NEXT`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit

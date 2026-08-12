@@ -34,6 +34,7 @@ class BenchmarkInstrumentation:
     unknown_tool_call_count: int = 0
     invalid_tool_argument_count: int = 0
     stale_tool_catalog_count: int = 0
+    tool_grounding_gap_count: int = 0
     tool_catalog_count: int = 0
     tool_catalog_bytes: int = 0
     action_evaluator_calls: int = 0
@@ -186,7 +187,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     }
     adapter = _dynamic_tool_adapter(policy)
     if adapter is not None:
-        event["interaction_protocol"] = "dynamic_tools.v1"
+        event["interaction_protocol"] = getattr(adapter, "interaction_protocol", "dynamic_tools.v1")
         event["tool_transport"] = getattr(getattr(adapter, "transport_kind", None), "value", "")
         event["tool_resolution_code"] = getattr(
             getattr(adapter, "last_resolution_code", None),
@@ -452,6 +453,7 @@ def _record_dynamic_tool_metrics(instrumentation, port: object) -> None:
             "invalid_tool_arguments": "invalid_tool_argument_count",
             "unknown_tool_destination": "invalid_tool_argument_count",
             "stale_tool_catalog": "stale_tool_catalog_count",
+            "tool_grounding_gap": "tool_grounding_gap_count",
         }.get(code)
         if field is not None:
             setattr(instrumentation, field, getattr(instrumentation, field) + 1)

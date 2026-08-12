@@ -20,6 +20,10 @@ def serialize_agent_context(
     if not isinstance(payload, dict):
         raise TypeError("AgentContext serialization requires an object")
     payload.pop("image_inputs", None)
+    # Grounding aliases are an alternate protocol-specific allowlist projection.
+    # Legacy structured-package serialization remains byte-for-byte independent
+    # of that private resolver/index surface.
+    payload.pop("grounding", None)
     serialized = json.dumps(
         payload,
         ensure_ascii=False,

@@ -33,6 +33,7 @@ from affordance_runtime.world import (
     EntityInventoryIssueCode,
     EntityInventoryStatus,
     EntityInventorySummary,
+    ObservationGroundingRegion,
     ObservationMedia,
     ObservationSourceProfile,
     SemanticInventorySummary,
@@ -182,7 +183,14 @@ def project_browsergym_observation(
         coverage,
         artifacts,
         inventory,
-        _screenshot_media(raw),
+        _screenshot_media(
+            raw,
+            tuple(
+                ObservationGroundingRegion(target_ids[node.private_node_id], node.private_bbox)
+                for node in projected
+                if node.private_bbox is not None
+            ),
+        ),
         entity_inventory,
     )
     world = WorldObservation(
@@ -263,7 +271,10 @@ def _binding_pair(
     return public, runtime
 
 
-def _screenshot_media(raw: dict[str, object]) -> tuple[ObservationMedia, ...]:
+def _screenshot_media(
+    raw: dict[str, object],
+    grounding_regions: tuple[ObservationGroundingRegion, ...],
+) -> tuple[ObservationMedia, ...]:
     screenshot = raw.get("screenshot")
     if screenshot is None:
         return ()
@@ -271,6 +282,14 @@ def _screenshot_media(raw: dict[str, object]) -> tuple[ObservationMedia, ...]:
         image = Image.fromarray(screenshot)  # type: ignore[arg-type]
         output = BytesIO()
         image.save(output, format="PNG", optimize=True)
-        return (ObservationMedia("screenshot", "screenshot", "image/png", output.getvalue()),)
+        return (
+            ObservationMedia(
+                "screenshot",
+                "screenshot",
+                "image/png",
+                output.getvalue(),
+                grounding_regions,
+            ),
+        )
     except (AttributeError, TypeError, ValueError, OSError) as exc:
         raise ValueError("BrowserGym screenshot could not be encoded") from exc

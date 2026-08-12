@@ -73,6 +73,7 @@ REQUIRED_METRICS = (
     "unknown_tool_call_count",
     "invalid_tool_argument_count",
     "stale_tool_catalog_count",
+    "tool_grounding_gap_count",
     "tool_catalog_count",
     "tool_catalog_bytes",
     "provider_attempts",

@@ -6,6 +6,8 @@ from affordance_runtime.model_policy.contracts import (
     ModelMetadata,
 )
 from affordance_runtime.model_policy.factory import model_policy_from_environment
+from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
+from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
@@ -35,6 +37,8 @@ __all__ = [
     "ModelDecisionResponse",
     "ModelMetadata",
     "model_policy_from_environment",
+    "GROUNDED_TOOLS_PROTOCOL",
+    "GroundedToolDecisionAdapter",
     "ProviderAttemptReceipt",
     "ProviderAttemptStatus",
     "ProviderCallOrchestrator",

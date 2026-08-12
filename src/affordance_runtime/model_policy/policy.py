@@ -88,6 +88,7 @@ def _build_request(context: AgentContext) -> ModelDecisionRequest:
         instructions=MODEL_POLICY_INSTRUCTIONS,
         decision_schema=decision_response_schema(),
         image_inputs=context.image_inputs,
+        policy_context=context,
     )
 
 

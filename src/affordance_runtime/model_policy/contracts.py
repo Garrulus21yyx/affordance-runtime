@@ -5,9 +5,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.context import AgentImageInput
+
+if TYPE_CHECKING:
+    from affordance_runtime.model_boundary.context import AgentContext
 
 MAX_MODEL_RESPONSE_BYTES = 32 * 1024
 _MAX_CONTEXT_BYTES = 64 * 1024
@@ -74,6 +78,7 @@ class ModelDecisionRequest:
     instructions: str
     decision_schema: Mapping[str, object]
     image_inputs: tuple[AgentImageInput, ...] = ()
+    policy_context: "AgentContext | None" = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if _SAFE_METADATA.fullmatch(self.request_id) is None:
@@ -90,6 +95,11 @@ class ModelDecisionRequest:
             not isinstance(item, AgentImageInput) for item in self.image_inputs
         ):
             raise TypeError("model request image inputs must be bounded and typed")
+        if self.policy_context is not None:
+            from affordance_runtime.model_boundary.context import AgentContext
+
+            if not isinstance(self.policy_context, AgentContext):
+                raise TypeError("model decision request policy context must be typed")
 
 
 @dataclass(frozen=True)

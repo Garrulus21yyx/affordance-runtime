@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
+from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
+from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
@@ -87,6 +89,12 @@ def model_policy_from_environment(
             config,
             perception_profile=selected_perception,
             grounding_variant=selected_grounding,
+        )
+    elif selected_protocol == GROUNDED_TOOLS_PROTOCOL:
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            config,
+            perception_profile=selected_perception,
         )
     else:
         raise ValueError("unsupported model interaction protocol")

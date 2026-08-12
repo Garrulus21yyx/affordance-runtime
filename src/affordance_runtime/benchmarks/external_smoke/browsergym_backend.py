@@ -14,6 +14,10 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
 
 _PHYSICAL_PROPERTIES_SCRIPT = """el => ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
+  bbox: (() => {
+    const rect = el.getBoundingClientRect();
+    return [rect.x, rect.y, rect.width, rect.height];
+  })(),
   options: (el instanceof HTMLSelectElement) ? Array.from(el.options).map(option => ({
     label: String(option.label || option.textContent || '').trim(),
     value: String(option.value),
@@ -205,6 +209,7 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         physical = physical if isinstance(physical, dict) else {}
         readonly = physical.get("readonly")
         options = physical.get("options")
+        bbox = physical.get("bbox")
         properties[bid] = {
             "attached": attached,
             "visible": visible,
@@ -212,6 +217,7 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             "readonly": readonly if isinstance(readonly, bool) else None,
             "editable": editable,
             "options": options if isinstance(options, list) else [],
+            "bbox": bbox if isinstance(bbox, list) else [],
         }
     enriched = dict(raw)
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties

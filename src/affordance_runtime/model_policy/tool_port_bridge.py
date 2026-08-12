@@ -104,6 +104,10 @@ class DynamicToolDecisionAdapter:
         )
 
     @property
+    def interaction_protocol(self) -> str:
+        return DYNAMIC_TOOLS_PROTOCOL
+
+    @property
     def provider_id(self) -> str:
         return self.port.provider
 

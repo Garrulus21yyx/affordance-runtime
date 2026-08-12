@@ -212,6 +212,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "unknown_tool_call_count": state.unknown_tool_call_count,
         "invalid_tool_argument_count": state.invalid_tool_argument_count,
         "stale_tool_catalog_count": state.stale_tool_catalog_count,
+        "tool_grounding_gap_count": state.tool_grounding_gap_count,
         "tool_catalog_count": state.tool_catalog_count,
         "tool_catalog_bytes": state.tool_catalog_bytes,
         "semantic_judge_calls": state.semantic_judge_calls,
