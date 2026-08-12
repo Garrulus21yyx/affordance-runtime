@@ -399,6 +399,16 @@ def test_changed_already_satisfied_predicate_gets_second_repair_turn() -> None:
         assert len(policy.contexts) == 3
         assert result.execution_count == 0
         assert result.reason_code == "abort_policy"
+        first_trace = instrumentation.policy_trace[0]
+        assert first_trace["selected_source_modalities"] == ("structural",)
+        assert first_trace["selected_grounding"] == {
+            "ref": "E1",
+            "role": "button",
+            "label": "Submit",
+            "state": {"submitted": False},
+            "marked": False,
+            "semantic_action": "activate",
+        }
         repair_trace = instrumentation.policy_trace[1]["feedback"]
         assert repair_trace["strategy_transition_required"] is False
         assert repair_trace["strategy_change_required"] is True

@@ -116,6 +116,9 @@ class BrowserGymMiniWobEnvironment:
     dom_action_calls: int = 0
     fill_calls: int = 0
     select_calls: int = 0
+    visual_proposer_calls: int = 0
+    structural_binding_dispatch_count: int = 0
+    visual_binding_dispatch_count: int = 0
     verifier_queries: int = 0
     official_success_count: int = 0
     _observation_serial: int = 0
@@ -212,10 +215,17 @@ class BrowserGymMiniWobEnvironment:
             truncated=False,
             task_info=self._prepared_task_info,
         )
-        plan = ObservationSelectionPlan(
-            (SourceSelection("browsergym", SourceRequirement.REQUIRED, "primary_grounding"),),
-            2,
-        )
+        selections = [
+            SourceSelection("browsergym", SourceRequirement.REQUIRED, "primary_grounding"),
+        ]
+        # An explicitly configured bounded proposer is an acquisition capability,
+        # not a policy ritual. Make its first frame available before the first
+        # policy call; ``observe_visual`` remains available for fresh recovery.
+        if self.visual_region_proposer is not None:
+            selections.append(SourceSelection(
+                "browsergym_visual", SourceRequirement.OPTIONAL, "initial_visual_augmentation",
+            ))
+        plan = ObservationSelectionPlan(tuple(selections), 2)
         return self._project(
             raw, snapshot, AcquisitionOrigin.RESET, observation_id, revision, plan,
         )
@@ -395,6 +405,7 @@ class BrowserGymMiniWobEnvironment:
         elif visual_selection is not None:
             try:
                 assert self._task is not None and self.visual_region_proposer is not None
+                self.visual_proposer_calls += 1
                 visual = project_browsergym_visual_source(
                     raw,
                     observation_id=f"{observation_id}:visual",
@@ -575,6 +586,8 @@ class BrowserGymMiniWobEnvironment:
     def _record_dispatch(self, request: BoundActionRequest) -> None:
         self.step_calls += 1
         self.dom_action_calls += int(request.binding.surface == "browsergym")
+        self.structural_binding_dispatch_count += int(request.binding.surface == "browsergym")
+        self.visual_binding_dispatch_count += int(request.binding.surface == "browsergym_visual")
         self.dispatched_request_ids.append(request.request_id)
         self.fill_calls += int(request.binding.primitive_action == "fill")
         self.select_calls += int(request.binding.primitive_action == "select_option")

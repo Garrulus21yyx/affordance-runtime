@@ -250,7 +250,7 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
                     "choices": [
                         {
                             "message": {
-                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9}]}'
+                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"option","actionable":true,"color":"blue","shape":"circle","row":2,"column":3,"selected":false}]}'
                             }
                         }
                     ]
@@ -280,6 +280,11 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
     assert len(regions) == 1
     assert regions[0].pixel_bbox((200, 100)) == pytest.approx((20.0, 20.0, 50.0, 50.0))
     assert regions[0].label == "target"
+    assert regions[0].role == "option"
+    assert regions[0].primitive_action == "point_activate"
+    assert regions[0].state == {
+        "color": "blue", "shape": "circle", "row": 2, "column": 3, "selected": False,
+    }
 
 
 def test_visual_grounder_environment_factory_uses_zhipu_vision_model_without_exposing_key() -> None:

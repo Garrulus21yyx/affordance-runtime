@@ -1,6 +1,6 @@
 # Step 13 Unified Visual Binding Implementation
 
-Status: `IMPLEMENTED_PROPERTY_VERIFIED / LIVE_TARGETED_EVIDENCE_PENDING`
+Status: `REMEDIATION_IMPLEMENTED_PROPERTY_VERIFIED / LIVE_TARGETED_RERUN_PENDING`
 
 Scope boundary: connect generic screenshot-region observation and pointer
 activation through the Step-12 Unified source/fusion/route seam into the
@@ -46,6 +46,30 @@ world, tool and intent values contain no bbox, point or backend route.
 Shared-capture screenshots are deduplicated by public image digest at the model
 boundary and their canonical grounding regions are unioned, so one model call
 receives one marked image rather than conflicting structural and visual copies.
+
+## Bounded live-path remediation
+
+The initial observation now performs one optional visual augmentation whenever
+the environment was explicitly configured with a bounded visual proposer.
+Visual capability therefore no longer depends on a successful policy-authored
+`observe_visual` schema call; that tool remains available for fresh recovery.
+
+Visual proposals now distinguish observation from action authority. Public
+entities may carry bounded `color`, `text`, `shape`, `row`, `column`, and
+`selected` facts. Only an explicitly actionable point region at or above the
+bounded confidence floor receives a private pointer binding. Informational,
+unsupported, and low-confidence regions remain visible but non-executable.
+
+`activate` evaluation now compares current public target semantics and the
+before/after screenshot state. The validation boundary recomputes the change
+against current evidence instead of trusting evaluator claims. A confirmed
+unchanged click enters the existing strategy-feedback path, forbids identical
+retry, and is zero-dispatch bounded by the existing progress controller.
+
+Targeted evidence now records selected source modalities, proposer calls,
+structural versus visual binding dispatch counts, selected public E-ref
+role/label/state, and expected/observed effect evidence. The live gate applies
+per-case route requirements rather than accepting one aggregate visual dispatch.
 
 ## Verification record
 

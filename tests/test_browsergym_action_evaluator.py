@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import replace
 
+import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation, request_for
 
 from affordance_runtime.agent.evaluation_control import validated_action_evaluation
@@ -182,3 +183,54 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
     ))
     assert evaluation.status is ActionEvaluationStatus.UNKNOWN
     assert not evaluation.evidence_refs
+
+
+def _activate_world(observation_id: str, shade: int):
+    raw = raw_observation(ax_node("private-button", "button", "Target"))
+    raw["screenshot"] = np.full((40, 80, 3), shade, dtype=np.uint8)
+    return project_browsergym_observation(
+        raw,
+        observation_id=observation_id,
+        source_revision=f"revision:{observation_id}",
+        page_identity="page:opaque",
+        episode_identity="0",
+        verifier=BrowserGymVerifierSnapshot(
+            "run:opaque", observation_id, observation_id, VerifierFactSource.RESET,
+            ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
+        ),
+        entity_identity=_IDENTITY,
+    ).world
+
+
+def _evaluate_activate(before, after):
+    task = _task()
+    request = request_for(before, task, "activate")
+    result = ActionResult(request.request_id, DispatchStatus.SENT, "browsergym", True)
+    return asyncio.run(validated_action_evaluation(
+        BrowserGymMechanicalActionEvaluator(), task, before, request, result, after,
+    ))
+
+
+def test_activate_visual_change_is_effect_confirmed_with_public_diff_evidence() -> None:
+    evaluation = _evaluate_activate(
+        _activate_world("obs:before", 255),
+        _activate_world("obs:after", 0),
+    )
+    assert evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    assert evaluation.evidence == {
+        "verification_profile": "visual_diff_v1",
+        "expected_effects": ["external_ui_interaction"],
+        "observed_effect": "effect_confirmed",
+        "screenshot_changed": True,
+        "target_changed": False,
+    }
+
+
+def test_activate_unchanged_visual_state_is_no_effect_confirmed() -> None:
+    evaluation = _evaluate_activate(
+        _activate_world("obs:before", 255),
+        _activate_world("obs:after", 255),
+    )
+    assert evaluation.status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+    assert evaluation.evidence["screenshot_changed"] is False
+    assert evaluation.evidence["target_changed"] is False

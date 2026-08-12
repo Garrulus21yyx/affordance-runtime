@@ -150,6 +150,18 @@ def project_browsergym_observation(
         key = evidence_ref.rsplit(":", 1)[-1]
         if key in {MECHANICAL_EVIDENCE_KEY, MECHANICAL_STATUS_EVIDENCE_KEY}:
             artifacts[key] = {"public_summary": ""}
+    screenshot_media = _screenshot_media(
+        raw,
+        tuple(
+            ObservationGroundingRegion(target_ids[node.private_node_id], node.private_bbox)
+            for node in projected
+            if node.private_bbox is not None
+        ),
+    )
+    if screenshot_media:
+        artifacts["screenshot_semantic_state"] = {
+            "public_summary": "Current screenshot state for bounded before/after effect comparison.",
+        }
     actionable_target_count = len({binding.target_id for binding in bindings})
     projected_target_count = len(targets)
     recognized_target_count = analysis.inventory.recognized_target_count
@@ -185,14 +197,7 @@ def project_browsergym_observation(
         coverage,
         artifacts,
         inventory,
-        _screenshot_media(
-            raw,
-            tuple(
-                ObservationGroundingRegion(target_ids[node.private_node_id], node.private_bbox)
-                for node in projected
-                if node.private_bbox is not None
-            ),
-        ),
+        screenshot_media,
         entity_inventory,
         acquisition_root_id=observation_id,
     )

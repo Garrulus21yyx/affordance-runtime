@@ -85,7 +85,7 @@ def _bind_first(task, world):
     return ActionBinder().bind(selection, world, "context:visual")
 
 
-def test_visual_source_is_typed_optional_augmentation_over_one_shared_capture() -> None:
+def test_configured_visual_source_is_automatically_augmented_before_first_policy_call() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
@@ -93,17 +93,22 @@ def test_visual_source_is_typed_optional_augmentation_over_one_shared_capture() 
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
-            assert initial.observation.bindings == ()
-            assert proposer.calls == []
+            assert len(initial.observation.bindings) == 1
+            assert len(proposer.calls) == 1
+            assert environment.visual_proposer_calls == 1
             assert [(item.source, item.status) for item in initial.source_results] == [
                 ("browsergym", SourceAcquisitionStatus.ACQUIRED),
-                ("browsergym_visual", SourceAcquisitionStatus.NOT_ACQUIRED),
+                ("browsergym_visual", SourceAcquisitionStatus.ACQUIRED),
             ]
+            assert {source.surface for source in initial.observation.sources} == {
+                "browsergym",
+                "browsergym_visual",
+            }
 
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
             assert fake.capture_count == 1
-            assert len(proposer.calls) == 1
+            assert len(proposer.calls) == 2
             assert {source.surface for source in acquired.observation.sources} == {
                 "browsergym",
                 "browsergym_visual",
@@ -153,7 +158,9 @@ def test_visual_binding_routes_through_action_space_and_pointer_execution() -> N
             assert fake.actions == ["mouse_click(70, 35)"]
             assert environment.step_calls == 1
             assert environment.dom_action_calls == 0
-            assert len(proposer.calls) == 2  # requested capture plus post-action projection
+            assert environment.structural_binding_dispatch_count == 0
+            assert environment.visual_binding_dispatch_count == 1
+            assert len(proposer.calls) == 3  # initial augmentation, requested capture, post-action
         finally:
             await environment.close()
 
@@ -198,6 +205,47 @@ def test_unsupported_visual_primitive_never_creates_action_authority() -> None:
             assert acquired.observation is not None
             assert len(acquired.observation.targets) == 1
             assert acquired.observation.bindings == ()
+            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([
+            VisualRegion(
+                (0.25, 0.2, 0.2, 0.3),
+                "blue circle",
+                0.9,
+                role="shape",
+                primitive_action="observe_only",
+                state={"color": "blue", "shape": "circle", "row": 2, "column": 3},
+            ),
+            VisualRegion(
+                (0.55, 0.2, 0.2, 0.3),
+                "uncertain target",
+                0.49,
+                role="option",
+                state={"selected": False},
+            ),
+        ])
+        environment, task = _open(fake, proposer)
+        try:
+            acquired = await environment.reset(task)
+            assert acquired.observation is not None
+            visual = next(
+                source for source in acquired.observation.sources
+                if source.surface == "browsergym_visual"
+            )
+            assert len(visual.targets) == 2
+            assert {(fact.predicate, fact.value) for fact in visual.facts} >= {
+                ("color", "blue"), ("shape", "circle"), ("row", 2), ("column", 3),
+                ("selected", False),
+            }
+            assert visual.bindings == ()
             assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
         finally:
             await environment.close()

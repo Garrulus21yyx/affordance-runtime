@@ -32,6 +32,7 @@ _WITNESSES = frozenset({
     "browsergym/miniwob.click-pie",
     "browsergym/miniwob.visual-addition",
 })
+_VISUAL_POINTER_WITNESSES = _WITNESSES - {"browsergym/miniwob.visual-addition"}
 
 
 def main() -> int:
@@ -72,6 +73,12 @@ def main() -> int:
         arm=outcome,
     )
     payload = json.loads(report.read_text(encoding="utf-8"))
+    acceptance = _visual_gate_acceptance(outcome)
+    payload["visual_gate_acceptance"] = acceptance
+    report.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps({
         "report": str(report),
         "completed_cases": payload["completed_cases"],
@@ -79,8 +86,66 @@ def main() -> int:
         "outcome_counts": payload["outcome_counts"],
         "run_evidence_valid": payload["run_evidence_valid"],
         "errors": payload["errors"],
+        "visual_gate_acceptance": acceptance,
     }, sort_keys=True))
     return 0
+
+
+def _visual_gate_acceptance(outcome) -> dict[str, object]:
+    errors: list[str] = []
+    no_effect_opportunities = 0
+    no_effect_repeat_violations = 0
+    by_task = {record.task_family_label: record for record in outcome.records}
+    for task_id in _WITNESSES:
+        slug = task_id.removeprefix("browsergym/miniwob.")
+        record = by_task[slug]
+        metrics = record.result.measurements
+        if _metric(metrics, "visual_proposer_calls") < 1:
+            errors.append(f"{record.case_id}: visual proposer was not called")
+        if _metric(metrics, "invalid_tool_argument_count") != 0:
+            errors.append(f"{record.case_id}: structured tool argument failure occurred")
+        first = record.diagnostic_trace[0] if record.diagnostic_trace else {}
+        if "visual" not in tuple(first.get("selected_source_modalities", ())):
+            errors.append(f"{record.case_id}: first policy context omitted visual source")
+        if task_id in _VISUAL_POINTER_WITNESSES:
+            if _metric(metrics, "visual_binding_dispatch_count") < 1:
+                errors.append(f"{record.case_id}: no visual binding was dispatched")
+            if not any(item.get("selected_grounding") for item in record.diagnostic_trace):
+                errors.append(f"{record.case_id}: selected public E-ref evidence is absent")
+        for index, item in enumerate(record.diagnostic_trace[:-1]):
+            transition = item.get("runtime_transition")
+            if not isinstance(transition, dict) or transition.get("action_evaluation_status") != "no_effect_confirmed":
+                continue
+            no_effect_opportunities += 1
+            following = record.diagnostic_trace[index + 1]
+            feedback = following.get("feedback")
+            if not isinstance(feedback, dict) or feedback.get("code") != "action_no_effect_change_strategy":
+                no_effect_repeat_violations += 1
+                continue
+            prior = item.get("selected_grounding")
+            selected = following.get("selected_grounding")
+            if isinstance(prior, dict) and isinstance(selected, dict) and (
+                prior.get("ref"), prior.get("semantic_action")
+            ) == (selected.get("ref"), selected.get("semantic_action")):
+                no_effect_repeat_violations += 1
+    if outcome.success_count < 1:
+        errors.append("no visual-only witness succeeded end to end")
+    if no_effect_repeat_violations:
+        errors.append("confirmed no-effect activation was repeated without a strategy transition")
+    return {
+        "accepted": not errors,
+        "errors": errors,
+        "visual_required_case_count": len(_WITNESSES),
+        "visual_pointer_case_count": len(_VISUAL_POINTER_WITNESSES),
+        "no_effect_opportunities": no_effect_opportunities,
+        "no_effect_repeat_violations": no_effect_repeat_violations,
+    }
+
+
+def _metric(measurements, name: str) -> int:
+    measurement = measurements.get(name)
+    value = getattr(measurement, "value", 0)
+    return int(value) if isinstance(value, int | float) else 0
 
 
 def _manifest(model: str) -> MiniWobBreadthManifest:

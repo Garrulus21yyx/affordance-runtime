@@ -10,7 +10,10 @@ from dataclasses import dataclass, field
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.visual_grounding import VisualRegion
 
-_SEMANTIC_STATE_KEYS = frozenset({"visible", "enabled", "selected", "checked", "expanded", "value"})
+_SEMANTIC_STATE_KEYS = frozenset({
+    "visible", "enabled", "selected", "checked", "expanded", "value",
+    "color", "text", "shape", "row", "column",
+})
 _MAX_STATE_LIST_ITEMS = 32
 _MAX_STATE_STRING_LENGTH = 256
 

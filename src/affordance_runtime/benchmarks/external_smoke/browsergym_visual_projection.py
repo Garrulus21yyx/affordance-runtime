@@ -31,6 +31,7 @@ from affordance_runtime.world.action_classification import classify_surface_acti
 from affordance_runtime.world.action_vocabulary import action_metadata
 
 MAX_BROWSERGYM_VISUAL_REGIONS = 16
+MIN_VISUAL_ACTION_CONFIDENCE = 0.5
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,12 @@ def project_browsergym_visual_source(
         CoverageState.COMPLETE
         if bool(getattr(proposer, "acquisition_exhaustive", False))
         else CoverageState.TRUNCATED,
-        {"unsupported_actions": unsupported},
+        {
+            "unsupported_actions": unsupported,
+            "screenshot_semantic_state": {
+                "public_summary": "Current screenshot state for bounded before/after effect comparison.",
+            },
+        },
         media=(media,),
         acquisition_root_id=acquisition_root_id,
     )
@@ -165,7 +171,10 @@ def _binding_pair(
     page_identity: str,
     episode_identity: str,
 ) -> tuple[ActionBinding, BrowserGymVisualBinding] | None:
-    if region.primitive_action != "point_activate":
+    if (
+        region.primitive_action != "point_activate"
+        or region.confidence < MIN_VISUAL_ACTION_CONFIDENCE
+    ):
         return None
     try:
         metadata = action_metadata("visual", region.primitive_action)

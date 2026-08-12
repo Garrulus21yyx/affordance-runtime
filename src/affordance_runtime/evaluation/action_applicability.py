@@ -10,6 +10,7 @@ from affordance_runtime.evaluation.contracts import ActionEvaluation, ActionEval
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.public_semantic_digest import target_semantics
 from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 
@@ -28,6 +29,11 @@ def apply_action_evidence_profile(
     records = tuple(after_index.resolve_record(ref) for ref in evaluation.evidence_refs)
     if any(record is None or not evidence_source_is_current(record, after) for record in records):
         return _unknown(evaluation, "action evidence is not current")
+    if (
+        request.intent.semantic_action == "activate"
+        and evaluation.evidence.get("verification_profile") == "visual_diff_v1"
+    ):
+        return _apply_activate_visual_profile(evaluation, request, before, after, records)
     if not obligations or not after.sources:
         return _unknown(evaluation, "action verification scope or source profile is unavailable")
     if evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
@@ -107,3 +113,39 @@ def _assurance(actual: str, required: str) -> bool:
 
 def _unknown(evaluation: ActionEvaluation, reason: str) -> ActionEvaluation:
     return replace(evaluation, status=ActionEvaluationStatus.UNKNOWN, reason=reason, evidence_refs=())
+
+
+def _apply_activate_visual_profile(evaluation, request, before, after, records):
+    if not any(
+        record is not None and record.kind == "artifact"
+        and record.artifact_kind == "screenshot_semantic_state"
+        for record in records
+    ):
+        return _unknown(evaluation, "activation requires current screenshot-state evidence")
+    before_digests = _screenshot_digests(before)
+    after_digests = _screenshot_digests(after)
+    if not before_digests or not after_digests:
+        return _unknown(evaluation, "activation screenshot state is unavailable")
+    target_id = request.intent.target_id
+    screenshot_changed = before_digests != after_digests
+    target_changed = _target_semantics(before, target_id) != _target_semantics(after, target_id)
+    changed = screenshot_changed or target_changed
+    if evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED and changed:
+        return evaluation
+    if evaluation.status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED and not changed:
+        return evaluation
+    return _unknown(evaluation, "activation evaluation does not match public before/after state")
+
+
+def _screenshot_digests(observation: WorldObservation) -> tuple[str, ...]:
+    return tuple(sorted({
+        media.sha256
+        for source in observation.sources
+        for media in source.media
+        if media.kind == "screenshot"
+    }))
+
+
+def _target_semantics(observation: WorldObservation, target_id: str):
+    target = next((item for item in observation.targets if item.target_id == target_id), None)
+    return None if target is None else target_semantics(target)

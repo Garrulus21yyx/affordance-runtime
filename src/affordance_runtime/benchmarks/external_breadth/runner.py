@@ -60,6 +60,9 @@ REQUIRED_METRICS = (
     "click_calls",
     "fill_calls",
     "select_calls",
+    "visual_proposer_calls",
+    "structural_binding_dispatch_count",
+    "visual_binding_dispatch_count",
     "policy_calls",
     "policy_schema_repair_count",
     "tool_argument_repair_count",
@@ -136,7 +139,14 @@ async def run_breadth_campaign(
         raise ValueError("target-loop manifest identity is not canonical")
     suite = await run_suite(target_manifest, _progress_callback(progress))
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
-    records = tuple(_record(case, result) for case, result in zip(manifest.cases, suite.cases, strict=True))
+    records = tuple(
+        _record(
+            case,
+            result,
+            instrumentations[index] if index < len(instrumentations) else None,
+        )
+        for index, (case, result) in enumerate(zip(manifest.cases, suite.cases, strict=True))
+    )
     provider, model, grounding = _model_identity(
         instrumentations,
         configured_identity,
@@ -301,6 +311,9 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
         "click_calls",
         "fill_calls",
         "select_calls",
+        "visual_proposer_calls",
+        "structural_binding_dispatch_count",
+        "visual_binding_dispatch_count",
         "official_verifier_queries",
         "official_success_count",
         "fallback_count",

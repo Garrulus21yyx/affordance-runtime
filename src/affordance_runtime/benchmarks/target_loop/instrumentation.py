@@ -153,6 +153,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         "context_id": context.context_id,
         "decision_mode": str(context.decision_mode),
         "visible_action_count": len(context.actions.options),
+        "selected_source_modalities": tuple(source.modality for source in context.world.sources),
         "frontier": _frontier_trace(frontier),
         "feedback": (
             {
@@ -203,6 +204,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["outcome"] = "decision_package"
         event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
         event["decision"] = _decision_trace(outcome.decision)
+        selected = _selected_grounding_trace(context, outcome.decision)
+        if selected is not None:
+            event["selected_grounding"] = selected
     elif isinstance(outcome, PolicyFailure):
         event["outcome"] = "policy_failure"
         event["policy_failure"] = {
@@ -234,6 +238,27 @@ def _dynamic_tool_adapter(value):
         if isinstance(ports, tuple):
             pending.extend(ports)
     return None
+
+
+def _selected_grounding_trace(context, decision):
+    action_id = getattr(decision, "action_id", "")
+    if not action_id:
+        return None
+    option = next((item for item in context.actions.options if item.action_id == action_id), None)
+    if option is None:
+        return None
+    ref = context.grounding.target_refs.get(option.target_id)
+    entity = next((item for item in context.grounding.entities if item.ref == ref), None)
+    if entity is None:
+        return None
+    return {
+        "ref": entity.ref,
+        "role": entity.role,
+        "label": entity.label,
+        "state": to_json_compatible(entity.state),
+        "marked": entity.marked,
+        "semantic_action": option.semantic_action,
+    }
 
 
 def _frontier_trace(frontier):
@@ -346,6 +371,7 @@ def _runtime_transition_trace(transition):
         "destination_id": intent.destination_id if intent is not None else "",
         "action_evaluation_status": action.status.value if action is not None else "",
         "action_evidence_fields": (tuple(sorted(str(name) for name in action.evidence)) if action is not None else ()),
+        "action_evidence": (to_json_compatible(action.evidence) if action is not None else {}),
         "task_evaluation_status": task.status.value if task is not None else "",
         "task_outcome_kind": (task.outcome.kind.value if task is not None and task.outcome is not None else ""),
         "task_outcome_code": (task.outcome.code if task is not None and task.outcome is not None else ""),
