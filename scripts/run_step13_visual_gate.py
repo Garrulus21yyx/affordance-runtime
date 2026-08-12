@@ -36,12 +36,15 @@ _WITNESSES = frozenset({
     "browsergym/miniwob.click-pie",
     "browsergym/miniwob.visual-addition",
 })
-_VISUAL_POINTER_WITNESSES = frozenset({
+_STRUCTURAL_SVG_WITNESSES = frozenset({
     "browsergym/miniwob.grid-coordinate",
     "browsergym/miniwob.click-pie-nodelay",
     "browsergym/miniwob.click-pie",
 })
-_E_REF_WITNESSES = frozenset({"browsergym/miniwob.click-shades"})
+_E_REF_WITNESSES = frozenset({
+    "browsergym/miniwob.grid-coordinate",
+    "browsergym/miniwob.click-shades",
+})
 
 
 def main() -> int:
@@ -116,22 +119,22 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
         if _metric(metrics, "invalid_tool_argument_count") != 0:
             errors.append(f"{record.case_id}: structured tool argument failure occurred")
         first = record.diagnostic_trace[0] if record.diagnostic_trace else {}
-        if task_id != "browsergym/miniwob.visual-addition" and _metric(
-            metrics, "visual_source_acquired_count"
-        ) < 1:
-            errors.append(f"{record.case_id}: initial visual source was not acquired")
-        elif task_id != "browsergym/miniwob.visual-addition" and first and "visual" not in tuple(
-            first.get("selected_source_modalities", ())
-        ):
-            errors.append(f"{record.case_id}: first policy context omitted acquired visual source")
-        if task_id in _VISUAL_POINTER_WITNESSES:
-            if _metric(metrics, "visual_point_grounder_calls") < 1:
-                errors.append(f"{record.case_id}: GLM point grounder was not called")
-            if _metric(metrics, "visual_binding_dispatch_count") < 1:
-                errors.append(f"{record.case_id}: no visual binding was dispatched")
+        if _metric(metrics, "visual_point_grounder_calls") != 0:
+            errors.append(f"{record.case_id}: BrowserGym target loop invoked a point grounder")
+        if _metric(metrics, "visual_binding_acquired_count") != 0 or _metric(
+            metrics, "visual_binding_dispatch_count"
+        ) != 0:
+            errors.append(f"{record.case_id}: visual proposal gained execution authority")
+        if task_id in _STRUCTURAL_SVG_WITNESSES:
+            if _metric(metrics, "structural_binding_dispatch_count") < 1:
+                errors.append(f"{record.case_id}: no structural identity binding was dispatched")
             if not any(item.get("selected_grounding") for item in record.diagnostic_trace):
                 errors.append(f"{record.case_id}: selected public E-ref evidence is absent")
         if task_id in _E_REF_WITNESSES:
+            if _metric(metrics, "visual_source_acquired_count") < 1:
+                errors.append(f"{record.case_id}: E-ref visual evidence was not acquired")
+            elif first and "visual" not in tuple(first.get("selected_source_modalities", ())):
+                errors.append(f"{record.case_id}: first policy context omitted E-ref visual evidence")
             if _metric(metrics, "visual_disambiguator_calls") < 1:
                 errors.append(f"{record.case_id}: E-ref disambiguator was not called")
             if _metric(metrics, "visual_disambiguator_selection_count") < 1:
@@ -153,14 +156,14 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
             ) == (selected.get("ref"), selected.get("semantic_action")):
                 no_effect_repeat_violations += 1
     if outcome.success_count < 1:
-        errors.append("no visual-only witness succeeded end to end")
+        errors.append("no structural/visually-assisted witness succeeded end to end")
     if no_effect_repeat_violations:
         errors.append("confirmed no-effect activation was repeated without a strategy transition")
     return {
         "accepted": not errors,
         "errors": errors,
-        "visual_required_case_count": len(_WITNESSES),
-        "visual_pointer_case_count": len(_VISUAL_POINTER_WITNESSES),
+        "witness_case_count": len(_WITNESSES),
+        "structural_svg_case_count": len(_STRUCTURAL_SVG_WITNESSES),
         "no_effect_opportunities": no_effect_opportunities,
         "no_effect_repeat_violations": no_effect_repeat_violations,
     }

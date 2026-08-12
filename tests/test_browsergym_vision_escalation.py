@@ -13,7 +13,6 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
 from affordance_runtime.execution import DispatchStatus
-from affordance_runtime.model_port import StructuredModelError
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguationRequest
 from affordance_runtime.visual_grounding import (
     VisualGroundingPoint,
@@ -141,21 +140,36 @@ def test_provider_presence_does_not_trigger_vision_when_dom_binding_is_sufficien
 
 def test_visual_selection_is_recomputed_after_action_instead_of_sticking() -> None:
     async def scenario() -> None:
-        initial = raw_observation(goal="Click the visible target.")
-        initial["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
+        initial = _raw_with_buttons(
+            ("left", "Target", (20, 20, 40, 30)),
+            ("right", "Target", (120, 20, 40, 30)),
+            goal="Click the visible target.",
+        )
         post = _raw_with_buttons(("continue", "Continue", (20, 20, 50, 30)))
         fake = FakeBrowserGym(initial, post)
         fake.step_terminated = False
         fake.step_done = False
+        fake.probe_override = {
+            "raw": initial,
+            "task": {
+                "ready": True,
+                "done": False,
+                "raw_reward": 0,
+                "episode": "0",
+                "url": initial["url"],
+            },
+            "latency_ms": 0.1,
+        }
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
-        environment, task = _open(fake, proposer)
+        disambiguator = _Disambiguator("E1")
+        environment, task = _open(fake, proposer, disambiguator=disambiguator)
         try:
             acquired = await environment.reset(task)
             assert acquired.observation is not None
-            assert len(proposer.calls) == 1
+            assert len(disambiguator.calls) == 1
+            assert proposer.calls == []
             assert isinstance(environment.visual_point_grounder, _Grounder)
-            assert "next atomic interaction" in environment.visual_point_grounder.calls[0].instruction
-            assert "hidden behind a menu" in environment.visual_point_grounder.calls[0].instruction
+            assert environment.visual_point_grounder.calls == []
             space = ActionSpaceBuilder().build(task, acquired.observation)
             request = ActionBinder().bind(
                 ActionSpaceBuilder().admit(space.options[0], {}),
@@ -167,7 +181,9 @@ def test_visual_selection_is_recomputed_after_action_instead_of_sticking() -> No
 
             assert outcome.result.dispatch_status is DispatchStatus.SENT
             assert outcome.post_acquisition.observation is not None
-            assert len(proposer.calls) == 1
+            assert len(disambiguator.calls) == 1
+            assert proposer.calls == []
+            assert environment.visual_point_grounder.calls == []
             assert environment.last_visual_escalation is not None
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
             assert {item.surface for item in outcome.post_acquisition.observation.sources} == {
@@ -226,7 +242,7 @@ def test_visual_value_task_stays_with_screenshot_policy_instead_of_e_ref() -> No
     asyncio.run(scenario())
 
 
-def test_provider_validation_failure_is_retained_as_typed_diagnostic() -> None:
+def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None:
     @dataclass
     class FailingGrounder:
         provider: str = "fixture"
@@ -235,26 +251,30 @@ def test_provider_validation_failure_is_retained_as_typed_diagnostic() -> None:
 
         def ground(self, request: VisualGroundingRequest) -> VisualGroundingPoint:
             del request
-            raise StructuredModelError("invalid point")
+            raise AssertionError("BrowserGym mainline must not invoke a point grounder")
 
     async def scenario() -> None:
         raw = raw_observation(goal="Click the visible target.")
         raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
+        grounder = FailingGrounder()
         environment, task = BrowserGymMiniWobEnvironment.open(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
-            visual_point_grounder=FailingGrounder(),
+            visual_point_grounder=grounder,
         )
         try:
             acquired = await environment.reset(task)
             assert acquired.observation is not None
-            assert environment.visual_provider_failure_count == 1
-            assert environment.visual_provider_structured_output_failure_count == 1
-            assert environment.visual_point_grounding_failure_count == 1
-            failure = environment.visual_provider_failures[0]
-            assert failure.exception_class == "StructuredModelError"
-            assert failure.reason_code == "point_grounding_structured_output"
+            assert acquired.observation.bindings == ()
+            assert environment.last_visual_escalation is not None
+            assert environment.last_visual_escalation.mode is VisionEscalationMode.UNAVAILABLE
+            assert environment.visual_provider_failure_count == 0
+            assert environment.visual_point_grounder_calls == 0
+            assert all(
+                offer.source != "browsergym_visual"
+                for offer in environment.observation_capabilities.offers
+            )
         finally:
             await environment.close()
 
@@ -290,7 +310,7 @@ def test_same_frame_visual_region_merges_into_dom_identity_without_coordinate_bi
     asyncio.run(scenario())
 
 
-def test_only_visual_region_without_dom_correspondence_gets_coordinate_binding() -> None:
+def test_visual_region_without_dom_correspondence_remains_observation_only() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(("okay", "Okay", (0, 0, 20, 20)))
         proposer = _Proposer([
@@ -301,11 +321,15 @@ def test_only_visual_region_without_dom_correspondence_gets_coordinate_binding()
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
-            assert {item.surface for item in acquired.observation.bindings} == {
-                "browsergym",
-                "browsergym_visual",
-            }
-            assert environment.visual_binding_acquired_count == 1
+            assert {item.surface for item in acquired.observation.bindings} == {"browsergym"}
+            visual = next(
+                item for item in acquired.observation.sources
+                if item.surface == "browsergym_visual"
+            )
+            assert len(visual.targets) == 1
+            assert visual.bindings == ()
+            assert environment.visual_binding_acquired_count == 0
+            assert environment.visual_point_grounder_calls == 0
             assert environment.visual_correspondence_unmatched_count == 1
         finally:
             await environment.close()
@@ -402,6 +426,56 @@ def test_ambiguous_dom_candidates_use_e_ref_disambiguation_without_point_authori
             )
             assert len(visual.correspondences) == 1
             assert visual.bindings == ()
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_clickable_svg_candidates_use_e_ref_then_dom_binding_without_point() -> None:
+    async def scenario() -> None:
+        raw = raw_observation(
+            ax_node("circle-left", "graphics-symbol", "", parent_id="svg-root"),
+            ax_node("circle-right", "graphics-symbol", "", parent_id="svg-root"),
+            goal="Click the requested grid coordinate.",
+        )
+        raw["screenshot"] = np.full((120, 220, 3), 255, dtype=np.uint8)
+        for bid, bbox in (
+            ("circle-left", [20, 40, 14, 14]),
+            ("circle-right", [120, 40, 14, 14]),
+        ):
+            raw["extra_element_properties"][bid].update({
+                "clickable": True,
+                "visibility": 1.0,
+                "bbox": bbox,
+            })
+            raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid]["bbox"] = bbox
+        proposer = _Proposer([VisualRegion((0.1, 0.1, 0.2, 0.2), "unused", 0.9)])
+        disambiguator = _Disambiguator("E2")
+        environment, task = _open(
+            FakeBrowserGym(raw),
+            proposer,
+            disambiguator=disambiguator,
+        )
+        try:
+            acquired = await environment.reset(task)
+
+            assert acquired.observation is not None
+            assert environment.last_visual_escalation is not None
+            assert (
+                environment.last_visual_escalation.mode
+                is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
+            )
+            assert len(disambiguator.calls) == 1
+            assert len(disambiguator.calls[0].candidates) == 2
+            assert proposer.calls == []
+            assert environment.visual_point_grounder_calls == 0
+            assert len(acquired.observation.bindings) == 1
+            binding = acquired.observation.bindings[0]
+            assert binding.surface == "browsergym"
+            assert binding.semantic_action == "activate"
+            assert binding.primitive_action == "click"
+            assert "point" not in repr(binding).casefold()
         finally:
             await environment.close()
 

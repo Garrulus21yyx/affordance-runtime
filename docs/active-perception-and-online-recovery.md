@@ -11,7 +11,10 @@ bindings, coverage, confidence, and artifacts.
 `WorldFusion` creates one immutable `WorldObservation` with canonical targets,
 facts, coverage, conflicts, and all current bindings.
 
-DOM/AX is the browser control plane. A configured visual provider is only an
+AX plus visible clickable raw-DOM identity is the browser control plane. The
+pinned BrowserGym adapter marks all DOM elements, so actionable SVG children
+that default AX projection would omit receive private BIDs and participate in
+the same E-ref/Playwright route as ordinary HTML controls. A configured visual provider is only an
 available evidence source: Runtime reevaluates the current structural evidence
 on every acquisition and invokes Vision only for a typed coverage, binding,
 candidate-ambiguity, explicit-observation, or unresolved-postcondition gap.
@@ -21,19 +24,20 @@ The provider split is explicit. OmniParser may propose bounded open-world
 regions and is always observation-only. Every region-proposer output is
 normalized to observation-only at each current adapter boundary, even if a
 custom/legacy provider claims an action primitive. The main visual VLM may disambiguate
-current DOM candidates only by choosing an offered call-local E-ref. GLM is the
-default last-stage `visual-only query -> point` provider. A point is attached
-to a proposed visual entity but still creates no route unless correspondence
-classifies that current entity as unmatched visual-only. Region proposal,
-candidate choice and point grounding have separate call/success counters.
+current DOM candidates only by choosing an offered call-local E-ref. Point
+grounders such as GLM remain isolated benchmark/compatibility arms and are not
+a BrowserGym target-loop observation capability. Region proposal and candidate
+choice have separate call/success counters; point-benchmark counters cannot
+grant Runtime action authority.
 
 Visual evidence and visual execution authority are separate. Same-acquisition
 visual regions merge with DOM entities only through explicit
 `EntityCorrespondence`. A corresponded region cannot retain a coordinate
-binding. Only a current region explicitly classified as visual-only, after no
-DOM correspondence is established, may expose a private coordinate route;
-ambiguous, conflicting, stale, unsupported, or low-confidence regions remain
-non-executable. Missing or incoherent acquisition identity fails closed.
+binding. In the BrowserGym target loop an unmatched V-ref is observation-only
+and exposes no private coordinate route; ambiguous, conflicting, stale,
+unsupported, or low-confidence regions are likewise non-executable. A future
+safe-region executor requires a separately admitted contract. Missing or
+incoherent acquisition identity fails closed.
 
 Each source may additionally publish a frozen `SemanticInventorySummary` for
 one named inventory profile. It reports recognized, actually projected,

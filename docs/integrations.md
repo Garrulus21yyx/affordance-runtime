@@ -51,12 +51,9 @@ the policy or Runtime.
 
 ## 6. Evidence-gated Vision providers
 
-Vision is configured as three independent provider roles, not one provider that
+Vision is configured as independent provider roles, not one provider that
 implicitly owns observation, identity and execution:
 
-- `visual-only query -> point`: GLM is the default implementation. It reads
-  `LLM_ZHIPU_BASE_URL`, `LLM_ZHIPU_API_KEY` and
-  `LLM_ZHIPU_VISION_MODEL`; `LLM_VISUAL_PROFILE` cannot replace this role.
 - open-world visual entity proposal: disabled by default. Set
   `VISUAL_REGION_PROVIDER=omniparser` and `OMNIPARSER_BASE_URL` to use the thin
   official `POST /parse/` adapter. `OMNIPARSER_API_KEY` and
@@ -65,15 +62,20 @@ implicitly owns observation, identity and execution:
 - DOM-candidate visual disambiguation: the configured visual VLM receives a
   bounded SoM screenshot and supplied `E*` inventory, and may return only one
   offered E-ref or `null`.
+- point grounding: GLM/ShowUI/UI-TARS-style adapters remain explicit offline
+  grounding or legacy-compatibility benchmark arms. They are not offered as a
+  BrowserGym target-loop capability and cannot create an ActionBinding.
 
-`--visual-grounding` therefore enables GLM point grounding by default; it does
-not silently enable GLM as an open-world region proposer. The OmniParser
+The target-loop BrowserGym path uses only an explicitly configured region
+proposer and/or E-ref disambiguator. A legacy benchmark option may still build
+a GLM point adapter for isolated comparison, but the target-loop environment
+does not call or advertise it. The OmniParser
 adapter consumes the current server schema documented by the
 [official OmniParser repository](https://github.com/microsoft/OmniParser/tree/master/omnitool/omniparserserver).
 It imports none of OmniTool's planner, memory or executor.
 
 All provider outputs remain observations or proposals. Runtime's typed visual
 gate decides whether a call occurs; `EntityCorrespondence`/`WorldFusion` own
-identity; action-space admission and currentness own coordinate authority.
+identity; action-space admission and currentness own DOM execution authority.
 Region-proposer action claims are discarded at all current adapter boundaries;
-only the separate point-grounder result can nominate a point.
+an unmatched V-ref remains observation-only.

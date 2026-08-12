@@ -79,7 +79,13 @@ class ThreadBoundBrowserGym:
             import browsergym.miniwob  # type: ignore[import-not-found]  # noqa: F401
             import gymnasium as gym  # type: ignore[import-not-found]
 
-            environment = gym.make(task_id, headless=headless)
+            # BrowserGym's default ``standard_html`` marking omits SVG child
+            # elements.  Those elements still appear as clickable in the CDP
+            # DOM snapshot, but without a BrowserGym ID they cannot participate
+            # in the identity-based control plane.  Mark every DOM element so
+            # clickable SVG/path/circle/text nodes receive private BIDs and can
+            # be executed through BrowserGym/Playwright rather than coordinates.
+            environment = gym.make(task_id, headless=headless, tags_to_mark="all")
             unwrapped = getattr(environment, "unwrapped", environment)
             getter = getattr(unwrapped, "_get_obs", None)
             # BrowserGym creates its page during reset. The pinned read-only API
@@ -190,6 +196,8 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         for bid in (node.get("browsergym_id"),)
         if isinstance(bid, str) and bid
     ))
+    dom_extra = raw.get("extra_element_properties")
+    dom_extra = dom_extra if isinstance(dom_extra, dict) else {}
     properties: dict[str, object] = {}
     for bid in bids:
         try:
@@ -225,6 +233,14 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         readonly = physical.get("readonly")
         options = physical.get("options")
         bbox = physical.get("bbox")
+        snapshot_properties = dom_extra.get(bid)
+        if isinstance(snapshot_properties, dict):
+            # BrowserGym scales DOMSnapshot geometry to the screenshot.  Keep
+            # that geometry for E-ref/SoM projection; locator geometry is in
+            # CSS pixels and would misalign marks when bgym_scale_factor != 1.
+            snapshot_bbox = snapshot_properties.get("bbox")
+            if isinstance(snapshot_bbox, list):
+                bbox = snapshot_bbox
         label_hint = physical.get("labelHint")
         properties[bid] = {
             "attached": attached,

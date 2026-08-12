@@ -75,12 +75,14 @@ non-authoritative hypothesis vertical slices implemented. Grounded-tools v2
 already reuses the SoM renderer and passed its single-BrowserGym-source targeted
 gate. Runtime-owned source selection, provenance-preserving WorldFusion,
 one-route selection, a per-frame visual evidence gate, explicit same-acquisition
-DOM/visual correspondence, and visual-only coordinate authority now exist on
-the non-default target path. GLM is now the default point-only Vision provider;
-open-world region proposal is explicitly configured and may use the thin
+DOM/visual correspondence now exist on the non-default target path. Phase 4
+extends the structural plane with raw-DOM clickable SVG identity and removes
+point authority from the BrowserGym target loop. Point providers remain
+isolated benchmark/legacy arms; open-world region proposal is explicitly configured and may use the thin
 OmniParser adapter, while ambiguous DOM candidates can resolve only to an
-existing E-ref. The provider-completion repository gate passes at
-`2348 passed, 27 skipped`; the live visual gate remains open;
+existing E-ref, and unmatched proposals remain observation-only. Phase-4
+focused/full verification and real identity probes pass; the frozen provider
+gate remains open;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`

@@ -19,6 +19,8 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile im
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
+MIN_DOM_CLICKABLE_VISIBILITY = 0.5
+MIN_DOM_CLICKABLE_AREA = 20.0
 SemanticScalar: TypeAlias = str | bool | int | float | None
 
 
@@ -132,6 +134,8 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         )
     records = _normalized_records(raw, _ax_records(raw))
     physical = _physical_properties(raw)
+    dom_properties = _dom_properties(raw)
+    suppressed_clickable_bids = _suppressed_dom_clickable_bids(records, dom_properties)
     by_node_id: dict[str, list[_AxRecord]] = {}
     for record in records:
         by_node_id.setdefault(record.node_id, []).append(record)
@@ -139,6 +143,8 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
     seen_controls: set[str] = set()
     option_owners: dict[str, str] = {}
     for record in records:
+        if record.bid in suppressed_clickable_bids:
+            continue
         spec = browsergym_role_spec(record.role)
         if (
             spec is None
@@ -172,10 +178,14 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         controls.append(_canonical_control(record, spec, options, physical.get(record.bid)))
     diagnostic_roles = diagnostic_browsergym_roles()
     distribution = Counter(
-        record.role for record in records if record.role in diagnostic_roles
+        record.role
+        for record in records
+        if record.bid not in suppressed_clickable_bids and record.role in diagnostic_roles
     )
     recognized = sum(
-        is_inventory_target_browsergym_role(record.role) for record in records
+        record.bid not in suppressed_clickable_bids
+        and is_inventory_target_browsergym_role(record.role)
+        for record in records
     )
     return BrowserGymSemanticAnalysis(
         tuple(controls),
@@ -264,10 +274,13 @@ def _normalized_records(
     for record in records:
         properties = extra.get(record.bid)
         clickable = (
-            record.role == "generic"
-            and record.bid
+            record.bid
             and isinstance(properties, dict)
             and properties.get("clickable") is True
+            and (
+                record.role == "generic"
+                or browsergym_role_spec(record.role) is None
+            )
         )
         if clickable:
             normalized.append(replace(
@@ -278,6 +291,122 @@ def _normalized_records(
         else:
             normalized.append(record)
     return tuple(normalized)
+
+
+def _dom_properties(raw: dict[str, object]) -> dict[str, object]:
+    value = raw.get("extra_element_properties")
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if isinstance(key, str)
+    }
+
+
+def _suppressed_dom_clickable_bids(
+    records: tuple[_AxRecord, ...],
+    dom_properties: dict[str, object],
+) -> frozenset[str]:
+    """Reject non-hittable DOM fallbacks and collapse same-control drawing nodes.
+
+    Native AX controls are never affected.  The filter is intentionally
+    bounded to records normalized from DOM clickability.  When BrowserGym has
+    no geometry (for example an older fixture), the record is retained and the
+    ordinary availability contract remains authoritative.
+    """
+
+    candidates = [record for record in records if record.role == "clickable" and record.bid]
+    suppressed: set[str] = set()
+    boxes: dict[str, tuple[float, float, float, float]] = {}
+    for record in candidates:
+        properties = dom_properties.get(record.bid)
+        if not isinstance(properties, dict):
+            continue
+        bbox = _float_bbox(properties.get("bbox"))
+        if bbox is None:
+            continue
+        visibility = properties.get("visibility")
+        if (
+            isinstance(visibility, int | float)
+            and not isinstance(visibility, bool)
+            and float(visibility) < MIN_DOM_CLICKABLE_VISIBILITY
+        ):
+            suppressed.add(record.bid)
+            continue
+        if bbox[2] * bbox[3] < MIN_DOM_CLICKABLE_AREA:
+            suppressed.add(record.bid)
+            continue
+        boxes[record.bid] = bbox
+
+    retained = [record for record in candidates if record.bid in boxes and record.bid not in suppressed]
+    for index, left in enumerate(retained):
+        if left.bid in suppressed:
+            continue
+        for right in retained[index + 1:]:
+            if right.bid in suppressed or left.parent_id != right.parent_id:
+                continue
+            if not _same_control_overlap(boxes[left.bid], boxes[right.bid]):
+                continue
+            left_label, right_label = left.name.strip(), right.name.strip()
+            if left_label and right_label and left_label.casefold() != right_label.casefold():
+                continue
+            winner = _preferred_clickable_record(left, right, boxes)
+            loser = right if winner is left else left
+            suppressed.add(loser.bid)
+            if loser is left:
+                break
+    return frozenset(suppressed)
+
+
+def _preferred_clickable_record(
+    left: _AxRecord,
+    right: _AxRecord,
+    boxes: dict[str, tuple[float, float, float, float]],
+) -> _AxRecord:
+    left_label, right_label = left.name.strip(), right.name.strip()
+    if bool(left_label) != bool(right_label):
+        return left if left_label else right
+    left_area = boxes[left.bid][2] * boxes[left.bid][3]
+    right_area = boxes[right.bid][2] * boxes[right.bid][3]
+    if left_area != right_area:
+        return left if left_area > right_area else right
+    # BIDs are Runtime-private but stable for one page incarnation.  They make
+    # equal unlabeled overlays deterministic under AX record permutation.
+    return min((left, right), key=lambda item: (item.bid, item.node_id))
+
+
+def _float_bbox(value: object) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    try:
+        x, y, width, height = (float(item) for item in value)
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
+
+
+def _same_control_overlap(
+    left: tuple[float, float, float, float],
+    right: tuple[float, float, float, float],
+) -> bool:
+    left_x, left_y, left_width, left_height = left
+    right_x, right_y, right_width, right_height = right
+    intersection_width = max(
+        0.0,
+        min(left_x + left_width, right_x + right_width) - max(left_x, right_x),
+    )
+    intersection_height = max(
+        0.0,
+        min(left_y + left_height, right_y + right_height) - max(left_y, right_y),
+    )
+    intersection = intersection_width * intersection_height
+    if intersection <= 0:
+        return False
+    smaller = min(left_width * left_height, right_width * right_height)
+    return intersection / smaller >= 0.9
 
 
 def _descendant_text(

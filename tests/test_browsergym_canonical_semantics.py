@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 
+import numpy as np
 import pytest
 from browsergym_adapter_support import ax_node, raw_observation
 from hypothesis import given
@@ -120,6 +121,84 @@ def test_dom_heuristic_fields_cannot_change_canonical_ax_equality() -> None:
     raw["dom_object"] = {"role": "textbox", "innerText": "another heuristic"}
 
     assert canonical_control_for_bid(raw, "control") == first
+
+
+def test_dom_clickable_svg_symbol_becomes_identity_bound_activate_control() -> None:
+    raw = raw_observation(ax_node("svg-point", "graphics-symbol", ""))
+    raw["extra_element_properties"]["svg-point"].update({
+        "clickable": True,
+        "visibility": 1.0,
+        "bbox": [21.75, 96.75, 13.5, 13.5],
+    })
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["svg-point"]["bbox"] = [21.75, 96.75, 13.5, 13.5]
+    raw["screenshot"] = np.zeros((240, 320, 3), dtype=np.uint8)
+
+    projection = _projection(raw)
+
+    assert len(projection.world.targets) == len(projection.world.bindings) == 1
+    assert projection.world.targets[0].role == "clickable"
+    assert projection.world.bindings[0].semantic_action == "activate"
+    assert projection.world.bindings[0].primitive_action == "click"
+    assert projection.private_bindings[0].private_element_id == "svg-point"
+    assert projection.world.sources[0].media[0].grounding_regions[0].bbox == (22, 97, 14, 14)
+    public = repr(projection.world)
+    assert "svg-point" not in public
+    assert "point_activate" not in public and "coordinate" not in public
+
+
+def test_dom_clickable_drawing_nodes_are_hittable_filtered_and_deduplicated() -> None:
+    raw = raw_observation(
+        ax_node("slice", "graphics-symbol", "", parent_id="svg-root"),
+        ax_node("title", "generic", "", parent_id="svg-root", child_ids=("title-text",)),
+        ax_node("title-text", "StaticText", "+", parent_id="title"),
+        ax_node("tiny", "graphics-symbol", "", parent_id="svg-root"),
+        ax_node("occluded", "graphics-symbol", "", parent_id="svg-root"),
+    )
+    for bid, bbox, visibility in (
+        ("slice", [87.0, 162.0, 66.0, 66.0], 1.0),
+        ("title", [104.5, 166.5, 31.0, 57.0], 1.0),
+        ("tiny", [120.0, 195.0, 1.0, 1.0], 1.0),
+        ("occluded", [0.0, 75.0, 6.0, 6.0], 0.25),
+    ):
+        raw["extra_element_properties"][bid].update({
+            "clickable": True,
+            "visibility": visibility,
+            "bbox": bbox,
+        })
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid]["bbox"] = bbox
+
+    controls = canonicalize_browsergym_controls(raw)
+    clickables = [item for item in controls if item.role == "clickable"]
+
+    assert [(item.private_bid, item.accessible_name) for item in clickables] == [("title", "+")]
+    projection = _projection(raw)
+    clickable_target_ids = {
+        target.target_id for target in projection.world.targets if target.role == "clickable"
+    }
+    assert len(clickable_target_ids) == 1
+    assert {binding.target_id for binding in projection.world.bindings} == clickable_target_ids
+
+
+def test_equal_unlabeled_dom_overlays_deduplicate_independently_of_ax_order() -> None:
+    def controls(order: tuple[str, str]) -> tuple[str, ...]:
+        raw = raw_observation(*(
+            ax_node(bid, "graphics-symbol", "", parent_id="svg-root")
+            for bid in order
+        ))
+        for bid in order:
+            raw["extra_element_properties"][bid].update({
+                "clickable": True,
+                "visibility": 1.0,
+                "bbox": [20, 40, 20, 20],
+            })
+        return tuple(
+            item.private_bid
+            for item in canonicalize_browsergym_controls(raw)
+            if item.role == "clickable"
+        )
+
+    assert controls(("overlay-b", "overlay-a")) == ("overlay-a",)
+    assert controls(("overlay-a", "overlay-b")) == ("overlay-a",)
 
 
 def test_exact_duplicate_is_merged_and_conflicting_same_bid_fails_typed() -> None:

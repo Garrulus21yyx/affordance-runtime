@@ -365,3 +365,88 @@ grounding/tool-output quality: three GLM point witnesses did not complete, and
 `click-shades` performed one visually constrained effective DOM selection before
 the main policy emitted invalid tool arguments on the next turn. GLM therefore
 remains a pluggable baseline, not an attested SOTA point grounder.
+
+## 15. Phase 4 structural-identity completion and point de-authoring
+
+Status: `IMPLEMENTED_FULL_VERIFIED / FROZEN_LIVE_GATE_PENDING`
+
+New repository evidence invalidates the Phase-3 classification of
+`grid-coordinate` and likely `click-pie` as inherently visual-only. The pinned
+BrowserGym raw DOM snapshot exposes 25 clickable SVG nodes for the former and
+clickable SVG nodes for the latter. The current AX-only semantic projection
+drops those controls before the visual gate, creating a false evidence gap and
+unnecessarily assigning pixel-level grounding work to the Agent/provider path.
+
+The bounded replacement contract is:
+
+```text
+AX controls + visible raw-DOM clickable controls
+-> one canonical E-ref inventory with private BrowserGym identity
+-> optional screenshot/SoM evidence over those same E-refs
+-> Agent selects semantic action + E-ref only
+-> Runtime resolves the E-ref to the private DOM binding
+
+no structural identity
+-> optional OmniParser observation-only V-ref proposal
+-> explicit correspondence may recover a DOM E-ref
+-> unmatched V-ref remains non-executable in this phase
+```
+
+Point grounders remain isolated benchmark arms. They are not used as the sole
+architecture and no main Agent contract accepts or emits coordinates or boxes.
+Phase 4 does not delete generic visual-surface foundations or ScreenSpot
+evaluation support; it removes point execution from the BrowserGym mainline
+until a separately admitted safe-region executor exists.
+
+Work items:
+
+1. `completed_revised_to_smaller_native_bridge` — configure BrowserGym's native
+   DOM marking with `tags_to_mark="all"`, then consume its DOMSnapshot-derived
+   clickability/visibility/geometry through the existing AX BID bridge. This
+   avoids a duplicate sparse-CDP parser while covering SVG descendants without
+   benchmark/task-family branches.
+2. `completed` — merge AX and raw-DOM controls before semantic projection, with
+   one private DOM identity per canonical E-ref and DOM execution authority.
+3. `completed` — ensure same-ID screenshot/SoM marks cover the merged structural
+   inventory and vision escalation treats those objects as structured
+   candidates rather than visual-only discovery targets.
+4. `completed` — make open-world proposer output observation-only by default;
+   unmatched V-refs receive no BrowserGym point binding in this phase, while
+   matched V-refs retain correspondence to DOM authority.
+5. `completed_for_target_loop` — remove point actions from the main Agent-facing BrowserGym
+   catalog/path while retaining isolated benchmark ports and historical
+   compatibility surfaces outside the BrowserGym mainline.
+6. `completed` — add invariant/property/integration coverage for SVG identity,
+   nested-control deduplication, no-coordinate public contracts, DOM execution,
+   unmatched visual fail-closed behavior and zero point-provider calls.
+7. `full_and_real_probe_verified / frozen_live_gate_pending` — run focused/full tests, a held-out real BrowserGym probe and the
+   relevant live benchmark witnesses; update maintained architecture/status
+   documents from measured evidence only.
+
+Verification so far:
+
+- focused BrowserGym architecture suite: `50 passed`;
+- full repository suite: `2359 passed, 27 skipped`;
+- Ruff on affected Python sources/tests and `git diff --check`: passed;
+- real target-loop seed-7 probes: `grid-coordinate` success and two-step
+  `click-pie` success, with zero point-grounder calls; evidence record:
+  `docs/evidence/2026-08-12-svg-dom-identity-target-loop-probe.md`;
+- frozen five-witness provider gate: pending a clean implementation SHA.
+
+Files changed by work item will be recorded here as implementation proceeds.
+
+Exit criteria:
+
+- every visible actionable raw-DOM control in the supported BrowserGym snapshot
+  algebra is either represented once by E-ref or rejected with a typed reason;
+- AX and DOM representations of one control do not create duplicate entities;
+- nested SVG drawing nodes for one logical control do not create duplicate
+  executable actions;
+- structural SVG targets are executed through BrowserGym/Playwright identity,
+  never a model-produced point;
+- main Agent requests and tool calls contain semantic actions/E-refs and no
+  coordinate, bbox, selector, backend node or provider route fields;
+- OmniParser proposals cannot grant execution authority; unmatched proposals
+  are observation-only and fail closed if selected for an action;
+- focused, full and held-out real-browser evidence agree before this phase is
+  marked verified.

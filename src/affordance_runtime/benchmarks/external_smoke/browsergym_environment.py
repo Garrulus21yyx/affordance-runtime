@@ -188,7 +188,6 @@ class BrowserGymMiniWobEnvironment:
             offers = (ObservationOffer("browsergym", "structural", "structural", "medium", group),)
             if any((
                 self.visual_region_proposer,
-                self.visual_point_grounder,
                 self.visual_candidate_disambiguator,
             )):
                 offers += (ObservationOffer(
@@ -458,7 +457,6 @@ class BrowserGymMiniWobEnvironment:
         candidate_binding_filter: set[str] | None = None
         visual_capable = any((
             self.visual_region_proposer,
-            self.visual_point_grounder,
             self.visual_candidate_disambiguator,
         ))
         if visual_capable and visual_selection is None:
@@ -513,7 +511,10 @@ class BrowserGymMiniWobEnvironment:
                         episode_identity=self._episode_identity,
                         task=self._task,
                         proposer=self.visual_region_proposer,
-                        point_grounder=self.visual_point_grounder,
+                        # Point grounders are isolated benchmark arms.  The
+                        # BrowserGym mainline may observe unmatched V-refs but
+                        # cannot turn them into action authority.
+                        point_grounder=None,
                         structured_source=projection.world.sources[0],
                     )
                     visual_source = visual.source
@@ -607,18 +608,11 @@ class BrowserGymMiniWobEnvironment:
             structured_source,
             visual_available=any((
                 self.visual_region_proposer,
-                self.visual_point_grounder,
                 self.visual_candidate_disambiguator,
             )),
             candidate_verification_available=self.visual_candidate_disambiguator is not None,
-            discovery_available=(
-                self.visual_region_proposer is not None
-                or self.visual_point_grounder is not None
-            ),
-            diagnosis_available=(
-                self.visual_region_proposer is not None
-                or self.visual_point_grounder is not None
-            ),
+            discovery_available=self.visual_region_proposer is not None,
+            diagnosis_available=self.visual_region_proposer is not None,
             explicitly_requested=explicit_visual,
             terminal=terminal,
             task_instruction=self._task.instruction if self._task is not None else "",

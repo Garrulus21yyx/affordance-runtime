@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / PROVIDER_SPLIT_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC` | grounded-tools v2 passed its four-case single-BrowserGym-source gate at `b9ad39a`; Step 12 owns bounded source selection/fusion/route/grounding. Step 13 treats visual configuration as capability only: every frame starts from DOM/AX, a typed gate selects optional Vision, explicit correspondence preserves DOM identity, and only unmatched visual-only entities may retain coordinates. Phase-3 adds atomic point objectives, typed single/multi/value needs, E-ref action narrowing, fused verifier lineage, typed provider diagnostics and atomic per-case progress. The full suite passes (`2355 passed, 27 skipped`); the exact live rerun improved from `0/5` to `1/5` with `visual-addition` successful, but GLM point quality and later main-policy tool output keep the live gate failed. Step 14 is not started |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / PHASE_4 STRUCTURAL_IDENTITY_COMPLETION_IMPLEMENTED_FULL_VERIFIED / FROZEN_LIVE_GATE_PENDING` | grounded-tools v2 and source/fusion foundations remain. Phase 4 marks all BrowserGym DOM elements, projects visible clickable SVG children into the same E-ref/BID control plane, filters non-hittable and duplicate drawing nodes, and keeps Agent output at semantic action + E-ref. BrowserGym target-loop point providers no longer advertise capability or create bindings; OmniParser-compatible unmatched V-refs remain observation-only. Focused BrowserGym tests (`50 passed`), the full suite (`2359 passed, 27 skipped`) and real identity target-loop probes for `grid-coordinate` and `click-pie` pass; the frozen provider gate remains pending. |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -91,12 +91,12 @@ HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`: typed rolling
 objectives plus bounded non-authoritative hypothesis proposal, atomic Runtime
 admission, verifier assessment and fair observation pinning exist.
 
-The current provider-completion increment keeps those authorities unchanged.
-GLM is wired through the separate point-grounder port and is the only Vision
-role enabled by `--visual-grounding` without further configuration. OmniParser
-may be enabled explicitly for open-world region proposal; its output remains
-observation-only. Ambiguous DOM candidates use a SoM/E-ref chooser that cannot
-represent a coordinate. Postcondition diagnosis remains typed in the gate but
+The current Phase-4 increment retains point grounders only as explicit
+benchmark/legacy-compatibility arms; the BrowserGym target loop neither
+advertises nor calls them. OmniParser may be enabled explicitly for open-world
+region proposal; its unmatched output remains observation-only. Ambiguous DOM
+candidates use a SoM/E-ref chooser that cannot represent a coordinate.
+Postcondition diagnosis remains typed in the gate but
 is not fed from request prose or guessed failure state; it awaits an evaluator-
 owned unresolved-postcondition fact.
 

@@ -12,7 +12,6 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_environment import 
     BrowserGymMiniWobEnvironment,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
@@ -31,7 +30,6 @@ from affordance_runtime.world import (
     SourceAcquisitionStatus,
     WorldObservationRequest,
 )
-from affordance_runtime.world.binder import ActionBinder
 
 
 @dataclass
@@ -111,13 +109,6 @@ def _visual_request():
     )
 
 
-def _bind_first(task, world):
-    space = ActionSpaceBuilder().build(task, world)
-    assert len(space.options) == 1
-    selection = ActionSpaceBuilder().admit(space.options[0], {})
-    return ActionBinder().bind(selection, world, "context:visual")
-
-
 def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acquisition() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
@@ -126,7 +117,7 @@ def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acqu
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
-            assert len(initial.observation.bindings) == 1
+            assert initial.observation.bindings == ()
             assert len(proposer.calls) == 1
             assert environment.visual_proposer_calls == 1
             assert [(item.source, item.status) for item in initial.source_results] == [
@@ -146,9 +137,14 @@ def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acqu
                 "browsergym",
                 "browsergym_visual",
             }
-            assert len(acquired.observation.bindings) == 1
-            assert acquired.observation.bindings[0].surface == "browsergym_visual"
-            assert acquired.observation.bindings[0].payload == {}
+            assert acquired.observation.bindings == ()
+            visual = next(
+                source for source in acquired.observation.sources
+                if source.surface == "browsergym_visual"
+            )
+            assert len(visual.targets) == 1
+            assert visual.bindings == ()
+            assert environment.visual_point_grounder_calls == 0
             state = AgentLoopState(acquired.observation, remaining_turns=3)
             context = ContextBuilder().build(
                 task,
@@ -163,14 +159,14 @@ def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acqu
                 observation_capabilities=environment.observation_capabilities,
             )
             assert len(context.image_inputs) == 1
-            assert sum(item.marked for item in context.grounding.entities) == 1
+            assert sum(item.marked for item in context.grounding.entities) == 0
         finally:
             await environment.close()
 
     asyncio.run(scenario())
 
 
-def test_visual_binding_routes_through_action_space_and_pointer_execution() -> None:
+def test_point_grounder_cannot_create_browsergym_mainline_action_authority() -> None:
     async def scenario() -> None:
         raw = _raw()
         fake = FakeBrowserGym(raw)
@@ -182,26 +178,24 @@ def test_visual_binding_routes_through_action_space_and_pointer_execution() -> N
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
-            request = _bind_first(task, acquired.observation)
-            assert "bbox" not in request.intent.parameters
-            assert request.binding.payload == {}
-
-            outcome = await environment.execute(request)
-            assert outcome.result.dispatch_status is DispatchStatus.SENT
-            assert fake.actions == ["mouse_click(60, 30)"]
-            assert environment.visual_point_grounder_calls == 3
-            assert environment.step_calls == 1
+            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+            assert acquired.observation.bindings == ()
+            assert environment.visual_point_grounder_calls == 0
+            assert isinstance(environment.visual_point_grounder, _Grounder)
+            assert environment.visual_point_grounder.calls == []
+            assert fake.actions == []
+            assert environment.step_calls == 0
             assert environment.dom_action_calls == 0
             assert environment.structural_binding_dispatch_count == 0
-            assert environment.visual_binding_dispatch_count == 1
-            assert len(proposer.calls) == 3  # evidence gap, explicit capture, renewed evidence gap
+            assert environment.visual_binding_dispatch_count == 0
+            assert len(proposer.calls) == 2
         finally:
             await environment.close()
 
     asyncio.run(scenario())
 
 
-def test_changed_screenshot_makes_visual_binding_stale_with_zero_dispatch() -> None:
+def test_changed_screenshot_does_not_make_observation_only_visual_entity_executable() -> None:
     async def scenario() -> None:
         initial = _raw()
         fake = FakeBrowserGym(initial, _raw(shade=1))
@@ -211,13 +205,12 @@ def test_changed_screenshot_makes_visual_binding_stale_with_zero_dispatch() -> N
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
-            # Capture used ``post`` in the fixture, so change it only after binding.
+            # Capture used ``post`` in the fixture; changing it cannot create an
+            # executable route for an unmatched observation-only V-ref.
             fake.post = _raw(shade=2)
-            request = _bind_first(task, acquired.observation)
-
-            outcome = await environment.execute(request)
-            assert outcome.result.dispatch_status is DispatchStatus.NOT_SENT
-            assert outcome.result.error is ActionError.STALE_BINDING
+            assert acquired.observation.bindings == ()
+            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+            assert environment.visual_point_grounder_calls == 0
             assert fake.actions == []
             assert environment.step_calls == 0
         finally:

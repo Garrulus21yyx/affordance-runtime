@@ -26,7 +26,7 @@ class VisionEvidenceNeed(StrEnum):
     """The bounded kind of evidence missing from the structured control plane."""
 
     NONE = "none"
-    VISUAL_ONLY_POINT = "visual_only_point"
+    OPEN_WORLD_ENTITY_DISCOVERY = "open_world_entity_discovery"
     SINGLE_TARGET_DISAMBIGUATION = "single_target_disambiguation"
     NEXT_MATCHING_TARGET = "next_matching_target"
     VISUAL_VALUE_REASONING = "visual_value_reasoning"
@@ -79,7 +79,7 @@ def decide_visual_escalation(
     if explicitly_requested:
         requested_mode = VisionEscalationMode.DISCOVER_VISUAL_ENTITIES
         reason_code = "explicit_visual_observation"
-        evidence_need = VisionEvidenceNeed.VISUAL_ONLY_POINT
+        evidence_need = VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY
     elif postcondition_unresolved:
         requested_mode = VisionEscalationMode.DIAGNOSE_POSTCONDITION
         reason_code = "postcondition_visual_diagnosis"
@@ -87,7 +87,7 @@ def decide_visual_escalation(
     elif not structured.bindings:
         requested_mode = VisionEscalationMode.DISCOVER_VISUAL_ENTITIES
         reason_code = "structured_action_unavailable"
-        evidence_need = VisionEvidenceNeed.VISUAL_ONLY_POINT
+        evidence_need = VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY
     elif _actionable_targets_are_ambiguous(structured):
         if _requires_visual_value_reasoning(structured, task_instruction):
             return VisionEscalationDecision(

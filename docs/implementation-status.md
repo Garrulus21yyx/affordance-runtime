@@ -547,22 +547,22 @@ actually emitted in that provider request. Deterministic DOM+Visual shared
 acquisition and DOM+WoT equivalent-route witnesses pass, together with the
 Step-11 regression set and the full repository suite.
 
-Step 13 now bridges the existing `VisualRegionBinding` foundation into the
-current BrowserGym target loop, with a later trigger/authority correction. An
+Step 13 historically bridged the existing `VisualRegionBinding` foundation into the
+current BrowserGym target loop. Phase 4 supersedes its point-authority portion. An
 explicitly injected bounded proposer adds a `visual/weak` capability; provider
 presence and prior selection do not invoke it. Each frame first projects DOM/AX,
 then a pure typed gate selects Vision only for current missing action authority,
 ambiguous structured candidates, explicit visual observation, or admitted
 postcondition diagnosis. Structural and visual projections share one raw
 capture. Unique compatible correspondence emits `EntityCorrespondence` and
-merges visual evidence into DOM identity without a coordinate binding; only an
-explicitly unmatched current visual-only `point_activate` region can create a
-private screenshot/viewport-bound route. Ambiguous/conflicting correspondence,
+merges visual evidence into DOM identity without a coordinate binding; unmatched
+visual regions remain observation-only and create no target-loop route.
+Ambiguous/conflicting correspondence,
 unsupported regions, missing shared acquisition identity, and stale screenshots
 are non-executable/fail closed. The route still passes through WorldFusion,
 ActionSpace/admission, RouteSelector and exact page/episode/screenshot
-currentness. The provider-completion slice separates these roles: GLM is the
-default visual-only point grounder; an optional thin OmniParser HTTP adapter
+currentness. Point grounders remain isolated benchmark/legacy compatibility
+ports and are not BrowserGym target-loop capabilities. An optional thin OmniParser HTTP adapter
 normalizes official parsed elements as observation-only regions; and a bounded
 SoM disambiguator may return only an offered E-ref for ambiguous current DOM
 candidates. Open-world proposal is disabled unless explicitly configured, so
@@ -578,7 +578,15 @@ case plus a progress index atomically. The exact live rerun completed with valid
 evidence at `1/5`: `visual-addition` succeeded without auxiliary E-ref/point
 calls, while GLM point quality and a later main-policy tool-output error kept
 the other cases from completion. `LIVE_GATE_FAILED_DIAGNOSTIC` therefore
-remains honest; no live-provider result is inferred from local verification.
+remains historical diagnostic evidence; no live-provider result is inferred
+from local verification. Phase 4 additionally marks all DOM elements so
+clickable SVG children receive private BIDs, normalizes them into ordinary
+`activate/click` E-refs, and filters tiny/low-visibility/overlapping drawing
+duplicates. Real read-only/control probes show 25 executable grid circle
+identities and one collapsed pie opener; identity-based clicks complete
+`grid-coordinate` and the two-step `click-pie` witness at reward 1.0 without a
+point-provider call. The full suite passes (`2359 passed, 27 skipped`); the
+frozen provider gate remains pending.
 
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,

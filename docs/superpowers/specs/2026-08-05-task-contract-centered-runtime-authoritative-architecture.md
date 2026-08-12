@@ -158,7 +158,10 @@ route。`WorldFusion` 保留 source-local identity/revision/provenance，将可�
 未选择、失败、截断、陈旧与有覆盖的缺失保持不同状态。普通实现不得把“观察所有 adapter
 并拼接 tuple”宣称为完成 fusion。
 
-BrowserGym visual binding 只在显式配置 bounded region proposer 时声明 `visual/weak`
+BrowserGym structural control plane 同时消费 AX 与 raw DOMSnapshot 的 visible clickable
+identity。adapter 必须为 SVG child 等非 standard-HTML 元素分配 private BID，并将其与 AX
+control 合并为唯一 E-ref；Agent 只选择 semantic action + E-ref，Runtime 使用 BID 经
+BrowserGym/Playwright 执行。BrowserGym visual observation 只在显式配置 bounded region proposer 时声明 `visual/weak`
 offer。该 offer 只表示能力可用，不构成调用证据。每次 acquisition 先取得 structural
 observation；Runtime 再根据当前 typed coverage/action/ambiguity/postcondition gap，或公开
 `RequestObservation(visual, weak)`，独立决定 `SKIP / VERIFY_STRUCTURED_CANDIDATES /
@@ -169,25 +172,26 @@ structural required + visual optional，并让二者共享一次 raw capture 和
 DOM/AX bbox 生成的 SoM mark 直接保留同一 DOM identity。外部 proposer 产生的 region 先是
 source-local observed entity，再以 current shared acquisition 内的显式
 `EntityCorrespondence` 合并：唯一匹配的 visual entity 映射到 DOM canonical target，且
-不得保留 coordinate binding；明确 unmatched 的 current visual-only entity 才可为支持的
-`point_activate` 创建 private `VisualRegionBinding` 和 public `ActionBinding`。ambiguous、
-conflicting、stale、unsupported 或 low-confidence region 只可观察。所有 binding 仍经
+不得保留 coordinate binding；unmatched current visual entity 在 BrowserGym target loop
+中仍是 observation-only，不创建 `VisualRegionBinding` 或 public `ActionBinding`。ambiguous、
+conflicting、stale、unsupported 或 low-confidence region 同样只可观察。所有 DOM binding 仍经
 `WorldFusion -> ActionSpace -> admission -> RouteSelector`；SoM、截图、correspondence 或
 observed region 自身不创建执行权。
 
 Vision provider role 必须分离：open-world discovery 可由 OmniParser-compatible
 `VisualRegionProposerPort` 返回 observation-only regions；DOM candidate verification
 由 bounded SoM/E-ref disambiguator 返回一个 supplied E-ref 或 `null`，类型上不能返回坐标；
-visual-only point 由独立 `VisualGrounderPort` 完成，当前默认实现为 GLM。默认启用 point
-不得隐式启用 GLM region proposer；region proposer 必须显式配置。ShowUI/GUI-Actor 未来只能
-替换 point port，任何 provider 都不拥有 gate、correspondence、fusion 或 execution authority。
+point grounder 只保留为独立 benchmark/legacy-compatibility port；GLM、ShowUI 或 GUI-Actor
+都不得成为 BrowserGym target-loop capability，也不得给 unmatched V-ref 授予 action
+authority。region proposer 必须显式配置。任何 provider 都不拥有 gate、correspondence、
+fusion 或 execution authority。
 
-视觉 route 的 bbox、point、screenshot identity 和 viewport 仅在 private binding 中；公开
-binding payload 和 model intent 不含坐标。dispatch 前必须重新读取当前截图，并同时验证
-world epoch、page、episode、exact screenshot digest/dimensions/viewport；任一不一致返回 typed
-`STALE_BINDING` 且 zero dispatch，probe 不可用返回 `CURRENTNESS_UNAVAILABLE`。只有验证后的
-整数点可编码为 BrowserGym `mouse_click`。optional visual acquisition 失败保留 sufficient
-structural world 并报告 typed gap；unsupported primitive 只可观察，不产生 ActionOption。
+视觉 bbox、screenshot identity 和 viewport 仅是 observation/correspondence evidence；公开
+binding payload 和 model intent 不含坐标。BrowserGym target-loop execution 只接受 current
+DOM identity binding，并在 dispatch 前验证 world epoch、page、episode 和 canonical control
+currentness；任一不一致返回 typed `STALE_BINDING` 且 zero dispatch，probe 不可用返回
+`CURRENTNESS_UNAVAILABLE`。optional visual acquisition 失败保留 sufficient structural world
+并报告 typed gap；unmatched 或 unsupported visual primitive 只可观察，不产生 ActionOption。
 
 正常 action path 直接消费 `execute()` 返回的 post-action acquisition。只有
 RequestObservation、Wait、stale/currentness recovery、confirmation refresh，或
