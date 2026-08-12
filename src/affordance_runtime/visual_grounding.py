@@ -139,7 +139,7 @@ class OpenAICompatibleVisualGrounder:
         body: dict[str, Any] = {
             "model": self.model,
             "temperature": 0.0,
-            "max_tokens": 128,
+            "max_tokens": 2048,
             "messages": [
                 {"role": "system", "content": _GROUNDING_SYSTEM_PROMPT},
                 {
@@ -244,12 +244,46 @@ class OpenAICompatibleVisualRegionProposer:
                     continue
                 raise StructuredModelError("visual region response failed validation") from exc
             point_ready = any(region.primitive_action == "point_activate" for region in regions)
-            if (
-                attempt == 1
-                or (regions and (not _requires_point_action(request.instruction) or point_ready))
-            ):
+            if attempt == 1:
+                if _requires_point_action(request.instruction) and not point_ready:
+                    fallback = self._point_fallback(request)
+                    return [fallback, *regions[: request.max_regions - 1]]
+                return regions
+            if regions and (not _requires_point_action(request.instruction) or point_ready):
                 return regions
         raise StructuredModelError("visual region response failed validation") from validation_error
+
+    def _point_fallback(self, request: VisualRegionProposalRequest) -> VisualRegion:
+        point = OpenAICompatibleVisualGrounder(
+            self.base_url,
+            self.api_key,
+            self.model,
+            self.provider,
+            timeout_s=self.timeout_s,
+        ).ground(VisualGroundingRequest(
+            request.sample_id,
+            request.image_path,
+            request.image_bytes,
+            request.image_size,
+            request.instruction,
+        ))
+        x, y = point.pixel_coordinates(request.image_size)
+        x /= request.image_size[0]
+        y /= request.image_size[1]
+        left, top = max(0.0, x - 0.01), max(0.0, y - 0.01)
+        right, bottom = min(1.0, x + 0.01), min(1.0, y + 0.01)
+        region = VisualRegion(
+            (left, top, right - left, bottom - top),
+            "visually grounded task target",
+            # The point endpoint supplies no calibrated confidence. Use the
+            # conservative BrowserGym admission floor, not a fabricated high score.
+            0.5,
+            True,
+            "option",
+            "point_activate",
+        )
+        region.pixel_bbox(request.image_size)
+        return region
 
 
 def _parse_visual_regions(

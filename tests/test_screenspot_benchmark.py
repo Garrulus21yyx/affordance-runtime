@@ -335,6 +335,51 @@ def test_visual_region_proposer_retries_non_actionable_point_output_and_accepts_
     assert regions[0].primitive_action == "point_activate"
 
 
+def test_visual_region_proposer_uses_validated_point_fallback_after_two_observe_only_results(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "sample.png"
+    Image.new("RGB", (200, 100), "white").save(image)
+    request_count = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            nonlocal request_count
+            request_count += 1
+            content = (
+                '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
+                '"label":"context","confidence":0.9,"role":"region","actionable":false}]}'
+                if request_count <= 2
+                else '{"x":0.4,"y":0.6,"normalized":true}'
+            )
+            response = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        regions = OpenAICompatibleVisualRegionProposer(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="vision-test"
+        ).propose(VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert request_count == 3
+    assert regions[0].primitive_action == "point_activate"
+    assert regions[0].confidence == 0.5
+    assert regions[0].pixel_bbox((200, 100)) == pytest.approx((78.0, 59.0, 4.0, 2.0))
+
+
 def test_visual_grounder_environment_factory_uses_zhipu_vision_model_without_exposing_key() -> None:
     grounder = visual_grounder_from_environment(
         {
