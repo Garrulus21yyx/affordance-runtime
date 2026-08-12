@@ -105,8 +105,10 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
         if _metric(metrics, "invalid_tool_argument_count") != 0:
             errors.append(f"{record.case_id}: structured tool argument failure occurred")
         first = record.diagnostic_trace[0] if record.diagnostic_trace else {}
-        if "visual" not in tuple(first.get("selected_source_modalities", ())):
-            errors.append(f"{record.case_id}: first policy context omitted visual source")
+        if _metric(metrics, "visual_source_acquired_count") < 1:
+            errors.append(f"{record.case_id}: initial visual source was not acquired")
+        elif first and "visual" not in tuple(first.get("selected_source_modalities", ())):
+            errors.append(f"{record.case_id}: first policy context omitted acquired visual source")
         if task_id in _VISUAL_POINTER_WITNESSES:
             if _metric(metrics, "visual_binding_dispatch_count") < 1:
                 errors.append(f"{record.case_id}: no visual binding was dispatched")

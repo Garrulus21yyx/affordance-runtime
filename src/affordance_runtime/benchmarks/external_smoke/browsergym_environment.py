@@ -117,6 +117,8 @@ class BrowserGymMiniWobEnvironment:
     fill_calls: int = 0
     select_calls: int = 0
     visual_proposer_calls: int = 0
+    structural_source_acquired_count: int = 0
+    visual_source_acquired_count: int = 0
     structural_binding_dispatch_count: int = 0
     visual_binding_dispatch_count: int = 0
     verifier_queries: int = 0
@@ -394,6 +396,7 @@ class BrowserGymMiniWobEnvironment:
             "source_acquired",
             projection.world.sources[0],
         )]
+        self.structural_source_acquired_count += 1
         visual_selection = selected.get("browsergym_visual")
         if self.visual_region_proposer is not None and visual_selection is None:
             results.append(SourceAcquisitionResult(
@@ -424,6 +427,7 @@ class BrowserGymMiniWobEnvironment:
                     "source_acquired",
                     visual.source,
                 ))
+                self.visual_source_acquired_count += 1
             except Exception:
                 results.append(SourceAcquisitionResult(
                     "browsergym_visual",

@@ -265,7 +265,7 @@ def _parse_visual_regions(
             continue
         try:
             left, top, right, bottom = _region_corners(item)
-            role = _visual_role(item.get("role"))
+            role = _visual_role(item)
             declared_actionable = _required_bool(item, "actionable") if "actionable" in item else False
             action_role = role in {"button", "option", "cell", "gridcell", "shape", "img"}
             region = VisualRegion(
@@ -319,8 +319,8 @@ def _optional_bool(item: Mapping[str, Any], key: str, default: bool) -> bool:
     return _required_bool(item, key)
 
 
-def _visual_role(value: object) -> str:
-    role = str(value or "").strip().casefold()
+def _visual_role(item: Mapping[str, Any]) -> str:
+    role = str(item.get("role") or "").strip().casefold()
     aliases = {
         "coordinate point": "option",
         "target": "option",
@@ -336,11 +336,18 @@ def _visual_role(value: object) -> str:
         "image": "img",
     }
     normalized = aliases.get(role, role)
-    return (
-        normalized
-        if normalized in {"button", "option", "cell", "gridcell", "shape", "text", "group", "img"}
-        else "region"
-    )
+    supported = {"button", "option", "cell", "gridcell", "shape", "text", "group", "img"}
+    if normalized in supported:
+        return normalized
+    label = str(item.get("label") or "").strip().casefold()
+    shape = str(item.get("shape") or "").strip().casefold()
+    if "button" in label:
+        return "button"
+    if any(token in f"{label} {shape}" for token in ("circle", "dot", "sector", "slice", "wedge")):
+        return "option"
+    if any(token in f"{label} {shape}" for token in ("square", "swatch", "cell", "block")):
+        return "shape"
+    return "region"
 
 
 def _visual_semantic_state(item: Mapping[str, Any]) -> dict[str, Any]:
