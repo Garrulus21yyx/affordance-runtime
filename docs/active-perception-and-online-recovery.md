@@ -23,8 +23,12 @@ Prior visual selection never persists into the next frame.
 The provider split is explicit. OmniParser may propose bounded open-world
 regions and is always observation-only. Every region-proposer output is
 normalized to observation-only at each current adapter boundary, even if a
-custom/legacy provider claims an action primitive. The main visual VLM may disambiguate
-current DOM candidates only by choosing an offered call-local E-ref. Point
+custom/legacy provider claims an action primitive. When the main Agent already
+receives the current screenshot plus marked structural candidates, it owns the
+semantic action and offered E-ref choice in one call; Runtime does not invoke a
+second pre-policy visual disambiguator. A dedicated disambiguator remains an
+optional bounded port for policies that cannot consume that evidence, and may
+return only one offered call-local E-ref. Point
 grounders such as GLM remain isolated benchmark/compatibility arms and are not
 a BrowserGym target-loop observation capability. Region proposal and candidate
 choice have separate call/success counters; point-benchmark counters cannot
@@ -35,6 +39,13 @@ outside tiny controls, keeping both the target pixels and the reference
 legible. Agent tools require an explicit E-ref only when more than one target
 is legal for that semantic operation; for a singleton, the ephemeral tool
 binding already carries the sole identity and Runtime resolves it privately.
+The BrowserGym projection may also expose observation-only repeated-leaf group
+counts, current selected state, and a normalized color family derived from
+visible computed style. These are public current-frame evidence, not bindings
+or hidden task answers. Model-facing catalogs may suppress an already-settled
+fill/select operation or an already-selected toggle, and may narrow unlabeled
+visual controls to one color family explicitly named by the instruction. The
+underlying Runtime action space and DOM authority remain unchanged.
 
 Visual evidence and visual execution authority are separate. Same-acquisition
 visual regions merge with DOM entities only through explicit

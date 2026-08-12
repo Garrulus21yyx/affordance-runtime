@@ -70,7 +70,7 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; M4.6-E is
-`PHASE_4_ARCHITECTURE_GATE_ACCEPTED / MODEL_PERFORMANCE_PARTIAL` with task-grounded perception and
+`PHASE_4_ARCHITECTURE_GATE_ACCEPTED / NAMED_REGRESSIONS_FIXED / GENERALIZATION_OPEN` with task-grounded perception and
 non-authoritative hypothesis vertical slices implemented. Grounded-tools v2
 already reuses the SoM renderer and passed its single-BrowserGym-source targeted
 gate. Runtime-owned source selection, provenance-preserving WorldFusion,
@@ -83,8 +83,12 @@ OmniParser adapter, while ambiguous DOM candidates can resolve only to an
 existing E-ref, and unmatched proposals remain observation-only. Phase-4
 focused/full verification and real identity probes pass; the clean-SHA frozen
 five-witness gate is evidence-valid at `3/5` and accepts the bounded
-architecture/authority invariants, while model performance and generalization
-remain open;
+architecture/authority invariants. Follow-up remediation removes redundant
+E-ref calls and closes settled-value/multi-target state projection;
+`visual-addition` succeeds in the clean five-case run and focused
+`click-shades` succeeds in six structural actions with no auxiliary E-ref or
+point calls. The final color increment has not received another complete
+five-case run, and broad model performance/generalization remain open;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`

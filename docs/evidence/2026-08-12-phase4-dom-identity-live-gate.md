@@ -4,6 +4,11 @@
 > **Claim:** architecture/authority gate only; performance and generalization
 > remain unclaimed
 
+This frozen record remains exact for `331ac0d`. Its residual diagnosis was
+superseded by the later
+[visual-value and multi-target remediation record](2026-08-12-visual-value-and-multitarget-remediation.md);
+the original measurements below are intentionally unchanged.
+
 ## Frozen run
 
 - implementation: `331ac0d94af0db77e0ebaabfb4891e3f9d279e2d`;

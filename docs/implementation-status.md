@@ -589,13 +589,17 @@ point-provider call. Dense SoM candidates now receive top-to-bottom,
 left-to-right E-ref numbering and external labels instead of text painted over
 14-pixel SVG targets. Singleton semantic tools bind their sole target inside
 the Runtime catalog, eliminating redundant target serialization without
-expanding authority. The full suite passes (`2365 passed, 24 skipped`). A clean
-`331ac0d` frozen provider gate completed with valid evidence at `3/5` and
-architecture acceptance true: every action used structural bindings, point and
-visual-binding acquisition/dispatch counts were zero, and invalid tool
-arguments were zero. `click-shades` still timed out under separate E-ref and
-policy calls, and `visual-addition` submitted an incorrect visual value, so
-model performance and generalization remain explicitly unclaimed.
+expanding authority. Follow-up remediation lets the screenshot+AX main policy
+choose the semantic action and E-ref in one call, suppresses settled fills and
+selected toggles from its next catalog, projects observation-only repeated-leaf
+counts, and exposes selected state plus computed-style color family without
+using fixture `data-*` answers. `visual-addition` then succeeds in two actions
+in the clean `8741890` five-case run, and focused clean `7fae859`
+`click-shades` succeeds in six structural actions with zero auxiliary E-ref or
+point calls. The full suite passes (`2373 passed, 24 skipped`). The final
+color-family increment has not received another complete five-case run, and
+`grid-coordinate` remains stochastic, so broad performance and generalization
+remain explicitly unclaimed.
 
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,

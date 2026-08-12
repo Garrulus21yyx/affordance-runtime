@@ -1,6 +1,6 @@
 # DOM-First Evidence-Gated Vision Convergence Plan
 
-Status: `PHASE_4_ARCHITECTURE_GATE_ACCEPTED / MODEL_PERFORMANCE_PARTIAL`
+Status: `PHASE_4_ARCHITECTURE_GATE_ACCEPTED / NAMED_REGRESSIONS_FIXED / GENERALIZATION_OPEN`
 
 Date: 2026-08-12
 
@@ -369,7 +369,7 @@ remains a pluggable baseline, not an attested SOTA point grounder.
 
 ## 15. Phase 4 structural-identity completion and point de-authoring
 
-Status: `ARCHITECTURE_GATE_ACCEPTED / MODEL_PERFORMANCE_PARTIAL`
+Status: `ARCHITECTURE_GATE_ACCEPTED / NAMED_REGRESSIONS_FIXED / GENERALIZATION_OPEN`
 
 New repository evidence invalidates the Phase-3 classification of
 `grid-coordinate` and likely `click-pie` as inherently visual-only. The pinned
@@ -427,8 +427,8 @@ Work items:
 Verification so far:
 
 - focused BrowserGym architecture suite: `50 passed`;
-- full repository suite after the final SoM/tool-contract increment:
-  `2365 passed, 24 skipped`;
+- full repository suite after the multi-target/value remediation:
+  `2373 passed, 24 skipped`;
 - Ruff on affected Python sources/tests and `git diff --check`: passed;
 - real target-loop seed-7 probes: `grid-coordinate` success and two-step
   `click-pie` success, with zero point-grounder calls; evidence record:
@@ -459,10 +459,16 @@ Exit criteria:
   marked verified.
 
 The architectural exit criteria are satisfied for this bounded five-witness
-gate. Performance/generalization remain open: `click-shades` timed out after
-nine valid DOM actions because each step still performs separate E-ref and main
-policy model calls, and `visual-addition` reached valid structural fill/submit
-actions with the wrong visual value. The next optimization should merge
-candidate choice and semantic action into one main multimodal decision when the
-typed gate selects SoM; it must not reintroduce point output or coordinate
-authority.
+gate. The two named residuals are now remediated without coordinate authority.
+The screenshot+AX main policy owns candidate choice and semantic action in one
+call, settled values/toggles are removed from its next catalog, repeated visible
+DOM leaf groups expose observation-only counts, and current controls expose
+selected state plus computed-style color family. `visual-addition` succeeds in
+two actions in the clean `8741890` five-case run; focused clean `7fae859`
+`click-shades` succeeds in six structural actions with zero auxiliary E-ref or
+point calls. See
+`docs/evidence/2026-08-12-visual-value-and-multitarget-remediation.md`.
+The final color-family increment has not been rerun across all five witnesses,
+and `grid-coordinate` E-ref selection remains stochastic, so broader
+performance/generalization remain open. `ActionBatch` is deferred rather than
+made a prerequisite for correctness.

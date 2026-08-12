@@ -59,12 +59,15 @@ implicitly owns observation, identity and execution:
   official `POST /parse/` adapter. `OMNIPARSER_API_KEY` and
   `OMNIPARSER_MODEL_ID` are optional. Setting `VISUAL_REGION_PROVIDER=vlm`
   explicitly enables the compatible VLM proposer instead.
-- DOM-candidate visual disambiguation: the configured visual VLM receives a
-  bounded SoM screenshot and supplied `E*` inventory, and may return only one
-  offered E-ref or `null`. Dense marks are numbered in stable visual reading
-  order and their labels are rendered outside tiny targets. A singleton
-  semantic operation carries its sole target in the ephemeral Runtime binding,
-  so the model does not serialize a redundant E-ref.
+- DOM-candidate visual disambiguation: when the main Agent consumes screenshot
+  plus AX/DOM marks, it selects the semantic action and one offered `E*` ref in
+  the same policy call. The environment does not make a redundant pre-policy
+  disambiguation call. Policies without multimodal marked-choice support may
+  use the bounded disambiguator port, which can return only an offered E-ref or
+  `null`. Dense marks are numbered in stable visual reading order and their
+  labels are rendered outside tiny targets. A singleton semantic operation
+  carries its sole target in the ephemeral Runtime binding, so the model does
+  not serialize a redundant E-ref or operation name.
 - point grounding: GLM/ShowUI/UI-TARS-style adapters remain explicit offline
   grounding or legacy-compatibility benchmark arms. They are not offered as a
   BrowserGym target-loop capability and cannot create an ActionBinding.
@@ -82,3 +85,10 @@ gate decides whether a call occurs; `EntityCorrespondence`/`WorldFusion` own
 identity; action-space admission and currentness own DOM execution authority.
 Region-proposer action claims are discarded at all current adapter boundaries;
 an unmatched V-ref remains observation-only.
+
+The BrowserGym adapter may publish current visible computed-style color family,
+selected state, and observation-only repeated DOM leaf-group counts. It does
+not expose fixture `data-*` answers, selectors, CSS classes, or new executable
+bindings. Catalog relevance filtering can use those public facts to omit
+already-settled actions and mismatched unlabeled color controls while leaving
+Runtime admission and DOM identity authoritative.
