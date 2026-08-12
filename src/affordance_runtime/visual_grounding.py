@@ -243,7 +243,10 @@ class OpenAICompatibleVisualRegionProposer:
                 if attempt == 0:
                     continue
                 raise StructuredModelError("visual region response failed validation") from exc
-            point_ready = any(region.primitive_action == "point_activate" for region in regions)
+            point_ready = any(
+                region.primitive_action == "point_activate" and region.confidence >= 0.5
+                for region in regions
+            )
             if attempt == 1:
                 if _requires_point_action(request.instruction) and not point_ready:
                     fallback = self._point_fallback(request)

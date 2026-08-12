@@ -300,7 +300,7 @@ def test_visual_region_proposer_retries_non_actionable_point_output_and_accepts_
             request_count += 1
             content = (
                 '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
-                '"label":"context","confidence":0.9,"role":"region","actionable":false}]}'
+                '"label":"low confidence target","confidence":0.2,"role":"option","actionable":true}]}'
                 if request_count == 1
                 else '<think>bounded analysis</think>{"regions":[{"x":0.1,"y":0.2,'
                 '"width":0.25,"height":0.5,"label":"target","confidence":0.9,'
