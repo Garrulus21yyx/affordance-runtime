@@ -351,6 +351,59 @@ def test_compact_singleton_operation_does_not_require_or_trust_redundant_target(
     asyncio.run(scenario())
 
 
+def test_compact_singleton_operation_does_not_require_redundant_operation_name() -> None:
+    async def scenario():
+        context = _context()
+        login_target = next(
+            target_id
+            for target_id, ref in context.grounding.target_refs.items()
+            if next(item for item in context.grounding.entities if item.ref == ref).label == "Login"
+        )
+        context = replace(
+            context,
+            actions=replace(
+                context.actions,
+                options=tuple(
+                    item for item in context.actions.options if item.target_id == login_target
+                ),
+                total_count=1,
+                page_size=1,
+            ),
+        )
+        port = _CompactPort([{"op": "submit", "target": "E99"}])
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+        )
+
+        response = await adapter.generate(_build_request(context))
+
+        assert not isinstance(response, ModelFailure)
+        parsed = parse_agent_decision(response.raw_payload, context.context_id)
+        assert isinstance(parsed, SelectAction)
+        assert adapter.last_resolution_code is GroundedToolResolutionCode.ACCEPTED
+
+    asyncio.run(scenario())
+
+
+def test_selected_multi_target_toggle_is_hidden_from_next_model_menu() -> None:
+    context = _context()
+    login = next(item for item in context.grounding.entities if item.label == "Login")
+    entities = tuple(
+        replace(item, state={"selected": True}) if item.ref == login.ref else item
+        for item in context.grounding.entities
+    )
+    context = replace(
+        context,
+        task=replace(context.task, instruction="Select all the matching shades and press Login."),
+        grounding=replace(context.grounding, entities=entities),
+    )
+
+    catalog = compile_grounded_tool_catalog(context)
+
+    assert "click" not in {item.name for item in catalog.specs}
+
+
 def test_confirmed_current_fill_is_removed_from_next_model_tool_menu() -> None:
     context = _context()
     username = next(item for item in context.grounding.entities if item.label == "Username")

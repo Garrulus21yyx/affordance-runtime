@@ -30,6 +30,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
 from affordance_runtime.world.schema_validation import validate_value
+from affordance_runtime.world.vision_escalation import requires_multiple_visual_targets
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,14 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         if ref is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         verb = _verb(option.semantic_action)
+        entity = entity_by_ref.get(ref)
+        if (
+            verb == "click"
+            and entity is not None
+            and entity.state.get("selected") is True
+            and requires_multiple_visual_targets(context.task.instruction)
+        ):
+            continue
         shape = _shape_key(verb, option.parameter_schema)
         grouped.setdefault((verb, shape), []).append((ref, option))
 

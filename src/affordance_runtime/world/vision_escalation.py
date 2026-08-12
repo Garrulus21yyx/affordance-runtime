@@ -99,7 +99,7 @@ def decide_visual_escalation(
         if marked_candidate_policy_available:
             evidence_need = (
                 VisionEvidenceNeed.NEXT_MATCHING_TARGET
-                if _requires_multiple_visual_targets(task_instruction)
+                if requires_multiple_visual_targets(task_instruction)
                 else VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
             )
             return VisionEscalationDecision(
@@ -108,7 +108,7 @@ def decide_visual_escalation(
                 evidence_need,
             )
         requested_mode = VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
-        if _requires_multiple_visual_targets(task_instruction):
+        if requires_multiple_visual_targets(task_instruction):
             reason_code = "next_matching_visual_target_required"
             evidence_need = VisionEvidenceNeed.NEXT_MATCHING_TARGET
         else:
@@ -163,7 +163,7 @@ _VISUAL_VALUE_PATTERN = re.compile(
 )
 
 
-def _requires_multiple_visual_targets(instruction: str) -> bool:
+def requires_multiple_visual_targets(instruction: str) -> bool:
     return bool(_MULTI_TARGET_PATTERN.search(instruction))
 
 

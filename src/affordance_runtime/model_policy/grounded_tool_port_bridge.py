@@ -211,7 +211,10 @@ class GroundedToolDecisionAdapter:
                     _format_repair_messages(messages), GroundedToolCommandPayload, self.config,
                 )
             spec = next((item for item in specs if item.name == payload.op), None)
-            return (ToolCall(payload.op, _command_arguments(payload, spec)),)
+            if spec is None and len(specs) == 1:
+                spec = specs[0]
+            operation = spec.name if spec is not None else payload.op
+            return (ToolCall(operation, _command_arguments(payload, spec)),)
         generate = getattr(self.port, "generate_tool_calls", None)
         if generate is None:
             raise ValueError("model port does not implement admitted native tool calls")
