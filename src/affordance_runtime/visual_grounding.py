@@ -71,7 +71,12 @@ class VisualRegion:
         if width <= 0 or height <= 0:
             raise ValueError("visual region bbox dimensions must be positive")
         if self.normalized:
-            if not (0 <= x <= 1 and 0 <= y <= 1 and 0 < width <= 1 and 0 < height <= 1):
+            if not (
+                0 <= x < 1
+                and 0 <= y < 1
+                and 0 < width <= 1 - x
+                and 0 < height <= 1 - y
+            ):
                 raise ValueError("normalized visual region bbox must be within [0, 1]")
             image_width, image_height = image_size
             return x * image_width, y * image_height, width * image_width, height * image_height
@@ -257,24 +262,31 @@ def _parse_visual_regions(
     regions: list[VisualRegion] = []
     for item in raw_regions:
         if not isinstance(item, dict):
-            raise TypeError("visual region must be an object")
-        left, top, right, bottom = _region_corners(item)
-        role = _visual_role(item.get("role"))
-        declared_actionable = _required_bool(item, "actionable") if "actionable" in item else False
-        region = VisualRegion(
-            bbox_xywh=(left, top, right - left, bottom - top),
-            label=str(item.get("label") or ""),
-            confidence=float(item.get("confidence") or 0.0),
-            normalized=bool(item.get("normalized", True)),
-            role=role,
-            primitive_action=(
-                "point_activate"
-                if declared_actionable or _validated_point_candidate(request.instruction, role)
-                else "observe_only"
-            ),
-            state=_visual_semantic_state(item),
-        )
-        region.pixel_bbox(request.image_size)
+            continue
+        try:
+            left, top, right, bottom = _region_corners(item)
+            role = _visual_role(item.get("role"))
+            declared_actionable = _required_bool(item, "actionable") if "actionable" in item else False
+            action_role = role in {"button", "option", "cell", "gridcell", "shape", "img"}
+            region = VisualRegion(
+                bbox_xywh=(left, top, right - left, bottom - top),
+                label=str(item.get("label") or ""),
+                confidence=float(item.get("confidence") or 0.0),
+                normalized=_optional_bool(item, "normalized", True),
+                role=role,
+                primitive_action=(
+                    "point_activate"
+                    if action_role
+                    and (declared_actionable or _validated_point_candidate(request.instruction, role))
+                    else "observe_only"
+                ),
+                state=_visual_semantic_state(item),
+            )
+            region.pixel_bbox(request.image_size)
+        except (KeyError, TypeError, ValueError):
+            # One malformed model candidate must not erase valid siblings. It
+            # remains absent from both public entities and private bindings.
+            continue
         regions.append(region)
     return regions
 
@@ -301,16 +313,26 @@ def _required_bool(item: Mapping[str, Any], key: str) -> bool:
     return value
 
 
+def _optional_bool(item: Mapping[str, Any], key: str, default: bool) -> bool:
+    if key not in item:
+        return default
+    return _required_bool(item, key)
+
+
 def _visual_role(value: object) -> str:
     role = str(value or "").strip().casefold()
     aliases = {
         "coordinate point": "option",
+        "target": "option",
+        "marker": "option",
+        "dot": "option",
         "point": "option",
         "circle": "option",
         "sector": "option",
         "slice": "option",
         "color swatch": "option",
         "block": "shape",
+        "square": "shape",
         "image": "img",
     }
     normalized = aliases.get(role, role)

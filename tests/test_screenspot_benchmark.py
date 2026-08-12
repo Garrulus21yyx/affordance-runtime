@@ -250,7 +250,7 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
                     "choices": [
                         {
                             "message": {
-                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"option","actionable":false,"color":"blue","shape":"circle","row":2,"column":3,"selected":false}]}'
+                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"option","actionable":false,"color":"blue","shape":"circle","row":2,"column":3,"selected":false},{"left":0.8,"top":0.8,"right":1.2,"bottom":0.9,"label":"invalid sibling","confidence":0.9,"role":"option","actionable":true}]}'
                             }
                         }
                     ]
