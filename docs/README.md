@@ -70,7 +70,7 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; M4.6-E is
-`PHASE_4_ARCHITECTURE_GATE_ACCEPTED / NAMED_REGRESSIONS_FIXED / GENERALIZATION_OPEN` with task-grounded perception and
+`PHASE_5_BOUNDED_WITNESS_VERIFIED / GENERALIZATION_OPEN` with task-grounded perception and
 non-authoritative hypothesis vertical slices implemented. Grounded-tools v2
 already reuses the SoM renderer and passed its single-BrowserGym-source targeted
 gate. Runtime-owned source selection, provenance-preserving WorldFusion,
@@ -88,7 +88,10 @@ E-ref calls and closes settled-value/multi-target state projection;
 `visual-addition` succeeds in the clean five-case run and focused
 `click-shades` succeeds in six structural actions with no auxiliary E-ref or
 point calls. The final color increment has not received another complete
-five-case run, and broad model performance/generalization remain open;
+five-case run. A current-observation regular-lattice enricher now derives
+row/column and visible Cartesian-axis semantics without point output; clean
+`3ccb267` `grid-coordinate` completes in one main call and one DOM dispatch
+with no auxiliary visual call. Multi-seed and broad generalization remain open;
 the M4.6-B residual contract implementation is `880e65fef0c2541be9f4b5af121e610f858685db`,
 while its accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`;
 M4.6-C implementation `e6c410021d8b9bf11b52f24520a6258ede5d2027`

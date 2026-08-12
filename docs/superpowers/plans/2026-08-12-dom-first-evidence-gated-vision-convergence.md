@@ -1,12 +1,12 @@
 # DOM-First Evidence-Gated Vision Convergence Plan
 
-Status: `PHASE_4_ARCHITECTURE_GATE_ACCEPTED / NAMED_REGRESSIONS_FIXED / GENERALIZATION_OPEN`
+Status: `PHASE_5_BOUNDED_WITNESS_VERIFIED / GENERALIZATION_OPEN`
 
 Date: 2026-08-12
 
 ## 2026-08-13 Phase 5 — observation-derived lattice semantics
 
-Status: `IN_PROGRESS`
+Status: `BOUNDED_WITNESS_VERIFIED / GENERALIZATION_OPEN`
 
 Objective: remove the remaining `grid-coordinate` 25-way SoM selection burden
 without introducing point grounding or a benchmark-task branch. Mechanically
@@ -28,13 +28,33 @@ Plan:
    retaining the unchanged Runtime ActionSpace.
 4. `completed` — add invariant/property regressions for order independence,
    orientation inference, uniqueness, ambiguity and fail-closed behavior.
-5. `in_progress` — run focused/full tests and a clean real BrowserGym/GLM witness;
+5. `completed` — run focused/full tests and a clean real BrowserGym/GLM witness;
    persist per-case evidence and update maintained status from measured facts.
 
 Non-goals: MiniWoB slug/case branches, fixed 5x5 or `-2..2` assumptions,
 model-produced coordinates, coordinate execution bindings, verifier answer
 inference, or a generalized table/calendar platform beyond the proven regular
 lattice contract.
+
+Verification:
+
+- focused lattice/projection/catalog suite: `22 passed`; broader affected suite:
+  `98 passed` before the final DOM-only closure regression;
+- full repository suite: `2379 passed, 24 skipped`;
+- clean `3ccb267c7958d2e02634f8aebcfe8284199e491d` real
+  BrowserGym/GLM seed-7 witness: `grid-coordinate` succeeded in one turn and
+  one structural dispatch, with one main-policy call and zero auxiliary E-ref,
+  point-grounder, visual-binding or invalid-tool-argument events;
+- the selected display ref was `E25`, while the observation-derived membership
+  was invariantly row `4`, column `3`. This is intentionally different from a
+  historical successful `E24` display ref and demonstrates that execution no
+  longer depends on volatile SoM numbering;
+- evidence record:
+  `docs/evidence/2026-08-13-observation-derived-lattice-witness.md`.
+
+This closes the named seed-7 correspondence regression only. Multi-seed,
+multiple-grid UI families, calendars/tables and broader generalization remain
+unclaimed.
 
 Scope: replace the Step-13 configure-and-stick visual acquisition behavior with
 a DOM/AX-first control plane, evidence-gated visual augmentation, explicit
@@ -500,7 +520,9 @@ two actions in the clean `8741890` five-case run; focused clean `7fae859`
 `click-shades` succeeds in six structural actions with zero auxiliary E-ref or
 point calls. See
 `docs/evidence/2026-08-12-visual-value-and-multitarget-remediation.md`.
-The final color-family increment has not been rerun across all five witnesses,
-and `grid-coordinate` E-ref selection remains stochastic, so broader
+The final color-family increment has not been rerun across all five witnesses.
+At the Phase-4 boundary, `grid-coordinate` E-ref selection remained stochastic;
+Phase 5 above supersedes that named correspondence diagnosis with a clean
+single-witness exact-relation success. Multi-seed and broader
 performance/generalization remain open. `ActionBatch` is deferred rather than
 made a prerequisite for correctness.

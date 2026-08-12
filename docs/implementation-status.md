@@ -597,9 +597,19 @@ using fixture `data-*` answers. `visual-addition` then succeeds in two actions
 in the clean `8741890` five-case run, and focused clean `7fae859`
 `click-shades` succeeds in six structural actions with zero auxiliary E-ref or
 point calls. The full suite passes (`2373 passed, 24 skipped`). The final
-color-family increment has not received another complete five-case run, and
-`grid-coordinate` remains stochastic, so broad performance and generalization
-remain explicitly unclaimed.
+color-family increment has not received another complete five-case run.
+Phase-5 follow-up now clusters current executable geometry into a regular
+lattice, fits visible numeric axis-label groups (including screen-down versus
+Cartesian-y orientation), and publishes derived membership/coordinate facts
+only for one fully occupied, uniquely mapped grid. The grounded catalog parses
+one explicit public task coordinate and privately closes one exact current DOM
+action; it does not ask the model to copy an E-ref. Missing axes,
+irregular/duplicate cells and multiple candidate lattices publish no derived
+coordinate. Clean `3ccb267` seed-7 `grid-coordinate` succeeds in one model call
+and one structural dispatch with zero auxiliary E-ref, point or visual-binding
+calls; the displayed ref changed to `E25` while row 4/column 3 remained stable.
+The full suite passes (`2379 passed, 24 skipped`). Multi-seed and broad layout
+generalization remain explicitly unclaimed.
 
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,

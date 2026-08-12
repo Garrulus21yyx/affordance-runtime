@@ -47,6 +47,17 @@ fill/select operation or an already-selected toggle, and may narrow unlabeled
 visual controls to one color family explicitly named by the instruction. The
 underlying Runtime action space and DOM authority remain unchanged.
 
+Mechanically derivable spatial relations are also observation evidence, not a
+reason to call a point grounder. For one bounded regular lattice, the adapter
+clusters current executable element centers into complete rows/columns and fits
+visible numeric label groups independently for each axis. A successful fit
+publishes observation-bound grid membership and Cartesian values on the
+existing DOM targets. One explicit task coordinate may then exact-close the
+model-facing catalog to one current action. Missing axes, irregular spacing,
+duplicate/empty cells, ambiguous mappings or multiple lattices produce a typed
+non-result and no coordinate fact. No derived fact creates a binding; execution
+still resolves through the current DOM identity.
+
 Visual evidence and visual execution authority are separate. Same-acquisition
 visual regions merge with DOM entities only through explicit
 `EntityCorrespondence`. A corresponded region cannot retain a coordinate

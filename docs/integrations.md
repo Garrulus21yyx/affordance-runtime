@@ -92,3 +92,11 @@ not expose fixture `data-*` answers, selectors, CSS classes, or new executable
 bindings. Catalog relevance filtering can use those public facts to omit
 already-settled actions and mismatched unlabeled color controls while leaving
 Runtime admission and DOM identity authoritative.
+
+Regular-lattice semantics follow the same rule. Current element bboxes and
+visible numeric label bboxes may derive row/column membership and Cartesian
+values. If one explicit public task coordinate matches exactly one current
+actionable entity, the grounded tool compiler exposes a singleton zero-target
+operation and privately retains its DOM action ID. It emits no model coordinate
+or point. Incomplete, irregular, duplicate, ambiguous or multiple-grid evidence
+does not activate this closure.
