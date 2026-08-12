@@ -48,6 +48,10 @@ class HypothesisAdmissionResult:
     accepted_count: int
     rejected_codes: tuple[HypothesisAdmissionCode, ...] = ()
 
+    @property
+    def rejected_count(self) -> int:
+        return len(self.rejected_codes)
+
 
 def admit_requirement_hypotheses(
     current: RequirementHypothesisState,
@@ -60,38 +64,41 @@ def admit_requirement_hypotheses(
             0,
             (HypothesisAdmissionCode.INITIAL_ALREADY_APPLIED,),
         )
-    issues = tuple(
-        dict.fromkeys(
-            issue
-            for proposal in batch.proposals
-            if (issue := _admission_issue(proposal, observation)) is not None
-        )
-    )
-    if issues:
-        return HypothesisAdmissionResult(current, 0, issues)
+    admissible = []
+    rejected_codes = []
+    for proposal in batch.proposals:
+        issue = _admission_issue(proposal, observation)
+        if issue is None:
+            admissible.append(proposal)
+        else:
+            rejected_codes.append(issue)
 
     retained = list(current.hypotheses)
-    if batch.mode is HypothesisProposalMode.REPLACE:
+    if batch.mode is HypothesisProposalMode.REPLACE and (
+        admissible or not rejected_codes
+    ):
         retained = [
             replace(item, status=TrackedHypothesisStatus.RETIRED)
             if item.status is TrackedHypothesisStatus.ACTIVE else item
             for item in retained
         ]
     known_digests = {_proposal_key(item) for item in retained}
-    novel = [
-        proposal
-        for proposal in batch.proposals
-        if _proposal_key(proposal) not in known_digests
-    ]
-    if len(retained) + len(novel) > MAX_TRACKED_HYPOTHESES:
-        return HypothesisAdmissionResult(
-            current,
-            0,
-            (HypothesisAdmissionCode.CAPACITY_EXCEEDED,),
-        )
+    novel = []
+    for proposal in admissible:
+        digest = _proposal_key(proposal)
+        if digest in known_digests:
+            continue
+        known_digests.add(digest)
+        novel.append(proposal)
+    available = max(0, MAX_TRACKED_HYPOTHESES - len(retained))
+    admitted = novel[:available]
+    rejected_codes.extend(
+        HypothesisAdmissionCode.CAPACITY_EXCEEDED
+        for _ in novel[available:]
+    )
 
     sequence = current.next_sequence
-    for proposal in novel:
+    for proposal in admitted:
         retained.append(TrackedRequirementHypothesis(
             f"hypothesis:{sequence}",
             proposal.summary,
@@ -107,7 +114,8 @@ def admit_requirement_hypotheses(
             current.revision + int(changed),
             sequence,
         ),
-        len(novel),
+        len(admitted),
+        tuple(rejected_codes),
     )
 
 

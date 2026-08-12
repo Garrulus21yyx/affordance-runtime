@@ -16,6 +16,7 @@ from affordance_runtime.task import (
 )
 from affordance_runtime.task.frontier import synchronize_verified_task_state
 from affordance_runtime.task.frontier_contracts import (
+    FactAvailable,
     LiteralExpected,
     TargetAbsent,
     TargetFieldEquals,
@@ -76,9 +77,9 @@ def _proposal(target_id: str, value: str = "Ada") -> RequirementHypothesisPropos
     )
 
 
-def test_admission_is_atomic_and_runtime_assigns_ids() -> None:
+def test_admission_installs_valid_items_and_rejects_bad_references_independently() -> None:
     world = _world()
-    rejected = admit_requirement_hypotheses(
+    admitted = admit_requirement_hypotheses(
         RequirementHypothesisState(),
         RequirementHypothesisProposalBatch(
             HypothesisProposalMode.INITIAL,
@@ -87,20 +88,73 @@ def test_admission_is_atomic_and_runtime_assigns_ids() -> None:
         world,
     )
 
-    assert rejected.state == RequirementHypothesisState()
-    assert rejected.accepted_count == 0
-    assert rejected.rejected_codes == (HypothesisAdmissionCode.UNKNOWN_ENTITY,)
+    assert admitted.accepted_count == 1
+    assert admitted.rejected_count == 1
+    assert admitted.rejected_codes == (HypothesisAdmissionCode.UNKNOWN_ENTITY,)
+    assert admitted.state.active[0].hypothesis_id == "hypothesis:1"
+    assert admitted.state.active[0].predicate.target_id == "entity:0"
 
-    accepted = admit_requirement_hypotheses(
-        rejected.state,
+
+def test_admission_installs_known_target_while_rejecting_unknown_fact() -> None:
+    admitted = admit_requirement_hypotheses(
+        RequirementHypothesisState(),
+        RequirementHypothesisProposalBatch(
+            HypothesisProposalMode.INITIAL,
+            (
+                _proposal("entity:0"),
+                RequirementHypothesisProposal(
+                    "Check a hallucinated fact",
+                    FactAvailable("fact:missing"),
+                    ("entity:0",),
+                ),
+            ),
+        ),
+        _world(),
+    )
+
+    assert admitted.accepted_count == 1
+    assert admitted.rejected_codes == (HypothesisAdmissionCode.UNKNOWN_FACT,)
+    assert len(admitted.state.active) == 1
+
+
+def test_admission_deduplicates_repeated_items_within_one_batch() -> None:
+    proposal = _proposal("entity:0")
+    admitted = admit_requirement_hypotheses(
+        RequirementHypothesisState(),
+        RequirementHypothesisProposalBatch(
+            HypothesisProposalMode.INITIAL,
+            (proposal, proposal),
+        ),
+        _world(),
+    )
+
+    assert admitted.accepted_count == 1
+    assert admitted.rejected_count == 0
+    assert len(admitted.state.active) == 1
+
+
+def test_invalid_replace_batch_does_not_retire_existing_hypotheses() -> None:
+    initial = admit_requirement_hypotheses(
+        RequirementHypothesisState(),
         RequirementHypothesisProposalBatch(
             HypothesisProposalMode.INITIAL,
             (_proposal("entity:0"),),
         ),
-        world,
+        _world(),
+    ).state
+
+    rejected = admit_requirement_hypotheses(
+        initial,
+        RequirementHypothesisProposalBatch(
+            HypothesisProposalMode.REPLACE,
+            (_proposal("entity:missing"),),
+        ),
+        _world(),
     )
-    assert accepted.accepted_count == 1
-    assert accepted.state.active[0].hypothesis_id == "hypothesis:1"
+
+    assert rejected.accepted_count == 0
+    assert rejected.rejected_codes == (HypothesisAdmissionCode.UNKNOWN_ENTITY,)
+    assert rejected.state == initial
 
 
 def test_verifier_does_not_infer_absence_from_incomplete_inventory() -> None:
