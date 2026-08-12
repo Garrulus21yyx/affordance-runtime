@@ -330,6 +330,52 @@ def write_perception_ab(
     return report
 
 
+def write_provider_cohort_arm(
+    output_dir: Path,
+    *,
+    implementation_sha: str,
+    profile: str,
+    arm: PerceptionArmOutcome,
+) -> Path:
+    """Persist one provider-cohort diagnostic without an ad-hoc result schema."""
+
+    output_dir.mkdir(parents=True, exist_ok=False)
+    for record in arm.records:
+        _atomic_json(
+            output_dir / f"{record.case_id}.json",
+            {
+                "profile": profile,
+                "perception_profile": arm.perception_profile.value,
+                "typed_outcome": record.outcome.value,
+                "policy_trace": record.diagnostic_trace,
+                "case": public_case_evidence(record.result),
+            },
+        )
+    report = output_dir / "report.json"
+    _atomic_json(report, {
+        "schema_version": SCHEMA_VERSION,
+        "profile": profile,
+        "implementation_sha": implementation_sha,
+        "perception_profile": arm.perception_profile.value,
+        "provider_id": arm.provider_id,
+        "model_id": arm.model_id,
+        "grounding_profile": arm.grounding_profile,
+        "completed_cases": len(arm.records),
+        "success_count": arm.success_count,
+        "outcome_counts": _outcome_counts(arm.records),
+        "provider_attempts": arm.provider_attempts,
+        "total_tokens": arm.total_tokens,
+        "model_latency_ms": arm.model_latency_ms,
+        "requirement_hypotheses_enabled": arm.requirement_hypotheses_enabled,
+        "requirement_hypothesis_calls": arm.requirement_hypothesis_calls,
+        "run_evidence_valid": not arm.errors,
+        "errors": arm.errors,
+        "case_ids": tuple(record.case_id for record in arm.records),
+        "generalization_claim_prohibited": True,
+    })
+    return report
+
+
 def file_sha256(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
