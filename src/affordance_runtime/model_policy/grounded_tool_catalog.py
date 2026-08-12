@@ -194,8 +194,10 @@ def resolve_grounded_tool_call(
             ),
         )
     assert isinstance(binding, _VerbBinding)
-    ref = str(call.arguments["target"])
+    ref = str(call.arguments.get("target") or "")
     actions = dict(binding.actions)
+    if not ref and len(binding.actions) == 1:
+        ref = binding.actions[0][0]
     if ref not in actions:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
     parameters = {}
@@ -259,8 +261,14 @@ def _shape_key(verb: str, schema: Mapping[str, object]) -> str:
 
 
 def _verb_schema(verb, refs, parameter_schema):
-    properties: dict[str, object] = {"target": {"type": "string", "enum": refs}}
-    required = ["target"]
+    # A singleton operation already carries one referentially closed Runtime
+    # binding.  Requiring the model to echo its sole E-ref adds no choice and is
+    # a common source of avoidable schema failures.
+    properties: dict[str, object] = {}
+    required: list[str] = []
+    if len(refs) > 1:
+        properties["target"] = {"type": "string", "enum": refs}
+        required.append("target")
     parameter_field = ""
     if verb == "fill":
         properties["text"] = {"type": "string"}

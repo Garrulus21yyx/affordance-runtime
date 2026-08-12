@@ -468,6 +468,10 @@ def test_clickable_svg_candidates_use_e_ref_then_dom_binding_without_point() -> 
             )
             assert len(disambiguator.calls) == 1
             assert len(disambiguator.calls[0].candidates) == 2
+            assert [item.bbox for item in disambiguator.calls[0].candidates] == [
+                (20, 40, 14, 14),
+                (120, 40, 14, 14),
+            ]
             assert proposer.calls == []
             assert environment.visual_point_grounder_calls == 0
             assert len(acquired.observation.bindings) == 1

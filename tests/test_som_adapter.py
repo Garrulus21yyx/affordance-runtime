@@ -1,8 +1,9 @@
+import io
 from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.adapters.som import SomAdapter
+from affordance_runtime.adapters.som import BoundingBox, SomAdapter, VisualMark, annotate_screenshot
 from affordance_runtime.contracts import Observation
 
 
@@ -57,3 +58,25 @@ def test_som_rejects_non_positive_bbox() -> None:
             [{"bbox": [10, 20, 0, 20], "label": "bad"}],
             environment_revision="rev-1",
         )
+
+
+def test_raster_som_label_is_drawn_outside_a_tiny_target() -> None:
+    Image = pytest.importorskip("PIL.Image")
+    source = Image.new("RGB", (80, 80), "white")
+    encoded = io.BytesIO()
+    source.save(encoded, format="PNG")
+    mark = VisualMark(
+        "E25",
+        "E25",
+        BoundingBox(30, 40, 14, 14),
+        1.0,
+        "screen",
+        "snapshot",
+        "page",
+        "target",
+    )
+
+    rendered = Image.open(io.BytesIO(annotate_screenshot(encoded.getvalue(), (mark,))))
+
+    assert rendered.getpixel((31, 30)) == (0, 200, 0)
+    assert rendered.getpixel((37, 47)) == (255, 255, 255)

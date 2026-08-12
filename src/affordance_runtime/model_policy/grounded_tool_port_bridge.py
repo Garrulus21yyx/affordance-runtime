@@ -210,7 +210,8 @@ class GroundedToolDecisionAdapter:
                 payload = await self.port.generate_structured(
                     _format_repair_messages(messages), GroundedToolCommandPayload, self.config,
                 )
-            return (ToolCall(payload.op, _command_arguments(payload)),)
+            spec = next((item for item in specs if item.name == payload.op), None)
+            return (ToolCall(payload.op, _command_arguments(payload, spec)),)
         generate = getattr(self.port, "generate_tool_calls", None)
         if generate is None:
             raise ValueError("model port does not implement admitted native tool calls")
@@ -236,7 +237,7 @@ class GroundedToolDecisionAdapter:
             GroundedToolCommandPayload,
             self.config,
         )
-        return ToolCall(payload.op, _command_arguments(payload))
+        return ToolCall(payload.op, _command_arguments(payload, spec))
 
 
 def _messages(view, request, supports_multimodal):
@@ -316,13 +317,18 @@ def _argument_repair_messages(messages, spec, issue):
     )
 
 
-def _command_arguments(payload):
+def _command_arguments(payload, spec=None):
+    admitted = (
+        set(spec.input_schema.get("properties", {}))
+        if spec is not None
+        else {"target", "text", "value"}
+    )
     result = {}
-    if payload.target:
+    if payload.target and "target" in admitted:
         result["target"] = payload.target
-    if payload.text is not None:
+    if payload.text is not None and "text" in admitted:
         result["text"] = payload.text
-    if payload.value is not None:
+    if payload.value is not None and "value" in admitted:
         result["value"] = payload.value
     return result
 

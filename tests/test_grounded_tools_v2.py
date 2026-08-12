@@ -21,6 +21,10 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalVerifierStatus,
     VerifierFactSource,
 )
+from affordance_runtime.benchmarks.target_loop.instrumentation import (
+    BenchmarkInstrumentation,
+    CountingPolicy,
+)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure
@@ -137,6 +141,16 @@ def test_schema_equivalent_actions_are_grouped_into_small_verb_tools_and_resolve
         refs_by_label["Username"], refs_by_label["Password"],
     }
     assert fill.input_schema["required"] == ("target", "text")
+    click = next(item for item in catalog.specs if item.name == "click")
+    assert click.input_schema["properties"] == {}
+    assert click.input_schema["required"] == ()
+    click_package = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("click", {}),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(click_package.decision, SelectAction)
+    assert click_package.decision.parameters == {}
     package = resolve_grounded_tool_call(
         catalog,
         ToolCall("fill", {"target": refs_by_label["Password"], "text": "UV"}),
@@ -296,8 +310,12 @@ def test_public_workspace_is_task_id_invariant_and_does_not_expand_action_author
     for spec in original.specs:
         if spec.name == "next_actions":
             continue
-        target = spec.input_schema["properties"]["target"]["enum"][0]
-        arguments = {"target": target}
+        target_schema = spec.input_schema["properties"].get("target")
+        arguments = (
+            {"target": target_schema["enum"][0]}
+            if target_schema is not None
+            else {}
+        )
         if spec.name.startswith("fill"):
             arguments["text"] = "value"
         elif spec.name.startswith("select"):
@@ -310,6 +328,44 @@ def test_public_workspace_is_task_id_invariant_and_does_not_expand_action_author
         assert isinstance(package.decision, SelectAction)
         resolved_ids.add(package.decision.action_id)
     assert resolved_ids.issubset(offered_ids)
+
+
+def test_compact_singleton_operation_does_not_require_or_trust_redundant_target() -> None:
+    async def scenario():
+        context = _context()
+        port = _CompactPort([{"op": "click", "target": "E99"}])
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+        )
+
+        response = await adapter.generate(_build_request(context))
+
+        assert not isinstance(response, ModelFailure)
+        parsed = parse_agent_decision(response.raw_payload, context.context_id)
+        assert isinstance(parsed, SelectAction)
+        assert parsed.parameters == {}
+        assert adapter.last_resolution_code is GroundedToolResolutionCode.ACCEPTED
+        assert adapter.last_argument_repair_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_direct_model_select_action_records_selected_public_e_ref() -> None:
+    class Policy:
+        async def decide(self, context):
+            return SelectAction(context.context_id, context.actions.options[0].action_id)
+
+    async def scenario():
+        context = _context()
+        instrumentation = BenchmarkInstrumentation()
+        outcome = await CountingPolicy(Policy(), instrumentation).decide(context)
+
+        assert isinstance(outcome, SelectAction)
+        assert instrumentation.policy_trace[0]["selected_grounding"]["ref"] == "E1"
+        assert "target_id" not in instrumentation.policy_trace[0]["selected_grounding"]
+
+    asyncio.run(scenario())
 
 
 def test_grounded_normal_path_is_one_model_call_one_runtime_transition_and_no_proposer() -> None:

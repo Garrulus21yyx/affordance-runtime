@@ -52,7 +52,19 @@ def project_browsergym_visual_disambiguation_source(
         for region in media.grounding_regions
         if region.target_id in actionable_ids and region.target_id in targets
     }
-    ordered_ids = tuple(sorted(boxes))
+    # E-ref numbering follows visual reading order instead of private identity
+    # hashes.  This keeps dense SoM inventories legible and deterministic while
+    # preserving the target ID exclusively inside the Runtime binding.
+    ordered_ids = tuple(sorted(
+        boxes,
+        key=lambda target_id: (
+            boxes[target_id][1],
+            boxes[target_id][0],
+            boxes[target_id][3],
+            boxes[target_id][2],
+            target_id,
+        ),
+    ))
     candidate_ids = ordered_ids[:MAX_VISUAL_DISAMBIGUATION_CANDIDATES]
     if len(candidate_ids) < 2:
         raise ValueError("visual disambiguation requires at least two grounded DOM candidates")

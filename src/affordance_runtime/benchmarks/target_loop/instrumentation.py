@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import AgentDecisionPackage
+from affordance_runtime.agent.decisions import AgentDecisionPackage, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -205,6 +205,12 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
         event["decision"] = _decision_trace(outcome.decision)
         selected = _selected_grounding_trace(context, outcome.decision)
+        if selected is not None:
+            event["selected_grounding"] = selected
+    elif isinstance(outcome, SelectAction):
+        event["outcome"] = type(outcome).__name__
+        event["decision"] = _decision_trace(outcome)
+        selected = _selected_grounding_trace(context, outcome)
         if selected is not None:
             event["selected_grounding"] = selected
     elif isinstance(outcome, PolicyFailure):
