@@ -95,6 +95,7 @@ def project_browsergym_observation(
         )
         for node in projected
     }
+    controls_by_node_id = {node.private_node_id: node for node in projected}
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
         state = dict(node.public_state)
@@ -131,6 +132,7 @@ def project_browsergym_observation(
             source_revision,
             page_identity,
             episode_identity,
+            execution_allowed=not _blocked_by_inactive_tab_panel(node, controls_by_node_id),
         )
         if public is not None and runtime is not None:
             bindings.append(public)
@@ -218,10 +220,12 @@ def _binding_pair(
     revision: str,
     page_identity: str,
     episode_identity: str,
+    *,
+    execution_allowed: bool = True,
 ):
     spec = node.role_spec
     semantic, primitive = spec.semantic_action, spec.primitive
-    if not node.executable:
+    if not node.executable or not execution_allowed:
         return None, None
     options = node.private_options
     if semantic == "select" and len(options) > MAX_SELECT_OPTIONS:
@@ -269,6 +273,49 @@ def _binding_pair(
         node,
     )
     return public, runtime
+
+
+def _blocked_by_inactive_tab_panel(
+    node: CanonicalBrowserControl,
+    controls_by_node_id: dict[str, CanonicalBrowserControl],
+) -> bool:
+    """Normalize AX tab-panels without granting or inferring task semantics."""
+
+    if node.role == "tab" and _owns_form_control(node, controls_by_node_id):
+        return True
+    parent_id = node.private_parent_id
+    visited: set[str] = set()
+    while parent_id and parent_id not in visited:
+        visited.add(parent_id)
+        parent = controls_by_node_id.get(parent_id)
+        if parent is None:
+            break
+        if parent.role == "tab" and dict(parent.public_state).get("selected") is False:
+            return True
+        parent_id = parent.private_parent_id
+    return False
+
+
+def _owns_form_control(
+    node: CanonicalBrowserControl,
+    controls_by_node_id: dict[str, CanonicalBrowserControl],
+) -> bool:
+    pending = list(node.private_child_ids)
+    visited: set[str] = set()
+    while pending:
+        child_id = pending.pop()
+        if child_id in visited:
+            continue
+        visited.add(child_id)
+        child = controls_by_node_id.get(child_id)
+        if child is None:
+            continue
+        if child.role in {
+            "button", "checkbox", "combobox", "listbox", "radio", "searchbox", "textbox",
+        }:
+            return True
+        pending.extend(child.private_child_ids)
+    return False
 
 
 def _screenshot_media(

@@ -245,6 +245,36 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
     assert media[0].sha256 not in serialized
 
 
+def test_inactive_tab_panel_descendants_do_not_gain_action_authority() -> None:
+    def accordion(selected: bool):
+        return raw_observation(
+            ax_node(
+                "header", "tab", "Section #37",
+                properties=(("selected", selected),), child_ids=("header-text",),
+            ),
+            ax_node("header-text", "StaticText", "Section #37", parent_id="header"),
+            ax_node(
+                "panel", "tab", " Submit",
+                properties=(("selected", selected),), child_ids=("submit",),
+            ),
+            ax_node("submit", "button", "Submit", parent_id="panel"),
+        )
+
+    collapsed = _project(accordion(False))
+    collapsed_labels = {
+        next(item.label for item in collapsed.world.targets if item.target_id == binding.target_id)
+        for binding in collapsed.world.bindings
+    }
+    assert collapsed_labels == {"Section #37"}
+
+    expanded = _project(accordion(True))
+    expanded_labels = {
+        next(item.label for item in expanded.world.targets if item.target_id == binding.target_id)
+        for binding in expanded.world.bindings
+    }
+    assert expanded_labels == {"Section #37", "Submit"}
+
+
 def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -> None:
     disabled = raw_observation(ax_node("disabled", "button", "Disabled"))
     disabled[PRIVATE_CONTROL_PROPERTIES_KEY]["disabled"]["enabled"] = False
