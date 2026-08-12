@@ -1,0 +1,18 @@
+{
+  "case_ids": [
+    "miniwob-60-15",
+    "miniwob-60-31"
+  ],
+  "completed_cases": 2,
+  "errors": [],
+  "implementation_sha": "9d8e3a3f854b056937c4f0896a7bde39fd72b96a",
+  "model_id": "glm-4.1v-thinking-flashx",
+  "perception_profile": "screenshot-ax.v1",
+  "provider_attempts": 8,
+  "provider_id": "zhipu",
+  "requirement_hypotheses_enabled": true,
+  "requirement_hypothesis_calls": 2,
+  "run_evidence_valid": true,
+  "schema_version": "zhipu-structured-hypothesis-convergence.v1",
+  "success_count": 0
+}
