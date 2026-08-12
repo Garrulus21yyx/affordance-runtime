@@ -14,14 +14,15 @@
 | `ObjectivePolicy` | current LocalObjective from task/plan/world | selector, route, action execution |
 | `VerifiedTaskState` | validated milestone status, current frontier, evidence refs and unresolved obligations for one run | plan truth, action selection, persistence, replay |
 | `TaskProgressAuditor` | evidence-scoped milestone/frontier promotion proposals | GUI action choice, task completion, local retry containment |
-| `SurfaceRegistry` | adapter discovery/selection for observation | task meaning or route execution result |
+| `SurfaceRegistry` | adapter discovery and static typed observation offers | task meaning, source-plan policy or route execution result |
 | `SurfaceAdapter` | truthful observation, bindings, supported execution | global task planning or completion |
 | `WorldEnvironment` acquisition boundary | reset initial acquisition, capability-aware capture, execute outcome with typed post acquisition | evidence assurance inflation, policy recovery, exception-as-capability protocol |
+| `ObservationOrchestrator` | deterministic reuse/select/augment/recapture plan from public request, offers, gaps and bounded cost; typed per-source acquisition disposition | semantic fusion, model reasoning, action legality or route execution |
 | `WorldFusion` | semantic entity/fact fusion and conflicts | action execution or user confirmation |
 | `ActionSpaceBuilder` | current legal semantic options and barrier metadata | model choice or backend execution |
 | `ActionRelevancePolicy` | DIRECT/ENABLING/INFORMATION/OTHER ranking and paging hints | legality, capability, risk lowering or completion |
-| `RouteSelector` | choose one current binding for a semantic action | effectful fallback execution |
-| `ActionBinder` | ActionIntent + current binding → BoundActionRequest | confirmation semantics or evaluation |
+| `RouteSelector` | choose one current equivalent binding and typed alternate eligibility after proven zero-dispatch | executing, changing action semantics/risk/parameters or fallback after possible dispatch |
+| `ActionBinder` | admitted ActionIntent + already selected current binding → BoundActionRequest | route ranking/reroute, confirmation semantics or evaluation |
 | `RiskPolicy` | ALLOW/NEEDS_CONFIRMATION/BLOCK | executor capability discovery or token registry |
 | `confirmation/` | semantic request/decision contracts and human-readable summary | surface payloads, BrowserSession, HTTP transport, registry |
 | `AgentRunSession` | one in-memory run, pending confirmation, consumption and continuation counts | persistence, global lookup, cross-process resume |

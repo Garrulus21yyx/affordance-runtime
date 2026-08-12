@@ -612,8 +612,8 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
         abort = Abort("context:test", "still stale", "policy")
         result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
-        # environment.execute was physically called once and returned NOT_SENT.
-        assert result.execution_count == 1
+        # Step 12 permits one fresh revalidation attempt after stale NOT_SENT.
+        assert result.execution_count == 2
         assert environment.executed_requests == []
         assert result.observation_count == 2
         assert environment.capture_calls == 1

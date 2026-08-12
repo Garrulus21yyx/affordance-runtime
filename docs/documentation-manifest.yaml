@@ -88,6 +88,9 @@ normative:
     lifecycle: current
 
 reference:
+  - role: step12_unified_source_orchestration_implementation_record
+    path: docs/superpowers/plans/2026-08-12-step12-unified-source-orchestration-implementation.md
+    lifecycle: current
   - role: dynamic_tools_v1_protocol_experiment_record
     path: docs/superpowers/plans/2026-08-12-dynamic-tools-v1-protocol-experiment.md
     lifecycle: current

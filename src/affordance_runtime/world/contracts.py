@@ -195,6 +195,21 @@ class ObservationConflict:
 
 
 @dataclass(frozen=True)
+class EntityCorrespondence:
+    """Trusted adapter-supplied source-local to canonical entity link."""
+
+    source_target_id: str
+    canonical_target_id: str
+    relation: str = "explicit"
+
+    def __post_init__(self) -> None:
+        if not self.source_target_id.strip() or not self.canonical_target_id.strip():
+            raise ValueError("entity correspondence requires both identities")
+        if self.relation != "explicit":
+            raise ValueError("only explicit correspondence is supported")
+
+
+@dataclass(frozen=True)
 class ActionBinding:
     binding_id: str
     world_observation_id: str
@@ -269,6 +284,8 @@ class SurfaceObservation:
     semantic_inventory: SemanticInventorySummary = field(default_factory=SemanticInventorySummary.unassessed)
     media: tuple[ObservationMedia, ...] = ()
     entity_inventory: EntityInventorySummary = field(default_factory=EntityInventorySummary)
+    acquisition_root_id: str = ""
+    correspondences: tuple[EntityCorrespondence, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
@@ -295,6 +312,12 @@ class SurfaceObservation:
                 raise ValueError("assessed semantic inventory must match unique binding targets")
         if not isinstance(self.entity_inventory, EntityInventorySummary):
             raise TypeError("surface entity inventory summary must be typed")
+        object.__setattr__(self, "correspondences", tuple(self.correspondences))
+        if len({item.source_target_id for item in self.correspondences}) != len(self.correspondences):
+            raise ValueError("source entities may have only one explicit correspondence")
+        local_ids = {item.target_id for item in self.targets}
+        if any(item.source_target_id not in local_ids for item in self.correspondences):
+            raise ValueError("entity correspondence must reference a source-local target")
         if self.entity_inventory.status is not EntityInventoryStatus.UNASSESSED:
             if self.entity_inventory.entity_count != len(self.targets):
                 raise ValueError("entity inventory must match retained surface targets")
@@ -318,6 +341,10 @@ class WorldObservation:
         if any(binding.world_observation_id != self.observation_id for binding in self.bindings):
             raise ValueError("world binding must reference the current observation")
         target_ids = {target.target_id for target in self.targets}
+        if len(target_ids) != len(self.targets):
+            raise ValueError("canonical world target IDs must be unique")
+        if any(binding.target_id not in target_ids for binding in self.bindings):
+            raise ValueError("world bindings must reference canonical current targets")
         if any(
             destination_id not in target_ids
             for binding in self.bindings

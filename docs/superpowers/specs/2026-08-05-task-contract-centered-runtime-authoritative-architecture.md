@@ -148,6 +148,16 @@ operation：不支持时返回 typed `CAPABILITY_UNAVAILABLE`，支持但失败�
 modality、assurance 和 cost 限定能力；两个 aggregate boolean 只是最小 adapter-level
 合同，不把所有 surface 假装成同一种传感器。
 
+多 source 的 `WorldEnvironment` 必须把 acquisition-source selection、world fusion 和
+model-presentation selection 分开。`ObservationOrchestrator` 根据 typed request、预先
+声明的 offers、coverage/conflict/evidence gap 与 bounded cost 选择 reuse/select/augment/
+recapture；模型只能请求公开 modality/assurance/subject，不能指定 backend 或 private
+route。`WorldFusion` 保留 source-local identity/revision/provenance，将可信 correspondence
+映射为一个 canonical world entity，并显式返回 conflict、reobserve 或 inconclusive；
+它不执行动作，也不把同一 raw capture 派生的 AX/screenshot/visual view 当作独立确认。
+未选择、失败、截断、陈旧与有覆盖的缺失保持不同状态。普通实现不得把“观察所有 adapter
+并拼接 tuple”宣称为完成 fusion。
+
 正常 action path 直接消费 `execute()` 返回的 post-action acquisition。只有
 RequestObservation、Wait、stale/currentness recovery、confirmation refresh，或
 execute 未提供 after observation 时，Runtime 才在 capability 允许下调用
@@ -318,6 +328,11 @@ option 或补足差异。
 Route 只改变实现且 action/target/destination/effect/risk/confirmation subject 相同时，
 可作为一个 option 的多个 private bindings；route 改变 effect、externality、data
 access 或 verification semantics 时必须成为不同 semantic option，不能作为普通 fallback。
+`RouteSelector` 从一个 exact eligible-binding group 中选择一个 current private route；
+`ActionBinder` 不再兼任 route policy。只有 typed `NOT_SENT` 且 fresh world 重取、融合与
+semantic selection 重验证后，才可在同一 accepted decision 的 bounded continuation 中选择
+一个 equivalent alternate，并保持最多一次 effectful dispatch。`SENT`、`SENT_UNKNOWN`
+或 send semantics 不明的 failure 禁止 alternate execution。
 
 ## 6. Typed AgentDecision
 
@@ -709,7 +724,7 @@ observation、询问用户或停止。core 不建设通用 prompt-injection plat
 - approval registry/token platform、universal provenance envelope；
 - core prompt-injection subsystem、durable resume、distributed workflow engine；
 - 每个任务必经 TaskSpecAuthority/ActionContract/TaskPlan；
-- semantic fusion 在真实多源目标合并需求出现前成为主线前置；
+- 超出当前声明 DOM/AX、Visual、WoT 最小合同的开放式概率 fusion/knowledge graph；
 - 为每个合同或 context namespace 创建 service/database/store；
 - 将 ControlTransition 扩张为 durable event ledger、state reconstruction authority 或
   low-level global event taxonomy；

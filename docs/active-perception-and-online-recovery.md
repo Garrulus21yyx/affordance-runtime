@@ -59,6 +59,22 @@ budget, coverage gaps and conflicts. `WorldFusion` returns accepted semantic
 targets, explicit conflicts, or a need to reobserve; it does not maintain a
 long-lived probabilistic execution authority.
 
+This is the normative Unified contract, not the current implementation claim.
+As of M4.6-E step 11, `UnifiedWorldEnvironment` can host several adapters but
+still observes all of them and concatenates their values; semantic fusion and
+explicit route selection remain pending. M4.6-E step 12 closes that seam before
+visual execution binding. It separates three decisions: Runtime acquisition-
+source selection, deterministic world fusion, and bounded model-presentation
+selection. A model may request public modality/assurance/subject information,
+but Runtime selects the source and private route. The selector must use typed
+requirements/offers/gaps rather than task slugs or benchmark cohort metadata.
+
+One accepted semantic action selects one current route. A typed `NOT_SENT` may
+admit one bounded alternate only after fresh acquisition/fusion and semantic
+revalidation; `SENT` or `SENT_UNKNOWN` forbids alternate execution. Views
+derived from one raw capture share provenance and cannot be counted as
+independent agreement.
+
 ## 2. Agent view
 
 `AgentWorldView` exposes only the semantic information needed to decide:

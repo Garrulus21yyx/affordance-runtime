@@ -183,10 +183,13 @@ class StaleOnceEnvironment(StaticEnvironment):
 
 
 def stale_environment() -> StaleOnceEnvironment:
-    return StaleOnceEnvironment((
-        shared_world("stale:before", False, "dom"),
-        shared_world("stale:refresh", False, "dom"),
-    ))
+    return StaleOnceEnvironment(
+        (
+            shared_world("stale:before", False, "dom"),
+            shared_world("stale:refresh", False, "dom"),
+        ),
+        (ActionResult("*", DispatchStatus.NOT_SENT, "dom", False, ActionError.UNSUPPORTED_ACTION),),
+    )
 
 
 def low_risk_environment() -> StaticEnvironment:

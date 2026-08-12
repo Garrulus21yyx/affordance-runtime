@@ -12,6 +12,7 @@ from affordance_runtime.adapters.wot import ThingAffordanceModel, WotAdapter
 from affordance_runtime.adapters.wot_security import SecurityScheme
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_wot_action
 from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
@@ -48,12 +49,19 @@ class WotSurfaceAdapter:
     _routes: dict[str, tuple[WotAffordanceBinding, SecurityScheme]] = field(default_factory=dict, init=False, repr=False)
     _last_sent_at: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
-    async def reset(self, task: TaskGoal) -> None:
+    @property
+    def observation_offers(self) -> tuple[ObservationOffer, ...]:
+        return (ObservationOffer(self.surface, "environment_state", "authoritative", "medium", self.surface),)
+
+    def prepare(self, task: TaskGoal) -> None:
         self._task = task
         self._observation_id = ""
         self._td_digest = ""
         self._routes.clear()
         self._last_sent_at.clear()
+
+    async def reset(self, task: TaskGoal) -> None:
+        self.prepare(task)
         self.transport.reset()
 
     async def observe(self, reason: str) -> SurfaceObservation:
@@ -95,6 +103,7 @@ class WotSurfaceAdapter:
                 "unsupported_events": model.events,
                 "parser_issues": model.parser_issues,
             },
+            acquisition_root_id=f"wot:{td_digest}",
         )
 
     def is_current(self, request: BoundActionRequest) -> bool:

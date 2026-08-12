@@ -1,6 +1,6 @@
 # Task-Grounded Perception and Frontier Convergence Plan
 
-Status: `IN_PROGRESS / GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`.
+Status: `IN_PROGRESS / UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`.
 
 Goal: remove irreversible loss between acquired GUI observations and bounded
 model presentation, then add incremental non-authoritative requirement
@@ -47,6 +47,19 @@ same target in text, screenshot marks, tools and the previous tool result.
 - Source acquisition coverage, inventory completeness and model-presentation
   traversal are separate axes. Negative-claim coverage gates never overwrite
   authoritative source/evaluator facts.
+- Acquisition-source selection, semantic fusion and model-presentation source
+  selection are three separate decisions. Runtime owns the first two; the
+  bounded grounding projection owns the third. A model may request a public
+  modality/assurance/subject but never chooses a backend, private source or
+  execution route.
+- A source observation and an execution route are not interchangeable. One
+  fused entity may retain multiple source-local correspondences and multiple
+  equivalent current bindings, while `ActionSpace` still offers one semantic
+  action and `RouteSelector` selects exactly one private route per attempt.
+- Automatic reroute is permitted only after a typed zero-dispatch result and a
+  fresh current-world revalidation. `SENT` and `SENT_UNKNOWN` permanently close
+  alternate-route execution for that accepted request; fusion, telemetry or a
+  model retry cannot weaken no-replay.
 - No static full-task DAG, task-name production branches, hidden benchmark
   answers, selectors, coordinates, credentials, or oracle state.
 - The product goal is general GUI success in real environments. MiniWoB is a
@@ -78,16 +91,17 @@ same target in text, screenshot marks, tools and the previous tool result.
 | 8 | completed | Add bounded hypothesis pinning to existing rolling objectives while preserving fair cursor enumeration and ActionSpace authority. | context projection/action relevance |
 | 9 | diagnostic_complete / archived | Preserve the stopped `7c14190` dynamic-tools run as an incomplete mixed-cohort diagnostic: 8/60 completed, 0/8 success, one capability-covered, one unassessed and six declared-gap cases; make no performance claim and do not resume it. Its supported `login-user` witness proves that raw screenshot content and anonymous `act_NN` tools lack a shared grounding reference. | `docs/evidence/runs/p5-e-zhipu-dynamic-tools-60-seed7-7c14190-stopped/report.json` |
 | 10 | implemented_and_tested | Implement `grounded_tools.v2`: an allowlist `ToolPolicyView`, one call-local `GroundingIndex(E1...)`, reuse of the existing SoM renderer on the current screenshot, the same refs in text/tools/results, schema-equivalent verb tools, and a private current-epoch resolver into existing `ActionOption`/bindings. Disable the requirement proposer in the short-loop profile. | BrowserGym physical geometry; grounding projection; tool catalog/transport bridge; short-loop profile |
-| 11 | targeted_verified | Deterministic properties cover shared-ref alignment, duplicate-label distinction/typed gap, stale zero-dispatch, task-ID invariance, no ActionSpace expansion and one normal call per turn. The clean-`b9ad39a` Zhipu gate completed `login-user`, tab and both collapsible witnesses at 4/4 success with zero hypothesis calls, schema/argument repairs, grounding gaps and safety errors. | `docs/evidence/runs/m4-6-e-grounded-tools-v2-targeted-zhipu-b9ad39a/report.json` |
-| 12 | next / required | Bridge the existing `VisualSurfaceAdapter`/`VisualRegionBinding` capability into the current BrowserGym target loop: screenshot region proposal or trusted visual geometry -> current observed entity -> private screenshot/viewport-bound point -> legal `ActionOption` -> existing admission/currentness/pointer execution. Use `grid-coordinate`, `click-pie*`, `click-shades` and `visual-addition` only as held-out witnesses for the generic capability; no task identity may reach production selection or dispatch. SoM marks alone never grant execution. | existing visual contracts/adapter/executor; BrowserGym environment/projection; visual targeted evidence |
-| 13 | pending / required | Add current BrowserGym interaction breadth for viewport scroll and focus-aware keypress, with public scroll/focus state, bounded arguments, post-action observation and typed unavailable/stale outcomes. Reuse existing browser session/executor primitives where their contracts fit. | BrowserGym semantic/action profile, execution adapter, public state projection |
-| 14 | pending / required | Make relational and changing state decision-sufficient: owner-preserving table/row/cell and list/item relations, bounded dynamic before/after delta, and current selection/checked/focus/scroll state. This is perception truth for table, list, inbox, form-sequence and game tasks, not task-specific solving code. | BrowserGym semantics/projection; world/model projection; semantic-delta owner |
-| 15 | pending / required | Close general multi-step task control on top of the concise tool workspace: retain verified useful values and completed effects, expose unresolved task frontier and bounded recent deltas, and roll the current objective after verified progress. The policy performs compare/sort/arithmetic/text transformation and next-step choice; Runtime does not add per-task solvers. Add a typed value-reference transfer path for copy/clipboard-style tasks without exposing private routes. | task frontier/progress projection; tool result/workspace; value-reference binding |
-| 16 | pending / required | Review the 14 readiness-unassessed cases against the pinned source and fresh observation traces, then either map them to an existing shared capability or add one bounded shared capability. No task-name production branch is allowed. | capability inventory v3 and targeted probes |
-| 17 | pending | After each capability slice, run its targeted cohort plus a small previously supported no-regression witness. When steps 10-16 pass, run the frozen MiniWoB-60 with one exact profile and report supported, newly-covered, unassessed and remaining-gap outcomes separately as well as the honest aggregate. | benchmark reports/evidence |
-| 18 | pending / post-60 breadth | Extend beyond the frozen 60 to the registry interaction families deliberately excluded by the old activate/fill/select selection: drag/drop, slider/spinbutton, hover, multi-select, general canvas gestures and multi-viewport/scroll coverage. Reuse existing DOM/visual gesture foundations before adding new execution machinery. | registry capability inventory and family-specific adapters |
+| 11 | targeted_verified_for_single_browsergym_source | Deterministic properties cover shared-ref alignment, duplicate-label distinction/typed gap, stale zero-dispatch, task-ID invariance, no ActionSpace expansion and one normal call per turn. The clean-`b9ad39a` Zhipu gate completed `login-user`, tab and both collapsible witnesses at 4/4 success with zero hypothesis calls, schema/argument repairs, grounding gaps and safety errors. This proves the current single BrowserGym screenshot+AX projection only; it does not prove source selection, semantic fusion or reroute. | `docs/evidence/runs/m4-6-e-grounded-tools-v2-targeted-zhipu-b9ad39a/report.json` |
+| 12 | implemented_property_and_integration_verified | Runtime-owned source selection now consumes pre-acquisition offers and bounded requests; per-source required/optional results are typed; `WorldFusion` performs explicit correspondence, provenance conservation, conflict creation and fail-closed unresolved-subject handling; `RouteSelector` owns deterministic current-route ranking; the execution cycle permits one fresh revalidation and at most one zero-dispatch equivalent reroute; `GroundingProjection` owns E-refs/media/marks and computes `marked` only from emitted media. Deterministic DOM+Visual shared-acquisition and DOM+WoT route witnesses pass, as do the existing Step-11 grounding regressions and the full repository suite. | `world/observation_orchestrator.py`; `world/fusion.py`; `world/route_selector.py`; `model_boundary/grounding_projection.py`; thin `world/orchestrator.py`; `tests/test_unified_source_orchestration.py` |
+| 13 | next / required | Bridge the existing `VisualSurfaceAdapter`/`VisualRegionBinding` capability through step 12's Unified source/fusion/route path into the current BrowserGym target loop: screenshot region proposal or trusted visual geometry -> source-local observed entity -> accepted world entity -> private screenshot/viewport-bound route -> legal `ActionOption` -> existing admission/currentness/pointer execution. Use `grid-coordinate`, `click-pie*`, `click-shades` and `visual-addition` only as held-out witnesses for the generic capability; no task identity may reach production selection or dispatch. SoM marks alone never grant execution. | existing visual contracts/adapter/executor; Unified source/fusion/route owners; BrowserGym environment adapter; visual targeted evidence |
+| 14 | pending / required | Add current BrowserGym interaction breadth for viewport scroll and focus-aware keypress, with public scroll/focus state, bounded arguments, post-action observation and typed unavailable/stale outcomes. Reuse existing browser session/executor primitives where their contracts fit. | BrowserGym semantic/action profile, execution adapter, public state projection |
+| 15 | pending / required | Make relational and changing state decision-sufficient: owner-preserving table/row/cell and list/item relations, bounded dynamic before/after delta, and current selection/checked/focus/scroll state. This is perception truth for table, list, inbox, form-sequence and game tasks, not task-specific solving code. | BrowserGym semantics/projection; world/model projection; semantic-delta owner |
+| 16 | pending / required | Close general multi-step task control on top of the concise tool workspace: retain verified useful values and completed effects, expose unresolved task frontier and bounded recent deltas, and roll the current objective after verified progress. The policy performs compare/sort/arithmetic/text transformation and next-step choice; Runtime does not add per-task solvers. Add a typed value-reference transfer path for copy/clipboard-style tasks without exposing private routes. | task frontier/progress projection; tool result/workspace; value-reference binding |
+| 17 | pending / required | Review the 14 readiness-unassessed cases against the pinned source and fresh observation traces, then either map them to an existing shared capability or add one bounded shared capability. No task-name production branch is allowed. | capability inventory v3 and targeted probes |
+| 18 | pending | After each capability slice, run its targeted cohort plus a small previously supported no-regression witness. When steps 10-17 pass, run the frozen MiniWoB-60 with one exact profile and report supported, newly-covered, unassessed and remaining-gap outcomes separately as well as the honest aggregate. | benchmark reports/evidence |
+| 19 | pending / post-60 breadth | Extend beyond the frozen 60 to the registry interaction families deliberately excluded by the old activate/fill/select selection: drag/drop, slider/spinbutton, hover, multi-select, general canvas gestures and multi-viewport/scroll coverage. Reuse existing DOM/visual gesture foundations before adding new execution machinery. | registry capability inventory and family-specific adapters |
 
-## Next slice: `grounded_tools.v2`
+## Completed slice: `grounded_tools.v2`
 
 ### Trigger and causal scope
 
@@ -317,6 +331,403 @@ Complexity acceptance is behavioral and structural, not a raw LOC threshold:
    tools, admission result or execution route. Benchmark inventory/readiness
    metadata is absent from provider requests and canonical Runtime state.
 
+## Next slice: Unified source orchestration, fusion and bounded reroute
+
+### Why this is required now
+
+Step 11 closes referential grounding only for the declared single BrowserGym
+source used by its targeted run. Its implementation preserves the important
+authority boundary: `GroundingIndex` and SoM marks are model projections, the
+private tool resolver maps only to an existing `ActionOption`, and the selected
+command still passes normal admission/binding/execution. It does not select an
+observation source, fuse source claims or choose an execution route.
+
+The behavior and authority boundary therefore conform for that declared
+single-source scope, but the owner split is not yet suitable for multi-source
+extension. E-ref assignment, `marked` calculation and screenshot annotation
+currently live as helpers inside `model_boundary/context_builder.py`.
+Step 12 must extract them into one cohesive route-free grounding-projection
+owner before adding source-selection inputs; this is responsibility containment,
+not a line-count exercise.
+
+The current multi-adapter skeleton is insufficient for the project contract:
+
+- `UnifiedWorldEnvironment._acquire()` observes every registered adapter and
+  fails the whole acquisition if any adapter raises;
+- acquired targets, facts and bindings are concatenated rather than fused;
+- `ObservationOffer` is derived after acquisition, so it cannot yet drive the
+  initial source choice;
+- `ActionBinder` performs an inline `confidence/cost` maximum over eligible
+  bindings, but there is no explicit `RouteSelector` result or recovery policy;
+- post-action acquisition reads every adapter sequentially and does not state
+  whether source observations share one physical capture or a coherent epoch;
+- the grounded image projection takes up to two screenshots by tuple order,
+  while `marked=true` is computed from all source media. In a future
+  multi-source world this could claim an entity is marked using an image that
+  was not actually sent to the model.
+
+Step 12 closes this bounded seam before step 13 adds executable visual routes.
+It is not a generic probabilistic fusion platform and does not reopen the
+already verified single-source behavior.
+
+### Required data flow
+
+```text
+public ObservationRequest / typed evidence gap
+                  + adapter offers + budget
+                              |
+                              v
+                  ObservationOrchestrator
+              reuse / select / augment / recapture
+                              |
+                    selected source acquisitions
+                    + per-source typed failures
+                              |
+                              v
+                         WorldFusion
+       source-local entities/facts/bindings + provenance roots
+                              |
+          accepted correspondence / conflict / reobserve / inconclusive
+                              |
+                              v
+                 canonical WorldObservation
+                    |                   |
+                    v                   v
+          bounded ToolPolicyView     ActionSpace
+                                            |
+                                            v
+                                      RouteSelector
+                                            |
+                                  one current private binding
+                                            |
+                                            v
+                                  ActionBinder -> execute
+                                            |
+                     NOT_SENT and safe       | SENT/SENT_UNKNOWN
+                     alternate exists        | close reroute
+                              |              |
+                              v              v
+                     fresh acquire/fuse   evaluate/observe
+                     + revalidate once
+```
+
+### Three decisions that must remain separate
+
+1. **Acquisition-source selection** decides which environment sources to read.
+   It uses typed offers, requested modality/assurance/subject, coverage and
+   conflict gaps, acquisition cost and a bounded budget. It does not inspect
+   benchmark identity and does not call a model.
+2. **World fusion** decides which source-local claims may share one world
+   entity/fact, which remain independent and which conflict. It never chooses
+   or executes an action.
+3. **Policy-presentation selection** decides which already accepted public
+   entities, source summaries and images fit the current model call. It cannot
+   change fusion truth, source currentness or ActionSpace membership.
+
+`screenshot+AX` is normally one BrowserGym acquisition bundle: AX semantics,
+current screenshot bytes and their geometry share one provenance root. A
+visual proposer derived from that same screenshot may add grounding or a route,
+but it is not independent corroboration. A separately read WoT/API/device
+source has its own provenance root and revision.
+
+### Minimal source-offer and acquisition contract
+
+Extend the current capability seam rather than introducing a registry
+platform:
+
+- every selectable adapter/provider publishes an `ObservationOffer` before an
+  observe call, including stable public source class, modality, assurance and
+  cost;
+- optional internal acquisition-group/provenance identity states when several
+  representations come from one physical capture or shared session;
+- one selection result records requested characteristics, selected required
+  sources, selected optional augment sources and bounded reason codes;
+- each selected source returns an acquired observation or a typed
+  unavailable/failed result. An optional augment failure does not erase a
+  valid required source; a missing required source produces a typed overall
+  acquisition gap;
+- unselected sources remain `NOT_ACQUIRED`, not absent or failed;
+- initial reset and post-action capture respect shared physical ownership. Two
+  projectors over one BrowserGym page must not reset, step or capture that page
+  independently merely because they expose two modalities.
+
+The initial deterministic policy is deliberately small:
+
+1. prefer an offered low-cost structured source for ordinary grounding;
+2. retain screenshot media co-produced by that acquisition without counting it
+   as an independent source call;
+3. augment with visual observation for a typed spatial/layout need,
+   `tool_grounding_gap`, insufficient structural coverage or a material
+   source conflict that visual evidence can address;
+4. choose authoritative environment-state sources for a matching requested
+   subject/assurance or verification gap;
+5. stop with typed `CAPABILITY_UNAVAILABLE`, `FAILED` or `INCONCLUSIVE` when the
+   bounded offer/budget cannot satisfy the request.
+
+The selector may consume typed TaskGoal/EvaluationSpec requirements and the
+current LocalObjective subject, but it must not parse task slugs or introduce a
+task-family rule table. A policy request expresses desired information, never
+`use_backend="visual"` or an executor route.
+
+### Bounded WorldFusion contract
+
+`WorldFusion` receives successful source acquisitions plus their provenance and
+returns one immutable `WorldObservation`. For the declared DOM/AX, Visual and
+WoT minimum it must guarantee:
+
+- source-local identity is retained separately from the canonical world
+  `entity_id`; `ActionBinding.source_target_id` remains private provenance while
+  `ActionBinding.target_id` references the accepted world entity;
+- canonical target IDs are unique in the world, every fact subject and binding
+  target resolves to one canonical target, and every source revision used by a
+  binding is present in the same world epoch;
+- exact trusted links may merge source entities. Shared labels, roles,
+  ordinals or approximate geometry alone never prove identity; ambiguous
+  candidates remain separate or typed unresolved;
+- facts are never silently overwritten. Equal compatible claims retain their
+  contributing provenance; differing material claims create an explicit
+  `ObservationConflict` on the canonical subject/predicate;
+- two views derived from the same screenshot/acquisition root do not count as
+  independent agreement;
+- material conflict or incoherent source epochs on an action-relevant field
+  causes targeted reobserve or typed inconclusive and prevents that target's
+  ActionSpace option. Non-material source detail may remain available without
+  blocking unrelated actions;
+- absence is accepted only from a source/profile with sufficient relevant
+  coverage. `NOT_ACQUIRED`, `FAILED`, `TRUNCATED`, `STALE` and true covered
+  absence remain distinct;
+- fusion is pure and deterministic. It has no model call, long-lived belief
+  graph, replay log, hidden task solver or execution side effect.
+
+The first implementation supports only explicit correspondence supplied by a
+trusted adapter/acquisition lineage and the finite public predicates already
+declared by current contracts. Unknown relations remain separate and typed;
+arbitrary ontology matching is outside this slice.
+
+### Grounded-tools integration after fusion
+
+Step 11 remains a downstream projection. It must be adjusted only where
+multi-source truth makes its current assumptions invalid:
+
+- construct `GroundingIndex` from canonical fused entities, never by joining
+  source-local labels inside `ContextBuilder`;
+- select model-visible media from the explicit policy-presentation selection,
+  not by reversing `WorldObservation.sources` and taking the first two;
+- compute `marked` from the exact annotated images actually emitted in that
+  provider request. Geometry present only on a dropped/unselected image cannot
+  make an entity appear marked;
+- the same canonical `E*` may appear in multiple selected images only when
+  fusion accepted their correspondence and each image is current for the same
+  world epoch;
+- expose bounded accepted state, material conflict and observation-gap facts
+  needed for policy choice, but never source-local IDs, private routes,
+  selectors, coordinates or backend names;
+- tool catalog compilation continues to map `E* + verb` to one semantic
+  `ActionOption`, not to a surface binding. Source and route choice stay
+  Runtime-private.
+
+This keeps `ContextBuilder`, `ToolPolicyView` and the provider bridge from
+becoming source-selection, fusion or route god files.
+
+### Route selection and reroute algebra
+
+Move binding ranking out of `ActionBinder` into a small pure `RouteSelector`.
+Its input is one admitted semantic selection, the current fused world and the
+current eligible binding group. Its output is one selected binding or a typed
+`NO_CURRENT_ROUTE`/`ROUTE_CONFLICT` result.
+
+Candidate bindings are equivalent only when all existing ActionSpace grouping
+fields agree: canonical target, semantic action, effect category/effects,
+parameter-schema digest, risk ceiling, observation barrier, destination
+requirements and eligible destinations. Fusion may make bindings share a
+canonical target; it cannot relax any other field.
+
+Initial ranking is deterministic and bounded:
+
+```text
+current world/source epoch
+→ declared availability
+→ required assurance/risk compatibility
+→ higher binding confidence
+→ lower declared route cost
+→ stable opaque tie-break
+```
+
+The model never sees or chooses this ranking. `ActionBinder` only turns the
+selected current binding plus the already admitted semantic intent into one
+`BoundActionRequest`.
+
+Reroute uses this closed initial algebra:
+
+```text
+primary attempt SENT or SENT_UNKNOWN
+→ no alternate execution; latch dispatch truth and continue evaluation/recovery
+
+primary attempt NOT_SENT + INVALID_PARAMETERS
+→ no reroute; return exact contract feedback to policy
+
+primary attempt NOT_SENT + STALE_BINDING
+→ fresh acquisition/fusion, rebuild ActionSpace and revalidate the same semantic
+  selection; old binding/action/context identities cannot be relabelled current
+
+primary attempt NOT_SENT + CURRENTNESS_UNAVAILABLE/RATE_LIMITED/UNSUPPORTED_ACTION
++ exact equivalent alternate route offered
+→ one bounded alternate selection after current-world validation
+
+no safe alternate / second NOT_SENT / cancellation
+→ typed route exhaustion or cancellation; no further physical attempt
+```
+
+The first slice allows at most two physical execute attempts for one accepted
+semantic decision and at most one effectful dispatch. Both attempts and their
+route-disposition codes append to the existing `ControlTransition`; they do not
+create a ledger or reconstruct state. A reroute is never inferred from exception
+text. `EXECUTION_FAILED` is not automatically reroutable because its send/effect
+semantics may be ambiguous; the canonical `DispatchStatus` remains decisive.
+
+Confirmation refresh occurs before final route selection. If confirmation or
+refresh changes the world epoch, the semantic action must be re-admitted against
+the new ActionSpace; approval cannot authorize a stale or newly riskier route.
+
+### Shared-session and post-action coherence
+
+Do not instantiate multiple independently resetting adapters over the same
+BrowserGym page merely to obtain AX and visual views. The BrowserGym backend
+continues to own reset, owner-thread capture and step exactly once. Source
+projectors may derive several `SurfaceObservation` views from one acquired raw
+snapshot, sharing an acquisition/provenance root and page/episode epoch.
+
+Independent sources such as WoT may be read separately. Fusion must not claim
+atomic simultaneity when none exists: observations outside the declared
+coherence window/revision relationship become stale or inconclusive. After an
+effectful dispatch, the route-owning source and all evaluator-required sources
+must be reacquired; pre-action facts from unrefreshed sources cannot be carried
+forward as current post-action truth. Eventually consistent sources may use one
+bounded wait-and-recapture when offered, never an unbounded polling loop.
+
+### Owner map and change containment
+
+| Owner | Owns | Must not own |
+|---|---|---|
+| `SurfaceAdapter` / environment source provider | truthful source acquisition, static offer, source-local identity/revision and private routes | world entity merging, model presentation or cross-source ranking |
+| `ObservationOrchestrator` | deterministic source plan from offers/request/gaps/budget and per-source acquisition outcomes | semantic fusion, action route choice or policy reasoning |
+| `WorldFusion` | canonical correspondence, provenance, accepted facts, conflicts and reobserve/inconclusive disposition | acquisition I/O, model calls, ActionSpace legality or execution |
+| `ActionSpaceBuilder` | group exact equivalent current bindings into one legal semantic option | choosing a source/route or retrying execution |
+| `RouteSelector` | choose/exclude one current binding and record a typed route disposition | executing, weakening risk, changing parameters or effectful fallback |
+| `ActionBinder` | selected binding + admitted intent -> `BoundActionRequest` | ranking multiple routes, reobservation or recovery policy |
+| `UnifiedWorldEnvironment` | thin serial coordination of the above owners and adapter dispatch | source semantics, fusion heuristics, policy projection or benchmark classification |
+| grounded-tool projection | bounded fused public entities/images/tools/results | acquisition choice, correspondence inference, private routes or action permission |
+
+File responsibility, not LOC, is the split criterion. Do not put selection,
+fusion and reroute conditionals into the existing `world/orchestrator.py` merely
+to avoid adding cohesive owners.
+
+### Implementation sequence
+
+1. Add static/pre-acquisition offers and typed per-source acquisition results;
+   preserve existing single-source adapters through a thin compatibility path.
+2. Implement a pure `ObservationOrchestrator` selection function and bounded
+   source budget. Make the current always-observe-all behavior a test fixture,
+   not the product policy.
+3. Implement pure `WorldFusion` for explicit correspondences, canonical
+   rewriting, provenance conservation, conflicts and typed gaps. Tighten world
+   invariants for unique canonical IDs and source/currentness closure.
+4. Integrate both into a thin `UnifiedWorldEnvironment`; handle optional source
+   failure and shared acquisition roots without double reset/capture.
+5. Extract route ranking from `ActionBinder` into `RouteSelector`; preserve the
+   current single-route result as the compatibility behavior.
+6. Add the bounded zero-dispatch reroute continuation using existing execution
+   attempts, acquisition attempts and no-replay accounting.
+7. Extract E-ref assignment, grounding-index construction, exact selected-media
+   choice, `marked` computation and SoM annotation from `ContextBuilder` into a
+   cohesive route-free grounding projection. `ContextBuilder` only composes its
+   result into `AgentContext`.
+8. Run deterministic properties and DOM+Visual, DOM+WoT and shared-capture
+   integration witnesses. Only then admit step 13 visual binding into the
+   BrowserGym loop.
+
+### Reuse and explicit non-goals
+
+Reuse existing `ObservationOffer`, source profiles, `SurfaceObservation`,
+`ObservationConflict`, ActionSpace equivalent-binding groups, `ActionBinding`
+source/world lineage, `ControlTransition` attempt accounting and the DOM,
+Visual and WoT adapters. BrowserGym/Playwright continue to own browser capture
+and input mechanics. No external framework is needed for the small deterministic
+selection/fusion/routing algebra.
+
+Do not introduce:
+
+- an event bus, durable ledger, replay/state reconstruction or transaction
+  platform;
+- an LLM source router, LLM fusion judge or mandatory reflection call;
+- a probabilistic global knowledge graph or arbitrary label-based entity merge;
+- always-on acquisition of every expensive source;
+- a second ActionSpace, visual-only bypass or model-visible backend selector;
+- effectful fallback after `SENT`/`SENT_UNKNOWN`;
+- benchmark-task routing, per-case fusion rules or task-specific visual actions;
+- production-grade distributed consistency beyond the declared in-process run
+  and bounded source profiles.
+
+### Property and integration acceptance
+
+Closure is based on the following properties, with named tasks used only as
+integration witnesses:
+
+1. **Selection:** an unselected adapter receives zero observe calls; expensive
+   visual acquisition is absent on an adequate structured path and is added for
+   a typed visual/coverage/conflict need. Source selection is invariant under
+   task/case renaming.
+2. **Partial failure:** optional-source failure preserves a sufficient required
+   acquisition with a typed gap; required-source exhaustion is typed and never
+   reported as covered absence.
+3. **Identity/fusion:** explicit linked source entities yield one canonical
+   target with conserved source refs; duplicate labels without a trusted link
+   never merge; facts never overwrite silently.
+4. **Conflict:** material disagreement blocks only affected options and requests
+   at most the bounded targeted acquisition; irreducible disagreement becomes
+   typed inconclusive with zero dispatch.
+5. **Provenance independence:** AX, screenshot marks and a visual proposal from
+   one raw frame cannot be counted as three independent confirmations.
+6. **Grounding closure:** every `marked=true` entity appears with the same `E*`
+   in an image actually sent in that call; dropping a source image removes its
+   marks or yields a typed grounding gap.
+7. **Non-amplification:** fusion, media selection and source augmentation alone
+   never create an ActionOption. Only current validated bindings can do so.
+8. **Route uniqueness:** one admitted option with several equivalent bindings
+   selects one deterministic route; private route identity is absent from the
+   model workspace.
+9. **Safe reroute:** `NOT_SENT` on an admitted reroutable code may reach one
+   fresh equivalent alternate; total effectful dispatches remain at most one.
+   `SENT_UNKNOWN` and `SENT` cause zero alternate calls.
+10. **Freshness:** stale primary binding requires fresh acquire/fuse/rebuild and
+    re-admission; neither an old action ID nor an old E-ref is relabelled current.
+11. **Shared physical owner:** AX/screenshot/visual projections of one
+    BrowserGym capture cause one reset/capture/step at the backend and preserve
+    owner-thread constraints.
+12. **Post-action truth:** evaluation consumes only current post-action source
+    facts; an unrefreshed pre-action source cannot confirm effect or completion.
+13. **Complexity:** source selection, fusion, route selection and tool
+    projection have one owner each; adding a source changes its adapter/offer and
+    conformance tests, not AgentLoop, benchmark classifier and provider schema.
+
+Focused tests use pure functions and deterministic fake adapters. Required live
+evidence is small: one existing single-source grounded-tools no-regression
+witness, one shared BrowserGym capture/mark witness, one DOM+Visual conflict or
+augment witness and one DOM+WoT equivalent-route/zero-dispatch-reroute witness.
+Step 12 does not require a MiniWoB-60 rerun or claim a performance gain. Step 13
+then supplies the visual benchmark cohort that tests whether the unified seam
+actually enables general spatial GUI execution.
+
+### Step 12 exit condition
+
+Step 12 may be marked complete only when the implemented owner map matches the
+code, the current step-11 single-source gate remains green, multi-source
+properties pass without task-specific production branches, selected media and
+marks are referentially closed, and an alternate route is never called after a
+possible dispatch. Until then M4.6-E remains
+`UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`.
+Step 13 is now the only admitted next capability slice.
+
 ## Real-environment capability backlog surfaced by benchmark
 
 The frozen MiniWoB-60 inventory v2, evaluated against the currently declared
@@ -328,7 +739,8 @@ branch per task:
 | Capability family | Frozen-60 evidence | Required response |
 |---|---:|---|
 | Referentially closed screenshot/tool grounding | direct `login-user` witness | `grounded_tools.v2` with shared `E*` refs and existing SoM annotation |
-| Visual geometry/spatial observation and executable binding | 5 tasks | current BrowserGym bridge to existing `VisualRegionBinding`; targeted point activation before general canvas work |
+| Unified source selection/fusion/route | architecture requirement exposed before a second executable source | typed offer-based acquisition plan, provenance-preserving fusion/conflict and one-route execution with zero-dispatch-only reroute |
+| Visual geometry/spatial observation and executable binding | 5 tasks | bridge existing `VisualRegionBinding` through the Unified source/fusion/route seam; targeted point activation before general canvas work |
 | Scroll action and scroll-state observation | 10 tasks | typed viewport scroll plus current scroll/coverage state |
 | Focus-aware keypress | 6 tasks | bounded current-focus key action and post-action verification |
 | Dynamic-change observation | 13 tasks | bounded public before/after semantic delta over current epochs |
@@ -581,8 +993,29 @@ grounder, tool, action, verifier or recovery rule by benchmark identity.
   visual-only binding conditional even though `grid-coordinate` had already
   supplied a direct zero-action witness. The inventory reports 15
   declared-supported, 31 declared-unsupported and 14 readiness-unassessed
-  cases. Steps 12-18 now explicitly schedule reuse of the existing visual
+  cases. The capability queue explicitly schedules reuse of the existing visual
   binding foundation, scroll/keypress, relational and dynamic perception,
   verified multi-step working state, unassessed-case review, the exact-profile
   60 rerun and post-60 interaction breadth. Cohort separation remains an
   attribution rule, not permission to leave proven capability gaps unfixed.
+- 2026-08-12: steps 10-11 completed their declared single-BrowserGym-source
+  scope. Grounded-tools v2 uses one call-local `E*` namespace across the actual
+  annotated screenshot, allowlisted entity index, schema-equivalent verb tools
+  and previous result; its private resolver returns an existing ActionOption
+  and does not own binding, route, risk or execution. The clean `b9ad39a`
+  targeted gate completed four Zhipu witnesses at 4/4 with zero short-loop
+  hypothesis calls or repairs. This evidence does not prove multi-source
+  selection, fusion or reroute.
+- 2026-08-12: a post-step-11 architecture review restored the deferred Unified
+  seam as step 12 before visual execution. The current orchestrator still
+  observes every adapter, concatenates values and performs no explicit source
+  planning or fusion; binder-local confidence/cost ranking is not a
+  RouteSelector. The review also found a future multi-source projection hazard:
+  `marked=true` is derived from all source media while only two screenshots are
+  emitted, so a mark could refer to an omitted image. Step 12 now owns typed
+  source offers/selection, provenance and shared-capture identity, deterministic
+  fusion/conflict/reobserve, exact selected-media grounding, one-route choice
+  and bounded reroute only after proven zero-dispatch. VisualRegionBinding moves
+  to step 13 and must enter through this Unified seam. E-ref/mark/media helpers
+  also move out of `ContextBuilder` into a cohesive projection owner before
+  multi-source input is admitted.

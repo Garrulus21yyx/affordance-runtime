@@ -49,7 +49,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT` | grounded-tools v2 shares screenshot/index/tool/result refs, keeps ActionSpace authority, disables the short-loop proposer and passed its four-case targeted gate at `b9ad39a`; visual binding remains next |
+| P5-M4.6 evidence-directed remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT` | grounded-tools v2 passed its four-case single-BrowserGym-source gate at `b9ad39a`; Step 12 now owns bounded source selection, provenance-preserving fusion, deterministic route selection, zero-dispatch reroute and selected-media-only grounding; visual binding is the only next slice |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -82,7 +82,7 @@ docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
 AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
 semantic inventory truth are complete for their declared non-default scopes;
 M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
-`IN_PROGRESS / GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`: real screenshot transport, first
+`IN_PROGRESS / UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`: real screenshot transport, first
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
@@ -101,6 +101,18 @@ an incomplete diagnostic with no performance claim; it must not be resumed
 across an implementation change. Separated capability-covered benchmark
 validation remains open. B assurance review, default cutover and old-core
 deletion remain independently open.
+
+The `b9ad39a` gate is scoped to one BrowserGym screenshot+AX source. The next
+admitted slice closes the previously deferred Unified seam: an
+`ObservationOrchestrator` selects required and augment sources from typed offers
+and budgets; `WorldFusion` preserves provenance while producing canonical
+entities, facts and explicit conflicts; and `RouteSelector` chooses one exact
+current equivalent binding. Bounded reroute is permitted only after typed
+`NOT_SENT`, fresh world acquisition/fusion and revalidation, with at most one
+effectful dispatch. `SENT` and `SENT_UNKNOWN` never fall through to another
+route. Grounded-tools remains a route-free consumer of the fused public view;
+the existing VisualRegionBinding enters only through this seam rather than a
+BrowserGym-specific ActionSpace bypass.
 
 The architecture-first causal model, owner map, bounded algebra and evidence
 gates are recorded in the [M4.5-B convergence review](reviews/2026-08-11-p5-m45b-control-failure-convergence.md).
@@ -299,7 +311,7 @@ Implement one independently measurable slice at a time:
    never replayed — `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth and a referentially closed grounded-tool policy surface —
-   `GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`. Existing SoM utilities are reused as a
+   `UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`. Existing SoM utilities are reused as a
    deterministic current-screenshot projection, not reimplemented and not made
    an execution authority.
 
@@ -312,7 +324,10 @@ archive stopped 7c14190 8/60 as INCOMPLETE_DIAGNOSTIC
 -> schema-equivalent verb tools + private current-epoch resolver
 -> short-loop proposer disabled; one normal policy call per GUI turn
 -> login-user/duplicate-control targeted gate
--> existing VisualRegionBinding bridged into BrowserGym ActionSpace
+-> Runtime source selection + provenance-preserving WorldFusion
+-> one-route selection + bounded zero-dispatch reroute
+-> route-free GroundingProjection consumes exact selected fused media
+-> existing VisualRegionBinding bridged through the Unified seam
 -> grid-coordinate/click-pie/click-shades/visual-addition visual gate
 -> scroll + focus-aware keypress
 -> table/list relations + dynamic semantic delta
@@ -355,9 +370,10 @@ geometry-bound currentness and pointer execution; provider-native tool calling
 owns transport where supported; the selected model owns general reasoning; the
 official environment evaluator owns source task outcome; OpenTelemetry/
 Langfuse or JSON artifacts own downstream storage and visualization. Runtime
-retains only the authority kernel: current epoch, ActionSpace, ref/binding
-resolution, admission, risk/confirmation, dispatch truth/no-replay, evidence
-validation, verified working state and terminal disposition.
+retains only the authority kernel: current epoch, source-selection policy,
+canonical fusion/conflict truth, ActionSpace, route/ref/binding resolution,
+admission, risk/confirmation, dispatch truth/no-replay, evidence validation,
+verified working state and terminal disposition.
 
 `grounded_tools.v2` must replace, not extend, the diagnosed v1 stack. The active
 short-loop path removes full-AgentContext blacklist scrubbing, per-turn

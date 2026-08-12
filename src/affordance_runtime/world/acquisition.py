@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.execution.contracts import ActionResult
-from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.contracts import SurfaceObservation, WorldObservation
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 _PRIVATE_MARKERS = (
@@ -19,6 +19,19 @@ class AcquisitionStatus(StrEnum):
     ACQUIRED = "acquired"
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     FAILED = "failed"
+
+
+class SourceAcquisitionStatus(StrEnum):
+    NOT_ACQUIRED = "not_acquired"
+    ACQUIRED = "acquired"
+    CAPABILITY_UNAVAILABLE = "capability_unavailable"
+    FAILED = "failed"
+
+
+class SourceRequirement(StrEnum):
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+    UNSELECTED = "unselected"
 
 
 class AcquisitionOrigin(StrEnum):
@@ -51,12 +64,61 @@ class ObservationOffer:
     modality: str
     assurance: str
     acquisition_cost: str
+    acquisition_group: str = ""
 
     def __post_init__(self) -> None:
         if not all(value.strip() for value in (
             self.source, self.modality, self.assurance, self.acquisition_cost,
         )):
             raise ValueError("observation offer fields cannot be blank")
+
+
+@dataclass(frozen=True)
+class SourceSelection:
+    source: str
+    requirement: SourceRequirement
+    reason_code: str
+
+    def __post_init__(self) -> None:
+        if not self.source.strip() or not isinstance(self.requirement, SourceRequirement):
+            raise ValueError("source selection requires typed source identity")
+        _validate_reason_code(self.reason_code)
+
+
+@dataclass(frozen=True)
+class ObservationSelectionPlan:
+    selections: tuple[SourceSelection, ...]
+    max_source_calls: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "selections", tuple(self.selections))
+        if self.max_source_calls < 1 or len(self.selections) > self.max_source_calls:
+            raise ValueError("source selection exceeds its bounded call budget")
+        if len({item.source for item in self.selections}) != len(self.selections):
+            raise ValueError("source selection cannot repeat a source")
+
+
+@dataclass(frozen=True)
+class SourceAcquisitionResult:
+    source: str
+    requirement: SourceRequirement
+    status: SourceAcquisitionStatus
+    reason_code: str
+    observation: SurfaceObservation | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source.strip() or not isinstance(self.requirement, SourceRequirement):
+            raise ValueError("source acquisition requires typed source identity")
+        if not isinstance(self.status, SourceAcquisitionStatus):
+            raise TypeError("source acquisition status must be typed")
+        acquired = self.status is SourceAcquisitionStatus.ACQUIRED
+        if acquired != isinstance(self.observation, SurfaceObservation):
+            raise ValueError("source ACQUIRED requires exactly one observation")
+        if (self.requirement is SourceRequirement.UNSELECTED) != (
+            self.status is SourceAcquisitionStatus.NOT_ACQUIRED
+        ):
+            raise ValueError("only unselected sources may be NOT_ACQUIRED")
+        _validate_reason_code(self.reason_code)
 
 
 @dataclass(frozen=True)
@@ -75,6 +137,8 @@ class ObservationAcquisition:
     origin: AcquisitionOrigin
     observation: WorldObservation | None
     reason_code: str
+    selection_plan: ObservationSelectionPlan | None = None
+    source_results: tuple[SourceAcquisitionResult, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, AcquisitionStatus):
@@ -87,6 +151,11 @@ class ObservationAcquisition:
                 "ACQUIRED requires a WorldObservation and other statuses forbid one"
             )
         _validate_reason_code(self.reason_code)
+        object.__setattr__(self, "source_results", tuple(self.source_results))
+        if self.selection_plan is not None and not isinstance(
+            self.selection_plan, ObservationSelectionPlan
+        ):
+            raise TypeError("acquisition selection plan must be typed")
 
 
 @dataclass(frozen=True)

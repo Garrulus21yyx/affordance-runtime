@@ -15,6 +15,7 @@ from affordance_runtime.surfaces.visual.currentness import visual_binding_is_cur
 from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, integer_click_point
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.visual_grounding import VisualRegionProposalRequest, VisualRegionProposerPort
+from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_surface_action
 from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
@@ -40,12 +41,21 @@ class VisualSurfaceAdapter:
     _source_revision: str = field(default="", init=False)
     _regions: dict[str, VisualRegionBinding] = field(default_factory=dict, init=False, repr=False)
 
-    async def reset(self, task: TaskGoal) -> None:
+    @property
+    def observation_offers(self) -> tuple[ObservationOffer, ...]:
+        return (ObservationOffer(
+            self.surface, "visual", "weak", "high", f"browser:{id(self.session)}",
+        ),)
+
+    def prepare(self, task: TaskGoal) -> None:
         self._task = task
-        self.session.reset()
         self._observation_id = ""
         self._source_revision = ""
         self._regions.clear()
+
+    async def reset(self, task: TaskGoal) -> None:
+        self.prepare(task)
+        self.session.reset()
 
     async def observe(self, reason: str) -> SurfaceObservation:
         del reason
@@ -103,6 +113,7 @@ class VisualSurfaceAdapter:
             if bool(getattr(self.proposer, "acquisition_exhaustive", False))
             else CoverageState.TRUNCATED,
             {"screenshot_ref": frame.screenshot_ref, "unsupported_actions": unsupported},
+            acquisition_root_id=f"browser:{frame.source_revision}",
         )
 
     def is_current(self, request: BoundActionRequest) -> bool:

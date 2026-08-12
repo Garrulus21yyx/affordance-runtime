@@ -95,7 +95,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -126,12 +126,12 @@ ActionContract, or ExecutionReceipt.
   unavailable without transport fields, and related write/invoke affordances
   are withheld. The proof uses explicitly referenced `nosec` and Runtime
   `LOCAL_SIMULATION`; remote/physical scopes remain HIGH risk.
-- SoM utilities and smart-room/mock-web assets are implemented. The existing
-  SoM adapter still terminates in the legacy `Affordance/AffordanceLease`
-  surface and is not wired into the current BrowserGym
-  `WorldObservation/ActionPage/dynamic-tools` policy path. M4.6-E will reuse its
-  bbox/mark/image-annotation primitives through a thin current-path grounding
-  projection; it will not restore the legacy surface as an authority.
+- SoM utilities and smart-room/mock-web assets are implemented. Grounded-tools
+  v2 now reuses the existing bbox/mark/image-annotation primitives through a
+  thin current BrowserGym projection; the legacy
+  `Affordance/AffordanceLease` path is not restored as an authority. This is a
+  model-facing grounding projection over one BrowserGym source, not proof of
+  multi-source fusion or visual execution binding.
 - Smart-room images use committed lockfiles and `npm ci`. Audit debt remains:
   node-wot 4 vulnerabilities (2 moderate, 2 high); dashboard 2 (1 moderate,
   1 high). Fixes currently require breaking dependency upgrades.
@@ -503,7 +503,7 @@ no retryable failure, the run proves wiring and evidence validity but not live
 retry effectiveness; controlled exceptional-path tests cover retry and typed
 exhaustion. D remains implemented-not-verified pending fresh held-out review.
 
-M4.6-E is `IN_PROGRESS / GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`. BrowserGym
+M4.6-E is `IN_PROGRESS / UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`. BrowserGym
 screenshots are carried as typed private image inputs into real multimodal model
 messages; the public AX profile includes executable checkbox/radio/tab/menuitem
 and bounded read-only table/list/heading/static-text structure. The valid
@@ -525,24 +525,38 @@ the stopped clean-`7c14190` MiniWoB-60 attempt completed only 8 mixed-cohort
 cases with 0 success and is not a benchmark claim. Its only
 capability-covered case exposed the current shared root: raw screenshots and
 anonymous `act_NN` tools have no common public target reference, while the
-short-loop requirement proposer adds a second model-call path. The next active
-gate is therefore `grounded_tools.v2`, not another v1 repair or resumption of
-that partial run. It must reuse the existing SoM renderer to place the same
-call-local `E*` refs on current screenshot controls that appear in a concise
-allowlist `ToolPolicyView`, schema-equivalent verb tools and the previous tool
-result. A private current-epoch resolver maps those refs to existing
-ActionOptions/bindings; ActionSpace remains the only execution authority. The
-short-loop profile disables the requirement proposer and admits one normal
-policy call per GUI turn. Targeted `login-user` and duplicate-control witnesses
-must pass first. The next required capability slice then bridges the already
-implemented `VisualSurfaceAdapter`/`VisualRegionBinding` foundation into the
-current BrowserGym target loop for screenshot-only targets such as
-`grid-coordinate`; today that bridge does not exist. Scroll, focus-aware
-keypress, table/list ownership, dynamic semantic deltas, multi-step verified
-working state and source review of the 14 readiness-unassessed cases follow as
-explicit shared-capability slices. Targeted cohorts run after each slice before
-one frozen MiniWoB-60 rerun. Declared gaps remain separately reported for
-attribution, but are no longer treated as permanently out of product scope.
+short-loop requirement proposer adds a second model-call path. Grounded-tools
+v2 now reuses the existing SoM renderer, places one call-local `E*` namespace on
+the annotated screenshot, concise allowlist `ToolPolicyView`, schema-equivalent
+verb tools and previous result, and maps accepted refs back to existing
+ActionOptions. The short-loop proposer is disabled. Its clean-`b9ad39a`
+single-BrowserGym-source targeted gate completed `login-user`, tab and both
+collapsible witnesses at 4/4 success with zero hypothesis calls, schema or
+argument repairs, grounding gaps and safety errors. This does not prove source
+selection, semantic fusion or route recovery.
+
+Step 12 now closes that Unified seam. `ObservationOrchestrator` selects bounded
+required and optional sources from pre-acquisition offers; source failures stay
+typed; `WorldFusion` canonicalizes only explicit correspondence, conserves
+provenance and exposes material conflicts; `RouteSelector` owns deterministic
+private route choice; and the execution cycle allows at most one fresh
+revalidation plus one equivalent retry after typed `NOT_SENT`. `SENT` and
+`SENT_UNKNOWN` never reroute. `GroundingProjection` now owns E-refs, exact media
+selection and SoM annotation, so `marked=true` is derived only from an image
+actually emitted in that provider request. Deterministic DOM+Visual shared
+acquisition and DOM+WoT equivalent-route witnesses pass, together with the
+Step-11 regression set and the full repository suite.
+
+Only after that gate does the existing
+`VisualSurfaceAdapter`/`VisualRegionBinding` foundation enter the current
+BrowserGym target loop for screenshot-only targets such as `grid-coordinate`.
+It must enter through Unified fusion/route owners, not a BrowserGym-specific
+ActionSpace bypass. Scroll, focus-aware keypress, table/list ownership, dynamic
+semantic deltas, multi-step verified working state and source review of the 14
+readiness-unassessed cases follow as explicit shared-capability slices.
+Targeted cohorts run after each slice before one frozen MiniWoB-60 rerun.
+Declared gaps remain separately reported for attribution, but are no longer
+treated as permanently out of product scope.
 The named tasks are test witnesses only. No Runtime/policy/tool/admission path
 may branch on a MiniWoB task slug, case ID, readiness cohort,
 reviewed-source rule, reward or answer; only benchmark inventory/reporting
@@ -600,7 +614,7 @@ vertical slice. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT`;
+`UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT`;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit

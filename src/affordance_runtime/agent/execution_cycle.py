@@ -47,7 +47,7 @@ from affordance_runtime.world.acquisition import (
     WorldObservationRequest,
 )
 from affordance_runtime.world.binder import ActionBinder, BindingError
-from affordance_runtime.world.contracts import AdmittedActionSelection
+from affordance_runtime.world.contracts import ActionOption, AdmittedActionSelection
 
 
 async def execute_cycle(
@@ -115,7 +115,45 @@ async def execute_cycle(
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     if result.dispatch_status is DispatchStatus.NOT_SENT:
-        return await _not_sent_outcome(session, decision, request, result, scope)
+        rerouted = await _reroute_not_sent(
+            session, selection, decision, request, result, binder, scope,
+        )
+        if isinstance(rerouted, LoopDirective):
+            return rerouted
+        selection, request, outcome, before = rerouted
+        result = outcome.result
+        try:
+            _probe_count(result)
+        except ValueError:
+            scope.set_reason("invalid_currentness_probe_count")
+            return Terminate(
+                AgentLoopStatus.FAILED, "invalid_currentness_probe_count",
+                "adapter returned invalid currentness probe metadata",
+                failure_stage=FailureStage.EXECUTION,
+                failure_kind=FailureKind.INVALID_OUTPUT,
+            )
+        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+            scope.set_reason("action_result_lineage_mismatch")
+            return Terminate(
+                AgentLoopStatus.FAILED, "action_result_lineage_mismatch",
+                "action result lineage mismatch",
+                failure_stage=FailureStage.EXECUTION,
+                failure_kind=FailureKind.INVALID_OUTPUT,
+            )
+        primary = validate_fresh_acquisition(
+            outcome.post_acquisition,
+            before.observation_id,
+            expected_origin=AcquisitionOrigin.POST_ACTION,
+            post_action=True,
+        )
+        if result.dispatch_status is DispatchStatus.NOT_SENT:
+            scope.set_reason("route_exhausted")
+            return Terminate(
+                AgentLoopStatus.FAILED, "route_exhausted",
+                "all bounded equivalent routes were not dispatched",
+                failure_stage=FailureStage.EXECUTION,
+                failure_kind=FailureKind.CALL_FAILED,
+            )
     if result.dispatch_status is DispatchStatus.SENT:
         state.clear_control_issue_budget()
     remaining = task.loop_budget.max_observations - session.observation_count
@@ -288,16 +326,24 @@ async def _binding_refresh(
     )
 
 
-async def _not_sent_outcome(
+async def _reroute_not_sent(
     session,
+    selection: AdmittedActionSelection,
     decision,
     request,
     result: ActionResult,
+    binder: ActionBinder,
     scope: ControlTransitionScope | ControlContinuationScope,
-) -> LoopDirective:
+) -> tuple[AdmittedActionSelection, object, ExecutionOutcome, object] | LoopDirective:
     state = session.state
     before_id = state.current_observation.observation_id
-    if result.error not in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
+    reroutable = {
+        ActionError.STALE_BINDING,
+        ActionError.CURRENTNESS_UNAVAILABLE,
+        ActionError.RATE_LIMITED,
+        ActionError.UNSUPPORTED_ACTION,
+    }
+    if result.error not in reroutable:
         scope.set_reason("action_not_dispatched")
         return Terminate(
             AgentLoopStatus.FAILED, "action_not_dispatched",
@@ -305,23 +351,101 @@ async def _not_sent_outcome(
             failure_stage=FailureStage.EXECUTION,
             failure_kind=FailureKind.CALL_FAILED,
         )
-    acquired = await capture_for_session(
-        session,
-        before_id,
-        WorldObservationRequest(
-            ObservationRequestKind.CURRENTNESS_REFRESH,
-            "currentness unavailable refresh",
-        ),
-        scope,
+    before = state.current_observation
+    current_selection = selection
+    if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
+        acquired = await capture_for_session(
+            session,
+            before_id,
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "stale route revalidation",
+            ),
+            scope,
+        )
+        if acquired.observation is None:
+            return Terminate(
+                AgentLoopStatus.FAILED, acquired.reason_code, acquired.reason_code,
+                failure_code=acquired.failure_code,
+            )
+        before = acquired.observation
+        state.install_observation(before)
+        scope.record_after(before.observation_id)
+        action_space = session.agent_loop.action_space_builder.build(session.task, before)
+        option = _equivalent_option(action_space.options, selection)
+        if option is None:
+            scope.set_reason("route_revalidation_failed")
+            return Terminate(
+                AgentLoopStatus.FAILED, "route_revalidation_failed",
+                "fresh ActionSpace has no equivalent semantic action",
+                failure_stage=FailureStage.EXECUTION,
+                failure_kind=FailureKind.INVALID_OUTPUT,
+            )
+        admission = session.agent_loop.action_space_builder.try_admit(
+            option, dict(selection.parameters), selection.destination_id,
+        )
+        if admission.admitted is None:
+            scope.set_reason("route_readmission_rejected")
+            return Terminate(
+                AgentLoopStatus.FAILED, "route_readmission_rejected",
+                "fresh equivalent action failed normal admission",
+                failure_stage=FailureStage.ADMISSION,
+                failure_kind=FailureKind.INVALID_OUTPUT,
+            )
+        current_selection = admission.admitted
+    excluded_binding_ids = {request.binding.binding_id}
+    if before.observation_id != before_id:
+        different_surface = any(
+            binding.binding_id in current_selection.eligible_binding_ids
+            and binding.surface != request.binding.surface
+            for binding in before.bindings
+        )
+        excluded_binding_ids = {
+            binding.binding_id
+            for binding in before.bindings
+            if different_surface and binding.surface == request.binding.surface
+        }
+    try:
+        alternate_request = binder.bind(
+            current_selection,
+            before,
+            decision.context_id,
+            excluded_binding_ids=frozenset(excluded_binding_ids),
+        )
+    except BindingError:
+        scope.set_reason("no_equivalent_alternate_route")
+        return Terminate(
+            AgentLoopStatus.FAILED, "no_equivalent_alternate_route",
+            "no current equivalent alternate route was available",
+            failure_stage=FailureStage.EXECUTION,
+            failure_kind=FailureKind.CALL_FAILED,
+        )
+    alternate_outcome = await _execute_boundary(
+        session, alternate_request, before.observation_id, scope,
     )
-    if acquired.observation is not None:
-        state.install_observation(acquired.observation)
-        scope.record_after(acquired.observation.observation_id)
-        return Continue("currentness_refreshed")
-    return Terminate(
-        AgentLoopStatus.FAILED, acquired.reason_code, acquired.reason_code,
-        failure_code=acquired.failure_code,
-    )
+    return current_selection, alternate_request, alternate_outcome, before
+
+
+def _equivalent_option(
+    options: tuple[ActionOption, ...],
+    previous: AdmittedActionSelection,
+) -> ActionOption | None:
+    return next((
+        option for option in options
+        if option.semantic_action == previous.semantic_action
+        and option.target_id == previous.target_id
+        and option.effect_category == previous.effect_category
+        and option.semantic_effects == previous.semantic_effects
+        and option.schema_digest == previous.schema_digest
+        and option.observation_barrier == previous.observation_barrier
+        and option.destination_required == previous.destination_required
+        and option.eligible_destination_ids == previous.eligible_destination_ids
+        and _risk_rank(option.risk) <= _risk_rank(previous.risk)
+    ), None)
+
+
+def _risk_rank(risk: object) -> int:
+    return ("low", "medium", "high", "irreversible").index(str(risk))
 
 
 def _probe_count(result: ActionResult) -> int:

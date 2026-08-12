@@ -129,7 +129,7 @@ post-M4.4 separately authorized rerun-v3: COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60
 P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT
 P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
 P5-M4.5-C same-profile diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
-P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E GROUNDED_TOOLS_V2_TARGETED_VERIFIED / VISUAL_BINDING_NEXT
+P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E UNIFIED_SOURCE_ORCHESTRATION_IMPLEMENTED_PROPERTY_VERIFIED / VISUAL_BINDING_NEXT
 M4.6-B residual contract implementation: `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`
 P5-M4.7 supported-subset multi-seed: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
@@ -230,8 +230,9 @@ initial acquisition → build ActionSpace → select ActionIntent → bind
 | `C4` | same target with DOM+WoT bindings | one route executes; no effectful auto-fallback |
 | `C5` | small `AgentLoopState`, LoopPolicy, optional TurnRecorder | no StateKernel/RuntimeDelta; recorder failure is behavior-neutral |
 
-`C1–C3` shared-state deterministic matrix 已完成；`C4` semantic fusion 延后且不是
-P5-D/D6.1 前置条件；`C5` 仅 small AgentLoopState 已完成。
+`C1–C3` shared-state deterministic matrix 已完成；`C4` semantic fusion 之前延后且
+不是 P5-D/D6.1 前置条件，现在由 M4.6-E step 12 在 visual execution binding 前
+显式恢复；`C5` 仅 small AgentLoopState 已完成。
 
 ### P5-D — Human confirmation and unknown effect
 
@@ -278,7 +279,7 @@ M4.6 只消费 `4924ce6` 的 immutable facts 和同树源码归因；修复后�
 | `M4.6-B` | four-state verifier and typed task-terminal fact orthogonal to Runtime failure | supported algebra total；terminal task failure never becomes `RuntimeFailure(CONTROL, REJECTED)`；previous-unknown cohort gets a new run ID |
 | `M4.6-C` | semantic inventory separate from projection coverage and ActionSpace | recognized omission cannot appear as represented/empty；model sees bounded inventory counts without task-completeness inference |
 | `M4.6-D` | canonical model-facing control feedback, a frozen two-distinct-issue same-scope zero-dispatch repair/no-gain budget, explicit projection of existing validated no-effect strategy feedback, and immediate exact-repeat containment | typed source owners feed a sanitized envelope into the next ordinary AgentContext；AgentPolicy—not Runtime—chooses the correction；an identical issue repeats or a third distinct issue terminates typed；effectful dispatch or relevant semantic/task/page gain resets, but a valid no-gain decision and fresh identity do not；existing ProgressController remains local；Runtime refresh and any sent/uncertain request are never replayed |
-| `M4.6-E` | stable opaque target identity and staged observable/executable breadth | irrelevant AX order does not change identity；read-only semantics grants no execution；quotas preserve controls |
+| `M4.6-E` | stable opaque identity, referentially closed grounded tools, Unified source selection/fusion/route and staged observable/executable breadth | irrelevant AX order does not change identity；selected sources/fused facts retain provenance；one admitted action uses one route and reroutes only after proven zero-dispatch；read-only semantics grants no execution；quotas preserve controls |
 | `M4.7` | supported-subset multi-seed run | immutable manifest, exact seed set, provider-capacity floor, success floor and maximum seed variance frozen before execution; all thresholds met before P5-E |
 
 每个 M4.6 slice 独立提交、property 验收并记录 implementation SHA；targeted/full rerun 使用

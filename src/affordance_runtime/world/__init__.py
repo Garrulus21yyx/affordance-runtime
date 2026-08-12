@@ -8,6 +8,11 @@ from affordance_runtime.world.acquisition import (
     ObservationCapabilities,
     ObservationOffer,
     ObservationRequestKind,
+    ObservationSelectionPlan,
+    SourceAcquisitionResult,
+    SourceAcquisitionStatus,
+    SourceRequirement,
+    SourceSelection,
     WorldObservationRequest,
 )
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
@@ -21,6 +26,7 @@ from affordance_runtime.world.contracts import (
     ActionSpace,
     AdmittedActionSelection,
     CoverageState,
+    EntityCorrespondence,
     EntityInventoryIssueCode,
     EntityInventoryStatus,
     EntityInventorySummary,
@@ -32,10 +38,25 @@ from affordance_runtime.world.contracts import (
     SurfaceObservation,
     WorldObservation,
 )
+from affordance_runtime.world.fusion import (
+    FusedEntityProvenance,
+    FusionStatus,
+    WorldFusion,
+    WorldFusionResult,
+)
+from affordance_runtime.world.observation_orchestrator import (
+    ObservationOrchestrator,
+    ObservationSelectionResult,
+)
 from affordance_runtime.world.relevance import (
     ActionRelevance,
     ActionRelevancePolicy,
     ActionRelevanceRole,
+)
+from affordance_runtime.world.route_selector import (
+    RouteSelectionCode,
+    RouteSelectionResult,
+    RouteSelector,
 )
 from affordance_runtime.world.semantic_inventory import (
     MAX_SEMANTIC_INVENTORY_COUNT,
@@ -77,6 +98,7 @@ __all__ = [
     "EntityInventoryIssueCode",
     "EntityInventoryStatus",
     "EntityInventorySummary",
+    "EntityCorrespondence",
     "ExecutionOutcome",
     "InternalActionPage",
     "ObservationAssurance",
@@ -87,8 +109,22 @@ __all__ = [
     "ObservationMedia",
     "ObservationModality",
     "ObservationOffer",
+    "ObservationSelectionPlan",
+    "ObservationOrchestrator",
+    "ObservationSelectionResult",
     "ObservationRequestKind",
     "ObservationSourceProfile",
+    "SourceAcquisitionResult",
+    "SourceAcquisitionStatus",
+    "SourceRequirement",
+    "SourceSelection",
+    "FusedEntityProvenance",
+    "FusionStatus",
+    "WorldFusion",
+    "WorldFusionResult",
+    "RouteSelectionCode",
+    "RouteSelectionResult",
+    "RouteSelector",
     "SemanticTarget",
     "SemanticInventoryStatus",
     "SemanticInventorySummary",
