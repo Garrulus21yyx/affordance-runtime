@@ -132,7 +132,7 @@ def project_browsergym_observation(
             source_revision,
             page_identity,
             episode_identity,
-            execution_allowed=not _blocked_by_inactive_tab_panel(node, controls_by_node_id),
+            execution_allowed=not _is_tab_panel_container(node, controls_by_node_id),
         )
         if public is not None and runtime is not None:
             bindings.append(public)
@@ -275,25 +275,13 @@ def _binding_pair(
     return public, runtime
 
 
-def _blocked_by_inactive_tab_panel(
+def _is_tab_panel_container(
     node: CanonicalBrowserControl,
     controls_by_node_id: dict[str, CanonicalBrowserControl],
 ) -> bool:
     """Normalize AX tab-panels without granting or inferring task semantics."""
 
-    if node.role == "tab" and _owns_form_control(node, controls_by_node_id):
-        return True
-    parent_id = node.private_parent_id
-    visited: set[str] = set()
-    while parent_id and parent_id not in visited:
-        visited.add(parent_id)
-        parent = controls_by_node_id.get(parent_id)
-        if parent is None:
-            break
-        if parent.role == "tab" and dict(parent.public_state).get("selected") is False:
-            return True
-        parent_id = parent.private_parent_id
-    return False
+    return node.role == "tab" and _owns_form_control(node, controls_by_node_id)
 
 
 def _owns_form_control(

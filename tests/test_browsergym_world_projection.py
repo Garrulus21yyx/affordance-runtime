@@ -247,7 +247,7 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
 
 def test_inactive_tab_panel_descendants_do_not_gain_action_authority() -> None:
     def accordion(selected: bool):
-        return raw_observation(
+        raw = raw_observation(
             ax_node(
                 "header", "tab", "Section #37",
                 properties=(("selected", selected),), child_ids=("header-text",),
@@ -259,6 +259,8 @@ def test_inactive_tab_panel_descendants_do_not_gain_action_authority() -> None:
             ),
             ax_node("submit", "button", "Submit", parent_id="panel"),
         )
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["submit"]["visible"] = selected
+        return raw
 
     collapsed = _project(accordion(False))
     collapsed_labels = {
