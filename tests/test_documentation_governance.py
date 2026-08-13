@@ -142,7 +142,7 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
         "P5-M4.5-C same-profile diagnostic — complete diagnostic evidence",
         "P5-M4.6 evidence-directed remediation — in progress",
         "## Gates after M4.6",
-        "no exact target before first observation",
+        "natural-language task + current Unified World + bounded interaction history",
     )
     positions = [text.index(marker) for marker in markers]
     assert positions == sorted(positions)
