@@ -71,5 +71,27 @@ It needs separate agent-level evidence and cannot justify a Runtime color
 counter or Submit guard.
 
 Targeted verification for the correction is 15 grounded-protocol tests, Ruff
-on the touched files and Mypy on both changed source modules. Live revalidation
-of the exact corrected commit remains required.
+on the touched files and Mypy on both changed source modules.
+
+## Clean corrected-SHA revalidation
+
+The exact pushed correction `b2f3dace3f29a5012e970fb965f1564cdc401ada`
+completed the five-case run with valid evidence, 4/5 success and an accepted
+bounded gate. All three earlier argument failures disappeared: every case
+recorded zero invalid arguments and zero repairs. Grid coordinate, both pie
+witnesses and the five-member blue set succeeded entirely from structural
+sources with zero image inputs and zero visual acquisitions.
+
+The remaining `visual-addition` case made two `RequestObservation` decisions,
+received typed `observation_no_information_gain` feedback, executed no action
+and stopped at `no_progress_control_repetition`. The persisted trace shows that
+the model context remained structural, but does not retain the modality of a
+successfully resolved control decision. It therefore cannot yet distinguish a
+repeated structural request from a visual request whose acquisition failed to
+produce a visual source. That generic trace gap must be closed before another
+behavior change is admitted.
+
+Run totals were 13 provider attempts, 30,639 tokens and 102,726.072 ms model
+latency. The result closes only the grounded argument-envelope defect. Agent
+observation strategy and set/aggregate completion stability remain open; the
+five witnesses still prohibit a generalization claim.

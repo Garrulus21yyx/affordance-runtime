@@ -552,3 +552,16 @@ The same full run also selected four blue entities and then Submit, causing an
 authoritative terminal failure. That is a distinct agent set-completeness
 error. It remains open and is not converted into a color counter, singleton
 heuristic, Submit rule or benchmark-specific verifier.
+
+The clean corrected-SHA `b2f3dac` revalidation completed 5/5, succeeded 4/5,
+and removed every argument violation and repair from the cohort. All four
+successes consumed structural sources only. This is direct evidence that the
+stable explicit-target envelope corrected the shared tool failure rather than
+merely moving it.
+
+The residual made two `RequestObservation` decisions, received no-information-
+gain feedback and ended in the existing control-repetition guard without an
+execution. The current persisted policy trace omits modality/assurance for a
+successfully resolved observation decision. Until that typed public decision
+is retained, evidence cannot attribute the repetition to model strategy or
+acquisition output. The next admitted change is observability only.
