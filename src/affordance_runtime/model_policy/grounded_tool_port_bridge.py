@@ -368,9 +368,25 @@ class _GroundedAdapterBase:
         issue,
         payload_base: type[_GroundedCommandPayloadBase],
     ) -> ToolCall:
+        repair_messages = _argument_repair_messages(messages, spec, issue)
+        if self.transport_kind is not ToolTransportKind.COMPACT_JSON:
+            generate = getattr(self.port, "generate_tool_calls", None)
+            if generate is None:
+                raise ValueError("model port does not implement admitted native tool calls")
+            calls = await generate(
+                repair_messages,
+                (spec,),
+                self.config,
+                require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
+            )
+            if not calls:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
+            if len(calls) != 1:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
+            return calls[0]
         payload_type = _command_payload_type((spec,), payload_base=payload_base)
         payload = await self.port.generate_structured(
-            _argument_repair_messages(messages, spec, issue),
+            repair_messages,
             payload_type,
             self.config,
         )
@@ -514,8 +530,6 @@ def _command_payload_type(
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
-    if len(names) == 1:
-        return payload_base
     digest = hashlib.sha256("\0".join(names).encode()).hexdigest()[:12]
     allowed_operation = Literal.__getitem__(names)
     return create_model(

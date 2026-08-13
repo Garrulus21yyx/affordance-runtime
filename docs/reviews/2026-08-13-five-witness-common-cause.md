@@ -511,3 +511,21 @@ marked only when an image was sent. The structure-first gate requires zero
 images on the initial call and requires a current visual source for every later
 image-bearing call. Score and authoritative environment outcomes at `d325360`
 remain valid; its marked-selection evidence does not.
+
+## Control-context revalidation and exact selected-tool repair
+
+The clean `ccea342` rerun is recorded in the
+[control-context evidence note](../evidence/2026-08-14-structure-first-control-context-ccea342.md).
+It again completed 5/5 and succeeded 4/5. The previous repeated-control failure
+did not recur. Instead, the residual reached selected-tool argument repair and
+failed there as `invalid_tool_arguments`; no action or visual acquisition was
+admitted.
+
+Inspection found a protocol contradiction independent of GUI task semantics.
+Native first-pass calls repaired through a flat structured payload rather than
+the same native tool transport. For a single selected operation,
+`_command_payload_type` returned the unconstrained base payload, so the schema
+did not enforce the prompt's `operation_must_remain` rule. The corrective slice
+keeps native repair native with exactly one offered ToolSpec and constrains a
+single compact operation with Literal just like a multi-operation catalog.
+Argument validation, one-repair budget and Runtime resolution remain unchanged.

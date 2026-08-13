@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent import RequestObservation, SelectAction
 from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveNeedsInput,
     LocalObjectiveNotRequired,
@@ -44,11 +44,12 @@ from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedObjectiveAdapter,
     GroundedObjectiveCommandPayload,
     GroundedToolCommandPayload,
+    _command_payload_type,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
 from affordance_runtime.model_policy.policy import _build_request as _action_request
-from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model_port import (
     ModelCallRecord,
     ModelConfig,
@@ -240,6 +241,79 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 1
     assert trace["selected_grounding"]["marked"] is True
+
+
+def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_schema() -> None:
+    @dataclass
+    class NativeRepairPort:
+        provider: str = "zhipu"
+        model: str = "glm-4.6v"
+        endpoint_class: str = "fixture"
+        supports_multimodal: bool = True
+        last_call: ModelCallRecord | None = None
+        calls: int = 0
+        repair_messages: tuple = ()
+
+        async def generate_tool_calls(self, messages, tools, config, *, require_one):
+            del config, require_one
+            self.calls += 1
+            if self.calls == 1:
+                return (ToolCall("observe_visual", {"unexpected": "value"}),)
+            self.repair_messages = tuple(messages)
+            assert len(tools) == 1
+            assert tools[0].name == "observe_visual"
+            assert to_json_compatible(tools[0].input_schema) == {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            }
+            return (ToolCall("observe_visual", {}),)
+
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
+            raise AssertionError("native repair must retain native tool transport")
+
+    context = _context()
+    context = replace(
+        context,
+        world=replace(
+            context.world,
+            observation_capabilities=(
+                ObservationCapabilityView("structural", "structural"),
+                ObservationCapabilityView("visual", "weak"),
+            ),
+        ),
+    )
+    port = NativeRepairPort()
+    adapter = GroundedActionAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert not isinstance(outcome, ModelFailure)
+    assert isinstance(outcome.decision, RequestObservation)
+    assert outcome.decision.modality == "visual"
+    assert port.calls == 2
+    assert adapter.last_argument_repair_count == 1
+    repair_system = port.repair_messages[0].content
+    assert isinstance(repair_system, str)
+    assert '"selected_operation":"observe_visual"' in repair_system
+    assert '"field_paths":["parameters.unexpected"]' in repair_system
+
+
+def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
+    payload_type = _command_payload_type((ToolSpec(
+        "observe_visual",
+        "Acquire visual evidence.",
+        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    ),))
+
+    operation_schema = payload_type.model_json_schema()["properties"]["op"]
+    assert operation_schema["const"] == "observe_visual"
 
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
