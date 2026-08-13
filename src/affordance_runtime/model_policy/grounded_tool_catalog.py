@@ -387,7 +387,8 @@ def _append_set_objective_tools(
                     f"establish_{verb}_entity_objective{suffix}",
                     (
                         f"Establish one typed {verb} objective for an explicitly identified current "
-                        "E-ref. This performs no GUI action."
+                        "E-ref. Do not use this for quantified sets, derived values, public-fact "
+                        "selection, or ordered future steps. This performs no GUI action."
                     ),
                     entity_schema,
                 )
@@ -472,7 +473,8 @@ def _append_set_objective_tools(
                     f"establish_{verb}_visual_objective",
                     (
                         "Use before any member action when the task selects a quantified set or an "
-                        "open-vocabulary visual concept not represented by a public fact. Establishes "
+                        "open-vocabulary visual concept not represented by any public fact. Never "
+                        "replace an available public fact with this tool. Establishes "
                         "the objective over one typed candidate role and performs no GUI action."
                     ),
                     _object_schema(
@@ -521,7 +523,8 @@ def _append_objective_sequence_tool(
         ToolSpec(
             "establish_objective_sequence",
             (
-                "Establish 1-8 typed future-resolvable GUI steps. Each predicate is "
+                "Use for an explicit ordered multi-step instruction, especially when later controls "
+                "appear after earlier effects. Establish 1-8 typed future-resolvable GUI steps. Each predicate is "
                 "re-evaluated after a fresh observation; use public fields such as "
                 "identity.label and never future E-refs or coordinates. Performs no action."
             ),
@@ -626,7 +629,7 @@ def _append_aggregate_objective_tool(
         ToolSpec(
             "establish_aggregate_objective",
             (
-                "Derive COUNT/SUM/MIN/MAX from a closed source scope and write the Runtime-derived "
+                "Required when the task asks to derive COUNT/SUM/MIN/MAX. Derive it from a closed source scope and write the Runtime-derived "
                 "value to one destination. Never provide the result value yourself."
             ),
             _object_schema(

@@ -62,6 +62,9 @@ _SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
 When the request quantifies multiple targets, or identifies target(s) by a public state/relation represented by an establish_* objective operation, establish that typed objective before any member action.
+When an explicit target condition already appears in current_state, use its public fact objective; do not replace available structural evidence with a visual concept.
+When the task requires a count, sum, minimum, or maximum to be entered, establish an aggregate objective and never supply the computed result yourself.
+When the instruction explicitly describes ordered steps whose later controls appear only after earlier effects, establish one bounded objective sequence so each future selector is re-resolved after a fresh observation.
 Use a direct click among multiple E* targets only for one target identified by ordinary label or appearance when no offered objective operation represents the criterion.
 Use current public state and the previous tool result: once a requested field is nonempty or satisfied, advance to the next required control.
 When recovery forbids retry or requires a strategy change, never repeat the same operation, target, and arguments.
