@@ -15,6 +15,7 @@ from affordance_runtime.task.aggregate_objective import (
     install_aggregate_visual_leaf_assessments,
 )
 from affordance_runtime.task.objective_sequence import (
+    ObjectiveSequenceState,
     install_sequence_selector_resolution,
 )
 from affordance_runtime.task.selector_resolution import (
@@ -45,19 +46,20 @@ async def resolve_visual_set_evidence(session) -> bool:
     classifier = getattr(session.environment, "visual_predicate_classifier", None)
     if classifier is None:
         return False
-    sequence = session.state.active_objective_sequence
+    execution = session.state.active_step_execution
+    sequence = execution if isinstance(execution, ObjectiveSequenceState) else None
     if sequence is not None and sequence.selector_resolution is not None:
         return await _resolve_selector_evidence(
             session,
             sequence.selector_resolution,
             lambda resolved: setattr(
                 session.state,
-                "active_objective_sequence",
+                "active_step_execution",
                 install_sequence_selector_resolution(sequence, resolved),
             ),
         )
-    set_state = session.state.active_set_objective
-    aggregate_state = session.state.active_aggregate_objective
+    set_state = execution if isinstance(execution, SetObjectiveState) else None
+    aggregate_state = execution if isinstance(execution, AggregateObjectiveState) else None
     if (
         aggregate_state is not None
         and aggregate_state.disposition is AggregateDisposition.NEED_DESTINATION
@@ -94,9 +96,7 @@ async def resolve_visual_set_evidence(session) -> bool:
             size = image.size
         for leaf in leaves:
             current = (
-                session.state.active_set_objective
-                if set_state is not None
-                else session.state.active_aggregate_objective
+                session.state.active_step_execution
             )
             if current is None:
                 break
@@ -146,7 +146,7 @@ async def resolve_visual_set_evidence(session) -> bool:
                     f"{getattr(classifier, 'provider', 'visual')}:{getattr(classifier, 'model', 'classifier')}"
                 )
                 if isinstance(current, SetObjectiveState):
-                    session.state.active_set_objective = install_visual_leaf_assessments(
+                    session.state.active_step_execution = install_visual_leaf_assessments(
                         current,
                         session.state.current_observation,
                         leaf,
@@ -155,7 +155,7 @@ async def resolve_visual_set_evidence(session) -> bool:
                     )
                 else:
                     assert isinstance(current, AggregateObjectiveState)
-                    session.state.active_aggregate_objective = install_aggregate_visual_leaf_assessments(
+                    session.state.active_step_execution = install_aggregate_visual_leaf_assessments(
                         current,
                         session.state.current_observation,
                         leaf,
@@ -340,7 +340,7 @@ async def _resolve_aggregate_destination_evidence(
             ),
             enumerator=session.state.scope_enumerator,
         )
-    session.state.active_aggregate_objective = current
+    session.state.active_step_execution = current
     return True
 
 

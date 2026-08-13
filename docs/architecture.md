@@ -19,6 +19,7 @@ Governance:
 - [Documentation Index](README.md)
 - [Documentation Governance](documentation-governance.md)
 - [Architecture Governance](architecture-governance-track.md)
+- [Task Execution Authority Map](task-execution-authority-map.md)
 
 The target center is the unified world interface and a short typed
 acquire–decide–execute/acquire–evaluate loop. Adapters declare independent and

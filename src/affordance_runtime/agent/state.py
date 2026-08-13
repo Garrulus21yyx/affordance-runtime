@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TypeAlias
 
 from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
@@ -28,11 +29,12 @@ from affordance_runtime.task.objective_sequence import (
     SequenceDisposition,
     refresh_objective_sequence_state,
 )
-from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
+from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.task.set_objective import SetDisposition
 from affordance_runtime.task.set_objective_state import SetObjectiveState, refresh_set_objective_state
 from affordance_runtime.task_action_family_resolution import action_family_value
+from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
@@ -65,6 +67,11 @@ class SemanticControlMode(StrEnum):
     OBJECTIVE_TRANSITION = "objective_transition"
 
 
+StepExecutionState: TypeAlias = (
+    SetObjectiveState | ObjectiveSequenceState | AggregateObjectiveState
+)
+
+
 @dataclass
 class AgentLoopState:
     current_observation: WorldObservation
@@ -76,9 +83,7 @@ class AgentLoopState:
     control_terminal_status: AgentLoopStatus | None = None
     plan: TaskPlan | None = None
     active_objective: LocalObjective | ActiveObjective | None = None
-    active_set_objective: SetObjectiveState | None = None
-    active_objective_sequence: ObjectiveSequenceState | None = None
-    active_aggregate_objective: AggregateObjectiveState | None = None
+    active_step_execution: StepExecutionState | None = None
     scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
     verified_task_state: VerifiedTaskState | None = None
     requirement_hypotheses: RequirementHypothesisState = field(
@@ -122,8 +127,9 @@ class AgentLoopState:
 
     @property
     def semantic_control_mode(self) -> SemanticControlMode:
-        sequence = self.active_objective_sequence
-        if sequence is not None:
+        active = self.active_step_execution
+        if isinstance(active, ObjectiveSequenceState):
+            sequence = active
             if sequence.disposition is SequenceDisposition.READY:
                 return SemanticControlMode.MEMBER_EXECUTION
             if sequence.disposition is SequenceDisposition.WAITING_POSTCONDITION:
@@ -131,8 +137,8 @@ class AgentLoopState:
             if sequence.disposition is SequenceDisposition.COMPLETE:
                 return SemanticControlMode.OBJECTIVE_TRANSITION
             return SemanticControlMode.EVIDENCE_RESOLUTION
-        aggregate = self.active_aggregate_objective
-        if aggregate is not None:
+        if isinstance(active, AggregateObjectiveState):
+            aggregate = active
             if aggregate.disposition is AggregateDisposition.READY:
                 return SemanticControlMode.MEMBER_EXECUTION
             if aggregate.disposition is AggregateDisposition.NEED_EFFECT_RESOLUTION:
@@ -140,8 +146,7 @@ class AgentLoopState:
             if aggregate.disposition is AggregateDisposition.COMPLETE:
                 return SemanticControlMode.OBJECTIVE_TRANSITION
             return SemanticControlMode.EVIDENCE_RESOLUTION
-        active = self.active_set_objective
-        if active is None:
+        if not isinstance(active, SetObjectiveState):
             return (
                 SemanticControlMode.SEMANTIC_INGRESS
                 if self.semantic_objective_count == 0
@@ -181,21 +186,22 @@ class AgentLoopState:
             raise ControlReductionError(reduced)
         self._install_control_reducer_state(reduced.state)
         if (
-            self.active_objective_sequence is not None
-            and transition.after_observation_id != self.active_objective_sequence.observation_epoch
+            isinstance(self.active_step_execution, ObjectiveSequenceState)
+            and transition.after_observation_id != self.active_step_execution.observation_epoch
         ):
+            sequence = self.active_step_execution
             action = transition.action_evaluation
             intent = transition.intent
             acted_entity_id = (
                 intent.target_id
                 if intent is not None
-                and self.active_objective_sequence.active_step is not None
+                and sequence.active_step is not None
                 and action_family_value(intent.semantic_action)
-                == self.active_objective_sequence.active_step.action_template.semantic_action
+                == sequence.active_step.action_template.semantic_action
                 else ""
             )
-            self.active_objective_sequence = refresh_objective_sequence_state(
-                self.active_objective_sequence,
+            self.active_step_execution = refresh_objective_sequence_state(
+                sequence,
                 self.current_observation,
                 acted_entity_id=acted_entity_id,
                 action_status=(action.status if action is not None and acted_entity_id else None),
@@ -203,19 +209,19 @@ class AgentLoopState:
                 enumerator=self.scope_enumerator,
             )
         if (
-            self.active_aggregate_objective is not None
-            and transition.after_observation_id != self.active_aggregate_objective.universe.observation_epoch
+            isinstance(self.active_step_execution, AggregateObjectiveState)
+            and transition.after_observation_id != self.active_step_execution.universe.observation_epoch
         ):
             action = transition.action_evaluation
             intent = transition.intent
-            aggregate = self.active_aggregate_objective
+            aggregate = self.active_step_execution
             acted_entity_id = (
                 intent.target_id
                 if intent is not None
                 and action_family_value(intent.semantic_action) == aggregate.objective.semantic_action
                 else ""
             )
-            self.active_aggregate_objective = refresh_aggregate_objective_state(
+            self.active_step_execution = refresh_aggregate_objective_state(
                 aggregate,
                 self.current_observation,
                 acted_entity_id=acted_entity_id,
@@ -224,17 +230,18 @@ class AgentLoopState:
                 enumerator=self.scope_enumerator,
             )
         if (
-            self.active_set_objective is not None
-            and transition.after_observation_id != self.active_set_objective.universe.observation_epoch
+            isinstance(self.active_step_execution, SetObjectiveState)
+            and transition.after_observation_id != self.active_step_execution.universe.observation_epoch
         ):
+            set_state = self.active_step_execution
             action = transition.action_evaluation
             intent = transition.intent
             settled_members = {
-                *self.active_set_objective.candidate_entity_ids,
-                *(item.entity_id for item in self.active_set_objective.obligations),
+                *set_state.candidate_entity_ids,
+                *(item.entity_id for item in set_state.obligations),
             }
             certified_successor = (
-                self.active_set_objective.reduction.disposition is SetDisposition.CERTIFIED
+                set_state.reduction.disposition is SetDisposition.CERTIFIED
                 and intent is not None
                 and intent.target_id not in settled_members
             )
@@ -244,11 +251,11 @@ class AgentLoopState:
             acted_entity_id = (
                 intent.target_id
                 if intent is not None
-                and intent.semantic_action == self.active_set_objective.objective.action_template.semantic_action
+                and intent.semantic_action == set_state.objective.action_template.semantic_action
                 else ""
             )
-            self.active_set_objective = refresh_set_objective_state(
-                self.active_set_objective,
+            self.active_step_execution = refresh_set_objective_state(
+                set_state,
                 self.current_observation,
                 acted_entity_id=acted_entity_id,
                 action_status=action.status if action is not None and acted_entity_id else None,

@@ -1,4 +1,4 @@
-from dataclasses import fields, replace
+from dataclasses import fields
 
 import pytest
 
@@ -6,10 +6,8 @@ from affordance_runtime.task import (
     EvaluationSpec,
     LocalObjective,
     LoopBudget,
-    Milestone,
     RiskProfile,
     TaskGoal,
-    TaskPlan,
 )
 
 
@@ -54,12 +52,9 @@ def test_strict_evaluation_does_not_add_effect_authority() -> None:
     assert goal.allowed_effects == ()
 
 
-def test_optional_plan_can_be_bypassed_or_wholly_replaced() -> None:
+def test_local_objective_remains_separate_from_task_intake() -> None:
     goal = TaskGoal("read", "Inspect state", loop_budget=LoopBudget(4, 8))
-    first = TaskPlan("p1", (Milestone("m1", {"shared": True}),))
-    second = replace(first, plan_id="p2", milestones=(Milestone("m2", {"verified": True}),))
     objective = LocalObjective({"shared": True})
 
     assert goal is not None
-    assert first != second
     assert objective.desired_state == {"shared": True}

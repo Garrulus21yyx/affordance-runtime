@@ -2,7 +2,35 @@
 
 Date: 2026-08-13
 
-Status: `CONVERGENCE_REOPENED / IMPLEMENTATION_VERIFIED / LIVE_REVALIDATION_IN_PROGRESS`
+Status: `CONVERGENCE_REOPENED / DUPLICATE_AUTHORITY_MIGRATION_REQUIRED`
+
+## 2026-08-13 architecture-first correction
+
+The attempted `TaskProgram` repair was reverted.  It duplicated whole-task
+planning inside the benchmark short loop and then forced the model boundary to
+carry a third task schema.  Its structured-output failures were symptoms of the
+duplicated owner, not a reason to keep repairing that schema.
+
+Repository review found three planning surfaces:
+
+1. the retained default `TaskSpec -> TaskPlan<StepSpec> -> StateKernel/Coordinator`
+   chain;
+2. the target `TaskGoal -> optional TaskPlan<Milestone> -> VerifiedTaskState /
+   ActiveObjective -> AgentLoopState` chain;
+3. M4.6 short-loop `set / sequence / aggregate` ingress and the now-reverted
+   `TaskProgram` wrapper.
+
+The selected convergence path retains the admitted `TaskSpec` and canonical
+`TaskPlan<StepSpec>` authority contracts, connects them to the target AgentLoop,
+and does not import the old StateKernel/Coordinator execution core. M4.6 violated
+that boundary by letting Catalog/model transport create planner-shaped semantic
+state. The active work is to migrate the required set/sequence/aggregate algebra
+into canonical plan steps and one step-execution reducer, then delete both the
+temporary short-loop ingress and the displaced default execution chain at their
+cutover boundary.
+
+No further model schema tuning is allowed before that owner migration is
+defined.  Projection schemas serialize canonical state; they do not define it.
 
 ## Goal
 
@@ -110,7 +138,12 @@ authority.
 | Q | completed | Replace current-viewport/same-role candidate lists with ScopeEnumerator-owned universes | Snapshot viewport closure is domain-aware; larger scopes require an environment-owned enumerator and otherwise fail closed |
 | R | completed | Wire VisualPredicateClassifier through evidence obligations | Set members, aggregate members/destinations and sequence selectors share visual-leaf classification without granting completeness or bindings |
 | S | completed | Add independent task-semantic objective validation | Optional independent assurance returns SUPPORTED/CONTRADICTED/UNKNOWN before installation; default ingress avoids a mandatory second provider call |
-| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | Static checks and full suite pass (`2435 passed, 24 skipped`); real five-witness rerun is next |
+| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | After authority cleanup, Ruff and full suite pass (`2441 passed, 27 skipped`); real benchmark is blocked on canonical TaskSpec/TaskPlan entry rather than another schema patch |
+| U | completed | Remove the duplicate `TaskProgram` planner and its schema-repair path | Four public commits were reverted with audit-preserving revert commits; no TaskProgram source/test remains |
+| V | completed | Publish one executable owner/producer/consumer/deletion map for task semantics through completion | `docs/task-execution-authority-map.md` names every owner and required deletion; the duplicate target TaskPlan was removed |
+| W | in_progress | Migrate set/sequence/aggregate semantics into the selected canonical task/frontier owner | The three mutually exclusive AgentLoop slots are now one discriminated `active_step_execution`; creation still must move from model-facing ingress to active canonical StepSpec |
+| X | pending | Cut over callers and delete displaced contracts, tools, schemas, tests and docs | No dual read/write compatibility remains inside core; only explicitly bounded edge adapters may survive |
+| Y | pending | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI rejects new semantic owners in Catalog, model transport, benchmark code, or projections |
 
 ## Latest live evidence
 

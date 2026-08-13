@@ -45,7 +45,7 @@ from affordance_runtime.task.hypothesis_runtime import (
     assess_requirement_hypotheses,
 )
 from affordance_runtime.task.intent_context import IntentContext, IntentExcerpt, IntentSourceKind
-from affordance_runtime.task.planning_contracts import LocalObjective, Milestone, TaskPlan
+from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.task.predicate_transport import predicate_from_transport
 from affordance_runtime.task.selector_resolution import (
     SelectorResolutionDisposition,
@@ -109,6 +109,7 @@ from affordance_runtime.task.set_objective_state import (
     set_allowed_action_ids,
     set_evidence_obligations,
 )
+from affordance_runtime.task_plan_contracts import TaskPlan
 
 __all__ = [
     "EvaluationSpec",
@@ -139,7 +140,6 @@ __all__ = [
     "HypothesisAdmissionCode",
     "HypothesisAdmissionResult",
     "MaterialBinding",
-    "Milestone",
     "RiskProfile",
     "RequirementHypothesisFailure",
     "RequirementHypothesisFailureKind",

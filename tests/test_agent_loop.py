@@ -582,7 +582,7 @@ def test_contradicted_semantic_objective_is_never_installed_or_dispatched() -> N
         assert result.execution_count == 0
         assert environment.execute_calls == 0
         assert policy.semantic_validator.calls == 1
-        assert session.state.active_set_objective is None
+        assert session.state.active_step_execution is None
         assert session.state.semantic_objective_count == 0
         assert any(item.reason_code == "objective_semantic_contradicted" for item in result.control_transitions)
 

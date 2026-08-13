@@ -331,7 +331,7 @@ def test_true_member_without_current_action_route_blocks_catalog_control() -> No
     )
     only_wrong_route = ActionSpace(world.observation_id, (_space(world).options[0],))
     loop_state = AgentLoopState(world, remaining_turns=3)
-    loop_state.active_set_objective = active
+    loop_state.active_step_execution = active
     task = TaskGoal(
         "task:held-out-actionability",
         "Arbitrary semantic request",

@@ -1,7 +1,7 @@
 # Affordance Runtime：AgentContext 循环式 E2E Agent 目标架构
 
 > **Lifecycle:** CURRENT AUTHORITATIVE ARCHITECTURE
-> **Updated:** 2026-08-11
+> **Updated:** 2026-08-13
 > **Scope:** target semantics and invariants only
 > **Implementation truth:** [Implementation Status](../../implementation-status.md)
 > **Migration order:** [Architecture Evolution Plan](../plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
@@ -13,6 +13,24 @@ criterion adjudicator 与 independent observation acquisition 已在 non-default
 落地。本文只定义 control/failure 的目标不变量，不覆盖 Implementation Status：
 当前 M4.5-B 已集成但处于 reopened convergence review，尚未 verified closure；
 长程 verified frontier 尚未落地。
+
+### 2026-08-13 task-authority convergence amendment
+
+The repository-wide convergence review supersedes the earlier assumption that
+the target AgentLoop should grow a separate `TaskGoal/TaskPlan<Milestone>`
+semantic stack while the admitted `TaskSpec/TaskPlan<StepSpec>` stack remained
+in the default runtime. The canonical semantic and planning contracts are now:
+
+```text
+TaskSpecAuthority -> TaskPlanAuthority -> TaskPlan<StepSpec>
+```
+
+The target AgentLoop remains the execution destination. It consumes those
+canonical contracts through one plan-progress owner and one current-step
+execution reducer; it does not import the old StateKernel/Coordinator execution
+core. `TaskGoal` is transitional target-loop input only and must not remain a
+second task-semantic authority after entry migration. The detailed owner and
+deletion contract is [Task Execution Authority Map](../../task-execution-authority-map.md).
 
 ## 0. 系统定位与计算模型
 
@@ -34,7 +52,7 @@ AgentDecision
 → serial AgentLoopState update
 ```
 
-`AgentContext_t` 是 TaskGoal、bounded IntentContext、current WorldObservation、
+`AgentContext_t` 是 admitted TaskSpec、active TaskPlan/step progress、bounded IntentContext、current WorldObservation、
 progress、Internal ActionSpace、bounded history、pending state 和 budgets 的一次性
 投影。统一的是模型每轮看到的上下文，不是 Runtime authority。
 
@@ -42,7 +60,7 @@ progress、Internal ActionSpace、bounded history、pending state 和 budgets �
 
 1. **模型可见性不等于执行权。** Visible to model、authorized effect、executable
    route 和 verified fact 是四个不同概念。
-2. **Observation 是当前 binding 的事实来源。** TaskGoal 是稳定语义，TaskPlan
+2. **Observation 是当前 binding 的事实来源。** TaskSpec 是稳定语义，TaskPlan
    是可替换假设，WorldObservation 是当前世界事实，AgentLoopState 是当前 run control
    state，ControlTransition 只回答本次 control boundary 发生了什么。
 3. **Agent 提议，Runtime 裁决。** Agent 选择 subgoal/semantic action、请求观察、
@@ -51,17 +69,17 @@ progress、Internal ActionSpace、bounded history、pending state 和 budgets �
 4. **Context disposable。** 每轮重建，可裁剪、分页、压缩或丢弃；不能反向成为
    Runtime state、CognitiveMap、StateKernel 或 universal provenance graph。
 5. **Environment content may influence reasoning; it cannot grant authority.** 页面、
-   邮件、截图和工具文本不能修改 TaskGoal、扩大 effect、降低 risk、创建合法动作
+   邮件、截图和工具文本不能修改 TaskSpec、扩大 effect、降低 risk、创建合法动作
    或证明完成。
 
 ## 2. 顶层分层与 Runtime authoritative state
 
 ```text
 Thin Semantic Intake
-  UserRequest → TaskGoal + bounded IntentContext
+  UserRequest → admitted TaskSpec + bounded IntentContext
         ↓
 Runtime Authoritative State
-  TaskGoal/revision · WorldObservation · Internal ActionSpace · AgentLoopState
+  TaskSpec/revision · admitted TaskPlan/progress · WorldObservation · Internal ActionSpace · AgentLoopState
   optional VerifiedTaskState
   PendingConfirmation/Question/UnknownEffect · validated evaluations
         ↓ one-way projection
@@ -74,7 +92,8 @@ RiskPolicy / semantic confirmation / current binding / execute once
 typed fresh acquisition / ActionEvaluationValidator / TaskEvaluationValidator
 ```
 
-Runtime authoritative state 仅包括：`TaskGoal`、task revision、current
+Runtime authoritative state 仅包括：admitted `TaskSpec`、task revision、admitted
+`TaskPlan` and plan progress、current
 `WorldObservation`、current Internal `ActionSpace`、`AgentLoopState`、
 以及其 optional nested `VerifiedTaskState` frontier、
 `PendingConfirmation`、`PendingUserQuestion`、`PendingUnknownRequest`、current
@@ -201,7 +220,7 @@ unsupported/failure 或进入既有 UNKNOWN control policy；它不得伪造 fre
 
 ## 3. Thin Semantic Intake
 
-### 3.1 TaskGoal
+### 3.1 TaskSpec and transitional TaskGoal projection
 
 ```python
 @dataclass(frozen=True)
@@ -220,8 +239,11 @@ class TaskGoal:
     evaluation_spec: EvaluationSpec | None
 ```
 
-TaskGoal 不包含页面、selector、坐标、surface、backend、route、GUI 操作顺序、
-concrete TaskPlan、binding 或 provider object。
+The admitted TaskSpec owns stable task semantics, requirement identity, effect
+authorization, constraints, inputs and success. During migration, TaskGoal may
+project the subset required by still-unmigrated AgentLoop callers; it cannot be
+edited independently or treated as an authority. Neither task contract contains
+page selector, coordinate, surface, backend, current binding or provider object.
 
 ### 3.2 Bounded IntentContext
 
@@ -241,9 +263,9 @@ class IntentContextView:
     truncated: bool = False
 ```
 
-优先级固定为：current TaskGoal revision > admitted user clarification >
+优先级固定为：current admitted TaskSpec revision > admitted user clarification >
 IntentContext > environment/page/tool content。改变任务语义的 clarification 必须先
-validation，再生成新 TaskGoal revision、递增 `task_revision` 并重建 AgentContext；
+validation，再生成新 TaskSpec revision、递增 `task_revision` 并重建 AgentContext；
 不能只追加聊天历史来扩大 effect boundary。
 
 ## 4. Disposable AgentContext
@@ -334,11 +356,11 @@ artifact summaries 和 total serialized bytes。每个 bounded section 必须携
 
 ## 5. Internal ActionSpace、relevance 与 paging
 
-构建顺序是：current WorldObservation bindings → currentness/availability → TaskGoal
+构建顺序是：current WorldObservation bindings → currentness/availability → TaskSpec
 legality → effect/risk classification → LocalObjective relevance → distinguishability →
 ranking → paging → model projection。
 
-TaskGoal 决定 legality、allowed/forbidden effects、read-only boundary、risk floor、
+TaskSpec 决定 legality、allowed/forbidden effects、read-only boundary、risk floor、
 outputs 和 completion boundary。LocalObjective 仅以 `DIRECT / ENABLING /
 INFORMATION / OTHER` 改变 relevance、ranking 和 paging，不能新增 effect、降低 risk、
 创造 capability、修复 stale binding 或宣告 milestone 完成。
@@ -390,7 +412,7 @@ AgentDecision = (
   capture 时产生 typed unavailable control result，不抛裸异常。
 - `RequestActionPage(query, target_id, relevance_role)`；新 page 产生新 page/context ID，
   旧 decision 自动 stale。
-- `AskUser(question, requested_fields)`；改变任务语义的回答必须产生 TaskGoal revision。
+- `AskUser(question, requested_fields)`；改变任务语义的回答必须产生 TaskSpec revision。
 - `ProposeDone(claimed_criteria, evidence_refs, result_summary, unresolved_items)`；仅是建议。
 - `Wait(reason, max_wait_ms)`；实际等待后请求 capability-admitted capture；不支持/失败 typed。
 - `Abort(reason, category)`；不声称成功。
@@ -715,7 +737,7 @@ production core 导入；target core 不导入 StateKernel/RuntimeCommitter/Acti
 
 ## 12. Prompt injection 与不可信 context
 
-页面、邮件、截图和工具 instruction 可以被模型看见，但不能修改 TaskGoal、扩大
+页面、邮件、截图和工具 instruction 可以被模型看见，但不能修改 TaskSpec、扩大
 ActionSpace、降低 risk、创建 confirmation 或成为 completion evidence（除非被验证为
 environment state）。Agent 的可疑内容判断只能向保守方向作用：提高 risk、请求更强
 observation、询问用户或停止。core 不建设通用 prompt-injection platform。
@@ -727,8 +749,8 @@ observation、询问用户或停止。core 不建设通用 prompt-injection plat
 3. Internal ActionSpace 是唯一 membership authority；模型只选 current page option。
 4. LocalObjective 只改变 relevance，不改变 legality。
 5. private route 永不进入 AgentContext。
-6. environment content 不能扩张 TaskGoal；raw intent 只能 context_only。
-7. clarification 必须先产生 TaskGoal revision。
+6. environment content 不能扩张 TaskSpec；raw intent 只能 context_only。
+7. clarification 必须先产生 TaskSpec revision。
 8. confirmation 绑定 semantic subject，确认后 capability-aware capture/rebind。
 9. BoundActionRequest 必须 current；一个 effectful request 最多发送一次。
 10. SENT_UNKNOWN 不自动 replay；ActionResult 不证明 effect。
@@ -758,7 +780,7 @@ observation、询问用户或停止。core 不建设通用 prompt-injection plat
 - event sourcing、global transaction、RuntimeCommitter/StateKernel expansion；
 - approval registry/token platform、universal provenance envelope；
 - core prompt-injection subsystem、durable resume、distributed workflow engine；
-- 每个任务必经 TaskSpecAuthority/ActionContract/TaskPlan；
+- 把旧 StateKernel/Coordinator/ActionContract execution core 导入 target AgentLoop；
 - 超出当前声明 DOM/AX、Visual、WoT 最小合同的开放式概率 fusion/knowledge graph；
 - 为每个合同或 context namespace 创建 service/database/store；
 - 将 ControlTransition 扩张为 durable event ledger、state reconstruction authority 或

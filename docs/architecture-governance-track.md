@@ -69,3 +69,12 @@ independently testable responsibility with a coherent reason to change.
 Large or irreversible architecture changes receive a scoped record under
 `docs/change-admission/`. Historical records remain immutable but cannot
 override the current architecture or evolution plan.
+
+## 7. Authority-map gate
+
+Task, planning, execution, evidence, and completion changes must update and
+conform to the [Task Execution Authority Map](task-execution-authority-map.md).
+Before adding a state field, decision variant, tool, or schema, the change must
+name its existing canonical owner and the displaced path that will be deleted.
+Model transport and benchmark modules may project canonical state but may not
+introduce task-semantic domain owners.

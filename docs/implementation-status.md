@@ -1,7 +1,7 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-12
+> **Updated:** 2026-08-13
 > **Current reviewed M4.5-B closure SHA:** `NONE`
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 
@@ -17,12 +17,20 @@ The old transactional `Coordinator → RuntimeDelta → RuntimeCommitter →
 StateKernel` path remains the current product baseline/default. It is frozen
 against new product capability but has not been deleted.
 
+The task-authority convergence review is active. Canonical `TaskSpec` and
+`task_plan_contracts.TaskPlan<StepSpec>` contracts will be retained and connected
+to the target AgentLoop; the old Coordinator/StateKernel execution core will not
+be imported. The duplicate target `TaskPlan<Milestone>` and the attempted
+`TaskProgram` were deleted. AgentLoop now has one discriminated
+`active_step_execution` slot, but TaskSpec/TaskPlan entry, plan progress, and
+removal of dynamic `establish_*_objective` model ingress are not yet complete.
+
 The target path now has:
 
 | Capability | Status |
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
-| TaskPlan / Milestone / LocalObjective contracts | `INTEGRATED_NON_DEFAULT` (no model planner) |
+| canonical TaskPlan / StepSpec contracts | `MIGRATION_IN_PROGRESS`; duplicate target TaskPlan/Milestone deleted, AgentLoop consumption not yet connected |
 | VerifiedTaskState | `PARTIAL_PROJECTION_ONLY`; plan/objective/progress views and evidence-linked current facts exist, but no verified milestone/frontier lifecycle or promotion authority |
 | TaskProgressAuditor | `NOT_STARTED`; future P5-E owner, separate from local repetition containment |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |

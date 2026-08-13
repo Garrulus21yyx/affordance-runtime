@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-08-12
+updated: 2026-08-13
 repository: affordance-runtime
 
 authority_precedence:
@@ -50,6 +50,9 @@ status:
     lifecycle: current
 
 normative:
+  - role: task_execution_authority_map
+    path: docs/task-execution-authority-map.md
+    lifecycle: current
   - role: documentation_lifecycle_governance
     path: docs/documentation-governance.md
     lifecycle: current

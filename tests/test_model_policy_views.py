@@ -19,7 +19,16 @@ from affordance_runtime.model_boundary import (
     project_task,
     project_turns,
 )
-from affordance_runtime.task import MaterialBinding, Milestone, RiskProfile, TaskGoal, TaskPlan
+from affordance_runtime.simplified_runtime_contracts import (
+    CriterionEvidencePolicy,
+    ElementIntent,
+    EvidenceStrength,
+    SourceReference,
+    StateCriterion,
+    StateCriterionRelation,
+)
+from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
+from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from affordance_runtime.world import (
     ActionBinding,
     ActionOption,
@@ -28,6 +37,7 @@ from affordance_runtime.world import (
     AgentTargetView,
     AgentWorldView,
 )
+from runtime_test_support import legacy_step_spec
 
 
 def _task() -> TaskGoal:
@@ -348,12 +358,40 @@ def test_non_action_turn_projection_has_bounded_semantic_summary(decision, expec
 
 
 def test_plan_projection_contains_only_semantic_milestones() -> None:
-    plan = TaskPlan("plan:private", (Milestone("m1", {"message_sent": True}, "Send message"),), "private")
+    refs = (SourceReference("request", "request:message"),)
+    step = legacy_step_spec(
+        step_id="m1",
+        objective="Send message",
+        interaction=ElementIntent("message", refs),
+        completion_criteria=(
+            StateCriterion(
+                "criterion:m1",
+                refs,
+                subject="message",
+                relation=StateCriterionRelation.IS_COMPLETED,
+                evidence_policy=CriterionEvidencePolicy(
+                    EvidenceStrength.INDEPENDENT,
+                    ("dom_state",),
+                ),
+            ),
+        ),
+        source_refs=refs,
+    )
+    plan = TaskPlan(
+        plan_id="plan:private",
+        task_id="task:message",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=0,
+        based_on_observation_ref="observation:1",
+        generated_by=TaskPlanGeneratorSource.RULE,
+        steps=(step,),
+    )
 
     view = project_plan(plan)
 
     assert view is not None
     assert view.milestones[0].milestone_id == "m1"
     assert view.milestones[0].objective == "Send message"
-    assert view.milestones[0].completion_criteria["message_sent"] is True
+    assert view.milestones[0].completion_criteria
     assert "plan:private" not in repr(view)

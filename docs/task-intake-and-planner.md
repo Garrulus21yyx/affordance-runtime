@@ -3,6 +3,15 @@
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
 > **Scope:** semantically strong intake, risk profiles, optional planning, and model decision boundary
 
+## 2026-08-13 authority correction
+
+Canonical intake and plan admission reuse `TaskSpecAuthority` and
+`TaskPlanAuthority` with `TaskPlan<StepSpec>`. The TaskGoal and
+TaskPlan<Milestone> examples below describe the earlier target projection, not a
+second authority. TaskPlan<Milestone> has been deleted; TaskGoal remains only
+during bounded AgentLoop entry migration. See the
+[Task Execution Authority Map](task-execution-authority-map.md).
+
 ## 1. Boundary decision
 
 Intake is **responsibility-thin and semantics-strong**. It owns facts that
@@ -199,9 +208,11 @@ external effect, app/page change, or cross-surface dependency.
 
 ## 10. Current migration note
 
-Current code still requires admitted TaskSpec, mandatory planning flows, and
-ActionChoiceCatalog authority objects. Those remain baseline behavior until
-P5-A/P5-E/P5-H cutover and are not target contracts.
+Current default code still uses admitted TaskSpec, canonical TaskPlan and
+ActionChoiceCatalog through the old execution core. The canonical TaskSpec and
+TaskPlan contracts are now target contracts; StateKernel, Coordinator and
+ActionChoiceCatalog execution ownership remain migration sources and are not to
+be imported into AgentLoop.
 
 The target AgentLoop already has partial projection-oriented scaffolding for a
 plan, active objective, progress revision, evidence-linked facts, and

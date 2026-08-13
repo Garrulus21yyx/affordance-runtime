@@ -4,6 +4,15 @@
 > **Updated:** 2026-08-11
 > **Review evidence:** none; Implementation Status owns any reviewed closure SHA
 > **Target:** [Unified World Interface and E2E AgentLoop Architecture](../specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+
+## 2026-08-13 task-authority migration correction
+
+Retain the admitted `TaskSpec` and canonical `TaskPlan<StepSpec>` contracts while
+moving execution to AgentLoop. Do not import the old StateKernel/Coordinator
+execution core, and do not create another planner in AgentLoop, Catalog, model
+transport, projection, or benchmark code. The duplicate target
+`TaskPlan<Milestone>` and attempted `TaskProgram` have been deleted. The active
+migration is defined by the [Task Execution Authority Map](../../task-execution-authority-map.md).
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
 
 文件路径为兼容现有治理检查而保留。本文是迁移顺序、退出门和删除门的唯一
@@ -192,7 +201,7 @@ change the zero-retry/fallback boundary.
 |---|---|---|
 | `A0` | 同步权威架构、计划、状态、README 和 bounded contracts | 文档/链接治理通过；旧平台只作为 baseline/deletion target 出现 |
 | `A1` | semantics-strong `TaskGoal`, risk-proportionate MaterialInput/Binding, optional `EvaluationSpec` | intake 不含 page/surface/route/TaskPlan；effect boundary fail-closed |
-| `A2` | optional `TaskPlan<Milestone>` and `LocalObjective` | simple task can bypass; no GUI actions/bindings; evaluator owns completion |
+| `A2` | canonical admitted `TaskPlan<StepSpec>` plus local execution objective projection | no duplicate plan owner; current binding remains observation-owned; evaluator owns completion |
 | `A3` | `SurfaceObservation`, `WorldObservation`, `AgentWorldView`, `ActionBinding`, `ActionSpace` | contracts do not import StateKernel/delta/committer |
 | `A4` | `ActionIntent`, `BoundActionRequest`, `ActionResult`, evaluations, bounded loop state | intent/request identities separated; one-way legacy projectors only |
 
@@ -290,7 +299,7 @@ M4.6 只消费 `4924ce6` 的 immutable facts 和同树源码归因；修复后�
 
 | Slice | Deliverable | Exit gate |
 |---|---|---|
-| `E1` | run-scoped `VerifiedTaskState` over existing TaskPlan/Milestone contracts | milestone status/current frontier/unresolved obligations update only from validated evidence; simple tasks can bypass |
+| `E1` | AgentLoop plan progress over canonical TaskPlan/StepSpec contracts | active/completed/failed step state updates only from validated evidence; no parallel planner slots |
 | `E2` | MilestoneEvaluator/TaskProgressAuditor and frontier-derived LocalObjective | auditor cannot choose action or mark TaskEvaluation COMPLETE; local ProgressController remains separate |
 | `E3` | low-frequency TaskPlanner and fact-driven plan replacement | planner output is hypothesis; invalid plan is replaced from verified frontier, not patched through recovery history |
 | `E4` | bounded context: recent 8–12 ControlTransition projections + milestone summary + evidence refs | no full transition/event/observation history in model context |

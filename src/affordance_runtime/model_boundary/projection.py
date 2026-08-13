@@ -13,7 +13,7 @@ from affordance_runtime.model_boundary.contracts import (
     AgentMilestoneView,
     AgentPlanView,
 )
-from affordance_runtime.task.planning_contracts import TaskPlan
+from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.world.action_paging import InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.relevance import ActionRelevance
@@ -156,11 +156,13 @@ def project_plan(plan: TaskPlan | None) -> AgentPlanView | None:
     return AgentPlanView(
         tuple(
             AgentMilestoneView(
-                item.milestone_id,
-                item.description or item.milestone_id,
-                completion_criteria=project_public_value(item.desired_state),
+                item.step_id,
+                item.objective,
+                completion_criteria=project_public_value(
+                    tuple(item.completion_criteria),
+                ),
             )
-            for item in plan.milestones
+            for item in plan.steps
         )
     )
 

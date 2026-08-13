@@ -50,6 +50,7 @@ from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.aggregate_objective import (
     AggregateDisposition,
+    AggregateObjectiveState,
     aggregate_allowed_action_ids,
     aggregate_objective_public_value,
 )
@@ -65,12 +66,14 @@ from affordance_runtime.task.hypothesis_contracts import (
 )
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.task.objective_sequence import (
+    ObjectiveSequenceState,
     SequenceDisposition,
     sequence_allowed_action_ids,
 )
 from affordance_runtime.task.set_objective import SetDisposition
 from affordance_runtime.task.set_objective import predicate_public_value as set_predicate_public_value
 from affordance_runtime.task.set_objective_state import (
+    SetObjectiveState,
     set_allowed_action_ids,
     set_evidence_obligations,
 )
@@ -400,8 +403,9 @@ def _set_control_view(
     state: AgentLoopState,
     action_space: ActionSpace,
 ) -> AgentSetControlView | None:
-    sequence = state.active_objective_sequence
-    if sequence is not None:
+    execution = state.active_step_execution
+    if isinstance(execution, ObjectiveSequenceState):
+        sequence = execution
         step = sequence.active_step
         allowed = tuple(sorted(sequence_allowed_action_ids(sequence, action_space)))
         if sequence.disposition is SequenceDisposition.READY and allowed:
@@ -443,8 +447,8 @@ def _set_control_view(
                 else ()
             ),
         )
-    aggregate = state.active_aggregate_objective
-    if aggregate is not None:
+    if isinstance(execution, AggregateObjectiveState):
+        aggregate = execution
         allowed = tuple(sorted(aggregate_allowed_action_ids(aggregate, action_space)))
         complete = aggregate.disposition is AggregateDisposition.COMPLETE
         if aggregate.disposition is AggregateDisposition.READY and allowed:
@@ -483,7 +487,7 @@ def _set_control_view(
             aggregate.action_parameters,
             successor_ids if complete and state.semantic_control_required else (),
         )
-    active = state.active_set_objective
+    active = execution if isinstance(execution, SetObjectiveState) else None
     if active is None:
         if not state.semantic_control_required:
             return None
