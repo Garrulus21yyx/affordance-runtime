@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT REVIEW / CONVERGENCE RECORD
 > **Semantic authority:** false
 > **Reviewed branch:** `codex/migrate-world-interaction-capabilities`
-> **Reviewed HEAD:** `9663cdcdf7822462af5440845a50ed6fc3ad07f5`
+> **Reviewed HEAD:** `4a37e7c24e9f7bde0ad50e1993b219341e0a34ae`
 > **Reviewed state:** 含 2026-08-13 未提交工作树修改；本文记录该工作树快照，不是 clean-SHA closure attestation
 > **Review date:** 2026-08-13
 > **Target authority:** [Target AgentLoop Authority Map](../task-execution-authority-map.md)
@@ -17,6 +17,95 @@
 4. 旧运行时及其测试在什么条件下退出，而不是按日期或测试数量决定。
 
 本文是事实复核和实施建议，不替代目标架构、当前实施状态或 active queue。本文不声明旧链已经可以删除，也不声明新链已经通过 live benchmark closure。
+
+本次收敛的实现约束是 generalization-first：测试、fixture 和 benchmark
+只能提供反证与验收证据，不能成为生产分支的输入。禁止任务名、页面文案、
+selector、固定输出名、已知 action ID、单例数量或 benchmark profile 的硬/软
+特化；禁止用持续增长的机械 `if/elif` 代替稳定合同。SurfaceAdapter 不猜任务
+语义。开放页面理解、任务分解、语义 grounding 和无法由明确 postcondition
+闭合的判断属于 agent/model 或现成模型 provider；Runtime 分别拥有能力路由、
+准入、私有绑定、执行、产物 receipt、证据 lineage 和最终控制状态。浏览器下载、可访问性、视觉与
+传输等底层原语优先委托给 Playwright、BrowserGym 或选定 provider，不在
+Runtime 内重复造轮子。
+
+### 0.1 反特化审查结论：确认存在，相关切片重新打开
+
+这次检查不是只搜 `if task_id == ...`。硬特化、软特化、验证放宽、benchmark
+反向依赖和旧兼容逻辑进入 strict/profile 的可达性都纳入审查。结论是：当前
+代码确实存在会污染泛化证据的实现，最近完成的 pricing 及 production action
+evaluation 不能继续视为通用能力 closure。`export` 暂停，直到共享根因修复。
+
+| 发现 | 当前可达性 | 结论 |
+|---|---|---|
+| `surfaces/dom/document.py` 只把 `article -> dl -> dt/dd` 解释为 record，`DomSurfaceAdapter` 再以 record 数量或固定 `structured_document` 输出名决定是否发布 | 当前 target/pricing | **确认的页面结构与输出名特化**；没有调用 pricing API 不代表投影通用 |
+| `ProductionActionEvaluator` 将任意 current structural world fact 或 screenshot 变化视为所选 `activate` 生效 | 当前 target | **确认的软 oracle / 因果接受漏洞**；无关刷新也可能放行 |
+| `_business_effects` 在缺少显式 operation effect 时自动继承任务唯一 `allowed_effect` | 当前 DOM/Visual/WoT binding | **确认的单例软推断**；任务权限不能替代动作 effect authority |
+| compact JSON 只有一个 tool spec 时允许未知 `op` 回退到该 spec | 当前 grounded-tools 的单操作 workspace 可达 | **确认的宽松协议特化**；未知 operation 应 typed fail-closed |
+| `reference_target_readiness.py` 固定 `pricing/settings/export` 和精确 pytest node ID | 产品命名空间、cutover gate | **确认的治理硬耦合**；应由外部 readiness manifest 持有，不应进入 runtime 能力代码 |
+| `AuthoredInteractiveExtension` 的 calendar/quantity/owner/color 结构识别被 BrowserGym profile 全量启用 | strict BrowserGym/MiniWoB observation path | **确认的 benchmark task-family 特化**；标准 marker/backend handle 归一化可保留，MiniWoB 页面语法不能支持泛化声明 |
+| `external_smoke/composition.py::_public_decision` 解析 `enter/select` 语法、引号值并挑第一个 action；target-loop deterministic policies 使用固定选择 | benchmark/conformance only | 只适合作为协议/生命周期夹具；**若用于性能或泛化即构成作弊证据** |
+| `GeneralistLMPlanner` 无条件 `compatibility_mode = True` | 不在当前 target CLI/strict BrowserGym 主入口，但其他调用可达 | **strict profile 合同破坏**；兼容 task grammar 仍可能回流，需隔离或删除 |
+| visual grounder prompt 显式教授 Cartesian-grid witness | 当前 visual provider | **task-family prompt tuning**；应改成通用 grounding 合同，能力差异通过现成 model/provider 的 typed 路由而非 witness 文案实现 |
+| evolution replay 用 task ID 子串挑 read-only/export smoke；legacy executors 固定 settings/report capability | 旧 replay/reference chain | **legacy specialization debt**；在删除前必须隔离，不能成为 target 默认或泛化证据 |
+
+并非所有唯一性判断都违规。grounded tool catalog 在一个 tool 已经由当前
+ActionSpace 唯一绑定一个 action 时省略 `target`，属于编译后 tool 本身携带
+动作语义，模型确实是在选择 tool；这与“模型直接猜内部 action ID”不同。
+证据唯一性、歧义时 fail-closed、HTTP manifest 显式注册路径，以及只从当前
+观测几何关系导出的通用 lattice 也属于合法闭合合同。违规的是用数量、页面
+语法或任务唯一性补造原本不存在的语义、因果或协议选择。
+
+共享根因不是零散的十个 `if`，而是三项 authority 错位：
+
+1. 把开放语义理解塞进 adapter 的手写 parser，导致 benchmark witness 反向定义“通用语义”；
+2. evaluator 没有 action-specific effect obligation，只能用“之后有变化”替代因果证明；
+3. conformance、reference migration 与 generalization evidence 边界不够硬，固定脚本和页面扩展容易被误报为 agent 能力。
+
+### 0.2 与当前 GUI-agent SOTA 的职责对照
+
+这里的正确方向不是把 agent 移出链路，也不是让 Runtime 用更多规则模拟 agent。
+
+- [OpenAI CUA](https://openai.com/index/computer-using-agent/) 的循环把截图感知、推理、多步适应和动作选择交给模型，外部 harness 执行动作并回传新截图；[Computer use API](https://developers.openai.com/api/docs/guides/tools-computer-use) 同样把 harness 定义为执行“手脚”，而模型观察并决定下一步。
+- [Agent S2](https://arxiv.org/abs/2504.00906) 显式分成高层 Manager、低层 Worker 与 Mixture-of-Grounding specialists，并在新观察后重规划。它说明复杂任务需要 agent 之间的认知分工，不是持续增长的页面规则。
+- [UI-TARS](https://github.com/ByteDance/UI-TARS) 代表 native GUI agent 路线：模型联合处理视觉、推理、记忆与可执行动作；其 hybrid 环境还允许 GUI 与文件/终端工具协作，而不是强迫所有能力退化成鼠标规则。
+- [BrowserGym/AgentLab](https://openreview.net/forum?id=5298fKGmv3) 统一的是 environment observation/action 接口和实验管理；它内部委托 Chromium/Playwright 执行，并不把 benchmark task grammar 变成产品 agent 语义。
+- [GUI-Actor](https://proceedings.neurips.cc/paper_files/paper/2025/file/16130af940e9dabb43c726119bd3b42e-Paper-Conference.pdf) 说明 grounding 与候选 verifier 是独立认知职责；本项目只借鉴职责边界并调用现成 provider，不实现其训练方案，也不训练自有 grounding head。
+
+本项目明确不进入模型训练、微调、RL 后训练、数据构造或数据飞轮。这里的
+Manager/Worker/grounder/verifier 都是运行时角色和 typed port，可以由同一个
+现成 frontier multimodal/computer-use 模型承担，也可以路由到现成 grounding
+provider。SOTA 对照用于确定系统分工，不把训练路线加入本项目 scope。
+
+因此目标职责边界调整为：
+
+```text
+Unified public observation (AX/DOM facts + screenshot + WoT/HTTP facts)
+  -> reasoning/planning agent
+  -> semantic action or semantic extraction objective
+  -> optional existing-model-backed grounding/verifier role
+  -> Runtime typed admission + private binding + risk/currentness
+  -> Playwright/BrowserGym/provider execution
+  -> fresh Unified World observation
+  -> explicit mechanical postcondition when available
+     OR typed semantic verifier judgment over cited public evidence
+  -> Runtime final control transition
+```
+
+Runtime 机械保证的范围仅包括类型、权限、支持能力、状态转移、时序、
+currentness、幂等/单次 dispatch、receipt、证据 lineage 和明确 postcondition。
+页面结构归纳、开放世界实体理解、跨页面任务分解、语义 grounding，以及没有
+确定 postcondition 的完成/效果判断必须走 agent port。agent 输出不是 authority：
+Runtime 仍验证 schema、引用 currentness、权限与证据，并可返回
+`unsupported/needs_input/unknown`。
+
+### 0.3 最小收敛顺序
+
+1. 先撤销 pricing 的 `article/dl` document oracle、任意 world-diff activation 证明、唯一 `allowed_effect` 继承和单-tool unknown-op 回退；相关 readiness 恢复 blocked。
+2. 定义可复用的 `SemanticExtractionPort` / `SemanticEffectVerifierPort`，由现成模型/provider 驱动，输入只来自同一个 current Unified World，输出为 typed candidate/judgment + evidence refs；有明确 postcondition 的 action 仍走机械 evaluator。本项目不训练这些模型。
+3. DOM surface 只发布通用 AX/DOM 语义与可执行 binding，不解释 pricing/report/calendar/quantity；visual/WoT/HTTP 继续进入同一世界。下载物化继续委托 Playwright，artifact contract 只处理 receipt、路径、digest 与 lineage。
+4. BrowserGym DOM extension 去掉 MiniWoB semantic patterns；conformance scripted policy 与真实 model benchmark 分账。旧 strict planner 禁止 compatibility 回流。
+5. 用多页面模板、DOM 结构扰动、无关动态 fact、多个 allowed effect、未知 tool op 和 held-out 任务做性质/对抗验证；不能靠为每个失败 case 新增 production branch 过关。
+6. 上述共享根因关闭后再恢复 export，随后运行预声明 clean-SHA benchmark。旧测试先标记为 legacy/conformance，不因目标链出现就立即删除；只有对应默认 consumer、claim 和 target-owned replacement evidence 都迁走后才删。
 
 ## 0. 审查后实施进度
 

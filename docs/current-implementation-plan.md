@@ -24,12 +24,12 @@ cutover. Detailed diagnoses and deletion gates remain in the
 |---|---|---|
 | Model protocol convergence | done, pushed | `grounded_tools.v2` benchmark owner; explicit supported/required decisions; split action/objective adapters; closed objective outcomes |
 | Product target composition/client | done, pushed | `compose_target_runtime`, `TargetRuntimeClient`, typed continuations; source-tree composition gate |
-| Product evaluation/DOM evidence | done, pushed | product action evaluator plus structural DOM activation proof and real Playwright E2E |
+| Product evaluation/DOM evidence | `REOPENED_SPECIALIZATION_AUDIT` | evaluator is product-owned, but arbitrary world-fact/screenshot change currently confirms any activation; replace correlation with explicit effect obligations or semantic verifier evidence |
 | Explicit target CLI | done, pushed | `target-run`, strict intake, thread-bound browser session, real CLI E2E; legacy `run` unchanged |
-| Reference cutover readiness | done, pushed | typed pricing/settings/export blockers; aggregate cutover fails closed |
+| Reference cutover readiness | implemented, governance redesign pending | typed gate exists, but scenario names and exact pytest node IDs are hard-coded in product source; move readiness evidence to an external manifest |
 | Authoritative HTTP JSON surface | done, pushed (`0b3ab68`; CI fix `64d15ae`) | read-only registered state adapter; authoritative+DOM same-capture fusion; real settings confirmation/persistence target E2E; settings readiness blocker removed; replacement target attestation and BrowserGym conformance are green |
-| Pricing structural/output projection | implemented, locally verified | trusted interaction-only operation admission; generic visible document-record projection inside `DomSurfaceAdapter`; current `structured_document` output; target E2E reaches `DONE` with two executions and no pricing API/oracle; 123 focused and full `2461 passed, 27 skipped` are green |
-| Export materialization/integrity | pending | product download artifact and output-integrity evidence |
+| Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
+| Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
 | Root default switch | pending | only after reference readiness, held-out gate, and fresh-context topology review |
 | Legacy deletion | pending | delete owner-by-owner only after all default consumers resolve through target and shared claims have target-owned tests |
@@ -45,6 +45,35 @@ DOM / Visual / WoT / HTTP facts -> SurfaceObservation
 No evaluator, CLI, benchmark, or reference scenario may query an out-of-band
 state oracle. Surface-private selectors, coordinates, URLs, credentials, and
 executor routes never enter the model view.
+
+Implementation guardrail: tests and benchmarks are evidence consumers, never
+production branching inputs. No task-name, fixture, label, selector, fixed
+output-name, one-item-count, or benchmark-profile specialization—hard or soft—is
+admitted. Adapters execute generic surface capabilities; artifact identity and
+materialization are explicit Runtime contracts; evaluators consume current
+world evidence without re-projecting or querying a second world. Mature browser,
+download, accessibility, visual, and transport primitives remain delegated to
+Playwright/BrowserGym or the selected provider instead of being reimplemented.
+
+This does not mean that all semantics should become mechanical Runtime code.
+Runtime handles only closed, falsifiable contracts: type/authority checks,
+currentness, legal transitions, private binding, dispatch receipts, evidence
+lineage, and explicit postconditions. Open page interpretation, task
+decomposition, semantic grounding, and judgments without a deterministic
+postcondition belong to an agent/model or a replaceable existing-model-backed
+grounder/verifier port. Roles may reuse the same provider. This project does
+not train, fine-tune, or RL-post-train a model; Runtime validates typed model
+outputs and remains the final control-state owner.
+
+Current audit result: specialization is confirmed, so the affected slices are
+not closed. The current target path contains (1) a witness-shaped pricing DOM
+projection, (2) correlation-based activation acceptance, (3) singleton
+`allowed_effect` inference, and (4) permissive one-operation compact-tool
+normalization. Historical/benchmark paths additionally contain MiniWoB DOM
+pattern recognizers, task-grammar scripted policies, and a nominal strict
+planner that still enables compatibility rewrites. Conformance fixtures remain
+useful only when explicitly reported as conformance; none may support a
+generalization claim.
 
 Remote run `31740915053` stopped before mypy and the target gates because the
 repository-wide Ruff step found six import-only test issues. Those concrete
