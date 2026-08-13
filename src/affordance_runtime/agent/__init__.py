@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.decisions import (
         Abort,
         AskUser,
-        EstablishLocalObjective,
         ProposeDone,
         RequestActionPage,
         RequestObservation,
@@ -67,10 +66,6 @@ _EXPORTS = {
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
-    "EstablishLocalObjective": (
-        "affordance_runtime.agent.decisions",
-        "EstablishLocalObjective",
-    ),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
     "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),

@@ -102,11 +102,13 @@ reconstruction authority. AgentContext and benchmark/timeout artifacts are
 disposable projections of the current authorities and bounded transition
 suffix.
 
-P5-E adds `VerifiedTaskState` as the run-scoped validated task-frontier
-authority. TaskPlan remains a replaceable hypothesis. The local
-ProgressController continues to contain exact `fill`/`select` repetition;
-TaskProgressAuditor separately evaluates criterion, milestone, and frontier
-progress from validated evidence.
+The target retains one admitted `TaskPlan<StepSpec.execution>` and one
+authoritative PlanProgress reducer. Exactly one active StepExecutionState is
+materialized from the active step and refreshed from current evidence. Planner
+output remains an authority-free proposal until TaskPlan admission. The local
+ProgressController continues to contain exact `fill`/`select` repetition but
+cannot advance plan or task progress; validated step outcomes and TaskEvaluator
+own those transitions.
 
 M4.6-D adds a narrow ControlFeedbackPolicy with a frozen two-distinct-issue
 same-scope budget for zero-dispatch public admission repair and

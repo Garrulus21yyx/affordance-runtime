@@ -21,6 +21,7 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
+    AgentExecutionControlView,
     AgentPendingView,
     AgentProgressView,
     ContextIdentity,
@@ -37,12 +38,23 @@ from affordance_runtime.model_boundary.grounding_projection import GroundingProj
 from affordance_runtime.model_boundary.projection import project_action_page
 from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
+from affordance_runtime.task.aggregate_objective import (
+    AggregateDisposition,
+    AggregateObjectiveState,
+    aggregate_objective_public_value,
+)
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
+from affordance_runtime.task.execution_control import (
+    step_execution_action_parameters,
+    step_execution_allowed_action_ids,
+    step_execution_authority_digest,
+)
 from affordance_runtime.task.intent_context import IntentContext
-from affordance_runtime.task.local_objective import (
-    local_objective_allowed_action_ids,
-    local_objective_authority_digest,
-    local_objective_complete,
+from affordance_runtime.task.objective_sequence import ObjectiveSequenceState, SequenceDisposition
+from affordance_runtime.task.set_objective import SetDisposition, predicate_public_value
+from affordance_runtime.task.set_objective_state import (
+    SetObjectiveState,
+    set_evidence_obligations,
 )
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
@@ -151,6 +163,7 @@ class ContextBuilder:
             project_control_feedback(state.pending_control_feedback),
             grounding.images,
             grounding.index,
+            _execution_control_view(state, action_space),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
@@ -165,10 +178,12 @@ class ContextBuilder:
         cursor: str = "",
     ) -> InternalActionPage:
         labels = {item.target_id: item.label for item in state.current_observation.targets}
-        local = state.local_objective_state
+        execution = state.active_step_execution
         allowed_action_ids = (
-            local_objective_allowed_action_ids(local, action_space)
-            if local is not None and not local_objective_complete(local)
+            step_execution_allowed_action_ids(execution, action_space)
+            if execution is not None
+            else frozenset()
+            if state.semantic_control_required
             else None
         )
         return self.pager.page(
@@ -183,7 +198,7 @@ class ContextBuilder:
             max_destinations_per_option=self.budget.max_destinations_per_option,
             max_targets=self.budget.observation_pinned_capacity,
             allowed_action_ids=allowed_action_ids,
-            authority_digest=local_objective_authority_digest(local, action_space),
+            authority_digest=step_execution_authority_digest(execution, action_space),
         )
 
     def execution_page(
@@ -272,10 +287,7 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved_outputs) > max_unresolved,
         ),
         events=project_progress_events(state),
-        local_objective_open=(
-            state.local_objective_state is not None
-            and not local_objective_complete(state.local_objective_state)
-        ),
+        active_plan_step=state.active_step_execution is not None,
         truncated=(
             len(unresolved) > max_unresolved
             or len(unresolved_outputs) > max_unresolved
@@ -292,6 +304,115 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
         "user input required" if state.pending_user_question else "",
         confirmation,
         "effect outcome remains uncertain" if state.pending_unknown_request is not None else "",
+    )
+
+
+def _execution_control_view(
+    state: AgentLoopState,
+    action_space: ActionSpace,
+) -> AgentExecutionControlView | None:
+    execution = state.active_step_execution
+    if execution is None:
+        if not state.semantic_control_required:
+            return None
+        return AgentExecutionControlView(
+            "control_only",
+            state.semantic_control_mode.value,
+            "no_active_plan_step",
+            semantic_mode=state.semantic_control_mode.value,
+        )
+    allowed = tuple(sorted(step_execution_allowed_action_ids(execution, action_space)))
+    parameters = step_execution_action_parameters(execution)
+    if isinstance(execution, ObjectiveSequenceState):
+        step = execution.active_step
+        selector = step.selector if step is not None else execution.pending_postcondition
+        mode = (
+            "member_actions_only"
+            if execution.disposition is SequenceDisposition.READY and allowed
+            else "blocked"
+            if execution.disposition is SequenceDisposition.BLOCKED
+            else "control_only"
+        )
+        return AgentExecutionControlView(
+            mode,
+            execution.disposition.value,
+            execution.reason_code,
+            allowed if mode == "member_actions_only" else (),
+            len(state.current_observation.targets),
+            1 if execution.resolved_target_id else 0,
+            execution.disposition is SequenceDisposition.COMPLETE,
+            predicate_public_value(selector.predicate) if selector is not None else {},
+            selector.digest if selector is not None else "",
+            tuple(item.target_id for item in state.current_observation.targets),
+            execution.unknown_target_ids,
+            (
+                ("classify_predicate",)
+                if execution.disposition is SequenceDisposition.NEED_EVIDENCE
+                else ("refresh_stability",)
+                if execution.disposition is SequenceDisposition.WAITING_POSTCONDITION
+                else ()
+            ),
+            state.semantic_control_mode.value,
+            parameters,
+        )
+    if isinstance(execution, AggregateObjectiveState):
+        mode = (
+            "member_actions_only"
+            if execution.disposition is AggregateDisposition.READY and allowed
+            else "blocked"
+            if execution.disposition is AggregateDisposition.BLOCKED
+            else "control_only"
+        )
+        unknown = tuple(entity_id for entity_id, truth in execution.member_truth if truth.value == "unknown")
+        evidence_need = {
+            AggregateDisposition.NEED_SCOPE_CLOSURE: "enumerate_scope",
+            AggregateDisposition.NEED_CLASSIFICATION: "classify_predicate",
+            AggregateDisposition.NEED_VALUES: "extract_values",
+            AggregateDisposition.NEED_DESTINATION: "resolve_destination",
+            AggregateDisposition.NEED_EFFECT_RESOLUTION: "verify_item_effect",
+        }.get(execution.disposition)
+        return AgentExecutionControlView(
+            mode,
+            execution.disposition.value,
+            execution.reason_code,
+            allowed if mode == "member_actions_only" else (),
+            len(execution.universe.entity_ids),
+            sum(truth.value == "true" for _, truth in execution.member_truth),
+            execution.disposition is AggregateDisposition.COMPLETE,
+            aggregate_objective_public_value(execution.objective),
+            execution.objective.digest,
+            execution.universe.entity_ids,
+            unknown,
+            (evidence_need,) if evidence_need else (),
+            state.semantic_control_mode.value,
+            parameters,
+        )
+    assert isinstance(execution, SetObjectiveState)
+    reduction = execution.reduction
+    mode = (
+        "member_actions_only"
+        if reduction.disposition in {SetDisposition.READY_FOR_NEXT_MEMBER, SetDisposition.AGENT_SELECT_NEXT}
+        and allowed
+        else "blocked"
+        if reduction.disposition is SetDisposition.BLOCKED
+        else "control_only"
+    )
+    unknown = tuple(item.entity_id for item in execution.assessments if item.truth.value == "unknown")
+    return AgentExecutionControlView(
+        mode,
+        reduction.disposition.value,
+        reduction.reason_code,
+        allowed if mode == "member_actions_only" else (),
+        len(execution.universe.entity_ids),
+        len(reduction.true_entity_ids),
+        reduction.certificate is not None,
+        predicate_public_value(execution.objective.predicate),
+        execution.objective.predicate_digest,
+        execution.candidate_entity_ids,
+        unknown,
+        tuple(item.kind.value for item in set_evidence_obligations(execution)),
+        state.semantic_control_mode.value,
+        parameters,
     )
 
 

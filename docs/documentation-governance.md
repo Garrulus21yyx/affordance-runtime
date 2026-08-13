@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT NORMATIVE POLICY
 > **Scope:** documentation authority, lifecycle, discovery, and maintenance
-> **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
+> **Target:** [Canonical GUI Agent Execution Architecture](task-execution-authority-map.md)
 > **Manifest:** [documentation-manifest.yaml](documentation-manifest.yaml)
 
 ## 1. One discovery path and scoped authority
@@ -53,9 +53,14 @@ replace the whole architecture.
 
 ## 4. Current terminology
 
-- `TaskGoal` is responsibility-thin but semantically strong: goal, constraints,
-  effect boundaries, inputs, completion, outputs, risk profile, and optional
-  material bindings—never page structure, route, or Plan.
+- `TaskGoal` is the thin external target-loop input: public instruction, effect
+  boundaries, inputs, completion, outputs, risk profile, and optional material
+  bindings—never page structure, route, or exact GUI identity.
+- `TaskSpec` is the admitted stable task-meaning and effect-boundary contract.
+- `TaskPlan<StepSpec.execution>` is the sole admitted persistent execution-
+  semantic authority.
+- `StepExecutionState` is the one observation-grounded active entity/set/
+  aggregate reducer state materialized from the active StepSpec.
 - `EvaluationSpec` is optional strict completion/output semantics.
 - `WorldObservation` is the Runtime's complete current semantic world model.
 - `ObservationCapabilities` declares operational independent-capture and
@@ -66,33 +71,32 @@ replace the whole architecture.
 - `AgentWorldView` is the compact model-facing projection.
 - `SemanticTarget` retains one identity across surface representations.
 - `ActionBinding` contains surface/backend-specific execution material.
-- `ActionSpace` is the observation-bound set shown to policy.
+- `ActionSpace` is the observation-bound legal world action set.
+- `ActionChoiceCatalog` is the active-step-relevant current choice set projected
+  to policy.
 - `ActionIntent` is the user/model-facing semantic action.
 - `BoundActionRequest` is one ActionIntent bound to current observation and binding.
 - `ActionResult` reports execution/transport status; it does not prove effect.
 - `ExecutionOutcome` retains ActionResult together with the typed post-action
   ObservationAcquisition; acquisition failure does not erase dispatch truth.
 - `ActionEvaluation` and `TaskEvaluation` are independent post-observation judgments.
-- `TaskPlan<Milestone>` is an optional replaceable hypothesis; `LocalObjective`
-  is the nearby state selected from the current task frontier.
-- `VerifiedTaskState` is the P5-E run-scoped authority for the validated task
-  frontier and accepts only validated evidence updates.
 - `AgentLoopState` is the authority for current run control state.
 - `ControlTransition` is one bounded typed record per accepted policy decision.
   It is run-scoped and in-memory, not a durable ledger, event-sourcing stream,
   replay source, or state-reconstruction authority.
-- `ProgressController` is the local `fill`/`select` liveness guard;
-  `TaskProgressAuditor` separately owns criterion/milestone/frontier auditing.
+- `ProgressController` is the local `fill`/`select` liveness guard; authoritative
+  step progress comes only from the plan-progress reducer and validated step
+  outcomes.
 - `HumanConfirmation` binds semantic intent, risk and consequences; a fresh
   binding alone does not change what the user confirmed.
 - `ActionBatch` is semantic selection and `BoundActionBatch` is its current
   execution form; both are max-three, low-risk, same-surface and no-barrier.
 - `TurnRecorder` is optional telemetry and never execution authority.
 
-`TaskSpec`, `ActionContract`, `StateKernel`, `RuntimeDelta`,
-`RuntimeCommitter`, recovery transaction, and TraceDag remain implementation or
-historical terms until migration deletes them. Maintained documents may mention
-them only to describe code truth, migration sources, or legacy scenarios.
+`ActionContract`, `StateKernel`, `RuntimeDelta`, `RuntimeCommitter`, recovery
+transaction, and TraceDag remain baseline implementation or historical terms
+until migration deletes them. Maintained documents may mention them only to
+describe code truth, migration sources, or legacy scenarios.
 
 ## 5. Update protocol
 

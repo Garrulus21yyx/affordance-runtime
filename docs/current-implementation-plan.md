@@ -18,7 +18,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 |---|---|---|
 | R0 | complete | facts reconciled; smart-room atomic mismatch fix; lockfiles/npm ci; WoT metadata/security/event boundary |
 | A1 | complete, non-default | strong TaskGoal and optional EvaluationSpec; legacy projection is one-way edge |
-| A2 | complete, contracts only | optional replaceable TaskPlan/Milestone/LocalObjective; no model planner |
+| A2 | implemented, verification open | TaskSpec/TaskPlan preparation is explicitly composed into AgentLoop; active StepSpec.execution is the sole semantic producer; live verification pending |
 | A3 | complete, non-default | immutable WorldObservation, private bindings, policy view, runtime ActionSpace |
 | A4 | complete, non-default | ActionIntent/request/result, evaluations, decisions, bounded turns |
 | B1 | complete for DOM minimum | SurfaceAdapter, UnifiedWorldEnvironment, DOM adapter, binder |
@@ -49,13 +49,23 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `ARCHITECTURE_REOPENED / DE_SPECIALIZATION_IMPLEMENTED / LIVE_REVALIDATION_PENDING / GENERALIZATION_OPEN` | The five cases remain witnesses only. Persistent `SetObjectiveState` owns scope, assessments, member effects and stability; Catalog enforces an explicit fail-closed directive; main-policy tools explicitly establish typed structural or visual predicates; typed evidence obligations replace task-keyword Vision routing. Task-relative `task_predicate_truth`, the instruction scanner, universal keyword parser and repeated-leaf exact-count promotion are removed. Regular lattice and computed-style color remain replaceable task-independent evidence providers and cannot grant action authority. Focused invariant/metamorphic tests and the full suite (`2398 passed, 27 skipped`) pass; the clean-SHA real five-case rerun is pending. |
+| P5-M4.6 evidence-directed remediation | `AUTHORITY_CUTOVER_IMPLEMENTED_NOT_LIVE_VERIFIED / GENERALIZATION_OPEN` | The five cases remain witnesses only. Recurrent semantic construction is removed; admitted plan steps now drive the shared scope/evidence/member reducers. Fresh five-case and held-out evidence remain pending. |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
-| P5-E | `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED / LIVE_REVALIDATION_PENDING` | One post-observation LocalObjective lifecycle owns sequence/set/aggregate semantics and current evidence resolution. TaskFrontier, VerifiedTaskState, requirement hypotheses and packaged objective operations are deleted from AgentLoop. |
+| P5-E | `AUTHORITY_CUTOVER_IMPLEMENTED_NOT_LIVE_VERIFIED` | Canonical TaskSpec/TaskPlan/StepSpec is the sole semantic producer in the target composition; recurrent LocalObjective decisions/tools/state were deleted. Fresh benchmark evidence and independent review remain open. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
 ## Next admitted slice
+
+The authority cutover is implemented. The next admitted slice is verification:
+
+1. run the focused and full invariant suites;
+2. run the fresh five-case real gate with per-case persistence;
+3. add held-out selector/set/aggregate variations without production branches;
+4. perform a fresh-context authority review before any closure claim.
+
+No benchmark-specific repair or recurrent semantic-construction schema is
+admitted during verification.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and
@@ -81,14 +91,15 @@ valid evidence and no generalization claim. The archive commit `5f8d6ac` is
 docs-only and is not the run SHA or a B closure SHA. M4.6-A canonical BrowserGym
 AX semantics/currentness, M4.6-B verifier/task-terminal truth and M4.6-C
 semantic inventory truth are complete for their declared non-default scopes;
-M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
-`IN_PROGRESS / DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / PROVIDER_SPLIT_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`: real screenshot transport, first
-semantic breadth, stable identity, retained inventory, paging and
-negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
-valid but its comparison is provider-contaminated, so no screenshot gain is
-claimed. P5-E is `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED /
-LIVE_REVALIDATION_PENDING`: typed sequence/set/aggregate objectives share one
-post-observation lifecycle and the displaced frontier/hypothesis path is deleted.
+M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E retains
+real screenshot transport, semantic breadth, stable identity, retained
+inventory, paging and negative-claim traversal safety. Its displaced
+LocalObjective Agent ingress has now been removed from the target path.
+The current-SHA 15-pair A/B archive is provider-contaminated and makes no
+screenshot gain claim. P5-E is
+`AUTHORITY_CUTOVER_IMPLEMENTED_NOT_LIVE_VERIFIED`: reducer capabilities are
+retained, semantic production now comes from admitted TaskPlan steps, and the
+recurrent Agent is action-only.
 
 The current Phase-4 increment retains point grounders only as explicit
 benchmark/legacy-compatibility arms; the BrowserGym target loop neither
@@ -142,7 +153,7 @@ implementation and later run identities are tracked in the
   the M4.6 targeted/full rerun and M4.7 supported-subset multi-seed gates;
 - default cutover or deletion before the positive cross-surface gates.
 - any AgentContext ownership of Runtime state, private route projection, or
-  LocalObjective-based legality/risk change.
+  Agent-created semantic-state-based legality/risk change.
 - durable transition ledger, event sourcing, state replay/reconstruction,
   generic recovery engine, or combining ProgressController with planning.
 
@@ -353,9 +364,11 @@ archive stopped 7c14190 8/60 as INCOMPLETE_DIAGNOSTIC
 SoM marks and AX aliases remain non-authoritative.
 `ActionSpace` is still the only legal-action owner, and every accepted tool
 command still passes the existing admission, binding/currentness,
-risk/confirmation, execution and evaluation path. Full owner boundaries,
-non-goals and falsifiable properties are defined in the active
-[LocalObjective de-specialization plan](superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md).
+risk/confirmation, execution and evaluation path. Full owner boundaries and
+falsifiable properties are defined only in the
+[Canonical GUI Agent Execution Architecture](task-execution-authority-map.md);
+migration order is owned by the
+[Canonical GUI Agent Authority Cutover Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).
 
 The capability-covered cohort is a clean regression denominator, not a ceiling
 on product scope. The frozen inventory currently reports 15 declared-supported,
@@ -413,12 +426,13 @@ free of lifecycle/accounting hard-gate failures, freeze a supported-subset
 immutable manifest, exact seed set, numeric provider-availability/capacity
 floor, success floor and maximum seed variance before running the multi-seed
 gate. No threshold may be chosen after seeing results.
-The current LocalObjective slice is accepted only when these properties hold:
+The canonical authority cutover is accepted only when these properties hold:
 
 ```text
 no exact target before first observation
-→ one typed semantic objective decision
+→ admitted TaskSpec and TaskPlan semantic step
 → current scope/evidence resolution
+→ current ActionChoice and action-only Agent decision
 → current ActionSpace admission and private binding
 → fresh observation re-resolution and evaluator-owned completion
 ```

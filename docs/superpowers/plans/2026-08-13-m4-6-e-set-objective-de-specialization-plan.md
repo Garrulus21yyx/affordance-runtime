@@ -2,7 +2,17 @@
 
 Date: 2026-08-13
 
-Status: `ARCHITECTURE_CONVERGED / IMPLEMENTED_NOT_LIVE_VERIFIED`
+Status: `SUPERSEDED_ARCHITECTURE_RECORD / LIVE_GATE_FAILED`
+
+> **Superseded 2026-08-13:** This record preserves the LocalObjective
+> de-specialization attempt and its evidence. Its conclusion that the recurrent
+> Agent should construct `LocalObjective` state is withdrawn. Current target
+> semantics are defined only by the
+> [Canonical GUI Agent Execution Architecture](../../task-execution-authority-map.md),
+> and migration order by the
+> [Canonical GUI Agent Authority Cutover Plan](2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).
+> The prose below is historical evidence, not a current owner or compatibility
+> contract.
 
 ## 2026-08-13 architecture-first correction
 

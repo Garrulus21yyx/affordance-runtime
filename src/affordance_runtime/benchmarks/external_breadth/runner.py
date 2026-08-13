@@ -224,6 +224,7 @@ def _target_manifest(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    task_plan_preparer=None,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -236,6 +237,7 @@ def _target_manifest(
             visual_point_grounder,
             visual_candidate_disambiguator,
             visual_predicate_classifier,
+            task_plan_preparer,
         )
         for item in manifest.cases
     )
@@ -258,6 +260,7 @@ def _target_case(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    task_plan_preparer=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -305,6 +308,8 @@ def _target_case(
             paced,
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
+            task_plan_preparer=task_plan_preparer,
+            semantic_control_required=task_plan_preparer is not None,
         )
 
     return BenchmarkCase(

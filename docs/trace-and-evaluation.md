@@ -137,8 +137,9 @@ bounded projections.
 
 ### 5.1 TurnRecorder
 
-Optional records project ControlTransition plus before observation ID,
-LocalObjective, semantic ActionIntent or Batch, public request/result lineage,
+Optional records project ControlTransition plus before observation ID, active
+plan/step and StepExecutionState references, semantic ActionIntent or Batch,
+public request/result lineage,
 after observation ID, evaluations, route class, latency, and model/visual-call
 counts.
 Recorder failure must not change admission, execution, evaluation, or loop

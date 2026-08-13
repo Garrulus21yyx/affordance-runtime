@@ -5,6 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / "src" / "affordance_runtime"
+AUTHORITY = ROOT / "docs" / "task-execution-authority-map.md"
+STATUS = ROOT / "docs" / "implementation-status.md"
 
 
 def _python_sources() -> tuple[Path, ...]:
@@ -20,133 +22,120 @@ def _class_owners(name: str) -> tuple[str, ...]:
     return tuple(owners)
 
 
-def test_task_plan_has_exactly_one_production_owner() -> None:
+def test_task_plan_has_exactly_one_production_contract() -> None:
     assert _class_owners("TaskPlan") == ("task_plan_contracts.py",)
     assert _class_owners("TaskProgram") == ()
     assert _class_owners("Milestone") == ()
     assert not (RUNTIME / "task" / "task_program.py").exists()
 
 
-def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
-    projection = (RUNTIME / "model_boundary" / "projection.py").read_text(encoding="utf-8")
-    assert "from affordance_runtime.task_plan_contracts import TaskPlan" in projection
-    for relative in ("agent/loop.py", "agent/state.py", "agent/episode_runner.py"):
-        source = (RUNTIME / relative).read_text(encoding="utf-8")
-        assert "task_plan_contracts" not in source
-        assert "TaskPlan" not in source
+def test_canonical_step_execution_and_choice_contracts_exist() -> None:
+    step_execution = (RUNTIME / "task" / "step_execution.py").read_text(encoding="utf-8")
+    choice_builder = (RUNTIME / "action_choice_builder.py").read_text(encoding="utf-8")
+    choice_flow = (RUNTIME / "step_choice_flow.py").read_text(encoding="utf-8")
+
+    assert "StepExecutionSpec" in step_execution
+    assert "materialize_step_execution" in step_execution
+    assert "ActionChoiceCatalogBuilder" in choice_builder
+    assert "StepChoiceFlow" in choice_flow
 
 
-def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> None:
-    source = "\n".join(
-        (RUNTIME / relative).read_text(encoding="utf-8")
-        for relative in ("agent/loop.py", "agent/state.py", "agent/episode_runner.py")
-    )
-    for displaced in (
-        "AdmittedTaskSpec",
-        "task_plan_preparer",
-        "task_spec_identity",
-        "active_step_execution",
-        "semantic_control_required",
-        "install_plan(",
-    ):
-        assert displaced not in source
-    for duplicate in (
-        "active_set_objective",
-        "active_objective_sequence",
-        "active_aggregate_objective",
-    ):
-        assert duplicate not in "\n".join(
-            path.read_text(encoding="utf-8") for path in _python_sources()
-        )
-    production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
-    assert "AgentSetControlView" not in production
-    assert "set_control" not in production
-    assert not (RUNTIME / "model_policy" / "set_objective_catalog.py").exists()
-    assert not (RUNTIME / "model_policy" / "execution_control_catalog.py").exists()
-    assert not (RUNTIME / "task" / "planning_contracts.py").exists()
-    state_source = (RUNTIME / "agent" / "state.py").read_text(encoding="utf-8")
-    assert state_source.count("local_objective_state:") == 1
-    assert "refresh_local_objective(" in state_source
-
-
-def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> None:
-    production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
+def test_no_pre_observation_gui_identity_enters_task_goal() -> None:
     task_contract = (RUNTIME / "task" / "contracts.py").read_text(encoding="utf-8")
     loop = (RUNTIME / "agent" / "loop.py").read_text(encoding="utf-8")
 
-    assert "target_id:" not in task_contract.split("class TaskGoal", 1)[1].split("class ", 1)[0]
+    task_goal = task_contract.split("class TaskGoal", 1)[1].split("class ", 1)[0]
+    assert "target_id:" not in task_goal
     assert "require_initial_observation" in loop
     assert loop.index("require_initial_observation") < loop.index("AgentLoopState(")
-    for displaced in (
-        "AgentDecisionPackage",
-        "TaskFrontier",
-        "RequirementHypothesis",
-        "objective_operation",
-        "active_objective",
-        "verified_task_state",
-    ):
-        assert displaced not in production
-    for removed in (
-        "agent/frontier_control.py",
-        "model_policy/requirement_proposer.py",
-        "task/frontier.py",
-        "task/frontier_contracts.py",
-        "task/hypothesis_contracts.py",
-        "task/hypothesis_runtime.py",
-    ):
-        assert not (RUNTIME / removed).exists()
 
 
-def test_model_decision_is_parsed_once_and_objectives_have_no_reverse_wire_projection() -> None:
-    production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
-    policy = (RUNTIME / "model_policy" / "policy.py").read_text(encoding="utf-8")
-    adapters = "\n".join(
-        (RUNTIME / "model_policy" / relative).read_text(encoding="utf-8")
-        for relative in ("model_port_bridge.py", "tool_port_bridge.py", "grounded_tool_port_bridge.py")
+def test_one_canonical_authority_document_is_execution_complete() -> None:
+    authoritative = AUTHORITY.read_text(encoding="utf-8")
+    required_sections = (
+        "## 1. Decision",
+        "## 2. Non-negotiable invariants",
+        "## 3. Canonical owners and contracts",
+        "## 4. Authoritative state model",
+        "## 5. Identity and temporal ordering",
+        "## 6. Exact per-turn algorithm",
+        "## 7. Main Agent interface",
+        "## 8. Projection and losslessness",
+        "## 9. Unified evidence lifecycle",
+        "## 10. Typed fail-closed outcomes",
+        "## 11. Current repository mapping and convergence",
+        "## 12. Change-impact protocol",
+        "## 13. Verification and exit criteria",
     )
-    spec = (RUNTIME / "model_policy" / "spec.py").read_text(encoding="utf-8")
-    predicate = (RUNTIME / "task" / "predicate_transport.py").read_text(encoding="utf-8")
-
-    assert "ResolvedModelDecision" in adapters
-    assert "if isinstance(outcome, ResolvedModelDecision)" in policy
-    assert "ModelDecisionResponse" not in production
-    assert "parse_agent_decision" not in policy
-    assert "local_objective_to_payload" not in spec
-    assert "predicate_to_transport" not in predicate
+    assert all(section in authoritative for section in required_sections)
+    assert "admitted TaskPlan<StepSpec.execution>" in authoritative
+    assert "Action-only Agent boundary" in authoritative
+    assert "No pre-observation GUI identity" in authoritative
+    assert "Evidence source is not lifecycle authority" in authoritative
 
 
-def test_model_policy_has_no_task_semantic_producers() -> None:
-
-    markers = (
-        "EstablishSetObjective",
-        "EstablishObjectiveSequence",
-        "EstablishAggregateObjective",
-        "establish_set_objective",
-        "establish_objective_sequence",
-        "establish_aggregate_objective",
-    )
-    producers = {
-        path.relative_to(RUNTIME).as_posix()
-        for path in (RUNTIME / "model_policy").rglob("*.py")
-        if any(marker in path.read_text(encoding="utf-8") for marker in markers)
-    }
-    assert producers == set()
+def test_current_implementation_cutover_is_reported_without_live_closure() -> None:
+    status = STATUS.read_text(encoding="utf-8")
+    assert "AUTHORITY_CUTOVER_IMPLEMENTED_NOT_LIVE_VERIFIED" in status
+    assert "fresh five-case" in status
+    assert "GENERALIZATION_OPEN" in status
 
 
-def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
-    source = (RUNTIME / "agent" / "decisions.py").read_text(encoding="utf-8")
-    assert "EstablishSetObjective" not in source
-    assert "EstablishObjectiveSequence" not in source
-    assert "EstablishAggregateObjective" not in source
-
-
-def test_normative_architecture_links_the_authority_map() -> None:
-    assert "task-execution-authority-map.md" in (ROOT / "docs" / "architecture.md").read_text(
+def test_architecture_discovery_and_governance_use_the_authority_map() -> None:
+    assert "task-execution-authority-map.md" in (
+        ROOT / "docs" / "architecture.md"
+    ).read_text(encoding="utf-8")
+    governance = (ROOT / "docs" / "architecture-governance-track.md").read_text(
         encoding="utf-8"
     )
-    assert "Task Execution Authority Map" in (
-        ROOT / "docs" / "architecture-governance-track.md"
+    assert "Canonical GUI Agent Execution Architecture" in governance
+    assert "mandatory before implementation" in governance
+    assert "change-impact table from section 12" in governance
+
+
+def test_main_agent_cutover_properties_are_recorded_before_implementation() -> None:
+    authoritative = AUTHORITY.read_text(encoding="utf-8")
+    assert "the main Agent decision union contains no semantic-state constructor" in authoritative
+    assert "action catalogs do not import LocalObjective" in authoritative
+    assert "every active execution state is materialized from the active StepSpec" in authoritative
+    assert "fresh real benchmark evidence" in authoritative
+
+
+def test_recurrent_agent_and_grounded_catalog_are_action_only() -> None:
+    decisions = (RUNTIME / "agent" / "decisions.py").read_text(encoding="utf-8")
+    catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
+    spec = (RUNTIME / "model_policy" / "spec.py").read_text(encoding="utf-8")
+
+    assert "EstablishLocalObjective" not in decisions
+    assert "LocalObjective" not in catalog
+    assert "LocalObjective" not in spec
+    assert "establish_local_objective" not in catalog
+
+
+def test_agent_loop_composes_plan_authority_explicitly_and_has_one_execution_slot() -> None:
+    loop = (RUNTIME / "agent" / "loop.py").read_text(encoding="utf-8")
+    state = (RUNTIME / "agent" / "state.py").read_text(encoding="utf-8")
+
+    assert "task_plan_preparer: AgentTaskPlanPreparerPort | None" in loop
+    assert "self.task_plan_preparer.prepare(task, current)" in loop
+    assert "state.install_plan(" in loop
+    assert "getattr(self.policy" not in loop
+    assert "active_step_execution: StepExecutionState | None" in state
+    assert "local_objective_state" not in state
+
+
+def test_architecture_change_template_forces_owner_and_deletion_analysis() -> None:
+    template = (
+        ROOT / "docs" / "change-admission" / "architecture-change-template.md"
     ).read_text(encoding="utf-8")
-    authoritative = (ROOT / "docs" / "task-execution-authority-map.md").read_text(encoding="utf-8")
-    assert "TaskGoal boundary" in authoritative
-    assert "No exact GUI target identity is required before `WorldObservation`" in authoritative
+    required = (
+        "Which exact stage in authority-map section 3 changes?",
+        "Who is the single primary owner?",
+        "Which section-2 invariant is affected?",
+        "Which complete consumers read that output?",
+        "Does any projection become authoritative?",
+        "Which old owner/path will be deleted?",
+        "Held-out or generated variations",
+        "Fresh real benchmark/profile",
+    )
+    assert all(marker in template for marker in required)

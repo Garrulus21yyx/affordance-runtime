@@ -68,7 +68,7 @@ normative:
   - role: benchmark_boundary
     path: docs/benchmark-governance-boundary.md
     lifecycle: current
-  - role: task_intake_and_local_objective_contract
+  - role: task_intake_planning_and_agent_action_contract
     path: docs/task-intake-and-planner.md
     lifecycle: current
   - role: perception_acquisition_and_bounded_loop_recovery_contract
@@ -96,7 +96,8 @@ reference:
     lifecycle: immutable_record
   - role: set_objective_de_specialization_convergence_record
     path: docs/superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md
-    lifecycle: current
+    lifecycle: immutable_record
+    superseded_by: docs/task-execution-authority-map.md
   - role: dom_first_evidence_gated_vision_convergence_record
     path: docs/superpowers/plans/2026-08-12-dom-first-evidence-gated-vision-convergence.md
     lifecycle: immutable_record

@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 from browsergym_adapter_support import FakeBrowserGym, ax_node, raw_observation
 
-from affordance_runtime.agent.local_objective_evidence import resolve_visual_local_objective_evidence
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.agent.step_execution_evidence import resolve_visual_step_execution_evidence
 from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
     BrowserGymMiniWobEnvironment,
 )
@@ -346,7 +346,7 @@ def test_runtime_set_evidence_obligation_invokes_visual_classifier() -> None:
             acquired = await environment.reset(task)
             assert acquired.observation is not None
             state = AgentLoopState(acquired.observation)
-            state.local_objective_state = establish_set_objective_state(
+            state.active_step_execution = establish_set_objective_state(
                 predicate=VisualConcept("apple"),
                 quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
                 semantic_action="activate",
@@ -363,17 +363,17 @@ def test_runtime_set_evidence_obligation_invokes_visual_classifier() -> None:
             )
             session = SimpleNamespace(state=state, environment=environment)
 
-            resolved = await resolve_visual_local_objective_evidence(session)
+            resolved = await resolve_visual_step_execution_evidence(session)
 
             assert resolved is True
             assert len(classifier.calls) == 1
             assert environment.visual_predicate_classifier_calls == 1
-            assert [item.truth for item in state.local_objective_state.assessments] == [
+            assert [item.truth for item in state.active_step_execution.assessments] == [
                 PredicateTruth.TRUE,
                 PredicateTruth.FALSE,
             ]
-            assert all(item.confidence is None for item in state.local_objective_state.assessments)
-            assert await resolve_visual_local_objective_evidence(session) is False
+            assert all(item.confidence is None for item in state.active_step_execution.assessments)
+            assert await resolve_visual_step_execution_evidence(session) is False
             assert len(classifier.calls) == 1
         finally:
             await environment.close()
@@ -398,7 +398,7 @@ def test_open_world_visual_set_does_not_classify_before_visual_scope_closure() -
             acquired = await environment.reset(task)
             assert acquired.observation is not None
             state = AgentLoopState(acquired.observation)
-            state.local_objective_state = establish_set_objective_state(
+            state.active_step_execution = establish_set_objective_state(
                 predicate=VisualConcept("apple"),
                 quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
                 semantic_action="activate",
@@ -407,10 +407,10 @@ def test_open_world_visual_set_does_not_classify_before_visual_scope_closure() -
             )
             session = SimpleNamespace(state=state, environment=environment)
 
-            assert state.local_objective_state.universe.coverage.value == "partial"
-            assert await resolve_visual_local_objective_evidence(session) is False
+            assert state.active_step_execution.universe.coverage.value == "partial"
+            assert await resolve_visual_step_execution_evidence(session) is False
             assert classifier.calls == []
-            assert state.local_objective_state.certificate is None
+            assert state.active_step_execution.certificate is None
         finally:
             await environment.close()
 

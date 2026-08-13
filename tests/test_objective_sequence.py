@@ -4,7 +4,7 @@ from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.task.local_objective import establish_local_objective, refresh_local_objective
+from affordance_runtime.task.execution_control import refresh_step_execution
 from affordance_runtime.task.objective_sequence import (
     EntitySelector,
     ObjectiveSequence,
@@ -185,7 +185,7 @@ def test_visual_selector_can_classify_a_structurally_closed_domain() -> None:
     assert state.selector_resolution.scope.entity_domain is ScopeEntityDomain.STRUCTURED
 
 
-def test_local_objective_facade_projects_only_currently_resolved_action() -> None:
+def test_planned_step_execution_projects_only_currently_resolved_action() -> None:
     before = _world("observation:before", "+", "distractor")
     task = TaskGoal(
         "task:sequence-projection",
@@ -194,7 +194,7 @@ def test_local_objective_facade_projects_only_currently_resolved_action() -> Non
         risk_profile=RiskProfile.LOW,
     )
     state = AgentLoopState(before)
-    state.local_objective_state = establish_local_objective(
+    state.active_step_execution = establish_objective_sequence_state(
         _sequence(),
         before,
         enumerator=state.scope_enumerator,
@@ -207,8 +207,8 @@ def test_local_objective_facade_projects_only_currently_resolved_action() -> Non
 
     after = _world("observation:after", "distractor", "0")
     state.current_observation = after
-    state.local_objective_state = refresh_local_objective(
-        state.local_objective_state,
+    state.active_step_execution = refresh_step_execution(
+        state.active_step_execution,
         after,
         acted_entity_id="entity:0:+",
         semantic_action="activate",
@@ -224,7 +224,7 @@ def test_local_objective_facade_projects_only_currently_resolved_action() -> Non
     assert option is not None and option.target_id == "entity:1:0"
 
 
-def test_agent_context_marks_open_local_objective_without_projecting_future_identity() -> None:
+def test_agent_context_marks_active_plan_step_without_projecting_future_identity() -> None:
     before = _world("observation:before", "+")
     task = TaskGoal(
         "task:sequence-context",
@@ -233,7 +233,7 @@ def test_agent_context_marks_open_local_objective_without_projecting_future_iden
         risk_profile=RiskProfile.LOW,
     )
     state = AgentLoopState(before)
-    state.local_objective_state = establish_local_objective(
+    state.active_step_execution = establish_objective_sequence_state(
         _sequence(),
         before,
         enumerator=state.scope_enumerator,
@@ -250,5 +250,5 @@ def test_agent_context_marks_open_local_objective_without_projecting_future_iden
         ),
     )
 
-    assert context.progress.local_objective_open
+    assert context.progress.active_plan_step
     assert "entity:0:0" not in repr(context)

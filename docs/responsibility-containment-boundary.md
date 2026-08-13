@@ -7,19 +7,20 @@
 
 | Owner | Owns | Must not own |
 |---|---|---|
-| `AgentLoop` | serial turn sequencing and small loop state | surface parsing, policy reasoning, evaluation algorithms, telemetry persistence |
-| `task/` | TaskGoal, bounded IntentContext and planning contracts | current route, model projection, binding or execution |
-| `AgentPolicy` | next semantic decision | raw binding payload, execution, task completion |
-| `TaskPlanner` | optional high-level Milestone hypothesis | GUI actions, binding, completion authority |
-| `ObjectivePolicy` | current LocalObjective from task/plan/world | selector, route, action execution |
-| `VerifiedTaskState` | validated milestone status, current frontier, evidence refs and unresolved obligations for one run | plan truth, action selection, persistence, replay |
-| `TaskProgressAuditor` | evidence-scoped milestone/frontier promotion proposals | GUI action choice, task completion, local retry containment |
+| `AgentLoop` | serial turn sequencing, admitted plan progress, and one active StepExecutionState slot | plan proposal, surface parsing, policy reasoning, evaluation algorithms, telemetry persistence |
+| `task/` | TaskGoal, TaskSpec/TaskPlan/StepSpec contracts, bounded IntentContext, and private step reducers | current route, model projection, binding or execution |
+| `TaskSpecAuthority` | admission/version of stable task meaning and effect boundary | GUI entity identity, route, action choice |
+| `TaskPlanGeneratorPort` | authority-free semantic PlanProposal from admitted task plus bounded observation | plan admission, E-ref, binding, execution |
+| `TaskPlanAuthority` | admission/version of TaskPlan<StepSpec.execution> | current entity resolution, action execution |
+| `PlanProgress reducer` | active/completed/failed step state from validated step outcomes | model planning, physical execution, task completion |
+| `AgentPolicy` | one current action/control decision from disposable AgentContext | plan/objective construction, raw binding payload, execution, task completion |
 | `SurfaceRegistry` | adapter discovery and static typed observation offers | task meaning, source-plan policy or route execution result |
 | `SurfaceAdapter` | truthful observation, bindings, supported execution | global task planning or completion |
 | `WorldEnvironment` acquisition boundary | reset initial acquisition, capability-aware capture, execute outcome with typed post acquisition | evidence assurance inflation, policy recovery, exception-as-capability protocol |
 | `ObservationOrchestrator` | deterministic reuse/select/augment/recapture plan from public request, offers, gaps and bounded cost; typed per-source acquisition disposition | semantic fusion, model reasoning, action legality or route execution |
 | `WorldFusion` | semantic entity/fact fusion and conflicts | action execution or user confirmation |
-| `ActionSpaceBuilder` | current legal semantic options and barrier metadata | model choice or backend execution |
+| `ActionSpaceBuilder` | current legal semantic options and barrier metadata | plan semantics, model choice or backend execution |
+| `ActionChoiceCatalogBuilder` | active-step-relevant current choices from StepSpec + world + ActionSpace | plan mutation, binding, backend execution |
 | `ActionRelevancePolicy` | DIRECT/ENABLING/INFORMATION/OTHER ranking and paging hints | legality, capability, risk lowering or completion |
 | `RouteSelector` | choose one current equivalent binding and typed alternate eligibility after proven zero-dispatch | executing, changing action semantics/risk/parameters or fallback after possible dispatch |
 | `ActionBinder` | admitted ActionIntent + already selected current binding → BoundActionRequest | route ranking/reroute, confirmation semantics or evaluation |
@@ -62,16 +63,18 @@ not on AgentLoop internals.
 
 ## 3. State boundary
 
-Only `AgentLoop` mutates `AgentLoopState` in the target serial MVP. Functions
-return domain results directly; they do not emit a universal internal command
-language. Observation/action/evaluation records are immutable values referenced
-by bounded recent ControlTransitions. Every accepted policy decision yields one
-root transition; the exact total survives recent-window truncation.
+Only `AgentLoop` mutates `AgentLoopState` in the target serial MVP. Admitted task
+and plan objects are installed only from their canonical authorities; the main
+Agent cannot construct them. Functions return domain results directly; they do
+not emit a universal internal command language. Observation/action/evaluation
+records are immutable values referenced by bounded recent ControlTransitions.
+Every accepted policy decision yields one root transition; the exact total
+survives recent-window truncation.
 
 Trace or recorder persistence is best effort and not part of state commit.
 ControlTransition is in-memory run accounting and cannot be replayed to rebuild
-AgentLoopState. VerifiedTaskState, when P5-E adds it, is a specialized field of
-that state rather than another aggregate/store.
+AgentLoopState. Task semantics come only from admitted TaskSpec/TaskPlan;
+validated step obligations live only in the one active StepExecutionState.
 
 The reopened M4.5-B contract requires ordered physical execution/acquisition attempts,
 expected/actual acquisition origins, strict probe totals and epoch-matched
@@ -145,8 +148,9 @@ the three-surface policy-view test proves shared semantic action vocabulary and
 private-route isolation, not semantic fusion or cross-surface target identity.
 
 P5-M0.1 keeps `ContextIdentity` and authoritative revisions inside Runtime and
-projects only an opaque `context_id`. LocalObjective relevance may rank/page
-already-legal actions but cannot add an action, lower risk or affect completion.
+projects only an opaque `context_id`. Active StepSpec relevance may rank/page
+already-legal actions but cannot add an action, lower risk or affect task
+completion.
 The implemented split keeps policy routing in `agent/decision_control.py`, the
 single execution cycle in `agent/execution_cycle.py`, bounded projection in
 `model_boundary/`, and relevance/paging in `world/`. AgentLoop is reviewed by
@@ -370,11 +374,12 @@ and projection-view changes cannot create progress. That owner map is
 implemented at `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`, but D remains
 implemented-not-verified pending held-out review and M4.6-E stays blocked.
 
-P5-E keeps VerifiedTaskState/frontier promotion under task/evaluation ownership.
-The target AgentLoop has no workflow TaskPlan preparer and no pre-observation
-target identity. A policy may establish one typed `task/local_objective.py`
-rolling objective only after a current observation exists; that owner alone
-dispatches set/sequence/aggregate reducer variants and re-resolves them after
+P5-E uses the canonical admitted `TaskPlan<StepSpec.execution>` as the sole
+persistent execution-semantic owner. Planning is an explicit Runtime composition
+seam after initial observation, never a hidden AgentPolicy capability, and no
+planned step contains pre-observation GUI identity. The active step alone
+materializes the one entity/set/aggregate reducer state and re-resolves it after
 each fresh observation. `agent/progress_control.py` continues to own only local
 fill/select repetition containment. Neither evaluator nor controller may choose
-a replacement action, modify ActionSpace legality, or substitute for AgentPolicy.
+a replacement action, modify ActionSpace legality, or substitute for
+AgentPolicy.

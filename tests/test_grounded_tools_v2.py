@@ -5,7 +5,7 @@ import json
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import EstablishLocalObjective, SelectAction
+from affordance_runtime.agent import SelectAction
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
@@ -36,13 +36,13 @@ from affordance_runtime.task import (
     SetQuantifier,
     TaskGoal,
 )
-from affordance_runtime.task.local_objective import establish_local_objective
+from affordance_runtime.task.set_objective_state import establish_set_objective_state
 from affordance_runtime.world import ActionSpaceBuilder
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
 
-def _context(*, local_objective=None):
+def _context(*, step_objective=None):
     raw = raw_observation(
         ax_node("username", "textbox", ""),
         ax_node("password", "textbox", ""),
@@ -80,12 +80,18 @@ def _context(*, local_objective=None):
         risk_profile=RiskProfile.LOW,
     )
     state = AgentLoopState(projection.world, remaining_turns=5)
-    if local_objective is not None:
-        state.local_objective_state = establish_local_objective(
-            local_objective,
-            projection.world,
+    if step_objective is not None:
+        state.active_step_execution = establish_set_objective_state(
+            predicate=step_objective.predicate,
+            quantifier=step_objective.quantifier,
+            semantic_action=step_objective.action_template.semantic_action,
+            candidate_entity_ids=(),
+            observation=projection.world,
+            parameters=dict(step_objective.action_template.parameters),
+            scope=step_objective.scope,
             enumerator=state.scope_enumerator,
         )
+        state.semantic_control_required = True
     return ContextBuilder().build(
         task,
         state,
@@ -110,7 +116,7 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
 
 def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:
     context = _context(
-        local_objective=SetObjective(
+        step_objective=SetObjective(
             "set-objective:fill-password",
             ScopeSpec("scope:viewport", "current-viewport", ScopeExtent.CURRENT_VIEWPORT),
             FactEquals("identity.label", "Password"),
@@ -119,10 +125,10 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
         )
     )
     catalog = compile_grounded_tool_catalog(context)
-    assert {item.name for item in catalog.specs} == {"fill"}
+    assert {item.name for item in catalog.specs} == {"execute_objective"}
     decision = resolve_grounded_tool_call(
         catalog,
-        ToolCall("fill", {"text": "UV"}),
+        ToolCall("execute_objective", {}),
         expected_context_id=context.context_id,
     )
     assert isinstance(decision, SelectAction)
@@ -130,41 +136,21 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
     assert decision.action_id.startswith("action:")
 
 
-def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelope() -> None:
+def test_catalog_is_action_only_and_has_a_stable_command_envelope() -> None:
     catalog = compile_grounded_tool_catalog(_context())
-    assert [item.name for item in catalog.specs if item.name.startswith("establish_")] == [
-        "establish_local_objective"
-    ]
+    assert not [item.name for item in catalog.specs if item.name.startswith("establish_")]
     assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
         "op", "target", "text", "value"
     }
-    assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)
+    assert {item.name for item in catalog.specs}.issuperset({"click", "fill"})
 
 
-def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:
-    context = _context()
-    catalog = compile_grounded_tool_catalog(context)
-    decision = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            "establish_local_objective",
-            {
-                "value": {
-                    "kind": "set",
-                    "predicate": {"any_of": [{"all_of": [{
-                        "kind": "fact_equals", "field_name": "grid_coordinate",
-                        "expected": {"x": 1, "y": -2},
-                    }]}]},
-                    "quantifier": "exactly_one",
-                    "semantic_action": "activate",
-                }
-            },
-        ),
-        expected_context_id=context.context_id,
-    )
-
-    assert isinstance(decision, EstablishLocalObjective)
-    assert decision.objective.scope.root_entity_id == "current-viewport"
+def test_catalog_projection_contains_no_semantic_state_constructor() -> None:
+    catalog = compile_grounded_tool_catalog(_context())
+    public = json.dumps(to_json_compatible([item.input_schema for item in catalog.specs]), sort_keys=True)
+    assert "predicate" not in public
+    assert "quantifier" not in public
+    assert "scope_extent" not in public
 
 
 def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:

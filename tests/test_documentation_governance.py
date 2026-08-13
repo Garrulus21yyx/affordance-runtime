@@ -101,36 +101,18 @@ def test_manifest_declares_one_current_architecture_and_evolution_plan() -> None
     assert all("/archive/" not in path for path in authoritative_paths)
 
 
-def test_evolution_plan_has_one_current_phase_truth() -> None:
+def test_evolution_plan_owns_migration_only_and_does_not_duplicate_status() -> None:
     text = EVOLUTION_PLAN.read_text(encoding="utf-8")
 
-    assert "`A1–A4` 尚未开始代码实现" not in text
-    assert "尚未证明相同\nTaskGoal/AgentPolicy/evaluator" not in text
-    assert "P5-A1–A4: COMPLETE_NON_DEFAULT" in text
-    assert "P5-B1–B4: COMPLETE_FOR_DECLARED_MINIMUM_PROFILES" in text
-    assert "P5-C1–C3: COMPLETE_FOR_SHARED_STATE_DETERMINISTIC_MATRIX" in text
-    assert "P5-D1–D4: COMPLETE_NON_DEFAULT" in text
-    assert "P5-D5 evaluator control: COMPLETE_FOR_CURRENT_NO_REQUIRED_OUTPUT_PROFILE" in text
-    assert "P5-D5 target output validation: COMPLETE_FOR_DECLARED_MINIMUM" in text
-    assert "P5-D6.1: COMPLETE" in text
-    assert "P5-M0: COMPLETE" in text
-    assert "P5-M0.1 AgentContext architecture: COMPLETE_NON_DEFAULT" in text
-    assert "model-backed AgentPolicy: CLOSED" in text
-    assert "P5-M1.1 strict decision boundary and existing ModelPort bridge: COMPLETE_NON_DEFAULT" in text
-    assert "local HTTP provider transport proof: COMPLETE" in text
-    assert "live provider profile: EXACT_HEAD_MISTRAL_ATTESTED_FOR_DECLARED_PROFILES" in text
-    assert "P5-M2 production evaluator composition: COMPLETE_NON_DEFAULT_FOR_DECLARED_MINIMUM" in text
-    assert "P5-M2.1 evidence semantics and dynamic readiness: COMPLETE_NON_DEFAULT" in text
-    assert "P5-M3 new-AgentLoop internal benchmark harness: COMPLETE_NON_DEFAULT_FOR_FIXED_MANIFEST" in text
-    assert "P5-M4.3 historical MiniWoB-60 run: COMPLETE_VALID_NEGATIVE_EVIDENCE (6/60)" in text
-    assert (
-        "post-M4.4 separately authorized rerun-v3: "
-        "COMPLETE_VALID_NEGATIVE_EVIDENCE (4/60)"
-    ) in text
-    assert "P5-M4.5-A acquisition lifecycle: COMPLETE_NON_DEFAULT" in text
-    assert all(marker in text for marker in M45_B_STATUS)
-    assert all(marker in text for marker in M45_C_STATUS)
-    assert all(marker in text for marker in M46_STATUS)
+    assert "This document owns migration order only" in text
+    assert "Canonical GUI Agent Execution Architecture" in text
+    assert "Implementation Status" in text
+    assert "Current Implementation Plan" in text
+    assert "## 2. Cutover order" in text
+    assert "## 3. Required deletion gates" in text
+    assert "## 6. Exit gate" in text
+    assert "P5-A1–A4: COMPLETE_NON_DEFAULT" not in text
+    assert "DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED" not in text
 
 
 def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
@@ -149,7 +131,7 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
     assert "separate clean `83dc4fa` run at 4/60" in text
 
 
-def test_m45_current_status_has_one_authoritative_source_and_consistent_projections() -> None:
+def test_current_status_has_one_authoritative_source_without_mirror_requirements() -> None:
     manifest = _manifest_text()
     status_text = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
 
@@ -162,11 +144,14 @@ def test_m45_current_status_has_one_authoritative_source_and_consistent_projecti
         for marker in (*M45_B_STATUS, *M45_C_STATUS, *M46_STATUS)
     )
 
-    for path in M45_STATUS_PROJECTIONS:
+    evolution = EVOLUTION_PLAN.read_text(encoding="utf-8")
+    assert "This document owns migration order only" in evolution
+    assert "Implementation Status" in evolution
+    assert not all(marker in evolution for marker in M46_STATUS)
+
+    for path in (DOCS_INDEX, CURRENT_PLAN, DOCS / "project-plan.md"):
         text = path.read_text(encoding="utf-8")
-        assert all(marker in text for marker in M45_B_STATUS), path
-        assert all(marker in text for marker in M45_C_STATUS), path
-        assert all(marker in text for marker in M46_STATUS), path
+        assert "implementation-status.md" in text, path
 
 
 def test_m45_open_b_does_not_rewrite_completed_diagnostic_or_reviewed_sha() -> None:
@@ -246,24 +231,27 @@ def test_reviewed_sha_if_present_is_clean_committed_head() -> None:
     assert not dirty
 
 
-def test_target_contract_keeps_one_observation_grounded_authority_chain() -> None:
+def test_target_contract_keeps_one_planned_observation_grounded_authority_chain() -> None:
     architecture = AUTHORITATIVE_ARCHITECTURE.read_text(encoding="utf-8")
     status = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
 
     for marker in (
-        "No exact GUI target identity is required before `WorldObservation`",
-        "one `LocalObjective` lifecycle",
-        "one typed AgentDecision",
+        "No pre-observation GUI identity",
+        "admitted TaskPlan<StepSpec.execution>",
+        "Action-only Agent boundary",
+        "one active `StepExecutionState`",
         "private bind",
         "execute once",
-        "fresh observation",
+        "fresh post-action observation",
     ):
         assert marker in architecture
-    assert "typed-decision to JSON to typed-decision" not in architecture
-    assert "durable ledger" in architecture
+    assert "establish_local_objective(...)" in architecture
+    assert "forbidden from the main Agent interface" in architecture
+    assert "Projection is one-way" in architecture
     assert "WorldEnvironment independent capture" in status
     assert "lossless ControlTransition" in status
     assert "CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS" in status
+    assert "AUTHORITY_CUTOVER_IMPLEMENTED_NOT_LIVE_VERIFIED" in status
 
 
 def test_manifest_paths_and_lifecycles_are_valid() -> None:
@@ -279,7 +267,7 @@ def test_manifest_paths_and_lifecycles_are_valid() -> None:
 
 def test_current_authority_index_does_not_route_through_archive() -> None:
     text = DOCS_INDEX.read_text(encoding="utf-8")
-    current_authority = text.split("## 1. Current target authority", 1)[1].split(
+    current_authority = text.split("## 1. Authority map", 1)[1].split(
         "## 2.", 1
     )[0]
 

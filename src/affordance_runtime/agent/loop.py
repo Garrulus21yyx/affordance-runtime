@@ -30,7 +30,6 @@ from affordance_runtime.agent.decision_control import ensure_current_action_page
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
-from affordance_runtime.agent.local_objective_evidence import resolve_visual_local_objective_evidence
 from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
@@ -43,7 +42,9 @@ from affordance_runtime.agent.start_error import (
     require_initial_observation,
 )
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
+from affordance_runtime.agent.step_execution_evidence import resolve_visual_step_execution_evidence
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
+from affordance_runtime.agent.task_plan_preparation import AgentTaskPlanPreparerPort
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
@@ -91,6 +92,8 @@ class AgentLoop:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     recent_turn_limit: int = 12
+    task_plan_preparer: AgentTaskPlanPreparerPort | None = None
+    semantic_control_required: bool = False
 
     async def start(
         self,
@@ -164,7 +167,16 @@ class AgentLoop:
             remaining_turns=task.loop_budget.max_turns,
             recent_turn_limit=self.recent_turn_limit,
             scope_enumerator=_environment_scope_enumerator(environment),
+            semantic_control_required=self.semantic_control_required,
         )
+        if self.task_plan_preparer is not None:
+            prepared = await self.task_plan_preparer.prepare(task, current)
+            state.install_plan(
+                prepared.plan,
+                task_spec_identity=prepared.admitted_task.task_spec.identity,
+            )
+        elif self.semantic_control_required:
+            raise ValueError("semantic-control AgentLoop requires an explicit TaskPlan preparer")
         session = AgentRunSession(
             self,
             task,
@@ -254,7 +266,8 @@ class AgentLoop:
             )
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
-            elif await resolve_visual_local_objective_evidence(session):
+            elif await resolve_visual_step_execution_evidence(session):
+                state.advance_completed_plan_steps()
                 continue
             else:
                 outcome = await run_policy_turn(

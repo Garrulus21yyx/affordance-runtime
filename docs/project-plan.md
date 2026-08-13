@@ -2,8 +2,9 @@
 
 > **Lifecycle:** CURRENT PRODUCT ROADMAP
 > **Updated:** 2026-08-10
-> **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
+> **Target:** [Canonical GUI Agent Execution Architecture](task-execution-authority-map.md)
 > **Migration authority:** [Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+> **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## 1. Product position
 
@@ -19,6 +20,8 @@ Its organizing principle is:
 
 ```text
 responsibility-thin, semantics-strong intake
++ admitted semantic planning
++ observation-bound action choice
 + capability-thick, infrastructure-thin execution loop
 ```
 
@@ -31,14 +34,15 @@ selection, post-action evaluation, and fact-driven replanning.
 The stable target vocabulary is:
 
 ```text
-semantically strong TaskGoal + risk-proportionate MaterialBindings
+semantically strong TaskGoal + admitted TaskSpec
+admitted TaskPlan<StepSpec.execution> + PlanProgress
 optional EvaluationSpec / strict source lineage
-optional observation-grounded LocalObjective
+one observation-grounded active StepExecutionState
 WorldObservation + Internal ActionSpace
 ObservationCapabilities + ObservationAcquisition + ExecutionOutcome
 disposable AgentContext + opaque ContextIdentity
 bounded IntentContext + progress/world/history/pending/budget views
-AgentActionPageView + typed AgentDecision
+ActionChoiceCatalog + action-only typed AgentDecision
 SemanticTarget + ActionBinding
 ActionSpace + ActionIntent
 BoundActionRequest + ActionResult
@@ -66,7 +70,7 @@ core contracts for every GUI task.
 | P5-M0 | Model-safe policy views and evidence-validated evaluator boundary | complete, non-default |
 | P5-M0.1 | Unified disposable AgentContext, ContextIdentity, bounded intent/world/history, relevance, paging, source assurance and typed decisions | complete, non-default |
 | P5-M0.1.1 | One-shot context epochs, fresh observation identity, traversable cursor paging and coherent bounded projections/history | complete, non-default |
-| P5-M1 | Model-backed target AgentPolicy using deterministic evaluators | complete |
+| P5-M1 | Model-backed action-only target AgentPolicy using deterministic evaluators | architecture reopened; current LocalObjective constructor must be removed |
 | P5-M1.1 | Existing ModelPort bridge and invocation hardening | complete for strict boundary/local HTTP transport; later exact Mistral profile separately attested |
 | P5-M2 | Production evaluator composition and criterion adjudicators | complete for declared minimum profiles; general entailment partial |
 | P5-M2.1 | Evidence semantics and dynamic evaluation closure | complete for Runtime-derived obligation and presented-evidence profiles |
@@ -78,9 +82,9 @@ core contracts for every GUI task.
 | P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
-| P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A-C COMPLETE_NON_DEFAULT; M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED; M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC, followed after remediation and a passing live gate by scroll/keypress, relational/dynamic observation, verified multi-step working state, unassessed-case review and a frozen MiniWoB-60 rerun |
+| P5-M4.6 | Evidence-directed short-loop remediation | ARCHITECTURE_REOPENED; current `f3ca2df` LocalObjective ingress failed the five-case live gate 0/5 before execution; canonical authority cutover is next |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
-| P5-E | observation-grounded sequence/set/aggregate LocalObjective lifecycle | IN_PROGRESS / UNIFIED_OWNER_IMPLEMENTED / LIVE_REVALIDATION_PENDING; old frontier/hypothesis path deleted |
+| P5-E | canonical TaskPlan/StepSpec semantics with one observation-grounded entity/set/aggregate execution lifecycle | ARCHITECTURE_REOPENED / AUTHORITY_CUTOVER_REQUIRED |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
 | P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
@@ -121,7 +125,7 @@ semantic confirmation identity with current rebinding, model/binding separation,
 separation, capability-aware fresh post-action acquisition, unknown no-retry, required-output
 integrity, and benchmark neutrality.
 AgentContext remains a one-way disposable projection; every decision binds the
-current context ID, LocalObjective changes relevance only, and source assurance
+current context ID, active StepSpec changes relevance only, and source assurance
 never grants execution authority.
 Each policy call receives a new one-shot generation even when its public
 projection is otherwise identical. Runtime-issued paging cursors bind filters,
@@ -129,7 +133,8 @@ objective identity and exact membership; they are not durable state.
 Expected unsupported/failed acquisition is typed. Dispatch truth is independent
 of acquisition failure. One accepted policy decision has exactly one bounded
 root ControlTransition, while AgentLoopState remains the current-state authority.
-LocalObjective reducers accept only current typed evidence; TaskEvaluation remains the sole task-completion authority.
+Active step reducers accept only current typed evidence; TaskEvaluation remains
+the sole task-completion authority.
 
 ## 6. Non-goals
 
@@ -137,7 +142,8 @@ LocalObjective reducers accept only current typed evidence; TaskEvaluation remai
 - distributed/multi-writer transaction protocol;
 - global authorization-proof or capability-token platform;
 - prompt-injection classification as the Runtime architecture center;
-- mandatory full TaskPlan or strict source graph for ordinary GUI tasks;
+- transactional Coordinator/StateKernel execution machinery in the target
+  AgentLoop;
 - trace or external reward as online execution/completion authority;
 - ControlTransition as a durable ledger, replay source, global event taxonomy,
   state reconstruction mechanism, or second execution truth;
@@ -242,7 +248,8 @@ closing B. M4.6 repairs those gaps in independently
 measurable slices; its targeted gates and a new immutable full run precede the
 M4.7 supported-subset multi-seed gate, whose immutable manifest, exact seed set,
 numeric provider-availability/capacity floor, success floor and maximum seed
-variance are frozen before execution. P5-E now converges the
-observation-grounded LocalObjective lifecycle. A future long-horizon planner,
-if admitted by benchmark evidence, must be a separate proposal and cannot
-revive dormant AgentLoop frontier state.
+variance are frozen before execution. P5-E now performs the canonical authority
+cutover: admitted TaskSpec/TaskPlan semantics feed one observation-grounded
+active StepExecutionState, and the main Agent remains action-only. Long-horizon
+planning extends the same explicit planning port and admitted TaskPlan; it must
+not create a second AgentLoop planner or revive dormant frontier state.
