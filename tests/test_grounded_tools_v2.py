@@ -26,9 +26,11 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalVerifierStatus,
     VerifierFactSource,
 )
+from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure
+from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import AgentTurnView
 from affordance_runtime.model_policy.contracts import ResolvedLocalObjectiveOutcome
@@ -200,11 +202,15 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert not isinstance(outcome, ModelFailure)
     assert outcome.metadata.perception_profile == "structure-first.v1"
     assert adapter.compatibility_key.split(":")[2] == "structure-first.v1"
+    assert adapter.last_image_input_count == 0
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
     assert public["task_brief"]["instruction"] == context.task.instruction
     assert all(item["marked"] is False for item in public["grounding_index"])
+    trace = _policy_trace_event(1, context, outcome.decision, adapter)
+    assert trace["model_image_input_count"] == 0
+    assert trace["selected_grounding"]["marked"] is False
 
 
 def test_structure_first_grounded_action_adds_image_only_after_visual_source_acquisition() -> None:
@@ -228,8 +234,12 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
     assert isinstance(user_content, tuple)
     assert isinstance(user_content[0], ModelTextPart)
     assert isinstance(user_content[1], ModelImageURLPart)
+    assert adapter.last_image_input_count == 1
     public = json.loads(user_content[0].text)
     assert any(item["marked"] is True for item in public["grounding_index"])
+    trace = _policy_trace_event(1, context, outcome.decision, adapter)
+    assert trace["model_image_input_count"] == 1
+    assert trace["selected_grounding"]["marked"] is True
 
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
@@ -309,6 +319,44 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
         "task": "incomplete",
         "reason": "action_unknown_low_local",
     }
+
+
+def test_grounded_history_retains_observation_modality_and_tool_describes_current_source() -> None:
+    context = _context()
+    context = replace(
+        context,
+        world=replace(
+            context.world,
+            observation_capabilities=(
+                ObservationCapabilityView("structural", "structural"),
+                ObservationCapabilityView("visual", "weak"),
+            ),
+        ),
+        history=BoundedSection(
+            (
+                AgentTurnView(
+                    "requestobservation",
+                    reason="observation_no_information_gain",
+                    semantic_summary={
+                        "subject_id": "current_world",
+                        "modality": "structural",
+                        "required_assurance": "structural",
+                        "reason": "refresh public state",
+                    },
+                ),
+            ),
+            1,
+            False,
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+
+    previous = catalog.view.previous_tool_result
+    assert previous["decision_details"]["modality"] == "structural"
+    descriptions = {item.name: item.description for item in catalog.specs}
+    assert "current structural source is already present" in descriptions["observe_structural"]
+    assert "No current visual source is present" in descriptions["observe_visual"]
 
 
 def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:

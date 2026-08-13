@@ -183,7 +183,7 @@ def compile_grounded_tool_catalog(
             seen_modalities.add(capability.modality)
             specs.append(ToolSpec(
                 f"observe_{capability.modality}",
-                f"Acquire a fresh {capability.modality} observation at {capability.assurance} assurance.",
+                _observation_tool_description(context, capability),
                 _object_schema({}),
             ))
             bindings.append(_ObserveBinding(capability.modality, capability.assurance))
@@ -464,7 +464,7 @@ def _previous_result(context: AgentContext, ref_by_target: Mapping[str, str]):
 
 
 def _turn_result(item: AgentTurnView, ref_by_target: Mapping[str, str]) -> dict[str, object]:
-    return {
+    result = {
         "decision": item.decision_kind,
         "verb": _verb(item.semantic_action) if item.semantic_action else "",
         "target": ref_by_target.get(item.target_id, ""),
@@ -474,3 +474,25 @@ def _turn_result(item: AgentTurnView, ref_by_target: Mapping[str, str]) -> dict[
         "task": item.task_evaluation_status,
         "reason": item.reason,
     }
+    if item.semantic_summary and not item.semantic_action:
+        result["decision_details"] = to_json_compatible(item.semantic_summary)
+    return result
+
+
+def _observation_tool_description(context: AgentContext, capability) -> str:
+    current = next(
+        (
+            source
+            for source in context.world.sources
+            if source.modality == capability.modality and source.freshness == "current"
+        ),
+        None,
+    )
+    if current is None:
+        state = f"No current {capability.modality} source is present; acquire this evidence modality when needed."
+    else:
+        state = (
+            f"A current {capability.modality} source is already present with "
+            f"{current.projection_coverage} projection; refresh only when new currentness evidence is needed."
+        )
+    return f"{state} Requested assurance: {capability.assurance}."

@@ -222,6 +222,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     }
     adapter = _dynamic_tool_adapter(policy)
     if adapter is not None:
+        image_input_count = int(
+            getattr(adapter, "last_image_input_count", len(context.image_inputs))
+        )
         event["interaction_protocol"] = getattr(adapter, "interaction_protocol", "dynamic_tools.v1")
         event["tool_transport"] = getattr(getattr(adapter, "transport_kind", None), "value", "")
         event["tool_resolution_code"] = getattr(
@@ -232,13 +235,20 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
         event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
+        event["model_image_input_count"] = image_input_count
     if isinstance(
         outcome,
         SelectAction,
     ):
         event["outcome"] = type(outcome).__name__
         event["decision"] = _decision_trace(outcome)
-        selected = _selected_grounding_trace(context, outcome)
+        selected = _selected_grounding_trace(
+            context,
+            outcome,
+            image_attached=bool(
+                getattr(adapter, "last_image_input_count", len(context.image_inputs))
+            ),
+        )
         if selected is not None:
             event["selected_grounding"] = selected
     elif isinstance(outcome, PolicyFailure):
@@ -290,7 +300,7 @@ def _model_backed_policy(value):
     return value
 
 
-def _selected_grounding_trace(context, decision):
+def _selected_grounding_trace(context, decision, *, image_attached: bool):
     action_id = getattr(decision, "action_id", "")
     if not action_id:
         return None
@@ -306,7 +316,7 @@ def _selected_grounding_trace(context, decision):
         "role": entity.role,
         "label": entity.label,
         "state": to_json_compatible(entity.state),
-        "marked": entity.marked,
+        "marked": entity.marked and image_attached,
         "semantic_action": option.semantic_action,
     }
 

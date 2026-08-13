@@ -477,3 +477,37 @@ Targeted evidence for this implementation is 18 passing grounded-protocol and
 composition tests, touched-file Ruff success, and Mypy success for the seven
 changed source files. Live benchmark evidence remains pending and no score or
 generalization improvement is claimed yet.
+
+## Clean structure-first run and residual control-context defect
+
+The clean `d325360` GLM-4.6V run is recorded in the
+[structure-first evidence note](../evidence/2026-08-14-structure-first-five-witness-d325360.md).
+It completed 5/5, succeeded 4/5, remained evidence-valid, and invoked no visual
+source or auxiliary visual provider in any case. Grid coordinate, both pie
+witnesses and the multi-target color witness completed from structural public
+facts alone.
+
+The residual did not submit a wrong aggregate. `visual-addition` selected
+`RequestObservation` twice, received only the already-current structural source
+both times, and executed no action. Runtime correctly returned typed no-gain
+feedback after the first request and stopped the repeated control decision.
+
+The shared context defect is now narrower. `AgentTurnView.semantic_summary`
+already retained the requested observation modality, but the grounded catalog's
+compact `previous_tool_result` dropped the whole semantic summary. The model
+therefore saw the failed decision kind and no-gain feedback without the modality
+that had produced it. Observation-tool descriptions also failed to distinguish
+an already-current modality refresh from acquisition of an absent modality.
+The in-place remediation preserves non-action decision details in the same
+bounded history and derives each observation-tool description from public
+current source summaries. It does not suppress observation through task logic
+or infer which modality a task ought to use.
+
+The run also falsified one benchmark attestation detail. Diagnostic
+`selected_grounding.marked` reflected marks available in the Context even when
+the structure-first adapter did not transmit image bytes. The next trace schema
+records the adapter's actual image input count and reports a selected entity as
+marked only when an image was sent. The structure-first gate requires zero
+images on the initial call and requires a current visual source for every later
+image-bearing call. Score and authoritative environment outcomes at `d325360`
+remain valid; its marked-selection evidence does not.

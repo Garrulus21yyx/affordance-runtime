@@ -163,6 +163,7 @@ class _GroundedAdapterBase:
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
+    last_image_input_count: int = field(default=0, init=False, compare=False)
     last_attempt_origin: ProviderAttemptOrigin = field(
         default=ProviderAttemptOrigin.UNKNOWN,
         init=False,
@@ -214,6 +215,7 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
+        object.__setattr__(self, "last_image_input_count", 0)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
         if request.schema_version != expected_schema or request.policy_context is None:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
@@ -221,6 +223,13 @@ class _GroundedAdapterBase:
             catalog = catalog_builder(request.policy_context)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
+            object.__setattr__(
+                self,
+                "last_image_input_count",
+                len(request.image_inputs)
+                if perception_uses_images(request, self.perception_profile)
+                else 0,
+            )
             object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
             messages = _messages(
                 catalog.view,

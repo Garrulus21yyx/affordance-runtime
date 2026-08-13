@@ -26,6 +26,7 @@ from affordance_runtime.benchmarks.model_protocol import (
 from affordance_runtime.model_policy import (
     model_policy_from_environment,
 )
+from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.visual_disambiguation import visual_candidate_disambiguator_from_environment
 from affordance_runtime.visual_grounding import (
     configured_visual_region_proposer_from_environment,
@@ -138,7 +139,10 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
                 errors.append(f"{record.case_id}: no structural identity binding was dispatched")
             if not any(item.get("selected_grounding") for item in record.diagnostic_trace):
                 errors.append(f"{record.case_id}: selected public E-ref evidence is absent")
-        if task_id in _MARKED_AGENT_SELECTION_WITNESSES:
+        if (
+            outcome.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX
+            and task_id in _MARKED_AGENT_SELECTION_WITNESSES
+        ):
             if _metric(metrics, "visual_disambiguator_calls") != 0:
                 errors.append(f"{record.case_id}: a redundant pre-policy E-ref call occurred")
             if _metric(metrics, "visual_source_acquired_count") != 0:
@@ -150,6 +154,17 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
             )
             if not selected or not all(item.get("marked") is True for item in selected):
                 errors.append(f"{record.case_id}: main policy selected no marked public E-ref")
+        if outcome.perception_profile is DecisionPerceptionProfile.STRUCTURE_FIRST:
+            if record.diagnostic_trace and _metric_from_trace(
+                record.diagnostic_trace[0], "model_image_input_count"
+            ) != 0:
+                errors.append(f"{record.case_id}: structure-first initial call carried an image")
+            if any(
+                _metric_from_trace(item, "model_image_input_count") > 0
+                and "visual" not in item.get("selected_source_modalities", ())
+                for item in record.diagnostic_trace
+            ):
+                errors.append(f"{record.case_id}: image transport lacked a current visual source")
         for index, item in enumerate(record.diagnostic_trace[:-1]):
             transition = item.get("runtime_transition")
             if not isinstance(transition, dict) or transition.get("action_evaluation_status") != "no_effect_confirmed":
@@ -183,6 +198,11 @@ def _visual_gate_acceptance(outcome) -> dict[str, object]:
 def _metric(measurements, name: str) -> int:
     measurement = measurements.get(name)
     value = getattr(measurement, "value", 0)
+    return int(value) if isinstance(value, int | float) else 0
+
+
+def _metric_from_trace(event: object, name: str) -> int:
+    value = event.get(name, 0) if isinstance(event, dict) else 0
     return int(value) if isinstance(value, int | float) else 0
 
 
