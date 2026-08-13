@@ -449,7 +449,6 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
         } for item in context.progress.verified_public_facts],
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
-        "local_objective_open": context.progress.local_objective_open,
         "interaction_history": [
             _turn_result(item, ref_by_target)
             for item in context.history.items[:-1]

@@ -7,7 +7,6 @@ from affordance_runtime import (
     compose_target_runtime,
 )
 from affordance_runtime.agent import TOOL_ACTION_DECISION_CAPABILITIES
-from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 
 
 class _Policy:
@@ -24,12 +23,6 @@ class _Evaluator:
         raise AssertionError("composition test must not call evaluators")
 
 
-class _Proposer:
-    async def propose(self, context):
-        del context
-        raise AssertionError("composition test must not call proposer")
-
-
 def test_public_target_composition_factory_builds_the_runtime_contract() -> None:
     evaluator = _Evaluator()
 
@@ -43,24 +36,6 @@ def test_public_target_composition_factory_builds_the_runtime_contract() -> None
     assert isinstance(runtime, TargetRuntime)
     assert runtime.required_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert runtime.decision_ports.local_objective_proposer is None
-    assert runtime.decision_ports.local_objective_requirement is (
-        LocalObjectiveProposalRequirement.NOT_REQUIRED
-    )
-
-
-def test_public_target_composition_factory_enforces_objective_requirement() -> None:
-    evaluator = _Evaluator()
-
-    runtime = compose_target_runtime(
-        _Policy(),
-        evaluator,
-        evaluator,
-        local_objective_proposer=_Proposer(),
-        local_objective_requirement=LocalObjectiveProposalRequirement.REQUIRED,
-    )
-
-    assert isinstance(runtime, TargetRuntime)
-    assert runtime.decision_ports.local_objective_proposer is not None
 
 
 def test_root_package_exports_target_natural_language_start_contracts() -> None:

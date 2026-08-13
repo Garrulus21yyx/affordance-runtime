@@ -218,12 +218,49 @@ response from that capture is committed.
 This falsifies “wire split plus better repair closes objective proposal.” The
 remaining obstacle is the size and cognitive shape of the Runtime-owned
 sequence/set/aggregate/predicate DSL, not missing JSON instructions. Continuing
-to add task-shaped prompts or more schema branches is prohibited. The objective
-semantics stay reopened pending an architecture decision between:
+to add task-shaped prompts or more schema branches is prohibited.
 
-- retaining the DSL only as an explicitly requested advanced capability; or
-- shrinking the existing objective role to bounded agent-authored plan/working
-  state while Runtime retains only lifecycle, authority and execution checks.
+## Owner/consumer audit and architecture decision
 
-That decision must reuse the existing proposer/AgentLoop boundary or delete it;
-it does not authorize a parallel planner or another execution chain.
+The repository-wide owner audit separates two uses that had been conflated:
+
+- `task_planner.py` compiles an admitted `TaskPlan` step into
+  `EntityStepExecution`, `SetStepExecution`, or `AggregateStepExecution`. This
+  is a closed execution algebra owned by the legacy planning runtime.
+- `objective_spec.py` and `GroundedObjectiveAdapter` ask a model to construct
+  the same algebra from an open natural-language task. The public target
+  composition was its only intended product ingress, and no non-benchmark
+  source caller enables that factory.
+- Once installed in `AgentLoop`, a LocalObjective is not advisory working
+  memory: it filters the public action page, fixes admitted action parameters,
+  invokes visual predicate classification, refreshes after execution and can
+  reject an otherwise legal model action. It therefore carries execution
+  authority.
+
+The decision is to stop treating the Runtime execution algebra as the target
+agent's planning language. Open task decomposition, set/aggregate
+interpretation and next-action choice stay with the existing action agent over
+the current Unified World and bounded interaction history. Runtime keeps the
+closed shell: current legal tools, private binding, admission, risk,
+confirmation, execution, fresh observation and authoritative environment
+outcomes. Runtime does not enumerate task families.
+
+The target product composition and target benchmark contracts therefore no
+longer accept an objective proposer or per-case objective requirement. This is
+a subtraction from the existing chain, not a new planner. The closed
+sequence/set/aggregate types remain temporarily because the legacy `TaskPlan`
+runtime still consumes them; their model-facing target adapter and dormant
+`AgentLoop` branch are deletion debt, not an optional benchmark arm.
+
+Physical deletion order is consumer-based:
+
+1. remove the now-unreachable model objective phase from target `AgentLoop`
+   and its model transport/instrumentation;
+2. retain the execution algebra only while the legacy `TaskPlan` owner has a
+   default consumer;
+3. after root/default cutover and replacement evidence, delete the legacy
+   planner lifecycle and then its algebra/tests together.
+
+Tests for a removed target objective phase are deleted rather than used to keep
+that phase alive. Reducer tests for the still-consumed legacy execution algebra
+remain until its owner is removed.

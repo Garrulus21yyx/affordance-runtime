@@ -22,7 +22,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 
 | Slice | Status | Files / verification |
 |---|---|---|
-| Model protocol convergence | `ACTION_PROTOCOL_DONE / OBJECTIVE_SEMANTICS_REOPENED` | `grounded_tools.v2` benchmark owner and supported decisions are explicit. Action/objective adapters and compact payloads are now statically split, and schema repair returns bounded field errors. A clean live objective diagnostic still cannot reliably construct the large Runtime DSL; do not claim objective closure. |
+| Model protocol convergence | `ACTION_PROTOCOL_DONE / OBJECTIVE_MODEL_PHASE_WITHDRAWN_FROM_TARGET` | `grounded_tools.v2` is the benchmark action protocol and supported decisions are explicit. Schema repair returns bounded field errors. The failed live objective diagnostic and owner audit show that the Runtime execution DSL must not be the target agent's planning language; target product/benchmark composition can no longer configure that second model phase. Dormant objective transport remains pending physical deletion. |
 | Product target composition/client | done, pushed | `compose_target_runtime`, `TargetRuntimeClient`, typed continuations; source-tree composition gate |
 | Product evaluation/DOM evidence | `REOPENED_SPECIALIZATION_AUDIT` | evaluator is product-owned, but arbitrary world-fact/screenshot change currently confirms any activation; replace correlation with explicit effect obligations or semantic verifier evidence |
 | Explicit target CLI | done, pushed | `target-run`, strict intake, thread-bound browser session, real CLI E2E; legacy `run` unchanged |
@@ -125,7 +125,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
 | P5-M4.6 evidence-directed remediation | `REOPENED_AGENT_SEMANTICS / VALID_RUNS_3_OF_5_AND_2_OF_5 / GENERALIZATION_OPEN` | `b354398` removed the runner's unconditional objective phase (valid 3/5). `31720e4` then exposed the already-owned bounded interaction history without adding a chain (valid 2/5). First-turn failures prove the delta is not the cause; the two runs show model variance, not performance direction. SOTA review rejects Runtime enumeration of set/aggregate/task families. See the [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
-| P5-E | `IN_PROGRESS / PHASE_BOUNDARY_CUTOVER_IMPLEMENTED / LIVE_REVALIDATION_PENDING` | One post-observation LocalObjective lifecycle owns sequence/set/aggregate semantics and current evidence resolution. Its explicit proposal port is separate from the action-only AgentPolicy; TaskFrontier, workflow TaskPlan ingress, requirement hypotheses and packaged objective operations are absent from AgentLoop. |
+| P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `IN_PROGRESS / TARGET ENTRY NON_DEFAULT` | explicit target CLI/client and readiness gate exist; reference capability remediation, held-out benchmark, root switch, and physical deletion remain open |
 
@@ -487,12 +487,16 @@ free of lifecycle/accounting hard-gate failures, freeze a supported-subset
 immutable manifest, exact seed set, numeric provider-availability/capacity
 floor, success floor and maximum seed variance before running the multi-seed
 gate. No threshold may be chosen after seeing results.
-The current LocalObjective slice is accepted only when these properties hold:
+The target agent-semantic slice is accepted only when these properties hold:
 
 ```text
-no exact target before first observation
-→ one typed semantic objective decision
-→ current scope/evidence resolution
-→ current ActionSpace admission and private binding
+natural-language task + current Unified World + bounded interaction history
+→ one existing agent chooses one current public tool
+→ Runtime resolves that tool to current ActionSpace authority and private binding
 → fresh observation re-resolution and evaluator-owned completion
 ```
+
+Sequence/set/aggregate objective reducers are not evidence that Runtime can
+understand every task. They are temporarily retained only as the closed
+execution algebra of the still-existing legacy `TaskPlan` runtime. Do not add a
+target caller, benchmark flag, task classifier or second planner for them.

@@ -1,6 +1,4 @@
 from dataclasses import replace
-
-from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkRunIdentity
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
 
@@ -22,23 +20,6 @@ def test_manifest_digest_covers_auto_confirm() -> None:
         cases=tuple(
             replace(item, auto_confirm=False) if item.case_id == confirmation.case_id else item
             for item in manifest.cases
-        ),
-    )
-
-    assert manifest_digest(manifest) != manifest_digest(changed)
-
-
-def test_manifest_digest_covers_explicit_objective_requirement() -> None:
-    manifest = get_manifest("internal-core", "deterministic", 7)
-    first = manifest.cases[0]
-    changed = replace(
-        manifest,
-        cases=(
-            replace(
-                first,
-                local_objective_requirement=LocalObjectiveProposalRequirement.REQUIRED,
-            ),
-            *manifest.cases[1:],
         ),
     )
 

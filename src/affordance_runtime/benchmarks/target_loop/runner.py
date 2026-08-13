@@ -29,7 +29,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     CountingActionEvaluator,
     CountingEnvironment,
     finalize_policy_trace,
-    instrument_objective_proposer,
     instrument_policy,
     instrument_task_evaluator,
 )
@@ -132,11 +131,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
             frozenset(task.forbidden_effects),
         )
         try:
-            runtime = _build_runtime(
-                composition,
-                instrumentation,
-                case.local_objective_requirement,
-            )
+            runtime = _build_runtime(composition, instrumentation)
         except Exception as exc:
             instrumentation.record_failure(
                 CaseFailureOrigin.LOOP_CONSTRUCTION,
@@ -191,16 +186,11 @@ async def _run_case(case) -> BenchmarkCaseResult:
     )
 
 
-def _build_runtime(composition, instrumentation, local_objective_requirement):
+def _build_runtime(composition, instrumentation):
     return compose_target_runtime(
         instrument_policy(composition.policy, instrumentation),
         CountingActionEvaluator(composition.action_evaluator, instrumentation),
         instrument_task_evaluator(composition.task_evaluator, instrumentation),
-        local_objective_proposer=instrument_objective_proposer(
-            composition.local_objective_proposer,
-            instrumentation,
-        ),
-        local_objective_requirement=local_objective_requirement,
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,
     )

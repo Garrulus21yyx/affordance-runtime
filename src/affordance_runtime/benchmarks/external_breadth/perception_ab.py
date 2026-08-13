@@ -6,7 +6,6 @@ import hashlib
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCaseRecord,
     MiniWobTaskOutcome,
@@ -142,10 +141,6 @@ async def run_provider_cohort_arm(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
-    local_objective_proposer=None,
-    local_objective_requirement: LocalObjectiveProposalRequirement = (
-        LocalObjectiveProposalRequirement.NOT_REQUIRED
-    ),
     progress_dir: Path | None = None,
     progress_profile: str = "",
 ) -> PerceptionArmOutcome:
@@ -160,8 +155,6 @@ async def run_provider_cohort_arm(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
-        local_objective_proposer=local_objective_proposer,
-        local_objective_requirement=local_objective_requirement,
         progress_dir=progress_dir,
         progress_profile=progress_profile,
     )
@@ -177,8 +170,6 @@ async def _run_arm(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
-    local_objective_proposer=None,
-    local_objective_requirement=LocalObjectiveProposalRequirement.NOT_REQUIRED,
     progress_dir: Path | None = None,
     progress_profile: str = "",
 ):
@@ -200,8 +191,6 @@ async def _run_arm(
         visual_point_grounder,
         visual_candidate_disambiguator,
         visual_predicate_classifier,
-        local_objective_proposer,
-        local_objective_requirement,
     )
     target = replace(
         target,

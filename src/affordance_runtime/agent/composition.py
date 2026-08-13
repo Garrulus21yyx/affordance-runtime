@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from affordance_runtime.agent.decision_capability import DecisionCapability
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposalPort
 from affordance_runtime.agent.policy import (
     ActionEvaluator,
     AgentDecisionPorts,
     AgentPolicy,
-    LocalObjectiveProposalRequirement,
     TaskEvaluator,
 )
 from affordance_runtime.agent.runtime import TargetRuntime
@@ -25,10 +23,6 @@ def compose_target_runtime(
     action_evaluator: ActionEvaluator,
     task_evaluator: TaskEvaluator,
     *,
-    local_objective_proposer: LocalObjectiveProposalPort | None = None,
-    local_objective_requirement: LocalObjectiveProposalRequirement = (
-        LocalObjectiveProposalRequirement.NOT_REQUIRED
-    ),
     required_decisions: frozenset[DecisionCapability] = frozenset(),
     risk_policy: RiskPolicy | None = None,
     intake: TaskIntake | None = None,
@@ -41,11 +35,7 @@ def compose_target_runtime(
     """Compose product and benchmark target runs through one validation boundary."""
 
     return TargetRuntime(
-        AgentDecisionPorts(
-            action_policy,
-            local_objective_proposer,
-            local_objective_requirement,
-        ),
+        AgentDecisionPorts(action_policy),
         action_evaluator,
         task_evaluator,
         risk_policy=risk_policy or RiskPolicy(),

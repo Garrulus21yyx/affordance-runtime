@@ -19,11 +19,9 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.decisions import AbortCategory
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposalPort
 from affordance_runtime.agent.policy import (
     ActionEvaluator,
     AgentPolicy,
-    LocalObjectiveProposalRequirement,
     TaskEvaluator,
 )
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
@@ -296,7 +294,6 @@ class BenchmarkComposition:
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
-    local_objective_proposer: LocalObjectiveProposalPort | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
@@ -324,9 +321,6 @@ class BenchmarkCase:
     required_measurements: tuple[str, ...]
     metric_expectations: tuple[MetricExpectation, ...] = ()
     auto_confirm: bool = False
-    local_objective_requirement: LocalObjectiveProposalRequirement = (
-        LocalObjectiveProposalRequirement.NOT_REQUIRED
-    )
 
     def __post_init__(self) -> None:
         if not self.case_id or not self.suite_id or not 0 < self.timeout_s <= 300:
@@ -336,11 +330,6 @@ class BenchmarkCase:
             raise ValueError("benchmark metric expectations must be unique")
         if any(name not in _KNOWN_METRICS for name in (*self.required_measurements, *names)):
             raise ValueError("benchmark case references an unknown metric")
-        if not isinstance(
-            self.local_objective_requirement,
-            LocalObjectiveProposalRequirement,
-        ):
-            raise TypeError("benchmark objective proposal requirement must be typed")
 
 
 @dataclass(frozen=True)

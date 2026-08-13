@@ -52,29 +52,6 @@ class PacedAgentPolicy:
         return await self.wrapped.decide(context)
 
 
-@dataclass
-class PacedLocalObjectiveProposer:
-    wrapped: object
-    minimum_interval_s: float = 7.5
-    clock: Callable[[], float] = time.monotonic
-    sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep
-    state: FixedPacingState = field(default_factory=FixedPacingState)
-    context_observer: Callable[[object], None] | None = None
-
-    def __post_init__(self) -> None:
-        if self.minimum_interval_s < 0:
-            raise ValueError("fixed objective pacing interval cannot be negative")
-
-    def __getattr__(self, name: str):
-        return getattr(self.wrapped, name)
-
-    async def propose(self, context):
-        if self.context_observer is not None:
-            self.context_observer(context)
-        await _pace(self.minimum_interval_s, self.clock, self.sleeper, self.state)
-        return await self.wrapped.propose(context)
-
-
 async def _pace(minimum_interval_s, clock, sleeper, state) -> None:
     now = clock()
     if state.last_call_started_s is not None:
