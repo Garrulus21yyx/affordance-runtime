@@ -193,26 +193,9 @@ def test_real_model_port_503_then_200_dispatches_two_network_attempts() -> None:
                                 "message": {
                                     "content": json.dumps(
                                         {
-                                            "op": "establish_local_objective",
-                                            "value": {
-                                                "kind": "set",
-                                                "predicate": {
-                                                    "any_of": [
-                                                        {
-                                                            "all_of": [
-                                                                {
-                                                                    "kind": "fact_equals",
-                                                                    "field_name": "identity.label",
-                                                                    "expected": "Username",
-                                                                }
-                                                            ]
-                                                        }
-                                                    ]
-                                                },
-                                                "quantifier": "exactly_one",
-                                                "semantic_action": "fill",
-                                                "parameters": {"value": "donovan"},
-                                            },
+                                            "op": "fill",
+                                            "target": "E1",
+                                            "text": "donovan",
                                         }
                                     )
                                 }

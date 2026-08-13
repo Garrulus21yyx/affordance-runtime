@@ -25,9 +25,10 @@ ActionSpace -> AgentContext -> AgentDecision` chain. The incorrectly imported
 hidden policy preparer capability, semantic-control mode, AgentLoop TaskProgress,
 and execution-control projection were deleted. Canonical TaskSpec/TaskPlan remain
 owned by the separate Coordinator workflow runtime. Set/sequence/aggregate
-reducers now enter through one typed LocalObjective decision, share one state
-slot and one lifecycle owner, and re-resolve on every fresh observation. Fresh
-live benchmark revalidation remains open.
+reducers now enter through one explicit post-observation
+`LocalObjectiveProposalPort`, share one state slot and one lifecycle owner, and
+re-resolve on every fresh observation. The recurrent Agent decision/tool schema
+is action/control-only. Fresh live benchmark revalidation remains open.
 
 The target path now has:
 
@@ -62,7 +63,7 @@ The target path now has:
 | criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
 | P5-M1 model policy core | `CLOSED`; canonical context projection, adapter-owned single parse to typed decision, and Runtime admission |
-| P5-M1.1 strict decision boundary | `REOPENED / DETERMINISTIC_ARCHITECTURE_VERIFIED / NOT_LIVE_VERIFIED`; duplicate/non-finite/depth/node/byte limits and canonical eight-variant spec including one LocalObjective constructor; raw-response policy compatibility path deleted |
+| P5-M1.1 strict decision boundary | `PHASE_CUTOVER_IMPLEMENTED / NOT_LIVE_VERIFIED`; recurrent seven-variant action/control schema is independent from the LocalObjective proposal schema; duplicate/non-finite/depth/node/byte limits and single-parse adapters retained |
 | P5-M1.1 existing ModelPort bridge | `CLOSED`; existing transport owner, outer deadline, zero retry/no fallback, typed metadata/failures |
 | local HTTP provider-transport proof | `CLOSED`; one request/one execution plus 429/500/schema/deadline zero-call proofs |
 | deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
@@ -529,8 +530,8 @@ demonstrated. Stable opaque entity identity, a bounded retained
 entity/state/fact/relation/option inventory, fair frozen-snapshot paging and
 negative-claim coverage gating are implemented. The former pre-policy
 requirement-hypothesis producer and its separate call/accounting path are
-deleted; semantic objective establishment now occurs only as one typed decision
-over a current AgentContext.
+deleted; semantic objective proposal now occurs only through an explicit typed
+post-observation port. It is not an Agent decision or action tool.
 Dynamic-tools v1 and its bounded selected-argument repair are implemented, but
 the stopped clean-`7c14190` MiniWoB-60 attempt completed only 8 mixed-cohort
 cases with 0 success and is not a benchmark claim. Its only
@@ -686,10 +687,12 @@ are reused or outsourced behind typed ports. Runtime continues to own current
 epoch, ActionSpace/ref resolution, admission, dispatch truth/no-replay,
 risk/confirmation, evidence validation and task disposition.
 
-P5-E is `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED /
+P5-E is `IN_PROGRESS / PHASE_BOUNDARY_CUTOVER_IMPLEMENTED /
 LIVE_REVALIDATION_PENDING`. Sequence, set and aggregate semantics enter through
-one `EstablishLocalObjective` decision after observation, share one state slot,
-and re-resolve from current evidence. The old TaskFrontier, VerifiedTaskState,
+one explicit `LocalObjectiveProposalPort` after observation, share one state
+slot, and re-resolve from current evidence. `AgentDecision` and recurrent action
+tools contain no objective constructor; their schema module imports no
+predicate/scope/aggregate contracts. The old TaskFrontier, VerifiedTaskState,
 RequirementHypothesis and objective-operation package are deleted. Focused and
 full-suite verification do not yet constitute a fresh live benchmark closure.
 

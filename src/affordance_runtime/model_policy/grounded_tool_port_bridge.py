@@ -19,17 +19,24 @@ from affordance_runtime.model_boundary.failures import (
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model_policy.contracts import (
+    ModelDecisionRequest,
+    ModelMetadata,
+    ResolvedLocalObjectiveProposal,
+    ResolvedModelDecision,
+)
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
+    GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model_policy.objective_spec import OBJECTIVE_SCHEMA_VERSION
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 from affordance_runtime.model_policy.strict_json import validate_json_tree
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolTransportKind
@@ -48,19 +55,24 @@ from affordance_runtime.model_port import (
 from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.world.schema_validation import validate_value_issue
 
-_SYSTEM_PROMPT = """
+_ACTION_SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
-When establish_local_objective is offered, establish the semantic objective before any effectful action.
-When it is absent, choose only among actions in the current Runtime action page; those actions are already
-narrowed by the active objective reducer.
+Choose only among actions in the current Runtime action page; those actions are already narrowed by the
+active objective reducer.
 Use current public state and the previous tool result: once a requested field is nonempty or satisfied, advance to the next required control.
 When recovery forbids retry or requires a strategy change, never repeat the same operation, target, and arguments.
 Respect prerequisites expressed by the instruction, state, roles, labels, and relations before choosing a submit/final action.
 Return only the required command. Do not invent screen points, private selectors, IDs, tools, targets, or explanations.
 The Runtime independently validates action authority, currentness, risk, execution, effects, and task completion.
-When establish_local_objective is offered it is the only semantic ingress; install one observation-resolvable
-objective. Effectful action tools appear only after Runtime admits and resolves that objective.
+""".strip()
+
+_OBJECTIVE_SYSTEM_PROMPT = """
+Propose exactly one bounded observation-resolvable LocalObjective for the GUI task.
+Use semantic predicates over public facts or visual concepts. Never use E-refs, action IDs, DOM IDs,
+bindings, private selectors, screen points, or coordinates. A sequence may contain future-resolvable
+semantic steps when the instruction already determines them. Runtime owns admission, identity, scope
+closure, evidence, action legality, binding, effects, and completion. Return only the offered proposal.
 """.strip()
 
 
@@ -99,6 +111,7 @@ class GroundedToolDecisionAdapter:
     port: ModelPort
     config: ModelConfig
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
+    phase: GroundedToolPhase = GroundedToolPhase.ACTION_SELECTION
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
     last_argument_repair_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
@@ -120,6 +133,7 @@ class GroundedToolDecisionAdapter:
         if profile is not DecisionPerceptionProfile.SCREENSHOT_AX:
             raise ValueError("grounded-tools v2 requires screenshot+AX perception")
         object.__setattr__(self, "perception_profile", profile)
+        object.__setattr__(self, "phase", GroundedToolPhase(self.phase))
         object.__setattr__(self, "transport_kind", tool_transport_for_model(self.port.provider, self.port.model))
 
     @property
@@ -140,27 +154,40 @@ class GroundedToolDecisionAdapter:
 
     @property
     def compatibility_key(self) -> str:
-        return f"{GROUNDED_TOOLS_PROTOCOL}:{self.transport_kind.value}"
+        return f"{GROUNDED_TOOLS_PROTOCOL}:{self.phase.value}:{self.transport_kind.value}"
 
     @property
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
-    async def generate(self, request: ModelDecisionRequest) -> ResolvedModelDecision | ModelFailure:
+    async def generate(
+        self,
+        request: ModelDecisionRequest,
+    ) -> ResolvedModelDecision | ResolvedLocalObjectiveProposal | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
-        if request.schema_version != SCHEMA_VERSION or request.policy_context is None:
+        expected_schema = (
+            OBJECTIVE_SCHEMA_VERSION
+            if self.phase is GroundedToolPhase.OBJECTIVE_PROPOSAL
+            else SCHEMA_VERSION
+        )
+        if request.schema_version != expected_schema or request.policy_context is None:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
         try:
-            catalog = compile_grounded_tool_catalog(request.policy_context)
+            catalog = compile_grounded_tool_catalog(request.policy_context, self.phase)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
-            messages = _messages(catalog.view, request, self.port.supports_multimodal)
+            messages = _messages(
+                catalog.view,
+                request,
+                self.port.supports_multimodal,
+                self.phase,
+            )
             calls = await self._call(
                 messages,
                 catalog.specs,
@@ -231,7 +258,18 @@ class GroundedToolDecisionAdapter:
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
-        return ResolvedModelDecision(decision, _metadata(self.port, self.transport_kind, include_record=True))
+        metadata = _metadata(self.port, self.transport_kind, include_record=True)
+        if self.phase is GroundedToolPhase.OBJECTIVE_PROPOSAL:
+            from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
+
+            if not isinstance(decision, LocalObjectiveProposal):
+                return _failure(ModelFailureKind.INTERNAL_ERROR, "objective phase resolved an action")
+            return ResolvedLocalObjectiveProposal(decision, metadata)
+        from affordance_runtime.agent.decisions import AgentDecision
+
+        if not isinstance(decision, AgentDecision):
+            return _failure(ModelFailureKind.INTERNAL_ERROR, "action phase resolved an objective")
+        return ResolvedModelDecision(decision, metadata)
 
     async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
@@ -281,7 +319,7 @@ class GroundedToolDecisionAdapter:
         return ToolCall(payload.op, _command_arguments(payload, spec))
 
 
-def _messages(view, request, supports_multimodal):
+def _messages(view, request, supports_multimodal, phase):
     if not supports_multimodal or not request.image_inputs:
         raise ValueError("grounded-tools v2 requires a marked screenshot")
     public = {
@@ -304,7 +342,14 @@ def _messages(view, request, supports_multimodal):
         encoded = base64.b64encode(image.data).decode("ascii")
         parts.append(ModelImageURLPart(image_url=f"data:{image.mime_type};base64,{encoded}"))
     return (
-        ModelMessage(role="system", content=_SYSTEM_PROMPT),
+        ModelMessage(
+            role="system",
+            content=(
+                _OBJECTIVE_SYSTEM_PROMPT
+                if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL
+                else _ACTION_SYSTEM_PROMPT
+            ),
+        ),
         ModelMessage(role="user", content=tuple(parts)),
     )
 

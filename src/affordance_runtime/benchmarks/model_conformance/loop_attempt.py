@@ -6,7 +6,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import Abort, AgentLoopStatus, SelectAction, TargetRuntime
+from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_adapter_task, real_dom_environment
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
@@ -55,9 +56,11 @@ async def run_level_four_attempt(
     instrumentation = BenchmarkInstrumentation()
     environment = real_dom_environment(instrumentation)
     try:
-        result = await AgentEpisodeRunner(AgentLoop(
-            policy, CurrentFactActionEvaluator(), ProductionTaskEvaluator(),
-        )).run(environment, real_adapter_task())
+        result = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            CurrentFactActionEvaluator(),
+            ProductionTaskEvaluator(),
+        ).run_task(environment, real_adapter_task())
     finally:
         close = getattr(environment, "close", None)
         if close is not None:
@@ -123,7 +126,6 @@ def _attributed(outcome, user):
 def _decision_variant(decision) -> str:
     return {
         "SelectAction": "select_action",
-        "EstablishLocalObjective": "establish_local_objective",
         "RequestObservation": "request_observation",
         "RequestActionPage": "request_action_page",
         "AskUser": "ask_user",

@@ -19,7 +19,10 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     run_provider_cohort_arm,
     write_provider_cohort_arm,
 )
-from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model_policy import (
+    local_objective_proposer_from_environment,
+    model_policy_from_environment,
+)
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.visual_disambiguation import visual_candidate_disambiguator_from_environment
 from affordance_runtime.visual_grounding import (
@@ -75,6 +78,7 @@ def main() -> int:
         perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
         interaction_protocol="grounded_tools.v2",
     )
+    objective_proposer = local_objective_proposer_from_environment(call_timeout_s=90)
     outcome = asyncio.run(run_provider_cohort_arm(
         manifest,
         policy,
@@ -83,6 +87,7 @@ def main() -> int:
         visual_point_grounder=glm_visual_point_grounder_from_environment(),
         visual_candidate_disambiguator=visual_candidate_disambiguator_from_environment(),
         visual_predicate_classifier=visual_predicate_classifier_from_environment(),
+        local_objective_proposer=objective_proposer,
         progress_dir=args.output_dir,
         progress_profile="M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
     ))

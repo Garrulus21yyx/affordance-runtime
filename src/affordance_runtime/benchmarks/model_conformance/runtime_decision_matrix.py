@@ -5,18 +5,17 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
-    AgentLoop,
     AgentLoopStatus,
     AskUser,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    TargetRuntime,
     Wait,
 )
 from affordance_runtime.agent.accounting import RunAccounting
@@ -27,6 +26,7 @@ from affordance_runtime.agent.attempt_receipt import (
 )
 from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
+from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.support import (
@@ -45,6 +45,9 @@ from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIs
 from affordance_runtime.world.contracts import ActionSpace, WorldObservation
 
 from .decision_matrix import DECISION_VARIANTS
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.loop import AgentLoop
 
 
 @dataclass(frozen=True)
@@ -142,13 +145,13 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
     else:
         environment = shared_environment("dom")
     context_builder = ContextBuilder(pager=ActionPager(page_size=1)) if paging else ContextBuilder()
-    result = await AgentEpisodeRunner(AgentLoop(
-        policy,
+    result = await TargetRuntime(
+        AgentDecisionPorts(policy),
         CurrentFactActionEvaluator(),
         evaluator,
         context_builder=context_builder,
         wait_controller=waiter,
-    )).run(environment, shared_task())
+    ).run_task(environment, shared_task())
     context_ids = tuple(item.context_id for item in policy.contexts)
     page_changed = paging and len(policy.contexts) > 1 and (
         policy.contexts[0].actions.options[0].action_id
@@ -292,7 +295,7 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
         acquisition.reason_code, 1, 0, 0, 0, acquisition_status=acquisition.status,
     ))
     session = AgentRunSession(
-        cast(AgentLoop, SimpleNamespace()), task, environment, state,
+        cast("AgentLoop", SimpleNamespace()), task, environment, state,
         accounting=accounting,
     )
     options = value.get("actions", {}).get("options", ())

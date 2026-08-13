@@ -14,6 +14,11 @@ MAX_GROUNDED_TOOL_COUNT = 40
 MAX_GROUNDED_WORKSPACE_BYTES = 64 * 1024
 
 
+class GroundedToolPhase(StrEnum):
+    OBJECTIVE_PROPOSAL = "objective_proposal"
+    ACTION_SELECTION = "action_selection"
+
+
 class GroundedToolResolutionCode(StrEnum):
     ACCEPTED = "accepted"
     ZERO_CALLS = "zero_tool_calls"

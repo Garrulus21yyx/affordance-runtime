@@ -141,6 +141,7 @@ async def run_provider_cohort_arm(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    local_objective_proposer=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
 ) -> PerceptionArmOutcome:
@@ -155,6 +156,7 @@ async def run_provider_cohort_arm(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
+        local_objective_proposer=local_objective_proposer,
         progress_dir=progress_dir,
         progress_profile=progress_profile,
     )
@@ -170,6 +172,7 @@ async def _run_arm(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    local_objective_proposer=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
 ):
@@ -191,6 +194,7 @@ async def _run_arm(
         visual_point_grounder,
         visual_candidate_disambiguator,
         visual_predicate_classifier,
+        local_objective_proposer,
     )
     target = replace(
         target,

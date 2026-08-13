@@ -138,12 +138,12 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
             "ongoing",
         ),
     )
-    catalog = compile_grounded_tool_catalog(context)
+    from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
 
     assert target.target_id in dict(context.grounding.target_refs)
-    assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
-        "establish_local_objective"
-    ]
+    assert [spec.name for spec in catalog.specs] == ["propose_local_objective"]
 
 
 def test_exact_lattice_relation_is_available_before_model_target_selection() -> None:
@@ -169,11 +169,11 @@ def test_exact_lattice_relation_is_available_before_model_target_selection() -> 
         ),
     )
 
-    catalog = compile_grounded_tool_catalog(context)
+    from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
 
-    assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
-        "establish_local_objective"
-    ]
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
+
+    assert [spec.name for spec in catalog.specs] == ["propose_local_objective"]
 
 
 def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> None:
@@ -202,12 +202,12 @@ def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> N
         ),
     )
 
-    catalog = compile_grounded_tool_catalog(context)
+    from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
 
     assert not any(spec.name == "click" for spec in catalog.specs)
-    assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
-        "establish_local_objective"
-    ]
+    assert [spec.name for spec in catalog.specs] == ["propose_local_objective"]
 
 
 def _raw_grid():

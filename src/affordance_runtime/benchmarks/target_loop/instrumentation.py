@@ -15,7 +15,7 @@ from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelBackedLocalObjectiveProposer
 from affordance_runtime.model_policy.contracts import ModelMetadata
 from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
@@ -126,6 +126,43 @@ class CountingPolicy:
                 )
             )
             self.instrumentation.record_failure(CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc)
+            raise
+        metadata = getattr(self.wrapped, "last_metadata", None)
+        if isinstance(metadata, ModelMetadata):
+            self.instrumentation.model_metadata = metadata
+            self.instrumentation.prompt_tokens += metadata.prompt_tokens
+            self.instrumentation.completion_tokens += metadata.completion_tokens
+            self.instrumentation.total_tokens += metadata.total_tokens
+            self.instrumentation.model_latency_ms += metadata.latency_ms
+        self.instrumentation.policy_trace.append(
+            _policy_trace_event(
+                self.instrumentation.policy_calls,
+                context,
+                outcome,
+                self.wrapped,
+            )
+        )
+        return outcome
+
+
+@dataclass
+class CountingObjectiveProposer:
+    wrapped: object
+    instrumentation: BenchmarkInstrumentation
+
+    def __getattr__(self, name):
+        return getattr(self.wrapped, name)
+
+    async def propose(self, context):
+        self.instrumentation.policy_calls += 1
+        try:
+            outcome = await self.wrapped.propose(context)
+        except Exception as exc:
+            self.instrumentation.record_failure(
+                CaseFailureOrigin.POLICY_DECISION,
+                "objective_proposal_exception",
+                exc,
+            )
             raise
         metadata = getattr(self.wrapped, "last_metadata", None)
         if isinstance(metadata, ModelMetadata):
@@ -545,6 +582,22 @@ def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):
             wrapped=replace(inner, port=CountingDecisionPort(inner.port, instrumentation)),
         )
     return CountingPolicy(policy, instrumentation)
+
+
+def instrument_objective_proposer(proposer, instrumentation: BenchmarkInstrumentation):
+    if proposer is None:
+        return None
+    if isinstance(proposer, ModelBackedLocalObjectiveProposer):
+        instrumentation.configured_provider_retry_count = _configured_retry_count(proposer.port)
+        proposer = replace(proposer, port=CountingDecisionPort(proposer.port, instrumentation))
+    elif isinstance(getattr(proposer, "wrapped", None), ModelBackedLocalObjectiveProposer):
+        inner = proposer.wrapped
+        instrumentation.configured_provider_retry_count = _configured_retry_count(inner.port)
+        proposer = replace(
+            proposer,
+            wrapped=replace(inner, port=CountingDecisionPort(inner.port, instrumentation)),
+        )
+    return CountingObjectiveProposer(proposer, instrumentation)
 
 
 def _configured_retry_count(port: object) -> int | None:

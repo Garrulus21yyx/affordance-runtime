@@ -1,7 +1,9 @@
 """Policy and independent evaluation ports for the target short loop."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
@@ -10,6 +12,9 @@ from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailureKind
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposalPort
 
 
 @dataclass(frozen=True)
@@ -31,7 +36,25 @@ AgentPolicyOutcome: TypeAlias = AgentDecision | PolicyFailure
 
 
 class AgentPolicy(Protocol):
+    """Choose one current action/control operation; never construct objectives."""
+
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome: ...
+
+
+@dataclass(frozen=True)
+class AgentDecisionPorts:
+    """Explicit model-facing phase composition for one AgentLoop."""
+
+    action_policy: AgentPolicy
+    local_objective_proposer: LocalObjectiveProposalPort | None = None
+
+    def __post_init__(self) -> None:
+        if not callable(getattr(self.action_policy, "decide", None)):
+            raise TypeError("AgentDecisionPorts requires an action policy")
+        if self.local_objective_proposer is not None and not callable(
+            getattr(self.local_objective_proposer, "propose", None)
+        ):
+            raise TypeError("AgentDecisionPorts objective proposer is invalid")
 
 
 class ActionEvaluator(Protocol):

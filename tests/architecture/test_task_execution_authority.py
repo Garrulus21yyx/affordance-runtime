@@ -105,6 +105,7 @@ def test_model_decision_is_parsed_once_and_objectives_have_no_reverse_wire_proje
         for relative in ("model_port_bridge.py", "tool_port_bridge.py", "grounded_tool_port_bridge.py")
     )
     spec = (RUNTIME / "model_policy" / "spec.py").read_text(encoding="utf-8")
+    objective_spec = (RUNTIME / "model_policy" / "objective_spec.py").read_text(encoding="utf-8")
     predicate = (RUNTIME / "task" / "predicate_transport.py").read_text(encoding="utf-8")
 
     assert "ResolvedModelDecision" in adapters
@@ -112,6 +113,8 @@ def test_model_decision_is_parsed_once_and_objectives_have_no_reverse_wire_proje
     assert "ModelDecisionResponse" not in production
     assert "parse_agent_decision" not in policy
     assert "local_objective_to_payload" not in spec
+    assert "LocalObjective" not in spec
+    assert "LocalObjectiveProposal" in objective_spec
     assert "predicate_to_transport" not in predicate
 
 
@@ -138,6 +141,14 @@ def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
     assert "EstablishSetObjective" not in source
     assert "EstablishObjectiveSequence" not in source
     assert "EstablishAggregateObjective" not in source
+    assert "EstablishLocalObjective" not in source
+    assert "LocalObjective" not in source
+
+    catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
+    assert "GroundedToolPhase.OBJECTIVE_PROPOSAL" in catalog
+    assert "GroundedToolPhase.ACTION_SELECTION" in catalog
+    assert "propose_local_objective" in catalog
+    assert "establish_local_objective" not in catalog
 
 
 def test_normative_architecture_links_the_authority_map() -> None:

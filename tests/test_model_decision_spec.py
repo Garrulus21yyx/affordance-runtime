@@ -3,12 +3,16 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.agent.decisions import EstablishLocalObjective
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
+from affordance_runtime.model_policy.objective_spec import (
+    LocalObjectiveProposalResponse,
+    local_objective_response_schema,
+    payload_to_local_objective_proposal,
+)
 from affordance_runtime.model_policy.spec import (
     SCHEMA_VERSION,
     AgentDecisionPayload,
     decision_response_schema,
-    payload_to_decision,
 )
 
 
@@ -18,7 +22,6 @@ def test_canonical_schema_has_one_typed_decision_union() -> None:
     assert schema["discriminator"]["propertyName"] == "type"
     assert set(schema["discriminator"]["mapping"]) == {
         "select_action",
-        "establish_local_objective",
         "request_observation",
         "request_action_page",
         "ask_user",
@@ -26,7 +29,7 @@ def test_canonical_schema_has_one_typed_decision_union() -> None:
         "wait",
         "abort",
     }
-    assert len(schema["oneOf"]) == 8
+    assert len(schema["oneOf"]) == 7
     assert AgentDecisionPayload.model_json_schema() == schema
 
 
@@ -97,9 +100,9 @@ def test_direct_decision_boundary_rejects_non_json_sequence_coercion() -> None:
 
 
 def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identity() -> None:
-    payload = AgentDecisionPayload.model_validate(
+    payload = LocalObjectiveProposalResponse.model_validate(
         {
-            "type": "establish_local_objective",
+            "type": "local_objective_proposal",
             "context_id": "context:1",
             "objective": {
                 "kind": "set",
@@ -112,13 +115,13 @@ def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identi
             },
         }
     )
-    decision = payload_to_decision(payload, "context:1")
+    decision = payload_to_local_objective_proposal(payload, "context:1")
 
-    assert isinstance(decision, EstablishLocalObjective)
+    assert isinstance(decision, LocalObjectiveProposal)
     assert decision.objective.objective_id.startswith("set-objective:")
     encoded = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
     assert "target_id" not in encoded and "action_id" not in encoded and "binding_id" not in encoded
-    objective_schema = AgentDecisionPayload.model_json_schema()["$defs"]["SetLocalObjectivePayload"]
+    objective_schema = local_objective_response_schema()["$defs"]["SetLocalObjectivePayload"]
     assert not set(objective_schema["properties"]).intersection(
         {"objective_id", "scope_id", "scope_root", "target_id", "action_id", "binding_id"}
     )

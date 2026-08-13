@@ -243,6 +243,9 @@ reference:
   - role: p5_m4_6_evidence_directed_short_loop_remediation
     path: docs/reviews/2026-08-11-p5-m4-6-evidence-directed-short-loop-remediation.md
     lifecycle: current
+  - role: runtime_main_chain_convergence_audit_and_legacy_exit_plan
+    path: docs/reviews/2026-08-13-runtime-chain-convergence-audit.md
+    lifecycle: current
 
 immutable_records:
   - path: docs/evidence/

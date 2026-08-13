@@ -16,11 +16,11 @@ from pydantic import TypeAdapter, ValidationError
 
 from affordance_runtime.agent.decisions import (
     AgentDecision,
-    EstablishLocalObjective,
     RequestActionPage,
     RequestObservation,
     SelectAction,
 )
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext, AgentGroundingEntityView
 from affordance_runtime.model_boundary.contracts import AgentActionOptionView
@@ -28,11 +28,15 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
     GroundedToolCatalog,
+    GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
     ToolPolicyView,
 )
-from affordance_runtime.model_policy.spec import LocalObjectiveSpecPayload, local_objective_from_payload
+from affordance_runtime.model_policy.objective_spec import (
+    LocalObjectiveSpecPayload,
+    local_objective_from_payload,
+)
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.schema_validation import validate_value
 
@@ -62,13 +66,19 @@ class _LocalObjectiveBinding:
     pass
 
 
-def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
+def compile_grounded_tool_catalog(
+    context: AgentContext,
+    phase: GroundedToolPhase,
+) -> GroundedToolCatalog:
     if context.actions.options and (not context.grounding.entities or not context.grounding.target_refs):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
-    if context.progress.local_objective_open:
+    objective_open = context.progress.local_objective_open
+    if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL and objective_open:
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    if phase is GroundedToolPhase.ACTION_SELECTION:
         for option in context.actions.options:
             ref = ref_by_target.get(option.target_id)
             if ref is None:
@@ -78,28 +88,29 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
 
     specs: list[ToolSpec] = []
     bindings: list[object] = []
-    if not context.progress.local_objective_open:
+    if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL:
         specs.append(
             ToolSpec(
-                "establish_local_objective",
-                "Install one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
+                "propose_local_objective",
+                "Propose one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
                 "Use semantic predicates only. Runtime assigns objective/scope/step IDs; never put E-refs, DOM IDs, "
                 "screen points, private selectors, or bindings here.",
                 _object_schema({"value": _local_objective_schema()}, ("value",)),
             )
         )
         bindings.append(_LocalObjectiveBinding())
-    seen_modalities: set[str] = set()
-    for capability in context.world.observation_capabilities:
-        if capability.modality in seen_modalities:
-            continue
-        seen_modalities.add(capability.modality)
-        specs.append(ToolSpec(
-            f"observe_{capability.modality}",
-            f"Acquire a fresh {capability.modality} observation at {capability.assurance} assurance.",
-            _object_schema({}),
-        ))
-        bindings.append(_ObserveBinding(capability.modality, capability.assurance))
+    if phase is GroundedToolPhase.ACTION_SELECTION:
+        seen_modalities: set[str] = set()
+        for capability in context.world.observation_capabilities:
+            if capability.modality in seen_modalities:
+                continue
+            seen_modalities.add(capability.modality)
+            specs.append(ToolSpec(
+                f"observe_{capability.modality}",
+                f"Acquire a fresh {capability.modality} observation at {capability.assurance} assurance.",
+                _object_schema({}),
+            ))
+            bindings.append(_ObserveBinding(capability.modality, capability.assurance))
 
     verb_counts: dict[str, int] = {}
     for (verb, _shape), values in grouped.items():
@@ -110,7 +121,7 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         specs.append(ToolSpec(f"{verb}{suffix}", _tool_description(verb, refs, entity_by_ref), schema))
         bindings.append(_VerbBinding(tuple((ref, option.action_id) for ref, option in values), parameter_field))
 
-    if context.actions.has_more:
+    if phase is GroundedToolPhase.ACTION_SELECTION and context.actions.has_more:
         specs.append(ToolSpec(
             "next_actions",
             "Inspect the next in-memory page of currently legal actions.",
@@ -159,7 +170,7 @@ def resolve_grounded_tool_call(
     *,
     expected_context_id: str,
     expected_catalog_id: str | None = None,
-) -> AgentDecision:
+) -> AgentDecision | LocalObjectiveProposal:
     if catalog.context_id != expected_context_id or (
         expected_catalog_id is not None and catalog.catalog_id != expected_catalog_id
     ):
@@ -180,7 +191,7 @@ def resolve_grounded_tool_call(
             objective = local_objective_from_payload(payload)
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-        return EstablishLocalObjective(expected_context_id, objective)
+        return LocalObjectiveProposal(expected_context_id, objective)
     try:
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:

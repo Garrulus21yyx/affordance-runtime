@@ -286,6 +286,7 @@ class BenchmarkComposition:
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
+    local_objective_proposer: object | None = None
 
 
 @dataclass(frozen=True)

@@ -66,7 +66,15 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
-from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.task import (
+    LoopBudget,
+    NaturalLanguageTaskRequest,
+    ReadyTask,
+    RiskProfile,
+    TaskBoundary,
+    TaskGoal,
+    ThinTaskIntake,
+)
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -250,13 +258,22 @@ class BrowserGymMiniWobEnvironment:
                 visual_predicate_classifier=visual_predicate_classifier,
                 marked_candidate_policy_available=marked_candidate_policy_available,
             )
-            task = TaskGoal(
-                f"task:{uuid.uuid4().hex}", goal,
-                allowed_effects=("external_ui_interaction",),
-                forbidden_effects=("external_network_side_effect", "credential_use"),
-                risk_profile=RiskProfile.LOW,
-                loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+            intake = ThinTaskIntake().compile(
+                NaturalLanguageTaskRequest(
+                    f"task:{uuid.uuid4().hex}",
+                    goal,
+                    TaskBoundary(
+                        allowed_effects=("external_ui_interaction",),
+                        forbidden_effects=("external_network_side_effect", "credential_use"),
+                        risk_profile=RiskProfile.LOW,
+                        loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+                    ),
+                    source_ref=f"browsergym:{benchmark_task_id}:goal",
+                )
             )
+            if not isinstance(intake, ReadyTask):
+                raise RuntimeError(f"BrowserGym task intake rejected its reviewed profile: {intake.status.value}")
+            task = intake.task
             return environment, task
         except BaseException:
             gym_environment.close()

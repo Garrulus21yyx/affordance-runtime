@@ -1,4 +1,4 @@
-"""Sequential isolated benchmark execution through AgentEpisodeRunner only."""
+"""Sequential isolated benchmark execution through the production TargetRuntime."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from affordance_runtime.agent import (
-    AgentEpisodeRunner,
-    AgentLoop,
     AgentLoopStatus,
     AgentRunSession,
     AgentSessionStartError,
+    TargetRuntime,
 )
+from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -30,11 +30,13 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     CountingActionEvaluator,
     CountingEnvironment,
     finalize_policy_trace,
+    instrument_objective_proposer,
     instrument_policy,
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
+from affordance_runtime.risk.policy import RiskPolicy
 
 
 async def run_suite(
@@ -132,7 +134,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
             frozenset(task.forbidden_effects),
         )
         try:
-            loop = _build_loop(composition, instrumentation)
+            runtime = _build_runtime(composition, instrumentation)
         except Exception as exc:
             instrumentation.record_failure(
                 CaseFailureOrigin.LOOP_CONSTRUCTION,
@@ -141,7 +143,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
             )
             raise _CaseStageError("AgentLoop construction", exc) from exc
         result = await _run_with_watchdog(
-            _run_episode(case, loop, counted_environment, task, instrumentation, session_holder),
+            _run_episode(case, runtime, counted_environment, task, instrumentation, session_holder),
             case.timeout_s,
         )
     except _HarnessWatchdogTimeout as exc:
@@ -187,20 +189,24 @@ async def _run_case(case) -> BenchmarkCaseResult:
     )
 
 
-def _build_loop(composition, instrumentation):
-    loop = AgentLoop(
-        instrument_policy(composition.policy, instrumentation),
+def _build_runtime(composition, instrumentation):
+    return TargetRuntime(
+        AgentDecisionPorts(
+            instrument_policy(composition.policy, instrumentation),
+            instrument_objective_proposer(
+                composition.local_objective_proposer,
+                instrumentation,
+            ),
+        ),
         CountingActionEvaluator(composition.action_evaluator, instrumentation),
         instrument_task_evaluator(composition.task_evaluator, instrumentation),
+        risk_policy=composition.risk_policy or RiskPolicy(),
     )
-    if composition.risk_policy is not None:
-        loop.risk_policy = composition.risk_policy
-    return loop
 
 
-async def _run_episode(case, loop, environment, task, instrumentation, session_holder):
+async def _run_episode(case, runtime, environment, task, instrumentation, session_holder):
     try:
-        session = await AgentEpisodeRunner(loop).start(environment, task)
+        session = await runtime.start_task(environment, task)
     except AgentSessionStartError as exc:
         instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, exc.reason_code, exc)
         raise

@@ -9,7 +9,9 @@ def test_conformance_policy_uses_production_policy_parser_and_agent_loop() -> No
     assert "ModelBackedAgentPolicy" in composition
     assert "ResolvedModelDecision" in composition
     assert "payload_to_decision" in composition
-    assert "AgentEpisodeRunner" in runner
+    assert "TargetRuntime" in runner
+    assert "AgentEpisodeRunner(" not in runner
+    assert "AgentLoop(" not in runner
     policy_source = composition.split("def _public_decision", 1)[1]
     assert "benchmark_task_id" not in policy_source
     assert ".execute(" not in composition

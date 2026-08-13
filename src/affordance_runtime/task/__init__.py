@@ -21,6 +21,10 @@ _MODULE_EXPORTS = {
         "refresh_aggregate_objective_state",
     },
     "affordance_runtime.task.intent_context": {"IntentContext", "IntentExcerpt", "IntentSourceKind"},
+    "affordance_runtime.task.intake": {
+        "NaturalLanguageTaskRequest", "ReadyTask", "TaskBoundary", "TaskInputRequired", "TaskIntake",
+        "TaskIntakeOutcome", "TaskIntakeStatus", "TaskPolicyRejected", "TaskUnsupported", "ThinTaskIntake",
+    },
     "affordance_runtime.task.local_objective": {
         "LocalObjective", "LocalObjectiveState", "establish_local_objective",
         "local_objective_action_parameters", "local_objective_allowed_action_ids", "local_objective_authority_digest",

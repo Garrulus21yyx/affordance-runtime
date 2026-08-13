@@ -15,6 +15,8 @@ from affordance_runtime.agent import (
     Wait,
 )
 from affordance_runtime.agent.control_transition import PendingKind
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
+from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -26,8 +28,20 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.task import (
+    ActionTemplate,
+    FactEquals,
+    LoopBudget,
+    RiskProfile,
+    TaskGoal,
+)
 from affordance_runtime.task.contracts import criterion_id
+from affordance_runtime.task.objective_sequence import (
+    EntitySelector,
+    ObjectiveSequence,
+    ObjectiveStep,
+)
+from affordance_runtime.task.set_objective import ScopeEntityDomain
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     AcquisitionOrigin,
@@ -166,6 +180,47 @@ def _loop(policy) -> AgentLoop:
 def _sent(status: DispatchStatus = DispatchStatus.SENT, success: bool = True) -> ActionResult:
     error = None if success else ActionError.EXECUTION_FAILED
     return ActionResult("*", status, "dom", success, error)
+
+
+def test_objective_proposal_and_action_selection_are_separate_phases() -> None:
+    class Proposer:
+        calls = 0
+
+        async def propose(self, context):
+            self.calls += 1
+            objective = ObjectiveSequence(
+                "objective:enable-shared",
+                (
+                    ObjectiveStep(
+                        "step:enable-shared",
+                        EntitySelector(
+                            FactEquals("identity.label", "Enable shared state"),
+                            ScopeEntityDomain.STRUCTURED,
+                        ),
+                        ActionTemplate("activate"),
+                    ),
+                ),
+            )
+            return LocalObjectiveProposal(context.context_id, objective)
+
+    proposer = Proposer()
+    policy = ScriptedPolicy(["first"])
+    environment = StaticEnvironment(
+        [_world("obs-1", False), _world("obs-2", True)],
+        [_sent()],
+    )
+    loop = AgentLoop(
+        AgentDecisionPorts(policy, proposer),
+        SharedActionEvaluator(),
+        SharedTaskEvaluator(),
+    )
+
+    result = asyncio.run(AgentEpisodeRunner(loop).run(environment, _task()))
+
+    assert result.status is AgentLoopStatus.DONE
+    assert proposer.calls == 1
+    assert policy.decisions == []
+    assert environment.execute_calls == 1
 
 
 def test_initial_satisfaction_is_zero_execution_done() -> None:

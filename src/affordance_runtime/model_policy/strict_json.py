@@ -59,6 +59,22 @@ def validate_json_tree(value: object) -> None:
         raise StrictJsonError("structured JSON contains an unsupported value")
 
 
+def require_json_collection_types(value: object) -> None:
+    """Reject Python-only collection coercions at typed model boundaries."""
+
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Mapping):
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, Sequence) and not isinstance(item, str | bytes | bytearray):
+            raise TypeError("structured decision arrays must be JSON lists")
+        elif isinstance(item, set | frozenset):
+            raise TypeError("structured decision arrays must be JSON lists")
+
+
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:

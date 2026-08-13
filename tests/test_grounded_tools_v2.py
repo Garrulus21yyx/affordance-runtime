@@ -5,7 +5,8 @@ import json
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import EstablishLocalObjective, SelectAction
+from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
@@ -24,6 +25,7 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
+from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolCommandPayload
 from affordance_runtime.model_policy.tool_contracts import ToolCall
 from affordance_runtime.task import (
@@ -96,7 +98,7 @@ def _context(*, local_objective=None):
 
 def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context)
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     public = json.dumps(to_json_compatible({
         "index": catalog.view.grounding_index,
         "state": catalog.view.current_state,
@@ -118,7 +120,7 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
             ActionTemplate("fill", parameters={"value": "UV"}),
         )
     )
-    catalog = compile_grounded_tool_catalog(context)
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     assert {item.name for item in catalog.specs} == {"fill"}
     decision = resolve_grounded_tool_call(
         catalog,
@@ -131,10 +133,8 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
 
 
 def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelope() -> None:
-    catalog = compile_grounded_tool_catalog(_context())
-    assert [item.name for item in catalog.specs if item.name.startswith("establish_")] == [
-        "establish_local_objective"
-    ]
+    catalog = compile_grounded_tool_catalog(_context(), GroundedToolPhase.OBJECTIVE_PROPOSAL)
+    assert [item.name for item in catalog.specs] == ["propose_local_objective"]
     assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
         "op", "target", "text", "value"
     }
@@ -143,11 +143,11 @@ def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelo
 
 def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context)
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
     decision = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "establish_local_objective",
+            "propose_local_objective",
             {
                 "value": {
                     "kind": "set",
@@ -163,7 +163,7 @@ def test_local_objective_tool_carries_semantics_without_pre_observation_target_i
         expected_context_id=context.context_id,
     )
 
-    assert isinstance(decision, EstablishLocalObjective)
+    assert isinstance(decision, LocalObjectiveProposal)
     assert decision.objective.scope.root_entity_id == "current-viewport"
 
 

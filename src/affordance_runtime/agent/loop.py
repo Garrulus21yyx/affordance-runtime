@@ -26,13 +26,17 @@ from affordance_runtime.agent.control_transition import (
     ControlContinuationScope,
     ControlTransitionScope,
 )
-from affordance_runtime.agent.decision_control import ensure_current_action_page, run_policy_turn
+from affordance_runtime.agent.decision_control import (
+    ensure_current_action_page,
+    run_objective_proposal_turn,
+    run_policy_turn,
+)
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
 from affordance_runtime.agent.local_objective_evidence import resolve_visual_local_objective_evidence
 from affordance_runtime.agent.observation_control import capture_for_session
-from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
+from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
@@ -54,6 +58,7 @@ from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.risk.validation import validate_risk_assessment
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.task.local_objective import local_objective_complete
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -82,7 +87,7 @@ def _environment_scope_enumerator(environment: WorldEnvironment) -> ScopeEnumera
 
 @dataclass
 class AgentLoop:
-    policy: AgentPolicy
+    decision_ports: AgentDecisionPorts | AgentPolicy
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     action_space_builder: ActionSpaceBuilder = field(default_factory=ActionSpaceBuilder)
@@ -91,6 +96,16 @@ class AgentLoop:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     recent_turn_limit: int = 12
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision_ports, AgentDecisionPorts):
+            self.decision_ports = AgentDecisionPorts(self.decision_ports)
+
+    @property
+    def _ports(self) -> AgentDecisionPorts:
+        if not isinstance(self.decision_ports, AgentDecisionPorts):
+            raise TypeError("AgentLoop decision ports were not normalized")
+        return self.decision_ports
 
     async def start(
         self,
@@ -254,6 +269,17 @@ class AgentLoop:
             )
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
+            elif (
+                self._ports.local_objective_proposer is not None
+                and local_objective_complete(state.local_objective_state)
+            ):
+                outcome = await run_objective_proposal_turn(
+                    session,
+                    action_space,
+                    task_evaluation,
+                    self._ports.local_objective_proposer,
+                    self.context_builder,
+                )
             elif await resolve_visual_local_objective_evidence(session):
                 continue
             else:
@@ -261,7 +287,7 @@ class AgentLoop:
                     session,
                     action_space,
                     task_evaluation,
-                    self.policy,
+                    self._ports.action_policy,
                     self.context_builder,
                     self.task_evaluator,
                     self.wait_controller,

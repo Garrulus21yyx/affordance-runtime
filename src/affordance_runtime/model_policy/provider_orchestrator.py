@@ -7,6 +7,7 @@ import hashlib
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from time import monotonic
+from typing import Generic, TypeVar
 
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -16,9 +17,12 @@ from affordance_runtime.model_boundary.failures import (
 )
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
+    ResolvedLocalObjectiveProposal,
     ResolvedModelDecision,
 )
-from affordance_runtime.model_policy.port import StructuredDecisionModelPort
+from affordance_runtime.model_policy.port import StructuredModelPort
+
+ResolvedT = TypeVar("ResolvedT", ResolvedModelDecision, ResolvedLocalObjectiveProposal)
 
 
 class ProviderAttemptStatus(StrEnum):
@@ -82,10 +86,10 @@ class ProviderCallPolicy:
 
 
 @dataclass(frozen=True)
-class ProviderCallOrchestrator:
+class ProviderCallOrchestrator(Generic[ResolvedT]):
     """Retry retryable provider failures without creating GUI policy turns."""
 
-    ports: tuple[StructuredDecisionModelPort, ...]
+    ports: tuple[StructuredModelPort[ResolvedT], ...]
     policy: ProviderCallPolicy = ProviderCallPolicy()
     last_attempts: tuple[ProviderAttemptReceipt, ...] = field(default=(), init=False, compare=False)
     last_fallback_count: int = field(default=0, init=False, compare=False)
@@ -102,7 +106,7 @@ class ProviderCallOrchestrator:
         return self.policy.total_elapsed_deadline_s
 
     @property
-    def primary_port(self) -> StructuredDecisionModelPort:
+    def primary_port(self) -> StructuredModelPort[ResolvedT]:
         return self.ports[0]
 
     @property
@@ -127,9 +131,7 @@ class ProviderCallOrchestrator:
     def configured_fallback_count(self) -> int:
         return len(self.ports) - 1
 
-    async def generate(
-        self, request: ModelDecisionRequest
-    ) -> ResolvedModelDecision | ModelFailure:
+    async def generate(self, request: ModelDecisionRequest) -> ResolvedT | ModelFailure:
         object.__setattr__(self, "last_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         started = monotonic()
@@ -175,7 +177,7 @@ class ProviderCallOrchestrator:
                             False,
                             attempt_origin=ProviderAttemptOrigin.UNKNOWN,
                         )
-                    if isinstance(outcome, ResolvedModelDecision):
+                    if not isinstance(outcome, ModelFailure):
                         if accepted:
                             return ModelFailure(
                                 ModelFailureKind.INTERNAL_ERROR,
@@ -266,7 +268,7 @@ class ProviderCallOrchestrator:
     def _receipt(
         self,
         request: ModelDecisionRequest,
-        port: StructuredDecisionModelPort,
+        port: StructuredModelPort[ResolvedT],
         attempt_number: int,
         profile_index: int,
         status: ProviderAttemptStatus,

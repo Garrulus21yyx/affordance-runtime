@@ -29,6 +29,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnv
 from affordance_runtime.benchmarks.external_smoke.pacing import (
     FixedPacingState,
     PacedAgentPolicy,
+    PacedLocalObjectiveProposer,
     validate_pacing_budget,
 )
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -134,6 +135,7 @@ async def run_breadth_campaign(
     visual_point_grounder: VisualGrounderPort | None = None,
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
     visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
+    local_objective_proposer=None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -163,6 +165,7 @@ async def run_breadth_campaign(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
+        local_objective_proposer=local_objective_proposer,
     )
     harness_digest = target_manifest_digest(target_manifest)
     if harness_digest != expected_target_manifest_digest(manifest):
@@ -224,6 +227,7 @@ def _target_manifest(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    local_objective_proposer=None,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -236,6 +240,7 @@ def _target_manifest(
             visual_point_grounder,
             visual_candidate_disambiguator,
             visual_predicate_classifier,
+            local_objective_proposer,
         )
         for item in manifest.cases
     )
@@ -258,6 +263,7 @@ def _target_case(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    local_objective_proposer=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -301,10 +307,21 @@ def _target_case(
             state=pacing_state,
             context_observer=observer,
         )
+        paced_objective = (
+            PacedLocalObjectiveProposer(
+                local_objective_proposer,
+                manifest.minimum_policy_call_interval_s,
+                state=pacing_state,
+                context_observer=observer,
+            )
+            if local_objective_proposer is not None
+            else None
+        )
         return BenchmarkComposition(
             paced,
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
+            local_objective_proposer=paced_objective,
         )
 
     return BenchmarkCase(

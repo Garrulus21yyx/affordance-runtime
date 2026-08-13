@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 
-Status: `ARCHITECTURE_CONVERGED / IMPLEMENTED_NOT_LIVE_VERIFIED`
+Status: `PHASE_BOUNDARY_CUTOVER_IMPLEMENTED / LIVE_REVALIDATION_PENDING`
 
 ## 2026-08-13 architecture-first correction
 
@@ -17,10 +17,11 @@ duplicate inside the target loop:
 
 The third chain is deleted, not adapted. The target AgentLoop does not consume
 workflow TaskSpec/TaskPlan and does not require an exact resource or GUI target
-before its first observation. Sequence, set, and aggregate semantics now enter
-only as one post-observation `EstablishLocalObjective` decision, share one
-`local_objective_state` slot, and resolve their selectors against current world
-evidence.
+before its first observation. Sequence, set, and aggregate semantics share one
+`local_objective_state` slot and resolve their selectors against current world
+evidence. Their proposal is now owned by an explicit post-observation
+`LocalObjectiveProposalPort`; it is no longer encoded inside the recurrent Agent
+decision/tool contract, which is action/control-only.
 
 Provider adapters parse a response once into `AgentDecision`. The previous
 typed-decision -> JSON -> second policy parse and internal predicate -> wire
@@ -88,7 +89,7 @@ The bounded contract is:
 
 ```text
 current AgentContext
-  -> one typed LocalObjective decision
+  -> one typed LocalObjective proposal
   -> persistent typed local objective state
   -> fresh-observation selector resolution
   -> Runtime-owned candidate/value evidence obligations
@@ -130,7 +131,7 @@ authority.
 | F | completed | Add property/metamorphic and integration tests | Capacity, missing fact, zero match, actionability, new candidate, history independence and de-specialization redlines pass |
 | G | completed | Run focused suite, full suite, and real five-case regression gate | Full suite `2410 passed, 24 skipped`; live run `f57f758` completed all five with 3 successes and 2 typed provider-unavailable outcomes |
 | H | deleted as invalid | Replace action-loop semantic ingress with pre-loop TaskSpec/TaskPlan admission | Removed: workflow exact-resource authority cannot precede GUI discovery in AgentLoop |
-| I | implemented, verification open | Put selector/predicate semantics behind one LocalObjective decision contract | AgentContext remains disposable; no fact-specific schema owner or projection roundtrip |
+| I | implemented, verification open | Put selector/predicate semantics behind one LocalObjective proposal contract | AgentContext remains disposable; no fact-specific schema owner or projection roundtrip |
 | J | in_progress | Re-run the five live witnesses and held-out semantic-control cases | Grid, quantified shades, and aggregate value-entry witnesses completed; both pie witnesses established/executed their first objective then hit provider unavailable during successor ingress |
 | K | implemented, verification open | Converge grounded objective transport on the single LocalObjective contract | Grounded policy exposes objective establishment before effectful actions; Runtime assigns objective/scope/step IDs |
 | L | reopened | Auto-advance only reducer-authorized singleton member continuations | Reconnect after LocalObjective admission; action ID and parameters remain Runtime-owned |
@@ -148,6 +149,7 @@ authority.
 | X | completed | Delete displaced contracts, tools, projections, tests and docs | Pre-loop planner/frontier/hypothesis/package paths and their current-authority documentation are deleted or retired pointers |
 | Y | completed for deterministic architecture gate | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI forbids pre-observation target/frontier authority, duplicate state slots, reverse objective codecs and policy-level raw-response parsing; live gate remains separate |
 | Z | completed | Remove projection-to-objective and decision roundtrips | LocalObjective is admitted from the current typed decision; every provider adapter returns `ResolvedModelDecision`; projections retain no reconstruction authority |
+| AA | implemented, verification open | Split post-observation LocalObjective proposal from recurrent action selection | One explicit proposal port; action-only AgentDecision/tools; independent schema modules and grounded phases; Runtime remains the sole objective-state owner; full suite `2381 passed, 27 skipped` |
 
 ## Archived pre-cutover live evidence
 

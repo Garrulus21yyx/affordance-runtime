@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.decisions import (
         Abort,
         AskUser,
-        EstablishLocalObjective,
         ProposeDone,
         RequestActionPage,
         RequestObservation,
@@ -36,6 +35,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
+    from affordance_runtime.agent.runtime import TargetRuntime, TargetRuntimeStartOutcome
     from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
@@ -64,13 +64,11 @@ _EXPORTS = {
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
+    "TargetRuntime": ("affordance_runtime.agent.runtime", "TargetRuntime"),
+    "TargetRuntimeStartOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeStartOutcome"),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
-    "EstablishLocalObjective": (
-        "affordance_runtime.agent.decisions",
-        "EstablishLocalObjective",
-    ),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
     "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),

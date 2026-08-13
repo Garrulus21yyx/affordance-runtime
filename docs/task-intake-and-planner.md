@@ -26,18 +26,25 @@ not a hidden preparer, ingress, or planning layer for `AgentLoop`.
 
 ## Observation-grounded execution semantics
 
-After an observation and current ActionSpace exist, `AgentPolicy` may return an
-`EstablishLocalObjective` decision. Its value is one bounded semantic variant:
+After an observation and current ActionSpace exist, the explicit
+`LocalObjectiveProposalPort` may return one authority-free bounded semantic
+proposal:
 
 - sequence: future-resolvable semantic selectors and action templates;
 - set: scope, predicate, quantifier, and member action template;
 - aggregate: source scope/predicate/extractor/operator and destination selector.
 
-All variants share one `local_objective_state` owner. The model supplies typed
-semantics only. Runtime assigns objective/scope/step identities and resolves
-current entities from current evidence. A LocalObjective narrows relevance and
-tracks obligations; it never expands TaskGoal legality, risk permission, or
-ActionSpace authority.
+All variants share one `local_objective_state` owner. Runtime validates the
+proposal against the exact post-observation context, assigns objective/scope/
+step identities, and resolves current entities from current evidence. A
+LocalObjective narrows relevance and tracks obligations; it never expands
+TaskGoal legality, risk permission, or ActionSpace authority.
+
+This proposal phase is not part of `AgentPolicy` and is not projected as an
+action tool. The recurrent Agent interface contains only current action/control
+decisions. Predicate, scope, quantifier, aggregate, and future-resolvable
+selector schemas stop at the proposal adapter and cannot couple to E-ref action
+tools.
 
 Every fresh observation invalidates prior entity/action/binding resolution.
 The LocalObjective semantic value may persist, but its reducer must re-enumerate
@@ -74,6 +81,8 @@ The target loop must not reintroduce:
 - `TaskFrontier`, `VerifiedTaskState`, or requirement-hypothesis state;
 - separate set/sequence/aggregate state slots;
 - an objective-operation package around `AgentDecision`;
+- an Agent decision or action tool that installs execution semantics;
+- one provider schema mixing LocalObjective construction with current actions;
 - typed-decision to JSON to typed-decision round trips;
 - task-name/benchmark-case routing in Runtime code.
 
