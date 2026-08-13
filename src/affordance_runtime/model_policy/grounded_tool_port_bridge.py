@@ -8,15 +8,16 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, create_model, field_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator
 
 from affordance_runtime.agent.decisions import (
     EstablishAggregateObjective,
     EstablishObjectiveSequence,
     EstablishSetObjective,
     RequestActionPage,
+    RequestObservation,
     SelectAction,
     SubmitSetPredicateAssessments,
 )
@@ -56,10 +57,12 @@ from affordance_runtime.model_port import (
 from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.task.objective_sequence import sequence_public_value
 from affordance_runtime.task.set_objective import predicate_public_value
+from affordance_runtime.task.task_program import TaskProgram, task_program_public_value
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 _SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
+When establish_task_program is offered, compile the complete bounded instruction into its ordered typed steps once. Include later controls such as submit even if they are not yet visible. Runtime will re-resolve every selector after a fresh observation.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
 When the request quantifies multiple targets, or identifies target(s) by a public state/relation represented by an establish_* objective operation, establish that typed objective before any member action.
 When an explicit target condition already appears in current_state, use its public fact objective; do not replace available structural evidence with a visual concept.
@@ -74,10 +77,120 @@ The Runtime independently validates action authority, currentness, risk, executi
 """.strip()
 
 
-class GroundedToolCommandPayload(BaseModel):
+class _GroundedOperationPayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
     op: str
+
+    @field_validator("op")
+    @classmethod
+    def _operation(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError("grounded operation is invalid")
+        return value
+
+
+class _TaskProgramPayloadBase(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+
+class _ProgramFactAtom(_TaskProgramPayloadBase):
+    kind: Literal["fact_equals"]
+    field_name: str
+    expected: object
+    negated: bool = False
+
+
+class _ProgramCompareAtom(_TaskProgramPayloadBase):
+    kind: Literal["compare"]
+    field_name: str
+    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "in"]
+    expected: object
+    negated: bool = False
+
+
+class _ProgramVisualConceptAtom(_TaskProgramPayloadBase):
+    kind: Literal["visual_concept"]
+    text: str
+    negated: bool = False
+
+
+class _ProgramVisualAttributeAtom(_TaskProgramPayloadBase):
+    kind: Literal["visual_attribute"]
+    text: str
+    negated: bool = False
+
+
+_ProgramAtom = Annotated[
+    _ProgramFactAtom | _ProgramCompareAtom | _ProgramVisualConceptAtom | _ProgramVisualAttributeAtom,
+    Field(discriminator="kind"),
+]
+
+
+class _ProgramAllOf(_TaskProgramPayloadBase):
+    all_of: list[_ProgramAtom] = Field(min_length=1, max_length=8)
+
+
+class _ProgramPredicate(_TaskProgramPayloadBase):
+    any_of: list[_ProgramAllOf] = Field(min_length=1, max_length=4)
+
+
+_ProgramAction = Literal["click", "type", "select", "press", "drag", "navigate", "scroll", "set_value"]
+_ProgramDomain = Literal["structured", "all_visible", "fused"]
+_ProgramExtent = Literal[
+    "current_viewport",
+    "current_container",
+    "current_document",
+    "current_application_state",
+]
+
+
+class _ProgramEntityStep(_TaskProgramPayloadBase):
+    kind: Literal["entity"]
+    predicate: _ProgramPredicate
+    semantic_action: _ProgramAction
+    entity_domain: _ProgramDomain = "structured"
+    parameters: dict[str, object] = Field(default_factory=dict)
+    postcondition_predicate: _ProgramPredicate | None = None
+    postcondition_domain: _ProgramDomain = "structured"
+
+
+class _ProgramSetStep(_TaskProgramPayloadBase):
+    kind: Literal["set"]
+    predicate: _ProgramPredicate
+    quantifier: Literal["exactly_one", "all_in_closed_scope"]
+    semantic_action: _ProgramAction
+    parameters: dict[str, object] = Field(default_factory=dict)
+    scope_extent: _ProgramExtent = "current_viewport"
+    scope_root: str = "current-viewport"
+    scope_entity_domain: _ProgramDomain = "structured"
+
+
+class _ProgramAggregateStep(_TaskProgramPayloadBase):
+    kind: Literal["aggregate"]
+    source_predicate: _ProgramPredicate
+    operator: Literal["count", "sum", "min", "max"]
+    destination_predicate: _ProgramPredicate
+    semantic_action: _ProgramAction = "type"
+    value_field: str = ""
+    scope_extent: _ProgramExtent = "current_viewport"
+    scope_root: str = "current-viewport"
+    scope_entity_domain: _ProgramDomain = "structured"
+
+
+_ProgramStep = Annotated[
+    _ProgramEntityStep | _ProgramSetStep | _ProgramAggregateStep,
+    Field(discriminator="kind"),
+]
+
+
+class _TaskProgramCommandPayload(_GroundedOperationPayload):
+    steps: list[_ProgramStep] = Field(min_length=1, max_length=8)
+
+
+class GroundedToolCommandPayload(_GroundedOperationPayload):
+    """Superset compatibility payload; production compiles a smaller subtype."""
+
     target: str = ""
     text: str | None = None
     value: object | None = None
@@ -95,13 +208,6 @@ class GroundedToolCommandPayload(BaseModel):
     scope_entity_domain: str | None = None
     operator: str | None = None
     value_field: str | None = None
-
-    @field_validator("op")
-    @classmethod
-    def _operation(cls, value: str) -> str:
-        if not value or len(value) > 64:
-            raise ValueError("grounded operation is invalid")
-        return value
 
     @field_validator("target")
     @classmethod
@@ -181,6 +287,7 @@ class GroundedToolDecisionAdapter:
         init=False,
         compare=False,
     )
+    last_internal_error_code: str = field(default="", init=False, compare=False)
     transport_kind: ToolTransportKind = field(init=False)
 
     def __post_init__(self) -> None:
@@ -225,8 +332,10 @@ class GroundedToolDecisionAdapter:
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
+        object.__setattr__(self, "last_internal_error_code", "")
         if request.schema_version != SCHEMA_VERSION or request.policy_context is None:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
+        phase = "catalog"
         try:
             catalog = compile_grounded_tool_catalog(request.policy_context)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
@@ -238,6 +347,7 @@ class GroundedToolDecisionAdapter:
                 calls = (automatic,)
             else:
                 object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
+                phase = "model_call"
                 messages = _messages(catalog.view, request, self.port.supports_multimodal)
                 calls = await self._call(
                     messages,
@@ -249,6 +359,7 @@ class GroundedToolDecisionAdapter:
             if len(calls) != 1:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
             call = calls[0]
+            phase = "tool_resolution"
             try:
                 package = resolve_grounded_tool_call(
                     catalog,
@@ -277,6 +388,7 @@ class GroundedToolDecisionAdapter:
                     expected_catalog_id=catalog.catalog_id,
                 )
         except GroundedToolResolutionError as exc:
+            object.__setattr__(self, "last_internal_error_code", f"{phase}:{exc.code.value}")
             object.__setattr__(self, "last_resolution_code", exc.code)
             return _failure(ModelFailureKind.SCHEMA_ERROR, exc.code.value)
         except ProviderModelError as exc:
@@ -305,13 +417,21 @@ class GroundedToolDecisionAdapter:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded command violated its flat schema")
         except StructuredModelError:
             return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded command response was invalid")
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            object.__setattr__(self, "last_internal_error_code", f"{phase}:{type(exc).__name__}")
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
+        phase = "package_payload"
+        try:
+            payload = _package_payload(package)
+            metadata = _metadata(self.port, self.transport_kind, include_record=automatic is None)
+        except (TypeError, ValueError, AssertionError) as exc:
+            object.__setattr__(self, "last_internal_error_code", f"{phase}:{type(exc).__name__}")
+            return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded decision serialization failed")
         return ModelDecisionResponse(
-            json.dumps(_package_payload(package), separators=(",", ":"), ensure_ascii=False),
-            _metadata(self.port, self.transport_kind, include_record=automatic is None),
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+            metadata,
         )
 
     async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
@@ -397,6 +517,8 @@ def _runtime_sequential_member_call(context, catalog) -> ToolCall | None:
     if control is None or control.semantic_mode != "member_execution":
         return None
     execute = tuple(item for item in catalog.specs if item.name == "execute_objective")
+    if not execute and control.disposition == "agent_select_next":
+        return None
     if len(execute) != 1 or execute[0].input_schema.get("required"):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     return ToolCall("execute_objective", {})
@@ -406,14 +528,52 @@ def _command_payload_type(specs, aliases=()):
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
-    if len(names) == 1:
-        return GroundedToolCommandPayload
+    if len(specs) == 1 and specs[0].name == "establish_task_program" and not aliases:
+        return _TaskProgramCommandPayload
     digest = hashlib.sha256("\0".join(names).encode()).hexdigest()[:12]
-    allowed_operation = Literal.__getitem__(names)
+    allowed_operation = str if len(specs) == 1 else Literal.__getitem__(names)
+    properties = {
+        str(name)
+        for spec in specs
+        for name in spec.input_schema.get("properties", {})
+    }
+    assessment_properties = bool(properties) and all(re.fullmatch(r"E\d+", name) for name in properties)
+    fields: dict[str, tuple[object, object]] = {
+        "op": (allowed_operation, ...),
+        # Compact models commonly echo the visible E-ref even when a singleton
+        # operation needs no target argument. It is harmlessly projected out
+        # by the selected ToolSpec and keeps the minimal envelope robust.
+        "target": (str | None, None),
+    }
+    field_types: dict[str, object] = {
+        "target": str | None,
+        "text": str | None,
+        "value": object | None,
+        "quantifier": str | None,
+        "candidate_role": str | None,
+        "concept": str | None,
+        "steps": list[dict[str, object]] | None,
+        "predicate": dict[str, object] | None,
+        "source_predicate": dict[str, object] | None,
+        "destination_predicate": dict[str, object] | None,
+        "semantic_action": str | None,
+        "scope_extent": str | None,
+        "scope_root": str | None,
+        "scope_entity_domain": str | None,
+        "operator": str | None,
+        "value_field": str | None,
+    }
+    if assessment_properties:
+        fields["assessments"] = (dict[str, str] | None, None)
+    else:
+        unknown = properties - set(field_types)
+        if unknown:
+            raise ValueError("grounded operation contains unsupported compact fields")
+        fields.update((name, (field_types[name], None)) for name in sorted(properties) if name != "target")
     return create_model(
         f"GroundedToolCommand_{digest}",
-        __base__=GroundedToolCommandPayload,
-        op=(allowed_operation, ...),
+        __base__=_GroundedOperationPayload,
+        **fields,
     )
 
 
@@ -510,20 +670,30 @@ def _command_arguments(payload, spec=None):
         }
     )
     result = {}
-    if payload.target and "target" in admitted:
-        result["target"] = payload.target
-    if payload.text is not None and "text" in admitted:
-        result["text"] = payload.text
-    if payload.value is not None and "value" in admitted:
-        result["value"] = payload.value
-    if payload.quantifier is not None and "quantifier" in admitted:
-        result["quantifier"] = payload.quantifier
-    if payload.candidate_role is not None and "candidate_role" in admitted:
-        result["candidate_role"] = payload.candidate_role
-    if payload.concept is not None and "concept" in admitted:
-        result["concept"] = payload.concept
-    if payload.steps is not None and "steps" in admitted:
-        result["steps"] = payload.steps
+    target = getattr(payload, "target", None)
+    text = getattr(payload, "text", None)
+    value = getattr(payload, "value", None)
+    quantifier = getattr(payload, "quantifier", None)
+    candidate_role = getattr(payload, "candidate_role", None)
+    concept = getattr(payload, "concept", None)
+    steps = getattr(payload, "steps", None)
+    if target and "target" in admitted:
+        result["target"] = target
+    if text is not None and "text" in admitted:
+        result["text"] = text
+    if value is not None and "value" in admitted:
+        result["value"] = value
+    if quantifier is not None and "quantifier" in admitted:
+        result["quantifier"] = quantifier
+    if candidate_role is not None and "candidate_role" in admitted:
+        result["candidate_role"] = candidate_role
+    if concept is not None and "concept" in admitted:
+        result["concept"] = concept
+    if steps is not None and "steps" in admitted:
+        result["steps"] = [
+            item.model_dump(mode="json", exclude_none=True) if isinstance(item, BaseModel) else item
+            for item in steps
+        ]
     for name in (
         "predicate",
         "source_predicate",
@@ -535,11 +705,12 @@ def _command_arguments(payload, spec=None):
         "operator",
         "value_field",
     ):
-        value = getattr(payload, name)
+        value = getattr(payload, name, None)
         if value is not None and name in admitted:
             result[name] = value
-    if payload.assessments is not None and set(payload.assessments) == admitted:
-        result.update(payload.assessments)
+    assessments = getattr(payload, "assessments", None)
+    if assessments is not None and set(assessments) == admitted:
+        result.update(assessments)
     return result
 
 
@@ -555,9 +726,15 @@ def _package_payload(package):
         }
     elif isinstance(decision, EstablishObjectiveSequence):
         value = {
-            "type": "establish_objective_sequence",
+            "type": (
+                "establish_task_program" if isinstance(decision.sequence, TaskProgram) else "establish_objective_sequence"
+            ),
             "context_id": decision.context_id,
-            **sequence_public_value(decision.sequence),
+            **(
+                task_program_public_value(decision.sequence)
+                if isinstance(decision.sequence, TaskProgram)
+                else sequence_public_value(decision.sequence)
+            ),
         }
     elif isinstance(decision, EstablishAggregateObjective):
         objective = decision.objective
@@ -599,14 +776,24 @@ def _package_payload(package):
             "predicate_digest": decision.predicate_digest,
             "assessments": [{"target_id": item.target_id, "truth": item.truth.value} for item in decision.assessments],
         }
-    else:
-        assert isinstance(decision, RequestActionPage)
+    elif isinstance(decision, RequestActionPage):
         value = {
             "type": "request_action_page",
             "context_id": decision.context_id,
             "query": decision.query,
             "target_id": decision.target_id,
             "relevance_role": decision.relevance_role,
+            "cursor": decision.cursor,
+        }
+    else:
+        assert isinstance(decision, RequestObservation)
+        value = {
+            "type": "request_observation",
+            "context_id": decision.context_id,
+            "subject_id": decision.subject_id,
+            "modality": decision.modality,
+            "required_assurance": decision.required_assurance,
+            "reason": decision.reason,
             "cursor": decision.cursor,
         }
     return {"objective_operation": {"kind": "none"}, "decision": value}

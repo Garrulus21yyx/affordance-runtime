@@ -89,14 +89,14 @@ def _atom(value: object) -> PredicateExpr:
         and set(value) <= {"kind", "field_name", "expected", "negated"}
         and {"kind", "field_name", "expected"} <= set(value)
     ):
-        expression: PredicateExpr = FactEquals(str(value["field_name"]), value["expected"])
+        expression: PredicateExpr = FactEquals(_model_field_name(value["field_name"]), value["expected"])
     elif (
         kind == "compare"
         and set(value) <= {"kind", "field_name", "operator", "expected", "negated"}
         and {"kind", "field_name", "operator", "expected"} <= set(value)
     ):
         expression = Compare(
-            str(value["field_name"]),
+            _model_field_name(value["field_name"]),
             CompareOperator(str(value["operator"])),
             value["expected"],
         )
@@ -107,3 +107,15 @@ def _atom(value: object) -> PredicateExpr:
     else:
         raise ValueError("predicate atom is unsupported")
     return Not(expression) if negated else expression
+
+
+def _model_field_name(value: object) -> str:
+    """Map public view names to canonical selector fields; reject opaque identity."""
+
+    name = str(value).strip()
+    if name in {"entity_id", "identity.entity_id"}:
+        raise ValueError("model predicate cannot address opaque entity identity")
+    return {
+        "label": "identity.label",
+        "role": "identity.role",
+    }.get(name, name)

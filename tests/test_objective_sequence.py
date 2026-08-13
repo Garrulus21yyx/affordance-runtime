@@ -180,3 +180,24 @@ def test_visual_selector_can_classify_a_structurally_closed_domain() -> None:
     assert state.selector_resolution is not None
     assert state.selector_resolution.universe.coverage.value == "complete"
     assert state.selector_resolution.scope.entity_domain is ScopeEntityDomain.STRUCTURED
+
+
+def test_exact_visual_concept_uses_public_label_evidence_without_visual_call() -> None:
+    sequence = ObjectiveSequence(
+        "sequence:exact-public-label",
+        (
+            ObjectiveStep(
+                "activate-plus",
+                EntitySelector(VisualConcept("+"), ScopeEntityDomain.STRUCTURED),
+                ActionTemplate("activate"),
+            ),
+        ),
+    )
+
+    state = establish_objective_sequence_state(
+        sequence,
+        _world("observation:exact-label", "+", "other"),
+    )
+
+    assert state.disposition is SequenceDisposition.READY
+    assert state.resolved_target_id == "entity:0:+"

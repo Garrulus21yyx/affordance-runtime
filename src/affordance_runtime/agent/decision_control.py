@@ -92,6 +92,11 @@ from affordance_runtime.task.set_objective_state import (
     install_semantic_assessments,
     set_allowed_action_ids,
 )
+from affordance_runtime.task.task_program import (
+    TaskProgram,
+    TaskProgramDisposition,
+    task_program_public_value,
+)
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     ObservationRequestKind,
@@ -360,6 +365,7 @@ async def _route_decision(
         scope.set_reason(f"abort_{decision.category}")
         return Terminate(AgentLoopStatus.FAILED, f"abort_{decision.category}", decision.reason)
     if isinstance(decision, EstablishObjectiveSequence):
+        task_program = decision.sequence if isinstance(decision.sequence, TaskProgram) else None
         if (
             (
                 state.active_set_objective is not None
@@ -373,21 +379,29 @@ async def _route_decision(
                 state.active_aggregate_objective is not None
                 and state.active_aggregate_objective.disposition is not AggregateDisposition.COMPLETE
             )
+            or (
+                state.active_task_program is not None
+                and state.active_task_program.disposition is TaskProgramDisposition.ACTIVE
+            )
         ):
             scope.set_reason("semantic_objective_already_active")
             return Continue("semantic_objective_already_active")
-        state.active_set_objective = None
-        state.active_aggregate_objective = None
-        state.active_objective_sequence = establish_objective_sequence_state(
-            decision.sequence,
-            state.current_observation,
-            enumerator=state.scope_enumerator,
-        )
+        if task_program is not None:
+            state.install_task_program(task_program)
+        else:
+            state.active_task_program = None
+            state.active_set_objective = None
+            state.active_aggregate_objective = None
+            state.active_objective_sequence = establish_objective_sequence_state(
+                decision.sequence,
+                state.current_observation,
+                enumerator=state.scope_enumerator,
+            )
         state.semantic_objective_count += 1
-        state.progress_revision += 1
-        scope.record_decision_result("objective_sequence_established")
-        scope.set_reason("objective_sequence_established")
-        return Continue("objective_sequence_established")
+        reason = "task_program_established" if task_program is not None else "objective_sequence_established"
+        scope.record_decision_result(reason)
+        scope.set_reason(reason)
+        return Continue(reason)
     if isinstance(decision, EstablishAggregateObjective):
         if (
             (
@@ -402,6 +416,7 @@ async def _route_decision(
                 state.active_aggregate_objective is not None
                 and state.active_aggregate_objective.disposition is not AggregateDisposition.COMPLETE
             )
+            or state.active_task_program is not None
         ):
             scope.set_reason("semantic_objective_already_active")
             return Continue("semantic_objective_already_active")
@@ -424,7 +439,7 @@ async def _route_decision(
         ) or (
             state.active_aggregate_objective is not None
             and state.active_aggregate_objective.disposition is not AggregateDisposition.COMPLETE
-        ):
+        ) or state.active_task_program is not None:
             scope.set_reason("set_objective_already_active")
             return Continue("set_objective_already_active")
         state.active_set_objective = establish_set_objective_state(
@@ -539,7 +554,11 @@ def _semantic_objective_public_value(decision) -> dict[str, object]:
     if isinstance(decision, EstablishAggregateObjective):
         return aggregate_objective_public_value(decision.objective)
     if isinstance(decision, EstablishObjectiveSequence):
-        return sequence_public_value(decision.sequence)
+        return (
+            task_program_public_value(decision.sequence)
+            if isinstance(decision.sequence, TaskProgram)
+            else sequence_public_value(decision.sequence)
+        )
     assert isinstance(decision, EstablishSetObjective)
     return {
         "kind": "set_action",

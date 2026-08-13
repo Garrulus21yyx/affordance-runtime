@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,9 +15,9 @@ from affordance_runtime.agent import (
     AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
-    EstablishAggregateObjective,
     EstablishObjectiveSequence,
     EstablishSetObjective,
+    RequestObservation,
     SelectAction,
     SubmitSetPredicateAssessments,
 )
@@ -35,7 +36,12 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingPolicy,
 )
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ActionEvaluation,
+    ActionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary import AgentTurnView, ContextBuilder, ModelFailure, ProviderAttemptOrigin
 from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
@@ -52,15 +58,31 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedToolCommandPayload,
     GroundedToolDecisionAdapter,
+    _command_payload_type,
+    _GroundedOperationPayload,
+    _runtime_sequential_member_call,
 )
 from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.policy import _build_request
-from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.task_action_family_resolution import action_family_value
+from affordance_runtime.task.aggregate_objective import AggregateObjective
+from affordance_runtime.task.task_program import TaskProgram
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionSpaceBuilder, ObservationGroundingRegion, ObservationMedia
+from affordance_runtime.world import (
+    ActionBinding,
+    ActionRisk,
+    ActionSpaceBuilder,
+    CoverageState,
+    ObservationGroundingRegion,
+    ObservationMedia,
+    ObservationSourceProfile,
+    SemanticTarget,
+    StateFact,
+    SurfaceObservation,
+    WorldObservation,
+)
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
@@ -191,53 +213,50 @@ def test_mandatory_ingress_exposes_only_typed_objective_tools_and_preserves_valu
     catalog = compile_grounded_tool_catalog(context)
     names = {item.name for item in catalog.specs}
 
-    assert "fill" not in names and "click" not in names
-    assert "establish_fill_entity_objective" in names
-    assert "establish_click_entity_objective" in names
-    password_ref = next(item.ref for item in context.grounding.entities if item.label == "Password")
+    assert names == {"establish_task_program"}
+
+    def predicate(label: str) -> dict[str, object]:
+        return {
+            "any_of": [
+                {
+                    "all_of": [
+                        {
+                            "kind": "fact_equals",
+                            "field_name": "identity.label",
+                            "expected": label,
+                            "negated": False,
+                        }
+                    ]
+                }
+            ]
+        }
+
     package = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "establish_fill_entity_objective",
-            {"target": password_ref, "text": "UV"},
+            "establish_task_program",
+            {
+                "steps": [
+                    {
+                        "kind": "entity",
+                        "predicate": predicate("Password"),
+                        "semantic_action": "type",
+                        "parameters": {"value": "UV"},
+                    },
+                    {
+                        "kind": "entity",
+                        "predicate": predicate("Login"),
+                        "semantic_action": "click",
+                    },
+                ]
+            },
         ),
         expected_context_id=context.context_id,
     )
 
-    assert isinstance(package.decision, EstablishSetObjective)
-    assert package.decision.quantifier.value == "exactly_one"
-    assert package.decision.parameters == {"value": "UV"}
-
-    fill_action = next(
-        item.action_id
-        for item in context.actions.options
-        if context.grounding.target_refs[item.target_id] == password_ref
-    )
-    execution_context = replace(
-        context,
-        set_control=AgentSetControlView(
-            mode="member_actions_only",
-            disposition="ready_for_next_member",
-            reason_code="member_action_required",
-            allowed_action_ids=(fill_action,),
-            candidate_count=1,
-            matched_count=1,
-            predicate={"kind": "fact_equals", "field_name": "identity.entity_id"},
-            predicate_digest="a" * 64,
-            candidate_target_ids=package.decision.candidate_target_ids,
-            semantic_mode="member_execution",
-            objective_parameters={"value": "UV"},
-        ),
-    )
-    execution_catalog = compile_grounded_tool_catalog(execution_context)
-    execute = resolve_grounded_tool_call(
-        execution_catalog,
-        ToolCall("execute_objective", {}),
-        expected_context_id=context.context_id,
-    )
-    assert isinstance(execute.decision, SelectAction)
-    assert execute.decision.action_id == fill_action
-    assert execute.decision.parameters == {"value": "UV"}
+    assert isinstance(package.decision, EstablishObjectiveSequence)
+    assert isinstance(package.decision.sequence, TaskProgram)
+    assert package.decision.sequence.steps[0].action_template.parameters == {"value": "UV"}
 
 
 def test_aggregate_ingress_derives_count_contract_without_model_supplied_result() -> None:
@@ -263,24 +282,30 @@ def test_aggregate_ingress_derives_count_contract_without_model_supplied_result(
     package = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "establish_aggregate_objective",
+            "establish_task_program",
             {
-                "source_predicate": predicate("identity.role", "textbox"),
-                "operator": "count",
-                "value_field": "",
-                "destination_predicate": predicate("identity.label", "Username"),
-                "semantic_action": "fill",
-                "scope_extent": "current_viewport",
-                "scope_root": "current-viewport",
+                "steps": [
+                    {
+                        "kind": "aggregate",
+                        "source_predicate": predicate("identity.role", "textbox"),
+                        "operator": "count",
+                        "value_field": "",
+                        "destination_predicate": predicate("identity.label", "Username"),
+                        "semantic_action": "type",
+                    }
+                ]
             },
         ),
         expected_context_id=context.context_id,
     )
 
-    assert isinstance(package.decision, EstablishAggregateObjective)
-    assert package.decision.objective.operator.value == "count"
-    assert package.decision.objective.value_extractor.kind.value == "constant"
-    assert package.decision.objective.destination_selector.expected == "Username"
+    assert isinstance(package.decision, EstablishObjectiveSequence)
+    assert isinstance(package.decision.sequence, TaskProgram)
+    objective = package.decision.sequence.steps[0]
+    assert isinstance(objective, AggregateObjective)
+    assert objective.operator.value == "count"
+    assert objective.value_extractor.kind.value == "constant"
+    assert objective.destination_selector.expected == "Username"
 
 
 def test_stale_and_unknown_grounded_refs_are_zero_decision() -> None:
@@ -347,7 +372,7 @@ class _CompactPort:
         self.messages = list(messages)
         payload = self.commands[self.calls]
         self.calls += 1
-        assert issubclass(output_schema, GroundedToolCommandPayload)
+        assert issubclass(output_schema, _GroundedOperationPayload)
         self.last_call = ModelCallRecord(
             provider=self.provider,
             model=self.model,
@@ -372,7 +397,7 @@ def test_compact_grounded_bridge_uses_allowlist_flat_command_and_existing_decisi
 
         response = await adapter.generate(_build_request(context))
 
-        assert not isinstance(response, ModelFailure)
+        assert not isinstance(response, ModelFailure), adapter.last_internal_error_code
         parsed = parse_agent_decision(response.raw_payload, context.context_id)
         assert isinstance(parsed, SelectAction)
         assert parsed.parameters == {"value": "UV"}
@@ -388,16 +413,52 @@ def test_compact_grounded_bridge_uses_allowlist_flat_command_and_existing_decisi
     asyncio.run(scenario())
 
 
+def test_compact_schema_contains_only_current_operation_fields() -> None:
+    payload_type = _command_payload_type(
+        (
+            ToolSpec(
+                "choose_current_target",
+                "choose",
+                {
+                    "type": "object",
+                    "properties": {"target": {"type": "string"}},
+                    "required": ("target",),
+                    "additionalProperties": False,
+                },
+            ),
+        )
+    )
+
+    assert set(payload_type.model_json_schema()["properties"]) == {"op", "target"}
+
+
 def test_compact_grounded_bridge_transports_typed_objective_decision() -> None:
     async def scenario():
         context = _context(mandatory_semantic_control=True)
-        password_ref = next(item.ref for item in context.grounding.entities if item.label == "Password")
         port = _CompactPort(
             [
                 {
-                    "op": "establish_fill_entity_objective",
-                    "target": password_ref,
-                    "text": "UV",
+                    "op": "establish_task_program",
+                    "steps": [
+                        {
+                            "kind": "entity",
+                            "predicate": {
+                                "any_of": [
+                                    {
+                                        "all_of": [
+                                            {
+                                                "kind": "fact_equals",
+                                                "field_name": "identity.label",
+                                                "expected": "Password",
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            "semantic_action": "type",
+                            "parameters": {"value": "UV"},
+                        }
+                    ],
                 }
             ]
         )
@@ -408,11 +469,11 @@ def test_compact_grounded_bridge_transports_typed_objective_decision() -> None:
 
         response = await adapter.generate(_build_request(context))
 
-        assert not isinstance(response, ModelFailure)
+        assert not isinstance(response, ModelFailure), adapter.last_internal_error_code
         parsed = parse_agent_decision(response.raw_payload, context.context_id)
-        assert isinstance(parsed, EstablishSetObjective)
-        assert parsed.parameters == {"value": "UV"}
-        assert parsed.quantifier.value == "exactly_one"
+        assert isinstance(parsed, EstablishObjectiveSequence)
+        assert isinstance(parsed.sequence, TaskProgram)
+        assert parsed.sequence.steps[0].action_template.parameters == {"value": "UV"}
 
     asyncio.run(scenario())
 
@@ -420,19 +481,14 @@ def test_compact_grounded_bridge_transports_typed_objective_decision() -> None:
 def test_compact_grounded_bridge_transports_future_resolvable_sequence() -> None:
     async def scenario():
         context = _context(mandatory_semantic_control=True)
-        labels = {
-            target_id: next(item.label for item in context.grounding.entities if item.ref == ref)
-            for target_id, ref in context.grounding.target_refs.items()
-        }
-        by_label = {
-            labels[item.target_id]: action_family_value(item.semantic_action) for item in context.actions.options
-        }
+        by_label = {"Username": "type", "Login": "click"}
         port = _CompactPort(
             [
                 {
-                    "op": "establish_objective_sequence",
+                    "op": "establish_task_program",
                     "steps": [
                         {
+                            "kind": "entity",
                             "predicate": {
                                 "any_of": [
                                     {
@@ -452,6 +508,7 @@ def test_compact_grounded_bridge_transports_future_resolvable_sequence() -> None
                             "postcondition_predicate": None,
                         },
                         {
+                            "kind": "entity",
                             "predicate": {
                                 "any_of": [
                                     {
@@ -467,8 +524,6 @@ def test_compact_grounded_bridge_transports_future_resolvable_sequence() -> None
                                 ]
                             },
                             "semantic_action": by_label["Login"],
-                            "parameters": {},
-                            "postcondition_predicate": None,
                         },
                     ],
                 }
@@ -484,38 +539,27 @@ def test_compact_grounded_bridge_transports_future_resolvable_sequence() -> None
         assert not isinstance(response, ModelFailure)
         parsed = parse_agent_decision(response.raw_payload, context.context_id)
         assert isinstance(parsed, EstablishObjectiveSequence)
+        assert isinstance(parsed.sequence, TaskProgram)
         assert len(parsed.sequence.steps) == 2
+        assert parsed.sequence.steps[0].action_template.semantic_action == "type_text"
+        assert parsed.sequence.steps[1].action_template.semantic_action == "activate"
         assert parsed.sequence.steps[0].action_template.parameters == {"value": "donovan"}
 
     asyncio.run(scenario())
 
 
-def test_labeled_entity_ingress_accepts_familiar_verb_without_direct_dispatch() -> None:
-    async def scenario():
-        context = _context(mandatory_semantic_control=True)
-        password_ref = next(item.ref for item in context.grounding.entities if item.label == "Password")
-        port = _CompactPort(
-            [
-                {
-                    "op": "fill",
-                    "target": password_ref,
-                    "text": "UV",
-                }
-            ]
-        )
-        adapter = GroundedToolDecisionAdapter(
-            port,
-            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+def test_mandatory_ingress_rejects_old_single_objective_alias() -> None:
+    context = _context(mandatory_semantic_control=True)
+    catalog = compile_grounded_tool_catalog(context)
+
+    with pytest.raises(GroundedToolResolutionError) as raised:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall("fill", {"text": "UV"}),
+            expected_context_id=context.context_id,
         )
 
-        response = await adapter.generate(_build_request(context))
-
-        assert not isinstance(response, ModelFailure)
-        parsed = parse_agent_decision(response.raw_payload, context.context_id)
-        assert isinstance(parsed, EstablishSetObjective)
-        assert parsed.parameters == {"value": "UV"}
-
-    asyncio.run(scenario())
+    assert raised.value.code is GroundedToolResolutionCode.UNKNOWN_OPERATION
 
 
 def test_compact_command_accepts_typed_fact_value_and_quantifier() -> None:
@@ -643,7 +687,7 @@ def test_compact_singleton_operation_does_not_require_or_trust_redundant_target(
 
         response = await adapter.generate(_build_request(context))
 
-        assert not isinstance(response, ModelFailure)
+        assert not isinstance(response, ModelFailure), adapter.last_internal_error_code
         parsed = parse_agent_decision(response.raw_payload, context.context_id)
         assert isinstance(parsed, SelectAction)
         assert parsed.parameters == {}
@@ -678,7 +722,7 @@ def test_compact_singleton_operation_does_not_require_redundant_operation_name()
 
         response = await adapter.generate(_build_request(context))
 
-        assert not isinstance(response, ModelFailure)
+        assert not isinstance(response, ModelFailure), adapter.last_internal_error_code
         parsed = parse_agent_decision(response.raw_payload, context.context_id)
         assert isinstance(parsed, SelectAction)
         assert adapter.last_resolution_code is GroundedToolResolutionCode.ACCEPTED
@@ -830,12 +874,31 @@ def test_mandatory_objective_transition_excludes_settled_member_actions() -> Non
     )
 
     catalog = compile_grounded_tool_catalog(transitioned)
-    objective_specs = tuple(item for item in catalog.specs if item.name.startswith("establish_"))
+    assert tuple(item.name for item in catalog.specs) == ("establish_task_program",)
 
-    entity = next(item for item in objective_specs if item.name == "establish_click_entity_objective")
-    assert tuple(item.name for item in catalog.specs) == (entity.name,)
-    assert entity.input_schema["properties"] == {}
-    assert all("fill" not in item.name for item in objective_specs)
+
+def test_objective_transition_does_not_repeat_same_observation_instead_of_ingress() -> None:
+    context = _context(mandatory_semantic_control=True)
+    transitioned = replace(
+        context,
+        world=replace(
+            context.world,
+            observation_capabilities=(ObservationCapabilityView("visual", "weak"),),
+        ),
+        set_control=AgentSetControlView(
+            mode="control_only",
+            disposition="certified",
+            reason_code="closed_scope_set_complete",
+            certified=True,
+            semantic_mode="objective_transition",
+            objective_candidate_action_ids=tuple(item.action_id for item in context.actions.options),
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(transitioned)
+
+    assert catalog.specs
+    assert tuple(item.name for item in catalog.specs) == ("establish_task_program",)
 
 
 def test_model_can_establish_generic_fact_set_without_instruction_scanning() -> None:
@@ -980,6 +1043,41 @@ def test_zero_true_members_pending_stability_exposes_no_effectful_action() -> No
     assert catalog.view.current_state["quantified_objective"]["disposition"] == "need_stability_check"
 
 
+def test_grounded_bridge_serializes_observation_request_without_internal_failure() -> None:
+    async def scenario() -> None:
+        context = _context()
+        context = replace(
+            context,
+            world=replace(
+                context.world,
+                observation_capabilities=(ObservationCapabilityView("visual", "weak"),),
+            ),
+            set_control=AgentSetControlView(
+                mode="control_only",
+                disposition="need_stability_check",
+                reason_code="fresh_scope_stability_required",
+                candidate_count=3,
+                predicate={"kind": "visual_concept", "concept": "held-out fruit"},
+                predicate_digest="c" * 64,
+                candidate_target_ids=tuple(context.grounding.target_refs),
+            ),
+        )
+        port = _CompactPort([{"op": "observe_visual"}])
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+        )
+
+        response = await adapter.generate(_build_request(context))
+
+        assert not isinstance(response, ModelFailure), adapter.last_internal_error_code
+        parsed = parse_agent_decision(response.raw_payload, context.context_id)
+        assert isinstance(parsed, RequestObservation)
+        assert adapter.last_internal_error_code == ""
+
+    asyncio.run(scenario())
+
+
 def test_open_vocabulary_batch_evidence_admits_true_refs_without_point_execution() -> None:
     context = _context()
     digest = "d" * 64
@@ -1108,10 +1206,203 @@ def test_grounded_normal_path_is_one_model_call_one_runtime_transition_and_no_pr
         )
     )
 
-    assert result.status is AgentLoopStatus.DONE
+    assert result.status is AgentLoopStatus.DONE, (
+        result.message,
+        result.failure_code,
+        result.execution_count,
+        port.calls,
+        adapter.last_internal_error_code,
+        adapter.last_resolution_code,
+        tuple(
+            (
+                item.reason_code,
+                item.decision_result,
+                item.action_evaluation.status if item.action_evaluation is not None else None,
+                item.after_observation_id,
+            )
+            for item in result.control_transitions
+        ),
+        result.control_transitions,
+    )
     assert port.calls == 1
     assert result.execution_count == 1
     assert len(result.control_transitions) == 1
+
+
+def test_task_program_executes_multiple_freshly_resolved_steps_with_one_network_call() -> None:
+    def world(observation_id: str, value: str):
+        target = SemanticTarget("program-input", "textbox", "Program input", {"value": value})
+        fact = StateFact(f"fact:{observation_id}:value", target.target_id, "value", value, observation_id)
+        binding = ActionBinding(
+            f"binding:{observation_id}",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            f"fingerprint:{observation_id}",
+            target.target_id,
+            target.target_id,
+            "dom",
+            "dom",
+            "fill",
+            "type_text",
+            "local_reversible",
+            ("value_entered",),
+            {
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": False,
+            },
+            {"selector": "#program-input"},
+            risk=ActionRisk.LOW,
+        )
+        media = ObservationMedia(
+            "screenshot",
+            "screenshot",
+            "image/png",
+            _unmarked_png(),
+            (ObservationGroundingRegion(target.target_id, (10, 10, 120, 30)),),
+        )
+        source = SurfaceObservation(
+            observation_id,
+            "dom",
+            f"revision:{observation_id}",
+            ObservationSourceProfile.dom(),
+            (target,),
+            (fact,),
+            (binding,),
+            media=(media,),
+        )
+        return WorldObservation(
+            observation_id,
+            (target,),
+            (fact,),
+            (binding,),
+            {"dom": CoverageState.COMPLETE},
+            sources=(source,),
+        )
+
+    class ConfirmEveryEffect:
+        async def evaluate(self, task, before, request, result, after):
+            del task, before, result
+            return ActionEvaluation(
+                request.request_id,
+                request.observation_id,
+                after.observation_id,
+                ActionEvaluationStatus.EFFECT_CONFIRMED,
+                "fixture effect confirmed",
+                (after.facts[0].fact_id,),
+            )
+
+    class CompleteAfterSecondValue:
+        async def evaluate(self, task, observation):
+            complete = observation.facts[0].value == "second"
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.COMPLETE if complete else TaskEvaluationStatus.INCOMPLETE,
+                "second value entered" if complete else "value entry remains incomplete",
+                completion_evidence_refs=((observation.facts[0].fact_id,) if complete else ()),
+            )
+
+    def predicate(label):
+        return {
+            "any_of": [
+                {
+                    "all_of": [
+                        {
+                            "kind": "fact_equals",
+                            "field_name": "identity.label",
+                            "expected": label,
+                        }
+                    ]
+                }
+            ]
+        }
+
+    before = world("program-before", "")
+    middle = world("program-middle", "first")
+    after = world("program-after", "second")
+    task = TaskGoal(
+        "task-program-value-entry",
+        "Enter first, then replace it with second.",
+        allowed_effects=("value_entered",),
+        risk_profile=RiskProfile.LOW,
+    )
+    port = _CompactPort(
+        [
+            {
+                "op": "establish_task_program",
+                "steps": [
+                    {
+                        "kind": "entity",
+                        "predicate": predicate("Program input"),
+                        "semantic_action": "type",
+                        "parameters": {"value": "first"},
+                    },
+                    {
+                        "kind": "entity",
+                        "predicate": predicate("Program input"),
+                        "semantic_action": "type",
+                        "parameters": {"value": "second"},
+                    },
+                ],
+            }
+        ]
+    )
+    adapter = GroundedToolDecisionAdapter(
+        port,
+        ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+    )
+    policy = __import__(
+        "affordance_runtime.model_policy",
+        fromlist=["ModelBackedAgentPolicy"],
+    ).ModelBackedAgentPolicy(adapter, call_timeout_s=3)
+    loop = AgentLoop(policy, ConfirmEveryEffect(), CompleteAfterSecondValue(), semantic_control_required=True)
+
+    result = asyncio.run(
+        AgentEpisodeRunner(loop).run(
+            StaticEnvironment([before, middle, after], results=[_sent(), _sent()]),
+            task,
+        )
+    )
+
+    assert result.status is AgentLoopStatus.DONE, (
+        result.message,
+        result.failure_code,
+        result.execution_count,
+        port.calls,
+        adapter.last_internal_error_code,
+        adapter.last_resolution_code,
+        tuple(
+            (
+                item.reason_code,
+                item.decision_result,
+                item.action_evaluation.status if item.action_evaluation is not None else None,
+                item.after_observation_id,
+            )
+            for item in result.control_transitions
+        ),
+        result.control_transitions,
+    )
+    assert port.calls == 1
+    assert result.execution_count == 2
+    assert result.control_transition_kind_counts == (
+        ("EstablishObjectiveSequence", 1),
+        ("SelectAction", 2),
+    )
+
+
+def test_agent_selected_set_member_is_not_forced_through_singleton_runtime_worker() -> None:
+    context = SimpleNamespace(
+        set_control=SimpleNamespace(
+            semantic_mode="member_execution",
+            disposition="agent_select_next",
+        )
+    )
+    catalog = SimpleNamespace(specs=(ToolSpec("click", "choose a current admitted member", {}),))
+
+    assert _runtime_sequential_member_call(context, catalog) is None
 
 
 def _unmarked_png():

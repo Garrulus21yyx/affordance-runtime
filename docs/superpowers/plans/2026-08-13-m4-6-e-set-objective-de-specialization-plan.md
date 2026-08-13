@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 
-Status: `CONVERGENCE_REOPENED / IMPLEMENTATION_VERIFIED / LIVE_REVALIDATION_IN_PROGRESS`
+Status: `CONVERGENCE_REOPENED / ROOT_CAUSE_CONFIRMED / COHERENT_FIX_IN_PROGRESS`
 
 ## Goal
 
@@ -47,6 +47,35 @@ The authority invariant under repair is:
 semantic control enabled AND no admitted typed objective
 => zero effectful dispatch
 ```
+
+The repeated reopenings exposed the stronger shared cause.  The short loop had
+no authoritative, persistent representation of the complete bounded task
+semantics.  It retained raw prose plus one mutually exclusive current
+set/sequence/aggregate slot, so every completed objective discarded the
+semantic identity of its successor and forced the model to reconstruct it from
+a fresh dynamic Catalog.  Provider/schema failures, pie successor ingress,
+separate submit ingress, and model-derived aggregate values are different
+symptoms of that missing owner.
+
+The convergence fix is one admitted `TaskProgram` whose ordered steps contain
+future-resolvable predicates, never future identities.  The program owns order
+and continuation only.  Existing entity, set, aggregate, scope, evidence,
+binding, effect, and completion reducers remain the respective authorities.
+Each fresh observation materializes and resolves only the current child step.
+
+The first integration run of this fix also exposed an older duplicated-truth
+projection: Catalog reconstructed a settled `(target, verb)` pair from bounded
+history and suppressed a later admitted `fill` with different parameters.  The
+invariant is now explicit:
+
+```text
+admitted current objective action
+=> projection/history heuristics cannot remove or replace its authority
+```
+
+History-based menu cleanup is permitted only for an unowned free-policy menu.
+Benchmark instrumentation must serialize `TaskProgram` through its own public
+contract rather than reinterpret it as an old `ObjectiveSequence`.
 
 Repeated live reopenings show that this invariant is necessary but not sufficient.
 The remaining failures share one broader cause: semantic intent is admitted only
@@ -110,7 +139,9 @@ authority.
 | Q | completed | Replace current-viewport/same-role candidate lists with ScopeEnumerator-owned universes | Snapshot viewport closure is domain-aware; larger scopes require an environment-owned enumerator and otherwise fail closed |
 | R | completed | Wire VisualPredicateClassifier through evidence obligations | Set members, aggregate members/destinations and sequence selectors share visual-leaf classification without granting completeness or bindings |
 | S | completed | Add independent task-semantic objective validation | Optional independent assurance returns SUPPORTED/CONTRADICTED/UNKNOWN before installation; default ingress avoids a mandatory second provider call |
-| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | Static checks and full suite pass (`2435 passed, 24 skipped`); real five-witness rerun is next |
+| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | Static checks and full suite pass (`2448 passed, 27 skipped`); real five-witness rerun is next |
+| U | completed | Install a persistent bounded `TaskProgram` as the single whole-task semantic owner | One model call establishes ordered future-resolvable steps; child completion/blocking reconciles into program state |
+| V | completed | Remove projection/history authority over admitted program steps and align evidence serialization | Same-target different-value successor executes locally; task-program trace uses its own public contract |
 
 ## Latest live evidence
 
@@ -142,6 +173,11 @@ benchmark-specific branches.
   network, local-circuit, schema-repair, and fallback counts.
 - Every automated physical action is authorized by an admitted current step,
   freshly resolved selector, current binding, and current ActionSpace.
+- One admitted bounded program persists successor semantics across observations;
+  the model is called again only when that program is absent, exhausted,
+  contradicted, ambiguous, or unsupported.
+- Catalog/history projections cannot suppress, broaden, or replace the exact
+  current action and parameters admitted by the active reducer.
 - Future steps contain selectors and postconditions, never future identities or
   coordinates; unsupported or ambiguous resolution returns a typed outcome.
 - Aggregate destination values carry a digest of a complete candidate universe,
@@ -159,6 +195,8 @@ benchmark-specific branches.
   transitions pass without adding case-shaped production branches.
 - The real five-case run is rerun and recorded, but is regression evidence rather
   than the sole closure proof.
+- Runtime and benchmark traces expose the same program identity, active step,
+  network-call count, local continuation count, and typed stop reason.
 
 ## Explicit non-goals
 

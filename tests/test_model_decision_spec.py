@@ -29,6 +29,7 @@ def test_canonical_package_has_four_objective_operations_and_typed_decisions() -
         "select_action",
         "establish_aggregate_objective",
         "establish_objective_sequence",
+        "establish_task_program",
         "establish_set_objective",
         "submit_set_predicate_assessments",
         "request_observation",
@@ -39,7 +40,7 @@ def test_canonical_package_has_four_objective_operations_and_typed_decisions() -
         "abort",
     }
     assert len(objective["oneOf"]) == 4
-    assert len(decision["oneOf"]) == 11
+    assert len(decision["oneOf"]) == 12
     assert AgentDecisionPackagePayload.model_json_schema() == schema
 
 

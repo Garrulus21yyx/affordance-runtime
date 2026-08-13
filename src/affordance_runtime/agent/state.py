@@ -14,7 +14,9 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.task.aggregate_objective import (
     AggregateDisposition,
+    AggregateObjective,
     AggregateObjectiveState,
+    establish_aggregate_objective_state,
     refresh_aggregate_objective_state,
 )
 from affordance_runtime.task.frontier import PreparedObjectiveOperation
@@ -24,14 +26,30 @@ from affordance_runtime.task.hypothesis_contracts import (
     RequirementHypothesisState,
 )
 from affordance_runtime.task.objective_sequence import (
+    ObjectiveSequence,
     ObjectiveSequenceState,
+    ObjectiveStep,
     SequenceDisposition,
+    establish_objective_sequence_state,
     refresh_objective_sequence_state,
 )
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
-from affordance_runtime.task.set_objective import SetDisposition
-from affordance_runtime.task.set_objective_state import SetObjectiveState, refresh_set_objective_state
+from affordance_runtime.task.set_objective import SetDisposition, SetObjective
+from affordance_runtime.task.set_objective_state import (
+    SetObjectiveState,
+    establish_set_objective_state,
+    refresh_set_objective_state,
+)
+from affordance_runtime.task.task_program import (
+    TaskProgram,
+    TaskProgramDisposition,
+    TaskProgramState,
+    advance_task_program_state,
+    block_task_program_state,
+    establish_task_program_state,
+    task_program_step_id,
+)
 from affordance_runtime.task_action_family_resolution import action_family_value
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -79,6 +97,7 @@ class AgentLoopState:
     active_set_objective: SetObjectiveState | None = None
     active_objective_sequence: ObjectiveSequenceState | None = None
     active_aggregate_objective: AggregateObjectiveState | None = None
+    active_task_program: TaskProgramState | None = None
     scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
     verified_task_state: VerifiedTaskState | None = None
     requirement_hypotheses: RequirementHypothesisState = field(
@@ -142,6 +161,12 @@ class AgentLoopState:
             return SemanticControlMode.EVIDENCE_RESOLUTION
         active = self.active_set_objective
         if active is None:
+            program = self.active_task_program
+            if program is not None and program.disposition in {
+                TaskProgramDisposition.COMPLETE,
+                TaskProgramDisposition.BLOCKED,
+            }:
+                return SemanticControlMode.OBJECTIVE_TRANSITION
             return (
                 SemanticControlMode.SEMANTIC_INGRESS
                 if self.semantic_objective_count == 0
@@ -212,7 +237,8 @@ class AgentLoopState:
             acted_entity_id = (
                 intent.target_id
                 if intent is not None
-                and action_family_value(intent.semantic_action) == aggregate.objective.semantic_action
+                and action_family_value(intent.semantic_action)
+                == action_family_value(aggregate.objective.semantic_action)
                 else ""
             )
             self.active_aggregate_objective = refresh_aggregate_objective_state(
@@ -234,6 +260,8 @@ class AgentLoopState:
                 *(item.entity_id for item in self.active_set_objective.obligations),
             }
             certified_successor = (
+                self.active_task_program is None
+                and
                 self.active_set_objective.reduction.disposition is SetDisposition.CERTIFIED
                 and intent is not None
                 and intent.target_id not in settled_members
@@ -244,7 +272,8 @@ class AgentLoopState:
             acted_entity_id = (
                 intent.target_id
                 if intent is not None
-                and intent.semantic_action == self.active_set_objective.objective.action_template.semantic_action
+                and action_family_value(intent.semantic_action)
+                == action_family_value(self.active_set_objective.objective.action_template.semantic_action)
                 else ""
             )
             self.active_set_objective = refresh_set_objective_state(
@@ -255,7 +284,138 @@ class AgentLoopState:
                 effect_evidence_refs=action.evidence_refs if action is not None and acted_entity_id else (),
                 enumerator=self.scope_enumerator,
             )
+        self.reconcile_task_program()
         self.progress_revision += 1
+
+    def install_task_program(self, program: TaskProgram) -> None:
+        """Install one whole-task interpretation and materialize only its current step."""
+
+        self.active_task_program = establish_task_program_state(program)
+        self.active_set_objective = None
+        self.active_objective_sequence = None
+        self.active_aggregate_objective = None
+        self._materialize_task_program_step()
+        self.reconcile_task_program()
+        self.progress_revision += 1
+
+    def _advance_task_program_if_complete(self) -> None:
+        """Compatibility wrapper for tests and internal callers."""
+
+        self.reconcile_task_program()
+
+    def reconcile_task_program(self) -> None:
+        """Propagate the authoritative child reducer outcome into program order."""
+
+        program = self.active_task_program
+        if program is None or program.disposition is not TaskProgramDisposition.ACTIVE:
+            return
+        step = program.active_step
+        if step is None:
+            return
+        expected_child = (
+            self.active_objective_sequence
+            if isinstance(step, ObjectiveStep)
+            else self.active_set_objective
+            if isinstance(step, SetObjective)
+            else self.active_aggregate_objective
+        )
+        populated_children = sum(
+            item is not None
+            for item in (
+                self.active_objective_sequence,
+                self.active_set_objective,
+                self.active_aggregate_objective,
+            )
+        )
+        if expected_child is None or populated_children != 1:
+            self._block_task_program("task_program_child_lineage_mismatch")
+            return
+        blocked_reason = (
+            self.active_objective_sequence.reason_code
+            if isinstance(step, ObjectiveStep)
+            and self.active_objective_sequence is not None
+            and self.active_objective_sequence.disposition
+            in {SequenceDisposition.AMBIGUOUS, SequenceDisposition.BLOCKED}
+            else self.active_set_objective.reduction.reason_code
+            if isinstance(step, SetObjective)
+            and self.active_set_objective is not None
+            and self.active_set_objective.reduction.disposition is SetDisposition.BLOCKED
+            else self.active_aggregate_objective.reason_code
+            if isinstance(step, AggregateObjective)
+            and self.active_aggregate_objective is not None
+            and self.active_aggregate_objective.disposition is AggregateDisposition.BLOCKED
+            else ""
+        )
+        if blocked_reason:
+            self._block_task_program(blocked_reason)
+            return
+        complete = (
+            isinstance(step, ObjectiveStep)
+            and self.active_objective_sequence is not None
+            and self.active_objective_sequence.disposition is SequenceDisposition.COMPLETE
+        ) or (
+            isinstance(step, SetObjective)
+            and self.active_set_objective is not None
+            and self.active_set_objective.reduction.disposition is SetDisposition.CERTIFIED
+        ) or (
+            isinstance(step, AggregateObjective)
+            and self.active_aggregate_objective is not None
+            and self.active_aggregate_objective.disposition is AggregateDisposition.COMPLETE
+        )
+        if not complete:
+            return
+        self.active_task_program = advance_task_program_state(program, task_program_step_id(step))
+        self.active_set_objective = None
+        self.active_objective_sequence = None
+        self.active_aggregate_objective = None
+        self._materialize_task_program_step()
+        self.reconcile_task_program()
+
+    def _block_task_program(self, issue_code: str) -> None:
+        program = self.active_task_program
+        assert program is not None
+        self.active_task_program = block_task_program_state(program, issue_code)
+        self.active_set_objective = None
+        self.active_objective_sequence = None
+        self.active_aggregate_objective = None
+
+    def _materialize_task_program_step(self) -> None:
+        program = self.active_task_program
+        if program is None or program.disposition is not TaskProgramDisposition.ACTIVE:
+            return
+        step = program.active_step
+        assert step is not None
+        try:
+            if isinstance(step, ObjectiveStep):
+                segment = ObjectiveSequence(
+                    f"{program.program.program_id}:step:{program.active_index + 1}",
+                    (step,),
+                )
+                self.active_objective_sequence = establish_objective_sequence_state(
+                    segment,
+                    self.current_observation,
+                    enumerator=self.scope_enumerator,
+                )
+            elif isinstance(step, SetObjective):
+                self.active_set_objective = establish_set_objective_state(
+                    predicate=step.predicate,
+                    quantifier=step.quantifier,
+                    semantic_action=step.action_template.semantic_action,
+                    candidate_entity_ids=(),
+                    observation=self.current_observation,
+                    parameters=dict(step.action_template.parameters),
+                    scope=step.scope,
+                    enumerator=self.scope_enumerator,
+                )
+            else:
+                assert isinstance(step, AggregateObjective)
+                self.active_aggregate_objective = establish_aggregate_objective_state(
+                    step,
+                    self.current_observation,
+                    enumerator=self.scope_enumerator,
+                )
+        except (TypeError, ValueError):
+            self._block_task_program("task_program_step_unsupported")
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:
         from affordance_runtime.agent.control_reducer import (
