@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 
-Status: `ARCHITECTURE_REOPENED / LIVE_RESULT_3_OF_5 / MANDATORY_INGRESS_IN_PROGRESS / GENERALIZATION_OPEN`
+Status: `MANDATORY_INGRESS_IMPLEMENTED / LIVE_RESULT_3_OF_5 / PROVIDER_CAPACITY_OPEN / GENERALIZATION_OPEN`
 
 ## Goal
 
@@ -58,11 +58,27 @@ semantic control enabled AND no admitted typed objective
 | D | completed | Introduce typed evidence obligations and demote visual routing | Set reducer projects evidence needs; visual acquisition routes typed needs derived from current facts |
 | E | completed | Remove task-relative fields and witness-shaped provider publication | Deleted task predicate projection, keyword gate, universal parser and repeated-leaf exact-count scanner; color is generic `appearance.color_family` evidence |
 | F | completed | Add property/metamorphic and integration tests | Capacity, missing fact, zero match, actionability, new candidate, history independence and de-specialization redlines pass |
-| G | in_progress | Run focused suite, full suite, and real five-case regression gate | Focused gate and full suite (`2398 passed, 27 skipped`) pass; clean-SHA live run remains required before verified closure |
-| H | in_progress | Make semantic ingress a Runtime control mode and add an independent action admission gate | In ingress/transition, Catalog exposes only objective/observation controls; forged effectful decisions bind and execute zero times |
-| I | in_progress | Replace opaque exact-value enums with schema-level public-fact tools | Grid coordinate is a typed `{x,y}` value; no 32-value serialization or silent exact-value truncation |
-| J | pending | Re-run the five live witnesses and held-out semantic-control cases | Objective establishment precedes dispatch; wrong/duplicate/premature member dispatch is zero |
-| K | in_progress | Close grounded compact transport over typed objective decisions | Compact commands carry quantifier, object-valued facts, visual selectors and assessment maps; the canonical parser admits establishment/assessment payloads |
+| G | completed | Run focused suite, full suite, and real five-case regression gate | Full suite `2410 passed, 24 skipped`; live run `f57f758` completed all five with 3 successes and 2 typed provider-unavailable outcomes |
+| H | completed | Make semantic ingress a Runtime control mode and add an independent action admission gate | In ingress/transition, Catalog exposes only objective/observation controls; forged effectful decisions bind and execute zero times |
+| I | completed | Replace opaque exact-value enums with schema-level public-fact tools | Grid coordinate is a typed `{x,y}` value; no 32-value serialization or silent exact-value truncation |
+| J | in_progress | Re-run the five live witnesses and held-out semantic-control cases | Grid, quantified shades, and aggregate value-entry witnesses completed; both pie witnesses established/executed their first objective then hit provider unavailable during successor ingress |
+| K | completed | Close grounded compact transport over typed objective decisions | Compact commands carry quantifier, object-valued facts, visual selectors and assessment maps; the canonical parser admits establishment/assessment payloads |
+| L | completed | Auto-advance only reducer-authorized singleton member continuations | No policy inference occurs for `execute_objective`; action ID and parameters remain Runtime-owned |
+
+## Latest live evidence
+
+Run: `docs/evidence/runs/m4-6-e-semantic-tools-zhipu-f57f758/`
+
+- `grid-coordinate`: success; typed coordinate objective selected E24 and used structural identity execution.
+- `click-shades`: success; five distinct blue members settled, followed by a separately admitted Submit objective.
+- `visual-addition`: success; parameterized fill objective followed by a separately admitted Submit objective.
+- both pie witnesses: first `+` objective established and executed correctly; successor ingress ended with typed provider-unavailable before the visible `0` objective could be admitted.
+- No point grounder or visual binding obtained execution authority.
+
+This evidence closes the mandatory-ingress/action-gate implementation slice but
+does not close the five-case named regression or broader generalization. The two
+remaining live failures are provider-capacity/call-amplification outcomes rather
+than raw E-ref bypasses.
 
 ## Staged scope
 
