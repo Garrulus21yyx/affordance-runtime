@@ -1,4 +1,4 @@
-"""Stable client boundary for executing runtime requests."""
+"""Legacy Coordinator client retained for compatibility during target cutover."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from affordance_runtime.trace import TraceDag
 
 @dataclass(frozen=True)
 class RuntimeClient:
+    """Legacy staged-pipeline client; new target consumers use TargetRuntimeClient."""
+
     coordinator: RunCoordinator
 
     async def run(
@@ -27,3 +29,7 @@ class RuntimeClient:
         upstream_trace: TraceDag | None = None,
     ) -> RunResult:
         return self.coordinator.run_sync(request, upstream_trace)
+
+
+LegacyRuntimeClient = RuntimeClient
+"""Explicit name for the compatibility client backed by RunCoordinator."""

@@ -701,3 +701,16 @@ context builder 和 wait controller 仍按原值注入，因此此改动只收�
 直接调用 `TargetRuntime(...)` 都会失败；benchmark namespace 同时禁止直接构造
 `AgentLoop / AgentEpisodeRunner / TargetRuntime`。focused verification 为 `15 passed`，全量离线验证为
 `2423 passed, 27 skipped`。CLI/default、live benchmark 和 legacy 删除仍然 open。
+
+## 16. 实施记录：target public client
+
+2026-08-13 新增 `TargetRuntimeClient` 作为显式产品入口。它接收
+`WorldEnvironment + NaturalLanguageTaskRequest`，通过已组合的 `TargetRuntime` 完成 intake、session
+创建并运行到第一次 pause/terminal；`TargetRuntimeRunOutcome` 同时持有 typed intake、session 和 result，
+非 ready intake 不能伪造 session/result。用户补充输入和 confirmation continuation 继续委托同一 session，
+client 不重建 loop，也不持有第二套状态 authority。
+
+原 `RuntimeClient` 的 import 和 Coordinator 行为保持兼容，同时新增明确的
+`LegacyRuntimeClient` 名称。target client 的架构门禁禁止它依赖 legacy coordinator/composition；这一步选定了
+public client 语义，但没有改变根 CLI 默认。focused verification 为 `24 passed`，全量离线验证为
+`2427 passed, 27 skipped`。
