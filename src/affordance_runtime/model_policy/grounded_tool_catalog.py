@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -389,7 +390,7 @@ def _append_set_objective_tools(
                     },
                 }
                 specs.append(ToolSpec(
-                    f"establish_{verb}_by_fact_{fact_index}",
+                    _fact_objective_tool_name(verb, field_name, fact_index),
                     (
                         f'Establish a typed {verb} objective where public fact "{field_name}" '
                         f'for candidate role "{role}" equals the supplied value. '
@@ -515,6 +516,15 @@ def _fact_value_schema(values: tuple[object, ...]) -> dict[str, object] | None:
             properties[key] = child
         return _object_schema(properties, tuple(properties))
     return None
+
+
+def _fact_objective_tool_name(verb: str, field_name: str, index: int) -> str:
+    token = re.sub(r"[^a-z0-9]+", "_", field_name.casefold()).strip("_") or "fact"
+    value = f"establish_{verb}_where_{token}_equals"
+    if len(value) <= 64:
+        return value
+    digest = hashlib.sha256(f"{field_name}\0{index}".encode()).hexdigest()[:8]
+    return f"{value[:55]}_{digest}"
 
 
 def resolve_grounded_tool_call(

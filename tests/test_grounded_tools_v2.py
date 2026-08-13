@@ -370,7 +370,7 @@ def test_compact_grounded_bridge_transports_typed_objective_decision() -> None:
 
 def test_compact_command_accepts_typed_fact_value_and_quantifier() -> None:
     payload = GroundedToolCommandPayload.model_validate({
-        "op": "establish_click_by_fact_1",
+        "op": "establish_click_where_grid_coordinate_equals",
         "value": {"x": 1, "y": -2},
         "quantifier": "exactly_one",
     })
