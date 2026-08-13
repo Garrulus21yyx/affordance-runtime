@@ -35,6 +35,8 @@ The target path now has:
 | Capability | Status |
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
+| target thin intake / composition | `INTEGRATED_NON_DEFAULT`; closed intake outcomes and one `TargetRuntime` composition root are used by target/model-conformance benchmarks |
+| AskUser task-revision continuation | `INTEGRATED_NON_DEFAULT / OFFLINE_VERIFIED`; typed pending identity, full re-intake, exact +1 revision, environment no-reset update, one-shot control continuation, and stale projection invalidation |
 | canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |

@@ -88,3 +88,29 @@ The target loop must not reintroduce:
 
 Unsupported semantics return a typed, deterministic failure or remain
 unresolved; they do not fall back to hidden IDs, coordinates, or prose rules.
+
+## User-input continuation
+
+`AskUser` creates a typed `UserInputRequest` only after its context-bound
+decision has been accepted and recorded as a control root. The request binds
+the question and requested fields to the task ID, current task revision,
+originating context, and source transition.
+
+The caller answers by submitting a complete `NaturalLanguageTaskRequest` with
+the same task ID and exactly the next revision through
+`TargetRuntime.submit_user_input`. The request is compiled again by
+`ThinTaskIntake`; a prose answer or partial field patch cannot directly mutate
+`TaskGoal` authority. Non-ready intake outcomes leave the paused session
+unchanged.
+
+An admitted revision updates the environment's task-relative authority without
+resetting the physical GUI, consumes the AskUser root exactly once, and
+invalidates the old task evaluation, LocalObjective, context, ActionSpace,
+action page, feedback epoch, and progress projection. Physical observation and
+execution accounting remain monotonic. Wrong pending identity, duplicate
+submission, cross-task replacement, non-consecutive revision, terminal
+session, and an environment without task-revision support fail closed with a
+typed rejection.
+
+`WAITING_USER` caused by an unknown dispatched effect does not carry a
+`UserInputRequest` and cannot use this clarification path.

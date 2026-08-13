@@ -309,6 +309,13 @@ class BrowserGymMiniWobEnvironment:
             raw, snapshot, AcquisitionOrigin.RESET, observation_id, revision, plan,
         )
 
+    async def revise_task(self, task: TaskGoal) -> None:
+        if self._closed or self._task is None:
+            raise RuntimeError("BrowserGym environment must be reset before task revision")
+        if task.task_id != self._task.task_id or task.revision != self._task.revision + 1:
+            raise ValueError("BrowserGym task revision must be consecutive for the active task")
+        self._task = task
+
     async def capture(self, request: WorldObservationRequest) -> ObservationAcquisition:
         if self._closed or self._task is None:
             return failed_acquisition(AcquisitionOrigin.INDEPENDENT_CAPTURE, "environment_not_ready")

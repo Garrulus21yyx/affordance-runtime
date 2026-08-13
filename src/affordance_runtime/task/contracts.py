@@ -78,10 +78,13 @@ class TaskGoal:
     material_bindings: tuple[MaterialBinding, ...] = ()
     loop_budget: LoopBudget = field(default_factory=LoopBudget)
     evaluation_spec: EvaluationSpec | None = None
+    revision: int = 1
 
     def __post_init__(self) -> None:
         if not self.task_id.strip() or not self.instruction.strip():
             raise ValueError("task goal requires identity and instruction")
+        if type(self.revision) is not int or self.revision < 1:
+            raise ValueError("task goal revision must be a positive integer")
         if self.risk_profile != RiskProfile.READ_ONLY and not self.allowed_effects:
             raise ValueError("effectful task requires explicit allowed_effects")
         object.__setattr__(self, "constraints", tuple(self.constraints))

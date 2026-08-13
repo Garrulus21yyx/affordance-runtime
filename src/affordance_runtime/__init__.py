@@ -1,6 +1,11 @@
 """Stable Affordance Runtime public API."""
 
-from affordance_runtime.agent import TargetRuntime
+from affordance_runtime.agent import (
+    TargetRuntime,
+    UserInputRequest,
+    UserInputResumed,
+    UserInputResumeRejected,
+)
 from affordance_runtime.contracts import ActionContract
 from affordance_runtime.grounding import UnifiedAffordance
 from affordance_runtime.planning_contracts import PlannerPort, PlannerResponse
@@ -27,4 +32,7 @@ __all__ = [
     "TaskGoal",
     "UnifiedAffordance",
     "UnifiedObservation",
+    "UserInputRequest",
+    "UserInputResumed",
+    "UserInputResumeRejected",
 ]

@@ -521,6 +521,9 @@ class CountingEnvironment:
             self.instrumentation.environment_reset_acquisitions += 1
         return acquisition
 
+    async def revise_task(self, task):
+        return await self.wrapped.revise_task(task)
+
     async def capture(self, request):
         self.instrumentation.environment_capture_calls += 1
         try:

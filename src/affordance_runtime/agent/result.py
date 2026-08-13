@@ -10,6 +10,7 @@ from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure, runtime_failure_from_outcome
 from affordance_runtime.agent.state import AgentLoopStatus
+from affordance_runtime.agent.user_input import UserInputRequest
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskOutcomeFact
 from affordance_runtime.task.contracts import TaskGoal
@@ -44,6 +45,7 @@ class AgentResult:
     control_feedback_delivery_count: int = 0
     control_issue_consumption_count: int = 0
     control_repetition_count: int = 0
+    user_input_request: UserInputRequest | None = None
 
 
 def project_result(
@@ -94,4 +96,5 @@ def project_result(
         state.control_feedback_delivery_total_count,
         state.control_issue_consumption_total_count,
         state.control_repetition_total_count,
+        state.pending_user_request if outcome.status == AgentLoopStatus.WAITING_USER else None,
     )

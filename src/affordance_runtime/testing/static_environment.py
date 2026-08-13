@@ -97,6 +97,11 @@ class StaticEnvironment:
             "static_reset_acquired",
         )
 
+    async def revise_task(self, task: TaskGoal) -> None:
+        if self.task is None:
+            raise RuntimeError("static environment must be reset before task revision")
+        self.task = task
+
     async def capture(self, request: WorldObservationRequest) -> ObservationAcquisition:
         if self.task is None:
             raise RuntimeError("static environment must be reset before capture")

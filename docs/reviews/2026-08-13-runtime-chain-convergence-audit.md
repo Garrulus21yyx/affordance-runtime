@@ -31,17 +31,28 @@
 - 根 Python API 增加显式 target 类型导出，但根 CLI 默认路径尚未切换；
 - grounded-tools 现有门继续证明模型 wire 只含 tool/E-ref，不含 `action_id/binding_id`，adapter 在私有 catalog 内将 `ToolCall` 规范化为当前 `SelectAction`。
 
-本切片尚未实现：
+随后完成第二个非默认切片：
 
-- `WAITING_USER` continuation 和 task revision；
+- `NaturalLanguageTaskRequest` 与 `TaskGoal` 都显式携带正整数 task revision；
+- `AskUser` 的暂停结果携带 `UserInputRequest`，其中绑定 task、原 revision、context 和 accepted control-root identity；
+- `TargetRuntime.submit_user_input` 先让完整的新请求重新经过 `ThinTaskIntake`，只把 `ReadyTask` 交给 session；
+- `AgentRunSession.resume_user_input` 只接受同 task 的恰好下一版 revision，并对错误 pending ID、重复提交、跨 task、跳版、terminal session 和缺失环境 revision port 返回 typed rejection；
+- 环境通过 `revise_task` 更新缓存的 task authority，但不 reset 物理 GUI；随后旧 task evaluation、LocalObjective、context、ActionSpace、page、feedback 和 progress projection 全部失效；
+- AskUser control root 通过独立的 typed user-input continuation 恰好消费一次；`SENT_UNKNOWN` 导致的 `WAITING_USER` 没有 `UserInputRequest`，不能误走 clarification 恢复；
+- 集成、reducer state-machine 与 Hypothesis 性质测试覆盖 happy path、重复/错误/跳版提交、零执行和 context revision 更新。
+
+当前仍未实现：
+
 - protocol `supported_decisions/required_decisions` 启动检查；
 - objective `NotRequired/NeedsUserInput/Unsupported`；
 - action/objective adapter 静态类型拆分；
 - root CLI default cutover、legacy test inventory 或 legacy 删除。
 
-因此下文“缺少通用 target intake”和“benchmark 拥有 AgentLoop 构造”的诊断应作为本次切片的已处理原始缺口阅读；更高层的产品入口、恢复和默认切换仍然开放。
+因此下文“缺少通用 target intake”“benchmark 拥有 AgentLoop 构造”和“`WAITING_USER` 不可恢复”的诊断应作为已处理的原始缺口阅读；协议能力、objective 结果代数、更高层产品默认入口和旧链退出仍然开放。
 
 本切片的离线验证为：Ruff、`git diff --check`、67 个 focused architecture/documentation/intake/runner/tool/decision tests，以及 full suite `2389 passed, 27 skipped in 92.15s`。工作树非 clean SHA，未运行 live benchmark，也不产生 default-cutover 或 generalization 声明。
+
+第二个 continuation 切片的最终离线验证为：84 个 architecture/documentation/intake/continuation/session focused tests，以及 full suite `2400 passed, 27 skipped in 92.93s`。它仍是 non-default implementation evidence，不是 live benchmark、默认切换或旧链删除证据。
 
 ## 1. 审查结论
 
@@ -237,7 +248,7 @@ TargetRuntime(
 
 benchmark 仍负责 instrumentation decorator、manifest、environment adapter、seed、测量和 acceptance，但不再直接构造 `AgentLoop/AgentEpisodeRunner`。根 Python API 已显式导出 `TargetRuntime`；根 CLI 和旧 `RuntimeClient` 默认尚未切换。
 
-### 5.3 `WAITING_USER` 状态不可恢复
+### 5.3 审查时 `WAITING_USER` 状态不可恢复；现已闭合 AskUser continuation
 
 `AskUser` 会将问题写入 `AgentLoopState.pending_user_question` 并返回 `WAITING_USER`。`AgentRunSession` 只有 `resolve_confirmation`，没有提交用户答案、修订 `TaskGoal/IntentContext`、清除 pending question 并继续的 API。`run_until_pause` 在 `last_result` 存在时直接返回已有结果。
 
@@ -259,6 +270,8 @@ RUNNING
 ```
 
 所有 continuation 必须一次消费、绑定原 pending identity；新 task/context revision 应使旧 context、decision、ActionSpace 和 binding 确定性 stale。
+
+当前实现已经满足这条 bounded contract。需要特别区分两种相同外部 status：只有 accepted `AskUser` root 会产生可提交的 `UserInputRequest`；执行已发送但效果未知产生的 `WAITING_USER` 仍是 fail-closed 的未知效果状态，不接受 task-revision clarification 作为效果判定。
 
 ### 5.4 模型协议隐藏了能力差异
 
@@ -444,7 +457,7 @@ legacy = 明确隔离的 deprecation lane；只接受 containment/deletion 修�
 
 1. 实现 `ThinTaskIntake` 和闭合 `TaskIntakeOutcome`；
 2. 实现 `TargetRuntime` composition root；
-3. 实现 `AgentRunSession.submit_user_input`、task/context revision 和 cancellation continuation；
+3. 实现 `TargetRuntime.submit_user_input`、`AgentRunSession.resume_user_input`、task/context revision 和一次性 typed continuation（已实现；cancellation 继续沿用 session terminal latch）；
 4. 让 target benchmark 从同一个 production composition 构造 loop，只注入 manifest、adapter、seed 和 instrumentation；
 5. 为 root API 增加显式 target entry，但暂不删除旧 entry。
 

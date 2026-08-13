@@ -33,6 +33,7 @@ UserRequest
        -> ActionEvaluation + TaskEvaluation
        -> serial AgentLoopState
        -> continue/reobserve/ask/wait/done/abort
+       -> AskUser pause -> admitted next TaskGoal revision -> same session
 ```
 
 `TaskSpec`, `TaskPlan`, `TaskPlanAuthority`, `StateKernel`, and `Coordinator`
@@ -44,6 +45,7 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 | Stage | Owner | Authoritative input | Output | Explicitly not owned here |
 |---|---|---|---|---|
 | task boundary | `TaskGoal` | thin intake | allowed/forbidden effects, risk, success boundary | DOM ID, E-ref, coordinate, route |
+| task clarification | `TargetRuntime + AgentRunSession` | matching `UserInputRequest` + intake-admitted next revision | one-shot task revision and stale-projection invalidation | free-form patching, effect inference, physical reset |
 | supplemental context | `IntentContext` | bounded source excerpts | context-only hints | task/effect authority |
 | observed world | `WorldEnvironment` | current environment | `WorldObservation` | task semantics |
 | legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, LocalObjective |
@@ -60,6 +62,9 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 ## Identity timing
 
 - Before observation: only task/source identities exist.
+- At clarification: only the same task's exactly-next revision may replace task
+  meaning; the matching AskUser root is consumed once and every old
+  task-relative context/action projection becomes stale.
 - At observation: Runtime may issue semantic entity IDs and private binding IDs.
 - When `LocalObjectiveProposalPort` proposes a LocalObjective, it supplies only
   typed semantics; Runtime assigns objective, scope, and step identities after

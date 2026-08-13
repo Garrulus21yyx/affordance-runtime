@@ -176,6 +176,7 @@ class AgentLoop:
         current = require_initial_observation(acquisition, evidence)
         state = AgentLoopState(
             current,
+            task_revision=task.revision,
             remaining_turns=task.loop_budget.max_turns,
             recent_turn_limit=self.recent_turn_limit,
             scope_enumerator=_environment_scope_enumerator(environment),

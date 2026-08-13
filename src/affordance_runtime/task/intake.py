@@ -82,10 +82,13 @@ class NaturalLanguageTaskRequest:
     boundary: TaskBoundary = field(default_factory=TaskBoundary)
     intent_context: IntentContext | None = None
     source_ref: str = ""
+    revision: int = 1
 
     def __post_init__(self) -> None:
         if not self.request_id.strip() or not self.instruction.strip():
             raise ValueError("natural-language task request requires identity and instruction")
+        if type(self.revision) is not int or self.revision < 1:
+            raise ValueError("natural-language task request revision must be a positive integer")
         if not isinstance(self.boundary, TaskBoundary):
             raise TypeError("natural-language task request requires a typed boundary")
         if self.intent_context is not None and not isinstance(self.intent_context, IntentContext):
@@ -171,6 +174,7 @@ class ThinTaskIntake:
                 material_bindings=boundary.material_bindings,
                 loop_budget=boundary.loop_budget,
                 evaluation_spec=boundary.evaluation_spec,
+                revision=request.revision,
             )
         except (TypeError, ValueError):
             return TaskUnsupported(request.request_id, "task_goal_contract_invalid")

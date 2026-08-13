@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeAlias
 
 from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
 from affordance_runtime.agent.loop import AgentLoop
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult
 from affordance_runtime.agent.session import AgentRunSession
+from affordance_runtime.agent.user_input import UserInputResumeOutcome
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.risk.policy import RiskPolicy
@@ -16,8 +18,11 @@ from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
     NaturalLanguageTaskRequest,
     ReadyTask,
+    TaskInputRequired,
     TaskIntake,
     TaskIntakeOutcome,
+    TaskPolicyRejected,
+    TaskUnsupported,
     ThinTaskIntake,
 )
 from affordance_runtime.task.intent_context import IntentContext
@@ -38,6 +43,11 @@ class TargetRuntimeStartOutcome:
     @property
     def started(self) -> bool:
         return self.session is not None
+
+
+TargetRuntimeUserInputOutcome: TypeAlias = (
+    UserInputResumeOutcome | TaskInputRequired | TaskPolicyRejected | TaskUnsupported
+)
 
 
 @dataclass(frozen=True)
@@ -107,3 +117,16 @@ class TargetRuntime:
             return TargetRuntimeStartOutcome(admitted)
         session = await self.start_task(environment, admitted.task, admitted.intent_context)
         return TargetRuntimeStartOutcome(admitted, session)
+
+    async def submit_user_input(
+        self,
+        session: AgentRunSession,
+        input_request_id: str,
+        request: NaturalLanguageTaskRequest,
+    ) -> TargetRuntimeUserInputOutcome:
+        """Re-admit full task meaning, then resume one matching pending request."""
+
+        admitted = self.intake.compile(request)
+        if not isinstance(admitted, ReadyTask):
+            return admitted
+        return await session.resume_user_input(input_request_id, admitted)

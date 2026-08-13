@@ -18,6 +18,7 @@ from affordance_runtime.agent.attempt_receipt import (
 from affordance_runtime.agent.control_reducer import (
     AppendRoot,
     ApplyContinuation,
+    ApplyUserInputContinuation,
     ControlAccepted,
     ControlRejected,
     ControlState,
@@ -34,7 +35,8 @@ from affordance_runtime.agent.control_transition import (
     PendingKind,
     ProgressDelta,
 )
-from affordance_runtime.agent.decisions import SelectAction, Wait
+from affordance_runtime.agent.decisions import AskUser, SelectAction, Wait
+from affordance_runtime.agent.user_input import UserInputContinuation
 from affordance_runtime.benchmarks.target_loop.failure_origin import (
     OBSERVATION_FAILURE_ORIGINS,
     observation_failure_origin,
@@ -465,6 +467,41 @@ def test_root_identity_and_observation_epoch_are_global_sequence_invariants() ->
     assert reduce_control(second.state, AppendRoot(reused, 1)) == ControlRejected(
         "root_identity_sequence_mismatch"
     )
+
+
+def test_user_input_continuation_consumes_waiting_root_exactly_once() -> None:
+    root = replace(
+        _root(1),
+        decision=AskUser("context:1", "Clarify", ("inputs.answer",)),
+        pending_kind=PendingKind.USER,
+        resulting_status=AgentLoopStatus.WAITING_USER,
+        reason_code="user_input_requested",
+    )
+    pending = reduce_control(ControlState(), AppendRoot(root, 2))
+    assert isinstance(pending, ControlAccepted)
+    continuation = UserInputContinuation(
+        "user-input:0123456789abcdef01234567",
+        root.transition_id,
+        "task:state-machine",
+        1,
+        2,
+    )
+
+    resumed = reduce_control(
+        pending.state,
+        ApplyUserInputContinuation(continuation),
+    )
+
+    assert isinstance(resumed, ControlAccepted)
+    assert resumed.transition.pending_kind is PendingKind.NONE
+    assert resumed.transition.resulting_status is None
+    assert resumed.transition.reason_code == "user_input_submitted"
+    next_root = reduce_control(resumed.state, AppendRoot(_root(2), 2))
+    assert isinstance(next_root, ControlAccepted)
+    assert reduce_control(
+        resumed.state,
+        ApplyUserInputContinuation(continuation),
+    ) == ControlRejected("user_input_root_already_consumed")
 
 
 def test_execution_summaries_cannot_create_physical_attempt_truth() -> None:

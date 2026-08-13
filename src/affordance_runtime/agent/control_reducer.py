@@ -18,6 +18,7 @@ from affordance_runtime.agent.control_transition import (
     PendingKind,
 )
 from affordance_runtime.agent.decisions import Abort, AskUser, SelectAction
+from affordance_runtime.agent.user_input import UserInputContinuation
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus, TaskOutcomeKind
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.world.acquisition import AcquisitionStatus
@@ -57,7 +58,12 @@ class ApplyContinuation:
     continuation: ControlContinuation
 
 
-ControlCommand: TypeAlias = AppendRoot | ApplyContinuation
+@dataclass(frozen=True)
+class ApplyUserInputContinuation:
+    continuation: UserInputContinuation
+
+
+ControlCommand: TypeAlias = AppendRoot | ApplyContinuation | ApplyUserInputContinuation
 
 
 @dataclass(frozen=True)
@@ -94,6 +100,8 @@ def reduce_control(state: ControlState, command: ControlCommand) -> ControlReduc
         return _append_root(state, command)
     if isinstance(command, ApplyContinuation):
         return _apply_continuation(state, command.continuation)
+    if isinstance(command, ApplyUserInputContinuation):
+        return _apply_user_input_continuation(state, command.continuation)
     return ControlRejected("unsupported_control_command")
 
 
@@ -259,6 +267,52 @@ def _apply_continuation(
     return _accept_candidate(next_state, updated)
 
 
+def _apply_user_input_continuation(
+    state: ControlState,
+    continuation: UserInputContinuation,
+) -> ControlReduction:
+    if not isinstance(continuation, UserInputContinuation):
+        return ControlRejected("invalid_user_input_continuation")
+    if continuation.source_transition_id in state.continued_root_ids:
+        return ControlRejected("user_input_root_already_consumed")
+    index = next(
+        (
+            index
+            for index, transition in enumerate(state.recent_transitions)
+            if transition.transition_id == continuation.source_transition_id
+        ),
+        None,
+    )
+    if index is None:
+        return ControlRejected("user_input_root_outside_bounded_suffix")
+    transition = state.recent_transitions[index]
+    if (
+        index != len(state.recent_transitions) - 1
+        or not isinstance(transition.decision, AskUser)
+        or transition.pending_kind is not PendingKind.USER
+        or str(transition.resulting_status) != "waiting_user"
+    ):
+        return ControlRejected("root_is_not_pending_user_input")
+    if continuation.previous_task_revision < 1 or continuation.task_revision != (
+        continuation.previous_task_revision + 1
+    ):
+        return ControlRejected("task_revision_not_consecutive")
+    updated = replace(
+        transition,
+        pending_kind=PendingKind.NONE,
+        resulting_status=None,
+        reason_code="user_input_submitted",
+    )
+    values = list(state.recent_transitions)
+    values[index] = updated
+    next_state = replace(
+        state,
+        recent_transitions=tuple(values),
+        continued_root_ids=(*state.continued_root_ids, continuation.source_transition_id),
+    )
+    return _accept_candidate(next_state, updated)
+
+
 def _aggregate_acquisition(
     attempts: tuple[AcquisitionSummary, ...],
 ) -> AcquisitionSummary | None:
@@ -347,7 +401,7 @@ def _transition_fact_error(execution, executions, acquisition, acquisitions, rec
 def _transition_lifecycle_error(
     transition: ControlTransition,
     *,
-    confirmation_consumed: bool = False,
+    root_consumed: bool = False,
 ) -> str:
     """Close the supported finalized-record lifecycle cross-product."""
 
@@ -399,7 +453,7 @@ def _transition_lifecycle_error(
     ):
         return "decision_execution_mismatch"
     if admission is AdmissionStatus.CONFIRMATION_REQUIRED:
-        if confirmation_consumed:
+        if root_consumed:
             if transition.pending_kind is PendingKind.CONFIRMATION:
                 return "confirmation_lifecycle_mismatch"
         elif (
@@ -430,10 +484,12 @@ def _transition_lifecycle_error(
         for item in transition.execution_attempts
     ):
         return "evaluation_without_dispatched_action"
-    if isinstance(transition.decision, AskUser) and (
-        transition.pending_kind is not PendingKind.USER or str(transition.resulting_status) != "waiting_user"
-    ):
-        return "decision_pending_mismatch"
+    if isinstance(transition.decision, AskUser):
+        if root_consumed:
+            if transition.pending_kind is not PendingKind.NONE or transition.resulting_status is not None:
+                return "decision_pending_mismatch"
+        elif transition.pending_kind is not PendingKind.USER or str(transition.resulting_status) != "waiting_user":
+            return "decision_pending_mismatch"
     if isinstance(transition.decision, Abort):
         coverage_advance = bool(
             feedback is not None
@@ -596,7 +652,7 @@ def _invalid_state_code(state: ControlState) -> str:
             return fact_error
         lifecycle_error = _transition_lifecycle_error(
             transition,
-            confirmation_consumed=(transition.transition_id in state.continued_root_ids),
+            root_consumed=(transition.transition_id in state.continued_root_ids),
         )
         if lifecycle_error:
             return lifecycle_error
@@ -621,11 +677,19 @@ def _invalid_state_code(state: ControlState) -> str:
     visible_by_id = {item.transition_id: item for item in state.recent_transitions}
     for root_id in state.continued_root_ids:
         visible = visible_by_id.get(root_id)
-        if visible is not None and (
-            visible.admission is None
-            or visible.admission.status is not AdmissionStatus.CONFIRMATION_REQUIRED
-            or visible.pending_kind is PendingKind.CONFIRMATION
-        ):
+        if visible is None:
+            continue
+        confirmation_resolved = bool(
+            visible.admission is not None
+            and visible.admission.status is AdmissionStatus.CONFIRMATION_REQUIRED
+            and visible.pending_kind is not PendingKind.CONFIRMATION
+        )
+        user_input_resolved = bool(
+            isinstance(visible.decision, AskUser)
+            and visible.pending_kind is PendingKind.NONE
+            and visible.resulting_status is None
+        )
+        if not (confirmation_resolved or user_input_resolved):
             return "invalid_continuation_history"
     latest_terminal = ""
     if state.recent_transitions:

@@ -9,6 +9,7 @@ from enum import StrEnum
 from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
 from affordance_runtime.agent.progress_control import ProgressEvent
+from affordance_runtime.agent.user_input import UserInputContinuation, UserInputRequest
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
@@ -55,10 +56,12 @@ class AgentLoopState:
     progress_revision: int = 0
     pending_revision: int = 0
     pending_user_question: str = ""
+    pending_user_request: UserInputRequest | None = None
     pending_confirmation: ConfirmationRequest | None = None
     pending_unknown_request: BoundActionRequest | None = None
     pending_confirmation_transition_id: str = ""
     latest_control_continuation: ControlContinuation | None = None
+    latest_user_input_continuation: UserInputContinuation | None = None
     current_task_evaluation: TaskEvaluation | None = field(default=None, repr=False)
     remaining_turns: int = 20
     final_result: dict[str, object] = field(default_factory=dict)
@@ -127,6 +130,23 @@ class AgentLoopState:
             raise ControlReductionError(reduced)
         self._install_control_reducer_state(reduced.state)
 
+    def _apply_user_input_continuation(self, continuation: UserInputContinuation) -> None:
+        from affordance_runtime.agent.control_reducer import (
+            ApplyUserInputContinuation,
+            ControlAccepted,
+            ControlReductionError,
+            reduce_control,
+        )
+
+        reduced = reduce_control(
+            self._control_reducer_state(),
+            ApplyUserInputContinuation(continuation),
+        )
+        if not isinstance(reduced, ControlAccepted):
+            raise ControlReductionError(reduced)
+        self._install_control_reducer_state(reduced.state)
+        self.latest_user_input_continuation = continuation
+
     def _control_reducer_state(self):
         from affordance_runtime.agent.control_reducer import ControlState
 
@@ -158,11 +178,24 @@ class AgentLoopState:
     def set_pending_question(self, question: str) -> None:
         if self.pending_user_question != question:
             self.pending_user_question = question
+            self.pending_user_request = None
+            self.pending_revision += 1
+
+    def set_pending_user_request(self, request: UserInputRequest) -> None:
+        if not isinstance(request, UserInputRequest):
+            raise TypeError("pending user input request must be typed")
+        if request.question != self.pending_user_question:
+            raise ValueError("pending user input request must match the pending question")
+        if request.based_on_task_revision != self.task_revision:
+            raise ValueError("pending user input request must match current task revision")
+        if self.pending_user_request != request:
+            self.pending_user_request = request
             self.pending_revision += 1
 
     def clear_pending_question(self) -> None:
-        if self.pending_user_question:
+        if self.pending_user_question or self.pending_user_request is not None:
             self.pending_user_question = ""
+            self.pending_user_request = None
             self.pending_revision += 1
 
     def set_pending_confirmation(self, confirmation: ConfirmationRequest) -> None:

@@ -22,4 +22,5 @@ def task_spec_to_goal(spec: Any) -> TaskGoal:
         requested_outputs=tuple(getattr(spec, "requested_outputs", ()) or ()),
         risk_profile=RiskProfile.READ_ONLY,
         loop_budget=LoopBudget(max_turns=int(getattr(spec, "max_steps", 20) or 20), max_observations=40),
+        revision=int(getattr(spec, "revision", 1) or 1),
     )

@@ -85,6 +85,15 @@ class UnifiedWorldEnvironment:
             )
         return await self._acquire(request, AcquisitionOrigin.RESET, selected)
 
+    async def revise_task(self, task: TaskGoal) -> None:
+        """Update task-relative projections without resetting the physical world."""
+
+        for adapter in self.adapters:
+            prepare = getattr(adapter, "prepare", None)
+            if prepare is not None:
+                prepare(task)
+        self._task = task
+
     async def capture(self, request: WorldObservationRequest) -> ObservationAcquisition:
         return await self._acquire(request, AcquisitionOrigin.INDEPENDENT_CAPTURE)
 

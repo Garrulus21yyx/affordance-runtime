@@ -50,6 +50,7 @@ from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, 
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
+from affordance_runtime.agent.user_input import build_user_input_request
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -232,7 +233,16 @@ async def run_policy_turn(
         scope.set_resulting_status(AgentLoopStatus.FAILED)
         scope.finalize(state, Terminate(AgentLoopStatus.FAILED, "runtime_exception"))
         raise
-    scope.finalize(state, routed)
+    transition = scope.finalize(state, routed)
+    if isinstance(decision, AskUser) and state.pending_user_question:
+        state.set_pending_user_request(build_user_input_request(
+            task_id=session.task.task_id,
+            task_revision=state.task_revision,
+            context_id=decision.context_id,
+            source_transition_id=transition.transition_id,
+            question=decision.question,
+            requested_fields=decision.requested_fields,
+        ))
     return routed
 
 

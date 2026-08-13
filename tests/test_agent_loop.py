@@ -257,6 +257,7 @@ def test_sent_unknown_unconfirmed_effect_waits_without_replay() -> None:
         )
         result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
+        assert result.user_input_request is None
         assert result.execution_count == 1
         assert len(environment.executed_requests) == 1
         assert environment.execute_calls == 1

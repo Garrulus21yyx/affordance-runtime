@@ -35,7 +35,11 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
-    from affordance_runtime.agent.runtime import TargetRuntime, TargetRuntimeStartOutcome
+    from affordance_runtime.agent.runtime import (
+        TargetRuntime,
+        TargetRuntimeStartOutcome,
+        TargetRuntimeUserInputOutcome,
+    )
     from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
@@ -43,6 +47,13 @@ if TYPE_CHECKING:
         AgentLoopState,
         AgentLoopStatus,
         Turn,
+    )
+    from affordance_runtime.agent.user_input import (
+        UserInputRequest,
+        UserInputResumed,
+        UserInputResumeOutcome,
+        UserInputResumeRejected,
+        UserInputResumeRejectionCode,
     )
     from affordance_runtime.task.contracts import TaskGoal
 
@@ -66,6 +77,10 @@ _EXPORTS = {
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "TargetRuntime": ("affordance_runtime.agent.runtime", "TargetRuntime"),
     "TargetRuntimeStartOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeStartOutcome"),
+    "TargetRuntimeUserInputOutcome": (
+        "affordance_runtime.agent.runtime",
+        "TargetRuntimeUserInputOutcome",
+    ),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
@@ -83,6 +98,14 @@ _EXPORTS = {
     "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
+    "UserInputRequest": ("affordance_runtime.agent.user_input", "UserInputRequest"),
+    "UserInputResumed": ("affordance_runtime.agent.user_input", "UserInputResumed"),
+    "UserInputResumeOutcome": ("affordance_runtime.agent.user_input", "UserInputResumeOutcome"),
+    "UserInputResumeRejected": ("affordance_runtime.agent.user_input", "UserInputResumeRejected"),
+    "UserInputResumeRejectionCode": (
+        "affordance_runtime.agent.user_input",
+        "UserInputResumeRejectionCode",
+    ),
 }
 
 __all__ = list(_EXPORTS)
