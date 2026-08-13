@@ -308,6 +308,14 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
     assert adapter.last_argument_violation_paths == ("parameters.unexpected",)
     assert adapter.last_selected_operation == "observe_visual"
     assert adapter.last_repaired_operation_match is True
+    trace = _policy_trace_event(1, context, outcome.decision, adapter)
+    assert trace["decision"] == {
+        "kind": "RequestObservation",
+        "context_id": context.context_id,
+        "subject_id": "current_world",
+        "modality": "visual",
+        "required_assurance": "weak",
+    }
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
     assert '"selected_operation":"observe_visual"' in repair_system

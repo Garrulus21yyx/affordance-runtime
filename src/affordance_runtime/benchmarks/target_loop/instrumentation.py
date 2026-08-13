@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import SelectAction
+from affordance_runtime.agent.decisions import RequestObservation, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -248,21 +248,19 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             getattr(adapter, "last_repaired_operation_match", False)
         )
         event["model_image_input_count"] = image_input_count
-    if isinstance(
-        outcome,
-        SelectAction,
-    ):
+    if isinstance(outcome, (SelectAction, RequestObservation)):
         event["outcome"] = type(outcome).__name__
         event["decision"] = _decision_trace(outcome)
-        selected = _selected_grounding_trace(
-            context,
-            outcome,
-            image_attached=bool(
-                getattr(adapter, "last_image_input_count", len(context.image_inputs))
-            ),
-        )
-        if selected is not None:
-            event["selected_grounding"] = selected
+        if isinstance(outcome, SelectAction):
+            selected = _selected_grounding_trace(
+                context,
+                outcome,
+                image_attached=bool(
+                    getattr(adapter, "last_image_input_count", len(context.image_inputs))
+                ),
+            )
+            if selected is not None:
+                event["selected_grounding"] = selected
     elif isinstance(outcome, PolicyFailure):
         event["outcome"] = "policy_failure"
         event["policy_failure"] = {
@@ -340,6 +338,7 @@ def _decision_trace(decision):
         "destination_id",
         "subject_id",
         "modality",
+        "required_assurance",
         "relevance_role",
         "cursor",
         "category",
