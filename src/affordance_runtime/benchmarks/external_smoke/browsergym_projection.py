@@ -121,7 +121,7 @@ def project_browsergym_observation(
     controls_by_node_id = {node.private_node_id: node for node in projected}
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
-        state = dict(node.public_state)
+        state: dict[str, object] = dict(node.public_state)
         membership = lattice_by_node.get(node.private_node_id)
         if membership is not None:
             state.update({
@@ -301,7 +301,8 @@ def _descendant_numeric_text(
     owner: dict[str, object],
     records: dict[str, dict[str, object]],
 ) -> str | None:
-    pending = list(owner.get("childIds", ()))
+    owner_children = owner.get("childIds", ())
+    pending = list(owner_children) if isinstance(owner_children, list | tuple) else []
     found: list[str] = []
     visited: set[str] = set()
     while pending and len(visited) < 16:

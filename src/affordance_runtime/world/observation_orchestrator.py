@@ -66,6 +66,25 @@ class ObservationOrchestrator:
             else:
                 selections.append(SourceSelection(visual.source, SourceRequirement.REQUIRED, "visual_grounding"))
             return self._bounded(selections)
+        if desired_modality == "environment_state":
+            state = next((item for item in adequate if item.modality == "environment_state"), None)
+            if state is None:
+                return ObservationSelectionResult(
+                    None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "requested_modality_unavailable",
+                )
+            selections = [SourceSelection(
+                state.source,
+                SourceRequirement.REQUIRED,
+                "authoritative_state_grounding",
+            )]
+            structural = next((item for item in ordered if item.modality == "structural"), None)
+            if structural is not None:
+                selections.append(SourceSelection(
+                    structural.source,
+                    SourceRequirement.OPTIONAL,
+                    "structural_world_augmentation",
+                ))
+            return self._bounded(selections)
         if not adequate:
             reason = "requested_assurance_unavailable" if desired_assurance else "requested_modality_unavailable"
             return ObservationSelectionResult(None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, reason)

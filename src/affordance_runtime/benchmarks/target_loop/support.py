@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent import Abort, RequestActionPage, SelectAction
+from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -63,6 +64,10 @@ class SelectThenAbortPolicy:
 class ScriptedDecisionPort:
     fail: bool = False
     calls: int = 0
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return frozenset({DecisionCapability.SELECT_ACTION})
 
     async def generate(self, request):
         self.calls += 1

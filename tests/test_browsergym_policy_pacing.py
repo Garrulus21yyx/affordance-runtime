@@ -1,8 +1,8 @@
 import asyncio
+
 import pytest
 
 from affordance_runtime.benchmarks.external_smoke.pacing import (
-    FixedPacingState,
     PacedAgentPolicy,
     validate_pacing_budget,
 )

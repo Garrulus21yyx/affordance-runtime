@@ -3,6 +3,7 @@
 > **Lifecycle:** CURRENT ACTIVE QUEUE
 > **Updated:** 2026-08-13
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
+> **Active target-cutover baseline:** `311e094`
 > **Review evidence:** none; Implementation Status owns any reviewed closure SHA
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
@@ -11,6 +12,44 @@
 The transaction-platform queue remains stopped. P5-A/B1/C1 has established the
 target contracts, minimum Unified World Interface, and real DOM plus
 Visual-only and WoT local-simulation short loops without changing the default product path.
+
+## Active target-default convergence queue
+
+This is the durable progress owner for the current natural-language-to-action
+cutover. Detailed diagnoses and deletion gates remain in the
+[runtime-chain audit](reviews/2026-08-13-runtime-chain-convergence-audit.md) and
+[consumer map](reviews/2026-08-13-target-cutover-consumer-map.md).
+
+| Slice | Status | Files / verification |
+|---|---|---|
+| Model protocol convergence | done, pushed | `grounded_tools.v2` benchmark owner; explicit supported/required decisions; split action/objective adapters; closed objective outcomes |
+| Product target composition/client | done, pushed | `compose_target_runtime`, `TargetRuntimeClient`, typed continuations; source-tree composition gate |
+| Product evaluation/DOM evidence | done, pushed | product action evaluator plus structural DOM activation proof and real Playwright E2E |
+| Explicit target CLI | done, pushed | `target-run`, strict intake, thread-bound browser session, real CLI E2E; legacy `run` unchanged |
+| Reference cutover readiness | done, pushed | typed pricing/settings/export blockers; aggregate cutover fails closed |
+| Authoritative HTTP JSON surface | implemented, locally verified | read-only registered state adapter; authoritative+DOM same-capture fusion; real settings confirmation/persistence target E2E; settings readiness blocker removed; `mypy src`, focused tests and full `2452 passed, 27 skipped` are green |
+| Pricing structural/output projection | pending | project interaction effect, static document content, and structured output without a case oracle |
+| Export materialization/integrity | pending | product download artifact and output-integrity evidence |
+| Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
+| Root default switch | pending | only after reference readiness, held-out gate, and fresh-context topology review |
+| Legacy deletion | pending | delete owner-by-owner only after all default consumers resolve through target and shared claims have target-owned tests |
+
+World invariant for every pending slice:
+
+```text
+DOM / Visual / WoT / HTTP facts -> SurfaceObservation
+                               -> UnifiedWorldEnvironment + WorldFusion
+                               -> one WorldObservation and one internal ActionSpace
+```
+
+No evaluator, CLI, benchmark, or reference scenario may query an out-of-band
+state oracle. Surface-private selectors, coordinates, URLs, credentials, and
+executor routes never enter the model view.
+
+Remote run `31740915053` stopped before mypy and the target gates because the
+repository-wide Ruff step found six import-only test issues. Those concrete
+failures are corrected in the current slice; this is recorded as the cause of
+that run, not as a new permanent per-push policy.
 
 ## Slice status
 
@@ -53,7 +92,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `IN_PROGRESS / PHASE_BOUNDARY_CUTOVER_IMPLEMENTED / LIVE_REVALIDATION_PENDING` | One post-observation LocalObjective lifecycle owns sequence/set/aggregate semantics and current evidence resolution. Its explicit proposal port is separate from the action-only AgentPolicy; TaskFrontier, workflow TaskPlan ingress, requirement hypotheses and packaged objective operations are absent from AgentLoop. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
-| default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
+| default cutover/deletion | `IN_PROGRESS / TARGET ENTRY NON_DEFAULT` | explicit target CLI/client and readiness gate exist; reference capability remediation, held-out benchmark, root switch, and physical deletion remain open |
 
 ## Next admitted slice
 

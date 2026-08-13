@@ -91,7 +91,9 @@ class VisualSurfaceAdapter:
                     self._task.instruction,
                 )
             )
-            proposed = tuple(point_grounded_visual_regions(proposed, point, proposal_request.image_size))
+            proposed = tuple(
+                point_grounded_visual_regions(list(proposed), point, proposal_request.image_size)
+            )
         if len(proposed) > proposal_request.max_regions:
             raise ValueError("visual proposer exceeded the region bound")
         regions = tuple(

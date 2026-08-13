@@ -787,3 +787,36 @@ entrypoint migration gate，架构门禁禁止它进入 agent/model-policy/world
 `UnifiedWorldEnvironment -> WorldFusion`，仍然只产生一个 `WorldObservation`；禁止 evaluator 或 case
 旁路查询 fixture oracle。focused verification 为 `14 passed`；全量离线验证为
 `2443 passed, 27 skipped`。default cutover 和三项 capability remediation 仍然 open。
+
+## 21. 实施记录：统一世界中的 authoritative HTTP state
+
+2026-08-13 settings remediation 没有引入第二个 world 或 evaluator oracle。新增的
+`HttpJsonSurfaceAdapter` 只接受产品侧显式注册的 endpoint authority 和 public fact projection
+allowlist；endpoint 是 private configuration，raw response、未声明字段和 URL 均不进入
+`SurfaceObservation`。adapter 没有 action binding，`execute` 永远返回 typed unsupported。
+
+`ObservationOrchestrator` 对 `environment_state + authoritative` 请求现在选择 state source 为
+required，同时把 structural DOM 作为 optional augmentation；两者在同一次 capture 中由
+`WorldFusion` 形成唯一 `WorldObservation`。因此 settings 链路是：
+
+```text
+NaturalLanguageTaskRequest -> ThinTaskIntake -> initial DOM world
+-> model SelectAction(public action_id) -> semantic confirmation
+-> fresh private DOM bind -> execute once -> DOM post observation
+-> model RequestObservation(environment_state, authoritative)
+-> HTTP facts(required) + DOM(optional) -> one fused WorldObservation
+-> ProductionTaskEvaluator -> authoritative completion evidence
+```
+
+真实 fixture/Playwright acceptance 暴露并修复了两个共享控制缺口：初始缺少所需高 assurance
+事实时，`UNKNOWN` 原先在 policy turn 前一律暂停；现在只有当 environment 明确提供尚未采集、可满足
+criterion 的 typed source 时才继续控制。其次，已发送的 medium-risk action 若 DOM 无法确认业务 effect，
+但同一缺失 source 可澄清，则 Runtime 进入 observation-only uncertainty：允许 observation control，禁止
+再次 `SelectAction`；选择正确来源后清除该状态，选择另一 effectful action 则确定性 blocked。整个过程
+执行计数保持 1，不重放发送。
+
+settings 的 readiness 现绑定可执行 acceptance
+`tests/test_reference_target_settings.py::test_target_settings_confirms_action_then_completes_from_unified_authoritative_world`；
+pricing 与 export blockers 仍使聚合 default cutover fail closed。该实现先通过 broad focused gate
+`117 passed`，最终变更集再次通过直接相关 gate `59 passed`、`mypy src`（495 个源码文件）、Ruff、
+`git diff --check` 与全量 `2452 passed, 27 skipped in 95.97s`。新远端 CI 结果在本切片推送后另行记录。

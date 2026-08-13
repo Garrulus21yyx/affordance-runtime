@@ -43,6 +43,7 @@ from affordance_runtime.task.step_execution import (
     AggregateStepExecution,
     EntityStepExecution,
     SetStepExecution,
+    StepExecutionSpec,
 )
 from affordance_runtime.task_intake import StrictModel, TaskSpec
 from affordance_runtime.task_plan_contracts import PlanProposal, TaskPlanGeneratorSource
@@ -392,14 +393,14 @@ def _canonical_provider_step(
     )
 
 
-def _canonical_execution(proposal: TaskPlanStepProposal):
+def _canonical_execution(proposal: TaskPlanStepProposal) -> StepExecutionSpec:
     value = proposal.execution
     if value is None:
         raise ValueError("provider step omitted execution contract")
     predicate = predicate_from_public_value(value.predicate)
     if isinstance(value, EntityExecutionProposal):
         action = ActionTemplate(value.semantic_action, parameters=value.parameters)
-        execution = EntityStepExecution(
+        execution: StepExecutionSpec = EntityStepExecution(
             EntitySelector(predicate, value.entity_domain),
             action,
             EntitySelector(predicate_from_public_value(value.postcondition), value.entity_domain)

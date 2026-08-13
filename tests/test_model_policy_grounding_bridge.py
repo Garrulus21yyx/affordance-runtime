@@ -2,8 +2,6 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 
-import pytest
-
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter

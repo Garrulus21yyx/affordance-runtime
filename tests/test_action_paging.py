@@ -12,7 +12,6 @@ from affordance_runtime.agent import (
     RequestActionPage,
     SelectAction,
 )
-from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal

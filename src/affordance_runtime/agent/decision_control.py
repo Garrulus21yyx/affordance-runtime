@@ -55,10 +55,12 @@ from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEval
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
-from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
+from affordance_runtime.agent.task_evaluation_policy import (
+    task_evaluation_disposition_for_world,
+)
 from affordance_runtime.agent.user_input import build_user_input_request
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
-from affordance_runtime.evaluation.contracts import TaskEvaluation
+from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task.contracts import criterion_id
@@ -386,6 +388,17 @@ async def _route_decision(
         return await _wait_refresh(session, decision, waiter, scope)
     if isinstance(decision, RequestActionPage):
         return _request_action_page(session, action_space, context_builder, decision, scope)
+    if state.unresolved_observable_request is not None:
+        state.clear_unknown_effect_observation()
+        reason = "effect_unknown"
+        scope.record_admission(AdmissionStatus.REJECTED, reason)
+        scope.record_decision_result(reason)
+        scope.set_reason(reason)
+        return Terminate(
+            AgentLoopStatus.BLOCKED,
+            reason,
+            "an authoritative observation is required before another effectful action",
+        )
     execution = state.local_objective_state
     if execution is not None and not local_objective_complete(execution):
         allowed = local_objective_allowed_action_ids(execution, action_space)
@@ -467,8 +480,18 @@ async def _policy_observation(
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     state.current_task_evaluation = evaluation
+    if (
+        state.unresolved_observable_request is not None
+        and evaluation.status is not TaskEvaluationStatus.UNKNOWN
+    ):
+        state.clear_unknown_effect_observation()
     scope.record_evaluations(task=evaluation)
-    disposition = task_evaluation_disposition(evaluation)
+    disposition = task_evaluation_disposition_for_world(
+        session.task,
+        evaluation,
+        state.current_observation,
+        session.environment.observation_capabilities,
+    )
     if disposition.status is not None:
         return directive(
             disposition.status,
@@ -670,7 +693,12 @@ async def _propose_done(
     state.current_task_evaluation = evaluation
     scope.record_evaluations(task=evaluation)
     scope.set_reason(f"task_{evaluation.status}")
-    disposition = task_evaluation_disposition(evaluation)
+    disposition = task_evaluation_disposition_for_world(
+        task,
+        evaluation,
+        state.current_observation,
+        session.environment.observation_capabilities,
+    )
     return (
         Continue("task_incomplete")
         if disposition.status is None

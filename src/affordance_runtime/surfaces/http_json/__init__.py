@@ -1,13 +1,14 @@
-"""Surface-local observation and execution adapters."""
+"""Registered HTTP JSON state surface."""
 
-from affordance_runtime.surfaces.base import SurfaceAdapter
-from affordance_runtime.surfaces.http_json import (
+from affordance_runtime.surfaces.http_json.adapter import HttpJsonSurfaceAdapter
+from affordance_runtime.surfaces.http_json.contracts import (
     HttpJsonAuthority,
     HttpJsonFactProjection,
     HttpJsonProjectionError,
     HttpJsonProjectionErrorCode,
     HttpJsonSourceRegistration,
-    HttpJsonSurfaceAdapter,
+)
+from affordance_runtime.surfaces.http_json.transport import (
     HttpJsonTransportPort,
     UrllibHttpJsonTransport,
 )
@@ -20,6 +21,5 @@ __all__ = [
     "HttpJsonSourceRegistration",
     "HttpJsonSurfaceAdapter",
     "HttpJsonTransportPort",
-    "SurfaceAdapter",
     "UrllibHttpJsonTransport",
 ]

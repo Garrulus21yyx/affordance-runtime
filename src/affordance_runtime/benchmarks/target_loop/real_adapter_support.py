@@ -62,6 +62,9 @@ class ManagedRealEnvironment:
     async def reset(self, task: TaskGoal):
         return await self.inner.reset(task)
 
+    async def revise_task(self, task: TaskGoal) -> None:
+        await self.inner.revise_task(task)
+
     async def capture(self, request):
         return await self.inner.capture(request)
 

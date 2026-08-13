@@ -9,16 +9,21 @@ from test_confirmation_continuation import _world as confirmation_world
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import (
+    ActionEvaluation,
+    ActionEvaluationStatus,
     CriterionEvaluation,
     CriterionEvaluationStatus,
+    ProductionTaskEvaluator,
     TaskEvaluation,
     TaskEvaluationStatus,
     TaskOutcomeFact,
     TaskOutcomeKind,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
+from affordance_runtime.world import ObservationCapabilities, ObservationOffer
 
 
 class SequencedTaskEvaluator:
@@ -74,6 +79,65 @@ def test_initial_non_incomplete_task_evaluation_controls_loop(status, loop_statu
         assert result.status == loop_status
         assert result.execution_count == 0
         assert result.message == f"task evaluation is {status.value}"
+
+    asyncio.run(scenario())
+
+
+def test_observable_unknown_effect_requires_observation_before_another_action() -> None:
+    class UnknownActionEvaluator:
+        async def evaluate(self, task, before, request, result, after):
+            del task, result
+            return ActionEvaluation(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ActionEvaluationStatus.UNKNOWN,
+                "business effect requires authoritative observation",
+            )
+
+    async def scenario() -> None:
+        task = TaskGoal(
+            "observable-unknown",
+            "Enable shared state and verify the persisted setting",
+            allowed_effects=("shared_state_enabled",),
+            success_criteria=({
+                "id": "persisted",
+                "kind": "fact_equals",
+                "subject_id": "settings",
+                "predicate": "enabled",
+                "expected_value": True,
+                "required_assurance": "authoritative",
+            },),
+            risk_profile=RiskProfile.LOW,
+        )
+        environment = StaticEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", False),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+            observation_capabilities=ObservationCapabilities(True, True, (
+                ObservationOffer("dom", "structural", "structural", "low"),
+                ObservationOffer(
+                    "http_json",
+                    "environment_state",
+                    "authoritative",
+                    "medium",
+                ),
+            )),
+        )
+        session = await AgentEpisodeRunner(AgentLoop(
+            ScriptedPolicy(["first", "first"]),
+            UnknownActionEvaluator(),
+            ProductionTaskEvaluator(),
+        )).start(environment, task)
+
+        result = await session.run_until_pause()
+
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.reason_code == "effect_unknown"
+        assert result.execution_count == 1
+        assert environment.execute_calls == 1
+        assert session.state.unresolved_observable_request is None
+        assert session.state.pending_unknown_request is None
 
     asyncio.run(scenario())
 

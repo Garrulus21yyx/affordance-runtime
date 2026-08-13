@@ -14,6 +14,7 @@ import math
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from numbers import Real
+from typing import TypeGuard
 
 from affordance_runtime.evaluation.contracts import ActionEvaluationStatus
 from affordance_runtime.immutable import freeze_json, to_json_compatible
@@ -501,7 +502,7 @@ def _universe(
     )
 
 
-def _numeric(value: object) -> bool:
+def _numeric(value: object) -> TypeGuard[int | float]:
     return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(float(value))
 
 

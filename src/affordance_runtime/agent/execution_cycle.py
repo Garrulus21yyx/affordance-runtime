@@ -38,6 +38,10 @@ from affordance_runtime.agent.runtime_failure import (
 )
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
+from affordance_runtime.agent.task_evaluation_policy import (
+    task_evaluation_disposition_for_world,
+)
+from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -240,8 +244,18 @@ async def _evaluate_after(
         session, selection, action_evaluation, after, task_evaluation,
     )
     scope.set_reason(f"action_{action_evaluation.status}")
+    contextual_disposition = task_evaluation_disposition_for_world(
+        task,
+        task_evaluation,
+        after,
+        session.environment.observation_capabilities,
+    )
     outcome = post_action_result(
         task, state, request, result, action_evaluation, task_evaluation,
+        unknown_recoverable=(
+            task_evaluation.status == TaskEvaluationStatus.UNKNOWN
+            and contextual_disposition.status is None
+        ),
     )
     if isinstance(outcome, Continue) and progress_event is not None and progress_event.strategy_transition_required:
         from affordance_runtime.agent.control_feedback import (

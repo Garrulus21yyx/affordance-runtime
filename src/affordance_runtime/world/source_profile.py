@@ -74,6 +74,18 @@ class ObservationSourceProfile:
         )
 
     @classmethod
+    def http_json(cls) -> ObservationSourceProfile:
+        """Profile for an explicitly registered authoritative state endpoint."""
+
+        return cls(
+            ObservationModality.ENVIRONMENT_STATE,
+            ObservationAssurance.AUTHORITATIVE,
+            VerificationStrength.AUTHORITATIVE,
+            AcquisitionCost.MEDIUM,
+            "http_json",
+        )
+
+    @classmethod
     def user(cls) -> ObservationSourceProfile:
         return cls(
             ObservationModality.USER,

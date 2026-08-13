@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Container
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Mapping, TypeAlias
@@ -282,6 +283,8 @@ def _compare(actual: object, operator: CompareOperator, expected: object) -> boo
     if operator is CompareOperator.NE:
         return actual != expected
     if operator is CompareOperator.IN:
+        if not isinstance(expected, Container):
+            raise TypeError("membership comparison requires a container")
         return actual in expected
     if isinstance(actual, bool) or isinstance(expected, bool):
         raise TypeError("ordered comparisons do not admit booleans")

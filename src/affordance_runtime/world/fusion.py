@@ -80,13 +80,13 @@ class WorldFusion:
                     target_id=canonical_id,
                     relations=_rewrite_relations(dict(target.relations), mapping),
                 )
-                prior = targets.get(canonical_id)
-                if prior is None:
+                prior_target = targets.get(canonical_id)
+                if prior_target is None:
                     targets[canonical_id] = rewritten
                 else:
-                    conflicts.extend(_target_conflicts(canonical_id, prior, rewritten))
+                    conflicts.extend(_target_conflicts(canonical_id, prior_target, rewritten))
                     targets[canonical_id] = _merge_non_authoritative_target_evidence(
-                        prior,
+                        prior_target,
                         rewritten,
                     )
                 provenance.setdefault(canonical_id, []).append(
@@ -95,9 +95,9 @@ class WorldFusion:
             for fact in source.facts:
                 canonical_id = mapping[fact.subject_id]
                 key = (canonical_id, fact.predicate)
-                prior = fact_values.get(key)
+                prior_fact = fact_values.get(key)
                 encoded = json.dumps(to_json_compatible(fact.value), sort_keys=True, separators=(",", ":"))
-                if prior is not None and prior[0] != encoded:
+                if prior_fact is not None and prior_fact[0] != encoded:
                     conflicts.append(ObservationConflict(
                         _conflict_id(canonical_id, fact.predicate), canonical_id, fact.predicate,
                         "material source claims disagree",

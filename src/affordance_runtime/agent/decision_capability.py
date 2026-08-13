@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -37,13 +38,12 @@ def normalize_decision_capabilities(
 
     if isinstance(values, str):
         raise TypeError(f"{field_name} must contain typed DecisionCapability values")
-    try:
-        normalized = frozenset(values)  # type: ignore[arg-type]
-    except TypeError as exc:
-        raise TypeError(f"{field_name} must be an iterable of DecisionCapability values") from exc
+    if not isinstance(values, Iterable):
+        raise TypeError(f"{field_name} must be an iterable of DecisionCapability values")
+    normalized = frozenset(values)
     if any(not isinstance(item, DecisionCapability) for item in normalized):
         raise TypeError(f"{field_name} must contain typed DecisionCapability values")
-    return normalized
+    return frozenset(item for item in normalized if isinstance(item, DecisionCapability))
 
 
 @dataclass(frozen=True)

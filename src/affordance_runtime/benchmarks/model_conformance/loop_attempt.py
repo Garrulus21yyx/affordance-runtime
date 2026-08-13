@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from affordance_runtime.agent import Abort, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.composition import compose_target_runtime
+from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_adapter_task, real_dom_environment
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
@@ -29,6 +30,10 @@ class CapturingDecisionPort:
     wrapped: ModelPortDecisionAdapter
     request: object | None = None
     outcome: ResolvedModelDecision | ModelFailure | None = None
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return self.wrapped.supported_decisions
 
     @property
     def transport_timeout_s(self) -> float:

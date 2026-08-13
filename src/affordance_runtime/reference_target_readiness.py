@@ -51,7 +51,11 @@ REFERENCE_TARGET_READINESS = (
     ),
     ReferenceTargetReadiness(
         "settings",
-        frozenset({ReferenceTargetBlocker.AUTHORITATIVE_HTTP_STATE}),
+        frozenset(),
+        (
+            "tests/test_reference_target_settings.py::"
+            "test_target_settings_confirms_action_then_completes_from_unified_authoritative_world"
+        ),
     ),
     ReferenceTargetReadiness(
         "export",

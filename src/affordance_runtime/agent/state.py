@@ -60,6 +60,7 @@ class AgentLoopState:
     pending_user_request: UserInputRequest | None = None
     pending_confirmation: ConfirmationRequest | None = None
     pending_unknown_request: BoundActionRequest | None = None
+    unresolved_observable_request: BoundActionRequest | None = field(default=None, repr=False)
     pending_confirmation_transition_id: str = ""
     latest_control_continuation: ControlContinuation | None = None
     latest_user_input_continuation: UserInputContinuation | None = None
@@ -219,6 +220,18 @@ class AgentLoopState:
         if self.pending_unknown_request is not None:
             self.pending_unknown_request = None
             self.pending_revision += 1
+
+    def require_unknown_effect_observation(self, request: BoundActionRequest) -> None:
+        """Latch SENT uncertainty that can still be resolved by a typed source."""
+
+        if self.unresolved_observable_request != request:
+            self.unresolved_observable_request = request
+            self.progress_revision += 1
+
+    def clear_unknown_effect_observation(self) -> None:
+        if self.unresolved_observable_request is not None:
+            self.unresolved_observable_request = None
+            self.progress_revision += 1
 
     def install_control_feedback(
         self,

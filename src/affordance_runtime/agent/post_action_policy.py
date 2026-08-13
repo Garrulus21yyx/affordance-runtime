@@ -19,8 +19,13 @@ def post_action_result(
     result: ActionResult,
     action_evaluation: ActionEvaluation,
     task_evaluation: TaskEvaluation,
+    *,
+    unknown_recoverable: bool = False,
 ) -> LoopDirective:
-    task_disposition = task_evaluation_disposition(task_evaluation)
+    task_disposition = task_evaluation_disposition(
+        task_evaluation,
+        unknown_recoverable=unknown_recoverable,
+    )
     if (
         task_disposition.status is AgentLoopStatus.DONE
         or task_disposition.task_terminal is not None
@@ -52,6 +57,9 @@ def post_action_result(
         return Continue("action_effect_confirmed")
     if action_evaluation.status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED:
         return Continue("action_no_effect_confirmed")
+    if result.dispatch_status == DispatchStatus.SENT and unknown_recoverable:
+        state.require_unknown_effect_observation(request)
+        return Continue("action_unknown_observation_available")
     low_local = str(request.selection.risk) == "low" and request.selection.effect_category in {
         "observation", "local_reversible",
     }

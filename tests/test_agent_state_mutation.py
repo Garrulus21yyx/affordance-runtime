@@ -1,6 +1,8 @@
 from test_agent_loop import _world
 
 from affordance_runtime.agent.state import AgentLoopState
+
+
 def test_pending_mutators_increment_pending_revision() -> None:
     state = AgentLoopState(_world("before", False))
 

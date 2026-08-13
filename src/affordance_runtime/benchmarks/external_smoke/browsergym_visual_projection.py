@@ -319,7 +319,12 @@ def _correspondence_decision(
 ) -> VisualCorrespondenceDecision:
     targets = {item.target_id: item for item in structured_source.targets}
     boxes = {
-        item.target_id: tuple(float(value) for value in item.bbox)
+        item.target_id: (
+            float(item.bbox[0]),
+            float(item.bbox[1]),
+            float(item.bbox[2]),
+            float(item.bbox[3]),
+        )
         for media in structured_source.media
         for item in media.grounding_regions
         if item.target_id in targets

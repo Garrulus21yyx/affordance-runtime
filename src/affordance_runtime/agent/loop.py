@@ -47,10 +47,11 @@ from affordance_runtime.agent.start_error import (
     require_initial_observation,
 )
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
-from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
+from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition_for_world
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.confirmation.contracts import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.confirmation.summary import build_confirmation_request
+from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionIntent
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.risk.contracts import RiskDecisionKind
@@ -233,9 +234,19 @@ class AgentLoop:
                 )
                 raise
             state.current_task_evaluation = task_evaluation
+            if (
+                state.unresolved_observable_request is not None
+                and task_evaluation.status is not TaskEvaluationStatus.UNKNOWN
+            ):
+                state.clear_unknown_effect_observation()
             if session.confirmation_continuation_scope is not None:
                 session.confirmation_continuation_scope.record_evaluations(task=task_evaluation)
-            task_disposition = task_evaluation_disposition(task_evaluation)
+            task_disposition = task_evaluation_disposition_for_world(
+                task,
+                task_evaluation,
+                state.current_observation,
+                session.environment.observation_capabilities,
+            )
             if task_disposition.status is not None:
                 task_outcome = directive(
                     task_disposition.status,

@@ -49,6 +49,26 @@ def test_low_risk_sent_local_inconclusive_continues_from_fresh_world() -> None:
     assert state.pending_unknown_request is None
 
 
+def test_observable_unknown_effect_continues_without_claiming_user_pause() -> None:
+    world, request = _request(risk=ActionRisk.MEDIUM)
+    state = AgentLoopState(world)
+
+    result = post_action_result(
+        _task(),
+        state,
+        request,
+        ActionResult(request.request_id, DispatchStatus.SENT, "dom", True),
+        _action(request),
+        _task_evaluation(TaskEvaluationStatus.UNKNOWN),
+        unknown_recoverable=True,
+    )
+
+    assert isinstance(result, Continue)
+    assert result.reason_code == "action_unknown_observation_available"
+    assert state.pending_unknown_request is None
+    assert state.unresolved_observable_request == request
+
+
 def test_high_external_or_sent_unknown_inconclusive_waits_without_replay() -> None:
     for risk, category, dispatch, success in (
         (ActionRisk.HIGH, "external", DispatchStatus.SENT, True),

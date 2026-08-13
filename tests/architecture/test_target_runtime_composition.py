@@ -59,6 +59,20 @@ def test_product_action_evaluator_has_no_benchmark_dependency() -> None:
     )
 
 
+def test_http_fact_surface_is_product_owned_and_has_no_fixture_or_benchmark_oracle() -> None:
+    surface = RUNTIME / "surfaces" / "http_json"
+    imports = {
+        imported
+        for path in surface.rglob("*.py")
+        for imported in _imports(path)
+    }
+
+    assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
+    assert "affordance_runtime.fixtures" not in imports
+    assert "affordance_runtime.reference_scenarios" not in imports
+    assert "affordance_runtime.reference_target_readiness" not in imports
+
+
 def test_target_product_entry_has_no_legacy_or_benchmark_dependency() -> None:
     for relative in (
         "browser_thread_session.py",

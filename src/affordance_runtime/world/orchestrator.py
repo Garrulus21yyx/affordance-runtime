@@ -22,6 +22,7 @@ from affordance_runtime.world.acquisition import (
     SourceSelection,
     WorldObservationRequest,
 )
+from affordance_runtime.world.contracts import SurfaceObservation
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
 
@@ -117,8 +118,8 @@ class UnifiedWorldEnvironment:
             for offer in self._offers
             if offer.source not in selected_names
         ]
-        acquired = []
-        projected: dict[str, object] = {}
+        acquired: list[SurfaceObservation] = []
+        projected: dict[str, SurfaceObservation | None] = {}
         grouped: dict[str, list[SourceSelection]] = {}
         for item in selected.selections:
             offer = self._offer_for(item.source)
@@ -222,8 +223,11 @@ class UnifiedWorldEnvironment:
         return outcome.plan
 
     def _physical_reset_owners(self, plan: ObservationSelectionPlan) -> tuple[SurfaceAdapter, ...]:
-        selected = [self._adapter(item.source) for item in plan.selections]
-        selected = [item for item in selected if item is not None]
+        selected: list[SurfaceAdapter] = []
+        for item in plan.selections:
+            adapter = self._adapter(item.source)
+            if adapter is not None:
+                selected.append(adapter)
         groups: dict[str, SurfaceAdapter] = {}
         for adapter in selected:
             offer = next(item for item in self._offers if item.source == adapter.surface)
