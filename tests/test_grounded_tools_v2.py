@@ -683,6 +683,7 @@ def test_mandatory_objective_transition_excludes_settled_member_actions() -> Non
     entity = next(
         item for item in objective_specs if item.name == "establish_click_entity_objective"
     )
+    assert tuple(item.name for item in catalog.specs) == (entity.name,)
     assert entity.input_schema["properties"] == {}
     assert all("fill" not in item.name for item in objective_specs)
 

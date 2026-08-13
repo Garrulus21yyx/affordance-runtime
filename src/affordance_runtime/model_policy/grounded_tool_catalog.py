@@ -139,8 +139,22 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
 
     specs: list[ToolSpec] = []
     bindings: list[object] = []
+    semantic_ingress = (
+        set_directive is not None
+        and set_directive.mode is SetCatalogMode.CONTROL_ONLY
+        and context.set_control is not None
+        and context.set_control.semantic_mode
+        in {"semantic_ingress", "objective_transition"}
+    )
+    objective_candidate_ids = (
+        set(context.set_control.objective_candidate_action_ids)
+        if context.set_control is not None
+        and context.set_control.semantic_mode == "objective_transition"
+        else {item.action_id for item in context.actions.options}
+    )
+    unique_grounded_ingress = semantic_ingress and len(objective_candidate_ids) == 1
     seen_modalities: set[str] = set()
-    for capability in context.world.observation_capabilities:
+    for capability in (() if unique_grounded_ingress else context.world.observation_capabilities):
         if capability.modality in seen_modalities:
             continue
         seen_modalities.add(capability.modality)
@@ -151,13 +165,6 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         ))
         bindings.append(_ObserveBinding(capability.modality, capability.assurance))
     _append_set_assessment_tool(context, ref_by_target, specs, bindings)
-    semantic_ingress = (
-        set_directive is not None
-        and set_directive.mode is SetCatalogMode.CONTROL_ONLY
-        and context.set_control is not None
-        and context.set_control.semantic_mode
-        in {"semantic_ingress", "objective_transition"}
-    )
     if (
         (set_directive is None or semantic_ingress)
         and not context.actions.truncated
@@ -303,6 +310,7 @@ def _append_set_objective_tools(
             (option.semantic_action, _shape_key(verb, option.parameter_schema)),
             [],
         ).append(option)
+    unique_ingress = mandatory and sum(len(items) for items in options_by_action.values()) == 1
     verb_groups: dict[str, int] = {}
     for (semantic_action, _shape), options in options_by_action.items():
         verb = _verb(semantic_action)
@@ -334,6 +342,8 @@ def _append_set_objective_tools(
                 parameter_field,
             ))
         if options[0].parameter_schema.get("required") or options[0].parameter_schema.get("properties"):
+            continue
+        if unique_ingress:
             continue
         action_roles = {
             entity_by_ref[ref_by_target[option.target_id]].role.casefold().strip()
