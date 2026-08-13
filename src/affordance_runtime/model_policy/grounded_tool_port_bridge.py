@@ -164,6 +164,10 @@ class _GroundedAdapterBase:
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
     last_image_input_count: int = field(default=0, init=False, compare=False)
+    last_argument_violation_code: str = field(default="", init=False, compare=False)
+    last_argument_violation_paths: tuple[str, ...] = field(default=(), init=False, compare=False)
+    last_selected_operation: str = field(default="", init=False, compare=False)
+    last_repaired_operation_match: bool = field(default=False, init=False, compare=False)
     last_attempt_origin: ProviderAttemptOrigin = field(
         default=ProviderAttemptOrigin.UNKNOWN,
         init=False,
@@ -216,6 +220,10 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
         object.__setattr__(self, "last_image_input_count", 0)
+        object.__setattr__(self, "last_argument_violation_code", "")
+        object.__setattr__(self, "last_argument_violation_paths", ())
+        object.__setattr__(self, "last_selected_operation", "")
+        object.__setattr__(self, "last_repaired_operation_match", False)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
         if request.schema_version != expected_schema or request.policy_context is None:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
@@ -265,9 +273,13 @@ class _GroundedAdapterBase:
                 issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
                 if issue is None:
                     raise
+                object.__setattr__(self, "last_argument_violation_code", issue.code.value)
+                object.__setattr__(self, "last_argument_violation_paths", issue.public_field_paths)
+                object.__setattr__(self, "last_selected_operation", spec.name)
                 object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
                 object.__setattr__(self, "last_argument_repair_count", 1)
                 repaired = await self._repair_selected_operation(messages, spec, issue, payload_base)
+                object.__setattr__(self, "last_repaired_operation_match", repaired.name == call.name)
                 if repaired.name != call.name:
                     raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
                 decision = resolver(

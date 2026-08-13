@@ -235,6 +235,18 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
         event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
+        event["tool_argument_violation_code"] = str(
+            getattr(adapter, "last_argument_violation_code", "")
+        )
+        event["tool_argument_violation_paths"] = tuple(
+            getattr(adapter, "last_argument_violation_paths", ())
+        )
+        event["tool_argument_selected_operation"] = str(
+            getattr(adapter, "last_selected_operation", "")
+        )
+        event["tool_argument_repaired_operation_match"] = bool(
+            getattr(adapter, "last_repaired_operation_match", False)
+        )
         event["model_image_input_count"] = image_input_count
     if isinstance(
         outcome,

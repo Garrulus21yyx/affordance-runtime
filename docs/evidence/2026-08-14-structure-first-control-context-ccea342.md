@@ -37,3 +37,21 @@ transport and offers exactly the already-selected `ToolSpec`. Compact-JSON
 repairs retain their existing path but constrain even a single operation with a
 Literal `op`. Retry count remains one; no new planner, adapter, task branch or
 provider fallback is introduced.
+
+## Focused `e112487` result
+
+A clean same-profile `visual-addition`-only run at `e112487` remained a valid
+negative diagnostic. Its trajectory advanced further:
+
+1. structural observation request, followed by typed no-gain feedback;
+2. one accepted structural `fill` action with no image input; and
+3. a third policy call ending in selected-tool `invalid_tool_arguments` after
+   one native repair.
+
+This proves the native repair change did not close the residual and avoids an
+unnecessary full-cohort rerun. The persisted trace still lacked the safe
+violation path needed to distinguish an extra target field, missing field or
+other schema mismatch. The next diagnostic-only change records the already
+computed public violation code/paths, selected operation and operation-match
+boolean. It stores no argument values or provider response text and changes no
+Runtime behavior.

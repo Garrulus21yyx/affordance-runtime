@@ -299,6 +299,10 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
     assert outcome.decision.modality == "visual"
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
+    assert adapter.last_argument_violation_code == "invalid_action_parameters"
+    assert adapter.last_argument_violation_paths == ("parameters.unexpected",)
+    assert adapter.last_selected_operation == "observe_visual"
+    assert adapter.last_repaired_operation_match is True
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
     assert '"selected_operation":"observe_visual"' in repair_system
