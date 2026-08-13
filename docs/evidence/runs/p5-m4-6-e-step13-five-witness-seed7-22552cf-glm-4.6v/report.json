@@ -1,0 +1,36 @@
+{
+  "case_ids": [
+    "miniwob-60-05",
+    "miniwob-60-34",
+    "miniwob-60-42",
+    "miniwob-60-49",
+    "miniwob-60-60"
+  ],
+  "completed_cases": 5,
+  "errors": [],
+  "generalization_claim_prohibited": true,
+  "grounding_profile": "grounded_tools.v2",
+  "implementation_sha": "22552cf8cf12d4eef27b70a285ee0394871a4eeb",
+  "model_id": "glm-4.6v",
+  "model_latency_ms": 76978.366,
+  "outcome_counts": {
+    "success": 4,
+    "task_failed": 1
+  },
+  "perception_profile": "screenshot-ax.v1",
+  "profile": "M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
+  "provider_attempts": 16,
+  "provider_id": "zhipu",
+  "run_evidence_valid": true,
+  "schema_version": "miniwob-perception-ab.v2",
+  "success_count": 4,
+  "total_tokens": 29716,
+  "visual_gate_acceptance": {
+    "accepted": true,
+    "errors": [],
+    "no_effect_opportunities": 0,
+    "no_effect_repeat_violations": 0,
+    "structural_svg_case_count": 3,
+    "witness_case_count": 5
+  }
+}

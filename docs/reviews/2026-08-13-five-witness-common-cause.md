@@ -389,3 +389,27 @@ not be presented as an improvement. The next change must address a shared
 agent-semantic control boundary and be evaluated on predeclared held-out or
 multi-seed evidence; it may not add task-, label-, answer-, selector- or
 benchmark-shaped logic.
+
+## Same-protocol GLM-4.6V probe
+
+At the user's request, the exact frozen five-witness profile was run once at
+clean `22552cf` with only the configured model changed from
+`glm-4.1v-thinking-flashx` to `glm-4.6v`. The [valid report
+evidence](../evidence/runs/p5-m4-6-e-step13-five-witness-seed7-22552cf-glm-4.6v/report.json)
+records 5/5 completed, 4/5 succeeded, and an accepted bounded visual gate.
+
+The behavioral difference is material but bounded. GLM-4.6V selected all five
+currently blue entities and then Submit in six turns, closing the set witness
+that GLM-4.1V had finalized immediately. The grid and both pie witnesses also
+succeeded. The visual aggregate witness still filled the textbox and then
+received an authoritative terminal failure after Submit. The persisted public
+trace does not retain the fill parameter, so this report cannot honestly state
+which aggregate value the model entered.
+
+This is evidence that GLM-4.1V capability is a partial bottleneck, not proof of
+a stable model-ordering claim. It is one seed and one stochastic run. GLM-4.6V
+also cost more in this probe: model latency was 76,978 ms versus 38,742 ms,
+provider attempts were 16 versus 8, and total tokens were 29,716 versus 18,927.
+Three GLM-4.6V turns required bounded schema repair, while every selected action
+still resolved and dispatched through the same existing protocol. No product
+branch, reviewer, task semantic rule, or benchmark-specific behavior was added.
