@@ -185,6 +185,7 @@ class AgentRunSession:
         state.task_revision = revision
         state.current_task_evaluation = None
         state.local_objective_state = None
+        state.local_objective_not_required_revision = 0
         state.recent_progress_events = ()
         state.progress_revision += 1
         state.pending_control_feedback = None

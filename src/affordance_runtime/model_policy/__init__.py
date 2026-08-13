@@ -3,6 +3,7 @@
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,
+    ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.factory import (
@@ -10,7 +11,11 @@ from affordance_runtime.model_policy.factory import (
     model_policy_from_environment,
 )
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
+from affordance_runtime.model_policy.grounded_tool_port_bridge import (
+    GroundedActionAdapter,
+    GroundedObjectiveAdapter,
+    GroundedToolDecisionAdapter,
+)
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
@@ -37,9 +42,12 @@ __all__ = [
     "ModelDecisionRequest",
     "ModelMetadata",
     "ResolvedModelDecision",
+    "ResolvedLocalObjectiveOutcome",
     "model_policy_from_environment",
     "local_objective_proposer_from_environment",
     "GROUNDED_TOOLS_PROTOCOL",
+    "GroundedActionAdapter",
+    "GroundedObjectiveAdapter",
     "GroundedToolDecisionAdapter",
     "ProviderAttemptReceipt",
     "ProviderAttemptStatus",

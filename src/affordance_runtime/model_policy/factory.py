@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from typing import cast
 
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
-    GroundedToolPhase,
 )
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
+from affordance_runtime.model_policy.grounded_tool_port_bridge import (
+    GroundedActionAdapter,
+    GroundedObjectiveAdapter,
+)
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
@@ -100,13 +101,10 @@ def model_policy_from_environment(
             grounding_variant=selected_grounding,
         )
     elif selected_protocol == GROUNDED_TOOLS_PROTOCOL:
-        adapter = cast(
-            StructuredDecisionModelPort,
-            GroundedToolDecisionAdapter(
-                port,
-                config,
-                perception_profile=selected_perception,
-            ),
+        adapter = GroundedActionAdapter(
+            port,
+            config,
+            perception_profile=selected_perception,
         )
     else:
         raise ValueError("unsupported model interaction protocol")
@@ -140,20 +138,16 @@ def local_objective_proposer_from_environment(
         raise ValueError("objective proposal profile forbids provider fallback")
     orchestrator_deadline = max(0.001, call_timeout_s - min(1.0, call_timeout_s * 0.05))
     transport_timeout = min(30.0, max(0.001, orchestrator_deadline / 3))
-    adapter = cast(
-        StructuredObjectiveModelPort,
-        GroundedToolDecisionAdapter(
-            port,
-            ModelConfig(
-                timeout_s=transport_timeout,
-                rate_limit_retries=0,
-                transient_retries=0,
-                provider_circuit_break_s=0.0,
-                prompt_version="local-objective-proposal-v1",
-            ),
-            perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
-            phase=GroundedToolPhase.OBJECTIVE_PROPOSAL,
+    adapter: StructuredObjectiveModelPort = GroundedObjectiveAdapter(
+        port,
+        ModelConfig(
+            timeout_s=transport_timeout,
+            rate_limit_retries=0,
+            transient_retries=0,
+            provider_circuit_break_s=0.0,
+            prompt_version="local-objective-proposal-v2",
         ),
+        perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
     )
     orchestrator = ProviderCallOrchestrator(
         (adapter,),

@@ -273,6 +273,7 @@ class AgentLoop:
             elif (
                 self._ports.local_objective_proposer is not None
                 and local_objective_complete(state.local_objective_state)
+                and state.local_objective_not_required_revision != state.task_revision
             ):
                 outcome = await run_objective_proposal_turn(
                     session,

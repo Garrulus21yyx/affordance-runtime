@@ -21,7 +21,7 @@ from affordance_runtime.model_policy.contracts import (
     ModelMetadata,
     ResolvedModelDecision,
 )
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
+from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedActionAdapter
 from affordance_runtime.model_policy.policy import _build_request
 from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderAttemptStatus,
@@ -227,7 +227,7 @@ def test_real_model_port_503_then_200_dispatches_two_network_attempts() -> None:
         provider="zhipu",
         endpoint_class="local-fixture",
     )
-    adapter = GroundedToolDecisionAdapter(
+    adapter = GroundedActionAdapter(
         transport,
         ModelConfig(
             timeout_s=1.0,

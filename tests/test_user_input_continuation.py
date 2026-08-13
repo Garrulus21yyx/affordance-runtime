@@ -17,7 +17,11 @@ from affordance_runtime.agent import (
     UserInputResumeRejectionCode,
 )
 from affordance_runtime.agent.control_transition import PendingKind
-from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveNeedsInput
+from affordance_runtime.agent.policy import (
+    AgentDecisionPorts,
+    LocalObjectiveProposalRequirement,
+)
 from affordance_runtime.agent.user_input import (
     build_user_input_request,
     user_input_revision_rejection,
@@ -94,6 +98,19 @@ class AskThenAbortPolicy:
         return Abort(context.context_id, "fixture stopped after resume", "user_request")
 
 
+@dataclass
+class ObjectiveNeedsAccount:
+    calls: int = 0
+
+    async def propose(self, context):
+        self.calls += 1
+        return LocalObjectiveNeedsInput(
+            context.context_id,
+            "Which account should I use?",
+            ("inputs.account",),
+        )
+
+
 def _request(*, task_id: str = "task:clarify", revision: int = 1, account: str = ""):
     inputs = {"account": account} if account else {}
     return NaturalLanguageTaskRequest(
@@ -158,6 +175,42 @@ def test_waiting_user_resumes_with_one_admitted_task_revision() -> None:
         assert isinstance(duplicate, UserInputResumeRejected)
         assert duplicate.code is UserInputResumeRejectionCode.ALREADY_SUBMITTED
         assert session.last_result is resumed.result
+
+    asyncio.run(scenario())
+
+
+def test_objective_needs_input_uses_the_same_one_shot_revision_continuation() -> None:
+    async def scenario() -> None:
+        proposer = ObjectiveNeedsAccount()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(
+                AskForAccountPolicy(),
+                proposer,
+                LocalObjectiveProposalRequirement.REQUIRED,
+            ),
+            UnusedActionEvaluator(),
+            InputAwareTaskEvaluator(),
+        )
+        started = await runtime.start_request(StaticEnvironment((_world(),)), _request())
+        assert started.session is not None
+        session = started.session
+
+        paused = await session.run_until_pause()
+        assert paused.status is AgentLoopStatus.WAITING_USER
+        assert paused.reason_code == "objective_input_requested"
+        assert paused.user_input_request is not None
+        pending = paused.user_input_request
+
+        resumed = await runtime.submit_user_input(
+            session,
+            pending.input_request_id,
+            _request(revision=2, account="primary"),
+        )
+
+        assert isinstance(resumed, UserInputResumed)
+        assert resumed.result.status is AgentLoopStatus.DONE
+        assert proposer.calls == 1
+        assert session.state.continued_control_root_ids == (pending.source_transition_id,)
 
     asyncio.run(scenario())
 

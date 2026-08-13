@@ -26,16 +26,17 @@ from affordance_runtime.model_boundary.failures import (
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,
-    ResolvedLocalObjectiveProposal,
+    ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.grounded_tool_catalog import (
-    compile_grounded_tool_catalog,
-    resolve_grounded_tool_call,
+    compile_grounded_action_catalog,
+    compile_grounded_objective_catalog,
+    resolve_grounded_action_call,
+    resolve_grounded_objective_call,
 )
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
-    GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
@@ -72,11 +73,13 @@ The Runtime independently validates action authority, currentness, risk, executi
 """.strip()
 
 _OBJECTIVE_SYSTEM_PROMPT = """
-Propose exactly one bounded observation-resolvable LocalObjective for the GUI task.
+Resolve the optional LocalObjective phase with exactly one offered outcome.
+Propose a bounded observation-resolvable objective only when it is useful; otherwise declare not_required,
+request specific missing user input, or fail closed as unsupported.
 Use semantic predicates over public facts or visual concepts. Never use E-refs, action IDs, DOM IDs,
 bindings, private selectors, screen points, or coordinates. A sequence may contain future-resolvable
 semantic steps when the instruction already determines them. Runtime owns admission, identity, scope
-closure, evidence, action legality, binding, effects, and completion. Return only the offered proposal.
+closure, evidence, action legality, binding, effects, and completion. Return only one offered outcome.
 """.strip()
 
 
@@ -111,11 +114,10 @@ class GroundedToolCommandPayload(BaseModel):
 
 
 @dataclass(frozen=True)
-class GroundedToolDecisionAdapter:
+class _GroundedAdapterBase:
     port: ModelPort
     config: ModelConfig
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
-    phase: GroundedToolPhase = GroundedToolPhase.ACTION_SELECTION
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
     last_argument_repair_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
@@ -137,18 +139,11 @@ class GroundedToolDecisionAdapter:
         if profile is not DecisionPerceptionProfile.SCREENSHOT_AX:
             raise ValueError("grounded-tools v2 requires screenshot+AX perception")
         object.__setattr__(self, "perception_profile", profile)
-        object.__setattr__(self, "phase", GroundedToolPhase(self.phase))
         object.__setattr__(self, "transport_kind", tool_transport_for_model(self.port.provider, self.port.model))
 
     @property
     def interaction_protocol(self) -> str:
         return GROUNDED_TOOLS_PROTOCOL
-
-    @property
-    def supported_decisions(self) -> frozenset[DecisionCapability]:
-        if self.phase is GroundedToolPhase.ACTION_SELECTION:
-            return TOOL_ACTION_DECISION_CAPABILITIES
-        return frozenset()
 
     @property
     def provider_id(self) -> str:
@@ -163,32 +158,28 @@ class GroundedToolDecisionAdapter:
         return GROUNDED_TOOLS_PROTOCOL
 
     @property
-    def compatibility_key(self) -> str:
-        return f"{GROUNDED_TOOLS_PROTOCOL}:{self.phase.value}:{self.transport_kind.value}"
-
-    @property
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
-    async def generate(
+    async def _generate(
         self,
         request: ModelDecisionRequest,
-    ) -> ResolvedModelDecision | ResolvedLocalObjectiveProposal | ModelFailure:
+        *,
+        expected_schema: str,
+        catalog_builder,
+        resolver,
+        system_prompt: str,
+    ) -> tuple[object, ModelMetadata] | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
-        expected_schema = (
-            OBJECTIVE_SCHEMA_VERSION
-            if self.phase is GroundedToolPhase.OBJECTIVE_PROPOSAL
-            else SCHEMA_VERSION
-        )
         if request.schema_version != expected_schema or request.policy_context is None:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
         try:
-            catalog = compile_grounded_tool_catalog(request.policy_context, self.phase)
+            catalog = catalog_builder(request.policy_context)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
@@ -196,7 +187,7 @@ class GroundedToolDecisionAdapter:
                 catalog.view,
                 request,
                 self.port.supports_multimodal,
-                self.phase,
+                system_prompt,
             )
             calls = await self._call(
                 messages,
@@ -209,7 +200,7 @@ class GroundedToolDecisionAdapter:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
             call = calls[0]
             try:
-                decision = resolve_grounded_tool_call(
+                decision = resolver(
                     catalog,
                     call,
                     expected_context_id=request.context_id,
@@ -229,7 +220,7 @@ class GroundedToolDecisionAdapter:
                 repaired = await self._repair_selected_operation(messages, spec, issue)
                 if repaired.name != call.name:
                     raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-                decision = resolve_grounded_tool_call(
+                decision = resolver(
                     catalog,
                     repaired,
                     expected_context_id=request.context_id,
@@ -269,17 +260,7 @@ class GroundedToolDecisionAdapter:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
         metadata = _metadata(self.port, self.transport_kind, include_record=True)
-        if self.phase is GroundedToolPhase.OBJECTIVE_PROPOSAL:
-            from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
-
-            if not isinstance(decision, LocalObjectiveProposal):
-                return _failure(ModelFailureKind.INTERNAL_ERROR, "objective phase resolved an action")
-            return ResolvedLocalObjectiveProposal(decision, metadata)
-        from affordance_runtime.agent.decisions import AgentDecision
-
-        if not isinstance(decision, AgentDecision):
-            return _failure(ModelFailureKind.INTERNAL_ERROR, "action phase resolved an objective")
-        return ResolvedModelDecision(decision, metadata)
+        return decision, metadata
 
     async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
@@ -329,7 +310,83 @@ class GroundedToolDecisionAdapter:
         return ToolCall(payload.op, _command_arguments(payload, spec))
 
 
-def _messages(view, request, supports_multimodal, phase):
+@dataclass(frozen=True)
+class GroundedActionAdapter(_GroundedAdapterBase):
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return TOOL_ACTION_DECISION_CAPABILITIES
+
+    @property
+    def compatibility_key(self) -> str:
+        return f"{GROUNDED_TOOLS_PROTOCOL}:action_selection:{self.transport_kind.value}"
+
+    async def generate(
+        self,
+        request: ModelDecisionRequest,
+    ) -> ResolvedModelDecision | ModelFailure:
+        resolved = await self._generate(
+            request,
+            expected_schema=SCHEMA_VERSION,
+            catalog_builder=compile_grounded_action_catalog,
+            resolver=resolve_grounded_action_call,
+            system_prompt=_ACTION_SYSTEM_PROMPT,
+        )
+        if isinstance(resolved, ModelFailure):
+            return resolved
+        decision, metadata = resolved
+        from affordance_runtime.agent.decisions import AgentDecision
+
+        if not isinstance(decision, AgentDecision):
+            return _failure(ModelFailureKind.INTERNAL_ERROR, "action adapter resolved an objective")
+        return ResolvedModelDecision(decision, metadata)
+
+
+@dataclass(frozen=True)
+class GroundedObjectiveAdapter(_GroundedAdapterBase):
+    @property
+    def compatibility_key(self) -> str:
+        return f"{GROUNDED_TOOLS_PROTOCOL}:objective_proposal:{self.transport_kind.value}"
+
+    async def generate(
+        self,
+        request: ModelDecisionRequest,
+    ) -> ResolvedLocalObjectiveOutcome | ModelFailure:
+        resolved = await self._generate(
+            request,
+            expected_schema=OBJECTIVE_SCHEMA_VERSION,
+            catalog_builder=compile_grounded_objective_catalog,
+            resolver=resolve_grounded_objective_call,
+            system_prompt=_OBJECTIVE_SYSTEM_PROMPT,
+        )
+        if isinstance(resolved, ModelFailure):
+            return resolved
+        outcome, metadata = resolved
+        from affordance_runtime.agent.local_objective_proposal import (
+            LocalObjectiveNeedsInput,
+            LocalObjectiveNotRequired,
+            LocalObjectiveProposal,
+            LocalObjectiveUnsupported,
+        )
+
+        if not isinstance(
+            outcome,
+            (
+                LocalObjectiveProposal,
+                LocalObjectiveNotRequired,
+                LocalObjectiveNeedsInput,
+                LocalObjectiveUnsupported,
+            ),
+        ):
+            return _failure(ModelFailureKind.INTERNAL_ERROR, "objective adapter resolved an action")
+        return ResolvedLocalObjectiveOutcome(outcome, metadata)
+
+
+# Temporary name compatibility. The old name now denotes action selection only;
+# it has no phase field and cannot be cast into an objective port.
+GroundedToolDecisionAdapter = GroundedActionAdapter
+
+
+def _messages(view, request, supports_multimodal, system_prompt):
     if not supports_multimodal or not request.image_inputs:
         raise ValueError("grounded-tools v2 requires a marked screenshot")
     public = {
@@ -354,11 +411,7 @@ def _messages(view, request, supports_multimodal, phase):
     return (
         ModelMessage(
             role="system",
-            content=(
-                _OBJECTIVE_SYSTEM_PROMPT
-                if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL
-                else _ACTION_SYSTEM_PROMPT
-            ),
+            content=system_prompt,
         ),
         ModelMessage(role="user", content=tuple(parts)),
     )

@@ -637,3 +637,36 @@ CONVERGENCE IMPLEMENTATION NOT YET VERIFIED
 MODEL ACTION PROTOCOL CAPABILITIES IMPLEMENTED, OFFLINE VERIFIED
 OBJECTIVE PROTOCOL / PRODUCT DEFAULT / LEGACY DELETION OPEN
 ```
+
+## 13. 实施记录：objective outcome 与 adapter 静态拆分切片
+
+2026-08-13 在 action capability 切片之后继续实现 Phase 2 的 objective 边界：
+
+- objective proposer 的闭合结果代数现在是
+  `LocalObjectiveProposal / LocalObjectiveNotRequired / LocalObjectiveNeedsInput /
+  LocalObjectiveUnsupported / PolicyFailure`。`NotRequired` 由当前 context scope 产生，Runtime
+  将其按当前 task revision 记录，避免每个 action turn 重复调用 proposer；task revision 更新会清除该记录。
+- `NeedsInput` 不伪装成 effectful action。Runtime 将它归一化为一个无副作用的 typed
+  `AskUser` control root，因此继续复用一次性 request identity、consecutive task revision、重复提交拒绝和
+  terminal immutability 合同。`Unsupported` 以闭合 reason code 进入 `BLOCKED`，不归因成模型 provider failure。
+- benchmark 的启用事实由 `BenchmarkCase.local_objective_requirement` 持有并进入 manifest digest。
+  composition 只有在 requirement 为 `REQUIRED` 时才能提供 proposer；反过来 requirement 为
+  `REQUIRED` 却未配置 proposer 也会在 `AgentDecisionPorts` 构造时失败。Step-13 targeted manifest
+  显式声明该 requirement；普通 benchmark/task composition 默认 `NOT_REQUIRED`，不会产生额外模型调用。
+- `GroundedActionAdapter.generate` 只返回 `ResolvedModelDecision | ModelFailure`；
+  `GroundedObjectiveAdapter.generate` 只返回 `ResolvedLocalObjectiveOutcome | ModelFailure`。
+  factory 已删除 `phase + cast`。两者只共享 private transport/repair machinery，使用不同 catalog builder、
+  resolver、schema version、compatibility key 和公开 return type。
+- objective transport schema 升级为 `local-objective-proposal.v2`，grounded objective catalog
+  显式提供 proposal/not-required/needs-input/unsupported 四个 outcome tools。旧
+  `GroundedToolDecisionAdapter` 名称暂时只是 `GroundedActionAdapter` 的 action-only alias，不再接受
+  phase，也不能被组合为 objective port；它将在 consumer 归零后删除。
+
+仍未完成：product 默认入口切换、target-default held-out benchmark、旧链逻辑/物理删除及最终
+fresh-context review。因此当前状态是：
+
+```text
+MODEL ACTION + OBJECTIVE PROTOCOL BOUNDARIES IMPLEMENTED
+OFFLINE FULL-SUITE VERIFIED
+PRODUCT DEFAULT / LEGACY DELETION OPEN
+```

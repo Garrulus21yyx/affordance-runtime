@@ -8,7 +8,14 @@ from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints, field_validator
 
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
+from affordance_runtime.agent.local_objective_proposal import (
+    LocalObjectiveNeedsInput,
+    LocalObjectiveNotRequired,
+    LocalObjectiveProposal,
+    LocalObjectiveResolvedOutcome,
+    LocalObjectiveUnsupported,
+    LocalObjectiveUnsupportedReason,
+)
 from affordance_runtime.model_policy.strict_json import (
     require_json_collection_types,
     strict_json_loads,
@@ -37,7 +44,7 @@ from affordance_runtime.task.set_objective import (
 )
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
-OBJECTIVE_SCHEMA_VERSION = "local-objective-proposal.v1"
+OBJECTIVE_SCHEMA_VERSION = "local-objective-proposal.v2"
 
 ContextId = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 Id240 = Annotated[str, StringConstraints(min_length=1, max_length=240)]
@@ -122,7 +129,38 @@ class LocalObjectiveProposalPayload(BaseModel):
     objective: LocalObjectiveSpecPayload
 
 
-class LocalObjectiveProposalResponse(RootModel[LocalObjectiveProposalPayload]):
+class LocalObjectiveNotRequiredPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    type: Literal["local_objective_not_required"]
+    context_id: ContextId
+
+
+class LocalObjectiveNeedsInputPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    type: Literal["local_objective_needs_input"]
+    context_id: ContextId
+    question: Annotated[str, StringConstraints(min_length=1, max_length=1_000)]
+    requested_fields: Annotated[list[Item120], Field(max_length=32)] = Field(default_factory=list)
+
+
+class LocalObjectiveUnsupportedPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    type: Literal["local_objective_unsupported"]
+    context_id: ContextId
+    reason_code: Literal["no_resolvable_objective", "task_semantics_unsupported"]
+    reason: Annotated[str, StringConstraints(min_length=1, max_length=500)]
+
+
+LocalObjectiveOutcomePayload: TypeAlias = Annotated[
+    LocalObjectiveProposalPayload
+    | LocalObjectiveNotRequiredPayload
+    | LocalObjectiveNeedsInputPayload
+    | LocalObjectiveUnsupportedPayload,
+    Field(discriminator="type"),
+]
+
+
+class LocalObjectiveOutcomeResponse(RootModel[LocalObjectiveOutcomePayload]):
     model_config = ConfigDict(frozen=True, revalidate_instances="always")
 
     @classmethod
@@ -139,17 +177,51 @@ class LocalObjectiveProposalResponse(RootModel[LocalObjectiveProposalPayload]):
 
 
 def local_objective_response_schema() -> dict[str, Any]:
-    return LocalObjectiveProposalResponse.model_json_schema()
+    return LocalObjectiveOutcomeResponse.model_json_schema()
 
 
 def payload_to_local_objective_proposal(
-    payload: LocalObjectiveProposalResponse,
+    payload: LocalObjectiveOutcomeResponse,
     expected_context_id: str,
 ) -> LocalObjectiveProposal:
     value = payload.root
+    if not isinstance(value, LocalObjectiveProposalPayload):
+        raise ValueError("objective outcome is not a proposal")
     if value.context_id != expected_context_id:
         raise ValueError("local objective proposal context is stale")
     return LocalObjectiveProposal(value.context_id, local_objective_from_payload(value.objective))
+
+
+def payload_to_local_objective_outcome(
+    payload: LocalObjectiveOutcomeResponse,
+    expected_context_id: str,
+) -> LocalObjectiveResolvedOutcome:
+    value = payload.root
+    if value.context_id != expected_context_id:
+        raise ValueError("local objective outcome context is stale")
+    if isinstance(value, LocalObjectiveProposalPayload):
+        return LocalObjectiveProposal(
+            value.context_id,
+            local_objective_from_payload(value.objective),
+        )
+    if isinstance(value, LocalObjectiveNotRequiredPayload):
+        return LocalObjectiveNotRequired(value.context_id)
+    if isinstance(value, LocalObjectiveNeedsInputPayload):
+        return LocalObjectiveNeedsInput(
+            value.context_id,
+            value.question,
+            tuple(value.requested_fields),
+        )
+    return LocalObjectiveUnsupported(
+        value.context_id,
+        LocalObjectiveUnsupportedReason(value.reason_code),
+        value.reason,
+    )
+
+
+# Temporary transport-schema name compatibility for callers that only construct
+# the proposed branch. New code should use LocalObjectiveOutcomeResponse.
+LocalObjectiveProposalResponse = LocalObjectiveOutcomeResponse
 
 
 def local_objective_from_payload(payload: LocalObjectiveSpecPayload):

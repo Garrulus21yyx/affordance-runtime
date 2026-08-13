@@ -6,14 +6,14 @@ from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.model_boundary.failures import ModelFailure
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
-    ResolvedLocalObjectiveProposal,
+    ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
 )
 
 ResolvedT_co = TypeVar(
     "ResolvedT_co",
     ResolvedModelDecision,
-    ResolvedLocalObjectiveProposal,
+    ResolvedLocalObjectiveOutcome,
     covariant=True,
 )
 
@@ -29,5 +29,5 @@ class StructuredDecisionModelPort(StructuredModelPort[ResolvedModelDecision], Pr
     def supported_decisions(self) -> frozenset[DecisionCapability]: ...
 
 
-class StructuredObjectiveModelPort(StructuredModelPort[ResolvedLocalObjectiveProposal], Protocol):
+class StructuredObjectiveModelPort(StructuredModelPort[ResolvedLocalObjectiveOutcome], Protocol):
     pass

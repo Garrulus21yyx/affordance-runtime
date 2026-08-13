@@ -36,7 +36,13 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposalPort
+from affordance_runtime.agent.local_objective_proposal import (
+    LocalObjectiveNeedsInput,
+    LocalObjectiveNotRequired,
+    LocalObjectiveProposal,
+    LocalObjectiveProposalPort,
+    LocalObjectiveUnsupported,
+)
 from affordance_runtime.agent.negative_claim_coverage import (
     NegativeClaimCoverageDisposition,
     NegativeClaimCoverageGate,
@@ -293,6 +299,45 @@ async def run_objective_proposal_turn(
     if outcome.context_id != context.context_id or session.consumed_context_id == context.context_id:
         return Continue("stale_objective_proposal")
     session.consumed_context_id = context.context_id
+    if isinstance(outcome, LocalObjectiveNotRequired):
+        state.local_objective_not_required_revision = state.task_revision
+        state.progress_revision += 1
+        return Continue("local_objective_not_required")
+    if isinstance(outcome, LocalObjectiveNeedsInput):
+        decision = AskUser(
+            context.context_id,
+            outcome.question,
+            outcome.requested_fields,
+        )
+        scope = ControlTransitionScope(state, decision)
+        scope.set_reason("objective_input_requested")
+        state.set_pending_question(outcome.question)
+        routed = Pause(
+            AgentLoopStatus.WAITING_USER,
+            "objective_input_requested",
+            outcome.question,
+        )
+        transition = scope.finalize(state, routed)
+        state.set_pending_user_request(build_user_input_request(
+            task_id=session.task.task_id,
+            task_revision=state.task_revision,
+            context_id=context.context_id,
+            source_transition_id=transition.transition_id,
+            question=outcome.question,
+            requested_fields=outcome.requested_fields,
+        ))
+        return routed
+    if isinstance(outcome, LocalObjectiveUnsupported):
+        return Terminate(
+            AgentLoopStatus.BLOCKED,
+            f"objective_{outcome.reason_code.value}",
+            outcome.reason,
+        )
+    if not isinstance(outcome, LocalObjectiveProposal):
+        return Terminate(
+            AgentLoopStatus.FAILED,
+            "invalid_objective_proposal_outcome",
+        )
     if not local_objective_complete(state.local_objective_state):
         return Continue("local_objective_already_active")
     state.local_objective_state = establish_local_objective(

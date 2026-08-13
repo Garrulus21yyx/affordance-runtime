@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCampaignAcceptance,
     MiniWobBreadthCampaignOutcome,
@@ -139,6 +140,9 @@ async def run_breadth_campaign(
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
     visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
     local_objective_proposer=None,
+    local_objective_requirement: LocalObjectiveProposalRequirement = (
+        LocalObjectiveProposalRequirement.NOT_REQUIRED
+    ),
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -169,6 +173,7 @@ async def run_breadth_campaign(
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
         local_objective_proposer=local_objective_proposer,
+        local_objective_requirement=local_objective_requirement,
     )
     harness_digest = target_manifest_digest(target_manifest)
     if harness_digest != expected_target_manifest_digest(manifest):
@@ -231,6 +236,7 @@ def _target_manifest(
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
     local_objective_proposer=None,
+    local_objective_requirement=LocalObjectiveProposalRequirement.NOT_REQUIRED,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -244,6 +250,7 @@ def _target_manifest(
             visual_candidate_disambiguator,
             visual_predicate_classifier,
             local_objective_proposer,
+            local_objective_requirement,
         )
         for item in manifest.cases
     )
@@ -267,6 +274,7 @@ def _target_case(
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
     local_objective_proposer=None,
+    local_objective_requirement=LocalObjectiveProposalRequirement.NOT_REQUIRED,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -339,6 +347,7 @@ def _target_case(
         case.timeout_s,
         case.seed,
         REQUIRED_METRICS,
+        local_objective_requirement=local_objective_requirement,
     )
 
 

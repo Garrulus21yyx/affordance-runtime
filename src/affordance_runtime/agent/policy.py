@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from affordance_runtime.agent.decision_capability import (
@@ -45,12 +46,20 @@ class AgentPolicy(Protocol):
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome: ...
 
 
+class LocalObjectiveProposalRequirement(StrEnum):
+    NOT_REQUIRED = "not_required"
+    REQUIRED = "required"
+
+
 @dataclass(frozen=True)
 class AgentDecisionPorts:
     """Explicit model-facing phase composition for one AgentLoop."""
 
     action_policy: AgentPolicy
     local_objective_proposer: LocalObjectiveProposalPort | None = None
+    local_objective_requirement: LocalObjectiveProposalRequirement = (
+        LocalObjectiveProposalRequirement.NOT_REQUIRED
+    )
 
     def __post_init__(self) -> None:
         if not callable(getattr(self.action_policy, "decide", None)):
@@ -59,6 +68,14 @@ class AgentDecisionPorts:
             getattr(self.local_objective_proposer, "propose", None)
         ):
             raise TypeError("AgentDecisionPorts objective proposer is invalid")
+        requirement = self.local_objective_requirement
+        if not isinstance(requirement, LocalObjectiveProposalRequirement):
+            raise TypeError("objective proposal requirement must be typed")
+        configured = self.local_objective_proposer is not None
+        if configured != (requirement is LocalObjectiveProposalRequirement.REQUIRED):
+            raise ValueError(
+                "objective proposer configuration must match its explicit requirement"
+            )
 
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:

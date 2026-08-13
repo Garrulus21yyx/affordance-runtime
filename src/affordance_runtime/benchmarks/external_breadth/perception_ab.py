@@ -6,6 +6,7 @@ import hashlib
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCaseRecord,
     MiniWobTaskOutcome,
@@ -36,7 +37,7 @@ from affordance_runtime.benchmarks.target_loop.case_projection import public_cas
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
+from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedActionAdapter
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
@@ -142,6 +143,9 @@ async def run_provider_cohort_arm(
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
     local_objective_proposer=None,
+    local_objective_requirement: LocalObjectiveProposalRequirement = (
+        LocalObjectiveProposalRequirement.NOT_REQUIRED
+    ),
     progress_dir: Path | None = None,
     progress_profile: str = "",
 ) -> PerceptionArmOutcome:
@@ -157,6 +161,7 @@ async def run_provider_cohort_arm(
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
         local_objective_proposer=local_objective_proposer,
+        local_objective_requirement=local_objective_requirement,
         progress_dir=progress_dir,
         progress_profile=progress_profile,
     )
@@ -173,6 +178,7 @@ async def _run_arm(
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
     local_objective_proposer=None,
+    local_objective_requirement=LocalObjectiveProposalRequirement.NOT_REQUIRED,
     progress_dir: Path | None = None,
     progress_profile: str = "",
 ):
@@ -195,13 +201,14 @@ async def _run_arm(
         visual_candidate_disambiguator,
         visual_predicate_classifier,
         local_objective_proposer,
+        local_objective_requirement,
     )
     target = replace(
         target,
         profile_id=(
             (
                 "grounded-tools-v2"
-                if isinstance(adapter, GroundedToolDecisionAdapter)
+                if isinstance(adapter, GroundedActionAdapter)
                 else "dynamic-tools-v1"
                 if isinstance(adapter, DynamicToolDecisionAdapter)
                 else "structured-package-v2"
@@ -434,12 +441,12 @@ def _adapter(
     policy: ModelBackedAgentPolicy,
     *,
     require_frozen_mistral: bool = True,
-) -> ModelPortDecisionAdapter | DynamicToolDecisionAdapter | GroundedToolDecisionAdapter:
+) -> ModelPortDecisionAdapter | DynamicToolDecisionAdapter | GroundedActionAdapter:
     composed = policy.port
     adapter = composed.primary_port if isinstance(composed, ProviderCallOrchestrator) else composed
     if not isinstance(
         adapter,
-        ModelPortDecisionAdapter | DynamicToolDecisionAdapter | GroundedToolDecisionAdapter,
+        ModelPortDecisionAdapter | DynamicToolDecisionAdapter | GroundedActionAdapter,
     ):
         raise TypeError("perception A/B requires the canonical model bridge")
     if require_frozen_mistral and (

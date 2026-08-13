@@ -35,6 +35,13 @@ from affordance_runtime.world.regular_lattice import (
     derive_regular_lattice,
 )
 
+_OBJECTIVE_OUTCOME_TOOLS = [
+    "propose_local_objective",
+    "local_objective_not_required",
+    "local_objective_needs_input",
+    "local_objective_unsupported",
+]
+
 
 def _nodes(group: str = "grid") -> tuple[SpatialNode, ...]:
     return tuple(
@@ -143,7 +150,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
 
     assert target.target_id in dict(context.grounding.target_refs)
-    assert [spec.name for spec in catalog.specs] == ["propose_local_objective"]
+    assert [spec.name for spec in catalog.specs] == _OBJECTIVE_OUTCOME_TOOLS
 
 
 def test_exact_lattice_relation_is_available_before_model_target_selection() -> None:
@@ -173,7 +180,7 @@ def test_exact_lattice_relation_is_available_before_model_target_selection() -> 
 
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
 
-    assert [spec.name for spec in catalog.specs] == ["propose_local_objective"]
+    assert [spec.name for spec in catalog.specs] == _OBJECTIVE_OUTCOME_TOOLS
 
 
 def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> None:
@@ -207,7 +214,7 @@ def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> N
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
 
     assert not any(spec.name == "click" for spec in catalog.specs)
-    assert [spec.name for spec in catalog.specs] == ["propose_local_objective"]
+    assert [spec.name for spec in catalog.specs] == _OBJECTIVE_OUTCOME_TOOLS
 
 
 def _raw_grid():

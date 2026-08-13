@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import inspect
+from dataclasses import dataclass, fields
 from itertools import chain, combinations
 
 import pytest
@@ -23,11 +24,13 @@ from affordance_runtime.model_policy import (
     GROUNDED_TOOLS_PROTOCOL,
     STRUCTURED_PACKAGE_PROTOCOL,
     DynamicToolDecisionAdapter,
+    GroundedActionAdapter,
+    GroundedObjectiveAdapter,
     GroundedToolDecisionAdapter,
     ModelBackedAgentPolicy,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model_policy import factory as model_policy_factory
 from affordance_runtime.model_port import ModelConfig
 
 
@@ -61,7 +64,7 @@ def _config() -> ModelConfig:
 def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     structured = ModelPortDecisionAdapter(_Transport(), _config())
     dynamic = DynamicToolDecisionAdapter(_Transport(), _config())
-    grounded = GroundedToolDecisionAdapter(_Transport(), _config())
+    grounded = GroundedActionAdapter(_Transport(), _config())
 
     assert structured.interaction_protocol == STRUCTURED_PACKAGE_PROTOCOL
     assert structured.supported_decisions == ALL_DECISION_CAPABILITIES
@@ -69,16 +72,26 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert dynamic.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
+    assert GroundedToolDecisionAdapter is GroundedActionAdapter
 
 
 def test_objective_phase_does_not_claim_action_decision_capabilities() -> None:
-    adapter = GroundedToolDecisionAdapter(
+    adapter = GroundedObjectiveAdapter(
         _Transport(),
         _config(),
-        phase=GroundedToolPhase.OBJECTIVE_PROPOSAL,
     )
 
-    assert adapter.supported_decisions == frozenset()
+    assert not hasattr(adapter, "supported_decisions")
+
+
+def test_grounded_action_and_objective_adapters_are_distinct_static_types() -> None:
+    assert GroundedActionAdapter is not GroundedObjectiveAdapter
+    assert "phase" not in {item.name for item in fields(GroundedActionAdapter)}
+    assert "phase" not in {item.name for item in fields(GroundedObjectiveAdapter)}
+    factory_source = inspect.getsource(model_policy_factory)
+    assert "cast(" not in factory_source
+    assert "GroundedActionAdapter(" in factory_source
+    assert "GroundedObjectiveAdapter(" in factory_source
 
 
 def test_model_policy_preserves_adapter_capabilities() -> None:

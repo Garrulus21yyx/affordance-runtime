@@ -51,6 +51,7 @@ class AgentLoopState:
     continued_control_root_ids: tuple[str, ...] = ()
     control_terminal_status: AgentLoopStatus | None = None
     local_objective_state: LocalObjectiveState | None = None
+    local_objective_not_required_revision: int = 0
     scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
     task_revision: int = 1
     progress_revision: int = 0

@@ -40,7 +40,15 @@ if TYPE_CHECKING:
         Wait,
     )
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
+    from affordance_runtime.agent.local_objective_proposal import (
+        LocalObjectiveNeedsInput,
+        LocalObjectiveNotRequired,
+        LocalObjectiveProposal,
+        LocalObjectiveUnsupported,
+        LocalObjectiveUnsupportedReason,
+    )
     from affordance_runtime.agent.loop import AgentLoop
+    from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
     from affordance_runtime.agent.runtime import (
         TargetRuntime,
@@ -101,6 +109,30 @@ _EXPORTS = {
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
+    "LocalObjectiveNeedsInput": (
+        "affordance_runtime.agent.local_objective_proposal",
+        "LocalObjectiveNeedsInput",
+    ),
+    "LocalObjectiveNotRequired": (
+        "affordance_runtime.agent.local_objective_proposal",
+        "LocalObjectiveNotRequired",
+    ),
+    "LocalObjectiveProposal": (
+        "affordance_runtime.agent.local_objective_proposal",
+        "LocalObjectiveProposal",
+    ),
+    "LocalObjectiveProposalRequirement": (
+        "affordance_runtime.agent.policy",
+        "LocalObjectiveProposalRequirement",
+    ),
+    "LocalObjectiveUnsupported": (
+        "affordance_runtime.agent.local_objective_proposal",
+        "LocalObjectiveUnsupported",
+    ),
+    "LocalObjectiveUnsupportedReason": (
+        "affordance_runtime.agent.local_objective_proposal",
+        "LocalObjectiveUnsupportedReason",
+    ),
     "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),
     "ControlTransition": ("affordance_runtime.agent.control_transition", "ControlTransition"),
     "PendingKind": ("affordance_runtime.agent.control_transition", "PendingKind"),

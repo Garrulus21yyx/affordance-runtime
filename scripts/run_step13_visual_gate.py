@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 from affordance_runtime.benchmarks.external_breadth.contracts import (
     MiniWobBreadthCase,
     MiniWobBreadthManifest,
@@ -89,6 +90,7 @@ def main() -> int:
         visual_candidate_disambiguator=visual_candidate_disambiguator_from_environment(),
         visual_predicate_classifier=visual_predicate_classifier_from_environment(),
         local_objective_proposer=objective_proposer,
+        local_objective_requirement=LocalObjectiveProposalRequirement.REQUIRED,
         progress_dir=args.output_dir,
         progress_profile="M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
     ))

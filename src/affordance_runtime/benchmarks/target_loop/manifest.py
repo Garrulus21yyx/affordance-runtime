@@ -23,6 +23,11 @@ def manifest_digest(manifest: BenchmarkManifest) -> str:
                 "required_measurements": item.required_measurements,
                 "metric_expectations": [asdict(expectation) for expectation in item.metric_expectations],
                 "auto_confirm": item.auto_confirm,
+                **(
+                    {"local_objective_requirement": item.local_objective_requirement.value}
+                    if item.local_objective_requirement.value != "not_required"
+                    else {}
+                ),
             }
             for item in manifest.cases
         ],

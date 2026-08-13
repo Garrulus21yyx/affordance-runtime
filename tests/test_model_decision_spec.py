@@ -3,10 +3,16 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
+from affordance_runtime.agent.local_objective_proposal import (
+    LocalObjectiveNeedsInput,
+    LocalObjectiveNotRequired,
+    LocalObjectiveProposal,
+    LocalObjectiveUnsupported,
+)
 from affordance_runtime.model_policy.objective_spec import (
     LocalObjectiveProposalResponse,
     local_objective_response_schema,
+    payload_to_local_objective_outcome,
     payload_to_local_objective_proposal,
 )
 from affordance_runtime.model_policy.spec import (
@@ -125,3 +131,38 @@ def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identi
     assert not set(objective_schema["properties"]).intersection(
         {"objective_id", "scope_id", "scope_root", "target_id", "action_id", "binding_id"}
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_type"),
+    (
+        (
+            {"type": "local_objective_not_required", "context_id": "context:1"},
+            LocalObjectiveNotRequired,
+        ),
+        (
+            {
+                "type": "local_objective_needs_input",
+                "context_id": "context:1",
+                "question": "Which account?",
+                "requested_fields": ["account"],
+            },
+            LocalObjectiveNeedsInput,
+        ),
+        (
+            {
+                "type": "local_objective_unsupported",
+                "context_id": "context:1",
+                "reason_code": "no_resolvable_objective",
+                "reason": "no supported semantic objective can represent this task",
+            },
+            LocalObjectiveUnsupported,
+        ),
+    ),
+)
+def test_local_objective_nonproposal_payloads_are_typed(raw, expected_type) -> None:
+    payload = LocalObjectiveProposalResponse.model_validate(raw)
+
+    outcome = payload_to_local_objective_outcome(payload, "context:1")
+
+    assert isinstance(outcome, expected_type)

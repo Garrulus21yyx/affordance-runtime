@@ -15,8 +15,17 @@ from affordance_runtime.agent import (
     Wait,
 )
 from affordance_runtime.agent.control_transition import PendingKind
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
-from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.local_objective_proposal import (
+    LocalObjectiveNeedsInput,
+    LocalObjectiveNotRequired,
+    LocalObjectiveProposal,
+    LocalObjectiveUnsupported,
+    LocalObjectiveUnsupportedReason,
+)
+from affordance_runtime.agent.policy import (
+    AgentDecisionPorts,
+    LocalObjectiveProposalRequirement,
+)
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -210,7 +219,11 @@ def test_objective_proposal_and_action_selection_are_separate_phases() -> None:
         [_sent()],
     )
     loop = AgentLoop(
-        AgentDecisionPorts(policy, proposer),
+        AgentDecisionPorts(
+            policy,
+            proposer,
+            LocalObjectiveProposalRequirement.REQUIRED,
+        ),
         SharedActionEvaluator(),
         SharedTaskEvaluator(),
     )
@@ -221,6 +234,122 @@ def test_objective_proposal_and_action_selection_are_separate_phases() -> None:
     assert proposer.calls == 1
     assert policy.decisions == []
     assert environment.execute_calls == 1
+
+
+def test_objective_not_required_is_scoped_once_then_action_policy_runs() -> None:
+    class Proposer:
+        calls = 0
+
+        async def propose(self, context):
+            self.calls += 1
+            return LocalObjectiveNotRequired(context.context_id)
+
+    proposer = Proposer()
+    policy = ScriptedPolicy(["first"])
+    environment = StaticEnvironment(
+        [_world("obs-1", False), _world("obs-2", True)],
+        [_sent()],
+    )
+    loop = AgentLoop(
+        AgentDecisionPorts(
+            policy,
+            proposer,
+            LocalObjectiveProposalRequirement.REQUIRED,
+        ),
+        SharedActionEvaluator(),
+        SharedTaskEvaluator(),
+    )
+
+    result = asyncio.run(AgentEpisodeRunner(loop).run(environment, _task()))
+
+    assert result.status is AgentLoopStatus.DONE
+    assert proposer.calls == 1
+    assert policy.decisions == []
+    assert environment.execute_calls == 1
+
+
+def test_objective_needs_input_pauses_with_a_resumable_typed_request() -> None:
+    class Proposer:
+        async def propose(self, context):
+            return LocalObjectiveNeedsInput(
+                context.context_id,
+                "Which account should be used?",
+                ("account",),
+            )
+
+    loop = AgentLoop(
+        AgentDecisionPorts(
+            ScriptedPolicy([]),
+            Proposer(),
+            LocalObjectiveProposalRequirement.REQUIRED,
+        ),
+        SharedActionEvaluator(),
+        SharedTaskEvaluator(),
+    )
+
+    result = asyncio.run(
+        AgentEpisodeRunner(loop).run(StaticEnvironment([_world("obs-1", False)]), _task())
+    )
+
+    assert result.status is AgentLoopStatus.WAITING_USER
+    assert result.reason_code == "objective_input_requested"
+    assert result.user_input_request is not None
+    assert result.user_input_request.requested_fields == ("account",)
+    assert result.user_input_request.source_transition_id.startswith("transition:")
+
+
+def test_objective_unsupported_blocks_before_action_policy() -> None:
+    class Proposer:
+        async def propose(self, context):
+            return LocalObjectiveUnsupported(
+                context.context_id,
+                LocalObjectiveUnsupportedReason.TASK_SEMANTICS_UNSUPPORTED,
+                "task semantics are outside the objective protocol",
+            )
+
+    policy = ScriptedPolicy(["first"])
+    loop = AgentLoop(
+        AgentDecisionPorts(
+            policy,
+            Proposer(),
+            LocalObjectiveProposalRequirement.REQUIRED,
+        ),
+        SharedActionEvaluator(),
+        SharedTaskEvaluator(),
+    )
+
+    result = asyncio.run(
+        AgentEpisodeRunner(loop).run(StaticEnvironment([_world("obs-1", False)]), _task())
+    )
+
+    assert result.status is AgentLoopStatus.BLOCKED
+    assert result.reason_code == "objective_task_semantics_unsupported"
+    assert policy.decisions == ["first"]
+
+
+def test_objective_proposer_requires_explicit_composition_requirement() -> None:
+    class ValidProposer:
+        async def propose(self, context):
+            return LocalObjectiveNotRequired(context.context_id)
+
+    proposer = object()
+
+    with pytest.raises(TypeError, match="objective proposer is invalid"):
+        AgentDecisionPorts(ScriptedPolicy([]), proposer)
+    with pytest.raises(ValueError, match="must match its explicit requirement"):
+        AgentDecisionPorts(ScriptedPolicy([]), ValidProposer())
+    with pytest.raises(ValueError, match="must match its explicit requirement"):
+        AgentDecisionPorts(
+            ScriptedPolicy([]),
+            None,
+            LocalObjectiveProposalRequirement.REQUIRED,
+        )
+    with pytest.raises(TypeError, match="requirement must be typed"):
+        AgentDecisionPorts(
+            ScriptedPolicy([]),
+            ValidProposer(),
+            "required",  # type: ignore[arg-type]
+        )
 
 
 def test_initial_satisfaction_is_zero_execution_done() -> None:

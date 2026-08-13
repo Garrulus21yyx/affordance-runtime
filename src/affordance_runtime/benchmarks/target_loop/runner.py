@@ -134,7 +134,11 @@ async def _run_case(case) -> BenchmarkCaseResult:
             frozenset(task.forbidden_effects),
         )
         try:
-            runtime = _build_runtime(composition, instrumentation)
+            runtime = _build_runtime(
+                composition,
+                instrumentation,
+                case.local_objective_requirement,
+            )
         except Exception as exc:
             instrumentation.record_failure(
                 CaseFailureOrigin.LOOP_CONSTRUCTION,
@@ -189,7 +193,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
     )
 
 
-def _build_runtime(composition, instrumentation):
+def _build_runtime(composition, instrumentation, local_objective_requirement):
     return TargetRuntime(
         AgentDecisionPorts(
             instrument_policy(composition.policy, instrumentation),
@@ -197,6 +201,7 @@ def _build_runtime(composition, instrumentation):
                 composition.local_objective_proposer,
                 instrumentation,
             ),
+            local_objective_requirement,
         ),
         CountingActionEvaluator(composition.action_evaluator, instrumentation),
         instrument_task_evaluator(composition.task_evaluator, instrumentation),

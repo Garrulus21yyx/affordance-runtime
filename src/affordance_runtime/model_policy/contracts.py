@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposal
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveResolvedOutcome
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.context import AgentImageInput
 
@@ -129,10 +129,25 @@ class ResolvedModelDecision:
 
 
 @dataclass(frozen=True)
-class ResolvedLocalObjectiveProposal:
-    proposal: LocalObjectiveProposal
+class ResolvedLocalObjectiveOutcome:
+    outcome: LocalObjectiveResolvedOutcome
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.proposal, LocalObjectiveProposal):
-            raise TypeError("resolved objective outcome requires one typed proposal")
+        from affordance_runtime.agent.local_objective_proposal import (
+            LocalObjectiveNeedsInput,
+            LocalObjectiveNotRequired,
+            LocalObjectiveProposal,
+            LocalObjectiveUnsupported,
+        )
+
+        if not isinstance(
+            self.outcome,
+            (
+                LocalObjectiveProposal,
+                LocalObjectiveNotRequired,
+                LocalObjectiveNeedsInput,
+                LocalObjectiveUnsupported,
+            ),
+        ):
+            raise TypeError("resolved objective outcome requires one typed objective result")

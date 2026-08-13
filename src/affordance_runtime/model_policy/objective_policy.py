@@ -15,7 +15,7 @@ from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailur
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,
-    ResolvedLocalObjectiveProposal,
+    ResolvedLocalObjectiveOutcome,
 )
 from affordance_runtime.model_policy.objective_spec import (
     OBJECTIVE_SCHEMA_VERSION,
@@ -25,7 +25,8 @@ from affordance_runtime.model_policy.port import StructuredObjectiveModelPort
 from affordance_runtime.model_policy.serialization import serialize_agent_context
 
 _OBJECTIVE_INSTRUCTIONS = """
-Propose one bounded LocalObjective from the current post-observation context.
+Resolve the explicitly enabled LocalObjective phase from current post-observation context.
+Return one bounded proposal, not_required, needs_input, or unsupported outcome.
 Use semantic selectors only; never emit E-refs, action IDs, DOM IDs, bindings,
 private selectors, screen points, or coordinates. The proposal is not authority:
 Runtime independently admits it and owns evidence, actions, effects, and completion.
@@ -76,12 +77,12 @@ class ModelBackedLocalObjectiveProposer:
             object.__setattr__(self, "last_fallback_count", int(getattr(self.port, "last_fallback_count", 0)))
         if isinstance(outcome, ModelFailure):
             return _failure(outcome)
-        if not isinstance(outcome, ResolvedLocalObjectiveProposal):
+        if not isinstance(outcome, ResolvedLocalObjectiveOutcome):
             return _failure(ModelFailure(ModelFailureKind.INVALID_RESPONSE, "invalid proposal envelope", False))
         object.__setattr__(self, "last_metadata", outcome.metadata)
-        if outcome.proposal.context_id != context.context_id:
+        if outcome.outcome.context_id != context.context_id:
             return _failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "proposal context is stale", False))
-        return outcome.proposal
+        return outcome.outcome
 
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
