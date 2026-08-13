@@ -40,7 +40,10 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model_policy.model_port_bridge import (
+    DecisionPerceptionProfile,
+    perception_uses_images,
+)
 from affordance_runtime.model_policy.objective_spec import OBJECTIVE_SCHEMA_VERSION
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 from affordance_runtime.model_policy.strict_json import validate_json_tree
@@ -63,11 +66,13 @@ from affordance_runtime.world.schema_validation import validate_value_issue
 
 _ACTION_SYSTEM_PROMPT = """
 You are a GUI agent operating the current public interface to complete task_brief.instruction.
-You receive a marked screenshot, the matching grounding_index, current public state, bounded interaction
-history, the previous tool result, and a menu of currently legal tools.
+You receive the current public Unified World, bounded interaction history, the previous tool result, and a
+menu of currently legal tools. Prefer explicit structured roles, labels, state, and relations. A marked
+screenshot is attached only when the current observation includes acquired visual evidence. If the public
+evidence is insufficient, select an offered observation tool instead of guessing.
 Before choosing, reason internally in this order:
 1. Identify the requested end state and any requirements that remain unmet.
-2. Inspect the current screenshot, public state, roles, labels, relations, and available tools.
+2. Inspect current public state, roles, labels, relations, available tools, and any attached screenshot.
 3. Verify from the fresh state whether the previous tool had its intended effect; revise the strategy when it did not.
 4. Choose the single next action that advances one unmet requirement without undoing completed work.
 Tasks may require multiple turns. Before any action that may finalize or commit the task, verify that every
@@ -171,8 +176,6 @@ class _GroundedAdapterBase:
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("grounded-tools bridge requires a one-attempt transport")
         profile = DecisionPerceptionProfile(self.perception_profile)
-        if profile is not DecisionPerceptionProfile.SCREENSHOT_AX:
-            raise ValueError("grounded-tools v2 requires screenshot+AX perception")
         object.__setattr__(self, "perception_profile", profile)
         object.__setattr__(self, "transport_kind", tool_transport_for_model(self.port.provider, self.port.model))
 
@@ -224,6 +227,7 @@ class _GroundedAdapterBase:
                 request,
                 self.port.supports_multimodal,
                 system_prompt,
+                self.perception_profile,
             )
             calls = await self._call(
                 messages,
@@ -296,7 +300,12 @@ class _GroundedAdapterBase:
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
-        metadata = _metadata(self.port, self.transport_kind, include_record=True)
+        metadata = _metadata(
+            self.port,
+            self.transport_kind,
+            self.perception_profile,
+            include_record=True,
+        )
         return decision, metadata
 
     async def _call(
@@ -367,7 +376,12 @@ class GroundedActionAdapter(_GroundedAdapterBase):
 
     @property
     def compatibility_key(self) -> str:
-        return f"{GROUNDED_TOOLS_PROTOCOL}:action_selection:{self.transport_kind.value}"
+        return ":".join((
+            GROUNDED_TOOLS_PROTOCOL,
+            "action_selection",
+            self.perception_profile.value,
+            self.transport_kind.value,
+        ))
 
     async def generate(
         self,
@@ -395,7 +409,12 @@ class GroundedActionAdapter(_GroundedAdapterBase):
 class GroundedObjectiveAdapter(_GroundedAdapterBase):
     @property
     def compatibility_key(self) -> str:
-        return f"{GROUNDED_TOOLS_PROTOCOL}:objective_proposal:{self.transport_kind.value}"
+        return ":".join((
+            GROUNDED_TOOLS_PROTOCOL,
+            "objective_proposal",
+            self.perception_profile.value,
+            self.transport_kind.value,
+        ))
 
     async def generate(
         self,
@@ -437,12 +456,17 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
 GroundedToolDecisionAdapter = GroundedActionAdapter
 
 
-def _messages(view, request, supports_multimodal, system_prompt):
-    if not supports_multimodal or not request.image_inputs:
-        raise ValueError("grounded-tools v2 requires a marked screenshot")
+def _messages(view, request, supports_multimodal, system_prompt, perception_profile):
+    include_images = perception_uses_images(request, perception_profile)
+    if include_images and (not supports_multimodal or not request.image_inputs):
+        raise ValueError("selected grounded perception requires a current image input")
+    grounding_index = tuple(
+        dict(item) if include_images else {**dict(item), "marked": False}
+        for item in view.grounding_index
+    )
     public = {
         "task_brief": to_json_compatible(view.task_brief),
-        "grounding_index": to_json_compatible(view.grounding_index),
+        "grounding_index": to_json_compatible(grounding_index),
         "current_state": to_json_compatible(view.current_state),
         "previous_tool_result": to_json_compatible(view.previous_tool_result),
         "tool_menu": tuple(
@@ -455,6 +479,11 @@ def _messages(view, request, supports_multimodal, system_prompt):
         ),
     }
     text = json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if not include_images:
+        return (
+            ModelMessage(role="system", content=system_prompt),
+            ModelMessage(role="user", content=text),
+        )
     parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
     for image in request.image_inputs:
         encoded = base64.b64encode(image.data).decode("ascii")
@@ -559,7 +588,7 @@ def _argument_repair_messages(messages, spec, issue):
     )
 
 
-def _metadata(port, transport_kind, *, include_record=True):
+def _metadata(port, transport_kind, perception_profile, *, include_record=True):
     record = port.last_call if include_record else None
     return ModelMetadata(
         provider_id=port.provider,
@@ -572,7 +601,7 @@ def _metadata(port, transport_kind, *, include_record=True):
         prompt_tokens=record.prompt_tokens if record is not None else 0,
         completion_tokens=record.completion_tokens if record is not None else 0,
         total_tokens=record.total_tokens if record is not None else 0,
-        perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX.value,
+        perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",
         grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
         decision_schema_digest=transport_kind.value,

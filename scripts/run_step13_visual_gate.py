@@ -19,11 +19,13 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     run_provider_cohort_arm,
     write_provider_cohort_arm,
 )
-from affordance_runtime.benchmarks.model_protocol import PRIMARY_BENCHMARK_ACTION_PROTOCOL
+from affordance_runtime.benchmarks.model_protocol import (
+    PRIMARY_BENCHMARK_ACTION_PROTOCOL,
+    PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
+)
 from affordance_runtime.model_policy import (
     model_policy_from_environment,
 )
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.visual_disambiguation import visual_candidate_disambiguator_from_environment
 from affordance_runtime.visual_grounding import (
     configured_visual_region_proposer_from_environment,
@@ -75,13 +77,13 @@ def main() -> int:
     manifest = _manifest(args.model)
     policy = model_policy_from_environment(
         call_timeout_s=90,
-        perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
+        perception_profile=PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
         interaction_protocol=PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     )
     outcome = asyncio.run(run_provider_cohort_arm(
         manifest,
         policy,
-        DecisionPerceptionProfile.SCREENSHOT_AX,
+        PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
         visual_region_proposer=configured_visual_region_proposer_from_environment(),
         visual_point_grounder=glm_visual_point_grounder_from_environment(),
         visual_candidate_disambiguator=visual_candidate_disambiguator_from_environment(),
@@ -211,7 +213,7 @@ def _manifest(model: str) -> MiniWobBreadthManifest:
         payload["capability_inventory_digest"],
         payload["selection_namespace"],
         model,
-        "screenshot-ax.v1",
+        PRIMARY_BENCHMARK_PERCEPTION_PROFILE.value,
         7.5,
         cases,
     )

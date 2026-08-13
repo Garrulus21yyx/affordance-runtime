@@ -56,6 +56,7 @@ from affordance_runtime.model_port import (
 class DecisionPerceptionProfile(StrEnum):
     TEXT_ONLY = "text-only.v1"
     SCREENSHOT_AX = "screenshot-ax.v1"
+    STRUCTURE_FIRST = "structure-first.v1"
 
 
 @dataclass(frozen=True)
@@ -306,7 +307,7 @@ def _user_content(
     profile: DecisionPerceptionProfile,
     port: ModelPort,
 ) -> str | tuple[ModelTextPart | ModelImageURLPart, ...]:
-    if profile is DecisionPerceptionProfile.TEXT_ONLY:
+    if not perception_uses_images(request, profile):
         return text
     if not request.image_inputs:
         raise ValueError("screenshot perception requires a current image input")
@@ -321,6 +322,33 @@ def _user_content(
             )
         )
     return tuple(parts)
+
+
+def perception_uses_images(
+    request: ModelDecisionRequest,
+    profile: DecisionPerceptionProfile,
+) -> bool:
+    """Select image transport from the configured acquisition policy.
+
+    A structure-first policy upgrades to images only after the public current
+    world contains an acquired visual source.  Image bytes attached to a
+    structural source therefore do not silently turn every decision into a
+    visual call.
+    """
+
+    if profile is DecisionPerceptionProfile.TEXT_ONLY:
+        return False
+    if profile is DecisionPerceptionProfile.SCREENSHOT_AX:
+        return True
+    try:
+        payload = json.loads(request.serialized_context)
+        sources = payload["world"]["sources"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return False
+    return isinstance(sources, list) and any(
+        isinstance(source, dict) and source.get("modality") == "visual"
+        for source in sources
+    )
 
 
 def _system_message(variant: DecisionGroundingVariant) -> str:

@@ -326,7 +326,7 @@ def _target_case(
 
 
 def _marked_candidate_policy_available(policy: object) -> bool:
-    """Detect one screenshot+AX policy without coupling the environment to it."""
+    """Detect a policy that can consume marked visual evidence when acquired."""
 
     pending = [policy]
     seen: set[int] = set()
@@ -336,7 +336,10 @@ def _marked_candidate_policy_available(policy: object) -> bool:
             continue
         seen.add(id(item))
         profile = getattr(item, "perception_profile", None)
-        if profile is DecisionPerceptionProfile.SCREENSHOT_AX:
+        if profile in {
+            DecisionPerceptionProfile.SCREENSHOT_AX,
+            DecisionPerceptionProfile.STRUCTURE_FIRST,
+        }:
             return True
         for name in ("wrapped", "port"):
             nested = getattr(item, name, None)

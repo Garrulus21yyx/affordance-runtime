@@ -28,7 +28,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary import ContextBuilder
+from affordance_runtime.model_boundary import ContextBuilder, ModelFailure
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import AgentTurnView
 from affordance_runtime.model_policy.contracts import ResolvedLocalObjectiveOutcome
@@ -38,15 +38,20 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
 )
 from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
+    GroundedActionAdapter,
     GroundedObjectiveAdapter,
     GroundedObjectiveCommandPayload,
     GroundedToolCommandPayload,
 )
+from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
+from affordance_runtime.model_policy.policy import _build_request as _action_request
 from affordance_runtime.model_policy.tool_contracts import ToolCall
 from affordance_runtime.model_port import (
     ModelCallRecord,
     ModelConfig,
+    ModelImageURLPart,
+    ModelTextPart,
     StructuredOutputError,
     StructuredOutputViolation,
 )
@@ -89,6 +94,30 @@ class _ObjectivePort:
             response_id="response:objective",
         )
         return output_schema.model_validate({"op": "local_objective_not_required"})
+
+
+@dataclass
+class _ActionPort:
+    provider: str = "zhipu"
+    model: str = "glm-4.1v-thinking-flashx"
+    endpoint_class: str = "fixture"
+    supports_multimodal: bool = True
+    last_call: ModelCallRecord | None = None
+    messages: tuple = ()
+
+    async def generate_structured(self, messages, output_schema, config):
+        self.messages = tuple(messages)
+        self.last_call = ModelCallRecord(
+            provider=self.provider,
+            model=self.model,
+            endpoint_class=self.endpoint_class,
+            prompt_version=config.prompt_version,
+            schema_name=output_schema.__name__,
+            schema_version="grounded_tools.v2",
+            latency_ms=1,
+            response_id="response:action",
+        )
+        return output_schema.model_validate({"op": "click"})
 
 
 def _context(*, local_objective=None):
@@ -155,6 +184,52 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert all(item.marked for item in context.grounding.entities)
     assert "bbox" not in public
     assert "entity:" not in public and "action:" not in public and "binding:" not in public
+
+
+def test_structure_first_grounded_action_starts_from_public_structure_without_image() -> None:
+    context = _context()
+    port = _ActionPort(supports_multimodal=False)
+    adapter = GroundedActionAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert not isinstance(outcome, ModelFailure)
+    assert outcome.metadata.perception_profile == "structure-first.v1"
+    assert adapter.compatibility_key.split(":")[2] == "structure-first.v1"
+    user_content = port.messages[1].content
+    assert isinstance(user_content, str)
+    public = json.loads(user_content)
+    assert public["task_brief"]["instruction"] == context.task.instruction
+    assert all(item["marked"] is False for item in public["grounding_index"])
+
+
+def test_structure_first_grounded_action_adds_image_only_after_visual_source_acquisition() -> None:
+    context = _context()
+    visual_source = replace(context.world.sources[0], modality="visual")
+    context = replace(
+        context,
+        world=replace(context.world, sources=(*context.world.sources, visual_source)),
+    )
+    port = _ActionPort()
+    adapter = GroundedActionAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert not isinstance(outcome, ModelFailure)
+    user_content = port.messages[1].content
+    assert isinstance(user_content, tuple)
+    assert isinstance(user_content[0], ModelTextPart)
+    assert isinstance(user_content[1], ModelImageURLPart)
+    public = json.loads(user_content[0].text)
+    assert any(item["marked"] is True for item in public["grounding_index"])
 
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:

@@ -26,7 +26,10 @@ from affordance_runtime.model_policy.contracts import (
     ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model_policy.model_port_bridge import (
+    DecisionPerceptionProfile,
+    perception_uses_images,
+)
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 from affordance_runtime.model_policy.strict_json import validate_json_tree
 from affordance_runtime.model_policy.tool_catalog import compile_tool_catalog, resolve_tool_call
@@ -279,7 +282,7 @@ def _messages(request, catalog, perception_profile, supports_multimodal):
         ensure_ascii=False,
     )
     content: str | tuple[ModelTextPart | ModelImageURLPart, ...] = text
-    if perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX:
+    if perception_uses_images(request, perception_profile):
         if not supports_multimodal or not request.image_inputs:
             raise ValueError("screenshot dynamic-tools profile requires a model image input")
         parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]

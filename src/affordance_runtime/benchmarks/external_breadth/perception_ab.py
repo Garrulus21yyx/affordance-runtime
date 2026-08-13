@@ -443,10 +443,11 @@ def _adapter(
         or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
     ):
         raise ValueError("perception A/B requires the frozen Mistral model identity")
-    if adapter.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX and not getattr(
-        adapter.port, "supports_multimodal", False
-    ):
-        raise ValueError("screenshot+AX arm requires a multimodal model port")
+    if adapter.perception_profile in {
+        DecisionPerceptionProfile.SCREENSHOT_AX,
+        DecisionPerceptionProfile.STRUCTURE_FIRST,
+    } and not getattr(adapter.port, "supports_multimodal", False):
+        raise ValueError("image-capable perception requires a multimodal model port")
     return adapter
 
 

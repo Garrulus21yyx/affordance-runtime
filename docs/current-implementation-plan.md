@@ -123,13 +123,23 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `REOPENED_AGENT_SEMANTICS / SINGLE_AGENT_PROMPT_ALIGNED / MODEL_AB_4_OF_5 / GENERALIZATION_OPEN` | `b354398` removed the runner's unconditional objective phase (valid 3/5). `31720e4` exposed the already-owned bounded interaction history (valid 2/5). `9cbf503` aligned the existing action prompt and provider-facing role/schema order without few-shot, manager, critic or a new chain; its clean frozen five-witness rerun remained 3/5. A same-protocol `glm-4.6v` run at clean `22552cf` reached 4/5 and correctly completed the five-member set before Submit, while visual aggregate entry still ended in terminal failure. A same-screenshot, no-action numeric ablation then returned 10 from 4.1V and 11 from 4.6V; a separate 4.1V call had also returned 11. Model capability is therefore a partial, stochastic bottleneck rather than an established deterministic model ordering; multi-seed evidence remains required. See the [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `REOPENED_AGENT_SEMANTICS / STRUCTURE_FIRST_IMPLEMENTED / TARGETED_VERIFIED / LIVE_PENDING / GENERALIZATION_OPEN` | `b354398` removed the runner's unconditional objective phase (valid 3/5). `31720e4` exposed the already-owned bounded interaction history (valid 2/5). `9cbf503` aligned the existing action prompt and provider-facing role/schema order; its rerun remained 3/5. The GLM-4.6V probe reached 4/5, while screenshot-only numeric probes remained stochastic. A fresh real observation now proves that the existing Unified World already exposes the original goal, 24 entities, 10 blue read-only AX leaves, grouping relations and only two legal actions for `visual-addition`. The current slice therefore removes the false `grounded_tools.v2 == screenshot` coupling: the primary profile consumes public structure first and attaches an image only after the existing `RequestObservation` loop acquires a visual source. No DOM counter, task classifier, second planner or alternate execution path was added. Live five-witness revalidation is still required. See the [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `IN_PROGRESS / TARGET ENTRY NON_DEFAULT` | explicit target CLI/client and readiness gate exist; reference capability remediation, held-out benchmark, root switch, and physical deletion remain open |
 
 ## Next admitted slice
+
+The immediate next gate is one clean-SHA five-witness run of the primary
+`grounded_tools.v2 + structure-first.v1` profile. Initial decisions must receive
+the already-projected structural Unified World without image bytes. Visual
+media may enter only after the agent selects the existing `observe_visual`
+operation and the environment returns a current visual source. The run must
+record per-case acquisition/source and provider-call evidence before any
+further semantic change is admitted. A changed score alone does not close
+generalization; failures must first be attributed to structure projection,
+observation escalation, model choice, execution, or authoritative task result.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and

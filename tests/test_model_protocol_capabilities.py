@@ -16,6 +16,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.benchmarks.model_protocol import (
     PRIMARY_BENCHMARK_ACTION_PROTOCOL,
+    PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
     PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
 )
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
@@ -31,6 +32,7 @@ from affordance_runtime.model_policy import (
     ModelPortDecisionAdapter,
 )
 from affordance_runtime.model_policy import factory as model_policy_factory
+from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_port import ModelConfig
 
 
@@ -147,6 +149,7 @@ def test_required_decisions_reject_stringly_declared_capabilities() -> None:
 
 def test_current_benchmark_primary_protocol_is_grounded_tools() -> None:
     assert PRIMARY_BENCHMARK_ACTION_PROTOCOL == GROUNDED_TOOLS_PROTOCOL
+    assert PRIMARY_BENCHMARK_PERCEPTION_PROFILE is DecisionPerceptionProfile.STRUCTURE_FIRST
     assert PRIMARY_BENCHMARK_REQUIRED_DECISIONS == TOOL_ACTION_DECISION_CAPABILITIES
     composition = BenchmarkComposition(
         _DeclaredPolicy(TOOL_ACTION_DECISION_CAPABILITIES),

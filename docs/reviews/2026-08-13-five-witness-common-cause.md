@@ -430,3 +430,50 @@ not necessary for the failure. Second, neither this probe nor the five-case run
 establishes a deterministic 4.6V-over-4.1V ordering: visual counting is
 stochastic for this screenshot even at nominal temperature zero. The probe is
 diagnostic only, is not a benchmark score, and adds no production behavior.
+
+## Structure-first correction: reuse the existing Unified World
+
+A real seed-7 `visual-addition` reset was inspected through the same
+BrowserGym projection and grounded catalog used by the target runner. It
+establishes the actual boundary rather than inferring it from screenshots:
+
+- `task_brief.instruction` contains the original BrowserGym goal unchanged;
+- the structural Unified World contains 24 public entities and two executable
+  bindings (`fill` and `click`);
+- ten read-only `generic` leaf entities already carry
+  `appearance.color_family=blue`;
+- their public parent/child relations preserve the visible 8+2 grouping; and
+- the initial source is explicitly `structural`.
+
+The repository therefore did not need another DOM parser, a repeated-leaf
+counter, a visual-addition rule, or a parallel perception chain. The general
+AX projection already owned the useful facts. The remaining architectural bug
+was in the model adapter: `grounded_tools.v2` rejected every perception profile
+except `screenshot-ax.v1`, always transmitted image bytes already attached to
+the structural observation, and hard-coded screenshot metadata. Protocol,
+acquisition policy and transport modality were incorrectly coupled.
+
+The current in-place correction adds `structure-first.v1` as a perception
+profile while retaining `grounded_tools.v2`, the existing grounded catalog,
+the existing `RequestObservation` decision, the existing observation
+orchestrator and the same Runtime execution path. Its contract is:
+
+```text
+initial current Unified World (structural source)
+-> one grounded action/observation tool call with no image
+-> if public evidence is insufficient, agent selects observe_visual
+-> environment acquires and fuses a current visual source
+-> next call carries the corresponding marked image
+```
+
+When no image is transmitted, call-local `marked` flags are set to false so
+the model is never told that screenshot marks are visible when they are not.
+The adapter compatibility key and metadata now include the selected perception
+profile. The primary benchmark runner selects this profile explicitly; legacy
+text-only and always-screenshot profiles remain comparison configurations, not
+separate execution chains.
+
+Targeted evidence for this implementation is 18 passing grounded-protocol and
+composition tests, touched-file Ruff success, and Mypy success for the seven
+changed source files. Live benchmark evidence remains pending and no score or
+generalization improvement is claimed yet.
