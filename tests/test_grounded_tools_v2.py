@@ -609,6 +609,40 @@ def test_runtime_set_control_admits_one_member_then_releases_successors() -> Non
     assert settled.grounding.target_refs[selected.target_id] == login_ref
 
 
+def test_mandatory_objective_transition_excludes_settled_member_actions() -> None:
+    context = _context(mandatory_semantic_control=True)
+    login_target = next(
+        target_id
+        for target_id, ref in context.grounding.target_refs.items()
+        if next(item for item in context.grounding.entities if item.ref == ref).label == "Login"
+    )
+    login_action = next(
+        item.action_id for item in context.actions.options if item.target_id == login_target
+    )
+    transitioned = replace(
+        context,
+        set_control=AgentSetControlView(
+            mode="control_only",
+            disposition="certified",
+            reason_code="closed_scope_set_complete",
+            certified=True,
+            semantic_mode="objective_transition",
+            objective_candidate_action_ids=(login_action,),
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(transitioned)
+    objective_specs = tuple(
+        item for item in catalog.specs if item.name.startswith("establish_")
+    )
+
+    entity = next(
+        item for item in objective_specs if item.name == "establish_click_entity_objective"
+    )
+    assert entity.input_schema["properties"] == {}
+    assert all("fill" not in item.name for item in objective_specs)
+
+
 def test_model_can_establish_generic_fact_set_without_instruction_scanning() -> None:
     context = _context()
     entities = tuple(

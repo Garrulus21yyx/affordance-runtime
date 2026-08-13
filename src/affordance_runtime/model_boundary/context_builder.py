@@ -424,19 +424,20 @@ def _set_control_view(
                 ("resolve_actionability",),
             )
     elif reduction.disposition is SetDisposition.CERTIFIED:
+        set_members = set(active.candidate_entity_ids) | {
+            item.entity_id for item in active.obligations
+        }
+        successor_ids = tuple(
+            option.action_id
+            for option in action_space.options
+            if option.target_id not in set_members
+        )
         if state.semantic_control_required:
             mode = "control_only"
             allowed = ()
         else:
             mode = "successor_actions"
-            set_members = set(active.candidate_entity_ids) | {
-                item.entity_id for item in active.obligations
-            }
-            allowed = tuple(
-                option.action_id
-                for option in action_space.options
-                if option.target_id not in set_members
-            )
+            allowed = successor_ids
     elif reduction.disposition is SetDisposition.BLOCKED:
         mode = "blocked"
         allowed = ()
@@ -463,6 +464,12 @@ def _set_control_view(
         tuple(item.kind.value for item in set_evidence_obligations(active)),
         state.semantic_control_mode.value if state.semantic_control_required else "",
         active.objective.action_template.parameters,
+        (
+            successor_ids
+            if state.semantic_control_required
+            and reduction.disposition is SetDisposition.CERTIFIED
+            else ()
+        ),
     )
 
 

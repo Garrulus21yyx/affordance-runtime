@@ -198,7 +198,7 @@ class GroundedToolDecisionAdapter:
                     expected_catalog_id=catalog.catalog_id,
                 )
             except GroundedToolResolutionError as exc:
-                if exc.code is not GroundedToolResolutionCode.INVALID_ARGUMENTS or self.last_schema_repair_count:
+                if exc.code is not GroundedToolResolutionCode.INVALID_ARGUMENTS or self.last_argument_repair_count:
                     raise
                 spec = next((item for item in catalog.specs if item.name == call.name), None)
                 if spec is None:
@@ -206,7 +206,7 @@ class GroundedToolDecisionAdapter:
                 issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
                 if issue is None:
                     raise
-                object.__setattr__(self, "last_schema_repair_count", 1)
+                object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
                 object.__setattr__(self, "last_argument_repair_count", 1)
                 repaired = await self._repair_selected_operation(messages, spec, issue)
                 if repaired.name != call.name:

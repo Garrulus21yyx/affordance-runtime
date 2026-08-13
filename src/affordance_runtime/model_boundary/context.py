@@ -251,15 +251,18 @@ class AgentSetControlView:
     evidence_needs: tuple[str, ...] = ()
     semantic_mode: str = ""
     objective_parameters: Mapping[str, object] = field(default_factory=dict, repr=False)
+    objective_candidate_action_ids: tuple[str, ...] = field(default=(), repr=False)
 
     def __post_init__(self) -> None:
         values = tuple(self.allowed_action_ids)
+        objective_candidates = tuple(self.objective_candidate_action_ids)
         candidates = tuple(self.candidate_target_ids)
         unknown = tuple(self.unknown_target_ids)
         evidence_needs = tuple(self.evidence_needs)
         if (
             self.mode not in {"control_only", "member_actions_only", "successor_actions", "blocked"}
             or len(values) != len(set(values))
+            or len(objective_candidates) != len(set(objective_candidates))
             or self.candidate_count < 0
             or self.matched_count < 0
             or self.matched_count > self.candidate_count
@@ -286,6 +289,7 @@ class AgentSetControlView:
         object.__setattr__(self, "unknown_target_ids", unknown)
         object.__setattr__(self, "evidence_needs", evidence_needs)
         object.__setattr__(self, "objective_parameters", freeze_json(self.objective_parameters))
+        object.__setattr__(self, "objective_candidate_action_ids", objective_candidates)
 
 
 @dataclass(frozen=True)

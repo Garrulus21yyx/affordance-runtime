@@ -288,8 +288,16 @@ def _append_set_objective_tools(
         context.set_control is not None
         and context.set_control.semantic_mode in {"semantic_ingress", "objective_transition"}
     )
+    candidate_action_ids = (
+        set(context.set_control.objective_candidate_action_ids)
+        if context.set_control is not None
+        and context.set_control.semantic_mode == "objective_transition"
+        else None
+    )
     options_by_action: dict[tuple[str, str], list[AgentActionOptionView]] = {}
     for option in context.actions.options:
+        if candidate_action_ids is not None and option.action_id not in candidate_action_ids:
+            continue
         verb = _verb(option.semantic_action)
         options_by_action.setdefault(
             (option.semantic_action, _shape_key(verb, option.parameter_schema)),
