@@ -121,3 +121,47 @@ non-authoritative duplicate projection and unnecessary context load. The next
 slice will preserve one Unified World projection and one transport-owned tool
 catalog: native transport uses native ToolSpecs, while compact transport keeps
 the inline menu it actually needs.
+
+## Stopping analysis: default 4.1V full run at `90c3997`
+
+The duplicate projection was removed at
+`90c39979a108513332c0a03a576181c8c65f227d`. Native transport now receives the
+Unified World once in the user message and ToolSpecs once through the native
+tool channel. Compact transport retains its required inline menu. Verb
+descriptions no longer copy E-ref/role/label tuples already owned by
+`grounding_index`. Sixteen grounded-protocol tests, Ruff and Mypy passed.
+
+The requested clean full run used the default
+`glm-4.1v-thinking-flashx`. It completed 5/5 with valid evidence but succeeded
+only 1/5. The bounded authority gate accepted because the architecture
+invariants held. All 16 policy decisions resolved to valid structural actions;
+there were zero image inputs, visual sources, argument violations and repairs.
+
+| Case | Outcome | Causal trace |
+|---|---|---|
+| grid coordinate | success | selected the structurally projected coordinate in one action |
+| pie/no-delay | task failed | selected `+`, then `Y`; environment rejected the terminal action |
+| multi-target color | task failed | repeatedly activated blue entities, including entities whose current public state already said `selected=true`, then submitted |
+| pie | task failed | selected `+`, then `Y`; environment rejected the terminal action |
+| visual addition | task failed | filled from structural context and submitted; the public trace intentionally omits the entered value |
+
+This falsifies missing vision, broken action binding, malformed tools and
+executor failure as shared explanations for this run. The remaining common
+surface is agent cognition at the current one-decision loop: semantic option
+choice, monotonic tracking of completed set members, aggregate reasoning and
+pre-finalization completion judgment. The current public world already exposed
+the relevant pie labels, blue appearance, `selected` state and aggregate
+members. The default model either chose contrary to that state or produced an
+incorrect aggregate.
+
+This does not prove the whole architecture is bad. It shows that the Runtime
+chain is now coherent enough to localize the failures, while the default-model
+agent layer is not yet robust enough for these semantic tasks. Adding Runtime
+pie rules, color counters, arithmetic, task keywords or a Submit guard would
+hide the model-layer defect and violate the generalization contract.
+
+Per user direction, work stops after this analysis. If resumed, the next work
+must be an architecture decision about a general model-backed deliberation or
+completion-check role, or a stronger existing provider, evaluated on held-out
+tasks. It must not revive the old LocalObjective planner, add a benchmark
+classifier, or make Runtime enumerate open-world task semantics.

@@ -581,3 +581,32 @@ tool channel, yet the full schemas are repeated inside the user JSON
 after already appearing in `grounding_index`. The next correction removes only
 those non-authoritative duplicates. It does not introduce another world,
 planner or semantic preprocessing stage.
+
+## Default-model stopping result after projection de-duplication
+
+At `90c3997`, native ToolSpecs and user-context tools have one presentation
+owner each, and verb descriptions no longer duplicate the grounding index. A
+clean full run with the restored default `glm-4.1v-thinking-flashx` completed
+5/5 with valid evidence and an accepted authority gate, but only one task
+succeeded.
+
+This run sharply separates architecture conformance from task performance. All
+16 decisions were valid structural actions, with zero images, visual sources,
+argument violations or repairs. Grid coordinate succeeded. Both pie tasks
+selected `+` followed by `Y` and reached authoritative terminal failure. The
+color task repeatedly selected blue entities, including entities already
+published as `selected=true`, and then submitted. Visual addition filled and
+submitted an environment-rejected aggregate; the value remains intentionally
+absent from public evidence.
+
+The shared residual is therefore agent semantic control: choosing the intended
+label sequence, preserving monotonic completed-set state, aggregating public
+members and judging readiness before finalization. Runtime had already exposed
+the relevant structural facts and correctly bound, executed and evaluated the
+chosen actions. A deterministic Runtime patch would have to infer open task
+semantics and would be a prohibited benchmark oracle.
+
+Implementation is paused at the user's direction. A future resumption should
+evaluate a bounded general model-backed deliberation/completion-check design or
+a stronger provider on held-out tasks. It must not treat a favorable rerun as
+closure or revive the removed parallel planning path.

@@ -47,6 +47,15 @@ one world interface. Internal transaction submission is not the product center.
 - [Current Implementation Plan](current-implementation-plan.md) alone schedules the active slice.
 - [Project Plan](project-plan.md) summarizes the durable product direction.
 
+M4.6-E is currently paused after clean `90c3997` default
+`glm-4.1v-thinking-flashx` evidence: 5/5 completed, 1/5 succeeded, with all 16
+decisions admitted as structural actions and zero image inputs, visual sources,
+argument violations or repairs. Tool schema, E-ref binding and execution are no
+longer the shared failure. The open boundary is agent semantic choice,
+multi-turn completed-state tracking, aggregation and finalization judgment.
+See the [current implementation plan](current-implementation-plan.md) and
+[stopping analysis](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md).
+
 Current code still runs the older TaskSpec/ActionContract/StateKernel/
 RuntimeCommitter path by default. The non-default target path has the unified
 DOM/Visual/WoT matrix, semantic confirmation, disposable AgentContext, strict
