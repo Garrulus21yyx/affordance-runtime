@@ -22,7 +22,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 
 | Slice | Status | Files / verification |
 |---|---|---|
-| Model protocol convergence | done, pushed | `grounded_tools.v2` benchmark owner; explicit supported/required decisions; split action/objective adapters; closed objective outcomes |
+| Model protocol convergence | `ACTION_PROTOCOL_DONE / OBJECTIVE_SEMANTICS_REOPENED` | `grounded_tools.v2` benchmark owner and supported decisions are explicit. Action/objective adapters and compact payloads are now statically split, and schema repair returns bounded field errors. A clean live objective diagnostic still cannot reliably construct the large Runtime DSL; do not claim objective closure. |
 | Product target composition/client | done, pushed | `compose_target_runtime`, `TargetRuntimeClient`, typed continuations; source-tree composition gate |
 | Product evaluation/DOM evidence | `REOPENED_SPECIALIZATION_AUDIT` | evaluator is product-owned, but arbitrary world-fact/screenshot change currently confirms any activation; replace correlation with explicit effect obligations or semantic verifier evidence |
 | Explicit target CLI | done, pushed | `target-run`, strict intake, thread-bound browser session, real CLI E2E; legacy `run` unchanged |

@@ -176,3 +176,54 @@ the wrong aggregate. Both two-turn pie cases consumed history and succeeded.
 The 3/5 and 2/5 runs therefore demonstrate model decision variance, not a
 directional performance result. Multi-seed held-out evidence is required before
 claiming an improvement or regression.
+
+Primary references used for the responsibility comparison:
+
+- [OpenAI Computer Use guide](https://developers.openai.com/api/docs/guides/tools-computer-use):
+  the model reads screenshots/history and returns a bounded computer action;
+  the harness executes it, captures the next observation and owns confirmation.
+- [UI-TARS](https://arxiv.org/abs/2501.12326): an end-to-end native GUI model
+  performs task decomposition, milestone recognition, reflection, grounding and
+  action prediction over interaction history. Its training path is outside this
+  project's scope, but its model/runtime responsibility boundary is relevant.
+- [Agent S2](https://arxiv.org/abs/2504.00906): a manager agent plans subgoals, a
+  worker agent produces semantic actions, and grounding experts localize them;
+  this project may reuse existing models as roles but will not train specialists.
+- [BrowserGym/AgentLab](https://openreview.net/forum?id=5298fKGmv3): the browser
+  is an observation/action/reward environment over Playwright with safe action
+  mappings and feedback, not a task-family semantic engine.
+
+## Schema repair closure and objective-semantic reopening
+
+Three in-place grounded-tools changes now close the originally observed wire and
+repair defects without adding a protocol:
+
+1. `5b64bf0` gives every existing structured-output adapter the same bounded,
+   value-free `field_path + code` repair contract. The retry count remains one;
+   raw provider responses and exception text are not returned to the model.
+2. `eaed5a7` finishes the compact wire split. Action selection uses
+   `op/target/text/value`; objective proposal uses only `op/value`. Each payload
+   owns its parameter extraction, so no phase/cast branch reconstructs fields.
+3. `b0631b6` removes duplicate `expected` and raw `actual` from selected-tool
+   repair. The operation's input schema appears once alongside owner/code/paths.
+
+A clean private live diagnostic at `eaed5a7` explicitly enabled the existing
+objective proposer for one witness. The first response correctly used the new
+shape (`propose_local_objective` with `value=null`); Runtime identified the
+missing `parameters.value` and issued the existing selected-operation repair.
+The second response then mixed sequence, set and aggregate fields into one value
+and failed as `invalid_tool_arguments`. No prompt, screenshot or provider
+response from that capture is committed.
+
+This falsifies “wire split plus better repair closes objective proposal.” The
+remaining obstacle is the size and cognitive shape of the Runtime-owned
+sequence/set/aggregate/predicate DSL, not missing JSON instructions. Continuing
+to add task-shaped prompts or more schema branches is prohibited. The objective
+semantics stay reopened pending an architecture decision between:
+
+- retaining the DSL only as an explicitly requested advanced capability; or
+- shrinking the existing objective role to bounded agent-authored plan/working
+  state while Runtime retains only lifecycle, authority and execution checks.
+
+That decision must reuse the existing proposer/AgentLoop boundary or delete it;
+it does not authorize a parallel planner or another execution chain.
