@@ -460,7 +460,11 @@ class GroundedToolDecisionAdapter:
             except StructuredOutputError:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _format_repair_messages(messages),
+                    (
+                        _task_program_repair_messages(messages)
+                        if payload_type is _TaskProgramCommandPayload
+                        else _format_repair_messages(messages)
+                    ),
                     payload_type,
                     self.config,
                 )
@@ -625,6 +629,24 @@ def _format_repair_messages(messages):
             content=(
                 system.content + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
                 "current tool_menu and use only fields declared by that operation."
+            ),
+        ),
+        *messages[1:],
+    )
+
+
+def _task_program_repair_messages(messages):
+    system = messages[0]
+    if not isinstance(system.content, str):
+        raise ValueError("task program repair requires text system message")
+    return (
+        ModelMessage(
+            role="system",
+            content=(
+                system.content
+                + "\n\nReturn exactly one JSON object with op=establish_task_program and a nested steps array. "
+                "Each step and predicate must preserve the nested typed structure required by the supplied JSON "
+                "Schema. Return no reasoning, Markdown, wrapper object, E-ref, opaque identity, or coordinate."
             ),
         ),
         *messages[1:],
