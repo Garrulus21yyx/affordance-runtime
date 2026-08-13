@@ -62,6 +62,7 @@ semantic control enabled AND no admitted typed objective
 | H | in_progress | Make semantic ingress a Runtime control mode and add an independent action admission gate | In ingress/transition, Catalog exposes only objective/observation controls; forged effectful decisions bind and execute zero times |
 | I | in_progress | Replace opaque exact-value enums with schema-level public-fact tools | Grid coordinate is a typed `{x,y}` value; no 32-value serialization or silent exact-value truncation |
 | J | pending | Re-run the five live witnesses and held-out semantic-control cases | Objective establishment precedes dispatch; wrong/duplicate/premature member dispatch is zero |
+| K | in_progress | Close grounded compact transport over typed objective decisions | Compact commands carry quantifier, object-valued facts, visual selectors and assessment maps; the canonical parser admits establishment/assessment payloads |
 
 ## Staged scope
 

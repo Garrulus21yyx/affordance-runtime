@@ -300,7 +300,7 @@ class _CompactPort:
         self.messages = list(messages)
         payload = self.commands[self.calls]
         self.calls += 1
-        assert output_schema is GroundedToolCommandPayload
+        assert issubclass(output_schema, GroundedToolCommandPayload)
         self.last_call = ModelCallRecord(
             provider=self.provider,
             model=self.model,
@@ -339,6 +339,44 @@ def test_compact_grounded_bridge_uses_allowlist_flat_command_and_existing_decisi
         assert "bbox" not in text and "selector" not in text
 
     asyncio.run(scenario())
+
+
+def test_compact_grounded_bridge_transports_typed_objective_decision() -> None:
+    async def scenario():
+        context = _context(mandatory_semantic_control=True)
+        password_ref = next(
+            item.ref for item in context.grounding.entities if item.label == "Password"
+        )
+        port = _CompactPort([{
+            "op": "establish_fill_entity_objective",
+            "target": password_ref,
+            "text": "UV",
+        }])
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+        )
+
+        response = await adapter.generate(_build_request(context))
+
+        assert not isinstance(response, ModelFailure)
+        parsed = parse_agent_decision(response.raw_payload, context.context_id)
+        assert isinstance(parsed, EstablishSetObjective)
+        assert parsed.parameters == {"value": "UV"}
+        assert parsed.quantifier.value == "exactly_one"
+
+    asyncio.run(scenario())
+
+
+def test_compact_command_accepts_typed_fact_value_and_quantifier() -> None:
+    payload = GroundedToolCommandPayload.model_validate({
+        "op": "establish_click_by_fact_1",
+        "value": {"x": 1, "y": -2},
+        "quantifier": "exactly_one",
+    })
+
+    assert payload.value == {"x": 1, "y": -2}
+    assert payload.quantifier == "exactly_one"
 
 
 def test_selected_grounded_operation_gets_one_typed_argument_repair_without_changing_operation() -> None:

@@ -12,10 +12,13 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     AgentDecisionPackage,
     AskUser,
+    EstablishSetObjective,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    SetPredicateAssessmentDecision,
+    SubmitSetPredicateAssessments,
     Wait,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads, validate_json_tree
@@ -32,6 +35,12 @@ from affordance_runtime.task.frontier_contracts import (
     TargetPresent,
     TaskOutcomeIs,
     TaskOutcomeStatus,
+)
+from affordance_runtime.task.set_objective import (
+    FactEquals,
+    PredicateTruth,
+    SetQuantifier,
+    VisualConcept,
 )
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
@@ -74,6 +83,53 @@ class SelectActionPayload(_Payload):
         validate_json_tree(value)
         reject_private_parameter_values(value)
         return value
+
+
+class EstablishSetObjectivePayload(_Payload):
+    type: Literal["establish_set_objective"]
+    predicate: dict[str, Any]
+    quantifier: Literal["exactly_one", "all_in_closed_scope"]
+    semantic_action: Id240
+    candidate_target_ids: Annotated[list[Id240], Field(min_length=1, max_length=256)]
+    parameters: dict[str, Any]
+
+    @field_validator("predicate")
+    @classmethod
+    def _supported_predicate(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        kind = value.get("kind")
+        required = (
+            {"kind", "field_name", "expected"}
+            if kind == "fact_equals"
+            else {"kind", "concept"}
+            if kind == "visual_concept"
+            else set()
+        )
+        if not required or set(value) != required:
+            raise ValueError("set objective payload predicate is unsupported")
+        return value
+
+    @field_validator("parameters")
+    @classmethod
+    def _bounded_parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        reject_private_parameter_values(value)
+        return value
+
+
+class SetPredicateAssessmentPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    target_id: Id240
+    truth: Literal["true", "false", "unknown"]
+
+
+class SubmitSetPredicateAssessmentsPayload(_Payload):
+    type: Literal["submit_set_predicate_assessments"]
+    predicate_digest: Annotated[str, StringConstraints(pattern=r"[0-9a-f]{64}")]
+    assessments: Annotated[
+        list[SetPredicateAssessmentPayload],
+        Field(min_length=1, max_length=256),
+    ]
 
 
 class RequestObservationPayload(_Payload):
@@ -128,6 +184,8 @@ class AbortPayload(_Payload):
 
 DecisionPayload: TypeAlias = Annotated[
     SelectActionPayload
+    | EstablishSetObjectivePayload
+    | SubmitSetPredicateAssessmentsPayload
     | RequestObservationPayload
     | RequestActionPagePayload
     | AskUserPayload
@@ -300,6 +358,34 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
         raise ValueError("decision context is stale")
     if isinstance(value, SelectActionPayload):
         return SelectAction(value.context_id, value.action_id, value.parameters, value.destination_id)
+    if isinstance(value, EstablishSetObjectivePayload):
+        predicate_value = value.predicate
+        predicate = (
+            FactEquals(predicate_value["field_name"], predicate_value["expected"])
+            if predicate_value["kind"] == "fact_equals"
+            else VisualConcept(predicate_value["concept"])
+        )
+        return EstablishSetObjective(
+            value.context_id,
+            predicate,
+            SetQuantifier(value.quantifier),
+            value.semantic_action,
+            tuple(value.candidate_target_ids),
+            value.parameters,
+        )
+    if isinstance(value, SubmitSetPredicateAssessmentsPayload):
+        return SubmitSetPredicateAssessments(
+            value.context_id,
+            value.predicate_digest,
+            tuple(
+                SetPredicateAssessmentDecision(
+                    item.target_id,
+                    PredicateTruth(item.truth),
+                    None,
+                )
+                for item in value.assessments
+            ),
+        )
     if isinstance(value, RequestObservationPayload):
         return RequestObservation(
             value.context_id,

@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from dataclasses import dataclass, field
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
-from affordance_runtime.agent.decisions import RequestActionPage, SelectAction
+from affordance_runtime.agent.decisions import (
+    EstablishSetObjective,
+    RequestActionPage,
+    SelectAction,
+    SubmitSetPredicateAssessments,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind, ProviderFailureCode
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
@@ -23,6 +30,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
+from affordance_runtime.model_policy.strict_json import validate_json_tree
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolTransportKind
 from affordance_runtime.model_port import (
     FallbackModelPort,
@@ -37,6 +45,7 @@ from affordance_runtime.model_port import (
     StructuredOutputError,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
+from affordance_runtime.task.set_objective import predicate_public_value
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 _SYSTEM_PROMPT = """
@@ -58,7 +67,11 @@ class GroundedToolCommandPayload(BaseModel):
     op: str
     target: str = ""
     text: str | None = None
-    value: str | None = None
+    value: object | None = None
+    quantifier: str | None = None
+    candidate_role: str | None = None
+    concept: str | None = None
+    assessments: dict[str, str] | None = None
 
     @field_validator("op")
     @classmethod
@@ -72,6 +85,42 @@ class GroundedToolCommandPayload(BaseModel):
     def _target(cls, value: str) -> str:
         if value and (not value.startswith("E") or not value[1:].isdigit()):
             raise ValueError("grounded target ref is invalid")
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def _value(cls, value: object | None) -> object | None:
+        validate_json_tree(value)
+        return value
+
+    @field_validator("quantifier")
+    @classmethod
+    def _quantifier(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"exactly_one", "all_in_closed_scope"}:
+            raise ValueError("grounded quantifier is invalid")
+        return value
+
+    @field_validator("candidate_role", "concept")
+    @classmethod
+    def _bounded_semantic_text(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or len(value) > 160):
+            raise ValueError("grounded semantic text is invalid")
+        return value
+
+    @field_validator("assessments")
+    @classmethod
+    def _assessments(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if value is not None and (
+            not value
+            or len(value) > 256
+            or any(
+                not ref.startswith("E")
+                or not ref[1:].isdigit()
+                or truth not in {"true", "false", "unknown"}
+                for ref, truth in value.items()
+            )
+        ):
+            raise ValueError("grounded assessments are invalid")
         return value
 
 
@@ -205,12 +254,13 @@ class GroundedToolDecisionAdapter:
 
     async def _call(self, messages, specs) -> tuple[ToolCall, ...]:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
+            payload_type = _command_payload_type(specs)
             try:
-                payload = await self.port.generate_structured(messages, GroundedToolCommandPayload, self.config)
+                payload = await self.port.generate_structured(messages, payload_type, self.config)
             except StructuredOutputError:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _format_repair_messages(messages), GroundedToolCommandPayload, self.config,
+                    _format_repair_messages(messages), payload_type, self.config,
                 )
             spec = next((item for item in specs if item.name == payload.op), None)
             if spec is None and len(specs) == 1:
@@ -237,9 +287,10 @@ class GroundedToolDecisionAdapter:
             )
 
     async def _repair_selected_operation(self, messages, spec, issue) -> ToolCall:
+        payload_type = _command_payload_type((spec,))
         payload = await self.port.generate_structured(
             _argument_repair_messages(messages, spec, issue),
-            GroundedToolCommandPayload,
+            payload_type,
             self.config,
         )
         return ToolCall(payload.op, _command_arguments(payload, spec))
@@ -270,6 +321,21 @@ def _messages(view, request, supports_multimodal):
     )
 
 
+def _command_payload_type(specs):
+    names = tuple(item.name for item in specs)
+    if not names or len(names) != len(set(names)):
+        raise ValueError("grounded operation menu is invalid")
+    if len(names) == 1:
+        return GroundedToolCommandPayload
+    digest = hashlib.sha256("\0".join(names).encode()).hexdigest()[:12]
+    allowed_operation = Literal.__getitem__(names)
+    return create_model(
+        f"GroundedToolCommand_{digest}",
+        __base__=GroundedToolCommandPayload,
+        op=(allowed_operation, ...),
+    )
+
+
 def _format_repair_messages(messages):
     system = messages[0]
     if not isinstance(system.content, str):
@@ -279,9 +345,8 @@ def _format_repair_messages(messages):
             role="system",
             content=(
                 system.content
-                + '\n\nReturn exactly one flat JSON object such as '
-                '{"op":"fill","target":"E2","text":"value"}. '
-                "Use only fields declared by the selected operation."
+                + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
+                "current tool_menu and use only fields declared by that operation."
             ),
         ),
         *messages[1:],
@@ -326,7 +391,14 @@ def _command_arguments(payload, spec=None):
     admitted = (
         set(spec.input_schema.get("properties", {}))
         if spec is not None
-        else {"target", "text", "value"}
+        else {
+            "target",
+            "text",
+            "value",
+            "quantifier",
+            "candidate_role",
+            "concept",
+        }
     )
     result = {}
     if payload.target and "target" in admitted:
@@ -335,6 +407,14 @@ def _command_arguments(payload, spec=None):
         result["text"] = payload.text
     if payload.value is not None and "value" in admitted:
         result["value"] = payload.value
+    if payload.quantifier is not None and "quantifier" in admitted:
+        result["quantifier"] = payload.quantifier
+    if payload.candidate_role is not None and "candidate_role" in admitted:
+        result["candidate_role"] = payload.candidate_role
+    if payload.concept is not None and "concept" in admitted:
+        result["concept"] = payload.concept
+    if payload.assessments is not None and set(payload.assessments) == admitted:
+        result.update(payload.assessments)
     return result
 
 
@@ -347,6 +427,26 @@ def _package_payload(package):
             "action_id": decision.action_id,
             "parameters": to_json_compatible(decision.parameters),
             "destination_id": decision.destination_id,
+        }
+    elif isinstance(decision, EstablishSetObjective):
+        value = {
+            "type": "establish_set_objective",
+            "context_id": decision.context_id,
+            "predicate": predicate_public_value(decision.predicate),
+            "quantifier": decision.quantifier.value,
+            "semantic_action": decision.semantic_action,
+            "candidate_target_ids": list(decision.candidate_target_ids),
+            "parameters": to_json_compatible(decision.parameters),
+        }
+    elif isinstance(decision, SubmitSetPredicateAssessments):
+        value = {
+            "type": "submit_set_predicate_assessments",
+            "context_id": decision.context_id,
+            "predicate_digest": decision.predicate_digest,
+            "assessments": [
+                {"target_id": item.target_id, "truth": item.truth.value}
+                for item in decision.assessments
+            ],
         }
     else:
         assert isinstance(decision, RequestActionPage)
