@@ -169,7 +169,8 @@ def test_known_tool_invalid_arguments_are_repaired_once_with_fixed_public_contra
         assert '"selected_tool":"act_01"' in repair_system
         assert '"required":["value"]' in repair_system
         assert '"field_paths":["parameters.value"]' in repair_system
-        assert '"actual":{"missing":true}' in repair_system
+        assert '"actual"' not in repair_system
+        assert '"expected"' not in repair_system
         assert '"value":"hello"' not in repair_system
 
     asyncio.run(scenario())

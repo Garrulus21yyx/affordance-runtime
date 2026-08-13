@@ -330,8 +330,6 @@ def _argument_repair_messages(messages: tuple[ModelMessage, ...], spec, issue) -
             "contract_owner": issue.contract_owner.value,
             "code": issue.code.value,
             "field_paths": list(issue.public_field_paths),
-            "expected": to_json_compatible(issue.expected),
-            "actual": to_json_compatible(issue.actual),
         },
         "recovery": {
             "tool_must_remain": spec.name,
