@@ -25,7 +25,6 @@ from affordance_runtime.benchmarks.external_breadth.progress import (
 )
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import InstrumentedBrowserGymEnvironment
 from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
-from affordance_runtime.benchmarks.external_smoke.composition import BrowserGymMechanicalActionEvaluator
 from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.external_smoke.pacing import (
     FixedPacingState,
@@ -48,6 +47,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
+from affordance_runtime.evaluation import ProductionActionEvaluator
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
@@ -330,7 +330,7 @@ def _target_case(
         )
         return BenchmarkComposition(
             paced,
-            BrowserGymMechanicalActionEvaluator(),
+            ProductionActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
             local_objective_proposer=paced_objective,
             required_decisions=PRIMARY_BENCHMARK_REQUIRED_DECISIONS,

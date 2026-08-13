@@ -9,6 +9,8 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 | root `affordance-runtime run` | legacy `run_scenario -> compose_run_coordinator -> RunCoordinator` | keep default in this slice; retarget reference scenarios before Phase 3 |
 | public `RuntimeClient` / `LegacyRuntimeClient` | legacy `RunCoordinator` | import-compatible, explicitly named legacy compatibility; feature-frozen |
 | public `TargetRuntimeClient` | `compose_target_runtime -> TargetRuntime -> ThinTaskIntake -> AgentLoop` | executable natural-language target lifecycle; not yet CLI/default |
+| product browser world | `BrowserSession -> DomSurfaceAdapter -> UnifiedWorldEnvironment` | target `WorldEnvironment` implementation already exists; CLI wiring remains open |
+| product action evaluation | `ProductionActionEvaluator` | public before/after facts only; BrowserGym name is compatibility-only |
 | `benchmarks/target_loop` | product `compose_target_runtime` with harness-only decorators | target/shared claim owner |
 | `benchmarks/external_breadth` and current visual Step-13 gate | target-loop benchmark composition | target benchmark owner; live evidence remains profile-specific |
 | `benchmarks/model_conformance` target runtime attempts | product `compose_target_runtime` | protocol/conformance evidence; no direct Runtime construction |
@@ -31,7 +33,8 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 2. **Completed offline:** `TargetRuntimeClient` owns target start/run/continuation semantics;
    the existing Coordinator client is also exported as `LegacyRuntimeClient` without
    breaking the `RuntimeClient` compatibility import.
-3. Change root CLI `run` only after its environment adapter can implement `WorldEnvironment` without benchmark task routing.
+3. Wire root CLI `run` to the existing product `UnifiedWorldEnvironment` and target
+   policy/evaluator composition without reference-scenario or benchmark task routing.
 4. Run a clean-SHA target-default held-out, multi-seed benchmark with a predeclared threshold.
 5. Perform a fresh-context topology review showing that root API, CLI, and current benchmark resolve through the same product composition identity.
 

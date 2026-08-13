@@ -296,8 +296,11 @@ public benchmark evidence.
 
 ## P5-M4.2 narrow owners
 
-P5-M4.2 adds three narrow owners without changing those imports:
-`browsergym_action_evaluator` owns only fill/select public postconditions;
+P5-M4.2 adds three narrow owners without changing those imports. The public-world
+postcondition algorithm is now product-owned by `evaluation/action_evaluator.py`
+as `ProductionActionEvaluator`; the historical
+`BrowserGymMechanicalActionEvaluator` name is only a compatibility alias.
+The evaluator owns fill/select and public activate before/after evidence;
 `agent/progress_control` owns run-scoped semantic digests and
 execute/suppress/terminate disposition; `agent/session_snapshot` owns a
 read-only privacy-safe in-flight view. Progress projection cannot modify

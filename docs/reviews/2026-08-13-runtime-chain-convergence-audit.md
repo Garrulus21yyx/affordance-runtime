@@ -714,3 +714,16 @@ client 不重建 loop，也不持有第二套状态 authority。
 `LegacyRuntimeClient` 名称。target client 的架构门禁禁止它依赖 legacy coordinator/composition；这一步选定了
 public client 语义，但没有改变根 CLI 默认。focused verification 为 `24 passed`，全量离线验证为
 `2427 passed, 27 skipped`。
+
+## 17. 实施记录：product action evaluator ownership
+
+2026-08-13 进一步检查 CLI 切换所需的环境边界后确认，产品侧已经存在
+`BrowserSession -> DomSurfaceAdapter -> UnifiedWorldEnvironment`，它实现 target 所需的 reset、capture、
+currentness、execute 和 task revision；不需要复制 BrowserGym 环境。实际的反向依赖是机械 action evaluator
+实现位于 `benchmarks/external_smoke`，使产品 composition 若复用它就必须依赖 benchmark namespace。
+
+该实现现已原样提升为 product-owned `ProductionActionEvaluator`，只读取公开 before/after world evidence；
+所有 shipped consumers 直接使用产品名称。`BrowserGymMechanicalActionEvaluator` 暂时保留为等价 compatibility
+alias，以承接历史测试和外部 import，不再拥有算法。架构门禁保证产品 evaluator 不导入 benchmark。
+focused verification 为 `31 passed, 8 skipped`，全量离线验证为 `2428 passed, 27 skipped`。
+CLI/default 和 live benchmark 仍然 open。

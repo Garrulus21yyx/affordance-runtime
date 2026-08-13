@@ -6,11 +6,9 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
-    BrowserGymMechanicalActionEvaluator,
-)
 from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
+from affordance_runtime.evaluation import ProductionActionEvaluator
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
 
@@ -42,7 +40,7 @@ class BrowserGymStructuredDecisionPort:
 def adapter_conformance_composition(environment, port) -> BenchmarkComposition:
     return BenchmarkComposition(
         ModelBackedAgentPolicy(port, call_timeout_s=10),
-        BrowserGymMechanicalActionEvaluator(),
+        ProductionActionEvaluator(),
         ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
     )
 

@@ -1,5 +1,6 @@
 """Independent action and task evaluation contracts."""
 
+from affordance_runtime.evaluation.action_evaluator import ProductionActionEvaluator
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.evaluation.contracts import (
     ActionEvaluation,
@@ -22,6 +23,7 @@ __all__ = [
     "CriterionEvaluationStatus",
     "EvaluatedOutput",
     "EvidenceRecord",
+    "ProductionActionEvaluator",
     "ProductionTaskEvaluator",
     "TaskEvaluation",
     "TaskEvaluationStatus",

@@ -15,9 +15,7 @@ def test_conformance_policy_uses_production_policy_parser_and_agent_loop() -> No
     policy_source = composition.split("def _public_decision", 1)[1]
     assert "benchmark_task_id" not in policy_source
     assert ".execute(" not in composition
-    evaluator = Path(
-        "src/affordance_runtime/benchmarks/external_smoke/browsergym_action_evaluator.py"
-    ).read_text()
+    evaluator = Path("src/affordance_runtime/evaluation/action_evaluator.py").read_text()
     for private in ("benchmark_task_id", "private_element_id", "selector", "raw_reward"):
         assert private not in evaluator
 

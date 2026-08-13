@@ -50,6 +50,15 @@ def test_target_client_uses_target_runtime_without_legacy_coordinator() -> None:
     assert "affordance_runtime.composition" not in imports
 
 
+def test_product_action_evaluator_has_no_benchmark_dependency() -> None:
+    evaluator = RUNTIME / "evaluation" / "action_evaluator.py"
+
+    assert not any(
+        name.startswith("affordance_runtime.benchmarks")
+        for name in _imports(evaluator)
+    )
+
+
 def test_all_benchmark_modules_use_product_target_composition_owner() -> None:
     violations = []
     for path in sorted((RUNTIME / "benchmarks").rglob("*.py")):
