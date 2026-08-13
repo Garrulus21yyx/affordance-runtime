@@ -28,6 +28,11 @@ class PacedAgentPolicy:
         if self.minimum_interval_s < 0:
             raise ValueError("fixed policy pacing interval cannot be negative")
 
+    def __getattr__(self, name: str):
+        """Keep policy decorators transparent to non-decision capabilities."""
+
+        return getattr(self.wrapped, name)
+
     @property
     def last_metadata(self):
         return getattr(self.wrapped, "last_metadata", None)

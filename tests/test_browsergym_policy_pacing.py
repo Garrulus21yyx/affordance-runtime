@@ -35,6 +35,19 @@ def test_fixed_pacing_waits_between_calls_without_changing_decisions() -> None:
     assert policy.calls == 2 and policy.total_wait_s == 5.0
 
 
+def test_policy_pacing_preserves_wrapped_capabilities() -> None:
+    class PolicyWithPreparation:
+        task_plan_preparer = object()
+
+        async def decide(self, context):
+            return context
+
+    wrapped = PolicyWithPreparation()
+    policy = PacedAgentPolicy(wrapped, 0)
+
+    assert policy.task_plan_preparer is wrapped.task_plan_preparer
+
+
 def test_pacing_budget_coherence_accepts_valid_and_rejects_impossible_schedule() -> None:
     validate_pacing_budget(10, 7.5, 120.0, 5.0)
     with pytest.raises(ValueError, match="minimum pacing schedule"):
