@@ -366,3 +366,26 @@ by a predeclared held-out A/B; GUI task, label, benchmark and witness examples
 are prohibited. A separate manager, critic or verifier is likewise deferred
 until the single-agent prompt contract is measured and a shared residual cause
 demonstrates that another role is necessary.
+
+## Clean prompt-alignment revalidation
+
+The clean `9cbf503` frozen five-witness rerun is [valid public report
+evidence](../evidence/runs/p5-m4-6-e-step13-five-witness-seed7-9cbf503-prompt-alignment/report.json):
+
+- 5/5 cases completed, 3/5 succeeded, and the bounded visual gate accepted;
+- every provider response used a schema-valid, privately resolvable action
+  tool call, with zero schema repair and zero invalid-tool-argument events;
+- the grid and both pie witnesses succeeded through structural identities;
+- the set witness selected Submit as its first and only action and received an
+  authoritative terminal task failure;
+- the visual aggregate witness filled the textbox, then selected Submit and
+  received an authoritative terminal task failure.
+
+This result measures the prompt change and falsifies the claim that an explicit
+GUI role, deliberate-order instruction, and role-before-schema transport are
+alone sufficient to close the residual. Those changes remain a clearer public
+agent contract, but the score is the same as the clean `b354398` run and must
+not be presented as an improvement. The next change must address a shared
+agent-semantic control boundary and be evaluated on predeclared held-out or
+multi-seed evidence; it may not add task-, label-, answer-, selector- or
+benchmark-shaped logic.

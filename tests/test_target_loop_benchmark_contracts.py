@@ -1,4 +1,5 @@
 from dataclasses import replace
+
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkRunIdentity
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
 
