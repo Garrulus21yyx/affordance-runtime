@@ -17,6 +17,7 @@ from affordance_runtime.runtime import RunRequest
 from affordance_runtime.runtime_client import LegacyRuntimeClient, RuntimeClient
 from affordance_runtime.runtime_result_phase import RunResult
 from affordance_runtime.simplified_runtime_contracts import ActionOutcome
+from affordance_runtime.target_composition import compose_target_client_from_environment
 from affordance_runtime.target_runtime_client import TargetRuntimeClient, TargetRuntimeRunOutcome
 from affordance_runtime.task import NaturalLanguageTaskRequest, TaskBoundary, TaskGoal
 from affordance_runtime.unified_observation import UnifiedObservation
@@ -45,4 +46,5 @@ __all__ = [
     "UserInputResumed",
     "UserInputResumeRejected",
     "compose_target_runtime",
+    "compose_target_client_from_environment",
 ]

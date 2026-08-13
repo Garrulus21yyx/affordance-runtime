@@ -138,6 +138,7 @@ Implementation Status is authoritative.
 | parent-agent/API integration | [Integrations](integrations.md) |
 | offline adaptation | [Harness Evolution](harness-evolution.md) |
 | positive cross-surface evaluation | [Benchmark Plan](benchmark-plan.md) |
+| explicit target Python/CLI entrypoints | [Target Runtime entrypoints](target-runtime-entrypoints.md) |
 
 These documents explain one bounded responsibility. If they conflict with the
 two target-authority documents, the target authority wins; if they describe code
@@ -175,6 +176,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M4.4 MiniWoB breadth failure attribution](reviews/2026-08-10-p5-m4-4-miniwob-breadth-failure-attribution.md)
 - [Runtime main-chain convergence audit and legacy-exit plan](reviews/2026-08-13-runtime-chain-convergence-audit.md)
 - [Target default-cutover consumer map](reviews/2026-08-13-target-cutover-consumer-map.md)
+- [Target Runtime entrypoints](target-runtime-entrypoints.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

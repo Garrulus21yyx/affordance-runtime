@@ -70,7 +70,10 @@ or act across environments more effectively.
 ## Current implementation truth
 
 The older TaskSpec/TaskPlan/ActionContract/StateKernel/RuntimeCommitter control
-path remains the default baseline. A non-default target path now implements the
+path remains the `run` default baseline. The explicit `target-run` command and
+`TargetRuntimeClient` now provide an executable natural-language target path with the
+product DOM world, grounded-tools model protocol, and product evaluators; default
+cutover and legacy deletion remain open. The target path implements the
 strong TaskGoal and world/action/evaluation contracts and integrated DOM,
 Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
 three-surface adapter-only shared-state matrix is proven with one deterministic
@@ -197,6 +200,8 @@ cutover is therefore blocked, not executed.
 Start with [docs/README.md](docs/README.md). The
 [documentation manifest](docs/documentation-manifest.yaml) records authority
 and lifecycle.
+
+- [Target Runtime entrypoints](docs/target-runtime-entrypoints.md)
 
 - [Project Plan](docs/project-plan.md)
 - [Current Implementation Plan](docs/current-implementation-plan.md)

@@ -32,6 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="affordance-runtime")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
+    from affordance_runtime.target_cli import add_target_run_parser
+
+    add_target_run_parser(subcommands)
+
     fixture = subcommands.add_parser("serve-fixture", help="serve the resettable local SaaS fixture")
     fixture.add_argument("--host", default="127.0.0.1")
     fixture.add_argument("--port", type=int, default=3000)
@@ -201,6 +205,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "target-run":
+        from affordance_runtime.target_cli import run_target_command
+
+        result = run_target_command(args)
+        print(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return 0 if result["status"] == "done" else 1
     if args.command == "serve-fixture":
         serve_fixture(args.host, args.port)
         return 0

@@ -45,6 +45,11 @@ class TargetRuntimeClient:
         if not isinstance(self.runtime, TargetRuntime):
             raise TypeError("TargetRuntimeClient requires a TargetRuntime")
 
+    def admit(self, request: NaturalLanguageTaskRequest) -> TaskIntakeOutcome:
+        """Compile stable task authority before allocating a world session."""
+
+        return self.runtime.intake.compile(request)
+
     async def start(
         self,
         environment: WorldEnvironment,
@@ -57,11 +62,25 @@ class TargetRuntimeClient:
         environment: WorldEnvironment,
         request: NaturalLanguageTaskRequest,
     ) -> TargetRuntimeRunOutcome:
-        started = await self.start(environment, request)
-        if started.session is None:
-            return TargetRuntimeRunOutcome(started.intake)
-        result = await started.session.run_until_pause()
-        return TargetRuntimeRunOutcome(started.intake, started.session, result)
+        admitted = self.admit(request)
+        if not isinstance(admitted, ReadyTask):
+            return TargetRuntimeRunOutcome(admitted)
+        return await self.run_admitted(environment, admitted)
+
+    async def run_admitted(
+        self,
+        environment: WorldEnvironment,
+        admitted: ReadyTask,
+    ) -> TargetRuntimeRunOutcome:
+        if not isinstance(admitted, ReadyTask):
+            raise TypeError("target client admitted run requires ReadyTask")
+        session = await self.runtime.start_task(
+            environment,
+            admitted.task,
+            admitted.intent_context,
+        )
+        result = await session.run_until_pause()
+        return TargetRuntimeRunOutcome(admitted, session, result)
 
     async def submit_user_input(
         self,

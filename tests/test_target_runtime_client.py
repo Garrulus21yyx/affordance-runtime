@@ -146,5 +146,25 @@ def test_target_client_preserves_nonready_intake_without_environment_access() ->
     assert environment.reset_calls == 0
 
 
+def test_target_client_can_run_one_pre_admitted_request_without_recompiling() -> None:
+    async def scenario() -> None:
+        policy = AskForAccountPolicy()
+        client = TargetRuntimeClient(compose_target_runtime(
+            policy,
+            UnusedActionEvaluator(),
+            InputAwareTaskEvaluator(),
+        ))
+        admitted = client.admit(_request(account="primary"))
+        assert isinstance(admitted, ReadyTask)
+
+        outcome = await client.run_admitted(StaticEnvironment((_world(),)), admitted)
+
+        assert outcome.result is not None
+        assert outcome.result.status is AgentLoopStatus.DONE
+        assert policy.calls == 0
+
+    asyncio.run(scenario())
+
+
 def test_legacy_runtime_client_has_an_explicit_compatibility_name() -> None:
     assert LegacyRuntimeClient is RuntimeClient

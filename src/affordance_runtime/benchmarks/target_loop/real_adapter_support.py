@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import queue
 import threading
-from concurrent.futures import Future
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
@@ -16,6 +14,7 @@ from PIL import Image
 
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.browser_thread_session import ThreadBoundBrowserSession
 from affordance_runtime.evaluation import CriterionEvaluationStatus
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.execution import ActionResult, BoundActionRequest, DispatchStatus
@@ -175,65 +174,6 @@ class WotFixtureState:
     action_calls: int = 0
 
 
-class ThreadBoundBrowserSession:
-    """Keep the existing synchronous BrowserSession on its owning thread."""
-
-    def __init__(self, url: str) -> None:
-        self._commands: queue.Queue[tuple[str, tuple, dict, Future] | None] = queue.Queue()
-        self._ready: Future = Future()
-        self._thread = threading.Thread(target=self._run, args=(url,), daemon=True)
-        self._thread.start()
-        self._ready.result(timeout=30)
-
-    def _run(self, url: str) -> None:
-        try:
-            session = BrowserSession.launch(url, lease_ttl_ms=30_000)
-            self._ready.set_result(True)
-        except BaseException as exc:
-            self._ready.set_exception(exc)
-            return
-        while (command := self._commands.get()) is not None:
-            name, args, kwargs, outcome = command
-            try:
-                outcome.set_result(getattr(session, name)(*args, **kwargs))
-            except BaseException as exc:
-                outcome.set_exception(exc)
-        session.close()
-
-    def _call(self, name: str, *args, **kwargs):
-        outcome: Future = Future()
-        self._commands.put((name, args, kwargs, outcome))
-        return outcome.result(timeout=30)
-
-    def reset(self):
-        return self._call("reset")
-
-    def capture(self, **kwargs):
-        return self._call("capture", **kwargs)
-
-    def probe_dom_target(self, target_id):
-        return self._call("probe_dom_target", target_id)
-
-    def click(self, selector):
-        return self._call("click", selector)
-
-    def fill(self, selector, text):
-        return self._call("fill", selector, text)
-
-    def select_option(self, selector, value):
-        return self._call("select_option", selector, value)
-
-    def capture_visual_frame(self, observation_id):
-        return self._call("capture_visual_frame", observation_id)
-
-    def click_xy(self, x, y):
-        return self._call("click_xy", x, y)
-
-    def close(self) -> None:
-        self._commands.put(None)
-        require_thread_stopped(self._thread, timeout=30)
-
-
 def real_adapter_task() -> TaskGoal:
     return TaskGoal(
         "enable-real-shared", "Enable shared state", allowed_effects=("shared_state_enabled",),
@@ -271,7 +211,10 @@ class VisualStateCriterionJudge:
 
 
 def real_dom_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvironment:
-    session = ThreadBoundBrowserSession("data:text/html," + quote(_DOM_HTML))
+    session = ThreadBoundBrowserSession(
+        "data:text/html," + quote(_DOM_HTML),
+        lease_ttl_ms=30_000,
+    )
     adapter = CountingAdapter(
         DomSurfaceAdapter(cast(BrowserSession, session)), instrumentation, "dom_click_calls",
     )
@@ -281,7 +224,10 @@ def real_dom_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvi
 
 
 def real_visual_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvironment:
-    session = ThreadBoundBrowserSession("data:text/html," + quote(_VISUAL_HTML))
+    session = ThreadBoundBrowserSession(
+        "data:text/html," + quote(_VISUAL_HTML),
+        lease_ttl_ms=30_000,
+    )
     proposer = ScreenshotOnlySharedStateProposer(instrumentation)
     adapter = CountingAdapter(
         VisualSurfaceAdapter(

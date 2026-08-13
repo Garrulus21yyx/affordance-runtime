@@ -744,3 +744,29 @@ current typed source lineage、structural assurance、source coverage 与 world 
 ProductionTaskEvaluator` 完成一次 button activation。策略只看到并选择公开 action ID，selector/binding
 仍由 Runtime 内部持有。focused verification 为 `15 passed`，全量离线验证为
 `2429 passed, 27 skipped`。显式 target CLI、default cutover 和 live benchmark 仍然 open。
+
+## 19. 实施记录：explicit target product CLI
+
+2026-08-13 新增显式 `affordance-runtime target-run`，但未替换 legacy `run`。它从严格 JSON
+stable boundary 构造 `NaturalLanguageTaskRequest`，先经同一个 `ThinTaskIntake` owner；只有
+`ReadyTask` 才分配浏览器。空 completion authority、未知 boundary 字段和 private GUI inputs 均 fail closed。
+
+产品 model composition 固定主协议为 `grounded_tools.v2`，并在浏览器分配前要求
+`select_action / request_observation / request_action_page` 三种控制能力。模型选择公开 tool/action ID；
+Runtime 仍独占 binding 和 executor route。
+
+真实 CLI E2E 暴露 Sync Playwright 与 async model loop 不能直接同线程运行。原 benchmark-only
+thread-bound proxy 已提升为 product-owned `ThreadBoundBrowserSession`：浏览器始终留在 owner thread，
+async AgentLoop 通过有界同步代理调用。benchmark real-adapter support 改为复用该产品 owner，不再复制实现。
+
+当前显式链路为：
+
+```text
+boundary JSON → ThinTaskIntake → ReadyTask → ThreadBoundBrowserSession
+→ DomSurfaceAdapter → UnifiedWorldEnvironment → TargetRuntimeClient
+→ grounded action selection → internal bind/execute → product evaluators → typed result
+```
+
+focused verification 为 `25 passed`；真实 Playwright `target-run` 完成一次 DOM activation；全量离线验证为
+`2438 passed, 27 skipped`。旧 `run`、`RuntimeClient` compatibility、target-default live held-out gate 和
+legacy 删除仍然 open。

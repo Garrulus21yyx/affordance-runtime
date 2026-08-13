@@ -7,9 +7,10 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 | Consumer | Current owner | Migration disposition |
 |---|---|---|
 | root `affordance-runtime run` | legacy `run_scenario -> compose_run_coordinator -> RunCoordinator` | keep default in this slice; retarget reference scenarios before Phase 3 |
+| explicit `affordance-runtime target-run` | `ThinTaskIntake -> TargetRuntimeClient -> UnifiedWorldEnvironment` | executable target product entry; not yet the default alias |
 | public `RuntimeClient` / `LegacyRuntimeClient` | legacy `RunCoordinator` | import-compatible, explicitly named legacy compatibility; feature-frozen |
-| public `TargetRuntimeClient` | `compose_target_runtime -> TargetRuntime -> ThinTaskIntake -> AgentLoop` | executable natural-language target lifecycle; not yet CLI/default |
-| product browser world | `BrowserSession -> DomSurfaceAdapter -> UnifiedWorldEnvironment` | real-browser target-runtime E2E passes with product action/task evaluators; CLI wiring remains open |
+| public `TargetRuntimeClient` | `compose_target_runtime -> TargetRuntime -> ThinTaskIntake -> AgentLoop` | executable natural-language target lifecycle; root default remains legacy |
+| product browser world | `ThreadBoundBrowserSession -> DomSurfaceAdapter -> UnifiedWorldEnvironment` | explicit CLI and real-browser target-runtime E2E pass; default alias remains open |
 | product action evaluation | `ProductionActionEvaluator` | public before/after facts only; BrowserGym name is compatibility-only |
 | `benchmarks/target_loop` | product `compose_target_runtime` with harness-only decorators | target/shared claim owner |
 | `benchmarks/external_breadth` and current visual Step-13 gate | target-loop benchmark composition | target benchmark owner; live evidence remains profile-specific |
@@ -33,8 +34,10 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 2. **Completed offline:** `TargetRuntimeClient` owns target start/run/continuation semantics;
    the existing Coordinator client is also exported as `LegacyRuntimeClient` without
    breaking the `RuntimeClient` compatibility import.
-3. Wire root CLI `run` to the existing product `UnifiedWorldEnvironment` and target
-   policy/evaluator composition without reference-scenario or benchmark task routing.
+3. **Completed offline:** explicit `target-run` uses product intake, grounded-tools
+   model composition, thread-bound browser world, target client, and product evaluators
+   without reference-scenario or benchmark routing. Switching the `run` alias remains
+   gated by items 1, 4, and 5.
 4. Run a clean-SHA target-default held-out, multi-seed benchmark with a predeclared threshold.
 5. Perform a fresh-context topology review showing that root API, CLI, and current benchmark resolve through the same product composition identity.
 
