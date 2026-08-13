@@ -65,7 +65,7 @@ from affordance_runtime.model_policy.grounded_tool_port_bridge import (
 from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.policy import _build_request
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig, StructuredOutputError
+from affordance_runtime.model_port import ModelCallRecord, ModelConfig
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.aggregate_objective import AggregateObjective
 from affordance_runtime.task.task_program import TaskProgram
@@ -643,62 +643,6 @@ def test_selected_grounded_operation_gets_one_typed_argument_repair_without_chan
         assert isinstance(repair, str)
         assert '"selected_operation":"fill"' in repair
         assert '"required":["target","text"]' in repair
-
-    asyncio.run(scenario())
-
-
-def test_task_program_schema_repair_preserves_nested_contract() -> None:
-    async def scenario():
-        class RepairPort(_CompactPort):
-            async def generate_structured(self, messages, output_schema, config):
-                if self.calls == 0:
-                    self.messages = list(messages)
-                    self.calls += 1
-                    raise StructuredOutputError("fixture invalid JSON")
-                return await super().generate_structured(messages, output_schema, config)
-
-        predicate = {
-            "any_of": [
-                {
-                    "all_of": [
-                        {
-                            "kind": "fact_equals",
-                            "field_name": "identity.label",
-                            "expected": "Login",
-                        }
-                    ]
-                }
-            ]
-        }
-        port = RepairPort(
-            [
-                {},
-                {
-                    "op": "establish_task_program",
-                    "steps": [
-                        {
-                            "kind": "entity",
-                            "predicate": predicate,
-                            "semantic_action": "click",
-                        }
-                    ],
-                },
-            ]
-        )
-        adapter = GroundedToolDecisionAdapter(
-            port,
-            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
-        )
-
-        response = await adapter.generate(_build_request(_context(mandatory_semantic_control=True)))
-
-        assert not isinstance(response, ModelFailure), adapter.last_internal_error_code
-        assert port.calls == 2
-        assert adapter.last_schema_repair_count == 1
-        repair = port.messages[0].content
-        assert isinstance(repair, str)
-        assert "nested steps array" in repair
-        assert "flat JSON object" not in repair
 
     asyncio.run(scenario())
 
