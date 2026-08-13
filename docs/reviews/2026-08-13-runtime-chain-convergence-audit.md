@@ -945,3 +945,17 @@ NaturalLanguageTaskRequest -> ThinTaskIntake -> DOM WorldObservation
 pricing readiness 已绑定上述 executable acceptance。export 仍使总 default cutover fail closed。最终本地
 验证为 123 个 focused tests、Ruff、`mypy src`（496 个源码文件）、`git diff --check` 与全量
 `2461 passed, 27 skipped in 96.50s`。
+
+## 23. Five-witness live rerun reopened the phase boundary
+
+The seed-7 five-witness diagnostic at `5d2e96d` completed 5/5 cases with 0/5
+successes. All five stopped at the forced LocalObjective proposal before any
+BrowserGym step or Runtime execution. This is now tracked as one shared
+composition/protocol/recovery cause in the
+[five-witness common-cause review](2026-08-13-five-witness-common-cause.md).
+
+The next slice is constrained to the existing grounded-tools mainline: remove
+the runner's unconditional objective requirement, then revalidate the existing
+action adapter. It is explicitly not permission to add another planner,
+adapter, model protocol, world, retry pipeline, or benchmark-shaped production
+branch.
