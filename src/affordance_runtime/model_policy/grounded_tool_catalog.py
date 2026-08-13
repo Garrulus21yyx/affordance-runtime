@@ -30,7 +30,7 @@ from affordance_runtime.agent.local_objective_proposal import (
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext, AgentGroundingEntityView
-from affordance_runtime.model_boundary.contracts import AgentActionOptionView
+from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentTurnView
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
@@ -450,6 +450,10 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
         "local_objective_open": context.progress.local_objective_open,
+        "interaction_history": [
+            _turn_result(item, ref_by_target)
+            for item in context.history.items[:-1]
+        ],
     }
     return value
 
@@ -457,11 +461,15 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
 def _previous_result(context: AgentContext, ref_by_target: Mapping[str, str]):
     if not context.history.items:
         return {}
-    item = context.history.items[-1]
+    return _turn_result(context.history.items[-1], ref_by_target)
+
+
+def _turn_result(item: AgentTurnView, ref_by_target: Mapping[str, str]) -> dict[str, object]:
     return {
         "decision": item.decision_kind,
         "verb": _verb(item.semantic_action) if item.semantic_action else "",
         "target": ref_by_target.get(item.target_id, ""),
+        "parameters": to_json_compatible(item.public_parameters),
         "dispatch": item.dispatch_status,
         "effect": item.action_evaluation_status,
         "task": item.task_evaluation_status,

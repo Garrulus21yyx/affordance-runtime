@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
@@ -29,6 +29,8 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary import ContextBuilder
+from affordance_runtime.model_boundary.budgets import BoundedSection
+from affordance_runtime.model_boundary.contracts import AgentTurnView
 from affordance_runtime.model_policy.contracts import ResolvedLocalObjectiveOutcome
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
@@ -145,6 +147,85 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert all(item.marked for item in context.grounding.entities)
     assert "bbox" not in public
     assert "entity:" not in public and "action:" not in public and "binding:" not in public
+
+
+def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
+    context = _context()
+    target_ids = tuple(context.grounding.target_refs)
+    refs = tuple(context.grounding.target_refs[target_id] for target_id in target_ids)
+    context = replace(
+        context,
+        history=BoundedSection(
+            (
+                AgentTurnView(
+                    "selectaction",
+                    "fill",
+                    target_ids[0],
+                    public_parameters={"value": "donovan"},
+                    dispatch_status="sent",
+                    action_evaluation_status="effect_confirmed",
+                    task_evaluation_status="incomplete",
+                    reason="action_effect_confirmed",
+                ),
+                AgentTurnView(
+                    "selectaction",
+                    "fill",
+                    target_ids[1],
+                    public_parameters={"value": "UV"},
+                    dispatch_status="sent",
+                    action_evaluation_status="effect_confirmed",
+                    task_evaluation_status="incomplete",
+                    reason="action_effect_confirmed",
+                ),
+                AgentTurnView(
+                    "selectaction",
+                    "activate",
+                    target_ids[2],
+                    dispatch_status="sent",
+                    action_evaluation_status="unknown",
+                    task_evaluation_status="incomplete",
+                    reason="action_unknown_low_local",
+                ),
+            ),
+            3,
+            False,
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+
+    assert catalog.view.current_state["interaction_history"] == (
+        {
+            "decision": "selectaction",
+            "verb": "fill",
+            "target": refs[0],
+            "parameters": {"value": "donovan"},
+            "dispatch": "sent",
+            "effect": "effect_confirmed",
+            "task": "incomplete",
+            "reason": "action_effect_confirmed",
+        },
+        {
+            "decision": "selectaction",
+            "verb": "fill",
+            "target": refs[1],
+            "parameters": {"value": "UV"},
+            "dispatch": "sent",
+            "effect": "effect_confirmed",
+            "task": "incomplete",
+            "reason": "action_effect_confirmed",
+        },
+    )
+    assert catalog.view.previous_tool_result == {
+        "decision": "selectaction",
+        "verb": "click",
+        "target": refs[2],
+        "parameters": {},
+        "dispatch": "sent",
+        "effect": "unknown",
+        "task": "incomplete",
+        "reason": "action_unknown_low_local",
+    }
 
 
 def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:

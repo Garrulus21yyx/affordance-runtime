@@ -65,7 +65,8 @@ Choose exactly one offered operation that advances the GUI task.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
 Choose only among actions in the current Runtime action page; those actions are already narrowed by the
 active objective reducer.
-Use current public state and the previous tool result: once a requested field is nonempty or satisfied, advance to the next required control.
+Use the bounded interaction history, current public state, and previous tool result to track progress. Once a
+requested field is nonempty or satisfied, advance to the next required control.
 When recovery forbids retry or requires a strategy change, never repeat the same operation, target, and arguments.
 Respect prerequisites expressed by the instruction, state, roles, labels, and relations before choosing a submit/final action.
 Return only the required command. Do not invent screen points, private selectors, IDs, tools, targets, or explanations.
