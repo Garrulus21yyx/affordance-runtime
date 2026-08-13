@@ -14,6 +14,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
+    ProviderAttemptOrigin,
     ProviderFailureCode,
 )
 from affordance_runtime.model_policy.contracts import (
@@ -196,6 +197,9 @@ class DynamicToolDecisionAdapter:
                 retryable=exc.resumable,
                 provider_code=provider_code,
                 retry_after_s=exc.retry_after_s,
+                attempt_origin=(
+                    ProviderAttemptOrigin.LOCAL_CIRCUIT if exc.circuit_open else ProviderAttemptOrigin.NETWORK
+                ),
             )
         except StructuredOutputError:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "model tool response violated its format")
@@ -289,8 +293,7 @@ def _format_repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMe
         ModelMessage(
             role="system",
             content=(
-                system.content
-                + "\n\nThe previous proposal was malformed. Return exactly one JSON object with only "
+                system.content + "\n\nThe previous proposal was malformed. Return exactly one JSON object with only "
                 'the keys "tool" and "args". Copy one offered tool name exactly. The args object must '
                 "satisfy that tool's input_schema, including every required property."
             ),
@@ -323,8 +326,7 @@ def _argument_repair_messages(messages: tuple[ModelMessage, ...], spec, issue) -
         ModelMessage(
             role="system",
             content=(
-                system.content
-                + "\n\nThe selected offered tool is fixed. Repair only its arguments according to this "
+                system.content + "\n\nThe selected offered tool is fixed. Repair only its arguments according to this "
                 "public contract, then return one object with exactly tool and args: "
                 + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             ),
@@ -354,9 +356,7 @@ def _scrub_runtime_identity(value):
     }
     if isinstance(value, dict):
         return {
-            key: _scrub_runtime_identity(item)
-            for key, item in value.items()
-            if key not in hidden and key != "actions"
+            key: _scrub_runtime_identity(item) for key, item in value.items() if key not in hidden and key != "actions"
         }
     if isinstance(value, list):
         return [_scrub_runtime_identity(item) for item in value]
@@ -423,5 +423,6 @@ def _failure(
     retryable: bool = False,
     provider_code: ProviderFailureCode | None = None,
     retry_after_s: float | None = None,
+    attempt_origin: ProviderAttemptOrigin = ProviderAttemptOrigin.UNKNOWN,
 ) -> ModelFailure:
-    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s)
+    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s, attempt_origin)

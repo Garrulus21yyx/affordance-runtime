@@ -44,7 +44,10 @@ async def run_suite(
 ) -> BenchmarkSuiteResult:
     digest = manifest_digest(manifest)
     identity = BenchmarkRunIdentity.create(
-        manifest.suite_id, digest, manifest.profile_id, manifest.seed,
+        manifest.suite_id,
+        digest,
+        manifest.profile_id,
+        manifest.seed,
     )
     completed = []
     for index, case in enumerate(manifest.cases, 1):
@@ -62,7 +65,9 @@ async def run_suite(
     results = tuple(completed)
     decisions = tuple(
         accept_case(
-            result, case.expected_terminal_statuses, case.required_measurements,
+            result,
+            case.expected_terminal_statuses,
+            case.required_measurements,
             case.metric_expectations,
         )
         for case, result in zip(manifest.cases, results, strict=True)
@@ -71,12 +76,20 @@ async def run_suite(
     sent_unknown = sum(_measured_int(item, "sent_unknown_count") for item in results)
     stale = sum(_measured_int(item, "stale_opportunities") for item in results)
     rates = {
-        "unknown_duplicate_rate": safe_rate(MetricMeasurement(
-            sum(_measured_int(item, "duplicate_unknown_attempts") for item in results), True, sent_unknown,
-        )),
-        "stale_zero_call_rate": safe_rate(MetricMeasurement(
-            stale - sum(_measured_int(item, "stale_zero_call_violations") for item in results), True, stale,
-        )),
+        "unknown_duplicate_rate": safe_rate(
+            MetricMeasurement(
+                sum(_measured_int(item, "duplicate_unknown_attempts") for item in results),
+                True,
+                sent_unknown,
+            )
+        ),
+        "stale_zero_call_rate": safe_rate(
+            MetricMeasurement(
+                stale - sum(_measured_int(item, "stale_zero_call_violations") for item in results),
+                True,
+                stale,
+            )
+        ),
     }
     return BenchmarkSuiteResult(identity, results, accepted, rates)
 
@@ -95,7 +108,9 @@ async def _run_case(case) -> BenchmarkCaseResult:
             environment = case.environment_factory(instrumentation)
         except Exception as exc:
             instrumentation.record_failure(
-                CaseFailureOrigin.ENVIRONMENT_FACTORY, "environment_factory_exception", exc,
+                CaseFailureOrigin.ENVIRONMENT_FACTORY,
+                "environment_factory_exception",
+                exc,
             )
             raise _CaseStageError("environment factory", exc) from exc
         try:
@@ -107,17 +122,23 @@ async def _run_case(case) -> BenchmarkCaseResult:
             composition = case.composition_factory(instrumentation)
         except Exception as exc:
             instrumentation.record_failure(
-                CaseFailureOrigin.COMPOSITION_FACTORY, "composition_factory_exception", exc,
+                CaseFailureOrigin.COMPOSITION_FACTORY,
+                "composition_factory_exception",
+                exc,
             )
             raise _CaseStageError("composition factory", exc) from exc
         counted_environment = CountingEnvironment(
-            environment, instrumentation, frozenset(task.forbidden_effects),
+            environment,
+            instrumentation,
+            frozenset(task.forbidden_effects),
         )
         try:
             loop = _build_loop(composition, instrumentation)
         except Exception as exc:
             instrumentation.record_failure(
-                CaseFailureOrigin.LOOP_CONSTRUCTION, "loop_construction_exception", exc,
+                CaseFailureOrigin.LOOP_CONSTRUCTION,
+                "loop_construction_exception",
+                exc,
             )
             raise _CaseStageError("AgentLoop construction", exc) from exc
         result = await _run_with_watchdog(
@@ -135,7 +156,9 @@ async def _run_case(case) -> BenchmarkCaseResult:
     except Exception as exc:
         failure = f"case exception: {type(exc).__name__}"
         instrumentation.record_failure(
-            CaseFailureOrigin.UNKNOWN, "runtime_exception", exc,
+            CaseFailureOrigin.UNKNOWN,
+            "runtime_exception",
+            exc,
         )
         session = session_holder.get("session")
         if session is not None and session.last_result is not None:
@@ -201,7 +224,9 @@ async def _run_episode(case, loop, environment, task, instrumentation, session_h
         if request is None:
             raise RuntimeError("confirmation status omitted its typed request")
         decision = ConfirmationDecision(
-            request.confirmation_id, request.subject_id, ConfirmationDecisionKind.CONFIRM,
+            request.confirmation_id,
+            request.subject_id,
+            ConfirmationDecisionKind.CONFIRM,
         )
         instrumentation.confirmations_submitted += 1
         result = await session.resolve_confirmation(decision)

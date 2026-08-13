@@ -11,6 +11,7 @@ from time import monotonic
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
+    ProviderAttemptOrigin,
     ProviderFailureCode,
 )
 from affordance_runtime.model_policy.contracts import (
@@ -40,12 +41,15 @@ class ProviderAttemptReceipt:
     retry_after_s: float | None = None
     scheduled_delay_s: float = 0.0
     response_id: str = ""
+    origin: ProviderAttemptOrigin = ProviderAttemptOrigin.UNKNOWN
 
     def __post_init__(self) -> None:
         if not self.policy_request_id or self.attempt_number <= 0 or self.profile_index < 0:
             raise ValueError("provider attempt receipt identity is invalid")
         if not isinstance(self.status, ProviderAttemptStatus):
             raise TypeError("provider attempt receipt status must be typed")
+        if not isinstance(self.origin, ProviderAttemptOrigin):
+            raise TypeError("provider attempt receipt origin must be typed")
         if self.status is ProviderAttemptStatus.ACCEPTED:
             if self.failure_kind is not None or self.failure_code is not None:
                 raise ValueError("accepted provider attempt cannot carry failure facts")
@@ -83,9 +87,7 @@ class ProviderCallOrchestrator:
 
     ports: tuple[StructuredDecisionModelPort, ...]
     policy: ProviderCallPolicy = ProviderCallPolicy()
-    last_attempts: tuple[ProviderAttemptReceipt, ...] = field(
-        default=(), init=False, compare=False
-    )
+    last_attempts: tuple[ProviderAttemptReceipt, ...] = field(default=(), init=False, compare=False)
     last_fallback_count: int = field(default=0, init=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -125,9 +127,7 @@ class ProviderCallOrchestrator:
     def configured_fallback_count(self) -> int:
         return len(self.ports) - 1
 
-    async def generate(
-        self, request: ModelDecisionRequest
-    ) -> ModelDecisionResponse | ModelFailure:
+    async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
         object.__setattr__(self, "last_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         started = monotonic()
@@ -146,10 +146,15 @@ class ProviderCallOrchestrator:
                     try:
                         outcome = await asyncio.wait_for(port.generate(request), timeout=remaining)
                     except asyncio.CancelledError:
-                        receipts.append(self._receipt(
-                            request, port, attempt_number, profile_index,
-                            ProviderAttemptStatus.CANCELLED,
-                        ))
+                        receipts.append(
+                            self._receipt(
+                                request,
+                                port,
+                                attempt_number,
+                                profile_index,
+                                ProviderAttemptStatus.CANCELLED,
+                            )
+                        )
                         raise
                     except TimeoutError:
                         outcome = ModelFailure(
@@ -157,6 +162,7 @@ class ProviderCallOrchestrator:
                             "provider attempt exceeded the orchestration deadline",
                             True,
                             ProviderFailureCode.TIMEOUT,
+                            attempt_origin=ProviderAttemptOrigin.ORCHESTRATOR_TIMEOUT,
                         )
                     if isinstance(outcome, ModelDecisionResponse):
                         if accepted:
@@ -166,15 +172,19 @@ class ProviderCallOrchestrator:
                                 False,
                             )
                         accepted = True
-                        receipts.append(self._receipt(
-                            request, port, attempt_number, profile_index,
-                            ProviderAttemptStatus.ACCEPTED,
-                            response_id=outcome.metadata.response_id,
-                        ))
+                        receipts.append(
+                            self._receipt(
+                                request,
+                                port,
+                                attempt_number,
+                                profile_index,
+                                ProviderAttemptStatus.ACCEPTED,
+                                response_id=outcome.metadata.response_id,
+                            )
+                        )
                         object.__setattr__(self, "last_attempts", tuple(receipts))
                         rate_retries = sum(
-                            item.failure_code is ProviderFailureCode.RATE_LIMITED
-                            for item in receipts[:-1]
+                            item.failure_code is ProviderFailureCode.RATE_LIMITED for item in receipts[:-1]
                         )
                         transient_retries = len(receipts) - 1 - rate_retries
                         return replace(
@@ -192,23 +202,33 @@ class ProviderCallOrchestrator:
                             False,
                         )
                     if not _is_retryable_provider_failure(outcome):
-                        receipts.append(self._receipt(
-                            request, port, attempt_number, profile_index,
-                            ProviderAttemptStatus.NON_RETRYABLE_FAILURE,
-                            failure=outcome,
-                        ))
+                        receipts.append(
+                            self._receipt(
+                                request,
+                                port,
+                                attempt_number,
+                                profile_index,
+                                ProviderAttemptStatus.NON_RETRYABLE_FAILURE,
+                                failure=outcome,
+                            )
+                        )
                         object.__setattr__(self, "last_attempts", tuple(receipts))
                         return outcome
                     last_retryable = outcome
                     can_retry_here = local_attempt + 1 < self.policy.max_attempts_per_profile
                     can_fallback = profile_index + 1 < len(self.ports)
                     delay = self._delay(request.request_id, local_attempt, outcome) if can_retry_here else 0.0
-                    receipts.append(self._receipt(
-                        request, port, attempt_number, profile_index,
-                        ProviderAttemptStatus.RETRYABLE_FAILURE,
-                        failure=outcome,
-                        scheduled_delay_s=delay,
-                    ))
+                    receipts.append(
+                        self._receipt(
+                            request,
+                            port,
+                            attempt_number,
+                            profile_index,
+                            ProviderAttemptStatus.RETRYABLE_FAILURE,
+                            failure=outcome,
+                            scheduled_delay_s=delay,
+                        )
+                    )
                     if can_retry_here:
                         remaining = self.policy.total_elapsed_deadline_s - (monotonic() - started)
                         if delay >= remaining:
@@ -223,9 +243,7 @@ class ProviderCallOrchestrator:
         finally:
             object.__setattr__(self, "last_attempts", tuple(receipts))
 
-    def _delay(
-        self, request_id: str, local_attempt: int, failure: ModelFailure
-    ) -> float:
+    def _delay(self, request_id: str, local_attempt: int, failure: ModelFailure) -> float:
         if failure.retry_after_s is not None:
             return min(self.policy.max_delay_s, failure.retry_after_s)
         base = self.policy.backoff_s[local_attempt]
@@ -258,6 +276,13 @@ class ProviderCallOrchestrator:
             failure.retry_after_s if failure is not None else None,
             scheduled_delay_s,
             response_id,
+            (
+                ProviderAttemptOrigin.NETWORK
+                if status is ProviderAttemptStatus.ACCEPTED
+                else failure.attempt_origin
+                if failure is not None
+                else ProviderAttemptOrigin.UNKNOWN
+            ),
         )
 
     def _exhausted(
@@ -277,11 +302,13 @@ class ProviderCallOrchestrator:
 def _is_retryable_provider_failure(failure: ModelFailure) -> bool:
     return bool(
         failure.retryable
-        and failure.kind in {
+        and failure.kind
+        in {
             ModelFailureKind.PROVIDER_UNAVAILABLE,
             ModelFailureKind.TIMEOUT,
         }
-        and failure.provider_code in {
+        and failure.provider_code
+        in {
             ProviderFailureCode.RATE_LIMITED,
             ProviderFailureCode.TIMEOUT,
             ProviderFailureCode.TRANSPORT,

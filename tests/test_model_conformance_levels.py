@@ -16,17 +16,27 @@ def test_level_zero_schema_is_minimal_and_closed() -> None:
 
 
 def test_level_one_requires_actual_select_action_contract() -> None:
-    value = Level1SelectActionPayload.model_validate({
-        "type": "select_action", "context_id": "context:x", "action_id": "action:x",
-        "parameters": {}, "destination_id": "",
-    })
+    value = Level1SelectActionPayload.model_validate(
+        {
+            "type": "select_action",
+            "context_id": "context:x",
+            "action_id": "action:x",
+            "parameters": {},
+            "destination_id": "",
+        }
+    )
     assert value.action_id == "action:x"
-    assert len(AgentDecisionPayload.model_json_schema()["oneOf"]) == 9
+    assert len(AgentDecisionPayload.model_json_schema()["oneOf"]) == 11
 
 
 def test_level_two_context_is_minimal_but_uses_actual_ids() -> None:
     encoded = minimal_union_context(
-        "context:actual", "action:actual", "activate", "target:actual", "Shared state", "",
+        "context:actual",
+        "action:actual",
+        "activate",
+        "target:actual",
+        "Shared state",
+        "",
     )
     value = json.loads(encoded)
     assert value["context_id"] == "context:actual"

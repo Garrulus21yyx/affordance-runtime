@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from affordance_runtime.evaluation.contracts import ActionEvaluationStatus
+from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.task.set_objective import (
     ActionObligationStatus,
     ActionTemplate,
@@ -18,6 +19,7 @@ from affordance_runtime.task.set_objective import (
     PredicateTruth,
     SchedulingPolicy,
     ScopeCoverage,
+    ScopeEntityDomain,
     ScopeExtent,
     ScopeSpec,
     SetCompletionCertificate,
@@ -28,12 +30,13 @@ from affordance_runtime.task.set_objective import (
     SetQuantifier,
     StabilityStatus,
     evaluate_predicate,
+    predicate_digest,
     predicate_public_value,
     reduce_set_objective,
+    visual_predicate_leaves,
 )
 from affordance_runtime.world.contracts import (
     ActionSpace,
-    CoverageState,
     WorldObservation,
 )
 
@@ -95,6 +98,7 @@ class SetObjectiveState:
     certificate: SetCompletionCertificate | None = None
     revision: int = 1
     issue_code: str = ""
+    semantic_leaf_assessments: tuple[PredicateAssessment, ...] = ()
 
     def __post_init__(self) -> None:
         candidates = tuple(self.candidate_entity_ids)
@@ -112,6 +116,7 @@ class SetObjectiveState:
         object.__setattr__(self, "candidate_entity_ids", candidates)
         object.__setattr__(self, "assessments", tuple(self.assessments))
         object.__setattr__(self, "obligations", tuple(self.obligations))
+        object.__setattr__(self, "semantic_leaf_assessments", tuple(self.semantic_leaf_assessments))
 
     @property
     def reduction(self) -> SetObjectiveReduction:
@@ -134,27 +139,26 @@ def establish_set_objective_state(
     candidate_entity_ids: tuple[str, ...],
     observation: WorldObservation,
     parameters: dict[str, object] | None = None,
+    scope: ScopeSpec | None = None,
+    enumerator: ScopeEnumeratorPort | None = None,
 ) -> SetObjectiveState:
     """Install one admitted objective against a full Runtime observation."""
 
     candidates = tuple(dict.fromkeys(candidate_entity_ids))
-    if not candidates:
-        raise SetObjectiveStateError(SetObjectiveStateErrorCode.EMPTY_CANDIDATE_DOMAIN)
     if len(candidates) > MAX_SET_MEMBERS:
         raise SetObjectiveStateError(SetObjectiveStateErrorCode.SET_CAPACITY_EXCEEDED)
     visible = {item.target_id for item in observation.targets}
     if any(item not in visible for item in candidates):
         raise SetObjectiveStateError(SetObjectiveStateErrorCode.UNKNOWN_CANDIDATE)
-    targets = {item.target_id: item for item in observation.targets}
-    roles = {targets[item].role.casefold().strip() for item in candidates}
-    if len(roles) != 1 or not next(iter(roles)):
-        raise SetObjectiveStateError(SetObjectiveStateErrorCode.MIXED_CANDIDATE_ROLE)
-    candidate_role = next(iter(roles))
+    candidate_role = "*"
     digest = _objective_digest(predicate, quantifier, semantic_action, candidates)
-    scope = ScopeSpec(
+    scope = scope or ScopeSpec(
         f"scope:{digest[:24]}",
         "current-viewport",
         ScopeExtent.CURRENT_VIEWPORT,
+        entity_domain=(
+            ScopeEntityDomain.ALL_VISIBLE if visual_predicate_leaves(predicate) else ScopeEntityDomain.STRUCTURED
+        ),
     )
     objective = SetObjective(
         f"set-objective:{digest[:24]}",
@@ -164,8 +168,20 @@ def establish_set_objective_state(
         ActionTemplate(semantic_action, parameters=parameters or {}),
         SchedulingPolicy(),
     )
-    universe = _universe(scope, candidates, observation)
-    assessments = _assess(objective, universe, observation)
+    enumeration = (enumerator or SnapshotScopeEnumerator()).enumerate(scope, observation)
+    candidates = enumeration.entity_ids
+    if not candidates:
+        raise SetObjectiveStateError(SetObjectiveStateErrorCode.EMPTY_CANDIDATE_DOMAIN)
+    if len(candidates) > MAX_SET_MEMBERS:
+        raise SetObjectiveStateError(SetObjectiveStateErrorCode.SET_CAPACITY_EXCEEDED)
+    universe = CandidateUniverse(
+        enumeration.scope_id,
+        enumeration.observation_epoch,
+        enumeration.entity_ids,
+        enumeration.coverage,
+        enumeration.evidence_refs,
+    )
+    assessments = _assess(objective, universe, observation, ())
     obligations = _merge_obligations((), assessments, observation.observation_id)
     return SetObjectiveState(
         objective,
@@ -184,20 +200,25 @@ def refresh_set_objective_state(
     acted_entity_id: str = "",
     action_status: ActionEvaluationStatus | None = None,
     effect_evidence_refs: tuple[str, ...] = (),
+    enumerator: ScopeEnumeratorPort | None = None,
 ) -> SetObjectiveState:
     """Advance membership/effects on a fresh observation without reading history."""
 
     current_targets = {item.target_id for item in observation.targets}
     historical = tuple(item for item in state.obligations if item.entity_id not in current_targets)
-    current_candidates = tuple(
-        item.target_id
-        for item in observation.targets
-        if item.role.casefold().strip() == state.candidate_role
-    )
+    current_candidates = tuple(item.target_id for item in observation.targets)
     if len(current_candidates) > MAX_SET_MEMBERS:
         return replace(state, issue_code="set_capacity_exceeded", revision=state.revision + 1)
-    universe = _universe(state.objective.scope, current_candidates, observation)
-    assessments = _assess(state.objective, universe, observation)
+    universe = _universe(
+        state.objective.scope,
+        current_candidates,
+        observation,
+        enumerator,
+    )
+    leaf_assessments = tuple(
+        item for item in state.semantic_leaf_assessments if item.observation_epoch == observation.observation_id
+    )
+    assessments = _assess(state.objective, universe, observation, leaf_assessments)
     obligations = _apply_effect(
         state.obligations,
         acted_entity_id,
@@ -216,12 +237,14 @@ def refresh_set_objective_state(
         obligations,
         StabilityStatus.PENDING,
         revision=state.revision + 1,
+        semantic_leaf_assessments=leaf_assessments,
     )
     stable = (
         universe.coverage is ScopeCoverage.COMPLETE
         and all(item.truth is not PredicateTruth.UNKNOWN for item in assessments)
         and not any(
-            item.action_status in {
+            item.action_status
+            in {
                 ActionObligationStatus.UNACTED,
                 ActionObligationStatus.ACTION_IN_FLIGHT,
                 ActionObligationStatus.NO_EFFECT_CONFIRMED,
@@ -236,10 +259,14 @@ def refresh_set_objective_state(
         return provisional
     settled = replace(provisional, stability_status=StabilityStatus.PASSED)
     final = settled.reduction
-    return replace(
-        settled,
-        certificate=final.certificate,
-    ) if final.certificate is not None else settled
+    return (
+        replace(
+            settled,
+            certificate=final.certificate,
+        )
+        if final.certificate is not None
+        else settled
+    )
 
 
 def set_allowed_action_ids(
@@ -256,8 +283,7 @@ def set_allowed_action_ids(
     return frozenset(
         option.action_id
         for option in action_space.options
-        if option.target_id in admitted
-        and option.semantic_action == state.objective.action_template.semantic_action
+        if option.target_id in admitted and option.semantic_action == state.objective.action_template.semantic_action
     )
 
 
@@ -277,19 +303,17 @@ def set_evidence_obligations(
     if kind is None:
         return ()
     if kind in {SetEvidenceNeedKind.CLASSIFY_PREDICATE, SetEvidenceNeedKind.RESOLVE_UNKNOWN}:
-        entities = tuple(
-            item.entity_id
-            for item in state.assessments
-            if item.truth is PredicateTruth.UNKNOWN
-        )
+        entities = tuple(item.entity_id for item in state.assessments if item.truth is PredicateTruth.UNKNOWN)
     else:
         entities = reduction.true_entity_ids
-    return (SetEvidenceObligation(
-        kind,
-        entities,
-        state.objective.predicate_digest,
-        reduction.reason_code,
-    ),)
+    return (
+        SetEvidenceObligation(
+            kind,
+            entities,
+            state.objective.predicate_digest,
+            reduction.reason_code,
+        ),
+    )
 
 
 def install_semantic_assessments(
@@ -300,20 +324,13 @@ def install_semantic_assessments(
 ) -> SetObjectiveState:
     """Install a complete model assessment only for currently unknown members."""
 
-    unknown_ids = {
-        item.entity_id
-        for item in state.assessments
-        if item.truth is PredicateTruth.UNKNOWN
-    }
+    unknown_ids = {item.entity_id for item in state.assessments if item.truth is PredicateTruth.UNKNOWN}
     submitted = tuple(assessments)
     if (
         not unknown_ids
         or {item[0] for item in submitted} != unknown_ids
         or len(submitted) != len(unknown_ids)
-        or any(
-            confidence is not None and not 0 <= confidence <= 1
-            for _, _, confidence in submitted
-        )
+        or any(confidence is not None and not 0 <= confidence <= 1 for _, _, confidence in submitted)
     ):
         raise ValueError("semantic assessment batch must cover every unknown member exactly once")
     replacements = {
@@ -345,23 +362,79 @@ def install_semantic_assessments(
     )
 
 
+def install_visual_leaf_assessments(
+    state: SetObjectiveState,
+    observation: WorldObservation,
+    leaf: PredicateExpr,
+    assessments: tuple[tuple[str, PredicateTruth], ...],
+    *,
+    evaluator_id: str,
+) -> SetObjectiveState:
+    """Install evidence for one visual leaf, then let Runtime recompute the compound AST."""
+
+    leaf_digest = predicate_digest(leaf)
+    current_ids = set(state.universe.entity_ids)
+    submitted = tuple(assessments)
+    if (
+        observation.observation_id != state.universe.observation_epoch
+        or not submitted
+        or len({item[0] for item in submitted}) != len(submitted)
+        or any(entity_id not in current_ids for entity_id, _ in submitted)
+    ):
+        raise ValueError("visual leaf assessment batch is not current and bounded")
+    replacements = {
+        (entity_id, leaf_digest): PredicateAssessment(
+            entity_id,
+            leaf_digest,
+            truth,
+            PredicateAssurance.SEMANTIC_UNCALIBRATED,
+            evaluator_id,
+            state.universe.observation_epoch,
+            (f"visual-leaf:{state.universe.observation_epoch}:{leaf_digest[:12]}:{entity_id}",),
+            None,
+        )
+        for entity_id, truth in submitted
+    }
+    by_key = {
+        (item.entity_id, item.predicate_digest): item
+        for item in state.semantic_leaf_assessments
+        if item.observation_epoch == state.universe.observation_epoch
+    }
+    by_key.update(replacements)
+    leaf_assessments = tuple(by_key.values())
+    recomputed = _assess(state.objective, state.universe, observation, leaf_assessments)
+    obligations = _merge_obligations(
+        state.obligations,
+        recomputed,
+        state.universe.observation_epoch,
+    )
+    return replace(
+        state,
+        assessments=recomputed,
+        obligations=obligations,
+        stability_status=StabilityStatus.PENDING,
+        certificate=None,
+        revision=state.revision + 1,
+        semantic_leaf_assessments=leaf_assessments,
+    )
+
+
 def _universe(
     scope: ScopeSpec,
     candidates: tuple[str, ...],
     observation: WorldObservation,
+    enumerator: ScopeEnumeratorPort | None,
 ) -> CandidateUniverse:
-    complete_sources = tuple(
-        f"source:{name}:coverage"
-        for name, coverage in observation.coverage.items()
-        if coverage is CoverageState.COMPLETE
-    )
-    complete = bool(observation.coverage) and len(complete_sources) == len(observation.coverage)
+    enumeration = (enumerator or SnapshotScopeEnumerator()).enumerate(scope, observation)
+    entity_ids = enumeration.entity_ids
+    if len(entity_ids) > MAX_SET_MEMBERS:
+        entity_ids = candidates
     return CandidateUniverse(
-        scope.scope_id,
-        observation.observation_id,
-        candidates,
-        ScopeCoverage.COMPLETE if complete else ScopeCoverage.PARTIAL,
-        complete_sources if complete else (),
+        enumeration.scope_id,
+        enumeration.observation_epoch,
+        entity_ids,
+        enumeration.coverage,
+        enumeration.evidence_refs,
     )
 
 
@@ -369,24 +442,22 @@ def _assess(
     objective: SetObjective,
     universe: CandidateUniverse,
     observation: WorldObservation,
+    semantic_leaf_assessments: tuple[PredicateAssessment, ...],
 ) -> tuple[PredicateAssessment, ...]:
-    targets = {
-        item.target_id: {
-            **dict(item.state),
-            "identity.entity_id": item.target_id,
-            "identity.label": item.label,
-            "identity.role": item.role,
-        }
-        for item in observation.targets
-    }
-    for fact in observation.facts:
-        if fact.subject_id in targets:
-            targets[fact.subject_id][fact.predicate] = fact.value
+    targets = target_public_fields(observation)
+    semantic_by_entity: dict[str, dict[str, PredicateTruth]] = {}
+    for item in semantic_leaf_assessments:
+        if item.observation_epoch == universe.observation_epoch:
+            semantic_by_entity.setdefault(item.entity_id, {})[item.predicate_digest] = item.truth
     return tuple(
         PredicateAssessment(
             entity_id,
             objective.predicate_digest,
-            evaluate_predicate(objective.predicate, targets.get(entity_id, {})),
+            evaluate_predicate(
+                objective.predicate,
+                targets.get(entity_id, {}),
+                semantic_by_entity.get(entity_id),
+            ),
             PredicateAssurance.STRUCTURAL,
             "runtime-predicate-evaluator",
             observation.observation_id,
@@ -394,6 +465,27 @@ def _assess(
         )
         for entity_id in universe.entity_ids
     )
+
+
+def target_public_fields(
+    observation: WorldObservation,
+) -> dict[str, dict[str, object]]:
+    """Project the canonical public facts used by all Runtime selectors."""
+
+    targets = {
+        item.target_id: {
+            **dict(item.state),
+            "identity.entity_id": item.target_id,
+            "identity.label": item.label,
+            "identity.role": item.role,
+            **{f"relation.{key}": value for key, value in item.relations.items()},
+        }
+        for item in observation.targets
+    }
+    for fact in observation.facts:
+        if fact.subject_id in targets:
+            targets[fact.subject_id][fact.predicate] = fact.value
+    return targets
 
 
 def _merge_obligations(
@@ -438,16 +530,8 @@ def _apply_effect(
         replace(
             item,
             action_status=projected,
-            effect_evidence_refs=(
-                evidence_refs
-                if projected is ActionObligationStatus.EFFECT_CONFIRMED
-                else ()
-            ),
-            effect_epoch=(
-                observation_epoch
-                if projected is ActionObligationStatus.EFFECT_CONFIRMED
-                else ""
-            ),
+            effect_evidence_refs=(evidence_refs if projected is ActionObligationStatus.EFFECT_CONFIRMED else ()),
+            effect_epoch=(observation_epoch if projected is ActionObligationStatus.EFFECT_CONFIRMED else ""),
         )
         if item.entity_id == entity_id
         else item

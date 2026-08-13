@@ -101,9 +101,41 @@ def _private_name(name: str) -> bool:
 
 
 def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parameters") -> None:
+    variants = schema.get("oneOf") or schema.get("anyOf")
+    if variants is not None:
+        if not isinstance(variants, Sequence) or isinstance(variants, str | bytes):
+            raise ValueError(f"{path} union schema is invalid")
+        matches = 0
+        for variant in variants:
+            try:
+                validate_value(value, variant, path=path)
+            except ValueError:
+                continue
+            matches += 1
+        required_matches = 1 if "oneOf" in schema else None
+        if matches == 0 or (required_matches is not None and matches != required_matches):
+            raise ValueError(f"{path} does not match the declared union")
+        return
     expected = schema.get("type")
-    if expected is not None and expected not in {"object", "string", "boolean", "integer", "number"}:
+    if expected is not None and expected not in {"object", "array", "null", "string", "boolean", "integer", "number"}:
         raise ValueError(f"{path} uses unsupported schema type: {expected}")
+    if expected == "null":
+        if value is not None:
+            raise ValueError(f"{path} must be null")
+        return
+    if expected == "array":
+        if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+            raise ValueError(f"{path} must be an array")
+        if len(value) < int(schema.get("minItems", 0)):
+            raise ValueError(f"{path} has too few items")
+        if "maxItems" in schema and len(value) > int(schema["maxItems"]):
+            raise ValueError(f"{path} has too many items")
+        item_schema = schema.get("items", {})
+        if not isinstance(item_schema, Mapping):
+            raise ValueError(f"{path} item schema is invalid")
+        for index, item in enumerate(value):
+            validate_value(item, item_schema, path=f"{path}[{index}]")
+        return
     if expected == "object":
         if not isinstance(value, Mapping):
             raise ValueError(f"{path} must be an object")
@@ -129,8 +161,15 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
         raise ValueError(f"{path} must be an integer")
     if expected == "number" and (not isinstance(value, int | float) or isinstance(value, bool)):
         raise ValueError(f"{path} must be a number")
+    if "const" in schema and value != schema["const"]:
+        raise ValueError(f"{path} does not match the required constant")
     if "enum" in schema and value not in schema["enum"]:
         raise ValueError(f"{path} is not in the allowed enum")
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            raise ValueError(f"{path} is shorter than minimum length")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            raise ValueError(f"{path} exceeds maximum length")
     if isinstance(value, int | float) and not isinstance(value, bool):
         if "minimum" in schema and value < schema["minimum"]:
             raise ValueError(f"{path} is below minimum")
@@ -166,11 +205,14 @@ def _value_violation(
         private = next((str(key) for key in value if _private_name(str(key))), None)
         if private is not None:
             return path, {"private_fields_allowed": False}, {"contains_private_field": True}
+    variants = schema.get("oneOf") or schema.get("anyOf")
+    if isinstance(variants, Sequence) and not isinstance(variants, str | bytes):
+        if any(_value_violation(value, item, path) is None for item in variants):
+            return None
+        return path, {"union_match": True}, {"union_match": False}
     expected_type = schema.get("type")
     actual_type = _json_type(value)
-    if expected_type != actual_type and not (
-        expected_type == "number" and actual_type == "integer"
-    ):
+    if expected_type != actual_type and not (expected_type == "number" and actual_type == "integer"):
         return path, {"type": expected_type}, {"type": actual_type}
     if expected_type == "object":
         assert isinstance(value, Mapping)
@@ -192,6 +234,21 @@ def _value_violation(
                 if issue is not None:
                     return issue
         return None
+    if expected_type == "array":
+        if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+            return path, {"type": "array"}, {"type": actual_type}
+        if len(value) < int(schema.get("minItems", 0)):
+            return path, {"minItems": schema.get("minItems")}, {"too_few_items": True}
+        if "maxItems" in schema and len(value) > int(schema["maxItems"]):
+            return path, {"maxItems": schema["maxItems"]}, {"too_many_items": True}
+        item_schema = schema.get("items", {})
+        for index, item in enumerate(value):
+            issue = _value_violation(item, item_schema, f"{path}[{index}]")
+            if issue is not None:
+                return issue
+        return None
+    if "const" in schema and value != schema["const"]:
+        return path, {"const": schema["const"]}, {"constant_match": False}
     if "enum" in schema and value not in schema["enum"]:
         return path, {"enum": tuple(schema["enum"])}, {"type": actual_type, "enum_member": False}
     if isinstance(value, int | float) and not isinstance(value, bool):
@@ -203,6 +260,8 @@ def _value_violation(
 
 
 def _json_type(value: Any) -> str:
+    if value is None:
+        return "null"
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, int):
@@ -213,4 +272,6 @@ def _json_type(value: Any) -> str:
         return "string"
     if isinstance(value, Mapping):
         return "object"
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return "array"
     return type(value).__name__

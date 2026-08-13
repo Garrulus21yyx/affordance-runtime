@@ -1,5 +1,21 @@
 """Stable task and optional planning contracts for the target runtime."""
 
+from affordance_runtime.task.aggregate_objective import (
+    AggregateDisposition,
+    AggregateObjective,
+    AggregateObjectiveState,
+    AggregateOperator,
+    AggregateOutputFormat,
+    AggregateValueEvidence,
+    ValueExtractor,
+    ValueExtractorKind,
+    aggregate_allowed_action_ids,
+    aggregate_objective_public_value,
+    establish_aggregate_objective_state,
+    install_aggregate_destination_visual_leaf_assessments,
+    install_aggregate_visual_leaf_assessments,
+    refresh_aggregate_objective_state,
+)
 from affordance_runtime.task.contracts import (
     EvaluationSpec,
     LoopBudget,
@@ -30,11 +46,26 @@ from affordance_runtime.task.hypothesis_runtime import (
 )
 from affordance_runtime.task.intent_context import IntentContext, IntentExcerpt, IntentSourceKind
 from affordance_runtime.task.planning_contracts import LocalObjective, Milestone, TaskPlan
+from affordance_runtime.task.predicate_transport import predicate_from_transport
+from affordance_runtime.task.selector_resolution import (
+    SelectorResolutionDisposition,
+    SelectorResolutionState,
+    install_selector_visual_leaf_assessments,
+    resolve_entity_selector,
+)
+from affordance_runtime.task.semantic_validation import (
+    ModelTaskSemanticValidator,
+    TaskSemanticValidation,
+    TaskSemanticValidationStatus,
+    TaskSemanticValidatorPort,
+)
 from affordance_runtime.task.set_objective import (
     ActionObligationStatus,
     ActionTemplate,
     And,
     CandidateUniverse,
+    Compare,
+    CompareOperator,
     FactEquals,
     MemberOrdering,
     Not,
@@ -45,6 +76,7 @@ from affordance_runtime.task.set_objective import (
     SchedulingMode,
     SchedulingPolicy,
     ScopeCoverage,
+    ScopeEntityDomain,
     ScopeExtent,
     ScopeSpec,
     SetCompletionCertificate,
@@ -62,6 +94,7 @@ from affordance_runtime.task.set_objective import (
     predicate_public_value,
     reduce_set_objective,
     transition_obligation,
+    visual_predicate_leaves,
 )
 from affordance_runtime.task.set_objective_state import (
     MAX_SET_MEMBERS,
@@ -79,6 +112,20 @@ from affordance_runtime.task.set_objective_state import (
 
 __all__ = [
     "EvaluationSpec",
+    "AggregateDisposition",
+    "AggregateObjective",
+    "AggregateObjectiveState",
+    "AggregateOperator",
+    "AggregateOutputFormat",
+    "AggregateValueEvidence",
+    "ValueExtractor",
+    "ValueExtractorKind",
+    "aggregate_allowed_action_ids",
+    "aggregate_objective_public_value",
+    "establish_aggregate_objective_state",
+    "install_aggregate_destination_visual_leaf_assessments",
+    "install_aggregate_visual_leaf_assessments",
+    "refresh_aggregate_objective_state",
     "LocalObjective",
     "LoopBudget",
     "IntentContext",
@@ -110,6 +157,8 @@ __all__ = [
     "ActionTemplate",
     "And",
     "CandidateUniverse",
+    "Compare",
+    "CompareOperator",
     "FactEquals",
     "MemberOrdering",
     "Not",
@@ -120,6 +169,7 @@ __all__ = [
     "SchedulingMode",
     "SchedulingPolicy",
     "ScopeCoverage",
+    "ScopeEntityDomain",
     "ScopeExtent",
     "ScopeSpec",
     "SetCompletionCertificate",
@@ -137,6 +187,8 @@ __all__ = [
     "predicate_public_value",
     "reduce_set_objective",
     "transition_obligation",
+    "visual_predicate_leaves",
+    "predicate_from_transport",
     "MAX_SET_MEMBERS",
     "SetEvidenceNeedKind",
     "SetEvidenceObligation",
@@ -148,4 +200,12 @@ __all__ = [
     "refresh_set_objective_state",
     "set_allowed_action_ids",
     "set_evidence_obligations",
+    "ModelTaskSemanticValidator",
+    "TaskSemanticValidation",
+    "TaskSemanticValidationStatus",
+    "TaskSemanticValidatorPort",
+    "SelectorResolutionDisposition",
+    "SelectorResolutionState",
+    "install_selector_visual_leaf_assessments",
+    "resolve_entity_selector",
 ]

@@ -4,21 +4,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID = "browsergym-ax-target-inventory.v2"
+BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID = "browsergym-ax-target-inventory.v3"
 
 _RECOGNIZED_UNPROJECTED_TARGET_ROLES: frozenset[str] = frozenset()
 _DOMAIN_CHILD_ROLES = frozenset({"option"})
-_INFORMATIONAL_ROLES = frozenset({
-    "StaticText",
-    "cell",
-    "columnheader",
-    "heading",
-    "list",
-    "listitem",
-    "row",
-    "rowheader",
-    "table",
-})
+_INFORMATIONAL_ROLES = frozenset(
+    {
+        "StaticText",
+        "cell",
+        "columnheader",
+        "heading",
+        "list",
+        "listitem",
+        "row",
+        "rowheader",
+        "table",
+        # Visible generic DOM/AX nodes are evidence-bearing entities even when
+        # they intentionally have no execution binding.  Omitting them transfers
+        # counting, grouping, and appearance predicates to screenshot reasoning.
+        "generic",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -34,61 +40,123 @@ class BrowserGymRoleSpec:
 
 _ROLE_SPECS = {
     "button": BrowserGymRoleSpec(
-        "button", True, True, "activate", "click", ("expanded",),
+        "button",
+        True,
+        True,
+        "activate",
+        "click",
+        ("expanded",),
         ("attached", "visible", "enabled"),
     ),
     "link": BrowserGymRoleSpec(
-        "link", True, True, "activate", "click", ("expanded",),
+        "link",
+        True,
+        True,
+        "activate",
+        "click",
+        ("expanded",),
         ("attached", "visible", "enabled"),
     ),
     "textbox": BrowserGymRoleSpec(
-        "textbox", True, True, "fill", "fill", ("value", "required"),
+        "textbox",
+        True,
+        True,
+        "fill",
+        "fill",
+        ("value", "required"),
         ("attached", "visible", "enabled", "not_readonly", "editable"),
     ),
     "searchbox": BrowserGymRoleSpec(
-        "searchbox", True, True, "fill", "fill", ("value", "required"),
+        "searchbox",
+        True,
+        True,
+        "fill",
+        "fill",
+        ("value", "required"),
         ("attached", "visible", "enabled", "not_readonly", "editable"),
     ),
     "combobox": BrowserGymRoleSpec(
-        "combobox", True, True, "select", "select_option",
+        "combobox",
+        True,
+        True,
+        "select",
+        "select_option",
         ("value", "expanded", "required", "selected_options"),
         ("attached", "visible", "enabled", "not_readonly", "editable"),
     ),
     "listbox": BrowserGymRoleSpec(
-        "listbox", True, True, "select", "select_option",
+        "listbox",
+        True,
+        True,
+        "select",
+        "select_option",
         ("value", "expanded", "required", "selected_options"),
         ("attached", "visible", "enabled", "not_readonly", "editable"),
     ),
     "checkbox": BrowserGymRoleSpec(
-        "checkbox", True, True, "activate", "click", ("checked",),
+        "checkbox",
+        True,
+        True,
+        "activate",
+        "click",
+        ("checked",),
         ("attached", "visible", "enabled"),
     ),
     "radio": BrowserGymRoleSpec(
-        "radio", True, True, "activate", "click", ("checked",),
+        "radio",
+        True,
+        True,
+        "activate",
+        "click",
+        ("checked",),
         ("attached", "visible", "enabled"),
     ),
     "tab": BrowserGymRoleSpec(
-        "tab", True, True, "activate", "click", ("selected",),
+        "tab",
+        True,
+        True,
+        "activate",
+        "click",
+        ("selected",),
         ("attached", "visible", "enabled"),
     ),
     "menuitem": BrowserGymRoleSpec(
-        "menuitem", True, True, "activate", "click", ("expanded", "checked"),
+        "menuitem",
+        True,
+        True,
+        "activate",
+        "click",
+        ("expanded", "checked"),
         ("attached", "visible", "enabled"),
     ),
     "clickable": BrowserGymRoleSpec(
-        "clickable", True, True, "activate", "click", (),
+        "clickable",
+        True,
+        True,
+        "activate",
+        "click",
+        (),
         ("attached", "visible", "enabled"),
     ),
     "slider": BrowserGymRoleSpec(
-        "slider", True, False, "", "", ("value",), (),
+        "slider",
+        True,
+        False,
+        "",
+        "",
+        ("value",),
+        (),
     ),
     "spinbutton": BrowserGymRoleSpec(
-        "spinbutton", True, False, "", "", ("value",), (),
+        "spinbutton",
+        True,
+        False,
+        "",
+        "",
+        ("value",),
+        (),
     ),
-    **{
-        role: BrowserGymRoleSpec(role, True, False, "", "", (), ())
-        for role in _INFORMATIONAL_ROLES
-    },
+    **{role: BrowserGymRoleSpec(role, True, False, "", "", (), ()) for role in _INFORMATIONAL_ROLES},
 }
 
 

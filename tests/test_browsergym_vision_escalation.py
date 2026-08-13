@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import numpy as np
 from browsergym_adapter_support import FakeBrowserGym, ax_node, raw_observation
 
+from affordance_runtime.agent.set_evidence_resolution import resolve_visual_set_evidence
+from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
     BrowserGymMiniWobEnvironment,
 )
@@ -13,7 +16,15 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
 from affordance_runtime.execution import DispatchStatus
-from affordance_runtime.task.set_objective import PredicateTruth
+from affordance_runtime.task.set_objective import (
+    PredicateTruth,
+    ScopeEntityDomain,
+    ScopeExtent,
+    ScopeSpec,
+    SetQuantifier,
+    VisualConcept,
+)
+from affordance_runtime.task.set_objective_state import establish_set_objective_state
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguationRequest
 from affordance_runtime.visual_grounding import (
     VisualGroundingPoint,
@@ -114,10 +125,12 @@ def _open(
 ):
     first = proposer.regions[0]
     x, y, width, height = first.bbox_xywh
-    grounder = _Grounder(VisualGroundingPoint(
-        (x + width / 2, y + height / 2),
-        normalized=first.normalized,
-    ))
+    grounder = _Grounder(
+        VisualGroundingPoint(
+            (x + width / 2, y + height / 2),
+            normalized=first.normalized,
+        )
+    )
     return BrowserGymMiniWobEnvironment.open(
         "browsergym/miniwob.click-button",
         7,
@@ -210,9 +223,7 @@ def test_visual_selection_is_recomputed_after_action_instead_of_sticking() -> No
             assert environment.visual_point_grounder.calls == []
             assert environment.last_visual_escalation is not None
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
-            assert {item.surface for item in outcome.post_acquisition.observation.sources} == {
-                "browsergym"
-            }
+            assert {item.surface for item in outcome.post_acquisition.observation.sources} == {"browsergym"}
         finally:
             await environment.close()
 
@@ -273,10 +284,7 @@ def test_marked_screenshot_policy_owns_ambiguous_e_ref_choice_without_provider_c
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
-            assert (
-                environment.last_visual_escalation.evidence_need
-                is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
-            )
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
             assert environment.last_visual_escalation.reason_code == (
                 "marked_candidate_choice_delegated_to_screenshot_policy"
             )
@@ -317,10 +325,92 @@ def test_auxiliary_predicate_classifier_is_not_automatically_invoked() -> None:
             assert classifier.calls == []
             assert disambiguator.calls == []
             assert len(acquired.observation.bindings) == 2
-            assert not any(
-                fact.predicate.startswith("task_predicate")
-                for fact in acquired.observation.facts
+            assert not any(fact.predicate.startswith("task_predicate") for fact in acquired.observation.facts)
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_set_evidence_obligation_invokes_visual_classifier() -> None:
+    async def scenario() -> None:
+        raw = _raw_with_buttons(
+            ("left", "", (20, 20, 40, 30)),
+            ("right", "", (120, 20, 40, 30)),
+            goal="Click all apples.",
+        )
+        proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
+        classifier = _PredicateClassifier((PredicateTruth.TRUE, PredicateTruth.FALSE))
+        environment, task = _open(FakeBrowserGym(raw), proposer, classifier=classifier)
+        try:
+            acquired = await environment.reset(task)
+            assert acquired.observation is not None
+            state = AgentLoopState(acquired.observation)
+            state.active_set_objective = establish_set_objective_state(
+                predicate=VisualConcept("apple"),
+                quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
+                semantic_action="activate",
+                candidate_entity_ids=tuple(item.target_id for item in acquired.observation.targets),
+                observation=acquired.observation,
+                # This witness classifies an already closed DOM candidate set;
+                # it is not an open-world "all visible apples" claim.
+                scope=ScopeSpec(
+                    "scope:structured-visual-disambiguation",
+                    "current-viewport",
+                    ScopeExtent.CURRENT_VIEWPORT,
+                    entity_domain=ScopeEntityDomain.STRUCTURED,
+                ),
             )
+            session = SimpleNamespace(state=state, environment=environment)
+
+            resolved = await resolve_visual_set_evidence(session)
+
+            assert resolved is True
+            assert len(classifier.calls) == 1
+            assert environment.visual_predicate_classifier_calls == 1
+            assert [item.truth for item in state.active_set_objective.assessments] == [
+                PredicateTruth.TRUE,
+                PredicateTruth.FALSE,
+            ]
+            assert all(item.confidence is None for item in state.active_set_objective.assessments)
+            assert await resolve_visual_set_evidence(session) is False
+            assert len(classifier.calls) == 1
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_open_world_visual_set_does_not_classify_before_visual_scope_closure() -> None:
+    async def scenario() -> None:
+        raw = _raw_with_buttons(
+            ("left", "", (20, 20, 40, 30)),
+            ("right", "", (120, 20, 40, 30)),
+            goal="Click all apples.",
+        )
+        classifier = _PredicateClassifier((PredicateTruth.TRUE, PredicateTruth.FALSE))
+        environment, task = _open(
+            FakeBrowserGym(raw),
+            _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)]),
+            classifier=classifier,
+        )
+        try:
+            acquired = await environment.reset(task)
+            assert acquired.observation is not None
+            state = AgentLoopState(acquired.observation)
+            state.active_set_objective = establish_set_objective_state(
+                predicate=VisualConcept("apple"),
+                quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
+                semantic_action="activate",
+                candidate_entity_ids=(),
+                observation=acquired.observation,
+            )
+            session = SimpleNamespace(state=state, environment=environment)
+
+            assert state.active_set_objective.universe.coverage.value == "partial"
+            assert await resolve_visual_set_evidence(session) is False
+            assert classifier.calls == []
+            assert state.active_set_objective.certificate is None
         finally:
             await environment.close()
 
@@ -369,9 +459,7 @@ def test_unowned_repeated_leaf_payload_is_not_promoted_to_semantic_truth() -> No
             acquired = await environment.reset(task)
 
             assert acquired.observation is not None
-            groups = [
-                item for item in acquired.observation.targets if item.role == "visual-group"
-            ]
+            groups = [item for item in acquired.observation.targets if item.role == "visual-group"]
             assert groups == []
             assert environment.last_visual_escalation is not None
             assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.NONE
@@ -411,10 +499,7 @@ def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None
             assert environment.last_visual_escalation.mode is VisionEscalationMode.UNAVAILABLE
             assert environment.visual_provider_failure_count == 0
             assert environment.visual_point_grounder_calls == 0
-            assert all(
-                offer.source != "browsergym_visual"
-                for offer in environment.observation_capabilities.offers
-            )
+            assert all(offer.source != "browsergym_visual" for offer in environment.observation_capabilities.offers)
         finally:
             await environment.close()
 
@@ -424,18 +509,17 @@ def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None
 def test_same_frame_visual_region_merges_into_dom_identity_without_coordinate_binding() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(("okay", "Okay", (50, 20, 40, 30)))
-        proposer = _Proposer([
-            VisualRegion((0.25, 0.2, 0.2, 0.3), "red Okay button", 0.9),
-        ])
+        proposer = _Proposer(
+            [
+                VisualRegion((0.25, 0.2, 0.2, 0.3), "red Okay button", 0.9),
+            ]
+        )
         environment, task = _open(FakeBrowserGym(raw), proposer)
         try:
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
-            visual = next(
-                item for item in acquired.observation.sources
-                if item.surface == "browsergym_visual"
-            )
+            visual = next(item for item in acquired.observation.sources if item.surface == "browsergym_visual")
             assert len(visual.correspondences) == 1
             assert len(acquired.observation.targets) == 1
             assert [item.surface for item in acquired.observation.bindings] == ["browsergym"]
@@ -453,19 +537,18 @@ def test_same_frame_visual_region_merges_into_dom_identity_without_coordinate_bi
 def test_visual_region_without_dom_correspondence_remains_observation_only() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(("okay", "Okay", (0, 0, 20, 20)))
-        proposer = _Proposer([
-            VisualRegion((0.5, 0.5, 0.2, 0.2), "canvas-only dot", 0.9, role="shape"),
-        ])
+        proposer = _Proposer(
+            [
+                VisualRegion((0.5, 0.5, 0.2, 0.2), "canvas-only dot", 0.9, role="shape"),
+            ]
+        )
         environment, task = _open(FakeBrowserGym(raw), proposer)
         try:
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
             assert {item.surface for item in acquired.observation.bindings} == {"browsergym"}
-            visual = next(
-                item for item in acquired.observation.sources
-                if item.surface == "browsergym_visual"
-            )
+            visual = next(item for item in acquired.observation.sources if item.surface == "browsergym_visual")
             assert len(visual.targets) == 1
             assert visual.bindings == ()
             assert environment.visual_binding_acquired_count == 0
@@ -504,14 +587,16 @@ def test_overlapping_multiple_dom_candidates_is_ambiguous_and_non_coordinate() -
 def test_overlapping_semantic_conflict_is_non_coordinate() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(("okay", "Okay", (50, 20, 40, 30)))
-        proposer = _Proposer([
-            VisualRegion(
-                (0.25, 0.2, 0.2, 0.3),
-                "decorative paragraph",
-                0.9,
-                role="text",
-            ),
-        ])
+        proposer = _Proposer(
+            [
+                VisualRegion(
+                    (0.25, 0.2, 0.2, 0.3),
+                    "decorative paragraph",
+                    0.9,
+                    role="text",
+                ),
+            ]
+        )
         environment, task = _open(FakeBrowserGym(raw), proposer)
         try:
             await environment.reset(task)
@@ -543,27 +628,20 @@ def test_ambiguous_dom_candidates_use_e_ref_disambiguation_without_point_authori
             acquired = await environment.reset(task)
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
-            assert (
-                environment.last_visual_escalation.mode
-                is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
-            )
+            assert environment.last_visual_escalation.mode is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
             assert len(disambiguator.calls) == 1
             assert proposer.calls == []
             assert environment.visual_point_grounder_calls == 0
             selected_facts = [
-                fact for fact in acquired.observation.facts
+                fact
+                for fact in acquired.observation.facts
                 if fact.predicate == "visually_selected" and fact.value is True
             ]
             assert len(selected_facts) == 1
             assert [item.surface for item in acquired.observation.bindings] == ["browsergym"]
             assert acquired.observation.bindings[0].target_id == selected_facts[0].subject_id
-            assert selected_facts[0].subject_id in {
-                binding.target_id for binding in acquired.observation.bindings
-            }
-            visual = next(
-                item for item in acquired.observation.sources
-                if item.surface == "browsergym_visual"
-            )
+            assert selected_facts[0].subject_id in {binding.target_id for binding in acquired.observation.bindings}
+            visual = next(item for item in acquired.observation.sources if item.surface == "browsergym_visual")
             assert len(visual.correspondences) == 1
             assert visual.bindings == ()
         finally:
@@ -584,11 +662,13 @@ def test_clickable_svg_candidates_use_e_ref_then_dom_binding_without_point() -> 
             ("circle-left", [20, 40, 14, 14]),
             ("circle-right", [120, 40, 14, 14]),
         ):
-            raw["extra_element_properties"][bid].update({
-                "clickable": True,
-                "visibility": 1.0,
-                "bbox": bbox,
-            })
+            raw["extra_element_properties"][bid].update(
+                {
+                    "clickable": True,
+                    "visibility": 1.0,
+                    "bbox": bbox,
+                }
+            )
             raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid]["bbox"] = bbox
         proposer = _Proposer([VisualRegion((0.1, 0.1, 0.2, 0.2), "unused", 0.9)])
         disambiguator = _Disambiguator("E2")
@@ -602,10 +682,7 @@ def test_clickable_svg_candidates_use_e_ref_then_dom_binding_without_point() -> 
 
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
-            assert (
-                environment.last_visual_escalation.mode
-                is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
-            )
+            assert environment.last_visual_escalation.mode is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
             assert len(disambiguator.calls) == 1
             assert len(disambiguator.calls[0].candidates) == 2
             assert [item.bbox for item in disambiguator.calls[0].candidates] == [
@@ -636,9 +713,7 @@ def test_dom_selected_class_is_public_current_state_not_private_answer_data() ->
             acquired = await environment.reset(task)
 
             assert acquired.observation is not None
-            target = next(
-                item for item in acquired.observation.targets if item.role == "button"
-            )
+            target = next(item for item in acquired.observation.targets if item.role == "button")
             assert target.state["selected"] is True
             assert "color" not in target.state
         finally:
@@ -654,24 +729,26 @@ def test_unlabeled_clickable_computed_color_is_public_without_hidden_dom_attribu
             goal="Select all the blue shades.",
         )
         raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
-        raw["extra_element_properties"]["shade"].update({
-            "clickable": True,
-            "visibility": 1.0,
-            "bbox": [20, 20, 18, 18],
-        })
-        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["shade"].update({
-            "bbox": [20, 20, 18, 18],
-            "color_family": "blue",
-        })
+        raw["extra_element_properties"]["shade"].update(
+            {
+                "clickable": True,
+                "visibility": 1.0,
+                "bbox": [20, 20, 18, 18],
+            }
+        )
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["shade"].update(
+            {
+                "bbox": [20, 20, 18, 18],
+                "color_family": "blue",
+            }
+        )
         proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
         environment, task = _open(FakeBrowserGym(raw), proposer)
         try:
             acquired = await environment.reset(task)
 
             assert acquired.observation is not None
-            target = next(
-                item for item in acquired.observation.targets if item.role == "clickable"
-            )
+            target = next(item for item in acquired.observation.targets if item.role == "clickable")
             assert target.state == {"appearance.color_family": "blue"}
             assert "data-color" not in repr(target)
         finally:

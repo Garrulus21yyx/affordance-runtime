@@ -35,12 +35,14 @@ class Port:
         self.messages = list(messages)
         value = json.loads(messages[1].content)
         context = value.get("agent_context", value)
-        return output_schema.model_validate({
-            "type": "abort",
-            "context_id": context["context_id"],
-            "reason": "fixture",
-            "category": "policy",
-        })
+        return output_schema.model_validate(
+            {
+                "type": "abort",
+                "context_id": context["context_id"],
+                "reason": "fixture",
+                "category": "policy",
+            }
+        )
 
 
 def _factory(monkeypatch, environment, *, grounding_variant=None):
@@ -61,6 +63,7 @@ def test_factory_grounding_precedence_and_default(monkeypatch) -> None:
     policy, _ = _factory(monkeypatch, {"LLM_ACTIVE_PROFILE": "local"})
     assert policy.port.grounding_variant is DecisionGroundingVariant.FORMAT_ONLY
     assert policy.port.grounding_profile_version == FORMAT_ONLY_PROFILE_VERSION
+    assert policy.semantic_validator is None
 
     policy, _ = _factory(
         monkeypatch,
@@ -75,6 +78,18 @@ def test_factory_grounding_precedence_and_default(monkeypatch) -> None:
         grounding_variant="compact-contract",
     )
     assert policy.port.grounding_variant is DecisionGroundingVariant.COMPACT_CONTRACT
+
+
+def test_independent_semantic_review_is_explicit_opt_in(monkeypatch) -> None:
+    policy, _ = _factory(
+        monkeypatch,
+        {
+            "LLM_ACTIVE_PROFILE": "local",
+            "LLM_ENABLE_OBJECTIVE_SEMANTIC_VALIDATOR": "true",
+        },
+    )
+
+    assert policy.semantic_validator is not None
 
 
 def test_factory_compact_v2_fails_closed_without_experimental_gate(monkeypatch) -> None:
@@ -165,8 +180,11 @@ def test_compact_v2_build_failure_is_internal_and_zero_call(monkeypatch) -> None
         lambda value: (_ for _ in ()).throw(ValueError("private context")),
     )
     request = ModelDecisionRequest(
-        "request:test", '{"context_id":"context:1","actions":{"options":[]}}',
-        SCHEMA_VERSION, "instructions", decision_response_schema(),
+        "request:test",
+        '{"context_id":"context:1","actions":{"options":[]}}',
+        SCHEMA_VERSION,
+        "instructions",
+        decision_response_schema(),
     )
     result = asyncio.run(adapter.generate(request))
     assert isinstance(result, ModelFailure)
@@ -178,14 +196,16 @@ def test_provider_schema_and_runtime_keep_summary_limit() -> None:
     summary = decision_response_schema()["$defs"]["ProposeDonePayload"]["properties"]["result_summary"]
     assert summary["maxLength"] == 1_024
     with pytest.raises(Exception):
-        AgentDecisionPayload.model_validate({
-            "type": "propose_done",
-            "context_id": "context:1",
-            "claimed_criteria": [],
-            "evidence_refs": [],
-            "result_summary": "x" * 1_025,
-            "unresolved_items": [],
-        })
+        AgentDecisionPayload.model_validate(
+            {
+                "type": "propose_done",
+                "context_id": "context:1",
+                "claimed_criteria": [],
+                "evidence_refs": [],
+                "result_summary": "x" * 1_025,
+                "unresolved_items": [],
+            }
+        )
 
 
 def test_production_policy_does_not_import_two_stage_or_branch_on_identity() -> None:

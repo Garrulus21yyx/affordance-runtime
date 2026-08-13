@@ -33,9 +33,13 @@ if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
 CASE_SCHEMA_VERSION = "target-loop-case.v8"
-SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset({
-    "target-loop-case.v6", "target-loop-case.v7", CASE_SCHEMA_VERSION,
-})
+SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
+    {
+        "target-loop-case.v6",
+        "target-loop-case.v7",
+        CASE_SCHEMA_VERSION,
+    }
+)
 _FACT_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
 _EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
@@ -59,9 +63,7 @@ class MetricMeasurement:
             or self.value < 0
         ):
             raise ValueError("measured metric values must be finite non-negative numbers")
-        if self.opportunities is not None and (
-            type(self.opportunities) is not int or self.opportunities < 0
-        ):
+        if self.opportunities is not None and (type(self.opportunities) is not int or self.opportunities < 0):
             raise ValueError("metric opportunities cannot be negative")
         if not isinstance(self.unit, str) or not self.unit or len(self.unit) > 32:
             raise ValueError("metric unit is required")
@@ -95,7 +97,8 @@ class TerminalReasonCode(StrEnum):
 _BLOCKED_TERMINAL_REASONS = {
     item.value: item
     for item in TerminalReasonCode
-    if item not in {
+    if item
+    not in {
         TerminalReasonCode.NO_PROGRESS_REPETITION,
         TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION,
         TerminalReasonCode.BLOCKED_OTHER,
@@ -116,7 +119,8 @@ def terminal_reason_from_facts(
     if status != AgentLoopStatus.BLOCKED.value:
         return None
     return _BLOCKED_TERMINAL_REASONS.get(
-        runtime_reason_code, TerminalReasonCode.BLOCKED_OTHER,
+        runtime_reason_code,
+        TerminalReasonCode.BLOCKED_OTHER,
     )
 
 
@@ -164,15 +168,18 @@ class CaseFacts:
     def __post_init__(self) -> None:
         if not isinstance(self.component_origin, CaseFailureOrigin):
             raise TypeError("component failure origin must be typed")
-        if self.runtime_failure is not None and not isinstance(
-            self.runtime_failure, RuntimeFailure
-        ):
+        if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
             raise TypeError("canonical Runtime failure must be typed")
         for value in (
-            self.runtime_reason_code, self.agent_failure_code, self.policy_failure_code,
-            self.component_code, self.watchdog_code, self.cleanup_code,
+            self.runtime_reason_code,
+            self.agent_failure_code,
+            self.policy_failure_code,
+            self.component_code,
+            self.watchdog_code,
+            self.cleanup_code,
             self.harness_integrity_code,
-            self.task_outcome_kind, self.task_outcome_code,
+            self.task_outcome_kind,
+            self.task_outcome_code,
         ):
             if not isinstance(value, str):
                 raise TypeError("failure fact codes must be strings")
@@ -190,13 +197,9 @@ class CaseFacts:
             raise ValueError("component exception class requires a component failure")
         if bool(self.cleanup_code) != bool(self.cleanup_exception_class):
             raise ValueError("cleanup failure code and exception class must be present together")
-        if self.agent_failure_code and self.agent_failure_code not in {
-            str(item) for item in AgentFailureCode
-        }:
+        if self.agent_failure_code and self.agent_failure_code not in {str(item) for item in AgentFailureCode}:
             raise ValueError("agent failure code is outside the closed vocabulary")
-        if self.policy_failure_code and self.policy_failure_code not in {
-            str(item) for item in ModelFailureKind
-        }:
+        if self.policy_failure_code and self.policy_failure_code not in {str(item) for item in ModelFailureKind}:
             raise ValueError("policy failure code is outside the closed vocabulary")
         if self.task_outcome_kind not in {"", *(str(item) for item in TaskOutcomeKind)}:
             raise ValueError("task outcome kind is outside the closed vocabulary")
@@ -214,7 +217,8 @@ class CaseFacts:
                 policy_kind = ModelFailureKind(self.policy_failure_code)
                 expected_kind = (
                     FailureKind.INVALID_OUTPUT
-                    if policy_kind in {
+                    if policy_kind
+                    in {
                         ModelFailureKind.INVALID_RESPONSE,
                         ModelFailureKind.SCHEMA_ERROR,
                     }
@@ -350,7 +354,9 @@ class BenchmarkRunIdentity:
         dirty = bool(_git("status", "--short"))
         started = datetime.now(UTC).isoformat()
         run_id = f"{suite_id}:{profile_id}:{sha[:12]}:{digest[:12]}:{seed}"
-        return cls(run_id, sha, dirty, suite_id, digest, profile_id, seed, started, sys.version.split()[0], platform.platform())
+        return cls(
+            run_id, sha, dirty, suite_id, digest, profile_id, seed, started, sys.version.split()[0], platform.platform()
+        )
 
 
 @dataclass(frozen=True)
@@ -425,9 +431,7 @@ class BenchmarkCaseResult:
             self.harness_schema_version,
         )
         if any(
-            not isinstance(value, str)
-            or len(value) > 512
-            or any(ord(character) < 32 for character in value)
+            not isinstance(value, str) or len(value) > 512 or any(ord(character) < 32 for character in value)
             for value in text_fields
         ):
             raise TypeError("benchmark case text fields must be bounded strings")
@@ -442,9 +446,7 @@ class BenchmarkCaseResult:
             or self.latency_ms < 0
         ):
             raise ValueError("benchmark case scalar contract is invalid")
-        if self.terminal_reason_code is not None and not isinstance(
-            self.terminal_reason_code, TerminalReasonCode
-        ):
+        if self.terminal_reason_code is not None and not isinstance(self.terminal_reason_code, TerminalReasonCode):
             raise TypeError("terminal reason code must be typed")
         if not isinstance(self.failure_origin, CaseFailureOrigin):
             raise TypeError("failure origin must be typed")
@@ -472,10 +474,7 @@ class BenchmarkCaseResult:
         }.get(self.pending_kind)
         if expected_pending_status is not None and self.status != expected_pending_status:
             raise ValueError("benchmark pending kind contradicts terminal status")
-        if (
-            self.status == AgentLoopStatus.WAITING_CONFIRMATION
-            and self.pending_kind != "confirmation"
-        ) or (
+        if (self.status == AgentLoopStatus.WAITING_CONFIRMATION and self.pending_kind != "confirmation") or (
             self.status == AgentLoopStatus.WAITING_USER
             and not self.pending_kind
             and self.latest_task_status != TaskEvaluationStatus.UNKNOWN
@@ -483,26 +482,40 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark waiting status lacks its typed pending fact")
         if self.latest_task_status not in {"", *(str(item) for item in TaskEvaluationStatus)}:
             raise ValueError("benchmark task status is outside the closed vocabulary")
-        if self.latest_action_evaluation_status not in {
-            "", *(str(item) for item in ActionEvaluationStatus)
-        }:
+        if self.latest_action_evaluation_status not in {"", *(str(item) for item in ActionEvaluationStatus)}:
             raise ValueError("benchmark action status is outside the closed vocabulary")
         if self.last_decision_type not in {
-            "", "Abort", "AskUser", "EstablishSetObjective", "ProposeDone",
-            "RequestActionPage", "RequestObservation", "SelectAction",
-            "SubmitSetPredicateAssessments", "Wait",
+            "",
+            "Abort",
+            "AskUser",
+            "EstablishAggregateObjective",
+            "EstablishObjectiveSequence",
+            "EstablishSetObjective",
+            "ProposeDone",
+            "RequestActionPage",
+            "RequestObservation",
+            "SelectAction",
+            "SubmitSetPredicateAssessments",
+            "Wait",
         }:
             raise ValueError("benchmark decision type is outside the closed vocabulary")
         if self.last_progress_event_type not in {
-            "", "already_satisfied_selection", "action_effect_evaluated",
+            "",
+            "already_satisfied_selection",
+            "action_effect_evaluated",
             "repeated_no_progress_selection",
         }:
             raise ValueError("benchmark progress event is outside the closed vocabulary")
         if self.last_world_coverage not in {"", *(str(item) for item in CoverageState)}:
             raise ValueError("benchmark coverage is outside the closed vocabulary")
-        if self.latest_semantic_attempt_key_digest and re.fullmatch(
-            r"sha256:[0-9a-f]{64}", self.latest_semantic_attempt_key_digest,
-        ) is None:
+        if (
+            self.latest_semantic_attempt_key_digest
+            and re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                self.latest_semantic_attempt_key_digest,
+            )
+            is None
+        ):
             raise ValueError("benchmark semantic attempt digest is malformed")
         if not isinstance(self.measurements, Mapping) or any(
             not isinstance(name, str) or not isinstance(value, MetricMeasurement)
@@ -512,27 +525,18 @@ class BenchmarkCaseResult:
         if not isinstance(self.failure_facts, FailureFacts):
             raise TypeError("benchmark failure facts must be typed")
         blocked = self.status == str(AgentLoopStatus.BLOCKED)
-        task_terminal = (
-            self.failure_facts.task_outcome_kind
-            == TaskOutcomeKind.TERMINAL_FAILURE.value
-        )
+        task_terminal = self.failure_facts.task_outcome_kind == TaskOutcomeKind.TERMINAL_FAILURE.value
         if blocked and self.terminal_reason_code is None and not task_terminal:
             raise ValueError("blocked case result requires a terminal reason code")
-        no_progress = (
-            self.status == str(AgentLoopStatus.FAILED)
-            and self.terminal_reason_code in {
-                TerminalReasonCode.NO_PROGRESS_REPETITION,
-                TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION,
-            }
-        )
+        no_progress = self.status == str(AgentLoopStatus.FAILED) and self.terminal_reason_code in {
+            TerminalReasonCode.NO_PROGRESS_REPETITION,
+            TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION,
+        }
         if not blocked and not no_progress and self.terminal_reason_code is not None:
             raise ValueError("non-blocked case result cannot carry a terminal reason code")
         if self.exception_class and _EXCEPTION_CLASS.fullmatch(self.exception_class) is None:
             raise ValueError("benchmark exception metadata must be a bounded class name")
-        if (
-            self.cleanup_exception_class
-            and _EXCEPTION_CLASS.fullmatch(self.cleanup_exception_class) is None
-        ):
+        if self.cleanup_exception_class and _EXCEPTION_CLASS.fullmatch(self.cleanup_exception_class) is None:
             raise ValueError("cleanup exception metadata must be a bounded class name")
         if self.cleanup_failures not in {0, 1}:
             raise ValueError("cleanup failure count must be zero or one")
@@ -605,16 +609,18 @@ class BenchmarkCaseResult:
         if bool(self.harness_integrity_failures) != bool(facts.harness_integrity_code):
             raise ValueError("benchmark integrity projection is inconsistent")
         official = self.measurements.get("official_success_count")
-        has_failure_fact = any((
-            facts.runtime_failure,
-            facts.runtime_reason_code,
-            facts.agent_failure_code,
-            facts.policy_failure_code,
-            facts.component_code,
-            facts.watchdog_code,
-            facts.cleanup_code,
-            facts.harness_integrity_code,
-        ))
+        has_failure_fact = any(
+            (
+                facts.runtime_failure,
+                facts.runtime_reason_code,
+                facts.agent_failure_code,
+                facts.policy_failure_code,
+                facts.component_code,
+                facts.watchdog_code,
+                facts.cleanup_code,
+                facts.harness_integrity_code,
+            )
+        )
         if (
             self.status == str(AgentLoopStatus.DONE)
             and official is not None
@@ -678,31 +684,79 @@ def _git(*args: str) -> str:
     return value
 
 
-_KNOWN_METRICS = frozenset({
-    "observations", "executions", "currentness_probes", "turns", "policy_calls",
-    "requirement_hypothesis_calls", "semantic_judge_calls", "provider_attempts", "confirmations", "ask_user_count",
-    "wait_count", "page_request_count", "sent_unknown_count", "duplicate_unknown_attempts",
-    "forbidden_effect_attempts", "stale_opportunities", "stale_zero_call_violations",
-    "effectful_dispatches", "dom_click_calls", "visual_proposer_calls", "pointer_calls",
-    "td_requests", "property_reads", "wot_action_calls",
-    "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
-    "dom_action_calls", "fill_calls", "select_calls", "official_verifier_queries",
-    "structural_source_acquired_count", "visual_source_acquired_count",
-    "visual_binding_acquired_count",
-    "visual_gate_selected_count", "visual_gate_skipped_count",
-    "visual_point_grounder_calls", "visual_point_grounder_success_count",
-    "visual_disambiguator_calls", "visual_disambiguator_selection_count",
-    "visual_predicate_classifier_calls", "visual_predicate_assessment_count",
-    "visual_provider_failure_count", "visual_provider_structured_output_failure_count",
-    "visual_provider_abstained_count", "visual_provider_transport_failure_count",
-    "visual_provider_other_failure_count", "visual_point_grounding_failure_count",
-    "visual_region_proposal_failure_count", "visual_candidate_disambiguation_failure_count",
-    "visual_predicate_classification_failure_count",
-    "visual_correspondence_matched_count", "visual_correspondence_unmatched_count",
-    "visual_correspondence_ambiguous_count", "visual_correspondence_conflict_count",
-    "structural_binding_dispatch_count", "visual_binding_dispatch_count",
-    "official_success_count", "provider_retry_count", "fallback_count", "cleanup_failures",
-    "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
-    "click_calls", "already_satisfied_suppressions", "no_progress_terminations",
-    "observation_contract_exceptions",
-}) | CANONICAL_METRICS
+_KNOWN_METRICS = (
+    frozenset(
+        {
+            "observations",
+            "executions",
+            "currentness_probes",
+            "turns",
+            "policy_calls",
+            "requirement_hypothesis_calls",
+            "semantic_judge_calls",
+            "provider_attempts",
+            "confirmations",
+            "ask_user_count",
+            "wait_count",
+            "page_request_count",
+            "sent_unknown_count",
+            "duplicate_unknown_attempts",
+            "forbidden_effect_attempts",
+            "stale_opportunities",
+            "stale_zero_call_violations",
+            "effectful_dispatches",
+            "dom_click_calls",
+            "visual_proposer_calls",
+            "pointer_calls",
+            "td_requests",
+            "property_reads",
+            "wot_action_calls",
+            "browsergym_reset_calls",
+            "browsergym_step_calls",
+            "browsergym_probe_calls",
+            "dom_action_calls",
+            "fill_calls",
+            "select_calls",
+            "official_verifier_queries",
+            "structural_source_acquired_count",
+            "visual_source_acquired_count",
+            "visual_binding_acquired_count",
+            "visual_gate_selected_count",
+            "visual_gate_skipped_count",
+            "visual_point_grounder_calls",
+            "visual_point_grounder_success_count",
+            "visual_disambiguator_calls",
+            "visual_disambiguator_selection_count",
+            "visual_predicate_classifier_calls",
+            "visual_predicate_assessment_count",
+            "visual_provider_failure_count",
+            "visual_provider_structured_output_failure_count",
+            "visual_provider_abstained_count",
+            "visual_provider_transport_failure_count",
+            "visual_provider_other_failure_count",
+            "visual_point_grounding_failure_count",
+            "visual_region_proposal_failure_count",
+            "visual_candidate_disambiguation_failure_count",
+            "visual_predicate_classification_failure_count",
+            "visual_correspondence_matched_count",
+            "visual_correspondence_unmatched_count",
+            "visual_correspondence_ambiguous_count",
+            "visual_correspondence_conflict_count",
+            "structural_binding_dispatch_count",
+            "visual_binding_dispatch_count",
+            "official_success_count",
+            "provider_retry_count",
+            "fallback_count",
+            "cleanup_failures",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "model_latency_ms",
+            "click_calls",
+            "already_satisfied_suppressions",
+            "no_progress_terminations",
+            "observation_contract_exceptions",
+        }
+    )
+    | CANONICAL_METRICS
+)

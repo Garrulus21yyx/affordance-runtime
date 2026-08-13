@@ -4,9 +4,13 @@ from affordance_runtime.agent import AgentLoopState
 from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.task import (
+    And,
     FactEquals,
     PredicateTruth,
     RiskProfile,
+    ScopeEntityDomain,
+    ScopeExtent,
+    ScopeSpec,
     SetDisposition,
     SetEvidenceNeedKind,
     SetObjectiveStateError,
@@ -18,6 +22,7 @@ from affordance_runtime.task import (
 from affordance_runtime.task.set_objective_state import (
     establish_set_objective_state,
     install_semantic_assessments,
+    install_visual_leaf_assessments,
     refresh_set_objective_state,
     set_allowed_action_ids,
     set_evidence_obligations,
@@ -165,6 +170,12 @@ def test_visual_predicate_creates_typed_evidence_obligation_then_admits_batch() 
         semantic_action="activate",
         candidate_entity_ids=tuple(item.target_id for item in world.targets),
         observation=world,
+        scope=ScopeSpec(
+            "scope:closed-structured-visual-candidates",
+            "current-viewport",
+            ScopeExtent.CURRENT_VIEWPORT,
+            entity_domain=ScopeEntityDomain.STRUCTURED,
+        ),
     )
 
     needs = set_evidence_obligations(state)
@@ -172,13 +183,53 @@ def test_visual_predicate_creates_typed_evidence_obligation_then_admits_batch() 
     assert needs[0].kind is SetEvidenceNeedKind.RESOLVE_UNKNOWN
     assert needs[0].entity_ids == state.universe.entity_ids
 
-    classified = install_semantic_assessments(state, (
-        ("entity:0", PredicateTruth.TRUE, 0.91),
-        ("entity:1", PredicateTruth.FALSE, 0.87),
-    ))
+    classified = install_semantic_assessments(
+        state,
+        (
+            ("entity:0", PredicateTruth.TRUE, 0.91),
+            ("entity:1", PredicateTruth.FALSE, 0.87),
+        ),
+    )
 
     assert classified.reduction.disposition is SetDisposition.READY_FOR_NEXT_MEMBER
     assert set_evidence_obligations(classified) == ()
+
+
+def test_compound_predicate_combines_structural_and_visual_leaf_evidence() -> None:
+    world = _world(1, ("member", "other", "member"))
+    leaf = VisualConcept("held-out fruit")
+    state = establish_set_objective_state(
+        predicate=And((FactEquals("kind", "member"), leaf)),
+        quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
+        semantic_action="activate",
+        candidate_entity_ids=(),
+        observation=world,
+        scope=ScopeSpec(
+            "scope:compound-structured-candidates",
+            "current-viewport",
+            ScopeExtent.CURRENT_VIEWPORT,
+            entity_domain=ScopeEntityDomain.STRUCTURED,
+        ),
+    )
+
+    classified = install_visual_leaf_assessments(
+        state,
+        world,
+        leaf,
+        (
+            ("entity:0", PredicateTruth.TRUE),
+            ("entity:1", PredicateTruth.TRUE),
+            ("entity:2", PredicateTruth.FALSE),
+        ),
+        evaluator_id="fixture:open-vocabulary",
+    )
+
+    assert [item.truth for item in classified.assessments] == [
+        PredicateTruth.TRUE,
+        PredicateTruth.FALSE,
+        PredicateTruth.FALSE,
+    ]
+    assert classified.reduction.disposition is SetDisposition.READY_FOR_NEXT_MEMBER
 
 
 def test_set_capacity_fails_typed_instead_of_truncating_members() -> None:

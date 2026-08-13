@@ -15,6 +15,7 @@ from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
+    ProviderAttemptOrigin,
     ProviderFailureCode,
 )
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
@@ -149,6 +150,9 @@ class ModelPortDecisionAdapter:
                 retryable=exc.resumable,
                 provider_code=provider_code,
                 retry_after_s=exc.retry_after_s,
+                attempt_origin=(
+                    ProviderAttemptOrigin.LOCAL_CIRCUIT if exc.circuit_open else ProviderAttemptOrigin.NETWORK
+                ),
             )
         except StructuredOutputError:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "model provider returned invalid structured output")
@@ -290,8 +294,9 @@ def _failure(
     retryable: bool = False,
     provider_code: ProviderFailureCode | None = None,
     retry_after_s: float | None = None,
+    attempt_origin: ProviderAttemptOrigin = ProviderAttemptOrigin.UNKNOWN,
 ) -> ModelFailure:
-    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s)
+    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s, attempt_origin)
 
 
 def _user_message(request: ModelDecisionRequest, variant: DecisionGroundingVariant) -> str:

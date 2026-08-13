@@ -17,11 +17,19 @@ from typing import Mapping, TypeAlias
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,95}")
+
+
 class ScopeExtent(StrEnum):
     CURRENT_VIEWPORT = "current_viewport"
     CURRENT_CONTAINER = "current_container"
     CURRENT_DOCUMENT = "current_document"
     CURRENT_APPLICATION_STATE = "current_application_state"
+
+
+class ScopeEntityDomain(StrEnum):
+    STRUCTURED = "structured"
+    ALL_VISIBLE = "all_visible"
+    FUSED = "fused"
 
 
 class ScopeCoverage(StrEnum):
@@ -93,6 +101,33 @@ class SpatialRelation:
         object.__setattr__(self, "argument", freeze_json(self.argument))
 
 
+class CompareOperator(StrEnum):
+    EQ = "eq"
+    NE = "ne"
+    LT = "lt"
+    LTE = "lte"
+    GT = "gt"
+    GTE = "gte"
+    IN = "in"
+
+
+@dataclass(frozen=True)
+class Compare:
+    field_name: str
+    operator: CompareOperator
+    expected: object
+
+    def __post_init__(self) -> None:
+        if _FIELD.fullmatch(self.field_name) is None:
+            raise ValueError("comparison field is invalid")
+        if not isinstance(self.operator, CompareOperator):
+            raise TypeError("comparison operator must be typed")
+        expected = freeze_json(self.expected)
+        if self.operator is CompareOperator.IN and not isinstance(expected, tuple | frozenset):
+            raise ValueError("in comparison requires a collection")
+        object.__setattr__(self, "expected", expected)
+
+
 @dataclass(frozen=True)
 class And:
     operands: tuple["PredicateExpr", ...]
@@ -124,8 +159,17 @@ class Not:
             raise TypeError("not predicate requires one typed operand")
 
 
-PredicateExpr: TypeAlias = FactEquals | VisualConcept | VisualAttribute | SpatialRelation | And | Or | Not
-_PREDICATE_TYPES = (FactEquals, VisualConcept, VisualAttribute, SpatialRelation, And, Or, Not)
+PredicateExpr: TypeAlias = FactEquals | VisualConcept | VisualAttribute | SpatialRelation | Compare | And | Or | Not
+_PREDICATE_TYPES = (
+    FactEquals,
+    VisualConcept,
+    VisualAttribute,
+    SpatialRelation,
+    Compare,
+    And,
+    Or,
+    Not,
+)
 
 
 def predicate_public_value(predicate: PredicateExpr) -> dict[str, object]:
@@ -147,6 +191,13 @@ def predicate_public_value(predicate: PredicateExpr) -> dict[str, object]:
             "relation": predicate.relation,
             "argument": to_json_compatible(predicate.argument),
         }
+    if isinstance(predicate, Compare):
+        return {
+            "kind": "compare",
+            "field_name": predicate.field_name,
+            "operator": predicate.operator.value,
+            "expected": to_json_compatible(predicate.expected),
+        }
     if isinstance(predicate, Not):
         return {"kind": "not", "operand": predicate_public_value(predicate.operand)}
     return {
@@ -165,6 +216,21 @@ def predicate_digest(predicate: PredicateExpr) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def visual_predicate_leaves(predicate: PredicateExpr) -> tuple[VisualConcept | VisualAttribute, ...]:
+    """Return each distinct open-vocabulary leaf without transferring compound authority."""
+
+    if isinstance(predicate, VisualConcept | VisualAttribute):
+        return (predicate,)
+    if isinstance(predicate, Not):
+        return visual_predicate_leaves(predicate.operand)
+    if isinstance(predicate, And | Or):
+        by_digest = {
+            predicate_digest(leaf): leaf for operand in predicate.operands for leaf in visual_predicate_leaves(operand)
+        }
+        return tuple(by_digest.values())
+    return ()
+
+
 def evaluate_predicate(
     predicate: PredicateExpr,
     public_fields: Mapping[str, object],
@@ -176,18 +242,21 @@ def evaluate_predicate(
         if predicate.field_name not in public_fields:
             return PredicateTruth.UNKNOWN
         return (
-            PredicateTruth.TRUE
-            if public_fields[predicate.field_name] == predicate.expected
-            else PredicateTruth.FALSE
+            PredicateTruth.TRUE if public_fields[predicate.field_name] == predicate.expected else PredicateTruth.FALSE
         )
     if isinstance(predicate, SpatialRelation):
         if predicate.relation not in public_fields:
             return PredicateTruth.UNKNOWN
-        return (
-            PredicateTruth.TRUE
-            if public_fields[predicate.relation] == predicate.argument
-            else PredicateTruth.FALSE
-        )
+        return PredicateTruth.TRUE if public_fields[predicate.relation] == predicate.argument else PredicateTruth.FALSE
+    if isinstance(predicate, Compare):
+        if predicate.field_name not in public_fields:
+            return PredicateTruth.UNKNOWN
+        actual = public_fields[predicate.field_name]
+        try:
+            matched = _compare(actual, predicate.operator, predicate.expected)
+        except (TypeError, ValueError):
+            return PredicateTruth.UNKNOWN
+        return PredicateTruth.TRUE if matched else PredicateTruth.FALSE
     if isinstance(predicate, VisualConcept | VisualAttribute):
         evidence = semantic_evidence or {}
         return evidence.get(predicate_digest(predicate), PredicateTruth.UNKNOWN)
@@ -197,10 +266,7 @@ def evaluate_predicate(
             PredicateTruth.FALSE: PredicateTruth.TRUE,
             PredicateTruth.UNKNOWN: PredicateTruth.UNKNOWN,
         }[evaluate_predicate(predicate.operand, public_fields, semantic_evidence)]
-    values = tuple(
-        evaluate_predicate(item, public_fields, semantic_evidence)
-        for item in predicate.operands
-    )
+    values = tuple(evaluate_predicate(item, public_fields, semantic_evidence) for item in predicate.operands)
     if isinstance(predicate, And):
         if PredicateTruth.FALSE in values:
             return PredicateTruth.FALSE
@@ -210,6 +276,24 @@ def evaluate_predicate(
     return PredicateTruth.UNKNOWN if PredicateTruth.UNKNOWN in values else PredicateTruth.FALSE
 
 
+def _compare(actual: object, operator: CompareOperator, expected: object) -> bool:
+    if operator is CompareOperator.EQ:
+        return actual == expected
+    if operator is CompareOperator.NE:
+        return actual != expected
+    if operator is CompareOperator.IN:
+        return actual in expected
+    if isinstance(actual, bool) or isinstance(expected, bool):
+        raise TypeError("ordered comparisons do not admit booleans")
+    if operator is CompareOperator.LT:
+        return actual < expected  # type: ignore[operator]
+    if operator is CompareOperator.LTE:
+        return actual <= expected  # type: ignore[operator]
+    if operator is CompareOperator.GT:
+        return actual > expected  # type: ignore[operator]
+    return actual >= expected  # type: ignore[operator]
+
+
 @dataclass(frozen=True)
 class ScopeSpec:
     scope_id: str
@@ -217,12 +301,15 @@ class ScopeSpec:
     extent: ScopeExtent
     traversal_policy: str = "current_snapshot"
     dynamic_policy: str = "invalidate_after_effect"
+    entity_domain: ScopeEntityDomain = ScopeEntityDomain.STRUCTURED
 
     def __post_init__(self) -> None:
         if not self.scope_id.startswith("scope:") or not self.root_entity_id.strip():
             raise ValueError("scope identity is invalid")
         if not isinstance(self.extent, ScopeExtent):
             raise TypeError("scope extent must be typed")
+        if not isinstance(self.entity_domain, ScopeEntityDomain):
+            raise TypeError("scope entity domain must be typed")
 
 
 @dataclass(frozen=True)
@@ -234,9 +321,7 @@ class ActionTemplate:
     def __post_init__(self) -> None:
         if not self.semantic_action.strip():
             raise ValueError("action template requires a semantic action")
-        if self.item_postcondition is not None and not isinstance(
-            self.item_postcondition, _PREDICATE_TYPES
-        ):
+        if self.item_postcondition is not None and not isinstance(self.item_postcondition, _PREDICATE_TYPES):
             raise TypeError("item postcondition must be a typed predicate")
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
 
@@ -260,9 +345,7 @@ class SchedulingPolicy:
     order_sensitive: bool = False
 
     def __post_init__(self) -> None:
-        if self.mode is SchedulingMode.RUNTIME_SEQUENTIAL and (
-            not self.members_independent or self.order_sensitive
-        ):
+        if self.mode is SchedulingMode.RUNTIME_SEQUENTIAL and (not self.members_independent or self.order_sensitive):
             raise ValueError("runtime scheduling requires independent order-insensitive members")
 
 
@@ -326,10 +409,7 @@ class PredicateAssessment:
             or len(self.predicate_digest) != 64
             or not self.evaluator_id.strip()
             or not self.observation_epoch.strip()
-            or (
-                self.confidence is not None
-                and not 0 <= self.confidence <= 1
-            )
+            or (self.confidence is not None and not 0 <= self.confidence <= 1)
         ):
             raise ValueError("predicate assessment is invalid")
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
@@ -346,10 +426,32 @@ class ActionObligationStatus(StrEnum):
 
 
 _LEGAL_OBLIGATION_TRANSITIONS = {
-    ActionObligationStatus.UNACTED: frozenset({ActionObligationStatus.ACTION_IN_FLIGHT, ActionObligationStatus.ALREADY_SATISFIED, ActionObligationStatus.BLOCKED}),
-    ActionObligationStatus.ACTION_IN_FLIGHT: frozenset({ActionObligationStatus.EFFECT_CONFIRMED, ActionObligationStatus.NO_EFFECT_CONFIRMED, ActionObligationStatus.EFFECT_UNKNOWN, ActionObligationStatus.BLOCKED}),
-    ActionObligationStatus.NO_EFFECT_CONFIRMED: frozenset({ActionObligationStatus.ACTION_IN_FLIGHT, ActionObligationStatus.BLOCKED}),
-    ActionObligationStatus.EFFECT_UNKNOWN: frozenset({ActionObligationStatus.ACTION_IN_FLIGHT, ActionObligationStatus.EFFECT_CONFIRMED, ActionObligationStatus.NO_EFFECT_CONFIRMED, ActionObligationStatus.BLOCKED}),
+    ActionObligationStatus.UNACTED: frozenset(
+        {
+            ActionObligationStatus.ACTION_IN_FLIGHT,
+            ActionObligationStatus.ALREADY_SATISFIED,
+            ActionObligationStatus.BLOCKED,
+        }
+    ),
+    ActionObligationStatus.ACTION_IN_FLIGHT: frozenset(
+        {
+            ActionObligationStatus.EFFECT_CONFIRMED,
+            ActionObligationStatus.NO_EFFECT_CONFIRMED,
+            ActionObligationStatus.EFFECT_UNKNOWN,
+            ActionObligationStatus.BLOCKED,
+        }
+    ),
+    ActionObligationStatus.NO_EFFECT_CONFIRMED: frozenset(
+        {ActionObligationStatus.ACTION_IN_FLIGHT, ActionObligationStatus.BLOCKED}
+    ),
+    ActionObligationStatus.EFFECT_UNKNOWN: frozenset(
+        {
+            ActionObligationStatus.ACTION_IN_FLIGHT,
+            ActionObligationStatus.EFFECT_CONFIRMED,
+            ActionObligationStatus.NO_EFFECT_CONFIRMED,
+            ActionObligationStatus.BLOCKED,
+        }
+    ),
     ActionObligationStatus.EFFECT_CONFIRMED: frozenset(),
     ActionObligationStatus.ALREADY_SATISFIED: frozenset(),
     ActionObligationStatus.BLOCKED: frozenset(),
@@ -368,10 +470,14 @@ class SetMemberObligation:
     def __post_init__(self) -> None:
         if not self.entity_id.strip() or not self.first_true_epoch.strip():
             raise ValueError("set member obligation identity is invalid")
-        if self.action_status in {
-            ActionObligationStatus.EFFECT_CONFIRMED,
-            ActionObligationStatus.ALREADY_SATISFIED,
-        } and not self.effect_evidence_refs:
+        if (
+            self.action_status
+            in {
+                ActionObligationStatus.EFFECT_CONFIRMED,
+                ActionObligationStatus.ALREADY_SATISFIED,
+            }
+            and not self.effect_evidence_refs
+        ):
             raise ValueError("settled obligation requires effect evidence")
         object.__setattr__(self, "effect_evidence_refs", tuple(self.effect_evidence_refs))
 
@@ -451,7 +557,10 @@ def reduce_set_objective(
 
     if universe.scope_id != objective.scope.scope_id:
         return _blocked("scope_identity_mismatch")
-    if universe.coverage is not ScopeCoverage.COMPLETE and objective.quantifier is not SetQuantifier.ALL_DISCOVERED_UNDER_BUDGET:
+    if (
+        universe.coverage is not ScopeCoverage.COMPLETE
+        and objective.quantifier is not SetQuantifier.ALL_DISCOVERED_UNDER_BUDGET
+    ):
         return SetObjectiveReduction(SetDisposition.NEED_SCOPE_CLOSURE, "scope_not_closed")
     by_entity: dict[str, PredicateAssessment] = {}
     for item in assessments:
@@ -473,18 +582,24 @@ def reduce_set_objective(
     obligations_by_id = {item.entity_id: item for item in obligations}
     if len(obligations_by_id) != len(obligations):
         return _blocked("obligation_membership_invalid", current_true_ids)
-    member_ids = tuple(dict.fromkeys((
-        *(item for item in universe.entity_ids if item in current_true_ids or item in obligations_by_id),
-        *(item.entity_id for item in obligations),
-    )))
+    member_ids = tuple(
+        dict.fromkeys(
+            (
+                *(item for item in universe.entity_ids if item in current_true_ids or item in obligations_by_id),
+                *(item.entity_id for item in obligations),
+            )
+        )
+    )
     if objective.quantifier is SetQuantifier.EXACTLY_ONE and len(member_ids) != 1:
         return _blocked("exactly_one_cardinality_violation", member_ids)
     missing_obligations = tuple(item for item in current_true_ids if item not in obligations_by_id)
     if missing_obligations:
         return _blocked("true_member_without_obligation", member_ids)
     pending_effect = tuple(
-        item.entity_id for item in obligations
-        if item.action_status in {
+        item.entity_id
+        for item in obligations
+        if item.action_status
+        in {
             ActionObligationStatus.ACTION_IN_FLIGHT,
             ActionObligationStatus.NO_EFFECT_CONFIRMED,
             ActionObligationStatus.EFFECT_UNKNOWN,
@@ -495,8 +610,7 @@ def reduce_set_objective(
     if any(item.action_status is ActionObligationStatus.BLOCKED for item in obligations):
         return _blocked("member_blocked", member_ids)
     unacted = tuple(
-        item for item in member_ids
-        if obligations_by_id[item].action_status is ActionObligationStatus.UNACTED
+        item for item in member_ids if obligations_by_id[item].action_status is ActionObligationStatus.UNACTED
     )
     if unacted:
         disposition = (
@@ -519,7 +633,9 @@ def reduce_set_objective(
         len(universe.entity_ids),
         false_count,
     )
-    return SetObjectiveReduction(SetDisposition.CERTIFIED, "closed_scope_set_complete", member_ids, certificate=certificate)
+    return SetObjectiveReduction(
+        SetDisposition.CERTIFIED, "closed_scope_set_complete", member_ids, certificate=certificate
+    )
 
 
 def _blocked(reason: str, true_ids: tuple[str, ...] = ()) -> SetObjectiveReduction:

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from affordance_runtime.task.predicate_transport import predicate_from_transport
 from affordance_runtime.task.set_objective import (
     ActionObligationStatus,
     ActionTemplate,
     And,
     CandidateUniverse,
+    Compare,
+    CompareOperator,
     FactEquals,
     Not,
     Or,
@@ -21,6 +24,7 @@ from affordance_runtime.task.set_objective import (
     SetObjective,
     SetQuantifier,
     StabilityStatus,
+    VisualAttribute,
     VisualConcept,
     evaluate_predicate,
     predicate_digest,
@@ -41,7 +45,10 @@ def _objective() -> SetObjective:
 
 def _universe(coverage: ScopeCoverage = ScopeCoverage.COMPLETE) -> CandidateUniverse:
     return CandidateUniverse(
-        "scope:test", "epoch:1", ("a", "b"), coverage,
+        "scope:test",
+        "epoch:1",
+        ("a", "b"),
+        coverage,
         (("source:dom:inventory",) if coverage is ScopeCoverage.COMPLETE else ()),
     )
 
@@ -49,8 +56,13 @@ def _universe(coverage: ScopeCoverage = ScopeCoverage.COMPLETE) -> CandidateUniv
 def _assessment(entity_id: str, truth: PredicateTruth) -> PredicateAssessment:
     objective = _objective()
     return PredicateAssessment(
-        entity_id, objective.predicate_digest, truth, PredicateAssurance.STRUCTURAL,
-        "style-provider", "epoch:1", (f"fact:{entity_id}",),
+        entity_id,
+        objective.predicate_digest,
+        truth,
+        PredicateAssurance.STRUCTURAL,
+        "style-provider",
+        "epoch:1",
+        (f"fact:{entity_id}",),
     )
 
 
@@ -75,14 +87,19 @@ def test_membership_and_effect_obligation_are_separate_and_certified_only_after_
     objective = _objective()
     assessments = (_assessment("a", PredicateTruth.TRUE), _assessment("b", PredicateTruth.FALSE))
     obligation = SetMemberObligation(
-        "a", "epoch:1", PredicateTruth.TRUE, ActionObligationStatus.UNACTED,
+        "a",
+        "epoch:1",
+        PredicateTruth.TRUE,
+        ActionObligationStatus.UNACTED,
     )
     ready = reduce_set_objective(objective, _universe(), assessments, (obligation,))
     assert ready.disposition is SetDisposition.READY_FOR_NEXT_MEMBER
     assert ready.next_entity_id == "a"
 
     in_flight = transition_obligation(
-        obligation, ActionObligationStatus.ACTION_IN_FLIGHT, observation_epoch="epoch:1",
+        obligation,
+        ActionObligationStatus.ACTION_IN_FLIGHT,
+        observation_epoch="epoch:1",
     )
     confirmed = transition_obligation(
         in_flight,
@@ -93,7 +110,11 @@ def test_membership_and_effect_obligation_are_separate_and_certified_only_after_
     pending = reduce_set_objective(objective, _universe(), assessments, (confirmed,))
     assert pending.disposition is SetDisposition.NEED_STABILITY_CHECK
     complete = reduce_set_objective(
-        objective, _universe(), assessments, (confirmed,), stability_status=StabilityStatus.PASSED,
+        objective,
+        _universe(),
+        assessments,
+        (confirmed,),
+        stability_status=StabilityStatus.PASSED,
     )
     assert complete.disposition is SetDisposition.CERTIFIED
     assert complete.certificate is not None
@@ -103,7 +124,10 @@ def test_membership_and_effect_obligation_are_separate_and_certified_only_after_
 
 def test_obligation_state_machine_rejects_impossible_shortcuts() -> None:
     obligation = SetMemberObligation(
-        "a", "epoch:1", PredicateTruth.TRUE, ActionObligationStatus.UNACTED,
+        "a",
+        "epoch:1",
+        PredicateTruth.TRUE,
+        ActionObligationStatus.UNACTED,
     )
     with pytest.raises(ValueError, match="illegal obligation transition"):
         transition_obligation(
@@ -128,6 +152,52 @@ def test_predicate_digest_is_type_discriminated_for_composites() -> None:
     assert predicate_digest(And(operands)) != predicate_digest(Or(operands))
 
 
+def test_comparison_and_bounded_transport_preserve_three_valued_semantics() -> None:
+    predicate = predicate_from_transport(
+        {
+            "any_of": [
+                {
+                    "all_of": [
+                        {
+                            "kind": "visual_concept",
+                            "text": "apple",
+                            "negated": False,
+                        },
+                        {
+                            "kind": "compare",
+                            "field_name": "layout.row_index",
+                            "operator": "lte",
+                            "expected": 2,
+                            "negated": False,
+                        },
+                        {
+                            "kind": "visual_attribute",
+                            "text": "rotten",
+                            "negated": True,
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+    semantic = {
+        predicate_digest(VisualConcept("apple")): PredicateTruth.TRUE,
+        predicate_digest(VisualAttribute("rotten")): PredicateTruth.FALSE,
+    }
+
+    assert evaluate_predicate(predicate, {"layout.row_index": 2}, semantic) is PredicateTruth.TRUE
+    assert evaluate_predicate(predicate, {"layout.row_index": 3}, semantic) is PredicateTruth.FALSE
+    assert evaluate_predicate(predicate, {}, semantic) is PredicateTruth.UNKNOWN
+
+
+def test_compare_in_and_type_mismatch_fail_closed() -> None:
+    included = Compare("rank", CompareOperator.IN, (1, 2))
+    ordered = Compare("rank", CompareOperator.LTE, 2)
+
+    assert evaluate_predicate(included, {"rank": 2}) is PredicateTruth.TRUE
+    assert evaluate_predicate(ordered, {"rank": "two"}) is PredicateTruth.UNKNOWN
+
+
 def test_assessment_order_is_irrelevant_and_stale_epoch_fails_closed() -> None:
     objective = _objective()
     assessments = (_assessment("a", PredicateTruth.TRUE), _assessment("b", PredicateTruth.FALSE))
@@ -136,11 +206,19 @@ def test_assessment_order_is_irrelevant_and_stale_epoch_fails_closed() -> None:
     reverse = reduce_set_objective(objective, _universe(), tuple(reversed(assessments)), (obligation,))
     assert forward == reverse
     stale = PredicateAssessment(
-        "a", objective.predicate_digest, PredicateTruth.TRUE, PredicateAssurance.STRUCTURAL,
-        "style-provider", "epoch:stale", ("fact:a",),
+        "a",
+        objective.predicate_digest,
+        PredicateTruth.TRUE,
+        PredicateAssurance.STRUCTURAL,
+        "style-provider",
+        "epoch:stale",
+        ("fact:a",),
     )
     rejected = reduce_set_objective(
-        objective, _universe(), (stale, _assessment("b", PredicateTruth.FALSE)), (obligation,),
+        objective,
+        _universe(),
+        (stale, _assessment("b", PredicateTruth.FALSE)),
+        (obligation,),
     )
     assert rejected.disposition is SetDisposition.BLOCKED
     assert rejected.reason_code == "assessment_snapshot_invalid"
@@ -150,11 +228,19 @@ def test_historical_membership_survives_predicate_becoming_false() -> None:
     objective = _objective()
     assessments = (_assessment("a", PredicateTruth.FALSE), _assessment("b", PredicateTruth.FALSE))
     historical = SetMemberObligation(
-        "a", "epoch:0", PredicateTruth.FALSE, ActionObligationStatus.EFFECT_CONFIRMED,
-        ("evaluation:effect:a",), "epoch:1",
+        "a",
+        "epoch:0",
+        PredicateTruth.FALSE,
+        ActionObligationStatus.EFFECT_CONFIRMED,
+        ("evaluation:effect:a",),
+        "epoch:1",
     )
     complete = reduce_set_objective(
-        objective, _universe(), assessments, (historical,), stability_status=StabilityStatus.PASSED,
+        objective,
+        _universe(),
+        assessments,
+        (historical,),
+        stability_status=StabilityStatus.PASSED,
     )
     assert complete.disposition is SetDisposition.CERTIFIED
     assert complete.true_entity_ids == ("a",)

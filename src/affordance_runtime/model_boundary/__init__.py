@@ -38,7 +38,11 @@ if TYPE_CHECKING:
     from affordance_runtime.model_boundary.control_transition_projection import (
         project_control_transitions,
     )
-    from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
+    from affordance_runtime.model_boundary.failures import (
+        ModelFailure,
+        ModelFailureKind,
+        ProviderAttemptOrigin,
+    )
     from affordance_runtime.model_boundary.projection import (
         project_action_page,
         project_action_space,
@@ -79,6 +83,10 @@ _EXPORTS = {
     "IntentContextView": ("affordance_runtime.model_boundary.context", "IntentContextView"),
     "ModelFailure": ("affordance_runtime.model_boundary.failures", "ModelFailure"),
     "ModelFailureKind": ("affordance_runtime.model_boundary.failures", "ModelFailureKind"),
+    "ProviderAttemptOrigin": (
+        "affordance_runtime.model_boundary.failures",
+        "ProviderAttemptOrigin",
+    ),
     "ModelSemanticInventoryView": (
         "affordance_runtime.model_boundary.source_projection",
         "ModelSemanticInventoryView",

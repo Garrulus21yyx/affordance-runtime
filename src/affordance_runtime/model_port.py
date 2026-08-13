@@ -294,14 +294,16 @@ class OpenAICompatibleModelPort:
             schema = getattr(tool, "input_schema", None)
             if not isinstance(name, str) or not isinstance(description, str) or schema is None:
                 raise TypeError("native tool transport requires typed ToolSpec values")
-            serialized_tools.append({
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": description,
-                    "parameters": to_json_compatible(schema),
-                },
-            })
+            serialized_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": description,
+                        "parameters": to_json_compatible(schema),
+                    },
+                }
+            )
         body: dict[str, Any] = {
             "model": self.model,
             "messages": serialized_messages,
@@ -345,11 +347,7 @@ class OpenAICompatibleModelPort:
                 if not isinstance(function, dict) or not isinstance(function.get("name"), str):
                     raise TypeError("tool call function is malformed")
                 raw_arguments = function.get("arguments", "")
-                arguments = (
-                    strict_json_loads(raw_arguments)
-                    if isinstance(raw_arguments, str)
-                    else raw_arguments
-                )
+                arguments = strict_json_loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
                 if not isinstance(arguments, Mapping):
                     raise TypeError("tool call arguments must be an object")
                 calls.append(ToolCall(function["name"], arguments))
@@ -1023,6 +1021,10 @@ def _raise_if_model_circuit_open(port: Any) -> None:
 
 
 def _trip_model_circuit(port: Any, error: ProviderModelError, config: ModelConfig) -> None:
+    if error.kind is not ProviderFailureKind.QUOTA_EXHAUSTED and config.provider_circuit_break_s <= 0:
+        # Zero delegates transient recovery to the caller. Retry-After remains
+        # failure data and must not silently recreate a second recovery owner.
+        return
     hold_s = (
         config.quota_circuit_break_s
         if error.kind == ProviderFailureKind.QUOTA_EXHAUSTED

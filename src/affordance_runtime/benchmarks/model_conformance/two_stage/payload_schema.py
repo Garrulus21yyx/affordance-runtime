@@ -12,10 +12,14 @@ from pydantic import BaseModel
 from affordance_runtime.model_policy.spec import (
     AbortPayload,
     AskUserPayload,
+    EstablishAggregateObjectivePayload,
+    EstablishObjectiveSequencePayload,
+    EstablishSetObjectivePayload,
     ProposeDonePayload,
     RequestActionPagePayload,
     RequestObservationPayload,
     SelectActionPayload,
+    SubmitSetPredicateAssessmentsPayload,
     WaitPayload,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads
@@ -25,6 +29,10 @@ from .contracts import DecisionKind
 
 BRANCH_MODELS: Mapping[DecisionKind, type[BaseModel]] = {
     DecisionKind.SELECT_ACTION: SelectActionPayload,
+    DecisionKind.ESTABLISH_AGGREGATE_OBJECTIVE: EstablishAggregateObjectivePayload,
+    DecisionKind.ESTABLISH_OBJECTIVE_SEQUENCE: EstablishObjectiveSequencePayload,
+    DecisionKind.ESTABLISH_SET_OBJECTIVE: EstablishSetObjectivePayload,
+    DecisionKind.SUBMIT_SET_PREDICATE_ASSESSMENTS: SubmitSetPredicateAssessmentsPayload,
     DecisionKind.REQUEST_OBSERVATION: RequestObservationPayload,
     DecisionKind.REQUEST_ACTION_PAGE: RequestActionPagePayload,
     DecisionKind.ASK_USER: AskUserPayload,
@@ -75,8 +83,7 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
         options = actions["options"]
         properties["action_id"] = _enum(item["action_id"] for item in options)
         destination_ids = [
-            destination["destination_id"]
-            for option in options for destination in option["destinations"]["items"]
+            destination["destination_id"] for option in options for destination in option["destinations"]["items"]
         ]
         if any(not option["destination_required"] for option in options):
             destination_ids.append("")
@@ -87,7 +94,8 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
         properties["modality"] = _enum(item["modality"] for item in capabilities)
         offered = tuple(item["assurance"] for item in capabilities)
         properties["required_assurance"] = _enum(
-            item.value for item in ObservationAssurance
+            item.value
+            for item in ObservationAssurance
             if any(assurance_satisfies(candidate, item) for candidate in offered)
         )
     elif kind is DecisionKind.REQUEST_ACTION_PAGE:
@@ -108,7 +116,9 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
             properties["unresolved_items"]["items"] = _enum(unresolved)
         else:
             properties["unresolved_items"] = {
-                "type": "array", "maxItems": 0, "items": {"type": "string"},
+                "type": "array",
+                "maxItems": 0,
+                "items": {"type": "string"},
             }
     elif kind is DecisionKind.WAIT:
         maximum = min(60_000, int(context["budgets"]["remaining_wait_ms"]))

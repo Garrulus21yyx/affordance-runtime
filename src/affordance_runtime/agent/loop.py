@@ -36,6 +36,7 @@ from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEv
 from affordance_runtime.agent.result import AgentResult, project_result
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
+from affordance_runtime.agent.set_evidence_resolution import resolve_visual_set_evidence
 from affordance_runtime.agent.start_error import (
     AgentSessionStartCancelledError,
     AgentSessionStartError,
@@ -65,6 +66,7 @@ from affordance_runtime.task.hypothesis_contracts import (
 )
 from affordance_runtime.task.hypothesis_runtime import admit_requirement_hypotheses
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -83,6 +85,15 @@ _DirectiveT = TypeVar("_DirectiveT", bound=LoopDirective)
 
 def _hypothesis_basis(state: AgentLoopState) -> str:
     return f"{state.current_observation.observation_id}:{state.observation_cursor or 'initial'}"
+
+
+def _environment_scope_enumerator(environment: WorldEnvironment) -> ScopeEnumeratorPort:
+    """Use the observation owner's scope implementation, with snapshot-only fallback."""
+
+    candidate = getattr(environment, "scope_enumerator", None)
+    if candidate is not None and callable(getattr(candidate, "enumerate", None)):
+        return candidate
+    return SnapshotScopeEnumerator()
 
 
 @dataclass
@@ -170,6 +181,7 @@ class AgentLoop:
             remaining_turns=task.loop_budget.max_turns,
             recent_turn_limit=self.recent_turn_limit,
             semantic_control_required=self.semantic_control_required,
+            scope_enumerator=_environment_scope_enumerator(environment),
         )
         session = AgentRunSession(
             self,
@@ -346,6 +358,8 @@ class AgentLoop:
             )
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
+            elif await resolve_visual_set_evidence(session):
+                continue
             else:
                 outcome = await run_policy_turn(
                     session,

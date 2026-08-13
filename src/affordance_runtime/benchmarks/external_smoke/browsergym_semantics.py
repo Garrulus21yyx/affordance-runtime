@@ -146,20 +146,12 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         if record.bid in suppressed_clickable_bids:
             continue
         spec = browsergym_role_spec(record.role)
-        if (
-            spec is None
-            or not spec.observable
-            or not record.node_id
-            or (spec.executable and not record.bid)
-        ):
+        if spec is None or not spec.observable or not record.node_id or (spec.executable and not record.bid):
             continue
         identity = record.bid or f"node:{record.node_id}"
         if identity in seen_controls:
             continue
-        same_bid = [
-            item for item in records
-            if record.bid and item.bid == record.bid and _is_semantic_record(item)
-        ]
+        same_bid = [item for item in records if record.bid and item.bid == record.bid and _is_semantic_record(item)]
         if any(_record_signature(item) != _record_signature(record) for item in same_bid):
             raise BrowserGymSemanticError(
                 BrowserGymSemanticErrorCode.CONFLICTING_BID,
@@ -183,8 +175,7 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         if record.bid not in suppressed_clickable_bids and record.role in diagnostic_roles
     )
     recognized = sum(
-        record.bid not in suppressed_clickable_bids
-        and is_inventory_target_browsergym_role(record.role)
+        record.bid not in suppressed_clickable_bids and is_inventory_target_browsergym_role(record.role)
         for record in records
     )
     return BrowserGymSemanticAnalysis(
@@ -231,15 +222,21 @@ def _ax_records(raw: dict[str, object]) -> tuple[_AxRecord, ...]:
         parent_value = node.get("parentId")
         parent_id = str(parent_value) if isinstance(parent_value, str | int) else ""
         children_value = node.get("childIds")
-        child_ids = tuple(
-            str(value) for value in children_value
-            if isinstance(value, str | int)
-        ) if isinstance(children_value, list) else ()
+        child_ids = (
+            tuple(str(value) for value in children_value if isinstance(value, str | int))
+            if isinstance(children_value, list)
+            else ()
+        )
         spec = browsergym_role_spec(role)
         state = _role_state(node, spec) if spec is not None else _option_state(node, role)
         record = _AxRecord(
-            node_id, parent_id, child_ids, bid, role,
-            _typed_string(node.get("name"))[:MAX_SEMANTIC_TEXT], state,
+            node_id,
+            parent_id,
+            child_ids,
+            bid,
+            role,
+            _typed_string(node.get("name"))[:MAX_SEMANTIC_TEXT],
+            state,
         )
         signature = _record_signature(record)
         if bid and _is_semantic_record(record):
@@ -277,17 +274,16 @@ def _normalized_records(
             record.bid
             and isinstance(properties, dict)
             and properties.get("clickable") is True
-            and (
-                record.role == "generic"
-                or browsergym_role_spec(record.role) is None
-            )
+            and (record.role == "generic" or browsergym_role_spec(record.role) is None)
         )
         if clickable:
-            normalized.append(replace(
-                record,
-                role="clickable",
-                name=_descendant_text(record, by_node_id),
-            ))
+            normalized.append(
+                replace(
+                    record,
+                    role="clickable",
+                    name=_descendant_text(record, by_node_id),
+                )
+            )
         else:
             normalized.append(record)
     return tuple(normalized)
@@ -297,11 +293,7 @@ def _dom_properties(raw: dict[str, object]) -> dict[str, object]:
     value = raw.get("extra_element_properties")
     if not isinstance(value, dict):
         return {}
-    return {
-        key: item
-        for key, item in value.items()
-        if isinstance(key, str)
-    }
+    return {key: item for key, item in value.items() if isinstance(key, str)}
 
 
 def _suppressed_dom_clickable_bids(
@@ -343,7 +335,7 @@ def _suppressed_dom_clickable_bids(
     for index, left in enumerate(retained):
         if left.bid in suppressed:
             continue
-        for right in retained[index + 1:]:
+        for right in retained[index + 1 :]:
             if right.bid in suppressed or left.parent_id != right.parent_id:
                 continue
             if not _same_control_overlap(boxes[left.bid], boxes[right.bid]):
@@ -432,8 +424,13 @@ def _descendant_text(
 
 def _record_signature(record: _AxRecord) -> tuple[object, ...]:
     return (
-        record.node_id, record.parent_id, record.child_ids, record.bid,
-        record.role, record.name, record.state,
+        record.node_id,
+        record.parent_id,
+        record.child_ids,
+        record.bid,
+        record.role,
+        record.name,
+        record.state,
     )
 
 
@@ -442,7 +439,8 @@ def _is_semantic_record(record: _AxRecord) -> bool:
 
 
 def _role_state(
-    node: dict[str, object], spec: BrowserGymRoleSpec,
+    node: dict[str, object],
+    spec: BrowserGymRoleSpec,
 ) -> tuple[tuple[str, SemanticScalar], ...]:
     properties = _properties(node)
     result: list[tuple[str, SemanticScalar]] = []
@@ -513,17 +511,18 @@ def _canonical_control(
     public_state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = list(record.state)
     if isinstance(physical, dict) and physical.get("selected") is True:
         public_state.append(("selected", True))
-    if (
-        isinstance(physical, dict)
-        and physical.get("color_family") in {
-            "red", "yellow", "green", "cyan", "blue", "magenta", "gray",
-        }
-    ):
-        public_state.append(("appearance.color_family", physical["color_family"]))
+    if isinstance(physical, dict) and isinstance(physical.get("color_family"), str):
+        color = physical["color_family"]
+        public_state.append(
+            (
+                "appearance.color_family",
+                color if color in {"red", "yellow", "green", "cyan", "blue", "magenta", "gray"} else "other",
+            )
+        )
     labels = tuple(sorted(item.name for item in option_records if item.name))
-    selected = tuple(sorted(
-        item.name for item in option_records if dict(item.state).get("selected") is True and item.name
-    ))
+    selected = tuple(
+        sorted(item.name for item in option_records if dict(item.state).get("selected") is True and item.name)
+    )
     if "selected_options" in spec.currentness_fields:
         public_state.append(("selected_options", selected))
     private_options = _private_options(labels, physical)
@@ -531,7 +530,10 @@ def _canonical_control(
     public_name = record.name or _private_label_hint(physical)
     public_payload = (record.role, public_name, tuple(public_state), public_options)
     private_payload = (
-        public_payload, availability.as_tuple(), private_options, spec.primitive,
+        public_payload,
+        availability.as_tuple(),
+        private_options,
+        spec.primitive,
     )
     return CanonicalBrowserControl(
         record.bid,
@@ -564,13 +566,18 @@ def _physical_properties(raw: dict[str, object]) -> dict[str, object]:
 
 def _availability(value: object) -> BrowserGymControlAvailability:
     mapping = value if isinstance(value, dict) else {}
-    return BrowserGymControlAvailability(*(
-        item if isinstance(item, bool) else None
-        for item in (
-            mapping.get("attached"), mapping.get("visible"), mapping.get("enabled"),
-            mapping.get("readonly"), mapping.get("editable"),
+    return BrowserGymControlAvailability(
+        *(
+            item if isinstance(item, bool) else None
+            for item in (
+                mapping.get("attached"),
+                mapping.get("visible"),
+                mapping.get("enabled"),
+                mapping.get("readonly"),
+                mapping.get("editable"),
+            )
         )
-    ))
+    )
 
 
 def _private_options(public_labels: tuple[str, ...], physical: object) -> tuple[tuple[str, str], ...]:

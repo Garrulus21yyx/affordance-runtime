@@ -48,6 +48,11 @@ from affordance_runtime.model_boundary.projection import (
 )
 from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
+from affordance_runtime.task.aggregate_objective import (
+    AggregateDisposition,
+    aggregate_allowed_action_ids,
+    aggregate_objective_public_value,
+)
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.frontier_contracts import (
     ActiveObjective,
@@ -59,6 +64,10 @@ from affordance_runtime.task.hypothesis_contracts import (
     TrackedHypothesisStatus,
 )
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.task.objective_sequence import (
+    SequenceDisposition,
+    sequence_allowed_action_ids,
+)
 from affordance_runtime.task.set_objective import SetDisposition
 from affordance_runtime.task.set_objective import predicate_public_value as set_predicate_public_value
 from affordance_runtime.task.set_objective_state import (
@@ -146,7 +155,9 @@ class ContextBuilder:
             "history": state.control_transition_total_count > len(history_items),
         }
         grounding = self.grounding_projection.project(
-            state.current_observation, world, actions,
+            state.current_observation,
+            world,
+            actions,
         )
         context = AgentContext(
             identity.context_id,
@@ -389,6 +400,89 @@ def _set_control_view(
     state: AgentLoopState,
     action_space: ActionSpace,
 ) -> AgentSetControlView | None:
+    sequence = state.active_objective_sequence
+    if sequence is not None:
+        step = sequence.active_step
+        allowed = tuple(sorted(sequence_allowed_action_ids(sequence, action_space)))
+        if sequence.disposition is SequenceDisposition.READY and allowed:
+            mode = "member_actions_only"
+        elif sequence.disposition is SequenceDisposition.COMPLETE:
+            mode = "control_only"
+        elif sequence.disposition in {
+            SequenceDisposition.NEED_EVIDENCE,
+            SequenceDisposition.WAITING_POSTCONDITION,
+        }:
+            mode = "control_only"
+        else:
+            mode = "blocked"
+        selector = step.selector if step is not None else sequence.pending_postcondition
+        return AgentSetControlView(
+            mode,
+            sequence.disposition.value,
+            sequence.reason_code,
+            allowed,
+            len(state.current_observation.targets),
+            1 if sequence.resolved_target_id else 0,
+            sequence.disposition is SequenceDisposition.COMPLETE,
+            (set_predicate_public_value(selector.predicate) if selector is not None else {}),
+            selector.digest if selector is not None else "",
+            tuple(item.target_id for item in state.current_observation.targets),
+            sequence.unknown_target_ids,
+            (
+                ("classify_predicate",)
+                if sequence.disposition is SequenceDisposition.NEED_EVIDENCE
+                else ("refresh_stability",)
+                if sequence.disposition is SequenceDisposition.WAITING_POSTCONDITION
+                else ()
+            ),
+            state.semantic_control_mode.value if state.semantic_control_required else "",
+            step.action_template.parameters if step is not None else {},
+            (
+                tuple(option.action_id for option in action_space.options)
+                if sequence.disposition is SequenceDisposition.COMPLETE
+                else ()
+            ),
+        )
+    aggregate = state.active_aggregate_objective
+    if aggregate is not None:
+        allowed = tuple(sorted(aggregate_allowed_action_ids(aggregate, action_space)))
+        complete = aggregate.disposition is AggregateDisposition.COMPLETE
+        if aggregate.disposition is AggregateDisposition.READY and allowed:
+            mode = "member_actions_only"
+        elif complete:
+            mode = "control_only" if state.semantic_control_required else "successor_actions"
+        elif aggregate.disposition is AggregateDisposition.BLOCKED:
+            mode = "blocked"
+        else:
+            mode = "control_only"
+        successor_ids = tuple(
+            option.action_id for option in action_space.options if option.target_id != aggregate.destination_entity_id
+        )
+        unknown = tuple(entity_id for entity_id, truth in aggregate.member_truth if truth.value == "unknown")
+        evidence_need = {
+            AggregateDisposition.NEED_SCOPE_CLOSURE: "enumerate_scope",
+            AggregateDisposition.NEED_CLASSIFICATION: "classify_predicate",
+            AggregateDisposition.NEED_VALUES: "extract_values",
+            AggregateDisposition.NEED_DESTINATION: "resolve_destination",
+            AggregateDisposition.NEED_EFFECT_RESOLUTION: "verify_item_effect",
+        }.get(aggregate.disposition)
+        return AgentSetControlView(
+            mode,
+            aggregate.disposition.value,
+            aggregate.reason_code,
+            allowed if not complete else (),
+            len(aggregate.universe.entity_ids),
+            sum(truth.value == "true" for _, truth in aggregate.member_truth),
+            complete,
+            aggregate_objective_public_value(aggregate.objective),
+            aggregate.objective.digest,
+            aggregate.universe.entity_ids,
+            unknown,
+            (evidence_need,) if evidence_need else (),
+            state.semantic_control_mode.value if state.semantic_control_required else "",
+            aggregate.action_parameters,
+            successor_ids if complete and state.semantic_control_required else (),
+        )
     active = state.active_set_objective
     if active is None:
         if not state.semantic_control_required:
@@ -424,13 +518,9 @@ def _set_control_view(
                 ("resolve_actionability",),
             )
     elif reduction.disposition is SetDisposition.CERTIFIED:
-        set_members = set(active.candidate_entity_ids) | {
-            item.entity_id for item in active.obligations
-        }
+        set_members = set(active.candidate_entity_ids) | {item.entity_id for item in active.obligations}
         successor_ids = tuple(
-            option.action_id
-            for option in action_space.options
-            if option.target_id not in set_members
+            option.action_id for option in action_space.options if option.target_id not in set_members
         )
         if state.semantic_control_required:
             mode = "control_only"
@@ -444,11 +534,7 @@ def _set_control_view(
     else:
         mode = "control_only"
         allowed = ()
-    unknown = tuple(
-        item.entity_id
-        for item in active.assessments
-        if item.truth.value == "unknown"
-    )
+    unknown = tuple(item.entity_id for item in active.assessments if item.truth.value == "unknown")
     return AgentSetControlView(
         mode,
         reduction.disposition.value,
@@ -466,8 +552,7 @@ def _set_control_view(
         active.objective.action_template.parameters,
         (
             successor_ids
-            if state.semantic_control_required
-            and reduction.disposition is SetDisposition.CERTIFIED
+            if state.semantic_control_required and reduction.disposition is SetDisposition.CERTIFIED
             else ()
         ),
     )

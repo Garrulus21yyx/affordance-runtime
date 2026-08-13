@@ -12,6 +12,8 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     AgentDecisionPackage,
     AskUser,
+    EstablishAggregateObjective,
+    EstablishObjectiveSequence,
     EstablishSetObjective,
     ProposeDone,
     RequestActionPage,
@@ -22,6 +24,13 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads, validate_json_tree
+from affordance_runtime.task.aggregate_objective import (
+    AggregateObjective,
+    AggregateOperator,
+    AggregateOutputFormat,
+    ValueExtractor,
+    ValueExtractorKind,
+)
 from affordance_runtime.task.frontier_contracts import (
     FactAvailable,
     FactReferenceExpected,
@@ -36,11 +45,19 @@ from affordance_runtime.task.frontier_contracts import (
     TaskOutcomeIs,
     TaskOutcomeStatus,
 )
+from affordance_runtime.task.objective_sequence import (
+    EntitySelector,
+    ObjectiveSequence,
+    ObjectiveStep,
+)
+from affordance_runtime.task.predicate_transport import predicate_from_public_value
 from affordance_runtime.task.set_objective import (
-    FactEquals,
+    ActionTemplate,
     PredicateTruth,
+    ScopeEntityDomain,
+    ScopeExtent,
+    ScopeSpec,
     SetQuantifier,
-    VisualConcept,
 )
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
@@ -90,23 +107,21 @@ class EstablishSetObjectivePayload(_Payload):
     predicate: dict[str, Any]
     quantifier: Literal["exactly_one", "all_in_closed_scope"]
     semantic_action: Id240
-    candidate_target_ids: Annotated[list[Id240], Field(min_length=1, max_length=256)]
+    candidate_target_ids: Annotated[list[Id240], Field(max_length=256)]
     parameters: dict[str, Any]
+    scope_extent: Literal[
+        "current_viewport",
+        "current_container",
+        "current_document",
+        "current_application_state",
+    ] = "current_viewport"
+    scope_root_target_id: Id240 = "current-viewport"
 
     @field_validator("predicate")
     @classmethod
     def _supported_predicate(cls, value: dict[str, Any]) -> dict[str, Any]:
         validate_json_tree(value)
-        kind = value.get("kind")
-        required = (
-            {"kind", "field_name", "expected"}
-            if kind == "fact_equals"
-            else {"kind", "concept"}
-            if kind == "visual_concept"
-            else set()
-        )
-        if not required or set(value) != required:
-            raise ValueError("set objective payload predicate is unsupported")
+        predicate_from_public_value(value)
         return value
 
     @field_validator("parameters")
@@ -114,6 +129,74 @@ class EstablishSetObjectivePayload(_Payload):
     def _bounded_parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
         validate_json_tree(value)
         reject_private_parameter_values(value)
+        return value
+
+
+class ObjectiveSequenceStepPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    step_id: Id240
+    selector: dict[str, Any]
+    semantic_action: Id240
+    parameters: dict[str, Any]
+    postcondition: dict[str, Any] | None = None
+
+    @field_validator("selector")
+    @classmethod
+    def _selector(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        predicate_from_public_value(value)
+        return value
+
+    @field_validator("postcondition")
+    @classmethod
+    def _postcondition(cls, value: dict[str, Any] | None):
+        if value is not None:
+            validate_json_tree(value)
+            predicate_from_public_value(value)
+        return value
+
+    @field_validator("parameters")
+    @classmethod
+    def _parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        reject_private_parameter_values(value)
+        return value
+
+
+class EstablishObjectiveSequencePayload(_Payload):
+    type: Literal["establish_objective_sequence"]
+    sequence_id: Id240
+    steps: Annotated[list[ObjectiveSequenceStepPayload], Field(min_length=1, max_length=8)]
+
+
+class EstablishAggregateObjectivePayload(_Payload):
+    type: Literal["establish_aggregate_objective"]
+    objective_id: Id240
+    scope_id: Id240
+    scope_extent: Literal[
+        "current_viewport",
+        "current_container",
+        "current_document",
+        "current_application_state",
+    ]
+    scope_root_target_id: Id240
+    scope_entity_domain: Literal["structured", "all_visible", "fused"]
+    member_predicate: dict[str, Any]
+    value_extractor_kind: Literal["constant", "fact"]
+    value_field: Optional120
+    constant: float
+    operator: Literal["count", "sum", "min", "max"]
+    destination_predicate: dict[str, Any]
+    semantic_action: Id240
+    parameter_name: Item120
+    output_format: Literal["integer_string", "decimal_string", "number"]
+
+    @field_validator("member_predicate", "destination_predicate")
+    @classmethod
+    def _predicate(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        predicate_from_public_value(value)
         return value
 
 
@@ -184,6 +267,8 @@ class AbortPayload(_Payload):
 
 DecisionPayload: TypeAlias = Annotated[
     SelectActionPayload
+    | EstablishAggregateObjectivePayload
+    | EstablishObjectiveSequencePayload
     | EstablishSetObjectivePayload
     | SubmitSetPredicateAssessmentsPayload
     | RequestObservationPayload
@@ -358,20 +443,60 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
         raise ValueError("decision context is stale")
     if isinstance(value, SelectActionPayload):
         return SelectAction(value.context_id, value.action_id, value.parameters, value.destination_id)
-    if isinstance(value, EstablishSetObjectivePayload):
-        predicate_value = value.predicate
-        predicate = (
-            FactEquals(predicate_value["field_name"], predicate_value["expected"])
-            if predicate_value["kind"] == "fact_equals"
-            else VisualConcept(predicate_value["concept"])
+    if isinstance(value, EstablishObjectiveSequencePayload):
+        return EstablishObjectiveSequence(
+            value.context_id,
+            ObjectiveSequence(
+                value.sequence_id,
+                tuple(
+                    ObjectiveStep(
+                        item.step_id,
+                        EntitySelector(predicate_from_public_value(item.selector)),
+                        ActionTemplate(item.semantic_action, parameters=item.parameters),
+                        (
+                            EntitySelector(predicate_from_public_value(item.postcondition))
+                            if item.postcondition is not None
+                            else None
+                        ),
+                    )
+                    for item in value.steps
+                ),
+            ),
         )
+    if isinstance(value, EstablishAggregateObjectivePayload):
+        return EstablishAggregateObjective(
+            value.context_id,
+            AggregateObjective(
+                value.objective_id,
+                ScopeSpec(
+                    value.scope_id,
+                    value.scope_root_target_id,
+                    ScopeExtent(value.scope_extent),
+                    entity_domain=ScopeEntityDomain(value.scope_entity_domain),
+                ),
+                predicate_from_public_value(value.member_predicate),
+                ValueExtractor(
+                    ValueExtractorKind(value.value_extractor_kind),
+                    value.value_field,
+                    value.constant,
+                ),
+                AggregateOperator(value.operator),
+                predicate_from_public_value(value.destination_predicate),
+                value.semantic_action,
+                value.parameter_name,
+                AggregateOutputFormat(value.output_format),
+            ),
+        )
+    if isinstance(value, EstablishSetObjectivePayload):
         return EstablishSetObjective(
             value.context_id,
-            predicate,
+            predicate_from_public_value(value.predicate),
             SetQuantifier(value.quantifier),
             value.semantic_action,
             tuple(value.candidate_target_ids),
             value.parameters,
+            ScopeExtent(value.scope_extent),
+            value.scope_root_target_id,
         )
     if isinstance(value, SubmitSetPredicateAssessmentsPayload):
         return SubmitSetPredicateAssessments(

@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import Any, TypeAlias
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.task.aggregate_objective import AggregateObjective
 from affordance_runtime.task.frontier_contracts import (
     NoObjectiveOperation,
     ObjectiveOperation,
@@ -14,7 +15,13 @@ from affordance_runtime.task.frontier_contracts import (
     ReplaceObjective,
     RetainObjective,
 )
-from affordance_runtime.task.set_objective import PredicateExpr, PredicateTruth, SetQuantifier
+from affordance_runtime.task.objective_sequence import ObjectiveSequence
+from affordance_runtime.task.set_objective import (
+    PredicateExpr,
+    PredicateTruth,
+    ScopeExtent,
+    SetQuantifier,
+)
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
@@ -71,6 +78,8 @@ class EstablishSetObjective:
     semantic_action: str
     candidate_target_ids: tuple[str, ...]
     parameters: dict[str, Any] = field(default_factory=dict)
+    scope_extent: ScopeExtent = ScopeExtent.CURRENT_VIEWPORT
+    scope_root_target_id: str = "current-viewport"
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -78,14 +87,41 @@ class EstablishSetObjective:
             raise ValueError("set objective requires a semantic action")
         values = tuple(self.candidate_target_ids)
         if (
-            not values
-            or len(values) > 256
+            len(values) > 256
             or len(values) != len(set(values))
             or any(not item.strip() or len(item) > 240 for item in values)
         ):
             raise ValueError("set objective candidate domain is invalid")
         object.__setattr__(self, "candidate_target_ids", values)
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        if not isinstance(self.scope_extent, ScopeExtent) or not self.scope_root_target_id.strip():
+            raise ValueError("set objective scope contract is invalid")
+
+
+@dataclass(frozen=True)
+class EstablishAggregateObjective:
+    """Install a Runtime-derived aggregate; the model cannot submit its result."""
+
+    context_id: str
+    objective: AggregateObjective
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        if not isinstance(self.objective, AggregateObjective):
+            raise TypeError("aggregate decision requires a typed objective")
+
+
+@dataclass(frozen=True)
+class EstablishObjectiveSequence:
+    """Install future-resolvable typed steps without granting an action."""
+
+    context_id: str
+    sequence: ObjectiveSequence
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        if not isinstance(self.sequence, ObjectiveSequence):
+            raise TypeError("sequence decision requires a typed objective sequence")
 
 
 @dataclass(frozen=True)
@@ -95,9 +131,7 @@ class SetPredicateAssessmentDecision:
     confidence: float | None
 
     def __post_init__(self) -> None:
-        if not self.target_id.strip() or (
-            self.confidence is not None and not 0 <= self.confidence <= 1
-        ):
+        if not self.target_id.strip() or (self.confidence is not None and not 0 <= self.confidence <= 1):
             raise ValueError("set predicate assessment decision is invalid")
 
 
@@ -219,6 +253,8 @@ class Abort:
 
 AgentDecision: TypeAlias = (
     SelectAction
+    | EstablishAggregateObjective
+    | EstablishObjectiveSequence
     | EstablishSetObjective
     | SubmitSetPredicateAssessments
     | RequestObservation
@@ -247,6 +283,8 @@ class AgentDecisionPackage:
             self.decision,
             (
                 SelectAction,
+                EstablishAggregateObjective,
+                EstablishObjectiveSequence,
                 EstablishSetObjective,
                 SubmitSetPredicateAssessments,
                 RequestObservation,

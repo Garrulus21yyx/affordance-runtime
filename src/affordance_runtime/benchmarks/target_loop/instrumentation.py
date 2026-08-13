@@ -111,6 +111,9 @@ class CountingPolicy:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
 
+    def __getattr__(self, name):
+        return getattr(self.wrapped, name)
+
     async def decide(self, context):
         self.instrumentation.policy_calls += 1
         try:
@@ -179,6 +182,8 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
                 "status": item.status.value,
                 "failure_kind": item.failure_kind.value if item.failure_kind is not None else "",
                 "failure_code": item.failure_code.value if item.failure_code is not None else "",
+                "origin": item.origin.value,
+                "network_dispatched": item.origin.value == "network",
                 "scheduled_delay_s": item.scheduled_delay_s,
                 "response_id": item.response_id,
             }
@@ -197,9 +202,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         )
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
-        event["tool_argument_repair_count"] = int(
-            getattr(adapter, "last_argument_repair_count", 0)
-        )
+        event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
     if isinstance(outcome, AgentDecisionPackage):
         event["outcome"] = "decision_package"
         event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
@@ -491,9 +494,7 @@ def _record_dynamic_tool_metrics(instrumentation, port: object) -> None:
             setattr(instrumentation, field, getattr(instrumentation, field) + 1)
         instrumentation.tool_catalog_count += int(getattr(adapter, "last_catalog_count", 0))
         instrumentation.tool_catalog_bytes += int(getattr(adapter, "last_catalog_bytes", 0))
-        instrumentation.tool_argument_repair_count += int(
-            getattr(adapter, "last_argument_repair_count", 0)
-        )
+        instrumentation.tool_argument_repair_count += int(getattr(adapter, "last_argument_repair_count", 0))
 
 
 @dataclass

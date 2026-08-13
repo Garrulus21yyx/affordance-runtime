@@ -27,6 +27,15 @@ class ProviderFailureCode(StrEnum):
     INVALID_REQUEST = "invalid_request"
 
 
+class ProviderAttemptOrigin(StrEnum):
+    """Where one provider-attempt outcome was produced."""
+
+    NETWORK = "network"
+    LOCAL_CIRCUIT = "local_circuit"
+    ORCHESTRATOR_TIMEOUT = "orchestrator_timeout"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class ModelFailure:
     kind: ModelFailureKind
@@ -34,19 +43,18 @@ class ModelFailure:
     retryable: bool
     provider_code: ProviderFailureCode | None = None
     retry_after_s: float | None = None
+    attempt_origin: ProviderAttemptOrigin = ProviderAttemptOrigin.UNKNOWN
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ModelFailureKind):
             raise TypeError("model failure kind must be typed")
         if type(self.retryable) is not bool:
             raise TypeError("model failure retryable flag must be boolean")
-        if self.provider_code is not None and not isinstance(
-            self.provider_code, ProviderFailureCode
-        ):
+        if self.provider_code is not None and not isinstance(self.provider_code, ProviderFailureCode):
             raise TypeError("provider failure code must be typed")
-        if self.retry_after_s is not None and (
-            isinstance(self.retry_after_s, bool) or self.retry_after_s < 0
-        ):
+        if not isinstance(self.attempt_origin, ProviderAttemptOrigin):
+            raise TypeError("provider attempt origin must be typed")
+        if self.retry_after_s is not None and (isinstance(self.retry_after_s, bool) or self.retry_after_s < 0):
             raise ValueError("provider retry delay must be nonnegative")
         if self.provider_code is None and self.retry_after_s is not None:
             raise ValueError("retry delay requires a provider failure code")

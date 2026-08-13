@@ -282,9 +282,7 @@ def _target_case(
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
                 visual_predicate_classifier=visual_predicate_classifier,
-                marked_candidate_policy_available=_marked_candidate_policy_available(
-                    base_policy
-                ),
+                marked_candidate_policy_available=_marked_candidate_policy_available(base_policy),
             )
         except BaseException as exc:
             _initialize_custom_metrics(instrumentation)

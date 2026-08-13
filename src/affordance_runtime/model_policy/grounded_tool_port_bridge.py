@@ -13,13 +13,20 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
 from affordance_runtime.agent.decisions import (
+    EstablishAggregateObjective,
+    EstablishObjectiveSequence,
     EstablishSetObjective,
     RequestActionPage,
     SelectAction,
     SubmitSetPredicateAssessments,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind, ProviderFailureCode
+from affordance_runtime.model_boundary.failures import (
+    ModelFailure,
+    ModelFailureKind,
+    ProviderAttemptOrigin,
+    ProviderFailureCode,
+)
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
@@ -47,6 +54,7 @@ from affordance_runtime.model_port import (
     StructuredOutputError,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
+from affordance_runtime.task.objective_sequence import sequence_public_value
 from affordance_runtime.task.set_objective import predicate_public_value
 from affordance_runtime.world.schema_validation import validate_value_issue
 
@@ -74,6 +82,15 @@ class GroundedToolCommandPayload(BaseModel):
     candidate_role: str | None = None
     concept: str | None = None
     assessments: dict[str, str] | None = None
+    steps: list[dict[str, object]] | None = None
+    predicate: dict[str, object] | None = None
+    source_predicate: dict[str, object] | None = None
+    destination_predicate: dict[str, object] | None = None
+    semantic_action: str | None = None
+    scope_extent: str | None = None
+    scope_root: str | None = None
+    operator: str | None = None
+    value_field: str | None = None
 
     @field_validator("op")
     @classmethod
@@ -116,13 +133,25 @@ class GroundedToolCommandPayload(BaseModel):
             not value
             or len(value) > 256
             or any(
-                not ref.startswith("E")
-                or not ref[1:].isdigit()
-                or truth not in {"true", "false", "unknown"}
+                not ref.startswith("E") or not ref[1:].isdigit() or truth not in {"true", "false", "unknown"}
                 for ref, truth in value.items()
             )
         ):
             raise ValueError("grounded assessments are invalid")
+        return value
+
+    @field_validator("steps")
+    @classmethod
+    def _steps(cls, value: list[dict[str, object]] | None) -> list[dict[str, object]] | None:
+        if value is not None and not 1 <= len(value) <= 8:
+            raise ValueError("grounded objective steps are invalid")
+        validate_json_tree(value)
+        return value
+
+    @field_validator("predicate", "source_predicate", "destination_predicate")
+    @classmethod
+    def _predicate_transport(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        validate_json_tree(value)
         return value
 
 
@@ -249,6 +278,9 @@ class GroundedToolDecisionAdapter:
                 retryable=exc.resumable,
                 provider_code=provider_code,
                 retry_after_s=exc.retry_after_s,
+                attempt_origin=(
+                    ProviderAttemptOrigin.LOCAL_CIRCUIT if exc.circuit_open else ProviderAttemptOrigin.NETWORK
+                ),
             )
         except StructuredOutputError:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded command violated its flat schema")
@@ -271,7 +303,9 @@ class GroundedToolDecisionAdapter:
             except StructuredOutputError:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _format_repair_messages(messages), payload_type, self.config,
+                    _format_repair_messages(messages),
+                    payload_type,
+                    self.config,
                 )
             alias_map = dict(aliases)
             operation_name = alias_map.get(payload.op, payload.op)
@@ -317,11 +351,14 @@ def _messages(view, request, supports_multimodal):
         "grounding_index": to_json_compatible(view.grounding_index),
         "current_state": to_json_compatible(view.current_state),
         "previous_tool_result": to_json_compatible(view.previous_tool_result),
-        "tool_menu": tuple({
-            "op": item.name,
-            "description": item.description,
-            "arguments": to_json_compatible(item.input_schema),
-        } for item in view.tools),
+        "tool_menu": tuple(
+            {
+                "op": item.name,
+                "description": item.description,
+                "arguments": to_json_compatible(item.input_schema),
+            }
+            for item in view.tools
+        ),
     }
     text = json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
@@ -364,10 +401,7 @@ def _command_payload_type(specs, aliases=()):
 def _labeled_entity_operation_aliases(catalog) -> tuple[tuple[str, str], ...]:
     """Accept familiar verb names only when every selectable entity has a public label."""
 
-    labels = {
-        str(item.get("ref", "")): str(item.get("label", "")).strip()
-        for item in catalog.view.grounding_index
-    }
+    labels = {str(item.get("ref", "")): str(item.get("label", "")).strip() for item in catalog.view.grounding_index}
     proposed: dict[str, list[str]] = {}
     for spec in catalog.specs:
         match = re.fullmatch(r"establish_(.+?)_entity_objective(?:_\d+)?", spec.name)
@@ -392,8 +426,7 @@ def _format_repair_messages(messages):
         ModelMessage(
             role="system",
             content=(
-                system.content
-                + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
+                system.content + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
                 "current tool_menu and use only fields declared by that operation."
             ),
         ),
@@ -425,8 +458,7 @@ def _argument_repair_messages(messages, spec, issue):
         ModelMessage(
             role="system",
             content=(
-                system.content
-                + "\n\nThe selected operation is fixed. Repair only its arguments, return one flat "
+                system.content + "\n\nThe selected operation is fixed. Repair only its arguments, return one flat "
                 "command, and obey this public contract: "
                 + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             ),
@@ -446,6 +478,15 @@ def _command_arguments(payload, spec=None):
             "quantifier",
             "candidate_role",
             "concept",
+            "steps",
+            "predicate",
+            "source_predicate",
+            "destination_predicate",
+            "semantic_action",
+            "scope_extent",
+            "scope_root",
+            "operator",
+            "value_field",
         }
     )
     result = {}
@@ -461,6 +502,21 @@ def _command_arguments(payload, spec=None):
         result["candidate_role"] = payload.candidate_role
     if payload.concept is not None and "concept" in admitted:
         result["concept"] = payload.concept
+    if payload.steps is not None and "steps" in admitted:
+        result["steps"] = payload.steps
+    for name in (
+        "predicate",
+        "source_predicate",
+        "destination_predicate",
+        "semantic_action",
+        "scope_extent",
+        "scope_root",
+        "operator",
+        "value_field",
+    ):
+        value = getattr(payload, name)
+        if value is not None and name in admitted:
+            result[name] = value
     if payload.assessments is not None and set(payload.assessments) == admitted:
         result.update(payload.assessments)
     return result
@@ -476,6 +532,32 @@ def _package_payload(package):
             "parameters": to_json_compatible(decision.parameters),
             "destination_id": decision.destination_id,
         }
+    elif isinstance(decision, EstablishObjectiveSequence):
+        value = {
+            "type": "establish_objective_sequence",
+            "context_id": decision.context_id,
+            **sequence_public_value(decision.sequence),
+        }
+    elif isinstance(decision, EstablishAggregateObjective):
+        objective = decision.objective
+        value = {
+            "type": "establish_aggregate_objective",
+            "context_id": decision.context_id,
+            "objective_id": objective.objective_id,
+            "scope_id": objective.source_scope.scope_id,
+            "scope_extent": objective.source_scope.extent.value,
+            "scope_root_target_id": objective.source_scope.root_entity_id,
+            "scope_entity_domain": objective.source_scope.entity_domain.value,
+            "member_predicate": predicate_public_value(objective.member_predicate),
+            "value_extractor_kind": objective.value_extractor.kind.value,
+            "value_field": objective.value_extractor.field_name,
+            "constant": float(objective.value_extractor.constant),
+            "operator": objective.operator.value,
+            "destination_predicate": predicate_public_value(objective.destination_selector),
+            "semantic_action": objective.semantic_action,
+            "parameter_name": objective.parameter_name,
+            "output_format": objective.output_format.value,
+        }
     elif isinstance(decision, EstablishSetObjective):
         value = {
             "type": "establish_set_objective",
@@ -485,16 +567,15 @@ def _package_payload(package):
             "semantic_action": decision.semantic_action,
             "candidate_target_ids": list(decision.candidate_target_ids),
             "parameters": to_json_compatible(decision.parameters),
+            "scope_extent": decision.scope_extent.value,
+            "scope_root_target_id": decision.scope_root_target_id,
         }
     elif isinstance(decision, SubmitSetPredicateAssessments):
         value = {
             "type": "submit_set_predicate_assessments",
             "context_id": decision.context_id,
             "predicate_digest": decision.predicate_digest,
-            "assessments": [
-                {"target_id": item.target_id, "truth": item.truth.value}
-                for item in decision.assessments
-            ],
+            "assessments": [{"target_id": item.target_id, "truth": item.truth.value} for item in decision.assessments],
         }
     else:
         assert isinstance(decision, RequestActionPage)
@@ -529,5 +610,13 @@ def _metadata(port, transport_kind, *, include_record=True):
     )
 
 
-def _failure(kind, reason, *, retryable=False, provider_code=None, retry_after_s=None):
-    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s)
+def _failure(
+    kind,
+    reason,
+    *,
+    retryable=False,
+    provider_code=None,
+    retry_after_s=None,
+    attempt_origin=ProviderAttemptOrigin.UNKNOWN,
+):
+    return ModelFailure(kind, reason, retryable, provider_code, retry_after_s, attempt_origin)

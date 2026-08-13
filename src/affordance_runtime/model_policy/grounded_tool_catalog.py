@@ -10,6 +10,8 @@ from typing import Mapping
 
 from affordance_runtime.agent.decisions import (
     AgentDecisionPackage,
+    EstablishAggregateObjective,
+    EstablishObjectiveSequence,
     EstablishSetObjective,
     RequestActionPage,
     RequestObservation,
@@ -36,12 +38,31 @@ from affordance_runtime.model_policy.set_objective_catalog import (
     SetCatalogMode,
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.task.aggregate_objective import (
+    AggregateObjective,
+    AggregateOperator,
+    AggregateOutputFormat,
+    ValueExtractor,
+    ValueExtractorKind,
+)
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
+from affordance_runtime.task.objective_sequence import (
+    SUPPORTED_SEQUENCE_ACTIONS,
+    EntitySelector,
+    ObjectiveSequence,
+    ObjectiveStep,
+)
+from affordance_runtime.task.predicate_transport import predicate_from_transport
 from affordance_runtime.task.set_objective import (
+    ActionTemplate,
     FactEquals,
     PredicateTruth,
+    ScopeEntityDomain,
+    ScopeExtent,
+    ScopeSpec,
     SetQuantifier,
     VisualConcept,
+    visual_predicate_leaves,
 )
 from affordance_runtime.world.schema_validation import validate_value
 
@@ -99,10 +120,25 @@ class _SetAssessmentBinding:
     refs: tuple[tuple[str, str], ...]
 
 
+@dataclass(frozen=True)
+class _SequenceBinding:
+    semantic_actions: tuple[str, ...] = SUPPORTED_SEQUENCE_ACTIONS
+
+
+@dataclass(frozen=True)
+class _CompoundSetBinding:
+    semantic_actions: tuple[str, ...]
+    targets_by_ref: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class _AggregateBinding:
+    parameter_fields: tuple[tuple[str, str, AggregateOutputFormat], ...]
+    targets_by_ref: tuple[tuple[str, str], ...]
+
+
 def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
-    if context.actions.options and (
-        not context.grounding.entities or not context.grounding.target_refs
-    ):
+    if context.actions.options and (not context.grounding.entities or not context.grounding.target_refs):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
@@ -121,7 +157,10 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         SetCatalogMode.SUCCESSOR_ACTIONS,
     }:
         _reject_ambiguous_unmarked_targets(
-            context, ref_by_target, entity_by_ref, target_filter=target_filter,
+            context,
+            ref_by_target,
+            entity_by_ref,
+            target_filter=target_filter,
         )
     settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
 
@@ -144,33 +183,34 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         set_directive is not None
         and set_directive.mode is SetCatalogMode.CONTROL_ONLY
         and context.set_control is not None
-        and context.set_control.semantic_mode
-        in {"semantic_ingress", "objective_transition"}
+        and context.set_control.semantic_mode in {"semantic_ingress", "objective_transition"}
     )
     objective_candidate_ids = (
         set(context.set_control.objective_candidate_action_ids)
-        if context.set_control is not None
-        and context.set_control.semantic_mode == "objective_transition"
+        if context.set_control is not None and context.set_control.semantic_mode == "objective_transition"
         else {item.action_id for item in context.actions.options}
     )
     unique_grounded_ingress = semantic_ingress and len(objective_candidate_ids) == 1
     seen_modalities: set[str] = set()
-    for capability in (() if unique_grounded_ingress else context.world.observation_capabilities):
+    for capability in () if unique_grounded_ingress else context.world.observation_capabilities:
         if capability.modality in seen_modalities:
             continue
         seen_modalities.add(capability.modality)
-        specs.append(ToolSpec(
-            f"observe_{capability.modality}",
-            f"Acquire a fresh {capability.modality} observation at {capability.assurance} assurance.",
-            _object_schema({}),
-        ))
+        specs.append(
+            ToolSpec(
+                f"observe_{capability.modality}",
+                f"Acquire a fresh {capability.modality} observation at {capability.assurance} assurance.",
+                _object_schema({}),
+            )
+        )
         bindings.append(_ObserveBinding(capability.modality, capability.assurance))
     _append_set_assessment_tool(context, ref_by_target, specs, bindings)
-    if (
-        (set_directive is None or semantic_ingress)
-        and not context.actions.truncated
-        and not context.actions.has_more
-    ):
+    if semantic_ingress and context.set_control is not None and context.set_control.semantic_mode == "semantic_ingress":
+        _append_objective_sequence_tool(context, specs, bindings)
+    if semantic_ingress and not unique_grounded_ingress:
+        _append_compound_set_objective_tool(context, specs, bindings)
+        _append_aggregate_objective_tool(context, specs, bindings)
+    if (set_directive is None or semantic_ingress) and not context.actions.truncated and not context.actions.has_more:
         _append_set_objective_tools(
             context,
             ref_by_target,
@@ -185,17 +225,21 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         and sum(len(items) for items in grouped.values()) == 1
         and context.set_control is not None
     ):
-        (_shape, values), = grouped.items()
+        ((_shape, values),) = grouped.items()
         _ref, option = values[0]
-        specs.append(ToolSpec(
-            "execute_objective",
-            "Execute the one action authorized by the admitted typed objective.",
-            _object_schema({}),
-        ))
-        bindings.append(_ObjectiveActionBinding(
-            option.action_id,
-            context.set_control.objective_parameters,
-        ))
+        specs.append(
+            ToolSpec(
+                "execute_objective",
+                "Execute the one action authorized by the admitted typed objective.",
+                _object_schema({}),
+            )
+        )
+        bindings.append(
+            _ObjectiveActionBinding(
+                option.action_id,
+                context.set_control.objective_parameters,
+            )
+        )
         grouped.clear()
     verb_counts: dict[str, int] = {}
     for (verb, _shape), values in grouped.items():
@@ -205,35 +249,39 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         refs = [ref for ref, _option in values]
         schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
         description = _tool_description(verb, refs, entity_by_ref)
-        if (
-            set_directive is not None
-            and set_directive.mode is SetCatalogMode.MEMBER_ACTIONS_ONLY
-            and len(values) == 1
-        ):
+        if set_directive is not None and set_directive.mode is SetCatalogMode.MEMBER_ACTIONS_ONLY and len(values) == 1:
             description = f"{verb} the next member admitted by the current quantified objective."
-        specs.append(ToolSpec(
-            name,
-            description,
-            schema,
-        ))
-        bindings.append(_VerbBinding(
-            verb,
-            tuple((ref, option.action_id) for ref, option in values),
-            parameter_field,
-        ))
+        specs.append(
+            ToolSpec(
+                name,
+                description,
+                schema,
+            )
+        )
+        bindings.append(
+            _VerbBinding(
+                verb,
+                tuple((ref, option.action_id) for ref, option in values),
+                parameter_field,
+            )
+        )
 
     if context.actions.has_more:
-        specs.append(ToolSpec(
-            "next_actions",
-            "Inspect the next in-memory page of currently legal actions.",
-            _object_schema({}),
-        ))
-        bindings.append(_NextActionsBinding(
-            context.actions.active_query,
-            context.actions.active_target_filter,
-            context.actions.active_relevance_filter,
-            context.actions.next_cursor,
-        ))
+        specs.append(
+            ToolSpec(
+                "next_actions",
+                "Inspect the next in-memory page of currently legal actions.",
+                _object_schema({}),
+            )
+        )
+        bindings.append(
+            _NextActionsBinding(
+                context.actions.active_query,
+                context.actions.active_target_filter,
+                context.actions.active_relevance_filter,
+                context.actions.next_cursor,
+            )
+        )
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -249,14 +297,20 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         "grounding_index": view.grounding_index,
         "current_state": view.current_state,
         "previous_tool_result": view.previous_tool_result,
-        "tools": tuple({
-            "name": item.name,
-            "description": item.description,
-            "input_schema": to_json_compatible(item.input_schema),
-        } for item in specs),
+        "tools": tuple(
+            {
+                "name": item.name,
+                "description": item.description,
+                "input_schema": to_json_compatible(item.input_schema),
+            }
+            for item in specs
+        ),
     }
     encoded = json.dumps(
-        to_json_compatible(public), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        to_json_compatible(public),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     )
     encoded_bytes = len(encoded.encode())
     if len(specs) > MAX_GROUNDED_TOOL_COUNT or encoded_bytes > MAX_GROUNDED_WORKSPACE_BYTES:
@@ -298,8 +352,7 @@ def _append_set_objective_tools(
     )
     candidate_action_ids = (
         set(context.set_control.objective_candidate_action_ids)
-        if context.set_control is not None
-        and context.set_control.semantic_mode == "objective_transition"
+        if context.set_control is not None and context.set_control.semantic_mode == "objective_transition"
         else None
     )
     options_by_action: dict[tuple[str, str], list[AgentActionOptionView]] = {}
@@ -329,27 +382,28 @@ def _append_set_objective_tools(
             options[0].parameter_schema,
         )
         if mandatory:
-            specs.append(ToolSpec(
-                f"establish_{verb}_entity_objective{suffix}",
-                (
-                    f"Establish one typed {verb} objective for an explicitly identified current "
-                    "E-ref. This performs no GUI action."
-                ),
-                entity_schema,
-            ))
-            bindings.append(_EntityObjectiveBinding(
-                semantic_action,
-                tuple(entity_values),
-                parameter_field,
-            ))
+            specs.append(
+                ToolSpec(
+                    f"establish_{verb}_entity_objective{suffix}",
+                    (
+                        f"Establish one typed {verb} objective for an explicitly identified current "
+                        "E-ref. This performs no GUI action."
+                    ),
+                    entity_schema,
+                )
+            )
+            bindings.append(
+                _EntityObjectiveBinding(
+                    semantic_action,
+                    tuple(entity_values),
+                    parameter_field,
+                )
+            )
         if options[0].parameter_schema.get("required") or options[0].parameter_schema.get("properties"):
             continue
         if unique_ingress:
             continue
-        action_roles = {
-            entity_by_ref[ref_by_target[option.target_id]].role.casefold().strip()
-            for option in options
-        }
+        action_roles = {entity_by_ref[ref_by_target[option.target_id]].role.casefold().strip() for option in options}
         candidates_by_role: dict[str, list[str]] = {}
         fields_by_role: dict[str, dict[str, list[object]]] = {}
         # Scope enumeration is independent of actionability.  A TRUE visual
@@ -389,36 +443,130 @@ def _append_set_objective_tools(
                         ],
                     },
                 }
-                specs.append(ToolSpec(
-                    _fact_objective_tool_name(verb, role, field_name, fact_index),
-                    (
-                        f'Establish a typed {verb} objective where public fact "{field_name}" '
-                        f'for candidate role "{role}" equals the supplied value. '
-                        "This performs no GUI action."
-                    ),
-                    _object_schema(fields_schema, ("value", "quantifier")),
-                ))
-                bindings.append(_SetFactBinding(
-                    semantic_action,
-                    field_name,
-                    role_candidates,
-                ))
+                specs.append(
+                    ToolSpec(
+                        _fact_objective_tool_name(verb, role, field_name, fact_index),
+                        (
+                            f'Establish a typed {verb} objective where public fact "{field_name}" '
+                            f'for candidate role "{role}" equals the supplied value. '
+                            "This performs no GUI action."
+                        ),
+                        _object_schema(fields_schema, ("value", "quantifier")),
+                    )
+                )
+                bindings.append(
+                    _SetFactBinding(
+                        semantic_action,
+                        field_name,
+                        role_candidates,
+                    )
+                )
         roles = tuple(
             (role, tuple(target_ids))
             for role, target_ids in sorted(candidates_by_role.items())
             if target_ids and (mandatory or len(target_ids) >= 2)
         )
         if roles:
-            specs.append(ToolSpec(
-                f"establish_{verb}_visual_objective",
-                (
-                    "Use before any member action when the task selects a quantified set or an "
-                    "open-vocabulary visual concept not represented by a public fact. Establishes "
-                    "the objective over one typed candidate role and performs no GUI action."
-                ),
-                _object_schema({
-                    "candidate_role": {"type": "string", "enum": [item[0] for item in roles]},
-                    "concept": {"type": "string", "minLength": 1, "maxLength": 160},
+            specs.append(
+                ToolSpec(
+                    f"establish_{verb}_visual_objective",
+                    (
+                        "Use before any member action when the task selects a quantified set or an "
+                        "open-vocabulary visual concept not represented by a public fact. Establishes "
+                        "the objective over one typed candidate role and performs no GUI action."
+                    ),
+                    _object_schema(
+                        {
+                            "candidate_role": {"type": "string", "enum": [item[0] for item in roles]},
+                            "concept": {"type": "string", "minLength": 1, "maxLength": 160},
+                            "quantifier": {
+                                "type": "string",
+                                "enum": [
+                                    SetQuantifier.EXACTLY_ONE.value,
+                                    SetQuantifier.ALL_IN_CLOSED_SCOPE.value,
+                                ],
+                            },
+                        },
+                        ("candidate_role", "concept", "quantifier"),
+                    ),
+                )
+            )
+            bindings.append(_SetVisualBinding(semantic_action, roles))
+
+
+def _append_objective_sequence_tool(
+    context: AgentContext,
+    specs: list[ToolSpec],
+    bindings: list[object],
+) -> None:
+    """Offer a bounded future-resolvable plan without future identities."""
+
+    semantic_actions = SUPPORTED_SEQUENCE_ACTIONS
+    selector_schema = _predicate_transport_schema()
+    step_schema = _object_schema(
+        {
+            "predicate": selector_schema,
+            "semantic_action": {"type": "string", "enum": list(semantic_actions)},
+            "parameters": {"type": "object", "additionalProperties": True},
+            "postcondition_predicate": {"anyOf": [selector_schema, {"type": "null"}]},
+        },
+        (
+            "predicate",
+            "semantic_action",
+            "parameters",
+            "postcondition_predicate",
+        ),
+    )
+    specs.append(
+        ToolSpec(
+            "establish_objective_sequence",
+            (
+                "Establish 1-8 typed future-resolvable GUI steps. Each predicate is "
+                "re-evaluated after a fresh observation; use public fields such as "
+                "identity.label and never future E-refs or coordinates. Performs no action."
+            ),
+            _object_schema(
+                {
+                    "steps": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "items": step_schema,
+                    }
+                },
+                ("steps",),
+            ),
+        )
+    )
+    bindings.append(_SequenceBinding())
+
+
+def _append_compound_set_objective_tool(
+    context: AgentContext,
+    specs: list[ToolSpec],
+    bindings: list[object],
+) -> None:
+    actions = tuple(
+        sorted(
+            {
+                option.semantic_action
+                for option in context.actions.options
+                if not option.parameter_schema.get("required") and not option.parameter_schema.get("properties")
+            }
+        )
+    )
+    if not actions:
+        return
+    specs.append(
+        ToolSpec(
+            "establish_compound_set_objective",
+            (
+                "Establish a scope-relative quantified objective from a bounded boolean "
+                "predicate. Runtime owns candidate enumeration and completion; this performs no action."
+            ),
+            _object_schema(
+                {
+                    "predicate": _predicate_transport_schema(),
                     "quantifier": {
                         "type": "string",
                         "enum": [
@@ -426,9 +574,171 @@ def _append_set_objective_tools(
                             SetQuantifier.ALL_IN_CLOSED_SCOPE.value,
                         ],
                     },
-                }, ("candidate_role", "concept", "quantifier")),
-            ))
-            bindings.append(_SetVisualBinding(semantic_action, roles))
+                    "semantic_action": {"type": "string", "enum": list(actions)},
+                    "scope_extent": {
+                        "type": "string",
+                        "enum": [item.value for item in ScopeExtent],
+                    },
+                    "scope_root": {
+                        "type": "string",
+                        "enum": ["current-viewport", *[item.ref for item in context.grounding.entities]],
+                    },
+                },
+                ("predicate", "quantifier", "semantic_action", "scope_extent", "scope_root"),
+            ),
+        )
+    )
+    bindings.append(
+        _CompoundSetBinding(
+            actions,
+            tuple(sorted((ref, target_id) for target_id, ref in context.grounding.target_refs.items())),
+        )
+    )
+
+
+def _append_aggregate_objective_tool(
+    context: AgentContext,
+    specs: list[ToolSpec],
+    bindings: list[object],
+) -> None:
+    parameter_fields: dict[str, tuple[str, AggregateOutputFormat]] = {}
+    for option in context.actions.options:
+        properties = option.parameter_schema.get("properties")
+        required = option.parameter_schema.get("required")
+        if not isinstance(properties, Mapping) or not isinstance(required, tuple | list):
+            continue
+        if len(required) == 1 and required[0] in properties:
+            field_name = str(required[0])
+            field_schema = properties[field_name]
+            field_type = field_schema.get("type") if isinstance(field_schema, Mapping) else None
+            parameter_fields.setdefault(
+                option.semantic_action,
+                (
+                    field_name,
+                    AggregateOutputFormat.NUMBER
+                    if field_type in {"integer", "number"}
+                    else AggregateOutputFormat.INTEGER_STRING,
+                ),
+            )
+    if not parameter_fields:
+        return
+    specs.append(
+        ToolSpec(
+            "establish_aggregate_objective",
+            (
+                "Derive COUNT/SUM/MIN/MAX from a closed source scope and write the Runtime-derived "
+                "value to one destination. Never provide the result value yourself."
+            ),
+            _object_schema(
+                {
+                    "source_predicate": _predicate_transport_schema(),
+                    "operator": {
+                        "type": "string",
+                        "enum": [item.value for item in AggregateOperator],
+                    },
+                    "value_field": {"type": "string", "maxLength": 120},
+                    "destination_predicate": _predicate_transport_schema(),
+                    "semantic_action": {
+                        "type": "string",
+                        "enum": sorted(parameter_fields),
+                    },
+                    "scope_extent": {
+                        "type": "string",
+                        "enum": [item.value for item in ScopeExtent],
+                    },
+                    "scope_root": {
+                        "type": "string",
+                        "enum": ["current-viewport", *[item.ref for item in context.grounding.entities]],
+                    },
+                },
+                (
+                    "source_predicate",
+                    "operator",
+                    "value_field",
+                    "destination_predicate",
+                    "semantic_action",
+                    "scope_extent",
+                    "scope_root",
+                ),
+            ),
+        )
+    )
+    bindings.append(
+        _AggregateBinding(
+            tuple((action, field, output) for action, (field, output) in sorted(parameter_fields.items())),
+            tuple(sorted((ref, target_id) for target_id, ref in context.grounding.target_refs.items())),
+        )
+    )
+
+
+def _predicate_transport_schema(*, include_visual: bool = True) -> dict[str, object]:
+    atoms = [
+        _object_schema(
+            {
+                "kind": {"type": "string", "const": "fact_equals"},
+                "field_name": {"type": "string", "minLength": 1, "maxLength": 120},
+                "expected": {},
+                "negated": {"type": "boolean"},
+            },
+            ("kind", "field_name", "expected", "negated"),
+        ),
+        _object_schema(
+            {
+                "kind": {"type": "string", "const": "compare"},
+                "field_name": {"type": "string", "minLength": 1, "maxLength": 120},
+                "operator": {
+                    "type": "string",
+                    "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in"],
+                },
+                "expected": {},
+                "negated": {"type": "boolean"},
+            },
+            ("kind", "field_name", "operator", "expected", "negated"),
+        ),
+    ]
+    if include_visual:
+        atoms.extend(
+            [
+                _object_schema(
+                    {
+                        "kind": {"type": "string", "const": "visual_concept"},
+                        "text": {"type": "string", "minLength": 1, "maxLength": 160},
+                        "negated": {"type": "boolean"},
+                    },
+                    ("kind", "text", "negated"),
+                ),
+                _object_schema(
+                    {
+                        "kind": {"type": "string", "const": "visual_attribute"},
+                        "text": {"type": "string", "minLength": 1, "maxLength": 160},
+                        "negated": {"type": "boolean"},
+                    },
+                    ("kind", "text", "negated"),
+                ),
+            ]
+        )
+    atom_schema = {"oneOf": atoms}
+    return _object_schema(
+        {
+            "any_of": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": _object_schema(
+                    {
+                        "all_of": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "items": atom_schema,
+                        }
+                    },
+                    ("all_of",),
+                ),
+            }
+        },
+        ("any_of",),
+    )
 
 
 def _append_set_assessment_tool(
@@ -443,9 +753,7 @@ def _append_set_assessment_tool(
     if control is None or not control.unknown_target_ids:
         return
     refs = tuple(
-        (ref_by_target[target_id], target_id)
-        for target_id in control.unknown_target_ids
-        if target_id in ref_by_target
+        (ref_by_target[target_id], target_id) for target_id in control.unknown_target_ids if target_id in ref_by_target
     )
     if len(refs) != len(control.unknown_target_ids):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -460,14 +768,16 @@ def _append_set_assessment_tool(
         }
         for ref, _target_id in refs
     }
-    specs.append(ToolSpec(
-        "classify_set_candidates",
-        (
-            "Classify every listed E-ref against the current typed visual predicate. "
-            "This supplies semantic evidence only and performs no action."
-        ),
-        _object_schema(properties, tuple(properties)),
-    ))
+    specs.append(
+        ToolSpec(
+            "classify_set_candidates",
+            (
+                "Classify every listed E-ref against the current typed visual predicate. "
+                "This supplies semantic evidence only and performs no action."
+            ),
+            _object_schema(properties, tuple(properties)),
+        )
+    )
     bindings.append(_SetAssessmentBinding(control.predicate_digest, refs))
 
 
@@ -478,7 +788,10 @@ def _set_fact_value(value: object) -> bool:
         return bool(value.strip()) and len(value) <= 80
     if isinstance(value, Mapping):
         encoded = json.dumps(
-            to_json_compatible(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+            to_json_compatible(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
         )
         return len(encoded) <= 160
     return False
@@ -582,6 +895,142 @@ def resolve_grounded_tool_call(
                 binding.action_id,
                 dict(binding.parameters),
                 "",
+            ),
+        )
+    if isinstance(binding, _SequenceBinding):
+        raw_steps = call.arguments.get("steps")
+        if not isinstance(raw_steps, tuple | list):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        steps = []
+        for index, raw in enumerate(raw_steps):
+            if not isinstance(raw, Mapping):
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            semantic_action = str(raw["semantic_action"])
+            if semantic_action not in binding.semantic_actions:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            selector = raw["predicate"]
+            postcondition = raw.get("postcondition_predicate")
+            if not isinstance(selector, Mapping) or (
+                postcondition is not None and not isinstance(postcondition, Mapping)
+            ):
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            steps.append(
+                ObjectiveStep(
+                    f"step:{index + 1}",
+                    EntitySelector(predicate_from_transport(selector)),
+                    ActionTemplate(semantic_action, parameters=dict(raw["parameters"])),
+                    (
+                        EntitySelector(predicate_from_transport(postcondition))
+                        if isinstance(postcondition, Mapping)
+                        else None
+                    ),
+                )
+            )
+        digest = hashlib.sha256(
+            json.dumps(
+                [
+                    {
+                        "predicate": to_json_compatible(raw["predicate"]),
+                        "semantic_action": raw["semantic_action"],
+                        "parameters": to_json_compatible(raw["parameters"]),
+                        "postcondition_predicate": to_json_compatible(raw.get("postcondition_predicate")),
+                    }
+                    for raw in raw_steps
+                ],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()[:24]
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            EstablishObjectiveSequence(
+                expected_context_id,
+                ObjectiveSequence(f"sequence:{digest}", tuple(steps)),
+            ),
+        )
+    if isinstance(binding, _CompoundSetBinding):
+        semantic_action = str(call.arguments["semantic_action"])
+        if semantic_action not in binding.semantic_actions:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        root = str(call.arguments["scope_root"])
+        root_target = "current-viewport" if root == "current-viewport" else dict(binding.targets_by_ref).get(root, "")
+        if not root_target:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            EstablishSetObjective(
+                expected_context_id,
+                predicate_from_transport(call.arguments["predicate"]),
+                SetQuantifier(str(call.arguments["quantifier"])),
+                semantic_action,
+                (),
+                {},
+                ScopeExtent(str(call.arguments["scope_extent"])),
+                root_target,
+            ),
+        )
+    if isinstance(binding, _AggregateBinding):
+        semantic_action = str(call.arguments["semantic_action"])
+        fields = {action: (field, output) for action, field, output in binding.parameter_fields}
+        if semantic_action not in fields:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        operator = AggregateOperator(str(call.arguments["operator"]))
+        value_field = str(call.arguments["value_field"])
+        if operator is not AggregateOperator.COUNT and not value_field:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        root = str(call.arguments["scope_root"])
+        root_target = "current-viewport" if root == "current-viewport" else dict(binding.targets_by_ref).get(root, "")
+        if not root_target:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        member = predicate_from_transport(call.arguments["source_predicate"])
+        destination = predicate_from_transport(call.arguments["destination_predicate"])
+        parameter_name, output_format = fields[semantic_action]
+        payload = {
+            "source": to_json_compatible(call.arguments["source_predicate"]),
+            "operator": operator.value,
+            "value_field": value_field,
+            "destination": to_json_compatible(call.arguments["destination_predicate"]),
+            "semantic_action": semantic_action,
+            "scope_extent": call.arguments["scope_extent"],
+            "scope_root": root_target,
+        }
+        digest = hashlib.sha256(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()[:24]
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            EstablishAggregateObjective(
+                expected_context_id,
+                AggregateObjective(
+                    f"aggregate-objective:{digest}",
+                    ScopeSpec(
+                        f"scope:{digest}",
+                        root_target,
+                        ScopeExtent(str(call.arguments["scope_extent"])),
+                        entity_domain=(
+                            ScopeEntityDomain.ALL_VISIBLE
+                            if visual_predicate_leaves(member)
+                            else ScopeEntityDomain.STRUCTURED
+                        ),
+                    ),
+                    member,
+                    ValueExtractor(
+                        ValueExtractorKind.CONSTANT if operator is AggregateOperator.COUNT else ValueExtractorKind.FACT,
+                        value_field,
+                        1,
+                    ),
+                    operator,
+                    destination,
+                    semantic_action,
+                    parameter_name,
+                    output_format,
+                ),
             ),
         )
     if isinstance(binding, _EntityObjectiveBinding):
@@ -707,10 +1156,7 @@ def _settled_parameter_effects(
     feedback = context.control_feedback
     if feedback is not None and (
         feedback.strategy_transition_required
-        or (
-            feedback.recovery is not None
-            and feedback.recovery.strategy_change_required
-        )
+        or (feedback.recovery is not None and feedback.recovery.strategy_change_required)
     ):
         return set()
     settled: set[tuple[str, str]] = set()
@@ -720,10 +1166,7 @@ def _settled_parameter_effects(
         if key in inspected or turn.semantic_action not in {"fill", "select"}:
             continue
         inspected.add(key)
-        if (
-            str(turn.dispatch_status) != "sent"
-            or str(turn.action_evaluation_status) != "effect_confirmed"
-        ):
+        if str(turn.dispatch_status) != "sent" or str(turn.action_evaluation_status) != "effect_confirmed":
             continue
         requested = turn.public_parameters.get("value")
         ref = ref_by_target.get(turn.target_id)
@@ -845,9 +1288,7 @@ def _current_state(context, ref_by_target):
             "certified": context.set_control.certified,
             "predicate": to_json_compatible(context.set_control.predicate),
             "unknown_candidates": [
-                ref_by_target[item]
-                for item in context.set_control.unknown_target_ids
-                if item in ref_by_target
+                ref_by_target[item] for item in context.set_control.unknown_target_ids if item in ref_by_target
             ],
             "evidence_needs": list(context.set_control.evidence_needs),
         }
