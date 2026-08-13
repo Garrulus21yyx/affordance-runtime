@@ -247,6 +247,7 @@ class _GroundedAdapterBase:
                 self.port.supports_multimodal,
                 system_prompt,
                 self.perception_profile,
+                include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
             )
             calls = await self._call(
                 messages,
@@ -495,7 +496,15 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
 GroundedToolDecisionAdapter = GroundedActionAdapter
 
 
-def _messages(view, request, supports_multimodal, system_prompt, perception_profile):
+def _messages(
+    view,
+    request,
+    supports_multimodal,
+    system_prompt,
+    perception_profile,
+    *,
+    include_tool_menu: bool,
+):
     include_images = perception_uses_images(request, perception_profile)
     if include_images and (not supports_multimodal or not request.image_inputs):
         raise ValueError("selected grounded perception requires a current image input")
@@ -508,15 +517,16 @@ def _messages(view, request, supports_multimodal, system_prompt, perception_prof
         "grounding_index": to_json_compatible(grounding_index),
         "current_state": to_json_compatible(view.current_state),
         "previous_tool_result": to_json_compatible(view.previous_tool_result),
-        "tool_menu": tuple(
+    }
+    if include_tool_menu:
+        public["tool_menu"] = tuple(
             {
                 "op": item.name,
                 "description": item.description,
                 "arguments": to_json_compatible(item.input_schema),
             }
             for item in view.tools
-        ),
-    }
+        )
     text = json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if not include_images:
         return (

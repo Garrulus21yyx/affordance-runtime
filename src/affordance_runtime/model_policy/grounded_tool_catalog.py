@@ -95,7 +95,6 @@ def compile_grounded_tool_catalog(
     if context.actions.options and (not context.grounding.entities or not context.grounding.target_refs):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
-    entity_by_ref = {item.ref: item for item in context.grounding.entities}
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     objective_open = context.progress.local_objective_open
     if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL and objective_open:
@@ -194,7 +193,7 @@ def compile_grounded_tool_catalog(
         suffix = "" if verb_counts[verb] == 1 else f"_{verb_counts[verb]}"
         refs = [ref for ref, _option in values]
         schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
-        specs.append(ToolSpec(f"{verb}{suffix}", _tool_description(verb, refs, entity_by_ref), schema))
+        specs.append(ToolSpec(f"{verb}{suffix}", _tool_description(verb), schema))
         bindings.append(_VerbBinding(tuple((ref, option.action_id) for ref, option in values), parameter_field))
 
     if phase is GroundedToolPhase.ACTION_SELECTION and context.actions.has_more:
@@ -411,12 +410,11 @@ def _local_objective_schema() -> dict[str, object]:
     return TypeAdapter(LocalObjectiveSpecPayload).json_schema()
 
 
-def _tool_description(verb: str, refs: list[str], entity_by_ref: Mapping[str, AgentGroundingEntityView]) -> str:
-    values = [f"{ref}({entity_by_ref[ref].role},{entity_by_ref[ref].label!r})" for ref in refs]
+def _tool_description(verb: str) -> str:
     return (
-        f"{verb} one target authorized by the current Runtime action page. "
-        f"Pass exactly one required target argument from: {'; '.join(values)}"
-    )[:500]
+        f"{verb} one entity authorized by the current Runtime action page. "
+        "Pass exactly one required target E-ref from grounding_index."
+    )
 
 
 def _task_brief(context: AgentContext):

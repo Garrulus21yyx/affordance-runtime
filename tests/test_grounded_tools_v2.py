@@ -214,6 +214,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     public = json.loads(user_content)
     assert public["task_brief"]["instruction"] == context.task.instruction
     assert all(item["marked"] is False for item in public["grounding_index"])
+    assert "tool_menu" in public
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 0
     assert trace["selected_grounding"]["marked"] is False
@@ -320,6 +321,48 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
     assert isinstance(repair_system, str)
     assert '"selected_operation":"observe_visual"' in repair_system
     assert '"field_paths":["parameters.unexpected"]' in repair_system
+
+
+def test_native_transport_carries_unified_world_and_tools_once() -> None:
+    @dataclass
+    class NativePort:
+        provider: str = "zhipu"
+        model: str = "glm-4.6v"
+        endpoint_class: str = "fixture"
+        supports_multimodal: bool = True
+        last_call: ModelCallRecord | None = None
+        messages: tuple = ()
+        tools: tuple[ToolSpec, ...] = ()
+
+        async def generate_tool_calls(self, messages, tools, config, *, require_one):
+            del config, require_one
+            self.messages = tuple(messages)
+            self.tools = tuple(tools)
+            return (ToolCall("click", {"target": "E3"}),)
+
+    context = _context()
+    port = NativePort()
+    adapter = GroundedActionAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert not isinstance(outcome, ModelFailure)
+    user_content = port.messages[1].content
+    assert isinstance(user_content, str)
+    public = json.loads(user_content)
+    assert set(public) == {
+        "task_brief",
+        "grounding_index",
+        "current_state",
+        "previous_tool_result",
+    }
+    assert {item.name for item in port.tools} == {"fill", "click"}
+    assert all("E1(" not in item.description for item in port.tools)
+    assert all("target E-ref from grounding_index" in item.description for item in port.tools)
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
