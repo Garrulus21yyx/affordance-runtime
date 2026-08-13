@@ -488,8 +488,9 @@ class BenchmarkCaseResult:
         }:
             raise ValueError("benchmark action status is outside the closed vocabulary")
         if self.last_decision_type not in {
-            "", "Abort", "AskUser", "ProposeDone", "RequestActionPage",
-            "RequestObservation", "SelectAction", "Wait",
+            "", "Abort", "AskUser", "EstablishSetObjective", "ProposeDone",
+            "RequestActionPage", "RequestObservation", "SelectAction",
+            "SubmitSetPredicateAssessments", "Wait",
         }:
             raise ValueError("benchmark decision type is outside the closed vocabulary")
         if self.last_progress_event_type not in {
