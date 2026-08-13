@@ -25,7 +25,7 @@ def _scenario():
     return asyncio.run(build_live_dom_scenario())
 
 
-def test_v1_guide_shape_wraps_first_action_in_the_v2_decision_package() -> None:
+def test_v1_guide_shape_contains_one_direct_typed_decision() -> None:
     scenario = _scenario()
     guide = build_compact_decision_guide(scenario.serialized_context)
     encoded = json.loads(serialize_compact_decision_guide(guide))
@@ -34,8 +34,7 @@ def test_v1_guide_shape_wraps_first_action_in_the_v2_decision_package() -> None:
         "select_action_example", "truncated", "visible_actions", "visible_actions_total",
     )
     example = encoded["select_action_example"]
-    assert example["objective_operation"] == {"kind": "none"}
-    assert example["decision"]["action_id"] == scenario.context.actions.options[0].action_id
+    assert example["action_id"] == scenario.context.actions.options[0].action_id
 
 
 def test_v2_is_explicit_and_contains_symmetric_seven_decision_contracts() -> None:

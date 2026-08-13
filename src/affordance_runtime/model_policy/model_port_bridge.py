@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import base64
-import copy
 import hashlib
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
-
-from pydantic import model_validator
 
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model_boundary.failures import (
@@ -18,7 +15,7 @@ from affordance_runtime.model_boundary.failures import (
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model_policy.grounding import (
     DecisionGroundingVariant,
     build_compact_decision_guide,
@@ -31,8 +28,9 @@ from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 from affordance_runtime.model_policy.schema_identity import decision_schema_digest, grounding_guide_digest
 from affordance_runtime.model_policy.spec import (
     SCHEMA_VERSION,
-    AgentDecisionPackagePayload,
+    AgentDecisionPayload,
     decision_response_schema,
+    payload_to_decision,
 )
 from affordance_runtime.model_port import (
     FallbackModelPort,
@@ -97,7 +95,7 @@ class ModelPortDecisionAdapter:
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
-    async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
+    async def generate(self, request: ModelDecisionRequest) -> ResolvedModelDecision | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
         if request.schema_version != SCHEMA_VERSION or dict(request.decision_schema) != decision_response_schema():
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model decision schema is not canonical")
@@ -111,7 +109,7 @@ class ModelPortDecisionAdapter:
         except (TypeError, ValueError, json.JSONDecodeError):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model grounding could not be built")
         try:
-            output_schema = _decision_output_schema(request.serialized_context)
+            output_schema = AgentDecisionPayload
             try:
                 payload = await self.port.generate_structured(
                     messages,
@@ -173,15 +171,19 @@ class ModelPortDecisionAdapter:
         )
         if metadata.rate_limit_retry_count or metadata.transient_retry_count:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "model transport violated the one-attempt profile")
-        return ModelDecisionResponse(payload.model_dump_json(), metadata)
+        try:
+            decision = payload_to_decision(payload, request.context_id)
+        except (TypeError, ValueError):
+            return _failure(ModelFailureKind.SCHEMA_ERROR, "model decision response violated its semantic contract")
+        return ResolvedModelDecision(decision, metadata)
 
 
 def _decision_schema_repair_messages(
     messages: tuple[ModelMessage, ...],
 ) -> tuple[ModelMessage, ...]:
     repair_instruction = (
-        "The previous response was rejected because it did not match the required decision package. "
-        "Return exactly one JSON object with top-level keys objective_operation and decision. "
+        "The previous response was rejected because it did not match the required typed decision. "
+        "Return exactly one JSON decision object. "
         "Do not add a schema-name wrapper, repeat the task context, or include explanation."
     )
     system = messages[0]
@@ -192,46 +194,6 @@ def _decision_schema_repair_messages(
         content=f"{system.content}\n\n{repair_instruction}",
     )
     return (repaired_system, *messages[1:])
-
-
-def _decision_output_schema(serialized_context: str) -> type[AgentDecisionPackagePayload]:
-    """Narrow one repair turn to Runtime-projected objective alternatives."""
-
-    try:
-        context = json.loads(serialized_context)
-        feedback = context.get("control_feedback")
-        recovery = feedback.get("recovery") if isinstance(feedback, dict) else None
-        raw_repairs = recovery.get("admissible_objective_operations") if isinstance(recovery, dict) else None
-    except (AttributeError, TypeError, json.JSONDecodeError):
-        return AgentDecisionPackagePayload
-    if (
-        not isinstance(feedback, dict)
-        or feedback.get("code") != "objective_already_satisfied"
-        or not isinstance(raw_repairs, list)
-        or not raw_repairs
-        or len(raw_repairs) > 4
-        or any(not isinstance(item, dict) for item in raw_repairs)
-    ):
-        return AgentDecisionPackagePayload
-    repairs = tuple(copy.deepcopy(item) for item in raw_repairs)
-
-    class RepairConstrainedAgentDecisionPackagePayload(AgentDecisionPackagePayload):
-        @model_validator(mode="after")
-        def _require_projected_objective_repair(self):
-            selected = self.objective_operation.model_dump(mode="json")
-            if selected not in repairs:
-                raise ValueError("objective operation is outside projected repair alternatives")
-            return self
-
-        @classmethod
-        def model_json_schema(cls, *args, **kwargs):
-            schema = super().model_json_schema(*args, **kwargs)
-            schema["properties"]["objective_operation"] = {
-                "enum": copy.deepcopy(list(repairs)),
-            }
-            return schema
-
-    return RepairConstrainedAgentDecisionPackagePayload
 
 
 def _metadata(

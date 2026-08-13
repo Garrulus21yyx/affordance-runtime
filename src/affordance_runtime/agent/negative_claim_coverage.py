@@ -5,10 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from affordance_runtime.agent.decisions import Abort, AbortCategory, AgentDecisionPackage, ProposeDone
+from affordance_runtime.agent.decisions import Abort, AbortCategory, AgentDecision, ProposeDone
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.observation_paging import ObservationTraversalStatus
-from affordance_runtime.task.frontier_contracts import ProposeObjective, ReplaceObjective, TargetAbsent
 from affordance_runtime.world.contracts import CoverageState, EntityInventoryStatus, WorldObservation
 
 
@@ -31,11 +30,11 @@ class NegativeClaimCoverageGate:
 
     def assess(
         self,
-        package: AgentDecisionPackage,
+        decision: AgentDecision,
         context: AgentContext,
         observation: WorldObservation,
     ) -> NegativeClaimCoverageResult:
-        if not _requires_negative_coverage(package):
+        if not _requires_negative_coverage(decision):
             return NegativeClaimCoverageResult(NegativeClaimCoverageDisposition.ALLOW)
         unavailable = _inventory_unavailable_reason(observation)
         if unavailable:
@@ -58,14 +57,7 @@ class NegativeClaimCoverageGate:
         )
 
 
-def _requires_negative_coverage(package: AgentDecisionPackage) -> bool:
-    operation = package.objective_operation
-    if isinstance(operation, ProposeObjective | ReplaceObjective) and isinstance(
-        operation.predicate,
-        TargetAbsent,
-    ):
-        return True
-    decision = package.decision
+def _requires_negative_coverage(decision: AgentDecision) -> bool:
     if isinstance(decision, Abort):
         return decision.category in {
             AbortCategory.NO_PROGRESS,

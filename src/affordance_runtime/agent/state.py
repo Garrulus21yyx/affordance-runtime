@@ -12,12 +12,6 @@ from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
-from affordance_runtime.task.frontier import PreparedObjectiveOperation
-from affordance_runtime.task.frontier_contracts import ActiveObjective, VerifiedTaskState
-from affordance_runtime.task.hypothesis_contracts import (
-    HypothesisItemRejection,
-    RequirementHypothesisState,
-)
 from affordance_runtime.task.local_objective import (
     LocalObjectiveState,
     local_objective_observation_id,
@@ -27,7 +21,6 @@ from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, Snapsh
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
-MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS = 4
 _SEMANTIC_DIGEST = re.compile(r"[0-9a-f]{64}")
 
 
@@ -56,21 +49,8 @@ class AgentLoopState:
     control_transition_kind_counts: dict[str, int] = field(default_factory=dict)
     continued_control_root_ids: tuple[str, ...] = ()
     control_terminal_status: AgentLoopStatus | None = None
-    active_objective: ActiveObjective | None = None
     local_objective_state: LocalObjectiveState | None = None
     scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
-    verified_task_state: VerifiedTaskState | None = None
-    requirement_hypotheses: RequirementHypothesisState = field(
-        default_factory=RequirementHypothesisState,
-    )
-    requirement_hypothesis_failure_reason: str = ""
-    recent_requirement_hypothesis_rejections: tuple[HypothesisItemRejection, ...] = ()
-    requirement_hypothesis_accepted_total_count: int = 0
-    requirement_hypothesis_rejected_total_count: int = 0
-    requirement_hypothesis_rejection_code_counts: dict[str, int] = field(default_factory=dict)
-    requirement_hypothesis_proposal_count: int = 0
-    requirement_hypothesis_last_basis: str = ""
-    objective_sequence: int = 0
     task_revision: int = 1
     progress_revision: int = 0
     pending_revision: int = 0
@@ -174,80 +154,6 @@ class AgentLoopState:
         )[-self.progress_event_limit :]
         self.progress_event_total_count += 1
         self.progress_revision += 1
-
-    def set_active_objective(self, objective: ActiveObjective) -> None:
-        if self.active_objective != objective:
-            self.active_objective = objective
-            self.progress_revision += 1
-
-    def clear_active_objective(self) -> None:
-        if self.active_objective is not None:
-            self.active_objective = None
-            self.progress_revision += 1
-
-    def install_verified_task_state(self, task_state: VerifiedTaskState) -> None:
-        if self.verified_task_state != task_state:
-            self.verified_task_state = task_state
-            self.progress_revision += 1
-
-    def install_requirement_hypotheses(
-        self,
-        hypotheses: RequirementHypothesisState,
-        *,
-        failure_reason: str = "",
-    ) -> None:
-        if self.requirement_hypotheses != hypotheses or self.requirement_hypothesis_failure_reason != failure_reason:
-            self.requirement_hypotheses = hypotheses
-            self.requirement_hypothesis_failure_reason = failure_reason
-            self.progress_revision += 1
-
-    def record_requirement_hypothesis_proposal(self, basis: str) -> None:
-        if (
-            not basis.strip()
-            or len(basis) > 640
-            or self.requirement_hypothesis_proposal_count >= MAX_REQUIREMENT_HYPOTHESIS_PROPOSALS
-        ):
-            raise ValueError("requirement hypothesis proposal budget is invalid")
-        self.requirement_hypothesis_proposal_count += 1
-        self.requirement_hypothesis_last_basis = basis
-
-    def record_requirement_hypothesis_admission(
-        self,
-        accepted_count: int,
-        rejections: tuple[HypothesisItemRejection, ...],
-    ) -> None:
-        values = tuple(rejections)
-        if (
-            type(accepted_count) is not int
-            or accepted_count < 0
-            or accepted_count + len(values) > 8
-            or any(not isinstance(item, HypothesisItemRejection) for item in values)
-        ):
-            raise ValueError("requirement hypothesis admission outcome is invalid")
-        self.requirement_hypothesis_accepted_total_count += accepted_count
-        self.requirement_hypothesis_rejected_total_count += len(values)
-        for item in values:
-            code = item.code.value
-            self.requirement_hypothesis_rejection_code_counts[code] = (
-                self.requirement_hypothesis_rejection_code_counts.get(code, 0) + 1
-            )
-        self.recent_requirement_hypothesis_rejections = values
-        self.progress_revision += 1
-
-    def commit_objective_operation(self, prepared: PreparedObjectiveOperation) -> None:
-        """Commit an already validated operation exactly once against current state."""
-
-        current = self.active_objective if isinstance(self.active_objective, ActiveObjective) else None
-        current_id = current.objective_id if current is not None else ""
-        if current_id != prepared.expected_active_objective_id:
-            raise ValueError("prepared objective operation is stale")
-        if prepared.allocated_sequence:
-            if prepared.allocated_sequence != self.objective_sequence + 1:
-                raise ValueError("prepared objective sequence is stale")
-            self.objective_sequence = prepared.allocated_sequence
-        if self.active_objective != prepared.next_active_objective:
-            self.active_objective = prepared.next_active_objective
-            self.progress_revision += 1
 
     def set_pending_question(self, question: str) -> None:
         if self.pending_user_question != question:

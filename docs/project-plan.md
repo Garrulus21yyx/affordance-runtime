@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT PRODUCT ROADMAP
 > **Updated:** 2026-08-10
-> **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+> **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 > **Migration authority:** [Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 ## 1. Product position
@@ -33,7 +33,7 @@ The stable target vocabulary is:
 ```text
 semantically strong TaskGoal + risk-proportionate MaterialBindings
 optional EvaluationSpec / strict source lineage
-optional TaskPlan<Milestone> + LocalObjective
+optional observation-grounded LocalObjective
 WorldObservation + Internal ActionSpace
 ObservationCapabilities + ObservationAcquisition + ExecutionOutcome
 disposable AgentContext + opaque ContextIdentity
@@ -44,7 +44,7 @@ ActionSpace + ActionIntent
 BoundActionRequest + ActionResult
 ActionEvaluation + TaskEvaluation
 AgentLoopState + bounded ControlTransition
-optional VerifiedTaskState + TaskProgressAuditor
+validated ActionEvaluation + TaskEvaluation
 HumanConfirmation + optional TurnRecorder telemetry
 bounded ActionBatch + evaluated memory/Skill sidecars
 ```
@@ -80,7 +80,7 @@ core contracts for every GUI task.
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
 | P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A-C COMPLETE_NON_DEFAULT; M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED; M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC, followed after remediation and a passing live gate by scroll/keypress, relational/dynamic observation, verified multi-step working state, unassessed-case review and a frozen MiniWoB-60 rerun |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
-| P5-E | VerifiedTaskState, task-level progress auditing, milestone/frontier planning and replanning | IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED; general long-horizon planning and separated-cohort validation remain open |
+| P5-E | observation-grounded sequence/set/aggregate LocalObjective lifecycle | IN_PROGRESS / UNIFIED_OWNER_IMPLEMENTED / LIVE_REVALIDATION_PENDING; old frontier/hypothesis path deleted |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
 | P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
@@ -129,7 +129,7 @@ objective identity and exact membership; they are not durable state.
 Expected unsupported/failed acquisition is typed. Dispatch truth is independent
 of acquisition failure. One accepted policy decision has exactly one bounded
 root ControlTransition, while AgentLoopState remains the current-state authority.
-VerifiedTaskState accepts only validated evidence; TaskPlan remains a hypothesis.
+LocalObjective reducers accept only current typed evidence; TaskEvaluation remains the sole task-completion authority.
 
 ## 6. Non-goals
 
@@ -242,6 +242,7 @@ closing B. M4.6 repairs those gaps in independently
 measurable slices; its targeted gates and a new immutable full run precede the
 M4.7 supported-subset multi-seed gate, whose immutable manifest, exact seed set,
 numeric provider-availability/capacity floor, success floor and maximum seed
-variance are frozen before execution. P5-E then reuses the existing TaskPlan
-contracts while adding validated VerifiedTaskState frontier promotion and a
-task-level auditor separate from the local fill/select ProgressController.
+variance are frozen before execution. P5-E now converges the
+observation-grounded LocalObjective lifecycle. A future long-horizon planner,
+if admitted by benchmark evidence, must be a separate proposal and cannot
+revive dormant AgentLoop frontier state.

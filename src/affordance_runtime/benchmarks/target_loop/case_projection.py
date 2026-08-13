@@ -185,22 +185,6 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "policy_calls": state.policy_calls,
         "policy_schema_repair_count": state.policy_schema_repair_count,
         "tool_argument_repair_count": state.tool_argument_repair_count,
-        "requirement_hypothesis_calls": state.requirement_hypothesis_calls,
-        "requirement_hypothesis_schema_repair_count": (state.requirement_hypothesis_schema_repair_count),
-        "requirement_hypothesis_accepted_count": (
-            getattr(result, "requirement_hypothesis_accepted_count", 0)
-            if result
-            else getattr(snapshot, "requirement_hypothesis_accepted_count", 0)
-            if snapshot
-            else 0
-        ),
-        "requirement_hypothesis_rejected_count": (
-            getattr(result, "requirement_hypothesis_rejected_count", 0)
-            if result
-            else getattr(snapshot, "requirement_hypothesis_rejected_count", 0)
-            if snapshot
-            else 0
-        ),
         "valid_tool_call_count": state.valid_tool_call_count,
         "admitted_decision_count": sum(
             1

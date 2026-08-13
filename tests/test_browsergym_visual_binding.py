@@ -330,14 +330,14 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
             )
             catalog = compile_grounded_tool_catalog(context)
             assert "observe_visual" in {item.name for item in catalog.specs}
-            package = resolve_grounded_tool_call(
+            decision = resolve_grounded_tool_call(
                 catalog,
                 ToolCall("observe_visual", {}),
                 expected_context_id=context.context_id,
             )
-            assert isinstance(package.decision, RequestObservation)
-            assert package.decision.modality == "visual"
-            assert package.decision.required_assurance == "weak"
+            assert isinstance(decision, RequestObservation)
+            assert decision.modality == "visual"
+            assert decision.required_assurance == "weak"
         finally:
             await environment.close()
 

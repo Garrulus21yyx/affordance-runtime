@@ -51,7 +51,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
 | P5-M4.6 evidence-directed remediation | `ARCHITECTURE_REOPENED / DE_SPECIALIZATION_IMPLEMENTED / LIVE_REVALIDATION_PENDING / GENERALIZATION_OPEN` | The five cases remain witnesses only. Persistent `SetObjectiveState` owns scope, assessments, member effects and stability; Catalog enforces an explicit fail-closed directive; main-policy tools explicitly establish typed structural or visual predicates; typed evidence obligations replace task-keyword Vision routing. Task-relative `task_predicate_truth`, the instruction scanner, universal keyword parser and repeated-leaf exact-count promotion are removed. Regular lattice and computed-style color remain replaceable task-independent evidence providers and cannot grant action authority. Focused invariant/metamorphic tests and the full suite (`2398 passed, 27 skipped`) pass; the clean-SHA real five-case rerun is pending. |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
-| P5-E | `IN_PROGRESS / HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` | VerifiedTaskState, rolling objective admission/audit, bounded initial/page-change requirement-hypothesis proposal, atomic Runtime admission, verifier assessment, fair pinning and separate benchmark call accounting exist; separated-cohort live validation remains open |
+| P5-E | `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED / LIVE_REVALIDATION_PENDING` | One post-observation LocalObjective lifecycle owns sequence/set/aggregate semantics and current evidence resolution. TaskFrontier, VerifiedTaskState, requirement hypotheses and packaged objective operations are deleted from AgentLoop. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `NOT_STARTED` | old baseline retained and frozen |
 
@@ -86,10 +86,9 @@ M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
-claimed. P5-E is `IN_PROGRESS /
-HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`: typed rolling
-objectives plus bounded non-authoritative hypothesis proposal, atomic Runtime
-admission, verifier assessment and fair observation pinning exist.
+claimed. P5-E is `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED /
+LIVE_REVALIDATION_PENDING`: typed sequence/set/aggregate objectives share one
+post-observation lifecycle and the displaced frontier/hypothesis path is deleted.
 
 The current Phase-4 increment retains point grounders only as explicit
 benchmark/legacy-compatibility arms; the BrowserGym target loop neither
@@ -139,7 +138,7 @@ implementation and later run identities are tracked in the
 - new RuntimeDelta/RuntimeCommitter/StateKernel capability;
 - ledger, checkpoint/resume, event sourcing, generic recovery transaction;
 - global approval/capability/token registry or worker fencing;
-- ActionBatch integration and P5-E long-horizon plan/frontier mutation before
+- ActionBatch integration or a new long-horizon planner before
   the M4.6 targeted/full rerun and M4.7 supported-subset multi-seed gates;
 - default cutover or deletion before the positive cross-surface gates.
 - any AgentContext ownership of Runtime state, private route projection, or
@@ -344,19 +343,19 @@ archive stopped 7c14190 8/60 as INCOMPLETE_DIAGNOSTIC
 -> grid-coordinate/click-pie/click-shades/visual-addition visual gate
 -> scroll + focus-aware keypress
 -> table/list relations + dynamic semantic delta
--> verified useful-value/frontier projection for multi-step control
+-> observation-resolvable sequence/set/aggregate objectives
 -> classify the 14 readiness-unassessed cases
 -> targeted cohort after every slice
 -> frozen MiniWoB-60 exact-profile rerun
 -> post-60 drag/slider/hover/multi-select/general-canvas breadth
 ```
 
-SoM marks, AX aliases and candidate hypotheses remain non-authoritative.
+SoM marks and AX aliases remain non-authoritative.
 `ActionSpace` is still the only legal-action owner, and every accepted tool
 command still passes the existing admission, binding/currentness,
 risk/confirmation, execution and evaluation path. Full owner boundaries,
 non-goals and falsifiable properties are defined in the active
-[task-grounded perception/frontier plan](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
+[LocalObjective de-specialization plan](superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md).
 
 The capability-covered cohort is a clean regression denominator, not a ceiling
 on product scope. The frozen inventory currently reports 15 declared-supported,
@@ -414,12 +413,12 @@ free of lifecycle/accounting hard-gate failures, freeze a supported-subset
 immutable manifest, exact seed set, numeric provider-availability/capacity
 floor, success floor and maximum seed variance before running the multi-seed
 gate. No threshold may be chosen after seeing results.
-Only if the multi-seed run meets every frozen threshold may P5-E be admitted:
+The current LocalObjective slice is accepted only when these properties hold:
 
 ```text
-VerifiedTaskState evidence promotion
-→ milestone/current-frontier lifecycle + frontier-derived LocalObjective
-→ TaskProgressAuditor (separate from local ProgressController)
-→ low-frequency TaskPlanner and fact-driven replacement
-→ 20–50+ accepted-policy root-ControlTransition long-horizon gate
+no exact target before first observation
+→ one typed semantic objective decision
+→ current scope/evidence resolution
+→ current ActionSpace admission and private binding
+→ fresh observation re-resolution and evaluator-owned completion
 ```

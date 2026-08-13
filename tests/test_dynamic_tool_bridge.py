@@ -6,9 +6,8 @@ from dataclasses import dataclass, field, replace
 
 from test_model_port_decision_bridge import _context, _zero_retry_config
 
-from affordance_runtime.agent import AgentDecisionPackage, SelectAction
+from affordance_runtime.agent import SelectAction
 from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.policy import _build_request
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolResolutionCode
 from affordance_runtime.model_policy.tool_port_bridge import (
@@ -65,7 +64,7 @@ class _CompactPort:
         return output_schema.model_validate(self.payload or {"tool": tool["name"], "args": {}})
 
 
-def test_compact_tool_bridge_hides_runtime_ids_and_restores_existing_package() -> None:
+def test_compact_tool_bridge_hides_runtime_ids_and_returns_typed_decision() -> None:
     async def scenario() -> None:
         context = await _context()
         port = _CompactPort()
@@ -78,9 +77,8 @@ def test_compact_tool_bridge_hides_runtime_ids_and_restores_existing_package() -
         assert isinstance(content, str)
         assert context.context_id not in content
         assert '"action_id"' not in content
-        parsed = parse_agent_decision(response.raw_payload, context.context_id)
-        assert isinstance(parsed, SelectAction | AgentDecisionPackage)
-        decision = parsed.decision if isinstance(parsed, AgentDecisionPackage) else parsed
+        decision = response.decision
+        assert isinstance(decision, SelectAction)
         assert decision.context_id == context.context_id
         assert decision.action_id.startswith("action:")
         assert adapter.last_resolution_code is ToolResolutionCode.ACCEPTED

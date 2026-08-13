@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_adapter_task, real_dom_environment
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
@@ -14,20 +14,20 @@ from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import ModelFailure
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.contracts import ModelDecisionResponse
+from affordance_runtime.model_policy.contracts import ResolvedModelDecision
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model_port import ModelConfig, ModelPort
 
 from .contracts import ConformanceAttempt, ModelConformanceStage
-from .stages import attribute_decision_payload
+from .stages import AttributedDecision, attribute_decision_payload
 
 
 @dataclass
 class CapturingDecisionPort:
     wrapped: ModelPortDecisionAdapter
     request: object | None = None
-    outcome: ModelDecisionResponse | ModelFailure | None = None
+    outcome: ResolvedModelDecision | ModelFailure | None = None
 
     @property
     def transport_timeout_s(self) -> float:
@@ -68,7 +68,7 @@ async def run_level_four_attempt(
     schema_bytes = len(json.dumps(
         to_json_compatible(schema), sort_keys=True, separators=(",", ":"),
     ).encode())
-    output = capturing.outcome.raw_payload if isinstance(capturing.outcome, ModelDecisionResponse) else ""
+    output = ""
     attributed = _attributed(capturing.outcome, user)
     stage = attributed.stage
     if stage == ModelConformanceStage.SUCCESS and result.status != AgentLoopStatus.DONE:
@@ -91,7 +91,7 @@ async def run_level_four_attempt(
 def _attributed(outcome, user):
     if isinstance(outcome, ModelFailure):
         return attribute_decision_payload(outcome, "", (), {})
-    if not isinstance(outcome, ModelDecisionResponse):
+    if not isinstance(outcome, ResolvedModelDecision):
         return attribute_decision_payload("{", "", (), {})
     value = json.loads(user)
     if isinstance(value, dict) and isinstance(value.get("agent_context"), dict):
@@ -104,7 +104,33 @@ def _attributed(outcome, user):
         )
         for item in options
     }
-    return attribute_decision_payload(outcome.raw_payload, str(value.get("context_id") or ""), action_ids, destinations)
+    decision = outcome.decision
+    if isinstance(decision, Abort):
+        return AttributedDecision(ModelConformanceStage.MODEL_ABORT, "model_abort", "abort")
+    if isinstance(decision, SelectAction):
+        if decision.action_id not in action_ids:
+            return AttributedDecision(ModelConformanceStage.ACTION_ID, "hidden_action", "select_action")
+        if decision.destination_id not in destinations.get(decision.action_id, ("",)):
+            return AttributedDecision(
+                ModelConformanceStage.DESTINATION_ID, "hidden_destination", "select_action"
+            )
+    return AttributedDecision(
+        ModelConformanceStage.SUCCESS,
+        decision_variant=_decision_variant(decision),
+    )
+
+
+def _decision_variant(decision) -> str:
+    return {
+        "SelectAction": "select_action",
+        "EstablishLocalObjective": "establish_local_objective",
+        "RequestObservation": "request_observation",
+        "RequestActionPage": "request_action_page",
+        "AskUser": "ask_user",
+        "ProposeDone": "propose_done",
+        "Wait": "wait",
+        "Abort": "abort",
+    }.get(type(decision).__name__, "")
 
 
 def _count(user: str, key: str) -> int:

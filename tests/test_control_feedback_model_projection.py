@@ -42,7 +42,6 @@ def test_model_projection_is_public_safe_and_omits_internal_digests() -> None:
         "public_subject_id": "target:public",
         "public_field_paths": ("actions",),
         "related_decision": None,
-        "related_objective_operation": None,
         "violation": None,
         "semantic_effect": None,
         "recovery": {
@@ -52,7 +51,6 @@ def test_model_projection_is_public_safe_and_omits_internal_digests() -> None:
             "rollback_available": False,
             "strategy_change_required": True,
             "offered_action_ids": ("action:1",),
-            "admissible_objective_operations": (),
         },
     }
     assert not {"scope_digest", "issue_digest", "request_digest", "result_digest"} & payload.keys()

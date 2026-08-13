@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent import Abort, RequestActionPage, SelectAction
@@ -16,7 +15,8 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
@@ -68,13 +68,16 @@ class ScriptedDecisionPort:
         self.calls += 1
         if self.fail:
             return ModelFailure(ModelFailureKind.TIMEOUT, "fixture timeout", False)
+        import json
+
         context = json.loads(request.serialized_context)
         option = context["actions"]["options"][0]
         payload = {
             "type": "select_action", "context_id": context["context_id"],
             "action_id": option["action_id"], "parameters": {}, "destination_id": "",
         }
-        return ModelDecisionResponse(json.dumps(payload), ModelMetadata("fixture", "scripted", "response:1"))
+        decision = payload_to_decision(AgentDecisionPayload.model_validate(payload), request.context_id)
+        return ResolvedModelDecision(decision, ModelMetadata("fixture", "scripted", "response:1"))
 
 
 def policy_for(profile: str):

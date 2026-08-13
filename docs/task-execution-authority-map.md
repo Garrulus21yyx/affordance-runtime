@@ -3,6 +3,7 @@
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
 > **Updated:** 2026-08-13
 > **Scope:** target GUI AgentLoop only
+> **Implementation truth:** [Implementation Status](implementation-status.md)
 
 ## Decision
 
@@ -19,7 +20,7 @@ UserRequest
        -> internal ActionSpace(TaskGoal legality + current availability)
        -> disposable AgentContext
        -> AgentPolicy.decide
-       -> typed AgentDecision + optional LocalObjective operation
+       -> one typed AgentDecision
        -> context/action membership admission
        -> ActionIntent
        -> risk/confirmation
@@ -69,6 +70,10 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 No intake or planner may invent an exact DOM/entity target. No E-ref or model
 point becomes durable identity.
 
+`EstablishLocalObjective` is one `AgentDecision` variant, not a second package,
+side channel, or parallel objective operation. Runtime validates it against the
+current context and installs it in the sole `local_objective_state` slot.
+
 ## LocalObjective and evidence
 
 Set, sequence, and aggregate execution reducers are local rolling-horizon
@@ -93,6 +98,11 @@ Projections are one-way and disposable. Runtime never reconstructs authoritative
 task, objective, world, or binding state from AgentContext, a tool catalog,
 E-ref, screenshot mark, tool result, benchmark row, or diagnostic trace.
 
+Provider protocol adapters parse a model response exactly once and return the
+typed `AgentDecision`. They do not serialize a typed package back to JSON for a
+second policy parser. The public context identity is validated against the
+private current AgentContext whenever a protocol needs private grounding data.
+
 The retained execution chain is deliberately short:
 
 ```text
@@ -107,6 +117,8 @@ TaskGoal boundary
 No transitive provenance graph is required for ordinary GUI actions. Additional
 lineage is retained only when a declared high-risk/material/evaluation contract
 requires it.
+No durable ledger, event replay, or projection-derived state is part of this
+short-loop authority chain.
 
 ## Removed wrong coupling
 

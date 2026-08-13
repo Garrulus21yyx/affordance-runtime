@@ -20,17 +20,6 @@ _MODULE_EXPORTS = {
         "install_aggregate_destination_visual_leaf_assessments", "install_aggregate_visual_leaf_assessments",
         "refresh_aggregate_objective_state",
     },
-    "affordance_runtime.task.hypothesis_contracts": {
-        "HypothesisItemRejection", "HypothesisPredicateAssessment", "HypothesisProposalMode",
-        "HypothesisRejectionCode", "HypothesisSetCompleteness", "RequirementHypothesisFailure",
-        "RequirementHypothesisFailureKind", "RequirementHypothesisProposal", "RequirementHypothesisProposalBatch",
-        "RequirementHypothesisProposer", "RequirementHypothesisState", "TrackedHypothesisStatus",
-        "TrackedRequirementHypothesis",
-    },
-    "affordance_runtime.task.hypothesis_runtime": {
-        "HypothesisAdmissionCode", "HypothesisAdmissionResult", "admit_requirement_hypotheses",
-        "assess_requirement_hypotheses",
-    },
     "affordance_runtime.task.intent_context": {"IntentContext", "IntentExcerpt", "IntentSourceKind"},
     "affordance_runtime.task.local_objective": {
         "LocalObjective", "LocalObjectiveState", "establish_local_objective",

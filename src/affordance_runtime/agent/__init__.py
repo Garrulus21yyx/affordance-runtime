@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     )
     from affordance_runtime.agent.decisions import (
         Abort,
-        AgentDecisionPackage,
         AskUser,
         EstablishLocalObjective,
         ProposeDone,
@@ -59,10 +58,6 @@ _EXPORTS = {
     "AdmissionSummary": ("affordance_runtime.agent.control_transition", "AdmissionSummary"),
     "AdmissionStatus": ("affordance_runtime.agent.control_transition", "AdmissionStatus"),
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
-    "AgentDecisionPackage": (
-        "affordance_runtime.agent.decisions",
-        "AgentDecisionPackage",
-    ),
     "AgentEpisodeRunner": ("affordance_runtime.agent.episode_runner", "AgentEpisodeRunner"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),

@@ -22,7 +22,6 @@ from affordance_runtime.agent.evaluation_control import (
     validated_action_evaluation,
     validated_task_evaluation,
 )
-from affordance_runtime.agent.frontier_control import audit_task_frontier
 from affordance_runtime.agent.observation_control import (
     capture_for_session,
     no_fresh_after_result,
@@ -39,7 +38,7 @@ from affordance_runtime.agent.runtime_failure import (
 )
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
-from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
+from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     ExecutionOutcome,
@@ -47,7 +46,7 @@ from affordance_runtime.world.acquisition import (
     WorldObservationRequest,
 )
 from affordance_runtime.world.binder import ActionBinder, BindingError
-from affordance_runtime.world.contracts import ActionOption, AdmittedActionSelection
+from affordance_runtime.world.contracts import ActionOption, AdmittedActionSelection, WorldObservation
 
 
 async def execute_cycle(
@@ -237,11 +236,6 @@ async def _evaluate_after(
         raise
     scope.record_evaluations(task=task_evaluation)
     state.current_task_evaluation = task_evaluation
-    audit_task_frontier(
-        session,
-        task_evaluation,
-        evidence_refs=action_evaluation.evidence_refs,
-    )
     progress_event = record_execution_progress(
         session, selection, action_evaluation, after, task_evaluation,
     )
@@ -327,14 +321,14 @@ async def _binding_refresh(
 
 
 async def _reroute_not_sent(
-    session,
+    session: AgentRunSession,
     selection: AdmittedActionSelection,
-    decision,
-    request,
+    decision: SelectAction,
+    request: BoundActionRequest,
     result: ActionResult,
     binder: ActionBinder,
     scope: ControlTransitionScope | ControlContinuationScope,
-) -> tuple[AdmittedActionSelection, object, ExecutionOutcome, object] | LoopDirective:
+) -> tuple[AdmittedActionSelection, BoundActionRequest, ExecutionOutcome, WorldObservation] | LoopDirective:
     state = session.state
     before_id = state.current_observation.observation_id
     reroutable = {
@@ -389,8 +383,8 @@ async def _reroute_not_sent(
             return Terminate(
                 AgentLoopStatus.FAILED, "route_readmission_rejected",
                 "fresh equivalent action failed normal admission",
-                failure_stage=FailureStage.ADMISSION,
-                failure_kind=FailureKind.INVALID_OUTPUT,
+                failure_stage=FailureStage.CONTROL,
+                failure_kind=FailureKind.REJECTED,
             )
         current_selection = admission.admitted
     excluded_binding_ids = {request.binding.binding_id}

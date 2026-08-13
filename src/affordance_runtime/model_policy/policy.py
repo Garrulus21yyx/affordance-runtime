@@ -10,8 +10,11 @@ from dataclasses import dataclass, field
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
-from affordance_runtime.model_policy.parser import parse_agent_decision
+from affordance_runtime.model_policy.contracts import (
+    ModelDecisionRequest,
+    ModelMetadata,
+    ResolvedModelDecision,
+)
 from affordance_runtime.model_policy.port import StructuredDecisionModelPort
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS, SCHEMA_VERSION, decision_response_schema
 from affordance_runtime.model_policy.serialization import serialize_agent_context
@@ -69,14 +72,14 @@ class ModelBackedAgentPolicy:
             )
         if isinstance(outcome, ModelFailure):
             return _policy_failure(outcome)
-        if not isinstance(outcome, ModelDecisionResponse):
-            failure = ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
-            return _policy_failure(failure)
-        object.__setattr__(self, "last_metadata", outcome.metadata)
-        decision = parse_agent_decision(outcome.raw_payload, context.context_id)
-        if isinstance(decision, ModelFailure):
-            return _policy_failure(decision)
-        return decision
+        if isinstance(outcome, ResolvedModelDecision):
+            object.__setattr__(self, "last_metadata", outcome.metadata)
+            if outcome.decision.context_id != context.context_id:
+                return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
+            return outcome.decision
+        return _policy_failure(
+            ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
+        )
 
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
@@ -96,7 +99,7 @@ async def _generate_with_deadline(
     port: StructuredDecisionModelPort,
     request: ModelDecisionRequest,
     timeout_s: float,
-) -> ModelDecisionResponse | ModelFailure:
+) -> ResolvedModelDecision | ModelFailure:
     try:
         task = asyncio.current_task()
     except RuntimeError:
@@ -112,7 +115,7 @@ async def _bounded_generate(
     port: StructuredDecisionModelPort,
     request: ModelDecisionRequest,
     timeout_s: float,
-) -> ModelDecisionResponse | ModelFailure:
+) -> ResolvedModelDecision | ModelFailure:
     return await asyncio.wait_for(port.generate(request), timeout=timeout_s)
 
 

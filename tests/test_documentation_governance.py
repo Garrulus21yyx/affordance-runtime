@@ -16,10 +16,7 @@ EVOLUTION_PLAN = (
     / "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md"
 )
 AUTHORITATIVE_ARCHITECTURE = (
-    DOCS
-    / "superpowers"
-    / "specs"
-    / "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md"
+    DOCS / "task-execution-authority-map.md"
 )
 IMPLEMENTATION_STATUS = DOCS / "implementation-status.md"
 CURRENT_PLAN = DOCS / "current-implementation-plan.md"
@@ -145,7 +142,7 @@ def test_current_queue_orders_short_loop_closure_before_long_horizon() -> None:
         "P5-M4.5-C same-profile diagnostic — complete diagnostic evidence",
         "P5-M4.6 evidence-directed remediation — in progress",
         "## Gates after M4.6",
-        "VerifiedTaskState evidence promotion",
+        "no exact target before first observation",
     )
     positions = [text.index(marker) for marker in markers]
     assert positions == sorted(positions)
@@ -249,20 +246,20 @@ def test_reviewed_sha_if_present_is_clean_committed_head() -> None:
     assert not dirty
 
 
-def test_target_contract_keeps_transition_lightweight_and_capture_typed() -> None:
+def test_target_contract_keeps_one_observation_grounded_authority_chain() -> None:
     architecture = AUTHORITATIVE_ARCHITECTURE.read_text(encoding="utf-8")
     status = IMPLEMENTATION_STATUS.read_text(encoding="utf-8")
 
     for marker in (
-        "class ObservationCapabilities",
-        "class ObservationAcquisition",
-        "class ExecutionOutcome",
-        "class ControlTransition",
-        "class VerifiedTaskState",
-        "AgentLoopState 不由 transition replay 重建",
+        "No exact GUI target identity is required before `WorldObservation`",
+        "one `LocalObjective` lifecycle",
+        "one typed AgentDecision",
+        "private bind",
+        "execute once",
+        "fresh observation",
     ):
         assert marker in architecture
-    assert "CAPABILITY_UNAVAILABLE" in architecture
+    assert "typed-decision to JSON to typed-decision" not in architecture
     assert "durable ledger" in architecture
     assert "WorldEnvironment independent capture" in status
     assert "lossless ControlTransition" in status
@@ -287,9 +284,7 @@ def test_current_authority_index_does_not_route_through_archive() -> None:
     )[0]
 
     assert "archive/" not in current_authority
-    assert "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md" in (
-        current_authority
-    )
+    assert "task-execution-authority-map.md" in current_authority
     assert "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md" in (
         current_authority
     )

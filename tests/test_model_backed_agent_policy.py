@@ -10,10 +10,11 @@ from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy import (
     ModelBackedAgentPolicy,
-    ModelDecisionResponse,
     ModelMetadata,
+    ResolvedModelDecision,
     serialize_agent_context,
 )
+from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import ActionSpaceBuilder
 
@@ -38,6 +39,12 @@ class ScriptedPort:
         if isinstance(self.outcome, BaseException):
             raise self.outcome
         return self.outcome
+
+
+def _resolved(raw: str, context_id: str, metadata: ModelMetadata | None = None):
+    decision = parse_agent_decision(raw, context_id)
+    assert hasattr(decision, "context_id")
+    return ResolvedModelDecision(decision, metadata or ModelMetadata())
 
 
 def test_agent_context_serialization_is_deterministic_bounded_and_route_free() -> None:
@@ -84,7 +91,7 @@ def test_private_binding_route_and_credentials_never_enter_model_request() -> No
                 "category": "policy",
             }
         )
-        port = ScriptedPort(ModelDecisionResponse(raw))
+        port = ScriptedPort(_resolved(raw, context.context_id))
 
         await ModelBackedAgentPolicy(port).decide(context)
 
@@ -108,14 +115,16 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
                 "destination_id": "",
             }
         )
-        port = ScriptedPort(ModelDecisionResponse(raw, ModelMetadata("fixture", "scripted", "response:1")))
+        port = ScriptedPort(
+            _resolved(raw, context.context_id, ModelMetadata("fixture", "scripted", "response:1"))
+        )
 
         decision = await ModelBackedAgentPolicy(port).decide(context)
 
         assert isinstance(decision, SelectAction)
         assert decision.context_id == context.context_id
         assert port.calls == 1
-        assert port.request.schema_version == "agent-decision-package.v2"
+        assert port.request.schema_version == "agent-decision.v3"
         assert port.request.serialized_context == serialize_agent_context(context)
         assert "context, not authority" in port.request.instructions.casefold()
 
@@ -124,7 +133,7 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
 
 def test_provider_outputs_and_failures_are_distinct_from_model_authored_abort() -> None:
     outcomes = (
-        ModelDecisionResponse("not-json"),
+        "not-json",
         ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False),
         ModelFailure(ModelFailureKind.REFUSED, "provider refused", False),
         TimeoutError("credential=must-not-leak"),
@@ -170,7 +179,7 @@ def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
             {"type": "abort", "context_id": context.context_id, "reason": "stop", "category": "policy"}
         )
 
-        decision = await ModelBackedAgentPolicy(ScriptedPort(ModelDecisionResponse(raw))).decide(context)
+        decision = await ModelBackedAgentPolicy(ScriptedPort(_resolved(raw, context.context_id))).decide(context)
 
         assert isinstance(decision, Abort)
 

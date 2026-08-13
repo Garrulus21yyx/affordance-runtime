@@ -2,7 +2,7 @@
 
 > **Lifecycle:** CURRENT NORMATIVE POLICY
 > **Scope:** architecture change admission and migration discipline
-> **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+> **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 
 ## 1. Decision
 

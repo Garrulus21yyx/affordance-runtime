@@ -23,8 +23,6 @@ from affordance_runtime.world.public_semantic_digest import (
 if TYPE_CHECKING:
     from affordance_runtime.agent.decisions import SelectAction
     from affordance_runtime.agent.state import AgentLoopState
-    from affordance_runtime.task.frontier import ObjectiveAdmissionIssue
-    from affordance_runtime.task.frontier_contracts import ObjectiveOperation
     from affordance_runtime.world.action_paging import InternalActionPage
     from affordance_runtime.world.admission_issue import AdmissionIssue
     from affordance_runtime.world.contracts import ActionSpace
@@ -38,7 +36,6 @@ class ControlFeedbackKind(StrEnum):
 
 
 class ControlFeedbackSource(StrEnum):
-    OBJECTIVE_ADMISSION = "objective_admission"
     ACTION_ADMISSION = "action_admission"
     ACTION_PAGE = "action_page"
     POLICY_OBSERVATION = "policy_observation"
@@ -63,16 +60,10 @@ _PUBLIC_PATHS = frozenset(
         "observation",
         "parameters",
         "parameters.value",
-        "objective_operation.active_objective_id",
-        "objective_operation.intended_requirement_ids",
-        "objective_operation.kind",
-        "objective_operation.predicate.expected.fact_ref",
-        "objective_operation.predicate.target_id",
-        "objective_operation.replaces_objective_id",
     }
 )
 _PUBLIC_PATH = re.compile(
-    r"parameters(?:\.[A-Za-z][A-Za-z0-9_-]{0,63})*|action_id|actions|destination_id|observation|objective_operation(?:\.[A-Za-z][A-Za-z0-9_-]{0,63})*"
+    r"parameters(?:\.[A-Za-z][A-Za-z0-9_-]{0,63})*|action_id|actions|destination_id|observation"
 )
 _PRIVATE_PARTS = frozenset(
     {
@@ -112,25 +103,6 @@ class RelatedDecisionSnapshot:
 
 
 @dataclass(frozen=True)
-class RelatedObjectiveOperationSnapshot:
-    kind: str
-    active_objective_id: str = ""
-    replaces_objective_id: str = ""
-    intended_requirement_ids: tuple[str, ...] = ()
-    predicate: Mapping[str, object] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.kind not in {"none", "propose", "retain", "replace"}:
-            raise ValueError("related objective operation kind is unsupported")
-        object.__setattr__(
-            self,
-            "intended_requirement_ids",
-            tuple(self.intended_requirement_ids),
-        )
-        object.__setattr__(self, "predicate", freeze_json(self.predicate))
-
-
-@dataclass(frozen=True)
 class ContractViolationSnapshot:
     contract_owner: str
     code: str
@@ -142,7 +114,6 @@ class ContractViolationSnapshot:
         if self.contract_owner not in {
             "current_action_page",
             "current_action_space",
-            "task_frontier",
         }:
             raise ValueError("feedback violation owner is unsupported")
         if _CODE.fullmatch(self.code) is None:
@@ -185,7 +156,6 @@ class RecoveryConstraints:
     rollback_available: bool = False
     strategy_change_required: bool = False
     offered_action_ids: tuple[str, ...] = ()
-    admissible_objective_operations: tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         if any(not _public_path(path) for path in self.must_change_fields):
@@ -200,14 +170,6 @@ class RecoveryConstraints:
             raise TypeError("recovery flags must be boolean")
         object.__setattr__(self, "must_change_fields", tuple(self.must_change_fields))
         object.__setattr__(self, "offered_action_ids", tuple(self.offered_action_ids[:32]))
-        repairs = tuple(self.admissible_objective_operations)
-        if len(repairs) > 4:
-            raise ValueError("objective repair alternatives must be bounded")
-        object.__setattr__(
-            self,
-            "admissible_objective_operations",
-            tuple(freeze_json(item) for item in repairs),
-        )
 
 
 @dataclass(frozen=True)
@@ -224,7 +186,6 @@ class ControlFeedback:
     request_digest: str = ""
     result_digest: str = ""
     related_decision: RelatedDecisionSnapshot | None = None
-    related_objective_operation: RelatedObjectiveOperationSnapshot | None = None
     violation: ContractViolationSnapshot | None = None
     semantic_effect: SemanticEffectSnapshot | None = None
     recovery: RecoveryConstraints | None = None
@@ -271,7 +232,6 @@ class ControlFeedback:
                 frozenset(
                     {
                         ControlFeedbackSource.ACTION_ADMISSION,
-                        ControlFeedbackSource.OBJECTIVE_ADMISSION,
                     }
                 ),
                 NextDecisionDisposition.CORRECT_OR_REPLAN,
@@ -319,24 +279,12 @@ class ControlFeedback:
         ):
             raise ValueError("control feedback kind/source/disposition matrix is invalid")
         if self.kind is ControlFeedbackKind.REPAIRABLE_REJECTION and (
-            (self.related_decision is None and self.related_objective_operation is None)
+            self.related_decision is None
             or self.violation is None
             or self.recovery is None
             or self.semantic_effect is not None
         ):
             raise ValueError("repairable rejection requires decision, violation, and recovery snapshots")
-        if (
-            self.source is ControlFeedbackSource.OBJECTIVE_ADMISSION
-            and self.code == "objective_already_satisfied"
-            and (
-                self.recovery is None
-                or self.recovery.must_change_fields != ("objective_operation.predicate",)
-                or self.recovery.retry_allowed
-                or not self.recovery.strategy_change_required
-                or not self.recovery.admissible_objective_operations
-            )
-        ):
-            raise ValueError("already-satisfied objective feedback requires an admissible replacement")
         if self.kind is ControlFeedbackKind.NO_INFORMATION_GAIN and self.recovery is None:
             raise ValueError("no-information-gain feedback requires recovery constraints")
         if self.kind is ControlFeedbackKind.STRATEGY_TRANSITION_REQUIRED and (
@@ -344,86 +292,6 @@ class ControlFeedback:
             and (self.related_decision is None or self.semantic_effect is None or self.recovery is None)
         ):
             raise ValueError("action-effect feedback requires decision, effect, and recovery snapshots")
-
-
-def objective_repair_feedback(
-    state: AgentLoopState,
-    action_space: ActionSpace,
-    page: InternalActionPage,
-    *,
-    decision: SelectAction | None,
-    operation: ObjectiveOperation,
-    issue: ObjectiveAdmissionIssue,
-) -> ControlFeedback:
-    from affordance_runtime.task.frontier_contracts import (
-        ProposeObjective,
-        ReplaceObjective,
-        RetainObjective,
-        predicate_public_value,
-    )
-
-    scope = current_semantic_scope(state, action_space, page)
-    proposal = operation if isinstance(operation, ProposeObjective | ReplaceObjective) else None
-    predicate = predicate_public_value(proposal.predicate) if proposal is not None else {}
-    digest = make_issue_digest(
-        scope_digest=scope,
-        kind=ControlFeedbackKind.REPAIRABLE_REJECTION.value,
-        source=ControlFeedbackSource.OBJECTIVE_ADMISSION.value,
-        code=issue.code.value,
-        subject_semantics=predicate,
-        public_field_paths=issue.field_paths,
-    )
-    already_satisfied = issue.code.value == "objective_already_satisfied"
-    objective_repairs: tuple[Mapping[str, object], ...] = ()
-    if already_satisfied:
-        objective_repairs = ({"kind": "none"},)
-        frontier = state.verified_task_state.current_frontier if state.verified_task_state is not None else ()
-        if frontier:
-            objective_repairs += (
-                {
-                    "kind": "propose",
-                    "intended_requirement_ids": frontier,
-                    "predicate": {"kind": "task_outcome_is", "status": "complete"},
-                },
-            )
-    option = action_space.find(decision.action_id) if decision is not None else None
-    return ControlFeedback(
-        ControlFeedbackKind.REPAIRABLE_REJECTION,
-        issue.code.value,
-        ControlFeedbackSource.OBJECTIVE_ADMISSION,
-        NextDecisionDisposition.CORRECT_OR_REPLAN,
-        False,
-        public_field_paths=issue.field_paths,
-        scope_digest=scope,
-        issue_digest=digest,
-        related_objective_operation=RelatedObjectiveOperationSnapshot(
-            operation.kind.value,
-            operation.active_objective_id if isinstance(operation, RetainObjective) else "",
-            operation.replaces_objective_id if isinstance(operation, ReplaceObjective) else "",
-            proposal.intended_requirement_ids if proposal is not None else (),
-            predicate,
-        ),
-        related_decision=(
-            _selection_snapshot(decision, option.target_id if option is not None else None)
-            if decision is not None
-            else None
-        ),
-        violation=ContractViolationSnapshot(
-            "task_frontier",
-            issue.code.value,
-            issue.field_paths,
-            issue.expected,
-            issue.actual,
-        ),
-        recovery=RecoveryConstraints(
-            must_change_fields=issue.field_paths,
-            repeat_previous_decision_allowed=False,
-            retry_allowed=not already_satisfied,
-            strategy_change_required=already_satisfied,
-            offered_action_ids=page.visible_action_ids,
-            admissible_objective_operations=objective_repairs,
-        ),
-    )
 
 
 class FeedbackBudgetDisposition(StrEnum):

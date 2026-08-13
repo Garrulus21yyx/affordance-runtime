@@ -286,7 +286,6 @@ class BenchmarkComposition:
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
-    requirement_hypothesis_proposer: object | None = None
 
 
 @dataclass(frozen=True)
@@ -687,7 +686,6 @@ _KNOWN_METRICS = (
             "currentness_probes",
             "turns",
             "policy_calls",
-            "requirement_hypothesis_calls",
             "semantic_judge_calls",
             "provider_attempts",
             "confirmations",

@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from test_grounded_tools_v2 import _context
 
+from affordance_runtime.agent import Abort
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -17,8 +18,8 @@ from affordance_runtime.model_boundary.failures import (
 )
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
-    ModelDecisionResponse,
     ModelMetadata,
+    ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
 from affordance_runtime.model_policy.policy import _build_request
@@ -31,19 +32,21 @@ from affordance_runtime.model_port import ModelConfig, OpenAICompatibleModelPort
 
 
 def _request() -> ModelDecisionRequest:
-    return ModelDecisionRequest("model-request:test", "{}", "v1", "decide", {})
+    return ModelDecisionRequest(
+        "model-request:test", '{"context_id":"context:test"}', "v1", "decide", {}
+    )
 
 
-def _response(response_id: str = "response:1") -> ModelDecisionResponse:
-    return ModelDecisionResponse(
-        '{"decision":"ok"}',
+def _response(response_id: str = "response:1") -> ResolvedModelDecision:
+    return ResolvedModelDecision(
+        Abort("context:test", "fixture stop", "policy"),
         ModelMetadata(response_id=response_id),
     )
 
 
 @dataclass
 class _Port:
-    outcomes: list[ModelDecisionResponse | ModelFailure]
+    outcomes: list[ResolvedModelDecision | ModelFailure]
     provider_id: str = "provider"
     model_id: str = "model"
     compatibility_key: str = "schema:grounding"
@@ -85,7 +88,7 @@ def test_retryable_rate_limit_retries_without_creating_a_new_request() -> None:
 
     outcome = asyncio.run(orchestrator.generate(_request()))
 
-    assert isinstance(outcome, ModelDecisionResponse)
+    assert isinstance(outcome, ResolvedModelDecision)
     assert port.calls == 2
     assert outcome.metadata.rate_limit_retry_count == 1
     assert outcome.metadata.transient_retry_count == 0
@@ -190,9 +193,26 @@ def test_real_model_port_503_then_200_dispatches_two_network_attempts() -> None:
                                 "message": {
                                     "content": json.dumps(
                                         {
-                                            "op": "fill",
-                                            "target": "E1",
-                                            "text": "donovan",
+                                            "op": "establish_local_objective",
+                                            "value": {
+                                                "kind": "set",
+                                                "predicate": {
+                                                    "any_of": [
+                                                        {
+                                                            "all_of": [
+                                                                {
+                                                                    "kind": "fact_equals",
+                                                                    "field_name": "identity.label",
+                                                                    "expected": "Username",
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                "quantifier": "exactly_one",
+                                                "semantic_action": "fill",
+                                                "parameters": {"value": "donovan"},
+                                            },
                                         }
                                     )
                                 }
@@ -244,7 +264,7 @@ def test_real_model_port_503_then_200_dispatches_two_network_attempts() -> None:
         server.server_close()
         thread.join(timeout=2)
 
-    assert isinstance(outcome, ModelDecisionResponse)
+    assert isinstance(outcome, ResolvedModelDecision)
     assert len(requests) == 2
     assert [item.origin for item in orchestrator.last_attempts] == [
         ProviderAttemptOrigin.NETWORK,

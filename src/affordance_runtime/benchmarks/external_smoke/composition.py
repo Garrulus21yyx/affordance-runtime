@@ -11,7 +11,8 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator im
 )
 from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
 
 
 @dataclass
@@ -26,8 +27,9 @@ class BrowserGymStructuredDecisionPort:
         self.serialized_contexts.append(request.serialized_context)
         context = json.loads(request.serialized_context)
         payload = _public_decision(context)
-        return ModelDecisionResponse(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        decision = payload_to_decision(AgentDecisionPayload.model_validate(payload), request.context_id)
+        return ResolvedModelDecision(
+            decision,
             ModelMetadata(
                 provider_id="conformance", model_id="scripted-structured",
                 response_id=f"response:{self.calls}", endpoint_class="in-process",

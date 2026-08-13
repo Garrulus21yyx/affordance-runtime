@@ -12,7 +12,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
-from affordance_runtime.agent.decisions import EstablishLocalObjective, RequestActionPage, SelectAction
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -20,7 +19,7 @@ from affordance_runtime.model_boundary.failures import (
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
@@ -31,7 +30,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, local_objective_to_payload
+from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 from affordance_runtime.model_policy.strict_json import validate_json_tree
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolTransportKind
 from affordance_runtime.model_port import (
@@ -60,8 +59,8 @@ When recovery forbids retry or requires a strategy change, never repeat the same
 Respect prerequisites expressed by the instruction, state, roles, labels, and relations before choosing a submit/final action.
 Return only the required command. Do not invent screen points, private selectors, IDs, tools, targets, or explanations.
 The Runtime independently validates action authority, currentness, risk, execution, effects, and task completion.
-For a multi-step, quantified-set, or aggregate requirement, use establish_local_objective with semantic
-predicates. Ordinary one-step choices may use the current action tool directly.
+When establish_local_objective is offered it is the only semantic ingress; install one observation-resolvable
+objective. Effectful action tools appear only after Runtime admits and resolves that objective.
 """.strip()
 
 
@@ -147,7 +146,7 @@ class GroundedToolDecisionAdapter:
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
-    async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
+    async def generate(self, request: ModelDecisionRequest) -> ResolvedModelDecision | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
@@ -173,10 +172,10 @@ class GroundedToolDecisionAdapter:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
             call = calls[0]
             try:
-                package = resolve_grounded_tool_call(
+                decision = resolve_grounded_tool_call(
                     catalog,
                     call,
-                    expected_context_id=request.policy_context.context_id,
+                    expected_context_id=request.context_id,
                     expected_catalog_id=catalog.catalog_id,
                 )
             except GroundedToolResolutionError as exc:
@@ -193,10 +192,10 @@ class GroundedToolDecisionAdapter:
                 repaired = await self._repair_selected_operation(messages, spec, issue)
                 if repaired.name != call.name:
                     raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-                package = resolve_grounded_tool_call(
+                decision = resolve_grounded_tool_call(
                     catalog,
                     repaired,
-                    expected_context_id=request.policy_context.context_id,
+                    expected_context_id=request.context_id,
                     expected_catalog_id=catalog.catalog_id,
                 )
         except GroundedToolResolutionError as exc:
@@ -232,10 +231,7 @@ class GroundedToolDecisionAdapter:
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
-        return ModelDecisionResponse(
-            json.dumps(_package_payload(package), separators=(",", ":"), ensure_ascii=False),
-            _metadata(self.port, self.transport_kind, include_record=True),
-        )
+        return ResolvedModelDecision(decision, _metadata(self.port, self.transport_kind, include_record=True))
 
     async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
@@ -411,37 +407,6 @@ def _command_arguments(payload, spec=None):
     if payload.value is not None and "value" in admitted:
         result["value"] = payload.value
     return result
-
-
-def _package_payload(package):
-    decision = package.decision
-    if isinstance(decision, SelectAction):
-        value = {
-            "type": "select_action",
-            "context_id": decision.context_id,
-            "action_id": decision.action_id,
-            "parameters": to_json_compatible(decision.parameters),
-            "destination_id": decision.destination_id,
-        }
-    else:
-        if isinstance(decision, EstablishLocalObjective):
-            objective = local_objective_to_payload(decision.objective)
-            value = {
-                "type": "establish_local_objective",
-                "context_id": decision.context_id,
-                "objective": objective.model_dump(mode="json"),
-            }
-        else:
-            assert isinstance(decision, RequestActionPage)
-            value = {
-                "type": "request_action_page",
-                "context_id": decision.context_id,
-                "query": decision.query,
-                "target_id": decision.target_id,
-                "relevance_role": decision.relevance_role,
-                "cursor": decision.cursor,
-            }
-    return {"objective_operation": {"kind": "none"}, "decision": value}
 
 
 def _metadata(port, transport_kind, *, include_record=True):

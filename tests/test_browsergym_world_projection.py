@@ -24,16 +24,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_policy.serialization import serialize_agent_context
-from affordance_runtime.task import (
-    HypothesisProposalMode,
-    RequirementHypothesisProposal,
-    RequirementHypothesisProposalBatch,
-    RequirementHypothesisState,
-    RiskProfile,
-    TaskGoal,
-    admit_requirement_hypotheses,
-)
-from affordance_runtime.task.frontier_contracts import TargetPresent
+from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
     EntityInventoryIssueCode,
@@ -411,56 +402,6 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
     assert context.world.traversal is not None
     assert context.world.traversal.next_cursor
     assert len(context.world.targets.items) == 64
-
-
-def test_hypothesis_can_pin_a_read_only_target_after_adversarial_noise() -> None:
-    projected = _project(
-        raw_observation(
-            *(ax_node(f"noise-{index}", "StaticText", f"Noise {index}") for index in range(70)),
-            ax_node("critical-heading", "heading", "Required account section"),
-        )
-    )
-    critical = next(
-        item for item in projected.world.targets if item.label == "Required account section"
-    )
-    task = TaskGoal("task:hypothesis-pinning", "Find the required account section")
-    state = __import__(
-        "affordance_runtime.agent.state",
-        fromlist=["AgentLoopState"],
-    ).AgentLoopState(projected.world, remaining_turns=2)
-    admitted = admit_requirement_hypotheses(
-        RequirementHypothesisState(),
-        RequirementHypothesisProposalBatch(
-            HypothesisProposalMode.INITIAL,
-            (
-                RequirementHypothesisProposal(
-                    "Inspect the required account section",
-                    TargetPresent(critical.target_id),
-                    (critical.target_id,),
-                ),
-            ),
-        ),
-        projected.world,
-    )
-    state.install_requirement_hypotheses(admitted.state)
-    evaluation = TaskEvaluation(
-        task.task_id,
-        projected.world.observation_id,
-        TaskEvaluationStatus.INCOMPLETE,
-        "ongoing",
-    )
-
-    context = ContextBuilder().build(
-        task,
-        state,
-        ActionSpaceBuilder().build(task, projected.world),
-        evaluation,
-    )
-
-    assert any(item.target_id == critical.target_id for item in context.world.targets.items)
-    assert context.actions.options == ()
-    assert context.world.traversal is not None
-    assert context.world.traversal.next_cursor
 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:

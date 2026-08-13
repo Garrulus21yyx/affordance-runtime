@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from affordance_runtime.agent.decisions import (
-    AgentDecisionPackage,
+    AgentDecision,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -22,7 +22,6 @@ from affordance_runtime.model_policy.tool_contracts import (
     ToolResolutionError,
     ToolSpec,
 )
-from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
 from affordance_runtime.world.schema_validation import validate_value
 
 _DESTINATION_ARGUMENT = "destination_ref"
@@ -147,7 +146,7 @@ def resolve_tool_call(
     *,
     expected_context_id: str,
     expected_catalog_id: str | None = None,
-) -> AgentDecisionPackage:
+) -> AgentDecision:
     if (
         catalog.context_id != expected_context_id
         or expected_catalog_id is not None
@@ -165,6 +164,7 @@ def resolve_tool_call(
     except ValueError as exc:
         raise ToolResolutionError(ToolResolutionCode.INVALID_ARGUMENTS) from exc
 
+    decision: AgentDecision
     if isinstance(binding, _ActionBinding):
         arguments = dict(call.arguments)
         destination_ref = arguments.pop(_DESTINATION_ARGUMENT, "")
@@ -210,7 +210,7 @@ def resolve_tool_call(
             assurance,
             "request fresh observation for selected public subject",
         )
-    return AgentDecisionPackage(NoObjectiveOperation(), decision)
+    return decision
 
 
 def _append_action(specs: list[ToolSpec], bindings: list[object], index: int, raw: object) -> None:

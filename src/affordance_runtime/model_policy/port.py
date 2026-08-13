@@ -3,8 +3,10 @@
 from typing import Protocol
 
 from affordance_runtime.model_boundary.failures import ModelFailure
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse
+from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ResolvedModelDecision
 
 
 class StructuredDecisionModelPort(Protocol):
-    async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure: ...
+    async def generate(
+        self, request: ModelDecisionRequest
+    ) -> ResolvedModelDecision | ModelFailure: ...

@@ -17,7 +17,6 @@ from affordance_runtime.model_policy.tool_contracts import (
     ToolResolutionCode,
     ToolResolutionError,
 )
-from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
 from affordance_runtime.world import ActionSpaceBuilder
 
 
@@ -30,7 +29,7 @@ def _context():
     return ContextBuilder().build(task, state, actions, evaluation)
 
 
-def test_action_tools_hide_runtime_identity_and_resolve_to_objective_neutral_package() -> None:
+def test_action_tools_hide_runtime_identity_and_resolve_to_typed_decision() -> None:
     context = _context()
     catalog = compile_tool_catalog(serialize_agent_context(context))
     action = next(spec for spec in catalog.specs if spec.name.startswith("act_"))
@@ -40,16 +39,15 @@ def test_action_tools_hide_runtime_identity_and_resolve_to_objective_neutral_pac
     assert "action:" not in serialized_schema
     assert "entity:" not in action.description
     assert "target:" not in action.description
-    package = resolve_tool_call(
+    decision = resolve_tool_call(
         catalog,
         ToolCall(action.name, {}),
         expected_context_id=context.context_id,
     )
 
-    assert isinstance(package.objective_operation, NoObjectiveOperation)
-    assert isinstance(package.decision, SelectAction)
-    assert package.decision.context_id == context.context_id
-    assert package.decision.action_id.startswith("action:")
+    assert isinstance(decision, SelectAction)
+    assert decision.context_id == context.context_id
+    assert decision.action_id.startswith("action:")
 
 
 def test_unknown_invalid_and_stale_calls_are_typed_before_runtime_admission() -> None:
@@ -94,12 +92,12 @@ def test_destination_refs_do_not_expand_action_tool_count() -> None:
         "dest_01",
         "dest_02",
     )
-    package = resolve_tool_call(
+    decision = resolve_tool_call(
         catalog,
         ToolCall(action_specs[0].name, {"destination_ref": "dest_02"}),
         expected_context_id=raw["context_id"],
     )
-    assert package.decision.destination_id == "entity:two"
+    assert decision.destination_id == "entity:two"
 
 
 def test_paging_controls_are_distinct_and_restore_existing_decisions() -> None:
@@ -125,7 +123,7 @@ def test_paging_controls_are_distinct_and_restore_existing_decisions() -> None:
         expected_context_id=raw["context_id"],
     )
 
-    assert isinstance(action_page.decision, RequestActionPage)
-    assert action_page.decision.cursor == "cursor:actions"
-    assert isinstance(observation_page.decision, RequestObservation)
-    assert observation_page.decision.cursor == "cursor:observation"
+    assert isinstance(action_page, RequestActionPage)
+    assert action_page.cursor == "cursor:actions"
+    assert isinstance(observation_page, RequestObservation)
+    assert observation_page.cursor == "cursor:observation"

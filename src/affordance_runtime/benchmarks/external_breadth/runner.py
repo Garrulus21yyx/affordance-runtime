@@ -29,7 +29,6 @@ from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnv
 from affordance_runtime.benchmarks.external_smoke.pacing import (
     FixedPacingState,
     PacedAgentPolicy,
-    PacedRequirementHypothesisProposer,
     validate_pacing_budget,
 )
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -95,10 +94,6 @@ REQUIRED_METRICS = (
     "policy_calls",
     "policy_schema_repair_count",
     "tool_argument_repair_count",
-    "requirement_hypothesis_calls",
-    "requirement_hypothesis_schema_repair_count",
-    "requirement_hypothesis_accepted_count",
-    "requirement_hypothesis_rejected_count",
     "valid_tool_call_count",
     "admitted_decision_count",
     "zero_tool_call_count",
@@ -225,7 +220,6 @@ def _target_manifest(
     policy,
     pacing_state,
     instrumentations,
-    requirement_hypothesis_proposer=None,
     visual_region_proposer=None,
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
@@ -238,7 +232,6 @@ def _target_manifest(
             policy,
             pacing_state,
             instrumentations,
-            requirement_hypothesis_proposer,
             visual_region_proposer,
             visual_point_grounder,
             visual_candidate_disambiguator,
@@ -261,7 +254,6 @@ def _target_case(
     base_policy,
     pacing_state,
     instrumentations,
-    requirement_hypothesis_proposer=None,
     visual_region_proposer=None,
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
@@ -309,20 +301,10 @@ def _target_case(
             state=pacing_state,
             context_observer=observer,
         )
-        paced_proposer = (
-            PacedRequirementHypothesisProposer(
-                requirement_hypothesis_proposer,
-                manifest.minimum_policy_call_interval_s,
-                state=pacing_state,
-            )
-            if requirement_hypothesis_proposer is not None
-            else None
-        )
         return BenchmarkComposition(
             paced,
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
-            requirement_hypothesis_proposer=paced_proposer,
         )
 
     return BenchmarkCase(

@@ -21,14 +21,8 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
-    AgentHypothesisRejectionView,
-    AgentObjectiveCheckpointView,
-    AgentObjectiveView,
     AgentPendingView,
     AgentProgressView,
-    AgentRequirementHypothesisView,
-    AgentRequirementStateView,
-    AgentTaskFrontierView,
     ContextIdentity,
     DecisionMode,
     IntentContextView,
@@ -40,22 +34,10 @@ from affordance_runtime.model_boundary.control_transition_projection import (
     project_control_transitions,
 )
 from affordance_runtime.model_boundary.grounding_projection import GroundingProjection
-from affordance_runtime.model_boundary.projection import (
-    project_action_page,
-    project_public_value,
-)
+from affordance_runtime.model_boundary.projection import project_action_page
 from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
-from affordance_runtime.task.frontier_contracts import (
-    ActiveObjective,
-    predicate_public_value,
-)
-from affordance_runtime.task.hypothesis_contracts import (
-    HypothesisPredicateAssessment,
-    RequirementHypothesisProposer,
-    TrackedHypothesisStatus,
-)
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.task.local_objective import (
     local_objective_allowed_action_ids,
@@ -75,7 +57,6 @@ if TYPE_CHECKING:
 class ContextBuilder:
     budget: ContextProjectionBudget = field(default_factory=ContextProjectionBudget)
     pager: ActionPager = field(default_factory=ActionPager)
-    requirement_hypothesis_proposer: RequirementHypothesisProposer | None = None
     grounding_projection: GroundingProjection = field(default_factory=GroundingProjection)
 
     def build(
@@ -192,7 +173,7 @@ class ContextBuilder:
         )
         return self.pager.page(
             action_space,
-            state.active_objective,
+            None,
             query=query,
             target_id=target_id,
             relevance_role=relevance_role or None,
@@ -214,7 +195,7 @@ class ContextBuilder:
     ) -> InternalActionPage:
         return self.pager.single_action_page(
             action_space,
-            state.active_objective,
+            None,
             action_id,
             destination_id,
             max_destinations_per_option=self.budget.max_destinations_per_option,
@@ -257,17 +238,8 @@ def _pinned_targets(actions, state, limit: int) -> tuple[str, ...]:
         for option in actions
         for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
     ]
-    objective = state.active_objective
-    if objective is not None:
-        values.extend((*objective.direct_target_ids, *objective.enabling_target_ids))
     if state.pending_confirmation is not None:
         values.append(state.pending_confirmation.intent.target_id)
-    values.extend(
-        target_id
-        for hypothesis in state.requirement_hypotheses.active[:8]
-        if hypothesis.assessment is HypothesisPredicateAssessment.UNKNOWN
-        for target_id in hypothesis.candidate_entity_ids
-    )
     current = {item.target_id for item in state.current_observation.targets}
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
@@ -279,9 +251,6 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
         for item in task.success_criteria
         if statuses.get(criterion_id(item)) != CriterionEvaluationStatus.SATISFIED
     )
-    objective = ""
-    if state.active_objective is not None:
-        objective = str(project_public_value(state.active_objective.desired_state))[:240]
     unresolved_outputs = tuple(
         item for item in task.requested_outputs if item not in {output.output_id for output in evaluation.outputs}
     )
@@ -292,7 +261,6 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
     }
     verified = tuple(item for item in facts if item.fact_ref in evidence_refs)
     return AgentProgressView(
-        active_objective=objective,
         validated_task_status=evaluation.status,
         verified_public_facts=verified,
         unresolved_criteria=BoundedSection(
@@ -304,7 +272,6 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved_outputs) > max_unresolved,
         ),
         events=project_progress_events(state),
-        task_frontier=_task_frontier_view(state),
         local_objective_open=(
             state.local_objective_state is not None
             and not local_objective_complete(state.local_objective_state)
@@ -313,72 +280,6 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved) > max_unresolved
             or len(unresolved_outputs) > max_unresolved
             or state.progress_event_total_count > len(state.recent_progress_events)
-        ),
-    )
-
-
-def _task_frontier_view(state) -> AgentTaskFrontierView | None:
-    verified = state.verified_task_state
-    if verified is None:
-        return None
-    active = state.active_objective
-    active_view = (
-        AgentObjectiveView(
-            active.objective_id,
-            active.intended_requirement_ids,
-            predicate_public_value(active.predicate),
-        )
-        if isinstance(active, ActiveObjective)
-        else None
-    )
-    latest = verified.objective_checkpoints[-1] if verified.objective_checkpoints else None
-    must_advance = bool(
-        active_view is None and verified.current_frontier and latest is not None and latest.status.value == "verified"
-    )
-    return AgentTaskFrontierView(
-        tuple(
-            AgentRequirementStateView(
-                item.requirement_id,
-                item.status.value,
-                item.evidence_refs,
-            )
-            for item in verified.requirements
-        ),
-        verified.current_frontier,
-        active_view,
-        tuple(
-            AgentObjectiveCheckpointView(
-                item.objective_id,
-                item.intended_requirement_ids,
-                predicate_public_value(item.predicate),
-                item.status.value,
-                item.observation_id,
-                item.evidence_refs,
-            )
-            for item in verified.objective_checkpoints[-8:]
-        ),
-        tuple(item.fact_ref for item in verified.values[-16:]),
-        must_advance,
-        latest.objective_id if must_advance and latest is not None else "",
-        must_advance,
-        tuple(
-            AgentRequirementHypothesisView(
-                item.hypothesis_id,
-                item.summary,
-                predicate_public_value(item.predicate),
-                item.candidate_entity_ids,
-                item.status.value,
-                item.assessment.value,
-                item.evidence_refs,
-            )
-            for item in state.requirement_hypotheses.hypotheses
-            if item.status is TrackedHypothesisStatus.ACTIVE
-        ),
-        state.requirement_hypotheses.completeness.value,
-        state.requirement_hypothesis_failure_reason,
-        tuple(
-            AgentHypothesisRejectionView(item.item_index, item.code.value)
-            for item in state.recent_requirement_hypothesis_rejections
         ),
     )
 

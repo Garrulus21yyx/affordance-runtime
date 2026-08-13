@@ -11,11 +11,11 @@ ranking, and historical references do not establish authority.
 
 Exactly two documents define the target and its migration:
 
-1. [AgentContext Recurrent E2E Agent Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+1. [Target AgentLoop Authority Map](task-execution-authority-map.md)
 2. [AgentContext Recurrent E2E Agent Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
-The paths are retained for repository compatibility; the documents no longer
-define a Task Contract-centered architecture.
+The retired task-contract-centered filename is a historical pointer only and
+does not define current Runtime authority.
 
 Core target order:
 

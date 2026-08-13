@@ -44,9 +44,6 @@ class AgentResult:
     control_feedback_delivery_count: int = 0
     control_issue_consumption_count: int = 0
     control_repetition_count: int = 0
-    requirement_hypothesis_accepted_count: int = 0
-    requirement_hypothesis_rejected_count: int = 0
-    requirement_hypothesis_rejection_code_counts: tuple[tuple[str, int], ...] = ()
 
 
 def project_result(
@@ -97,7 +94,4 @@ def project_result(
         state.control_feedback_delivery_total_count,
         state.control_issue_consumption_total_count,
         state.control_repetition_total_count,
-        state.requirement_hypothesis_accepted_total_count,
-        state.requirement_hypothesis_rejected_total_count,
-        tuple(sorted(state.requirement_hypothesis_rejection_code_counts.items())),
     )

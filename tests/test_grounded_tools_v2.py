@@ -5,7 +5,7 @@ import json
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import AgentDecisionPackage, EstablishLocalObjective, SelectAction
+from affordance_runtime.agent import EstablishLocalObjective, SelectAction
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
@@ -120,15 +120,14 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
     )
     catalog = compile_grounded_tool_catalog(context)
     assert {item.name for item in catalog.specs} == {"fill"}
-    package = resolve_grounded_tool_call(
+    decision = resolve_grounded_tool_call(
         catalog,
         ToolCall("fill", {"text": "UV"}),
         expected_context_id=context.context_id,
     )
-    assert isinstance(package, AgentDecisionPackage)
-    assert isinstance(package.decision, SelectAction)
-    assert package.decision.parameters == {"value": "UV"}
-    assert package.decision.action_id.startswith("action:")
+    assert isinstance(decision, SelectAction)
+    assert decision.parameters == {"value": "UV"}
+    assert decision.action_id.startswith("action:")
 
 
 def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelope() -> None:
@@ -145,18 +144,17 @@ def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelo
 def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context)
-    package = resolve_grounded_tool_call(
+    decision = resolve_grounded_tool_call(
         catalog,
         ToolCall(
             "establish_local_objective",
             {
                 "value": {
                     "kind": "set",
-                    "predicate": {
-                        "kind": "fact_equals",
-                        "field_name": "grid_coordinate",
+                    "predicate": {"any_of": [{"all_of": [{
+                        "kind": "fact_equals", "field_name": "grid_coordinate",
                         "expected": {"x": 1, "y": -2},
-                    },
+                    }]}]},
                     "quantifier": "exactly_one",
                     "semantic_action": "activate",
                 }
@@ -165,8 +163,8 @@ def test_local_objective_tool_carries_semantics_without_pre_observation_target_i
         expected_context_id=context.context_id,
     )
 
-    assert isinstance(package.decision, EstablishLocalObjective)
-    assert package.decision.objective.scope.root_entity_id == "current-viewport"
+    assert isinstance(decision, EstablishLocalObjective)
+    assert decision.objective.scope.root_entity_id == "current-viewport"
 
 
 def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:

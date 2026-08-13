@@ -117,8 +117,7 @@ def test_local_http_model_port_bridge_completes_one_safe_runtime_action() -> Non
     assert [message["role"] for message in request["messages"]] == ["system", "user"]
     assert request["response_format"]["json_schema"]["strict"] is True
     schema = request["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["objective_operation"]["discriminator"]["propertyName"] == "kind"
-    assert schema["properties"]["decision"]["discriminator"]["propertyName"] == "type"
+    assert schema["discriminator"]["propertyName"] == "type"
     assert policy.last_metadata is not None
     assert policy.last_metadata.total_tokens == 53
     assert policy.last_metadata.rate_limit_retry_count == 0

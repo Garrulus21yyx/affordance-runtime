@@ -69,6 +69,52 @@ def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> No
     assert "refresh_local_objective(" in state_source
 
 
+def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> None:
+    production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
+    task_contract = (RUNTIME / "task" / "contracts.py").read_text(encoding="utf-8")
+    loop = (RUNTIME / "agent" / "loop.py").read_text(encoding="utf-8")
+
+    assert "target_id:" not in task_contract.split("class TaskGoal", 1)[1].split("class ", 1)[0]
+    assert "require_initial_observation" in loop
+    assert loop.index("require_initial_observation") < loop.index("AgentLoopState(")
+    for displaced in (
+        "AgentDecisionPackage",
+        "TaskFrontier",
+        "RequirementHypothesis",
+        "objective_operation",
+        "active_objective",
+        "verified_task_state",
+    ):
+        assert displaced not in production
+    for removed in (
+        "agent/frontier_control.py",
+        "model_policy/requirement_proposer.py",
+        "task/frontier.py",
+        "task/frontier_contracts.py",
+        "task/hypothesis_contracts.py",
+        "task/hypothesis_runtime.py",
+    ):
+        assert not (RUNTIME / removed).exists()
+
+
+def test_model_decision_is_parsed_once_and_objectives_have_no_reverse_wire_projection() -> None:
+    production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
+    policy = (RUNTIME / "model_policy" / "policy.py").read_text(encoding="utf-8")
+    adapters = "\n".join(
+        (RUNTIME / "model_policy" / relative).read_text(encoding="utf-8")
+        for relative in ("model_port_bridge.py", "tool_port_bridge.py", "grounded_tool_port_bridge.py")
+    )
+    spec = (RUNTIME / "model_policy" / "spec.py").read_text(encoding="utf-8")
+    predicate = (RUNTIME / "task" / "predicate_transport.py").read_text(encoding="utf-8")
+
+    assert "ResolvedModelDecision" in adapters
+    assert "if isinstance(outcome, ResolvedModelDecision)" in policy
+    assert "ModelDecisionResponse" not in production
+    assert "parse_agent_decision" not in policy
+    assert "local_objective_to_payload" not in spec
+    assert "predicate_to_transport" not in predicate
+
+
 def test_model_policy_has_no_task_semantic_producers() -> None:
 
     markers = (
@@ -101,12 +147,6 @@ def test_normative_architecture_links_the_authority_map() -> None:
     assert "Task Execution Authority Map" in (
         ROOT / "docs" / "architecture-governance-track.md"
     ).read_text(encoding="utf-8")
-    authoritative = (
-        ROOT
-        / "docs"
-        / "superpowers"
-        / "specs"
-        / "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md"
-    ).read_text(encoding="utf-8")
-    assert "TaskSpecAuthority -> TaskPlanAuthority -> TaskPlan<StepSpec>" in authoritative
-    assert "task-execution-authority-map.md" in authoritative
+    authoritative = (ROOT / "docs" / "task-execution-authority-map.md").read_text(encoding="utf-8")
+    assert "TaskGoal boundary" in authoritative
+    assert "No exact GUI target identity is required before `WorldObservation`" in authoritative

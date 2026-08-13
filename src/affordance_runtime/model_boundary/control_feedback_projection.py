@@ -23,18 +23,6 @@ class AgentRelatedDecisionView:
 
 
 @dataclass(frozen=True)
-class AgentRelatedObjectiveOperationView:
-    kind: str
-    active_objective_id: str
-    replaces_objective_id: str
-    intended_requirement_ids: tuple[str, ...]
-    predicate: Mapping[str, object]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "predicate", freeze_json(self.predicate))
-
-
-@dataclass(frozen=True)
 class AgentContractViolationView:
     contract_owner: str
     code: str
@@ -66,7 +54,6 @@ class AgentRecoveryConstraintsView:
     rollback_available: bool
     strategy_change_required: bool
     offered_action_ids: tuple[str, ...]
-    admissible_objective_operations: tuple[Mapping[str, object], ...]
 
 
 @dataclass(frozen=True)
@@ -79,7 +66,6 @@ class AgentControlFeedbackView:
     public_subject_id: str | None
     public_field_paths: tuple[str, ...]
     related_decision: AgentRelatedDecisionView | None = None
-    related_objective_operation: AgentRelatedObjectiveOperationView | None = None
     violation: AgentContractViolationView | None = None
     semantic_effect: AgentSemanticEffectView | None = None
     recovery: AgentRecoveryConstraintsView | None = None
@@ -107,13 +93,6 @@ def project_control_feedback(
             feedback.related_decision.destination_id,
             project_public_value(feedback.related_decision.parameters),
         ) if feedback.related_decision is not None else None,
-        AgentRelatedObjectiveOperationView(
-            feedback.related_objective_operation.kind,
-            feedback.related_objective_operation.active_objective_id,
-            feedback.related_objective_operation.replaces_objective_id,
-            feedback.related_objective_operation.intended_requirement_ids,
-            project_public_value(feedback.related_objective_operation.predicate),
-        ) if feedback.related_objective_operation is not None else None,
         AgentContractViolationView(
             feedback.violation.contract_owner,
             feedback.violation.code,
@@ -137,9 +116,5 @@ def project_control_feedback(
             feedback.recovery.rollback_available,
             feedback.recovery.strategy_change_required,
             feedback.recovery.offered_action_ids,
-            tuple(
-                project_public_value(item)
-                for item in feedback.recovery.admissible_objective_operations
-            ),
         ) if feedback.recovery is not None else None,
     )

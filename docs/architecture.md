@@ -5,7 +5,7 @@
 
 Current target authority:
 
-- [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Target AgentLoop Authority Map](task-execution-authority-map.md)
 - [Unified World Interface and E2E AgentLoop Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 Current truth and scheduling:
@@ -26,11 +26,11 @@ acquire–decide–execute/acquire–evaluate loop. Adapters declare independent
 post-action acquisition capabilities separately from evidence/source assurance;
 unsupported and failed acquisition stay typed. AgentLoopState remains current
 run-control authority, while a bounded decision-scoped ControlTransition records
-what just happened without becoming a durable ledger or replay authority. P5-E
-adds a run-scoped VerifiedTaskState for the validated task frontier, keeping
-TaskPlan replaceable and task-level auditing separate from the local
-`fill`/`select` repetition guard. Schemas and invariants remain solely in the
-authoritative architecture and scoped normative contracts linked above.
+what just happened without becoming a durable ledger or replay authority. One
+`local_objective_state` owns observation-grounded sequence, set, or aggregate
+execution relevance; it is established only after observation and never owns
+task legality or private bindings. Schemas and invariants remain solely in the
+authority map and scoped normative contracts linked above.
 
 TaskSpec/ActionContract/StateKernel/RuntimeCommitter documents describe the
 retained implementation baseline or archive history unless the target

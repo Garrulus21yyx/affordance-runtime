@@ -37,7 +37,7 @@ route without teaching the policy a separate action language for each platform.
 
 The current target is defined only by:
 
-- [AgentContext Recurrent E2E Agent Architecture](docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Target AgentLoop Authority Map](docs/task-execution-authority-map.md)
 - [AgentContext Recurrent E2E Agent Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 ```text

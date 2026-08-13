@@ -24,7 +24,6 @@ from affordance_runtime.model_policy.grounding import (
     serialize_compact_decision_guide,
 )
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, decision_response_schema
 from affordance_runtime.model_port import ModelConfig
 
@@ -66,8 +65,7 @@ def _run(case):
         "instructions", decision_response_schema(),
     )
     response = asyncio.run(adapter.generate(request))
-    decision = parse_agent_decision(response.raw_payload, json.loads(case.serialized_context)["context_id"])
-    return port, decision
+    return port, response.decision
 
 
 def test_all_seven_decisions_cross_production_bridge_schema_and_parser() -> None:

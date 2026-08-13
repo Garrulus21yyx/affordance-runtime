@@ -31,7 +31,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     CountingEnvironment,
     finalize_policy_trace,
     instrument_policy,
-    instrument_requirement_hypothesis_proposer,
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
@@ -196,14 +195,6 @@ def _build_loop(composition, instrumentation):
     )
     if composition.risk_policy is not None:
         loop.risk_policy = composition.risk_policy
-    if composition.requirement_hypothesis_proposer is not None:
-        loop.context_builder = replace(
-            loop.context_builder,
-            requirement_hypothesis_proposer=instrument_requirement_hypothesis_proposer(
-                composition.requirement_hypothesis_proposer,
-                instrumentation,
-            ),
-        )
     return loop
 
 

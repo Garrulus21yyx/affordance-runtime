@@ -9,7 +9,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from affordance_runtime.agent.decisions import RequestActionPage, RequestObservation, SelectAction
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -19,8 +18,8 @@ from affordance_runtime.model_boundary.failures import (
 )
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
-    ModelDecisionResponse,
     ModelMetadata,
+    ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
@@ -128,7 +127,7 @@ class DynamicToolDecisionAdapter:
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
-    async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
+    async def generate(self, request: ModelDecisionRequest) -> ResolvedModelDecision | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
@@ -150,7 +149,7 @@ class DynamicToolDecisionAdapter:
                 return _failure(ModelFailureKind.SCHEMA_ERROR, "model returned multiple tool calls")
             call = calls[0]
             try:
-                package = resolve_tool_call(
+                decision = resolve_tool_call(
                     catalog,
                     call,
                     expected_context_id=catalog.context_id,
@@ -170,7 +169,7 @@ class DynamicToolDecisionAdapter:
                 repaired = await self._repair_selected_tool_arguments(messages, spec, issue)
                 if repaired.name != call.name:
                     raise ToolResolutionError(ToolResolutionCode.INVALID_ARGUMENTS)
-                package = resolve_tool_call(
+                decision = resolve_tool_call(
                     catalog,
                     repaired,
                     expected_context_id=catalog.context_id,
@@ -209,8 +208,8 @@ class DynamicToolDecisionAdapter:
             object.__setattr__(self, "last_resolution_code", ToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "dynamic tool catalog could not be built")
         object.__setattr__(self, "last_resolution_code", ToolResolutionCode.ACCEPTED)
-        return ModelDecisionResponse(
-            json.dumps(_package_payload(package), separators=(",", ":"), ensure_ascii=False),
+        return ResolvedModelDecision(
+            decision,
             _metadata(self.port, self.perception_profile, self.transport_kind),
         )
 
@@ -361,39 +360,6 @@ def _scrub_runtime_identity(value):
     if isinstance(value, list):
         return [_scrub_runtime_identity(item) for item in value]
     return value
-
-
-def _package_payload(package) -> dict[str, object]:
-    decision = package.decision
-    if isinstance(decision, SelectAction):
-        payload = {
-            "type": "select_action",
-            "context_id": decision.context_id,
-            "action_id": decision.action_id,
-            "parameters": to_json_compatible(decision.parameters),
-            "destination_id": decision.destination_id,
-        }
-    elif isinstance(decision, RequestActionPage):
-        payload = {
-            "type": "request_action_page",
-            "context_id": decision.context_id,
-            "query": decision.query,
-            "target_id": decision.target_id,
-            "relevance_role": decision.relevance_role,
-            "cursor": decision.cursor,
-        }
-    else:
-        assert isinstance(decision, RequestObservation)
-        payload = {
-            "type": "request_observation",
-            "context_id": decision.context_id,
-            "subject_id": decision.subject_id,
-            "modality": decision.modality,
-            "required_assurance": decision.required_assurance,
-            "reason": decision.reason,
-            "cursor": decision.cursor,
-        }
-    return {"objective_operation": {"kind": "none"}, "decision": payload}
 
 
 def _metadata(port, perception_profile, transport_kind) -> ModelMetadata:

@@ -42,9 +42,6 @@ from affordance_runtime.model_policy.model_port_bridge import (
     ModelPortDecisionAdapter,
 )
 from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
-from affordance_runtime.model_policy.requirement_proposer import (
-    ModelRequirementHypothesisProposer,
-)
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
@@ -72,8 +69,6 @@ class PerceptionArmOutcome:
     provider_attempts: int
     total_tokens: int
     model_latency_ms: float
-    requirement_hypotheses_enabled: bool
-    requirement_hypothesis_calls: int
 
     @property
     def success_count(self) -> int:
@@ -128,14 +123,11 @@ async def run_perception_arm(
     manifest: MiniWobBreadthManifest,
     policy: ModelBackedAgentPolicy,
     perception_profile: DecisionPerceptionProfile,
-    *,
-    enable_requirement_hypotheses: bool = False,
 ) -> PerceptionArmOutcome:
     return await _run_arm(
         manifest,
         policy,
         perception_profile,
-        enable_requirement_hypotheses=enable_requirement_hypotheses,
         require_frozen_mistral=True,
     )
 
@@ -145,7 +137,6 @@ async def run_provider_cohort_arm(
     policy: ModelBackedAgentPolicy,
     perception_profile: DecisionPerceptionProfile,
     *,
-    enable_requirement_hypotheses: bool = False,
     visual_region_proposer=None,
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
@@ -159,7 +150,6 @@ async def run_provider_cohort_arm(
         manifest,
         policy,
         perception_profile,
-        enable_requirement_hypotheses=enable_requirement_hypotheses,
         require_frozen_mistral=False,
         visual_region_proposer=visual_region_proposer,
         visual_point_grounder=visual_point_grounder,
@@ -175,7 +165,6 @@ async def _run_arm(
     policy,
     perception_profile,
     *,
-    enable_requirement_hypotheses,
     require_frozen_mistral,
     visual_region_proposer=None,
     visual_point_grounder=None,
@@ -187,29 +176,17 @@ async def _run_arm(
     adapter = _adapter(policy, require_frozen_mistral=require_frozen_mistral)
     if adapter.perception_profile is not perception_profile:
         raise ValueError("perception A/B policy profile does not match its arm")
-    if isinstance(adapter, GroundedToolDecisionAdapter) and enable_requirement_hypotheses:
-        raise ValueError("grounded-tools short-loop profile forbids requirement-hypothesis calls")
     configured_identity = (
         getattr(adapter.port, "provider", ""),
         getattr(adapter.port, "model", ""),
         adapter.grounding_profile_version,
     )
     instrumentations: list[BenchmarkInstrumentation] = []
-    proposer = (
-        ModelRequirementHypothesisProposer(
-            adapter.port,
-            adapter.config,
-            perception_profile,
-        )
-        if enable_requirement_hypotheses
-        else None
-    )
     target = _target_manifest(
         manifest,
         policy,
         FixedPacingState(),
         instrumentations,
-        proposer,
         visual_region_proposer,
         visual_point_grounder,
         visual_candidate_disambiguator,
@@ -226,7 +203,6 @@ async def _run_arm(
                 else "structured-package-v2"
             )
             + f"-{perception_profile.value}"
-            + ("-requirement-hypotheses" if enable_requirement_hypotheses else "")
         ),
     )
     case_completed = None
@@ -285,18 +261,6 @@ async def _run_arm(
     )
     provider, model, grounding = _model_identity(instrumentations, configured_identity)
     errors = _arm_errors(records, suite.identity.git_sha, suite.identity.git_dirty)
-    hypothesis_calls = sum(
-        _integer(item.result, "requirement_hypothesis_calls")
-        for item in records
-    )
-    if enable_requirement_hypotheses:
-        errors.extend(
-            f"{item.case_id}: requirement hypothesis call metric is unavailable"
-            for item in records
-            if _integer(item.result, "requirement_hypothesis_calls") < 1
-        )
-    elif hypothesis_calls:
-        errors.append("disabled requirement-hypothesis profile recorded model calls")
     return PerceptionArmOutcome(
         perception_profile,
         records,
@@ -307,8 +271,6 @@ async def _run_arm(
         sum(_integer(item.result, "provider_attempts") for item in records),
         sum(_integer(item.result, "total_tokens") for item in records),
         sum(_number(item.result, "model_latency_ms") for item in records),
-        enable_requirement_hypotheses,
-        hypothesis_calls,
     )
 
 
@@ -356,8 +318,6 @@ def write_perception_ab(
                 "provider_attempts": arm.provider_attempts,
                 "total_tokens": arm.total_tokens,
                 "model_latency_ms": arm.model_latency_ms,
-                "requirement_hypotheses_enabled": arm.requirement_hypotheses_enabled,
-                "requirement_hypothesis_calls": arm.requirement_hypothesis_calls,
                 "errors": arm.errors,
             }
             for arm in arms
@@ -372,8 +332,6 @@ def write_perception_ab(
         errors.append("A/B requires exactly the text-only and screenshot+AX arms")
     if len(identities) != 1:
         errors.append("A/B arms did not use the same provider/model/grounding identity")
-    if len({arm.requirement_hypotheses_enabled for arm in arms}) != 1:
-        errors.append("A/B arms did not use the same requirement-hypothesis profile")
     inconclusive_pairs = _inconclusive_pairs(case_ids, arms)
     run_evidence_valid = not errors
     comparison_valid = run_evidence_valid and not inconclusive_pairs
@@ -427,8 +385,6 @@ def write_provider_cohort_arm(
         "provider_attempts": arm.provider_attempts,
         "total_tokens": arm.total_tokens,
         "model_latency_ms": arm.model_latency_ms,
-        "requirement_hypotheses_enabled": arm.requirement_hypotheses_enabled,
-        "requirement_hypothesis_calls": arm.requirement_hypothesis_calls,
         "run_evidence_valid": not arm.errors,
         "errors": arm.errors,
         "case_ids": tuple(record.case_id for record in arm.records),

@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.context import AgentImageInput
 
 if TYPE_CHECKING:
     from affordance_runtime.model_boundary.context import AgentContext
 
-MAX_MODEL_RESPONSE_BYTES = 32 * 1024
 _MAX_CONTEXT_BYTES = 64 * 1024
 _MAX_INSTRUCTIONS = 8 * 1024
 _SAFE_METADATA = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
+MAX_MODEL_RESPONSE_BYTES = 32 * 1024
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ class ModelDecisionRequest:
     decision_schema: Mapping[str, object]
     image_inputs: tuple[AgentImageInput, ...] = ()
     policy_context: "AgentContext | None" = field(default=None, repr=False, compare=False)
+    context_id: str = field(init=False)
 
     def __post_init__(self) -> None:
         if _SAFE_METADATA.fullmatch(self.request_id) is None:
@@ -89,6 +92,14 @@ class ModelDecisionRequest:
             raise ValueError("model policy instructions exceed their bound")
         if not self.serialized_context.strip() or len(self.serialized_context.encode()) > _MAX_CONTEXT_BYTES:
             raise ValueError("serialized AgentContext exceeds the model request bound")
+        try:
+            public_context = json.loads(self.serialized_context)
+            context_id = public_context["context_id"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise ValueError("model decision request requires one public context identity") from exc
+        if not isinstance(context_id, str) or _SAFE_METADATA.fullmatch(context_id) is None:
+            raise ValueError("model decision request context identity is invalid")
+        object.__setattr__(self, "context_id", context_id)
         object.__setattr__(self, "decision_schema", freeze_json(self.decision_schema))
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(
@@ -100,15 +111,17 @@ class ModelDecisionRequest:
 
             if not isinstance(self.policy_context, AgentContext):
                 raise TypeError("model decision request policy context must be typed")
+            if self.policy_context.context_id != self.context_id:
+                raise ValueError("private policy context does not match its public projection")
 
 
 @dataclass(frozen=True)
-class ModelDecisionResponse:
-    raw_payload: str
+class ResolvedModelDecision:
+    """A provider response parsed exactly once by its protocol adapter."""
+
+    decision: AgentDecision
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.raw_payload, str) or not self.raw_payload.strip():
-            raise ValueError("model decision response payload cannot be blank")
-        if len(self.raw_payload.encode()) > MAX_MODEL_RESPONSE_BYTES:
-            raise ValueError("model decision response exceeds its byte bound")
+        if not isinstance(self.decision, AgentDecision):
+            raise TypeError("resolved model outcome requires one typed AgentDecision")

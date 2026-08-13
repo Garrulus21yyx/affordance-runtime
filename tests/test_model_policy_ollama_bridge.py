@@ -8,7 +8,7 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _
 
 from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
-from affordance_runtime.model_policy.spec import AgentDecisionPackagePayload
+from affordance_runtime.model_policy.spec import AgentDecisionPayload
 from affordance_runtime.model_port import ModelConfig, OllamaModelPort
 from affordance_runtime.testing import StaticEnvironment
 
@@ -75,7 +75,7 @@ def test_exact_ollama_agent_decision_schema_completes_one_runtime_action() -> No
 
     assert result.status == AgentLoopStatus.DONE
     assert len(requests) == 1 and result.execution_count == 1
-    assert requests[0]["format"] == AgentDecisionPackagePayload.model_json_schema()
+    assert requests[0]["format"] == AgentDecisionPayload.model_json_schema()
     assert config.rate_limit_retries == config.transient_retries == 0
     assert policy.last_metadata is not None and policy.last_metadata.total_tokens == 42
     captured = json.dumps(requests[0], sort_keys=True)

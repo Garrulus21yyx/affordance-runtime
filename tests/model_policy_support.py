@@ -2,7 +2,8 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model_policy.parser import parse_agent_decision
 
 DecisionScript = Callable[[dict[str, object], int], dict[str, object] | str]
 
@@ -21,7 +22,12 @@ class ScriptedStructuredDecisionPort:
         self.context_ids.append(context["context_id"])
         payload = self.script(context, self.calls)
         raw = payload if isinstance(payload, str) else json.dumps(payload)
-        return ModelDecisionResponse(raw, ModelMetadata("fixture", "scripted", f"response:{self.calls}"))
+        decision = parse_agent_decision(raw, request.context_id)
+        if not hasattr(decision, "context_id"):
+            return decision
+        return ResolvedModelDecision(
+            decision, ModelMetadata("fixture", "scripted", f"response:{self.calls}")
+        )
 
 
 def first_action_model_policy() -> ModelBackedAgentPolicy:

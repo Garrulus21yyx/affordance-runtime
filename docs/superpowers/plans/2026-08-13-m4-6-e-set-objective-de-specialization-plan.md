@@ -2,35 +2,30 @@
 
 Date: 2026-08-13
 
-Status: `CONVERGENCE_REOPENED / DUPLICATE_AUTHORITY_MIGRATION_REQUIRED`
+Status: `ARCHITECTURE_CONVERGED / IMPLEMENTED_NOT_LIVE_VERIFIED`
 
 ## 2026-08-13 architecture-first correction
 
-The attempted `TaskProgram` repair was reverted.  It duplicated whole-task
-planning inside the benchmark short loop and then forced the model boundary to
-carry a third task schema.  Its structured-output failures were symptoms of the
-duplicated owner, not a reason to keep repairing that schema.
+The repository-wide review found two independent products and one accidental
+duplicate inside the target loop:
 
-Repository review found three planning surfaces:
+1. the retained workflow `TaskSpec -> TaskPlan<StepSpec> -> Coordinator` chain;
+2. the target GUI `TaskGoal -> observe -> ActionSpace -> AgentContext ->
+   AgentDecision -> AgentLoop` chain;
+3. an accidental target-loop `TaskFrontier / VerifiedTaskState /
+   RequirementHypothesis / AgentDecisionPackage` semantic chain.
 
-1. the retained default `TaskSpec -> TaskPlan<StepSpec> -> StateKernel/Coordinator`
-   chain;
-2. the target `TaskGoal -> optional TaskPlan<Milestone> -> VerifiedTaskState /
-   ActiveObjective -> AgentLoopState` chain;
-3. M4.6 short-loop `set / sequence / aggregate` ingress and the now-reverted
-   `TaskProgram` wrapper.
+The third chain is deleted, not adapted. The target AgentLoop does not consume
+workflow TaskSpec/TaskPlan and does not require an exact resource or GUI target
+before its first observation. Sequence, set, and aggregate semantics now enter
+only as one post-observation `EstablishLocalObjective` decision, share one
+`local_objective_state` slot, and resolve their selectors against current world
+evidence.
 
-The selected convergence path retains the admitted `TaskSpec` and canonical
-`TaskPlan<StepSpec>` authority contracts, connects them to the target AgentLoop,
-and does not import the old StateKernel/Coordinator execution core. M4.6 violated
-that boundary by letting Catalog/model transport create planner-shaped semantic
-state. The active work is to migrate the required set/sequence/aggregate algebra
-into canonical plan steps and one step-execution reducer, then delete both the
-temporary short-loop ingress and the displaced default execution chain at their
-cutover boundary.
-
-No further model schema tuning is allowed before that owner migration is
-defined.  Projection schemas serialize canonical state; they do not define it.
+Provider adapters parse a response once into `AgentDecision`. The previous
+typed-decision -> JSON -> second policy parse and internal predicate -> wire
+predicate reverse codecs are removed. Projection schemas present current state;
+they never become an authority or reconstruction path.
 
 The migration must also avoid an over-extended causal/provenance chain. Runtime
 correctness requires only the admitted task/plan identity, active step identity,
@@ -62,37 +57,39 @@ appearance rules.
 
 ## Shared causal model
 
-1. Set reduction is currently advisory: unresolved reductions collapse to an
-   empty admitted-target tuple, which Catalog interprets as no filtering.
-2. Set membership and effect obligations are reconstructed from a bounded model
-   projection/history rather than owned by Runtime state.
-3. Raw task prose is independently reinterpreted by Catalog and Vision routing.
-4. BrowserGym color, repeated-leaf, and lattice observations are projected as
-   task-ready facts without an explicit evidence-demand/admission boundary.
-5. Fixed witnesses cover the successful shape but do not exercise paraphrase,
-   distractor, zero-match, long-set, predicate-flip, or provider-conflict cases.
-6. Live evidence at `1f32836` showed that typed establishment remained advisory:
-   the policy could select a raw E-ref before any Runtime objective existed, so
-   persistent membership and completion gates were never activated.
+The repeated reopenings came from duplicate semantic owners and lossy boundary
+round trips, not independent benchmark defects:
 
-The authority invariant under repair is:
+1. workflow planning contracts were imported into a GUI loop whose identities
+   do not exist until observation;
+2. frontier/hypothesis/objective-package state duplicated LocalObjective and
+   made semantic ingress optional or pre-policy;
+3. provider adapters resolved a tool to a typed package, serialized it, and a
+   second policy parser interpreted it again;
+4. documentation still named the deleted chain as current authority, inviting
+   the same coupling to be reintroduced;
+5. fixed witnesses did not expose these owner/projection defects until live
+   provider and successor-observation paths exercised them.
+
+The authority invariants are:
 
 ```text
-semantic control enabled AND no admitted typed objective
+no current LocalObjective
 => zero effectful dispatch
+
+LocalObjective established
+=> every authorized entity/action is resolved from the current observation
+
+fresh observation
+=> old entity/action/E-ref/binding resolution is stale and recomputed
 ```
 
-Repeated live reopenings show that this invariant is necessary but not sufficient.
-The remaining failures share one broader cause: semantic intent is admitted only
-for entities already present in one observation, while provider recovery, future
-selector resolution, derived values, scope enumeration, visual classification,
-and task-semantic validation have separate or missing owners.  The bounded
-contract under repair is therefore:
+The bounded contract is:
 
 ```text
-Task semantic proposal
-  -> independent semantic admission
-  -> persistent typed objective/step/value plan
+current AgentContext
+  -> one typed LocalObjective decision
+  -> persistent typed local objective state
   -> fresh-observation selector resolution
   -> Runtime-owned candidate/value evidence obligations
   -> current ActionSpace + binding admission
@@ -144,13 +141,13 @@ authority.
 | Q | completed | Replace current-viewport/same-role candidate lists with ScopeEnumerator-owned universes | Snapshot viewport closure is domain-aware; larger scopes require an environment-owned enumerator and otherwise fail closed |
 | R | completed | Wire VisualPredicateClassifier through evidence obligations | Set members, aggregate members/destinations and sequence selectors share visual-leaf classification without granting completeness or bindings |
 | S | deleted as invalid for AgentLoop | Use workflow intake semantic audit and TaskPlan admission | AgentLoop no longer invokes workflow intake/planning before the first policy turn |
-| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | Full suite `2421 passed, 24 skipped`; fresh live evidence is still required |
+| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | Current architecture suite `2383 passed, 24 skipped`; fresh live evidence is still required |
 | U | completed | Remove the duplicate `TaskProgram` planner and its schema-repair path | Four public commits were reverted with audit-preserving revert commits; no TaskProgram source/test remains |
 | V | completed | Publish one executable owner/producer/consumer/deletion map | The map now separates target AgentLoop from the transactional TaskSpec/TaskPlan workflow |
-| W | implemented, verification open | Converge set/entity/aggregate semantics into one LocalObjective lifecycle | One `local_objective_state` reducer slot; no TaskPlan dependency |
-| X | implemented, verification open | Delete displaced contracts, tools, projections, tests and docs | Pre-loop preparer, legacy LocalObjective hint, semantic-control mode, TaskProgress, and execution-control projection are deleted |
-| Y | in_progress | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI forbids workflow-plan ingress in AgentLoop; held-out/live gates remain |
-| Z | implemented, verification open | Remove projection-to-objective roundtrips | LocalObjective is admitted from the current typed decision; projections retain no objective reconstruction authority |
+| W | completed for deterministic architecture gate | Converge set/entity/aggregate semantics into one LocalObjective lifecycle | One `local_objective_state` reducer slot; no TaskPlan dependency |
+| X | completed | Delete displaced contracts, tools, projections, tests and docs | Pre-loop planner/frontier/hypothesis/package paths and their current-authority documentation are deleted or retired pointers |
+| Y | completed for deterministic architecture gate | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI forbids pre-observation target/frontier authority, duplicate state slots, reverse objective codecs and policy-level raw-response parsing; live gate remains separate |
+| Z | completed | Remove projection-to-objective and decision roundtrips | LocalObjective is admitted from the current typed decision; every provider adapter returns `ResolvedModelDecision`; projections retain no reconstruction authority |
 
 ## Archived pre-cutover live evidence
 

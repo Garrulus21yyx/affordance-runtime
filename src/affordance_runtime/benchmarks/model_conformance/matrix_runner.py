@@ -8,12 +8,10 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION, decision_response_schema
 from affordance_runtime.model_port import ModelConfig, ModelPort, OllamaModelPort
@@ -178,12 +176,7 @@ async def _attempt(
     record = port.last_call
     if isinstance(outcome, ModelFailure):
         return _result(case, "", False, _provider_failure(outcome.kind), record)
-    decision = parse_agent_decision(
-        outcome.raw_payload,
-        json.loads(case.serialized_context)["context_id"],
-    )
-    if isinstance(decision, ModelFailure | PolicyFailure):
-        return _result(case, "", False, "schema_error", record)
+    decision = outcome.decision
     actual = _variant(decision)
     guide_identity = (
         outcome.metadata.grounding_guide_schema_version,

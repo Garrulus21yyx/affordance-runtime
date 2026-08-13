@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-13
 > **Current reviewed M4.5-B closure SHA:** `NONE`
-> **Target:** [Unified World Interface and E2E AgentLoop Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+> **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 
 ## Status vocabulary
 
@@ -35,8 +35,7 @@ The target path now has:
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
 | canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
-| VerifiedTaskState | `PARTIAL_PROJECTION_ONLY`; plan/objective/progress views and evidence-linked current facts exist, but no verified milestone/frontier lifecycle or promotion authority |
-| TaskProgressAuditor | `NOT_STARTED`; future P5-E owner, separate from local repetition containment |
+| TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
@@ -62,8 +61,8 @@ The target path now has:
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
-| P5-M1 model policy core | `CLOSED`; canonical context JSON, typed decision parser and Runtime admission |
-| P5-M1.1 strict decision boundary | `REOPENED / IMPLEMENTED_NOT_LIVE_VERIFIED`; duplicate/non-finite/depth/node/byte limits and canonical eight-variant spec including one LocalObjective constructor |
+| P5-M1 model policy core | `CLOSED`; canonical context projection, adapter-owned single parse to typed decision, and Runtime admission |
+| P5-M1.1 strict decision boundary | `REOPENED / DETERMINISTIC_ARCHITECTURE_VERIFIED / NOT_LIVE_VERIFIED`; duplicate/non-finite/depth/node/byte limits and canonical eight-variant spec including one LocalObjective constructor; raw-response policy compatibility path deleted |
 | P5-M1.1 existing ModelPort bridge | `CLOSED`; existing transport owner, outer deadline, zero retry/no fallback, typed metadata/failures |
 | local HTTP provider-transport proof | `CLOSED`; one request/one execution plus 429/500/schema/deadline zero-call proofs |
 | deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
@@ -528,14 +527,10 @@ comparison-invalid because 7 pairs contain provider failures. The 8 comparable
 pairs were 8/8 text-only and 7/8 screenshot+AX, so screenshot benefit is not
 demonstrated. Stable opaque entity identity, a bounded retained
 entity/state/fact/relation/option inventory, fair frozen-snapshot paging and
-negative-claim coverage gating are implemented. Bounded non-authoritative
-requirement-hypothesis proposal, atomic Runtime admission/lifecycle, mechanical
-predicate assessment and fair candidate pinning are also implemented. Proposal
-is limited to one initial call plus changed-snapshot/page augmentation, with a
-hard four-call run budget. Benchmark accounting separates hypothesis calls
-from GUI policy calls and partitions cases into capability-covered, unassessed
-and declared-gap cohorts. Retryable hypothesis-provider failures use bounded
-attempt/deadline recovery and remain nonterminal after exhaustion.
+negative-claim coverage gating are implemented. The former pre-policy
+requirement-hypothesis producer and its separate call/accounting path are
+deleted; semantic objective establishment now occurs only as one typed decision
+over a current AgentContext.
 Dynamic-tools v1 and its bounded selected-argument repair are implemented, but
 the stopped clean-`7c14190` MiniWoB-60 attempt completed only 8 mixed-cohort
 cases with 0 success and is not a benchmark claim. Its only
@@ -679,32 +674,24 @@ reviewed-source rule, reward or answer; only benchmark inventory/reporting
 owners may retain that metadata. BrowserGym-specific mechanics remain isolated
 to the environment adapter, while the capability contracts are intended for
 real GUI surfaces. The
-active convergence plan is the [task-grounded perception/frontier record](superpowers/plans/2026-08-11-m4-6-e-perception-requirement-mainline-plan.md).
+active convergence plan is the [LocalObjective de-specialization record](superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md).
 
 The active plan now also freezes the v1 complexity diagnosis and reuse boundary.
-`grounded_tools.v2` must replace the active full-context scrub + per-turn
-hypothesis + anonymous-tool + multi-repair stack; merely adding another facade
-does not satisfy the slice. Browser/OS acquisition and input, accessibility
+`grounded_tools.v2` replaces the full-context scrub + pre-policy hypothesis +
+anonymous-tool + multi-repair stack; merely adding another facade does not
+satisfy the slice. Browser/OS acquisition and input, accessibility
 semantics, SoM rendering, optional OCR/visual proposal, provider-native tool
 transport, model reasoning, official task verification and downstream tracing
 are reused or outsourced behind typed ports. Runtime continues to own current
 epoch, ActionSpace/ref resolution, admission, dispatch truth/no-replay,
 risk/confirmation, evidence validation and task disposition.
 
-P5-E is `IN_PROGRESS /
-HYPOTHESIS_VERTICAL_SLICE_IMPLEMENTED_NOT_BENCHMARK_VALIDATED`. Closed typed objective
-operations, atomic objective/action admission, verifier-backed objective
-assessment, one active rolling objective, repair feedback and bounded repetition
-containment are implemented. The optional incremental `RequirementHypothesis`
-producer uses bounded public context and closed predicates; Runtime assigns IDs
-and admits each batch atomically, verifier assessment owns only
-`SATISFIED/CONTRADICTED/UNKNOWN`, and active unknown candidates feed a bounded
-pin header with reserved exploration slots. Provider/proposal failure is
-nonterminal metadata. The proposer reads the current frozen observation page,
-not always page one, and has a hard four-call run budget. Model hypotheses
-cannot define authoritative task
-requirements, set completeness, action authority or terminal completion. This
-slice is implemented but has not passed a separated-cohort benchmark.
+P5-E is `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED /
+LIVE_REVALIDATION_PENDING`. Sequence, set and aggregate semantics enter through
+one `EstablishLocalObjective` decision after observation, share one state slot,
+and re-resolve from current evidence. The old TaskFrontier, VerifiedTaskState,
+RequirementHypothesis and objective-operation package are deleted. Focused and
+full-suite verification do not yet constitute a fresh live benchmark closure.
 
 ## Control-transition and long-horizon gap status
 
@@ -717,15 +704,9 @@ reviewed closure. Codecs, legacy fields, privacy sanitation and telemetry remain
 downstream projections and cannot infer or override truth. No ledger, replay,
 event sourcing or state reconstruction is admitted.
 
-Long-horizon capability remains partial. `VerifiedTaskState`, one active rolling
-objective, evaluator-backed objective audit, non-authoritative requirement
-hypotheses and their bounded AgentContext projection exist. The optional
-hypothesis producer is invoked at task start; Runtime owns atomic admission and
-IDs, while predicate assessment never owns task necessity or completion.
-General multi-milestone planning and benchmark-proven replanning remain open.
-`ProgressController` remains an integrated fill/select local liveness guard;
-it is not the task-frontier owner. P5-E is implemented as an unvalidated
-vertical slice. M4.6 is
+General long-horizon planning is outside the current AgentLoop contract and is
+not represented by dormant frontier state. `ProgressController` remains an
+integrated fill/select local liveness guard; it is not a planner. M4.6 is
 `IN_PROGRESS`: M4.6-A is `COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE`,
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is

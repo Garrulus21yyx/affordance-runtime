@@ -52,45 +52,6 @@ class PacedAgentPolicy:
         return await self.wrapped.decide(context)
 
 
-@dataclass
-class PacedRequirementHypothesisProposer:
-    wrapped: object
-    minimum_interval_s: float = 7.5
-    clock: Callable[[], float] = time.monotonic
-    sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep
-    state: FixedPacingState = field(default_factory=FixedPacingState)
-
-    def __post_init__(self) -> None:
-        if self.minimum_interval_s < 0:
-            raise ValueError("fixed hypothesis pacing interval cannot be negative")
-
-    @property
-    def last_attempt_count(self) -> int:
-        return int(getattr(self.wrapped, "last_attempt_count", 0))
-
-    @property
-    def last_schema_repair_count(self) -> int:
-        return int(getattr(self.wrapped, "last_schema_repair_count", 0))
-
-    async def propose(
-        self,
-        task,
-        observation,
-        action_space,
-        *,
-        mode,
-        observation_cursor="",
-    ):
-        await _pace(self.minimum_interval_s, self.clock, self.sleeper, self.state)
-        return await self.wrapped.propose(
-            task,
-            observation,
-            action_space,
-            mode=mode,
-            observation_cursor=observation_cursor,
-        )
-
-
 async def _pace(minimum_interval_s, clock, sleeper, state) -> None:
     now = clock()
     if state.last_call_started_s is not None:

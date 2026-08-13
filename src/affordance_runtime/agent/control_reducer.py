@@ -363,9 +363,6 @@ def _transition_lifecycle_error(
                 feedback.source is ControlFeedbackSource.ACTION_ADMISSION
                 and is_selection
                 and admission is AdmissionStatus.REJECTED
-            ) or (
-                feedback.source is ControlFeedbackSource.OBJECTIVE_ADMISSION
-                and admission is (AdmissionStatus.REJECTED if is_selection else None)
             )
             if (
                 not source_matches

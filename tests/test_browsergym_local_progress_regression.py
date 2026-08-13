@@ -22,9 +22,10 @@ from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnv
 from affordance_runtime.evaluation import ActionEvaluationStatus
 from affordance_runtime.model_policy import (
     ModelBackedAgentPolicy,
-    ModelDecisionResponse,
     ModelMetadata,
+    ResolvedModelDecision,
 )
+from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("MINIWOB_URL"),
@@ -43,8 +44,8 @@ class LocalPublicStructuredPort:
         context = json.loads(request.serialized_context)
         self.progress_views.append(context["progress"])
         payload = self._decision(context)
-        return ModelDecisionResponse(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        return ResolvedModelDecision(
+            payload_to_decision(AgentDecisionPayload.model_validate(payload), request.context_id),
             ModelMetadata(
                 provider_id="local-conformance",
                 model_id="scripted-structured",

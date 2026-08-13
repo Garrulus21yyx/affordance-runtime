@@ -6,28 +6,17 @@ from pydantic import ValidationError
 from affordance_runtime.agent.decisions import EstablishLocalObjective
 from affordance_runtime.model_policy.spec import (
     SCHEMA_VERSION,
-    AgentDecisionPackagePayload,
     AgentDecisionPayload,
     decision_response_schema,
     payload_to_decision,
 )
 
 
-def test_canonical_package_has_four_objective_operations_and_typed_decisions() -> None:
+def test_canonical_schema_has_one_typed_decision_union() -> None:
     schema = decision_response_schema()
-    objective = schema["properties"]["objective_operation"]
-    decision = schema["properties"]["decision"]
-
-    assert SCHEMA_VERSION == "agent-decision-package.v2"
-    assert objective["discriminator"]["propertyName"] == "kind"
-    assert set(objective["discriminator"]["mapping"]) == {
-        "none",
-        "propose",
-        "retain",
-        "replace",
-    }
-    assert decision["discriminator"]["propertyName"] == "type"
-    assert set(decision["discriminator"]["mapping"]) == {
+    assert SCHEMA_VERSION == "agent-decision.v3"
+    assert schema["discriminator"]["propertyName"] == "type"
+    assert set(schema["discriminator"]["mapping"]) == {
         "select_action",
         "establish_local_objective",
         "request_observation",
@@ -37,9 +26,8 @@ def test_canonical_package_has_four_objective_operations_and_typed_decisions() -
         "wait",
         "abort",
     }
-    assert len(objective["oneOf"]) == 4
-    assert len(decision["oneOf"]) == 8
-    assert AgentDecisionPackagePayload.model_json_schema() == schema
+    assert len(schema["oneOf"]) == 8
+    assert AgentDecisionPayload.model_json_schema() == schema
 
 
 def test_provider_schema_encodes_runtime_enums_and_forbids_extra_fields() -> None:
@@ -115,11 +103,10 @@ def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identi
             "context_id": "context:1",
             "objective": {
                 "kind": "set",
-                "predicate": {
-                    "kind": "fact_equals",
-                    "field_name": "grid_coordinate",
+                "predicate": {"any_of": [{"all_of": [{
+                    "kind": "fact_equals", "field_name": "grid_coordinate",
                     "expected": {"x": 1, "y": -2},
-                },
+                }]}]},
                 "quantifier": "exactly_one",
                 "semantic_action": "activate",
             },

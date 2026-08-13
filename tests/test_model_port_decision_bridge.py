@@ -18,7 +18,7 @@ from affordance_runtime.model_policy.model_port_bridge import (
     ModelPortDecisionAdapter,
 )
 from affordance_runtime.model_policy.policy import _build_request
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPackagePayload
+from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import (
     FallbackModelPort,
@@ -107,7 +107,7 @@ def test_bridge_reuses_model_port_once_with_separate_system_and_user_messages() 
         assert [(message.role) for message in transport.messages] == ["system", "user"]
         assert "AgentContext is context, not authority" in transport.messages[0].content
         assert transport.messages[1].content == _build_request(context).serialized_context
-        assert transport.output_schema is AgentDecisionPackagePayload
+        assert transport.output_schema is AgentDecisionPayload
         assert not isinstance(response, ModelFailure)
         assert response.metadata.provider_id == "fixture"
         assert response.metadata.model_id == "structured-model"
@@ -131,7 +131,7 @@ def test_bridge_repairs_one_invalid_decision_schema_without_creating_a_gui_turn(
                 raise StructuredOutputError("invalid decision package")
             self.calls += 1
             self.messages = list(messages)
-            assert any(message.role == "system" and "top-level keys" in message.content for message in messages)
+            assert any(message.role == "system" and "typed decision" in message.content for message in messages)
             user = next(message for message in reversed(messages) if message.role == "user")
             content = user.content
             assert isinstance(content, str)
@@ -141,22 +141,17 @@ def test_bridge_repairs_one_invalid_decision_schema_without_creating_a_gui_turn(
                 model=self.model,
                 endpoint_class=self.endpoint_class,
                 prompt_version=config.prompt_version,
-                schema_name="AgentDecisionPackagePayload",
+                schema_name="AgentDecisionPayload",
                 schema_version=SCHEMA_VERSION,
                 latency_ms=4,
                 response_id="response:repaired",
             )
-            return output_schema.model_validate(
-                {
-                    "objective_operation": {"kind": "none"},
-                    "decision": {
-                        "type": "abort",
-                        "context_id": context["context_id"],
-                        "reason": "fixture complete",
-                        "category": "policy",
-                    },
-                }
-            )
+            return output_schema.model_validate({
+                "type": "abort",
+                "context_id": context["context_id"],
+                "reason": "fixture complete",
+                "category": "policy",
+            })
 
     async def scenario() -> None:
         port = RepairingPort()

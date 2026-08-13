@@ -13,6 +13,7 @@ from affordance_runtime.model_policy.model_port_bridge import (
     ModelPortDecisionAdapter,
 )
 from affordance_runtime.model_policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.port import StructuredDecisionModelPort
 from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderCallOrchestrator,
     ProviderCallPolicy,
@@ -76,6 +77,7 @@ def model_policy_from_environment(
         "LLM_INTERACTION_PROTOCOL",
         STRUCTURED_PACKAGE_PROTOCOL,
     )
+    adapter: StructuredDecisionModelPort
     if selected_protocol == STRUCTURED_PACKAGE_PROTOCOL:
         adapter = ModelPortDecisionAdapter(
             port,

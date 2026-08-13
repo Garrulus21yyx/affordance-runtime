@@ -115,14 +115,11 @@ def _guide(context, options, projected) -> CompactDecisionGuide:
     first = projected[0] if projected else None
     destination = first.visible_destination_ids[0] if first and first.visible_destination_ids else ""
     example = None if first is None else {
-        "objective_operation": {"kind": "none"},
-        "decision": {
-            "type": "select_action",
-            "context_id": str(context.get("context_id") or ""),
-            "action_id": first.action_id,
-            "parameters": {},
-            "destination_id": destination,
-        },
+        "type": "select_action",
+        "context_id": str(context.get("context_id") or ""),
+        "action_id": first.action_id,
+        "parameters": {},
+        "destination_id": destination,
     }
     actions = context.get("actions", {})
     return CompactDecisionGuide(

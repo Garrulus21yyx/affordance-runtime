@@ -10,7 +10,7 @@ from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, Agent
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelDecisionResponse, ModelMetadata
+from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.spec import AgentDecisionPayload, decision_response_schema
@@ -45,15 +45,8 @@ def test_huge_json_integer_is_invalid_response_without_escaping() -> None:
 def test_huge_json_integer_is_zero_execution_and_zero_surface_probe() -> None:
     class Port:
         async def generate(self, request):
-            context_id = json.loads(request.serialized_context)["context_id"]
-            raw = (
-                '{"type":"select_action","context_id":"'
-                + context_id
-                + '","action_id":"action:1","parameters":{"huge":'
-                + "9" * 5_000
-                + '},"destination_id":""}'
-            )
-            return ModelDecisionResponse(raw)
+            del request
+            return ModelFailure(ModelFailureKind.INVALID_RESPONSE, "fixture invalid JSON number", False)
 
     async def scenario() -> None:
         environment = StaticEnvironment([_world("before", False)])
@@ -127,15 +120,8 @@ def test_policy_clears_previous_metadata_before_a_failed_call() -> None:
         async def generate(self, request):
             self.calls += 1
             if self.calls == 1:
-                return ModelDecisionResponse(
-                    json.dumps(
-                        {
-                            "type": "abort",
-                            "context_id": json.loads(request.serialized_context)["context_id"],
-                            "reason": "stop",
-                            "category": "policy",
-                        }
-                    ),
+                return ResolvedModelDecision(
+                    Abort(request.context_id, "stop", "policy"),
                     ModelMetadata(provider_id="fixture", model_id="one"),
                 )
             return ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False)

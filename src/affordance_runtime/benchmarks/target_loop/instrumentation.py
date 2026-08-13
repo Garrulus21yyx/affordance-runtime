@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import AgentDecisionPackage, SelectAction
+from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -17,15 +17,12 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
-from affordance_runtime.model_policy.requirement_proposer import ModelRequirementHypothesisProposer
 from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
 
 @dataclass
 class BenchmarkInstrumentation:
     policy_calls: int = 0
-    requirement_hypothesis_calls: int = 0
-    requirement_hypothesis_schema_repair_count: int = 0
     policy_schema_repair_count: int = 0
     tool_argument_repair_count: int = 0
     valid_tool_call_count: int = 0
@@ -149,7 +146,6 @@ class CountingPolicy:
 
 
 def _policy_trace_event(call: int, context, outcome, policy, *, exception: str = ""):
-    frontier = context.progress.task_frontier
     feedback = context.control_feedback
     event: dict[str, object] = {
         "policy_call": call,
@@ -157,7 +153,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         "decision_mode": str(context.decision_mode),
         "visible_action_count": len(context.actions.options),
         "selected_source_modalities": tuple(source.modality for source in context.world.sources),
-        "frontier": _frontier_trace(frontier),
         "feedback": (
             {
                 "kind": feedback.kind,
@@ -168,9 +163,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
                     feedback.recovery.strategy_change_required if feedback.recovery is not None else False
                 ),
                 "must_change_fields": (feedback.recovery.must_change_fields if feedback.recovery is not None else ()),
-                "admissible_objective_operations": (
-                    feedback.recovery.admissible_objective_operations if feedback.recovery is not None else ()
-                ),
             }
             if feedback is not None
             else None
@@ -203,14 +195,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
         event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
-    if isinstance(outcome, AgentDecisionPackage):
-        event["outcome"] = "decision_package"
-        event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
-        event["decision"] = _decision_trace(outcome.decision)
-        selected = _selected_grounding_trace(context, outcome.decision)
-        if selected is not None:
-            event["selected_grounding"] = selected
-    elif isinstance(
+    if isinstance(
         outcome,
         SelectAction,
     ):
@@ -287,69 +272,6 @@ def _selected_grounding_trace(context, decision):
         "marked": entity.marked,
         "semantic_action": option.semantic_action,
     }
-
-
-def _frontier_trace(frontier):
-    if frontier is None:
-        return None
-    active = frontier.active_objective
-    return {
-        "current_frontier": frontier.current_frontier,
-        "active_objective_id": active.objective_id if active is not None else "",
-        "active_predicate_kind": (str(active.predicate.get("kind", "")) if active is not None else ""),
-        "recent_checkpoints": tuple(
-            {
-                "objective_id": item.objective_id,
-                "status": item.status,
-                "predicate_kind": str(item.predicate.get("kind", "")),
-            }
-            for item in frontier.recent_checkpoints
-        ),
-        "next_objective_required": frontier.next_objective_required,
-        "must_advance_from_objective_id": frontier.must_advance_from_objective_id,
-        "strategy_change_required": frontier.strategy_change_required,
-        "requirement_hypotheses": tuple(
-            {
-                "hypothesis_id": item.hypothesis_id,
-                "predicate_kind": str(item.predicate.get("kind", "")),
-                "assessment": item.assessment,
-            }
-            for item in frontier.requirement_hypotheses
-        ),
-        "hypothesis_rejections": tuple(
-            {"item_index": item.item_index, "code": item.code} for item in frontier.hypothesis_rejections
-        ),
-        "hypothesis_failure_reason": frontier.hypothesis_failure_reason,
-    }
-
-
-def _objective_operation_trace(operation):
-    value: dict[str, object] = {"kind": operation.kind.value}
-    for name in (
-        "active_objective_id",
-        "replaces_objective_id",
-        "intended_requirement_ids",
-    ):
-        if hasattr(operation, name):
-            value[name] = getattr(operation, name)
-    predicate = getattr(operation, "predicate", None)
-    if predicate is not None:
-        value["predicate"] = _predicate_trace(predicate)
-    return value
-
-
-def _predicate_trace(predicate):
-    value: dict[str, object] = {"kind": predicate.kind.value}
-    for name in ("fact_ref", "target_id", "field_name", "status"):
-        item = getattr(predicate, name, None)
-        if item is not None:
-            value[name] = item.value if hasattr(item, "value") else item
-    expected = getattr(predicate, "expected", None)
-    if expected is not None:
-        value["expected_kind"] = type(expected).__name__
-        if hasattr(expected, "fact_ref"):
-            value["expected_fact_ref"] = expected.fact_ref
-    return value
 
 
 def _decision_trace(decision):
@@ -530,37 +452,6 @@ class CountingModelPort:
 
 
 @dataclass
-class CountingRequirementHypothesisProposer:
-    wrapped: object
-    instrumentation: BenchmarkInstrumentation
-
-    async def propose(
-        self,
-        task,
-        observation,
-        action_space,
-        *,
-        mode,
-        observation_cursor="",
-    ):
-        self.instrumentation.requirement_hypothesis_calls += 1
-        result = await self.wrapped.propose(
-            task,
-            observation,
-            action_space,
-            mode=mode,
-            observation_cursor=observation_cursor,
-        )
-        schema_repairs = int(getattr(self.wrapped, "last_schema_repair_count", 0))
-        self.instrumentation.provider_retry_count += max(
-            0,
-            int(getattr(self.wrapped, "last_attempt_count", 1)) - 1 - schema_repairs,
-        )
-        self.instrumentation.requirement_hypothesis_schema_repair_count += schema_repairs
-        return result
-
-
-@dataclass
 class CountingSemanticJudge:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
@@ -654,26 +545,6 @@ def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):
             wrapped=replace(inner, port=CountingDecisionPort(inner.port, instrumentation)),
         )
     return CountingPolicy(policy, instrumentation)
-
-
-def instrument_requirement_hypothesis_proposer(proposer, instrumentation):
-    if isinstance(proposer, ModelRequirementHypothesisProposer):
-        proposer = replace(
-            proposer,
-            port=CountingModelPort(proposer.port, instrumentation),
-        )
-    elif isinstance(
-        getattr(proposer, "wrapped", None),
-        ModelRequirementHypothesisProposer,
-    ):
-        proposer = replace(
-            proposer,
-            wrapped=replace(
-                proposer.wrapped,
-                port=CountingModelPort(proposer.wrapped.port, instrumentation),
-            ),
-        )
-    return CountingRequirementHypothesisProposer(proposer, instrumentation)
 
 
 def _configured_retry_count(port: object) -> int | None:

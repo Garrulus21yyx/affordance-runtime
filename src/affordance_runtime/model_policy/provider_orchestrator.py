@@ -16,7 +16,7 @@ from affordance_runtime.model_boundary.failures import (
 )
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
-    ModelDecisionResponse,
+    ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.port import StructuredDecisionModelPort
 
@@ -127,7 +127,9 @@ class ProviderCallOrchestrator:
     def configured_fallback_count(self) -> int:
         return len(self.ports) - 1
 
-    async def generate(self, request: ModelDecisionRequest) -> ModelDecisionResponse | ModelFailure:
+    async def generate(
+        self, request: ModelDecisionRequest
+    ) -> ResolvedModelDecision | ModelFailure:
         object.__setattr__(self, "last_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         started = monotonic()
@@ -173,7 +175,7 @@ class ProviderCallOrchestrator:
                             False,
                             attempt_origin=ProviderAttemptOrigin.UNKNOWN,
                         )
-                    if isinstance(outcome, ModelDecisionResponse):
+                    if isinstance(outcome, ResolvedModelDecision):
                         if accepted:
                             return ModelFailure(
                                 ModelFailureKind.INTERNAL_ERROR,

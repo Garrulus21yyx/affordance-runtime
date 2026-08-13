@@ -16,8 +16,7 @@ def test_compact_guide_uses_actual_ids_and_is_deterministic_and_bounded() -> Non
     option = scenario.context.actions.options[0]
     assert guide.current_context_id == scenario.context.context_id
     assert guide.visible_actions[0].action_id == option.action_id
-    assert guide.select_action_example["objective_operation"] == {"kind": "none"}
-    assert guide.select_action_example["decision"]["action_id"] == option.action_id
+    assert guide.select_action_example["action_id"] == option.action_id
     assert encoded == serialize_compact_decision_guide(guide)
     assert len(encoded.encode()) <= MAX_COMPACT_GUIDE_BYTES
     assert len(encoded.encode()) < 1_024

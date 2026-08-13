@@ -15,7 +15,7 @@ from typing import Mapping
 from pydantic import TypeAdapter, ValidationError
 
 from affordance_runtime.agent.decisions import (
-    AgentDecisionPackage,
+    AgentDecision,
     EstablishLocalObjective,
     RequestActionPage,
     RequestObservation,
@@ -34,7 +34,6 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model_policy.spec import LocalObjectiveSpecPayload, local_objective_from_payload
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
-from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
 from affordance_runtime.world.schema_validation import validate_value
 
 
@@ -160,7 +159,7 @@ def resolve_grounded_tool_call(
     *,
     expected_context_id: str,
     expected_catalog_id: str | None = None,
-) -> AgentDecisionPackage:
+) -> AgentDecision:
     if catalog.context_id != expected_context_id or (
         expected_catalog_id is not None and catalog.catalog_id != expected_catalog_id
     ):
@@ -175,16 +174,13 @@ def resolve_grounded_tool_call(
         try:
             if set(call.arguments) != {"value"}:
                 raise ValueError("local objective tool requires exactly one value")
-            payload = TypeAdapter(LocalObjectiveSpecPayload).validate_python(
+            payload: LocalObjectiveSpecPayload = TypeAdapter(LocalObjectiveSpecPayload).validate_python(
                 to_json_compatible(call.arguments["value"])
             )
             objective = local_objective_from_payload(payload)
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-        return AgentDecisionPackage(
-            NoObjectiveOperation(),
-            EstablishLocalObjective(expected_context_id, objective),
-        )
+        return EstablishLocalObjective(expected_context_id, objective)
     try:
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
@@ -193,15 +189,15 @@ def resolve_grounded_tool_call(
         decision = RequestActionPage(
             expected_context_id, binding.query, binding.target_id, binding.relevance_role, binding.cursor
         )
-        return AgentDecisionPackage(NoObjectiveOperation(), decision)
+        return decision
     if isinstance(binding, _ObserveBinding):
-        return AgentDecisionPackage(NoObjectiveOperation(), RequestObservation(
+        return RequestObservation(
             expected_context_id,
             "current_world",
             binding.modality,
             binding.assurance,
             f"acquire fresh {binding.modality} grounding",
-        ))
+        )
     if not isinstance(binding, _VerbBinding):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref = str(call.arguments.get("target") or "")
@@ -211,9 +207,7 @@ def resolve_grounded_tool_call(
     if ref not in actions:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
     parameters = {"value": call.arguments[binding.parameter_field]} if binding.parameter_field else {}
-    return AgentDecisionPackage(
-        NoObjectiveOperation(), SelectAction(expected_context_id, actions[ref], parameters, "")
-    )
+    return SelectAction(expected_context_id, actions[ref], parameters, "")
 
 
 def _verb(semantic_action: str) -> str:
@@ -236,8 +230,11 @@ def _verb_schema(verb: str, refs: list[str], parameter_schema: Mapping[str, obje
         required.append("text")
         parameter_field = "text"
     elif verb == "select":
+        raw_properties = parameter_schema.get("properties", {})
+        if not isinstance(raw_properties, Mapping):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         properties["value"] = to_json_compatible(
-            dict(parameter_schema.get("properties", {})).get("value", {"type": "string"})
+            dict(raw_properties).get("value", {"type": "string"})
         )
         required.append("value")
         parameter_field = "value"
@@ -280,11 +277,8 @@ def _grounding_entity(item: AgentGroundingEntityView):
 
 
 def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
-    frontier = context.progress.task_frontier
     value = {
         "task_status": str(context.progress.validated_task_status),
-        "active_objective": context.progress.active_objective,
-        "frontier": list(frontier.current_frontier) if frontier is not None else [],
         "verified_public_facts": [{
             "subject": ref_by_target.get(item.subject_id, "task"),
             "field": item.predicate,

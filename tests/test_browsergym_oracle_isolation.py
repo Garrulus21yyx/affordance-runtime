@@ -7,8 +7,8 @@ def test_conformance_policy_uses_production_policy_parser_and_agent_loop() -> No
     composition = Path("src/affordance_runtime/benchmarks/external_smoke/composition.py").read_text()
     runner = Path("src/affordance_runtime/benchmarks/target_loop/runner.py").read_text()
     assert "ModelBackedAgentPolicy" in composition
-    assert "ModelDecisionResponse" in composition
-    assert "parse_agent_decision" not in composition
+    assert "ResolvedModelDecision" in composition
+    assert "payload_to_decision" in composition
     assert "AgentEpisodeRunner" in runner
     policy_source = composition.split("def _public_decision", 1)[1]
     assert "benchmark_task_id" not in policy_source
