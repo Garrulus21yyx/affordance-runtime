@@ -264,3 +264,51 @@ Physical deletion order is consumer-based:
 Tests for a removed target objective phase are deleted rather than used to keep
 that phase alive. Reducer tests for the still-consumed legacy execution algebra
 remain until its owner is removed.
+
+## Goal delivery and pre-execution verification audit
+
+The remaining GLM failures are not caused by losing or mechanically rewriting
+the MiniWoB goal:
+
+- `BrowserGymMiniWobEnvironment.open` requires the public `raw["goal"]` string
+  and passes that exact value into `NaturalLanguageTaskRequest`.
+- `ThinTaskIntake` copies the instruction into `TaskGoal` without planning or
+  parsing it, and `reset` rejects any task whose instruction differs from the
+  saved BrowserGym goal.
+- `project_task` bounds the instruction to 1,024 characters; the five witness
+  goals are below that bound. Grounded-tools sends it as
+  `task_brief.instruction` alongside the screenshot, current public entities,
+  bounded interaction history and current tool menu.
+
+There is no task-semantic verifier between `SelectAction` and dispatch. Runtime
+does validate current action authority, binding, risk and currentness, and the
+environment evaluates the task after execution. Those owners cannot know a
+hidden expected answer before a terminal action without becoming a benchmark
+oracle. In the failed evidence, GLM therefore chose Submit before satisfying
+the visible set, or submitted after trusting its own wrong aggregate.
+
+This is a reliability gap in deliberate agent control, not proof that the
+model or execution path cannot solve the tasks. A separate clean
+`click-shades` seed-7 GLM witness already selected five blue controls and then
+Submit successfully in six turns. The same model family can produce both a
+correct multi-step trajectory and a premature terminal action.
+
+[Zhipu's official GLM-4.1V-Thinking page](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.1v-thinking)
+states that the family has built-in deep thinking and demonstrates
+`glm-4.1v-thinking-flashx` without an explicit `thinking` parameter. The
+current multimodal port does not send `thinking=disabled`; absence of an
+explicit `enabled` flag is therefore not an evidenced cause and must not be
+patched speculatively.
+
+Current GUI-agent references do not give Runtime an omniscient correctness
+oracle. UI-TARS generates deliberate thoughts before actions and learns
+reflection through training; Agent S2 separates manager, worker and grounding
+roles with proactive replanning; OpenAI Computer Use keeps model action choice
+inside an observation/action loop while the harness owns execution and
+high-impact confirmation. Under this project's no-training constraint, a
+future pre-commit review must be an agent semantic judgment over the same
+current Unified World and candidate action. Runtime may hold, admit or reject
+that candidate, but must not infer task completion from a task name, benchmark
+ID, button label or hidden expected value. Such a review must reuse the
+existing `AgentLoop`/model policy boundary; it cannot introduce a second
+planner or execution path.
