@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.criteria import LiteralValue, PredicateExpr, PredicateOperator, SubjectExpr
-from affordance_runtime.evaluation import ActionEvaluationStatus
-from affordance_runtime.simplified_runtime_contracts import (
-    ElementIntent,
-    SourceReference,
-    StepSpec,
-)
+from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.task.local_objective import establish_local_objective, refresh_local_objective
 from affordance_runtime.task.objective_sequence import (
     EntitySelector,
     ObjectiveSequence,
-    ObjectiveSequenceState,
     ObjectiveStep,
     SequenceDisposition,
     establish_objective_sequence_state,
@@ -26,14 +19,6 @@ from affordance_runtime.task.set_objective import (
     FactEquals,
     ScopeEntityDomain,
     VisualConcept,
-)
-from affordance_runtime.task.step_execution import EntityStepExecution
-from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
-from affordance_runtime.verification.contracts import (
-    AssuranceLevel,
-    CriterionPolicy,
-    EvidenceSourceKind,
-    SatisfactionMode,
 )
 from affordance_runtime.world import (
     ActionBinding,
@@ -126,87 +111,6 @@ def test_future_selector_resolves_new_identity_after_fresh_observation() -> None
     assert bound.binding.binding_id.startswith("binding:observation:after:")
 
 
-def test_agent_state_materializes_execution_only_from_current_task_plan_step() -> None:
-    world = _world("observation:plan", "+")
-    refs = (SourceReference("request", "request:step"),)
-    execution = EntityStepExecution(
-        EntitySelector(FactEquals("identity.label", "+")),
-        ActionTemplate("activate"),
-    )
-    step = StepSpec(
-        "expand",
-        "activate plus",
-        ElementIntent("+", refs),
-        (
-            PredicateExpr(
-                "criterion:expand",
-                SubjectExpr("target", "+", "activated"),
-                PredicateOperator.EQUALS,
-                CriterionPolicy(
-                    satisfaction=SatisfactionMode.ACTION_CAUSED,
-                    minimum_assurance=AssuranceLevel.STRUCTURAL,
-                    allowed_source_kinds=(EvidenceSourceKind.DOM_STATE,),
-                    causal_lineage_required=True,
-                ),
-                LiteralValue(True),
-            ),
-        ),
-        refs,
-        ("requirement:test",),
-        execution=execution,
-    )
-    choose_zero = replace(
-        step,
-        step_id="choose-zero",
-        objective="activate zero",
-        interaction=ElementIntent("0", refs),
-        completion_criteria=(replace(step.completion_criteria[0], criterion_id="criterion:choose-zero"),),
-        depends_on=("expand",),
-        execution=EntityStepExecution(
-            EntitySelector(FactEquals("identity.label", "0")),
-            ActionTemplate("activate"),
-        ),
-    )
-    plan = TaskPlan(
-        plan_id="plan:canonical",
-        task_id="task:sequence",
-        task_revision=1,
-        plan_version=1,
-        based_on_state_version=0,
-        based_on_observation_ref=world.observation_id,
-        generated_by=TaskPlanGeneratorSource.RULE,
-        steps=(step, choose_zero),
-    )
-    state = AgentLoopState(world, semantic_control_required=True)
-
-    state.install_plan(plan, task_spec_identity="sha256:admitted-task")
-
-    assert state.plan is plan
-    assert state.task_spec_identity == "sha256:admitted-task"
-    assert state.task_progress is not None
-    assert state.task_progress.active_step_id == "expand"
-    assert isinstance(state.active_step_execution, ObjectiveSequenceState)
-    assert state.active_step_execution.resolved_target_id == "entity:0:+"
-
-    after = _world("observation:after-expand", "0")
-    state.current_observation = after
-    active = state.active_step_execution
-    state.active_step_execution = replace(
-        active,
-        active_index=1,
-        observation_epoch=after.observation_id,
-        disposition=SequenceDisposition.COMPLETE,
-        completed_step_ids=("expand",),
-        effect_evidence_refs=("effect:expand",),
-    )
-    state._advance_plan_after_execution()
-
-    assert state.task_progress.active_step_id == "choose-zero"
-    assert isinstance(state.active_step_execution, ObjectiveSequenceState)
-    assert state.active_step_execution.observation_epoch == after.observation_id
-    assert state.active_step_execution.resolved_target_id == "entity:0:0"
-
-
 def test_selector_ambiguity_and_absence_fail_closed() -> None:
     ambiguous = establish_objective_sequence_state(_sequence(), _world("observation:ambiguous", "+", "+"))
     missing = establish_objective_sequence_state(_sequence(), _world("observation:missing", "other"))
@@ -279,3 +183,72 @@ def test_visual_selector_can_classify_a_structurally_closed_domain() -> None:
     assert state.selector_resolution is not None
     assert state.selector_resolution.universe.coverage.value == "complete"
     assert state.selector_resolution.scope.entity_domain is ScopeEntityDomain.STRUCTURED
+
+
+def test_local_objective_facade_projects_only_currently_resolved_action() -> None:
+    before = _world("observation:before", "+", "distractor")
+    task = TaskGoal(
+        "task:sequence-projection",
+        "Activate plus and then zero",
+        allowed_effects=("ui_activated",),
+        risk_profile=RiskProfile.LOW,
+    )
+    state = AgentLoopState(before)
+    state.local_objective_state = establish_local_objective(
+        _sequence(),
+        before,
+        enumerator=state.scope_enumerator,
+    )
+    before_space = ActionSpaceBuilder().build(task, before)
+    before_page = ContextBuilder().page(before_space, state)
+
+    assert len(before_page.visible_action_ids) == 1
+    assert before_space.find(before_page.visible_action_ids[0]).target_id == "entity:0:+"
+
+    after = _world("observation:after", "distractor", "0")
+    state.current_observation = after
+    state.local_objective_state = refresh_local_objective(
+        state.local_objective_state,
+        after,
+        acted_entity_id="entity:0:+",
+        semantic_action="activate",
+        action_status=ActionEvaluationStatus.EFFECT_CONFIRMED,
+        effect_evidence_refs=("evaluation:expand",),
+        enumerator=state.scope_enumerator,
+    )
+    after_space = ActionSpaceBuilder().build(task, after)
+    after_page = ContextBuilder().page(after_space, state)
+
+    assert len(after_page.visible_action_ids) == 1
+    option = after_space.find(after_page.visible_action_ids[0])
+    assert option is not None and option.target_id == "entity:1:0"
+
+
+def test_agent_context_marks_open_local_objective_without_projecting_future_identity() -> None:
+    before = _world("observation:before", "+")
+    task = TaskGoal(
+        "task:sequence-context",
+        "Activate plus and then zero",
+        allowed_effects=("ui_activated",),
+        risk_profile=RiskProfile.LOW,
+    )
+    state = AgentLoopState(before)
+    state.local_objective_state = establish_local_objective(
+        _sequence(),
+        before,
+        enumerator=state.scope_enumerator,
+    )
+    context = ContextBuilder().build(
+        task,
+        state,
+        ActionSpaceBuilder().build(task, before),
+        TaskEvaluation(
+            task.task_id,
+            before.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+
+    assert context.progress.local_objective_open
+    assert "entity:0:0" not in repr(context)

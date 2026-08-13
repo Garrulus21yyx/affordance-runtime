@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
-from affordance_runtime.agent.decisions import RequestActionPage, SelectAction
+from affordance_runtime.agent.decisions import EstablishLocalObjective, RequestActionPage, SelectAction
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -31,7 +31,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION
+from affordance_runtime.model_policy.spec import SCHEMA_VERSION, local_objective_to_payload
 from affordance_runtime.model_policy.strict_json import validate_json_tree
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolTransportKind
 from affordance_runtime.model_port import (
@@ -52,12 +52,14 @@ from affordance_runtime.world.schema_validation import validate_value_issue
 _SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
-Task semantics, quantifiers, aggregates, and future selectors are owned by the admitted TaskPlan. Choose only among actions authorized for its current step.
+Choose only among actions in the current Runtime action page.
 Use current public state and the previous tool result: once a requested field is nonempty or satisfied, advance to the next required control.
 When recovery forbids retry or requires a strategy change, never repeat the same operation, target, and arguments.
 Respect prerequisites expressed by the instruction, state, roles, labels, and relations before choosing a submit/final action.
-Return only the required command. Do not invent coordinates, selectors, IDs, tools, targets, or explanations.
+Return only the required command. Do not invent screen points, private selectors, IDs, tools, targets, or explanations.
 The Runtime independently validates action authority, currentness, risk, execution, effects, and task completion.
+For a multi-step, quantified-set, or aggregate requirement, use establish_local_objective with semantic
+predicates. Ordinary one-step choices may use the current action tool directly.
 """.strip()
 
 
@@ -156,19 +158,13 @@ class GroundedToolDecisionAdapter:
             catalog = compile_grounded_tool_catalog(request.policy_context)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
-            automatic = _runtime_sequential_member_call(request.policy_context, catalog)
-            messages = ()
-            if automatic is not None:
-                object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.LOCAL_RUNTIME)
-                calls = (automatic,)
-            else:
-                object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
-                messages = _messages(catalog.view, request, self.port.supports_multimodal)
-                calls = await self._call(
-                    messages,
-                    catalog.specs,
-                    _labeled_entity_operation_aliases(catalog),
-                )
+            object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
+            messages = _messages(catalog.view, request, self.port.supports_multimodal)
+            calls = await self._call(
+                messages,
+                catalog.specs,
+                _labeled_entity_operation_aliases(catalog),
+            )
             if not calls:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
             if len(calls) != 1:
@@ -236,7 +232,7 @@ class GroundedToolDecisionAdapter:
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
         return ModelDecisionResponse(
             json.dumps(_package_payload(package), separators=(",", ":"), ensure_ascii=False),
-            _metadata(self.port, self.transport_kind, include_record=automatic is None),
+            _metadata(self.port, self.transport_kind, include_record=True),
         )
 
     async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
@@ -313,18 +309,6 @@ def _messages(view, request, supports_multimodal):
         ModelMessage(role="system", content=_SYSTEM_PROMPT),
         ModelMessage(role="user", content=tuple(parts)),
     )
-
-
-def _runtime_sequential_member_call(context, catalog) -> ToolCall | None:
-    """Consume only a Runtime-authorized singleton continuation without inference."""
-
-    control = context.execution_control
-    if control is None or control.semantic_mode != "member_execution":
-        return None
-    execute = tuple(item for item in catalog.specs if item.name == "execute_objective")
-    if len(execute) != 1 or execute[0].input_schema.get("required"):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    return ToolCall("execute_objective", {})
 
 
 def _command_payload_type(specs, aliases=()):
@@ -438,15 +422,23 @@ def _package_payload(package):
             "destination_id": decision.destination_id,
         }
     else:
-        assert isinstance(decision, RequestActionPage)
-        value = {
-            "type": "request_action_page",
-            "context_id": decision.context_id,
-            "query": decision.query,
-            "target_id": decision.target_id,
-            "relevance_role": decision.relevance_role,
-            "cursor": decision.cursor,
-        }
+        if isinstance(decision, EstablishLocalObjective):
+            objective = local_objective_to_payload(decision.objective)
+            value = {
+                "type": "establish_local_objective",
+                "context_id": decision.context_id,
+                "objective": objective.model_dump(mode="json"),
+            }
+        else:
+            assert isinstance(decision, RequestActionPage)
+            value = {
+                "type": "request_action_page",
+                "context_id": decision.context_id,
+                "query": decision.query,
+                "target_id": decision.target_id,
+                "relevance_role": decision.relevance_role,
+                "cursor": decision.cursor,
+            }
     return {"objective_operation": {"kind": "none"}, "decision": value}
 
 

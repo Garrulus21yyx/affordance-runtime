@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from affordance_runtime.agent import AgentLoopState
-from affordance_runtime.evaluation import ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model_boundary import ContextBuilder
+from affordance_runtime.evaluation import ActionEvaluationStatus
 from affordance_runtime.task import (
     And,
     FactEquals,
     PredicateTruth,
-    RiskProfile,
     ScopeEntityDomain,
     ScopeExtent,
     ScopeSpec,
@@ -16,7 +13,6 @@ from affordance_runtime.task import (
     SetObjectiveStateError,
     SetObjectiveStateErrorCode,
     SetQuantifier,
-    TaskGoal,
     VisualConcept,
 )
 from affordance_runtime.task.set_objective_state import (
@@ -318,43 +314,6 @@ def test_set_capacity_fails_typed_instead_of_truncating_members() -> None:
         assert exc.code is SetObjectiveStateErrorCode.SET_CAPACITY_EXCEEDED
     else:
         raise AssertionError("capacity overflow must fail closed")
-
-
-def test_true_member_without_current_action_route_blocks_catalog_control() -> None:
-    world = _world(1, ("red", "blue"))
-    active = establish_set_objective_state(
-        predicate=FactEquals("kind", "blue"),
-        quantifier=SetQuantifier.EXACTLY_ONE,
-        semantic_action="activate",
-        candidate_entity_ids=tuple(item.target_id for item in world.targets),
-        observation=world,
-    )
-    only_wrong_route = ActionSpace(world.observation_id, (_space(world).options[0],))
-    loop_state = AgentLoopState(world, remaining_turns=3)
-    loop_state.active_step_execution = active
-    task = TaskGoal(
-        "task:held-out-actionability",
-        "Arbitrary semantic request",
-        allowed_effects=("external_ui_interaction",),
-        risk_profile=RiskProfile.LOW,
-    )
-    context = ContextBuilder().build(
-        task,
-        loop_state,
-        only_wrong_route,
-        TaskEvaluation(
-            task.task_id,
-            world.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-    )
-
-    assert context.execution_control is not None
-    assert context.execution_control.mode == "blocked"
-    assert context.execution_control.disposition == "need_actionability_resolution"
-    assert context.execution_control.allowed_action_ids == ()
-    assert context.execution_control.evidence_needs == ("resolve_actionability",)
 
 
 def test_new_same_role_candidate_invalidates_scope_and_becomes_an_obligation() -> None:

@@ -5,7 +5,7 @@ import json
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import AgentDecisionPackage, SelectAction
+from affordance_runtime.agent import AgentDecisionPackage, EstablishLocalObjective, SelectAction
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
@@ -95,7 +95,7 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
 def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context)
-    assert {item.name for item in catalog.specs} == {"fill", "click"}
+    assert {item.name for item in catalog.specs} == {"establish_local_objective", "fill", "click"}
     refs = {item.label: item.ref for item in context.grounding.entities}
     package = resolve_grounded_tool_call(
         catalog,
@@ -108,12 +108,43 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
     assert package.decision.action_id.startswith("action:")
 
 
-def test_action_catalog_and_command_payload_contain_no_semantic_constructors() -> None:
+def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelope() -> None:
     catalog = compile_grounded_tool_catalog(_context())
-    assert not any(item.name.startswith("establish_") for item in catalog.specs)
+    assert [item.name for item in catalog.specs if item.name.startswith("establish_")] == [
+        "establish_local_objective"
+    ]
     assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
         "op", "target", "text", "value"
     }
+
+
+def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:
+    context = _context()
+    catalog = compile_grounded_tool_catalog(context)
+    package = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "establish_local_objective",
+            {
+                "value": {
+                    "kind": "set",
+                    "objective_id": "set-objective:1",
+                    "scope_id": "scope:viewport",
+                    "predicate": {
+                        "kind": "fact_equals",
+                        "field_name": "grid_coordinate",
+                        "expected": {"x": 1, "y": -2},
+                    },
+                    "quantifier": "exactly_one",
+                    "semantic_action": "activate",
+                }
+            },
+        ),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(package.decision, EstablishLocalObjective)
+    assert package.decision.objective.scope.root_entity_id == "current-viewport"
 
 
 def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:

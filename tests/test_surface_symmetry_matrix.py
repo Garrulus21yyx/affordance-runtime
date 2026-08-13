@@ -224,8 +224,8 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
     class CapturePolicy:
         async def decide(self, context):
             task, action_space = context.task, context.actions
-            recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-            captured.append((task, action_space, recent_turns, optional_plan, context.world.sources))
+            recent_turns = context.history.items
+            captured.append((task, action_space, recent_turns, context.world.sources))
             return SelectAction(context.context_id, action_space.options[0].action_id)
 
     for profile in ("dom", "visual", "wot"):
@@ -253,7 +253,7 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
     ]
     assert task_views[0] == task_views[1] == task_views[2]
     assert semantic_options[0] == semantic_options[1] == semantic_options[2]
-    assert tuple(item[4][0].modality for item in captured) == (
+    assert tuple(item[3][0].modality for item in captured) == (
         "structural",
         "visual",
         "environment_state",

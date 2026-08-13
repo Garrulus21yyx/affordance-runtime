@@ -370,9 +370,11 @@ and projection-view changes cannot create progress. That owner map is
 implemented at `9e92bd2d3b55a696f06ae77fd029b4bc6db9a903`, but D remains
 implemented-not-verified pending held-out review and M4.6-E stays blocked.
 
-P5-E reuses `task/planning_contracts.py`. VerifiedTaskState/milestone promotion
-and TaskProgressAuditor stay under task/evaluation ownership; ObjectivePolicy
-derives LocalObjective from the verified frontier. `agent/progress_control.py`
-continues to own only local fill/select repetition containment. Neither auditor
-nor controller may choose a replacement action, modify ActionSpace legality, or
-substitute for AgentPolicy/TaskPlanner.
+P5-E keeps VerifiedTaskState/frontier promotion under task/evaluation ownership.
+The target AgentLoop has no workflow TaskPlan preparer and no pre-observation
+target identity. A policy may establish one typed `task/local_objective.py`
+rolling objective only after a current observation exists; that owner alone
+dispatches set/sequence/aggregate reducer variants and re-resolves them after
+each fresh observation. `agent/progress_control.py` continues to own only local
+fill/select repetition containment. Neither evaluator nor controller may choose
+a replacement action, modify ActionSpace legality, or substitute for AgentPolicy.

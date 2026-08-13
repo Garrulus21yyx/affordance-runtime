@@ -27,20 +27,29 @@ def test_task_plan_has_exactly_one_production_owner() -> None:
     assert not (RUNTIME / "task" / "task_program.py").exists()
 
 
-def test_agent_loop_and_model_projection_use_the_canonical_task_plan() -> None:
-    for relative in ("agent/state.py", "model_boundary/projection.py"):
+def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
+    projection = (RUNTIME / "model_boundary" / "projection.py").read_text(encoding="utf-8")
+    assert "from affordance_runtime.task_plan_contracts import TaskPlan" in projection
+    for relative in ("agent/loop.py", "agent/state.py", "agent/episode_runner.py"):
         source = (RUNTIME / relative).read_text(encoding="utf-8")
-        assert "from affordance_runtime.task_plan_contracts import TaskPlan" in source
-        assert "from affordance_runtime.task.planning_contracts import" not in source or "TaskPlan" not in next(
-            line
-            for line in source.splitlines()
-            if line.startswith("from affordance_runtime.task.planning_contracts import")
-        )
+        assert "task_plan_contracts" not in source
+        assert "TaskPlan" not in source
 
 
-def test_agent_loop_has_one_step_execution_slot() -> None:
-    source = (RUNTIME / "agent" / "state.py").read_text(encoding="utf-8")
-    assert "active_step_execution: StepExecutionState | None" in source
+def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> None:
+    source = "\n".join(
+        (RUNTIME / relative).read_text(encoding="utf-8")
+        for relative in ("agent/loop.py", "agent/state.py", "agent/episode_runner.py")
+    )
+    for displaced in (
+        "AdmittedTaskSpec",
+        "task_plan_preparer",
+        "task_spec_identity",
+        "active_step_execution",
+        "semantic_control_required",
+        "install_plan(",
+    ):
+        assert displaced not in source
     for duplicate in (
         "active_set_objective",
         "active_objective_sequence",
@@ -49,13 +58,15 @@ def test_agent_loop_has_one_step_execution_slot() -> None:
         assert duplicate not in "\n".join(
             path.read_text(encoding="utf-8") for path in _python_sources()
         )
-    plan_source = (RUNTIME / "task_plan_contracts.py").read_text(encoding="utf-8")
-    assert "step_executions" not in plan_source
-    assert "step.execution" in plan_source
     production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
     assert "AgentSetControlView" not in production
     assert "set_control" not in production
     assert not (RUNTIME / "model_policy" / "set_objective_catalog.py").exists()
+    assert not (RUNTIME / "model_policy" / "execution_control_catalog.py").exists()
+    assert not (RUNTIME / "task" / "planning_contracts.py").exists()
+    state_source = (RUNTIME / "agent" / "state.py").read_text(encoding="utf-8")
+    assert state_source.count("local_objective_state:") == 1
+    assert "refresh_local_objective(" in state_source
 
 
 def test_model_policy_has_no_task_semantic_producers() -> None:

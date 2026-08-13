@@ -12,6 +12,7 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     AgentDecisionPackage,
     AskUser,
+    EstablishLocalObjective,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -19,6 +20,13 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads, validate_json_tree
+from affordance_runtime.task.aggregate_objective import (
+    AggregateObjective,
+    AggregateOperator,
+    AggregateOutputFormat,
+    ValueExtractor,
+    ValueExtractorKind,
+)
 from affordance_runtime.task.frontier_contracts import (
     FactAvailable,
     FactReferenceExpected,
@@ -32,6 +40,18 @@ from affordance_runtime.task.frontier_contracts import (
     TargetPresent,
     TaskOutcomeIs,
     TaskOutcomeStatus,
+)
+from affordance_runtime.task.objective_sequence import EntitySelector, ObjectiveSequence, ObjectiveStep
+from affordance_runtime.task.predicate_transport import predicate_from_public_value
+from affordance_runtime.task.set_objective import (
+    ActionTemplate,
+    SchedulingPolicy,
+    ScopeEntityDomain,
+    ScopeExtent,
+    ScopeSpec,
+    SetObjective,
+    SetQuantifier,
+    predicate_public_value,
 )
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
@@ -74,6 +94,108 @@ class SelectActionPayload(_Payload):
         validate_json_tree(value)
         reject_private_parameter_values(value)
         return value
+
+
+class LocalObjectiveStepPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    step_id: Id240
+    predicate: dict[str, Any]
+    entity_domain: Literal["structured", "all_visible", "fused"] = "structured"
+    semantic_action: Id240
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    postcondition: dict[str, Any] | None = None
+
+    @field_validator("predicate")
+    @classmethod
+    def _predicate(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        predicate_from_public_value(value)
+        return value
+
+    @field_validator("postcondition")
+    @classmethod
+    def _postcondition(cls, value: dict[str, Any] | None):
+        if value is not None:
+            validate_json_tree(value)
+            predicate_from_public_value(value)
+        return value
+
+    @field_validator("parameters")
+    @classmethod
+    def _parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        reject_private_parameter_values(value)
+        return value
+
+
+class SequenceLocalObjectivePayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    kind: Literal["sequence"]
+    objective_id: Id240
+    steps: Annotated[list[LocalObjectiveStepPayload], Field(min_length=1, max_length=8)]
+
+
+class SetLocalObjectivePayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    kind: Literal["set"]
+    objective_id: Id240
+    scope_id: Id240
+    scope_root: Id240 = "current-viewport"
+    scope_extent: Literal[
+        "current_viewport", "current_container", "current_document", "current_application_state"
+    ] = "current_viewport"
+    entity_domain: Literal["structured", "all_visible", "fused"] = "structured"
+    predicate: dict[str, Any]
+    quantifier: Literal[
+        "exactly_one", "all_in_closed_scope", "all_currently_visible", "all_discovered_under_budget"
+    ]
+    semantic_action: Id240
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    postcondition: dict[str, Any] | None = None
+
+    _predicate = field_validator("predicate")(LocalObjectiveStepPayload._predicate.__func__)
+    _postcondition = field_validator("postcondition")(LocalObjectiveStepPayload._postcondition.__func__)
+    _parameters = field_validator("parameters")(LocalObjectiveStepPayload._parameters.__func__)
+
+
+class AggregateLocalObjectivePayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    kind: Literal["aggregate"]
+    objective_id: Id240
+    scope_id: Id240
+    scope_root: Id240 = "current-viewport"
+    scope_extent: Literal[
+        "current_viewport", "current_container", "current_document", "current_application_state"
+    ] = "current_viewport"
+    entity_domain: Literal["structured", "all_visible", "fused"] = "structured"
+    predicate: dict[str, Any]
+    value_extractor_kind: Literal["constant", "fact"]
+    value_field: Optional120 = ""
+    constant: float = 1
+    operator: Literal["count", "sum", "min", "max"]
+    destination_predicate: dict[str, Any]
+    semantic_action: Id240 = "fill"
+    parameter_name: Item120 = "value"
+    output_format: Literal["integer_string", "decimal_string", "number"] = "integer_string"
+
+    @field_validator("predicate", "destination_predicate")
+    @classmethod
+    def _predicates(cls, value: dict[str, Any]) -> dict[str, Any]:
+        validate_json_tree(value)
+        predicate_from_public_value(value)
+        return value
+
+
+LocalObjectiveSpecPayload: TypeAlias = Annotated[
+    SequenceLocalObjectivePayload | SetLocalObjectivePayload | AggregateLocalObjectivePayload,
+    Field(discriminator="kind"),
+]
+
+
+class EstablishLocalObjectivePayload(_Payload):
+    type: Literal["establish_local_objective"]
+    objective: LocalObjectiveSpecPayload
 
 
 class RequestObservationPayload(_Payload):
@@ -128,6 +250,7 @@ class AbortPayload(_Payload):
 
 DecisionPayload: TypeAlias = Annotated[
     SelectActionPayload
+    | EstablishLocalObjectivePayload
     | RequestObservationPayload
     | RequestActionPagePayload
     | AskUserPayload
@@ -300,6 +423,8 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
         raise ValueError("decision context is stale")
     if isinstance(value, SelectActionPayload):
         return SelectAction(value.context_id, value.action_id, value.parameters, value.destination_id)
+    if isinstance(value, EstablishLocalObjectivePayload):
+        return EstablishLocalObjective(value.context_id, local_objective_from_payload(value.objective))
     if isinstance(value, RequestObservationPayload):
         return RequestObservation(
             value.context_id,
@@ -330,6 +455,131 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
     if isinstance(value, WaitPayload):
         return Wait(value.context_id, value.reason, value.max_wait_ms)
     return Abort(value.context_id, value.reason, value.category)
+
+
+def local_objective_from_payload(payload: LocalObjectiveSpecPayload):
+    if isinstance(payload, SequenceLocalObjectivePayload):
+        return ObjectiveSequence(
+            payload.objective_id,
+            tuple(
+                ObjectiveStep(
+                    item.step_id,
+                    EntitySelector(
+                        predicate_from_public_value(item.predicate),
+                        ScopeEntityDomain(item.entity_domain),
+                    ),
+                    ActionTemplate(item.semantic_action, parameters=item.parameters),
+                    EntitySelector(
+                        predicate_from_public_value(item.postcondition),
+                        ScopeEntityDomain(item.entity_domain),
+                    )
+                    if item.postcondition is not None
+                    else None,
+                )
+                for item in payload.steps
+            ),
+        )
+    scope = ScopeSpec(
+        payload.scope_id,
+        payload.scope_root,
+        ScopeExtent(payload.scope_extent),
+        entity_domain=ScopeEntityDomain(payload.entity_domain),
+    )
+    if isinstance(payload, SetLocalObjectivePayload):
+        return SetObjective(
+            payload.objective_id,
+            scope,
+            predicate_from_public_value(payload.predicate),
+            SetQuantifier(payload.quantifier),
+            ActionTemplate(
+                payload.semantic_action,
+                item_postcondition=(
+                    predicate_from_public_value(payload.postcondition)
+                    if payload.postcondition is not None
+                    else None
+                ),
+                parameters=payload.parameters,
+            ),
+            SchedulingPolicy(),
+        )
+    assert isinstance(payload, AggregateLocalObjectivePayload)
+    return AggregateObjective(
+        payload.objective_id,
+        scope,
+        predicate_from_public_value(payload.predicate),
+        ValueExtractor(
+            ValueExtractorKind(payload.value_extractor_kind),
+            payload.value_field,
+            payload.constant,
+        ),
+        AggregateOperator(payload.operator),
+        predicate_from_public_value(payload.destination_predicate),
+        payload.semantic_action,
+        payload.parameter_name,
+        AggregateOutputFormat(payload.output_format),
+    )
+
+
+def local_objective_to_payload(objective) -> LocalObjectiveSpecPayload:
+    """Project one typed local objective without using observation identities."""
+
+    if isinstance(objective, ObjectiveSequence):
+        return SequenceLocalObjectivePayload(
+            kind="sequence",
+            objective_id=objective.sequence_id,
+            steps=[
+                LocalObjectiveStepPayload(
+                    step_id=step.step_id,
+                    predicate=predicate_public_value(step.selector.predicate),
+                    entity_domain=step.selector.entity_domain.value,
+                    semantic_action=step.action_template.semantic_action,
+                    parameters=dict(step.action_template.parameters),
+                    postcondition=(
+                        predicate_public_value(step.postcondition.predicate)
+                        if step.postcondition is not None
+                        else None
+                    ),
+                )
+                for step in objective.steps
+            ],
+        )
+    if isinstance(objective, SetObjective):
+        return SetLocalObjectivePayload(
+            kind="set",
+            objective_id=objective.objective_id,
+            scope_id=objective.scope.scope_id,
+            scope_root=objective.scope.root_entity_id,
+            scope_extent=objective.scope.extent.value,
+            entity_domain=objective.scope.entity_domain.value,
+            predicate=predicate_public_value(objective.predicate),
+            quantifier=objective.quantifier.value,
+            semantic_action=objective.action_template.semantic_action,
+            parameters=dict(objective.action_template.parameters),
+            postcondition=(
+                predicate_public_value(objective.action_template.item_postcondition)
+                if objective.action_template.item_postcondition is not None
+                else None
+            ),
+        )
+    if isinstance(objective, AggregateObjective):
+        return AggregateLocalObjectivePayload(
+            kind="aggregate",
+            objective_id=objective.objective_id,
+            scope_id=objective.source_scope.scope_id,
+            scope_root=objective.source_scope.root_entity_id,
+            scope_extent=objective.source_scope.extent.value,
+            entity_domain=objective.source_scope.entity_domain.value,
+            predicate=predicate_public_value(objective.member_predicate),
+            value_extractor_kind=objective.value_extractor.kind.value,
+            value_field=objective.value_extractor.field_name,
+            constant=objective.value_extractor.constant,
+            operator=objective.operator.value,
+            destination_predicate=predicate_public_value(objective.destination_selector),
+            semantic_action=objective.semantic_action,
+            parameter_name=objective.parameter_name,
+            output_format=objective.output_format.value,
+        )
+    raise TypeError("local objective variant is unsupported")
 
 
 def payload_to_package(

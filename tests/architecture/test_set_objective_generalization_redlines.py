@@ -14,7 +14,6 @@ def _source(relative: str) -> str:
 def test_execution_control_and_vision_do_not_parse_task_prose_or_benchmark_slugs() -> None:
     governed = (
         "task/set_objective_state.py",
-        "model_policy/execution_control_catalog.py",
         "world/vision_escalation.py",
     )
     banned = (

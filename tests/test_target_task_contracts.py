@@ -4,8 +4,6 @@ import pytest
 
 from affordance_runtime.task import (
     EvaluationSpec,
-    LocalObjective,
-    LoopBudget,
     RiskProfile,
     TaskGoal,
 )
@@ -52,9 +50,7 @@ def test_strict_evaluation_does_not_add_effect_authority() -> None:
     assert goal.allowed_effects == ()
 
 
-def test_local_objective_remains_separate_from_task_intake() -> None:
-    goal = TaskGoal("read", "Inspect state", loop_budget=LoopBudget(4, 8))
-    objective = LocalObjective({"shared": True})
+def test_task_intake_has_no_local_objective_payload() -> None:
+    names = {item.name for item in fields(TaskGoal)}
 
-    assert goal is not None
-    assert objective.desired_state == {"shared": True}
+    assert "local_objective" not in names

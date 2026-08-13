@@ -21,7 +21,6 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
-    AgentExecutionControlView,
     AgentHypothesisRejectionView,
     AgentObjectiveCheckpointView,
     AgentObjectiveView,
@@ -43,17 +42,10 @@ from affordance_runtime.model_boundary.control_transition_projection import (
 from affordance_runtime.model_boundary.grounding_projection import GroundingProjection
 from affordance_runtime.model_boundary.projection import (
     project_action_page,
-    project_plan,
     project_public_value,
 )
 from affordance_runtime.model_boundary.task_projection import project_task
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
-from affordance_runtime.task.aggregate_objective import (
-    AggregateDisposition,
-    AggregateObjectiveState,
-    aggregate_allowed_action_ids,
-    aggregate_objective_public_value,
-)
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.frontier_contracts import (
     ActiveObjective,
@@ -65,17 +57,10 @@ from affordance_runtime.task.hypothesis_contracts import (
     TrackedHypothesisStatus,
 )
 from affordance_runtime.task.intent_context import IntentContext
-from affordance_runtime.task.objective_sequence import (
-    ObjectiveSequenceState,
-    SequenceDisposition,
-    sequence_allowed_action_ids,
-)
-from affordance_runtime.task.set_objective import SetDisposition
-from affordance_runtime.task.set_objective import predicate_public_value as set_predicate_public_value
-from affordance_runtime.task.set_objective_state import (
-    SetObjectiveState,
-    set_allowed_action_ids,
-    set_evidence_obligations,
+from affordance_runtime.task.local_objective import (
+    local_objective_allowed_action_ids,
+    local_objective_authority_digest,
+    local_objective_complete,
 )
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
@@ -185,7 +170,6 @@ class ContextBuilder:
             project_control_feedback(state.pending_control_feedback),
             grounding.images,
             grounding.index,
-            _execution_control_view(state, action_space),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
@@ -200,6 +184,12 @@ class ContextBuilder:
         cursor: str = "",
     ) -> InternalActionPage:
         labels = {item.target_id: item.label for item in state.current_observation.targets}
+        local = state.local_objective_state
+        allowed_action_ids = (
+            local_objective_allowed_action_ids(local, action_space)
+            if local is not None and not local_objective_complete(local)
+            else None
+        )
         return self.pager.page(
             action_space,
             state.active_objective,
@@ -211,6 +201,8 @@ class ContextBuilder:
             page_size=self.budget.max_action_options,
             max_destinations_per_option=self.budget.max_destinations_per_option,
             max_targets=self.budget.observation_pinned_capacity,
+            allowed_action_ids=allowed_action_ids,
+            authority_digest=local_objective_authority_digest(local, action_space),
         )
 
     def execution_page(
@@ -300,7 +292,6 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
     }
     verified = tuple(item for item in facts if item.fact_ref in evidence_refs)
     return AgentProgressView(
-        plan_summary=project_plan(state.plan),
         active_objective=objective,
         validated_task_status=evaluation.status,
         verified_public_facts=verified,
@@ -314,6 +305,10 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
         ),
         events=project_progress_events(state),
         task_frontier=_task_frontier_view(state),
+        local_objective_open=(
+            state.local_objective_state is not None
+            and not local_objective_complete(state.local_objective_state)
+        ),
         truncated=(
             len(unresolved) > max_unresolved
             or len(unresolved_outputs) > max_unresolved
@@ -399,169 +394,6 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
     )
 
 
-def _execution_control_view(
-    state: AgentLoopState,
-    action_space: ActionSpace,
-) -> AgentExecutionControlView | None:
-    execution = state.active_step_execution
-    if isinstance(execution, ObjectiveSequenceState):
-        sequence = execution
-        step = sequence.active_step
-        allowed = tuple(sorted(sequence_allowed_action_ids(sequence, action_space)))
-        if sequence.disposition is SequenceDisposition.READY and allowed:
-            mode = "member_actions_only"
-        elif sequence.disposition is SequenceDisposition.COMPLETE:
-            mode = "control_only"
-        elif sequence.disposition in {
-            SequenceDisposition.NEED_EVIDENCE,
-            SequenceDisposition.WAITING_POSTCONDITION,
-        }:
-            mode = "control_only"
-        else:
-            mode = "blocked"
-        selector = step.selector if step is not None else sequence.pending_postcondition
-        return AgentExecutionControlView(
-            mode,
-            sequence.disposition.value,
-            sequence.reason_code,
-            allowed,
-            len(state.current_observation.targets),
-            1 if sequence.resolved_target_id else 0,
-            sequence.disposition is SequenceDisposition.COMPLETE,
-            (set_predicate_public_value(selector.predicate) if selector is not None else {}),
-            selector.digest if selector is not None else "",
-            tuple(item.target_id for item in state.current_observation.targets),
-            sequence.unknown_target_ids,
-            (
-                ("classify_predicate",)
-                if sequence.disposition is SequenceDisposition.NEED_EVIDENCE
-                else ("refresh_stability",)
-                if sequence.disposition is SequenceDisposition.WAITING_POSTCONDITION
-                else ()
-            ),
-            state.semantic_control_mode.value if state.semantic_control_required else "",
-            step.action_template.parameters if step is not None else {},
-            (
-                tuple(option.action_id for option in action_space.options)
-                if sequence.disposition is SequenceDisposition.COMPLETE
-                else ()
-            ),
-        )
-    if isinstance(execution, AggregateObjectiveState):
-        aggregate = execution
-        allowed = tuple(sorted(aggregate_allowed_action_ids(aggregate, action_space)))
-        complete = aggregate.disposition is AggregateDisposition.COMPLETE
-        if aggregate.disposition is AggregateDisposition.READY and allowed:
-            mode = "member_actions_only"
-        elif complete:
-            mode = "control_only" if state.semantic_control_required else "successor_actions"
-        elif aggregate.disposition is AggregateDisposition.BLOCKED:
-            mode = "blocked"
-        else:
-            mode = "control_only"
-        successor_ids = tuple(
-            option.action_id for option in action_space.options if option.target_id != aggregate.destination_entity_id
-        )
-        unknown = tuple(entity_id for entity_id, truth in aggregate.member_truth if truth.value == "unknown")
-        evidence_need = {
-            AggregateDisposition.NEED_SCOPE_CLOSURE: "enumerate_scope",
-            AggregateDisposition.NEED_CLASSIFICATION: "classify_predicate",
-            AggregateDisposition.NEED_VALUES: "extract_values",
-            AggregateDisposition.NEED_DESTINATION: "resolve_destination",
-            AggregateDisposition.NEED_EFFECT_RESOLUTION: "verify_item_effect",
-        }.get(aggregate.disposition)
-        return AgentExecutionControlView(
-            mode,
-            aggregate.disposition.value,
-            aggregate.reason_code,
-            allowed if not complete else (),
-            len(aggregate.universe.entity_ids),
-            sum(truth.value == "true" for _, truth in aggregate.member_truth),
-            complete,
-            aggregate_objective_public_value(aggregate.objective),
-            aggregate.objective.digest,
-            aggregate.universe.entity_ids,
-            unknown,
-            (evidence_need,) if evidence_need else (),
-            state.semantic_control_mode.value if state.semantic_control_required else "",
-            aggregate.action_parameters,
-            successor_ids if complete and state.semantic_control_required else (),
-        )
-    active = execution if isinstance(execution, SetObjectiveState) else None
-    if active is None:
-        if not state.semantic_control_required:
-            return None
-        return AgentExecutionControlView(
-            "control_only",
-            state.semantic_control_mode.value,
-            "semantic_objective_required",
-            semantic_mode=state.semantic_control_mode.value,
-        )
-    reduction = active.reduction
-    if reduction.disposition in {
-        SetDisposition.READY_FOR_NEXT_MEMBER,
-        SetDisposition.AGENT_SELECT_NEXT,
-    }:
-        allowed = tuple(sorted(set_allowed_action_ids(active, action_space)))
-        if allowed:
-            mode = "member_actions_only"
-        else:
-            mode = "blocked"
-            return AgentExecutionControlView(
-                mode,
-                "need_actionability_resolution",
-                "true_member_action_unavailable",
-                (),
-                len(active.universe.entity_ids),
-                len(reduction.true_entity_ids),
-                False,
-                set_predicate_public_value(active.objective.predicate),
-                active.objective.predicate_digest,
-                active.candidate_entity_ids,
-                (),
-                ("resolve_actionability",),
-            )
-    elif reduction.disposition is SetDisposition.CERTIFIED:
-        set_members = set(active.candidate_entity_ids) | {item.entity_id for item in active.obligations}
-        successor_ids = tuple(
-            option.action_id for option in action_space.options if option.target_id not in set_members
-        )
-        if state.semantic_control_required:
-            mode = "control_only"
-            allowed = ()
-        else:
-            mode = "successor_actions"
-            allowed = successor_ids
-    elif reduction.disposition is SetDisposition.BLOCKED:
-        mode = "blocked"
-        allowed = ()
-    else:
-        mode = "control_only"
-        allowed = ()
-    unknown = tuple(item.entity_id for item in active.assessments if item.truth.value == "unknown")
-    return AgentExecutionControlView(
-        mode,
-        reduction.disposition.value,
-        reduction.reason_code,
-        allowed,
-        len(active.universe.entity_ids),
-        len(reduction.true_entity_ids),
-        reduction.certificate is not None,
-        set_predicate_public_value(active.objective.predicate),
-        active.objective.predicate_digest,
-        active.candidate_entity_ids,
-        unknown,
-        tuple(item.kind.value for item in set_evidence_obligations(active)),
-        state.semantic_control_mode.value if state.semantic_control_required else "",
-        active.objective.action_template.parameters,
-        (
-            successor_ids
-            if state.semantic_control_required and reduction.disposition is SetDisposition.CERTIFIED
-            else ()
-        ),
-    )
-
-
 def _fit_context(
     context: AgentContext,
     max_bytes: int,
@@ -627,6 +459,4 @@ def _fit_context(
 
 def _semantic_serialized_size(context: AgentContext) -> int:
     payload = to_json_compatible(replace(context, image_inputs=()))
-    if context.execution_control is None:
-        payload.pop("execution_control", None)
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())

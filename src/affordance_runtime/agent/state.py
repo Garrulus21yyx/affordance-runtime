@@ -12,33 +12,18 @@ from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
-from affordance_runtime.task.aggregate_objective import (
-    AggregateDisposition,
-    AggregateObjectiveState,
-    refresh_aggregate_objective_state,
-)
 from affordance_runtime.task.frontier import PreparedObjectiveOperation
 from affordance_runtime.task.frontier_contracts import ActiveObjective, VerifiedTaskState
 from affordance_runtime.task.hypothesis_contracts import (
     HypothesisItemRejection,
     RequirementHypothesisState,
 )
-from affordance_runtime.task.objective_sequence import (
-    ObjectiveSequenceState,
-    SequenceDisposition,
-    refresh_objective_sequence_state,
+from affordance_runtime.task.local_objective import (
+    LocalObjectiveState,
+    local_objective_observation_id,
+    refresh_local_objective,
 )
-from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
-from affordance_runtime.task.set_objective import SetDisposition
-from affordance_runtime.task.set_objective_state import SetObjectiveState, refresh_set_objective_state
-from affordance_runtime.task.step_execution import (
-    StepExecutionState,
-    materialize_step_execution,
-)
-from affordance_runtime.task_action_family_resolution import action_family_value
-from affordance_runtime.task_plan_contracts import TaskPlan
-from affordance_runtime.task_plan_progress import TaskProgress
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
@@ -62,14 +47,6 @@ class AgentLoopStatus(StrEnum):
     FAILED = "failed"
 
 
-class SemanticControlMode(StrEnum):
-    EVIDENCE_RESOLUTION = "evidence_resolution"
-    MEMBER_EXECUTION = "member_execution"
-    EFFECT_RESOLUTION = "effect_resolution"
-    STABILITY_CHECK = "stability_check"
-    OBJECTIVE_TRANSITION = "objective_transition"
-
-
 @dataclass
 class AgentLoopState:
     current_observation: WorldObservation
@@ -79,11 +56,8 @@ class AgentLoopState:
     control_transition_kind_counts: dict[str, int] = field(default_factory=dict)
     continued_control_root_ids: tuple[str, ...] = ()
     control_terminal_status: AgentLoopStatus | None = None
-    plan: TaskPlan | None = None
-    task_progress: TaskProgress | None = None
-    task_spec_identity: str = ""
-    active_objective: LocalObjective | ActiveObjective | None = None
-    active_step_execution: StepExecutionState | None = None
+    active_objective: ActiveObjective | None = None
+    local_objective_state: LocalObjectiveState | None = None
     scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
     verified_task_state: VerifiedTaskState | None = None
     requirement_hypotheses: RequirementHypothesisState = field(
@@ -121,45 +95,7 @@ class AgentLoopState:
     control_repetition_total_count: int = 0
     control_issue_consumption_total_count: int = 0
     observation_cursor: str = ""
-    semantic_control_required: bool = False
     visual_evidence_attempt_keys: tuple[str, ...] = ()
-
-    @property
-    def semantic_control_mode(self) -> SemanticControlMode:
-        active = self.active_step_execution
-        if isinstance(active, ObjectiveSequenceState):
-            sequence = active
-            if sequence.disposition is SequenceDisposition.READY:
-                return SemanticControlMode.MEMBER_EXECUTION
-            if sequence.disposition is SequenceDisposition.WAITING_POSTCONDITION:
-                return SemanticControlMode.STABILITY_CHECK
-            if sequence.disposition is SequenceDisposition.COMPLETE:
-                return SemanticControlMode.OBJECTIVE_TRANSITION
-            return SemanticControlMode.EVIDENCE_RESOLUTION
-        if isinstance(active, AggregateObjectiveState):
-            aggregate = active
-            if aggregate.disposition is AggregateDisposition.READY:
-                return SemanticControlMode.MEMBER_EXECUTION
-            if aggregate.disposition is AggregateDisposition.NEED_EFFECT_RESOLUTION:
-                return SemanticControlMode.EFFECT_RESOLUTION
-            if aggregate.disposition is AggregateDisposition.COMPLETE:
-                return SemanticControlMode.OBJECTIVE_TRANSITION
-            return SemanticControlMode.EVIDENCE_RESOLUTION
-        if not isinstance(active, SetObjectiveState):
-            return SemanticControlMode.OBJECTIVE_TRANSITION
-        disposition = active.reduction.disposition
-        if disposition in {
-            SetDisposition.READY_FOR_NEXT_MEMBER,
-            SetDisposition.AGENT_SELECT_NEXT,
-        }:
-            return SemanticControlMode.MEMBER_EXECUTION
-        if disposition is SetDisposition.NEED_EFFECT_RESOLUTION:
-            return SemanticControlMode.EFFECT_RESOLUTION
-        if disposition is SetDisposition.NEED_STABILITY_CHECK:
-            return SemanticControlMode.STABILITY_CHECK
-        if disposition is SetDisposition.CERTIFIED:
-            return SemanticControlMode.OBJECTIVE_TRANSITION
-        return SemanticControlMode.EVIDENCE_RESOLUTION
 
     @property
     def recent_turns(self) -> tuple[Turn, ...]:
@@ -180,156 +116,20 @@ class AgentLoopState:
         if not isinstance(reduced, ControlAccepted):
             raise ControlReductionError(reduced)
         self._install_control_reducer_state(reduced.state)
-        if (
-            isinstance(self.active_step_execution, ObjectiveSequenceState)
-            and transition.after_observation_id != self.active_step_execution.observation_epoch
-        ):
-            sequence = self.active_step_execution
+        local = self.local_objective_state
+        if local is not None and transition.after_observation_id != local_objective_observation_id(local):
             action = transition.action_evaluation
             intent = transition.intent
-            acted_entity_id = (
-                intent.target_id
-                if intent is not None
-                and sequence.active_step is not None
-                and action_family_value(intent.semantic_action)
-                == sequence.active_step.action_template.semantic_action
-                else ""
-            )
-            self.active_step_execution = refresh_objective_sequence_state(
-                sequence,
+            self.local_objective_state = refresh_local_objective(
+                local,
                 self.current_observation,
-                acted_entity_id=acted_entity_id,
-                action_status=(action.status if action is not None and acted_entity_id else None),
-                effect_evidence_refs=(action.evidence_refs if action is not None and acted_entity_id else ()),
+                acted_entity_id=intent.target_id if intent is not None else "",
+                semantic_action=intent.semantic_action if intent is not None else "",
+                action_status=action.status if action is not None else None,
+                effect_evidence_refs=action.evidence_refs if action is not None else (),
                 enumerator=self.scope_enumerator,
             )
-        if (
-            isinstance(self.active_step_execution, AggregateObjectiveState)
-            and transition.after_observation_id != self.active_step_execution.universe.observation_epoch
-        ):
-            action = transition.action_evaluation
-            intent = transition.intent
-            aggregate = self.active_step_execution
-            acted_entity_id = (
-                intent.target_id
-                if intent is not None
-                and action_family_value(intent.semantic_action) == aggregate.objective.semantic_action
-                else ""
-            )
-            self.active_step_execution = refresh_aggregate_objective_state(
-                aggregate,
-                self.current_observation,
-                acted_entity_id=acted_entity_id,
-                action_status=action.status if action is not None and acted_entity_id else None,
-                effect_evidence_refs=(action.evidence_refs if action is not None and acted_entity_id else ()),
-                enumerator=self.scope_enumerator,
-            )
-        if (
-            isinstance(self.active_step_execution, SetObjectiveState)
-            and transition.after_observation_id != self.active_step_execution.universe.observation_epoch
-        ):
-            set_state = self.active_step_execution
-            action = transition.action_evaluation
-            intent = transition.intent
-            settled_members = {
-                *set_state.candidate_entity_ids,
-                *(item.entity_id for item in set_state.obligations),
-            }
-            certified_successor = (
-                set_state.reduction.disposition is SetDisposition.CERTIFIED
-                and intent is not None
-                and intent.target_id not in settled_members
-            )
-            if certified_successor:
-                self.progress_revision += 1
-                return
-            acted_entity_id = (
-                intent.target_id
-                if intent is not None
-                and intent.semantic_action == set_state.objective.action_template.semantic_action
-                else ""
-            )
-            self.active_step_execution = refresh_set_objective_state(
-                set_state,
-                self.current_observation,
-                acted_entity_id=acted_entity_id,
-                action_status=action.status if action is not None and acted_entity_id else None,
-                effect_evidence_refs=action.evidence_refs if action is not None and acted_entity_id else (),
-                enumerator=self.scope_enumerator,
-            )
-        self._advance_plan_after_execution()
         self.progress_revision += 1
-
-    def install_plan(self, plan: TaskPlan, *, task_spec_identity: str) -> None:
-        """Install one admitted plan and materialize only its current step."""
-
-        if not task_spec_identity.strip():
-            raise ValueError("AgentLoop plan requires admitted TaskSpec identity")
-        if self.plan is not None or self.task_progress is not None or self.active_step_execution is not None:
-            raise ValueError("AgentLoop plan can only be installed once")
-        if not any(step.execution is not None for step in plan.steps):
-            raise ValueError("semantic AgentLoop plan requires executable step semantics")
-        if any(step.execution is None for step in plan.steps):
-            raise ValueError("every semantic AgentLoop step requires one execution contract")
-        self.plan = plan
-        self.task_spec_identity = task_spec_identity
-        self.task_progress = TaskProgress()
-        self._materialize_active_plan_step()
-        self.progress_revision += 1
-
-    def _materialize_active_plan_step(self) -> None:
-        if self.plan is None or self.task_progress is None:
-            self.active_step_execution = None
-            return
-        step_id = self.task_progress.activate_next(self.plan)
-        if not step_id:
-            self.active_step_execution = None
-            return
-        step = self.plan.step(step_id)
-        if step is None or step.execution is None:
-            raise ValueError("active TaskPlan step has no execution contract")
-        self.active_step_execution = materialize_step_execution(
-            step.step_id,
-            step.execution,
-            self.current_observation,
-            enumerator=self.scope_enumerator,
-        )
-
-    def _advance_plan_after_execution(self) -> None:
-        active = self.active_step_execution
-        if self.plan is None or self.task_progress is None or active is None:
-            return
-        complete = (
-            isinstance(active, ObjectiveSequenceState)
-            and active.disposition is SequenceDisposition.COMPLETE
-            or isinstance(active, AggregateObjectiveState)
-            and active.disposition is AggregateDisposition.COMPLETE
-            or isinstance(active, SetObjectiveState)
-            and active.reduction.disposition is SetDisposition.CERTIFIED
-        )
-        if not complete:
-            return
-        evidence_refs = (
-            active.effect_evidence_refs
-            if isinstance(active, ObjectiveSequenceState | AggregateObjectiveState)
-            else active.certificate.closure_evidence_refs
-            if active.certificate is not None
-            else ()
-        )
-        step_id = self.task_progress.active_step_id
-        if not step_id:
-            raise ValueError("completed execution has no active TaskPlan step")
-        step = self.plan.step(step_id)
-        assert step is not None
-        self.task_progress.complete(
-            plan=self.plan,
-            step_id=step_id,
-            criterion_ids=tuple(item.criterion_id for item in step.completion_criteria),
-            evidence_refs=tuple(evidence_refs),
-            state_version=self.progress_revision,
-        )
-        self.active_step_execution = None
-        self._materialize_active_plan_step()
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:
         from affordance_runtime.agent.control_reducer import (
@@ -375,7 +175,7 @@ class AgentLoopState:
         self.progress_event_total_count += 1
         self.progress_revision += 1
 
-    def set_active_objective(self, objective: LocalObjective | ActiveObjective) -> None:
+    def set_active_objective(self, objective: ActiveObjective) -> None:
         if self.active_objective != objective:
             self.active_objective = objective
             self.progress_revision += 1
@@ -447,11 +247,6 @@ class AgentLoopState:
             self.objective_sequence = prepared.allocated_sequence
         if self.active_objective != prepared.next_active_objective:
             self.active_objective = prepared.next_active_objective
-            self.progress_revision += 1
-
-    def replace_plan(self, plan: TaskPlan | None) -> None:
-        if self.plan != plan:
-            self.plan = plan
             self.progress_revision += 1
 
     def set_pending_question(self, question: str) -> None:

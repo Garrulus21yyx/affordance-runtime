@@ -1,12 +1,22 @@
+from dataclasses import dataclass
+
 from test_agent_loop import _world
 
-from affordance_runtime.task import LocalObjective, RiskProfile, TaskGoal
+from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ActionOption,
     ActionRelevancePolicy,
     ActionRelevanceRole,
     ActionSpaceBuilder,
 )
+
+
+@dataclass(frozen=True)
+class _Objective:
+    direct_target_ids: tuple[str, ...] = ()
+    direct_effects: tuple[str, ...] = ()
+    enabling_target_ids: tuple[str, ...] = ()
+    enabling_action_hints: tuple[str, ...] = ()
 
 
 def test_local_objective_classifies_without_changing_action_space_membership() -> None:
@@ -17,13 +27,12 @@ def test_local_objective_classifies_without_changing_action_space_membership() -
         risk_profile=RiskProfile.LOW,
     )
     world = _world("obs:1", False)
-    objective = LocalObjective(
-        {"enabled": True},
+    objective = _Objective(
         direct_target_ids=("shared-toggle",),
         direct_effects=("shared_state_enabled",),
     )
     without = ActionSpaceBuilder().build(task, world)
-    with_objective = ActionSpaceBuilder().build(task, world, objective)
+    with_objective = ActionSpaceBuilder().build(task, world)
 
     assert tuple(item.action_id for item in without.options) == tuple(item.action_id for item in with_objective.options)
     relevance = ActionRelevancePolicy().classify(with_objective.options[0], objective)
@@ -42,9 +51,9 @@ def test_relevance_roles_are_deterministic_from_explicit_semantics_only() -> Non
 
     enabling = policy.classify(
         option,
-        LocalObjective({"enabled": True}, enabling_action_hints=("activate",)),
+        _Objective(enabling_action_hints=("activate",)),
     )
-    other = policy.classify(option, LocalObjective({"enabled": True}))
+    other = policy.classify(option, _Objective())
 
     assert enabling.role == ActionRelevanceRole.ENABLING
     assert other.role == ActionRelevanceRole.OTHER
@@ -63,7 +72,7 @@ def test_explicit_direct_hint_takes_precedence_for_read_action() -> None:
         ("binding:1",),
         "read state",
     )
-    objective = LocalObjective({"known": True}, direct_target_ids=("target:read",))
+    objective = _Objective(direct_target_ids=("target:read",))
 
     relevance = ActionRelevancePolicy().classify(option, objective)
 

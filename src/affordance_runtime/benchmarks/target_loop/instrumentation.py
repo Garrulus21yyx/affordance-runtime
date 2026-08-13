@@ -175,7 +175,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             if feedback is not None
             else None
         ),
-        "semantic_control": _semantic_control_trace(context.execution_control),
         "provider_attempts": tuple(
             {
                 "attempt_number": item.attempt_number,
@@ -267,22 +266,6 @@ def _model_backed_policy(value):
         if wrapped is not None:
             pending.append(wrapped)
     return value
-
-
-def _semantic_control_trace(control):
-    if control is None:
-        return None
-    return {
-        "mode": control.mode,
-        "semantic_mode": control.semantic_mode,
-        "disposition": control.disposition,
-        "reason_code": control.reason_code,
-        "predicate": to_json_compatible(control.predicate),
-        "candidate_count": control.candidate_count,
-        "matched_count": control.matched_count,
-        "unknown_count": len(control.unknown_target_ids),
-        "allowed_action_count": len(control.allowed_action_ids),
-    }
 
 
 def _selected_grounding_trace(context, decision):

@@ -18,8 +18,8 @@ class ReselectPolicy:
 
     async def decide(self, context):
         task, world, action_space = context.task, context.world, context.actions
-        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-        del task, world, recent_turns, optional_plan
+        recent_turns = context.history.items
+        del task, world, recent_turns
         self.calls += 1
         if self.calls == 1:
             return SelectAction(context.context_id, action_space.options[0].action_id)

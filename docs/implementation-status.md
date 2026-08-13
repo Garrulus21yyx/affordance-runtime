@@ -17,25 +17,24 @@ The old transactional `Coordinator → RuntimeDelta → RuntimeCommitter →
 StateKernel` path remains the current product baseline/default. It is frozen
 against new product capability but has not been deleted.
 
-The task-authority convergence review is active. Canonical `TaskSpec` and
-`task_plan_contracts.TaskPlan<StepSpec>` contracts will be retained and connected
-to the target AgentLoop; the old Coordinator/StateKernel execution core will not
-be imported. The duplicate target `TaskPlan<Milestone>` and the attempted
-`TaskProgram` were deleted. AgentLoop now has one discriminated
-`active_step_execution` slot. The target loop now prepares and admits TaskSpec
-and TaskPlan through the canonical authorities, owns canonical TaskProgress, and
-materializes execution only from the typed contract stored directly on the
-active `StepSpec`; the temporary parallel step-execution table was removed.
-Dynamic
-`establish_*_objective` model ingress has been removed. Fresh live benchmark
-revalidation remains open.
+The target GUI `AgentLoop` and transactional workflow runtime are now explicitly
+separate. AgentLoop starts from `TaskGoal + IntentContext`, observes before any
+page target identity exists, and uses the current `WorldObservation ->
+ActionSpace -> AgentContext -> AgentDecision` chain. The incorrectly imported
+`LLMIntentCompiler -> TaskSpec -> StrictTaskPlanner -> TaskPlan` start path,
+hidden policy preparer capability, semantic-control mode, AgentLoop TaskProgress,
+and execution-control projection were deleted. Canonical TaskSpec/TaskPlan remain
+owned by the separate Coordinator workflow runtime. Set/sequence/aggregate
+reducers now enter through one typed LocalObjective decision, share one state
+slot and one lifecycle owner, and re-resolve on every fresh observation. Fresh
+live benchmark revalidation remains open.
 
 The target path now has:
 
 | Capability | Status |
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
-| canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / VERIFICATION_OPEN`; duplicate planners deleted and AgentLoop consumption connected; fresh live evidence pending |
+| canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
 | VerifiedTaskState | `PARTIAL_PROJECTION_ONLY`; plan/objective/progress views and evidence-linked current facts exist, but no verified milestone/frontier lifecycle or promotion authority |
 | TaskProgressAuditor | `NOT_STARTED`; future P5-E owner, separate from local repetition containment |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
@@ -58,13 +57,13 @@ The target path now has:
 | P5-M0.1.1 one-shot context epoch | `CLOSED`; monotonic per-session policy generation, stale/page-cycle/replay zero-call |
 | ContextIdentity | `CLOSED`; task/observation/action-space/page/progress/pending/generation digest |
 | IntentContextView | `CLOSED_FOR_BOUNDED_CONTEXT_ONLY`; always `context_only`, never TaskGoal authority |
-| LocalObjective relevance | `CLOSED_FOR_CURRENT_EXPLICIT_HINT_PROFILE`; legality and risk unchanged |
+| LocalObjective rolling execution | `INTEGRATED_NON_DEFAULT / IMPLEMENTED_NOT_LIVE_VERIFIED`; one post-observation semantic contract, legality and risk unchanged |
 | action paging | `CLOSED_FOR_DETERMINISTIC_CURSOR_PAGER`; traversable Runtime-issued cursor; only current-page IDs admitted |
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
 | P5-M1 model policy core | `CLOSED`; canonical context JSON, typed decision parser and Runtime admission |
-| P5-M1.1 strict decision boundary | `CLOSED`; duplicate/non-finite/depth/node/byte limits and canonical seven-variant spec |
+| P5-M1.1 strict decision boundary | `REOPENED / IMPLEMENTED_NOT_LIVE_VERIFIED`; duplicate/non-finite/depth/node/byte limits and canonical eight-variant spec including one LocalObjective constructor |
 | P5-M1.1 existing ModelPort bridge | `CLOSED`; existing transport owner, outer deadline, zero retry/no fallback, typed metadata/failures |
 | local HTTP provider-transport proof | `CLOSED`; one request/one execution plus 429/500/schema/deadline zero-call proofs |
 | deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
@@ -151,6 +150,10 @@ ActionContract, or ExecutionReceipt.
 
 ## Proof and remaining gates
 
+The current convergence implementation passes the full local suite:
+`2421 passed, 24 skipped`. This is implementation evidence, not live benchmark
+closure; exact-head five-case and held-out reruns remain required.
+
 Focused target tests cover source/world/fingerprint stale zero-call, Visual
 screenshot/viewport/scroll/DPR/zoom/orientation/region staleness, coordinate
 isolation, WoT TD/form/security stale checks, one-probe/one-send, rate limits,
@@ -188,7 +191,7 @@ to policy rather than selecting a Runtime candidate. Confirmed action effects
 require exact request/before/after lineage and evidence-ref fields; resolution
 against the current WorldObservation is completed in P5-M0.
 
-P5-M0 projects TaskGoal, internal ActionSpace, bounded transition summaries, and optional Plan
+P5-M0 projects TaskGoal, internal ActionSpace, and bounded transition summaries
 into private-payload-free model views while retaining internal ActionSpace as
 the sole admission authority. Per-observation evidence indexes resolve action
 and task evidence. COMPLETE is deterministically bound to task, observation,

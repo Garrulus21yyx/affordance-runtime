@@ -193,7 +193,6 @@ def _build_loop(composition, instrumentation):
         instrument_policy(composition.policy, instrumentation),
         CountingActionEvaluator(composition.action_evaluator, instrumentation),
         instrument_task_evaluator(composition.task_evaluator, instrumentation),
-        semantic_control_required=composition.semantic_control_required,
     )
     if composition.risk_policy is not None:
         loop.risk_policy = composition.risk_policy

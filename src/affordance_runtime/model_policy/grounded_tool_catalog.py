@@ -1,8 +1,8 @@
-"""Grounded action catalog for the model-policy boundary.
+"""Disposable grounded action and LocalObjective proposal catalog.
 
-Task semantics are deliberately absent.  The catalog is a one-way projection of
-the current Runtime action authority; it cannot establish or reconstruct plan
-steps, predicates, scopes, aggregates, or future selectors.
+Action tools are a one-way projection of current Runtime authority.  The sole
+LocalObjective tool accepts a typed semantic proposal; it never reconstructs
+authority from E-refs, action tools, or projected world data.
 """
 
 from __future__ import annotations
@@ -12,14 +12,18 @@ import json
 from dataclasses import dataclass
 from typing import Mapping
 
-from affordance_runtime.agent.decisions import AgentDecisionPackage, RequestActionPage, RequestObservation, SelectAction
+from pydantic import TypeAdapter, ValidationError
+
+from affordance_runtime.agent.decisions import (
+    AgentDecisionPackage,
+    EstablishLocalObjective,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext, AgentGroundingEntityView
 from affordance_runtime.model_boundary.contracts import AgentActionOptionView
-from affordance_runtime.model_policy.execution_control_catalog import (
-    ExecutionCatalogDirective,
-    ExecutionCatalogMode,
-)
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
@@ -28,6 +32,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
     ToolPolicyView,
 )
+from affordance_runtime.model_policy.spec import LocalObjectiveSpecPayload, local_objective_from_payload
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
 from affordance_runtime.world.schema_validation import validate_value
@@ -54,9 +59,8 @@ class _ObserveBinding:
 
 
 @dataclass(frozen=True)
-class _ObjectiveActionBinding:
-    action_id: str
-    parameters: Mapping[str, object]
+class _LocalObjectiveBinding:
+    pass
 
 
 def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
@@ -64,12 +68,8 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
-    directive = _projected_execution_directive(context) if context.execution_control is not None else None
-    allowed = directive.allowed_action_ids if directive is not None else None
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
-        if allowed is not None and option.action_id not in allowed:
-            continue
         ref = ref_by_target.get(option.target_id)
         if ref is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -78,6 +78,16 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
 
     specs: list[ToolSpec] = []
     bindings: list[object] = []
+    if not context.progress.local_objective_open:
+        specs.append(
+            ToolSpec(
+                "establish_local_objective",
+                "Install one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
+                "Use semantic predicates only; never put E-refs, DOM IDs, screen points, private selectors, or bindings here.",
+                _object_schema({"value": _local_objective_schema()}, ("value",)),
+            )
+        )
+        bindings.append(_LocalObjectiveBinding())
     seen_modalities: set[str] = set()
     for capability in context.world.observation_capabilities:
         if capability.modality in seen_modalities:
@@ -89,23 +99,6 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
             _object_schema({}),
         ))
         bindings.append(_ObserveBinding(capability.modality, capability.assurance))
-
-    if (
-        directive is not None
-        and directive.mode is ExecutionCatalogMode.MEMBER_ACTIONS_ONLY
-        and len(grouped) == 1
-        and sum(len(items) for items in grouped.values()) == 1
-        and context.execution_control is not None
-    ):
-        ((_shape, values),) = grouped.items()
-        _ref, option = values[0]
-        specs.append(ToolSpec(
-            "execute_objective",
-            "Execute the one action authorized by the admitted current TaskPlan step.",
-            _object_schema({}),
-        ))
-        bindings.append(_ObjectiveActionBinding(option.action_id, context.execution_control.objective_parameters))
-        grouped.clear()
 
     verb_counts: dict[str, int] = {}
     for (verb, _shape), values in grouped.items():
@@ -176,6 +169,20 @@ def resolve_grounded_tool_call(
         raise GroundedToolResolutionError(GroundedToolResolutionCode.UNKNOWN_OPERATION) from exc
     spec = catalog.specs[index]
     binding = catalog.bindings[index]
+    if isinstance(binding, _LocalObjectiveBinding):
+        try:
+            if set(call.arguments) != {"value"}:
+                raise ValueError("local objective tool requires exactly one value")
+            payload = TypeAdapter(LocalObjectiveSpecPayload).validate_python(
+                to_json_compatible(call.arguments["value"])
+            )
+            objective = local_objective_from_payload(payload)
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            EstablishLocalObjective(expected_context_id, objective),
+        )
     try:
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
@@ -193,10 +200,6 @@ def resolve_grounded_tool_call(
             binding.assurance,
             f"acquire fresh {binding.modality} grounding",
         ))
-    if isinstance(binding, _ObjectiveActionBinding):
-        return AgentDecisionPackage(NoObjectiveOperation(), SelectAction(
-            expected_context_id, binding.action_id, dict(binding.parameters), ""
-        ))
     if not isinstance(binding, _VerbBinding):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref = str(call.arguments.get("target") or "")
@@ -208,17 +211,6 @@ def resolve_grounded_tool_call(
     parameters = {"value": call.arguments[binding.parameter_field]} if binding.parameter_field else {}
     return AgentDecisionPackage(
         NoObjectiveOperation(), SelectAction(expected_context_id, actions[ref], parameters, "")
-    )
-
-
-def _projected_execution_directive(context: AgentContext) -> ExecutionCatalogDirective:
-    control = context.execution_control
-    if control is None:
-        raise ValueError("execution control projection is absent")
-    return ExecutionCatalogDirective(
-        ExecutionCatalogMode(control.mode),
-        frozenset(control.allowed_action_ids),
-        control.reason_code,
     )
 
 
@@ -254,6 +246,10 @@ def _verb_schema(verb: str, refs: list[str], parameter_schema: Mapping[str, obje
 
 def _object_schema(properties: Mapping[str, object], required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
+
+
+def _local_objective_schema() -> dict[str, object]:
+    return TypeAdapter(LocalObjectiveSpecPayload).json_schema()
 
 
 def _tool_description(verb: str, refs: list[str], entity_by_ref: Mapping[str, AgentGroundingEntityView]) -> str:
@@ -294,17 +290,8 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
         } for item in context.progress.verified_public_facts],
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
+        "local_objective_open": context.progress.local_objective_open,
     }
-    if context.execution_control is not None:
-        value["current_step_execution"] = {
-            "disposition": context.execution_control.disposition,
-            "reason": context.execution_control.reason_code,
-            "candidate_count": context.execution_control.candidate_count,
-            "matched_count": context.execution_control.matched_count,
-            "certified": context.execution_control.certified,
-            "predicate": to_json_compatible(context.execution_control.predicate),
-            "evidence_needs": list(context.execution_control.evidence_needs),
-        }
     return value
 
 

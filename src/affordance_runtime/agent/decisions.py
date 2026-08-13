@@ -14,6 +14,7 @@ from affordance_runtime.task.frontier_contracts import (
     ReplaceObjective,
     RetainObjective,
 )
+from affordance_runtime.task.local_objective import LocalObjective
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
@@ -58,6 +59,19 @@ class SelectAction:
         if not self.action_id.strip():
             raise ValueError("selection requires an offered action id")
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+
+
+@dataclass(frozen=True)
+class EstablishLocalObjective:
+    """Install one observation-resolvable local execution objective."""
+
+    context_id: str
+    objective: LocalObjective
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        if not isinstance(self.objective, LocalObjective):
+            raise TypeError("local objective execution variant is unsupported")
 
 
 @dataclass(frozen=True)
@@ -159,6 +173,7 @@ class Abort:
 
 AgentDecision: TypeAlias = (
     SelectAction
+    | EstablishLocalObjective
     | RequestObservation
     | RequestActionPage
     | AskUser
@@ -185,6 +200,7 @@ class AgentDecisionPackage:
             self.decision,
             (
                 SelectAction,
+                EstablishLocalObjective,
                 RequestObservation,
                 RequestActionPage,
                 AskUser,

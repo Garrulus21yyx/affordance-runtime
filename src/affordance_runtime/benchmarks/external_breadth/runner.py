@@ -45,7 +45,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
@@ -324,7 +323,6 @@ def _target_case(
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
             requirement_hypothesis_proposer=paced_proposer,
-            semantic_control_required=_grounded_semantic_control_available(base_policy),
         )
 
     return BenchmarkCase(
@@ -355,28 +353,6 @@ def _marked_candidate_policy_available(policy: object) -> bool:
         if profile is DecisionPerceptionProfile.SCREENSHOT_AX:
             return True
         for name in ("wrapped", "port"):
-            nested = getattr(item, name, None)
-            if nested is not None:
-                pending.append(nested)
-        ports = getattr(item, "ports", None)
-        if isinstance(ports, tuple):
-            pending.extend(ports)
-    return False
-
-
-def _grounded_semantic_control_available(policy: object) -> bool:
-    """Detect the admitted grounded-tools bridge through transparent wrappers."""
-
-    pending = [policy]
-    seen: set[int] = set()
-    while pending:
-        item = pending.pop()
-        if id(item) in seen:
-            continue
-        seen.add(id(item))
-        if isinstance(item, GroundedToolDecisionAdapter):
-            return True
-        for name in ("wrapped", "port", "primary_port"):
             nested = getattr(item, name, None)
             if nested is not None:
                 pending.append(nested)

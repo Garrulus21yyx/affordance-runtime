@@ -18,6 +18,7 @@ def cursor_fingerprint(
     limit: int,
     max_destinations: int,
     max_targets: int,
+    allowed_action_ids: tuple[str, ...] = (),
 ) -> str:
     payload = (
         action_space_id,
@@ -28,6 +29,7 @@ def cursor_fingerprint(
         limit,
         max_destinations,
         max_targets,
+        allowed_action_ids,
     )
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()[:24]
 

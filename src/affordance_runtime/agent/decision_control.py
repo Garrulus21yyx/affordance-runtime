@@ -31,6 +31,7 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     AgentDecisionPackage,
     AskUser,
+    EstablishLocalObjective,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -51,16 +52,12 @@ from affordance_runtime.agent.observation_control import (
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.state import AgentLoopStatus, SemanticControlMode
+from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
-from affordance_runtime.task.aggregate_objective import (
-    AggregateObjectiveState,
-    aggregate_allowed_action_ids,
-)
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.task.frontier import (
     PreparedObjectiveOperation,
@@ -68,13 +65,11 @@ from affordance_runtime.task.frontier import (
     synchronize_verified_task_state,
 )
 from affordance_runtime.task.frontier_contracts import ActiveObjective
-from affordance_runtime.task.objective_sequence import (
-    ObjectiveSequenceState,
-    sequence_allowed_action_ids,
-)
-from affordance_runtime.task.set_objective_state import (
-    SetObjectiveState,
-    set_allowed_action_ids,
+from affordance_runtime.task.local_objective import (
+    establish_local_objective,
+    local_objective_action_parameters,
+    local_objective_allowed_action_ids,
+    local_objective_complete,
 )
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -105,6 +100,7 @@ SelectionExecutor = Callable[
 _DECISION_TYPES = (
     Abort,
     AskUser,
+    EstablishLocalObjective,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -312,6 +308,19 @@ async def _route_decision(
     if isinstance(decision, Abort):
         scope.set_reason(f"abort_{decision.category}")
         return Terminate(AgentLoopStatus.FAILED, f"abort_{decision.category}", decision.reason)
+    if isinstance(decision, EstablishLocalObjective):
+        if not local_objective_complete(state.local_objective_state):
+            scope.set_reason("local_objective_already_active")
+            return Continue("local_objective_already_active")
+        state.local_objective_state = establish_local_objective(
+            decision.objective,
+            state.current_observation,
+            enumerator=state.scope_enumerator,
+        )
+        state.progress_revision += 1
+        scope.record_decision_result("local_objective_established")
+        scope.set_reason("local_objective_established")
+        return Continue("local_objective_established")
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator, scope)
     if isinstance(decision, RequestObservation):
@@ -329,38 +338,12 @@ async def _route_decision(
         return await _wait_refresh(session, decision, waiter, scope)
     if isinstance(decision, RequestActionPage):
         return _request_action_page(session, action_space, context_builder, decision, scope)
-    if state.semantic_control_required:
-        execution = state.active_step_execution
-        active = execution if isinstance(execution, SetObjectiveState) else None
-        sequence = execution if isinstance(execution, ObjectiveSequenceState) else None
-        aggregate = execution if isinstance(execution, AggregateObjectiveState) else None
-        allowed = (
-            sequence_allowed_action_ids(sequence, action_space)
-            if sequence is not None and state.semantic_control_mode is SemanticControlMode.MEMBER_EXECUTION
-            else set_allowed_action_ids(active, action_space)
-            if active is not None and state.semantic_control_mode is SemanticControlMode.MEMBER_EXECUTION
-            else aggregate_allowed_action_ids(aggregate, action_space)
-            if aggregate is not None and state.semantic_control_mode is SemanticControlMode.MEMBER_EXECUTION
-            else frozenset()
-        )
-        parameters = (
-            sequence.active_step.action_template.parameters
-            if sequence is not None and sequence.active_step is not None
-            else active.objective.action_template.parameters
-            if active is not None
-            else aggregate.action_parameters
-            if aggregate is not None
-            else {}
-        )
-        if active is None and sequence is None and aggregate is None:
-            reason = "objective_required"
-        elif state.semantic_control_mode is not SemanticControlMode.MEMBER_EXECUTION:
-            reason = "effectful_action_not_allowed_in_current_mode"
-        elif decision.action_id not in allowed or dict(decision.parameters) != dict(parameters):
-            reason = "action_not_authorized_by_active_objective"
-        else:
-            reason = ""
-        if reason:
+    execution = state.local_objective_state
+    if execution is not None and not local_objective_complete(execution):
+        allowed = local_objective_allowed_action_ids(execution, action_space)
+        parameters = local_objective_action_parameters(execution)
+        if decision.action_id not in allowed or dict(decision.parameters) != dict(parameters):
+            reason = "action_not_authorized_by_local_objective"
             scope.record_admission(AdmissionStatus.REJECTED, reason)
             scope.record_decision_result(reason)
             scope.set_reason(reason)
@@ -384,7 +367,6 @@ async def _route_decision(
         prepared_objective,
         scope,
     )
-
 
 async def _policy_observation(
     session: AgentRunSession,

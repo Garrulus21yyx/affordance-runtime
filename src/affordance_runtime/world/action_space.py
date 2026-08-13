@@ -11,7 +11,6 @@ from typing import Any
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
-from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.world.action_classification import EffectCategory
 from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIssueCode
 from affordance_runtime.world.contracts import (
@@ -66,9 +65,7 @@ class ActionSpaceBuilder:
         self,
         task: TaskGoal,
         observation: WorldObservation,
-        objective: LocalObjective | None = None,
     ) -> ActionSpace:
-        del objective  # Reserved for desired-state narrowing; it never grants effects.
         conflicted_targets = {conflict.subject_id for conflict in observation.conflicts}
         grouped: dict[_GroupKey, list[ActionBinding]] = {}
         for binding in observation.bindings:

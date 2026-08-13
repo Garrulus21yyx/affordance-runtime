@@ -9,7 +9,6 @@ from typing import Mapping
 
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_policy.strict_json import validate_json_tree
-from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
 DYNAMIC_TOOLS_PROTOCOL = "dynamic_tools.v1"
 MAX_TOOL_CATALOG_SIZE = 40
@@ -59,7 +58,6 @@ class ToolCall:
         if _TOOL_NAME.fullmatch(self.name) is None:
             raise ValueError("tool call name is invalid")
         validate_json_tree(self.arguments)
-        reject_private_parameter_values(self.arguments, path="tool_args")
         object.__setattr__(self, "arguments", freeze_json(self.arguments))
 
 

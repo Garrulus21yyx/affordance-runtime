@@ -287,7 +287,6 @@ class BenchmarkComposition:
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
     requirement_hypothesis_proposer: object | None = None
-    semantic_control_required: bool = False
 
 
 @dataclass(frozen=True)

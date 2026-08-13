@@ -31,12 +31,12 @@ from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
 from affordance_runtime.agent.frontier_control import audit_task_frontier
+from affordance_runtime.agent.local_objective_evidence import resolve_visual_local_objective_evidence
 from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.set_evidence_resolution import resolve_visual_set_evidence
 from affordance_runtime.agent.start_error import (
     AgentSessionStartCancelledError,
     AgentSessionStartError,
@@ -67,8 +67,6 @@ from affordance_runtime.task.hypothesis_contracts import (
 from affordance_runtime.task.hypothesis_runtime import admit_requirement_hypotheses
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
-from affordance_runtime.task_plan_contracts import TaskPlan
-from affordance_runtime.task_spec_authority import AdmittedTaskSpec
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -109,16 +107,12 @@ class AgentLoop:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     recent_turn_limit: int = 12
-    semantic_control_required: bool = False
 
     async def start(
         self,
         task: TaskGoal,
         environment: WorldEnvironment,
         intent_context: IntentContext | None = None,
-        *,
-        plan: TaskPlan | None = None,
-        admitted_task: AdmittedTaskSpec | None = None,
     ) -> AgentRunSession:
         accounting = RunAccounting()
         attempt_id = accounting.next_attempt_id()
@@ -181,30 +175,12 @@ class AgentLoop:
         accounting.record(receipt)
         evidence = StartBoundaryEvidence(receipt, accounting.snapshot())
         current = require_initial_observation(acquisition, evidence)
-        task_plan_preparer = getattr(self.policy, "task_plan_preparer", None)
-        if plan is None and admitted_task is None and task_plan_preparer is not None:
-            prepared = await task_plan_preparer.prepare(task, current)
-            admitted_task = prepared.admitted_task
-            plan = prepared.plan
         state = AgentLoopState(
             current,
             remaining_turns=task.loop_budget.max_turns,
             recent_turn_limit=self.recent_turn_limit,
-            semantic_control_required=self.semantic_control_required,
             scope_enumerator=_environment_scope_enumerator(environment),
         )
-        if plan is not None:
-            if admitted_task is None:
-                raise ValueError("TaskPlan installation requires an admitted TaskSpec")
-            if (
-                admitted_task.task_spec.task_id != task.task_id
-                or plan.task_id != task.task_id
-                or plan.task_revision != admitted_task.task_spec.revision
-            ):
-                raise ValueError("TaskGoal, admitted TaskSpec, and TaskPlan identity mismatch")
-            state.install_plan(plan, task_spec_identity=admitted_task.task_spec.identity)
-        elif self.semantic_control_required:
-            raise ValueError("semantic AgentLoop requires an admitted TaskSpec and TaskPlan")
         session = AgentRunSession(
             self,
             task,
@@ -304,13 +280,8 @@ class AgentLoop:
         task: TaskGoal,
         environment: WorldEnvironment,
         intent_context: IntentContext | None = None,
-        *,
-        plan: TaskPlan | None = None,
-        admitted_task: AdmittedTaskSpec | None = None,
     ) -> AgentResult:
-        return await (
-            await self.start(task, environment, intent_context, plan=plan, admitted_task=admitted_task)
-        ).run_until_pause()
+        return await (await self.start(task, environment, intent_context)).run_until_pause()
 
     async def _run_session(self, session: AgentRunSession) -> AgentResult:
         return project_result(session, await self._run_control(session))
@@ -385,7 +356,7 @@ class AgentLoop:
             )
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
-            elif await resolve_visual_set_evidence(session):
+            elif await resolve_visual_local_objective_evidence(session):
                 continue
             else:
                 outcome = await run_policy_turn(

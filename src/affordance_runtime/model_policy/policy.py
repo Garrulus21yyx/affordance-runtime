@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
-from affordance_runtime.agent.task_plan_preparation import AgentTaskPlanPreparerPort
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
@@ -35,7 +34,6 @@ class ModelBackedAgentPolicy:
     last_metadata: ModelMetadata | None = field(default=None, init=False, compare=False)
     last_provider_attempts: tuple[object, ...] = field(default=(), init=False, compare=False)
     last_fallback_count: int = field(default=0, init=False, compare=False)
-    task_plan_preparer: AgentTaskPlanPreparerPort | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not 0 < self.call_timeout_s <= 300:

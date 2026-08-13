@@ -127,30 +127,30 @@ authority.
 |---|---|---|---|
 | A | completed | Add explicit fail-closed set Catalog directive | Empty allowlist now means zero effectful actions; no-objective is represented separately |
 | B | completed | Add Runtime-owned persistent set-objective state and typed transitions | More than 12 members, predicate flip, identity reorder, new candidates and E-ref renumbering preserve obligations |
-| C | superseded/deleted | Remove typed objective establishment from action decisions | Canonical TaskPlan is now the only producer; Catalog and Vision do not parse task prose |
+| C | implemented, verification open | Remove multiple objective-specific action decisions | Target AgentLoop has one rolling LocalObjective contract; TaskPlan is not its producer |
 | D | completed | Introduce typed evidence obligations and demote visual routing | Set reducer projects evidence needs; visual acquisition routes typed needs derived from current facts |
 | E | completed | Remove task-relative fields and witness-shaped provider publication | Deleted task predicate projection, keyword gate, universal parser and repeated-leaf exact-count scanner; color is generic `appearance.color_family` evidence |
 | F | completed | Add property/metamorphic and integration tests | Capacity, missing fact, zero match, actionability, new candidate, history independence and de-specialization redlines pass |
 | G | completed | Run focused suite, full suite, and real five-case regression gate | Full suite `2410 passed, 24 skipped`; live run `f57f758` completed all five with 3 successes and 2 typed provider-unavailable outcomes |
-| H | superseded/deleted | Replace action-loop semantic ingress with pre-loop TaskSpec/TaskPlan admission | Without an admitted plan, semantic execution dispatches zero actions; the action loop has no objective-construction mode |
-| I | superseded/deleted | Move public-fact selection out of action tools | The planner's discriminated execution transport maps once into typed `StepSpec.execution`; no exact-value action-tool enums remain |
+| H | deleted as invalid | Replace action-loop semantic ingress with pre-loop TaskSpec/TaskPlan admission | Removed: workflow exact-resource authority cannot precede GUI discovery in AgentLoop |
+| I | implemented, verification open | Put selector/predicate semantics behind one LocalObjective decision contract | AgentContext remains disposable; no fact-specific schema owner or projection roundtrip |
 | J | in_progress | Re-run the five live witnesses and held-out semantic-control cases | Grid, quantified shades, and aggregate value-entry witnesses completed; both pie witnesses established/executed their first objective then hit provider unavailable during successor ingress |
-| K | superseded/deleted | Delete grounded objective transport | Grounded commands carry only current action/control choices; quantifiers, predicates and aggregates exist only in planner transport and admitted plan data |
-| L | completed | Auto-advance only reducer-authorized singleton member continuations | No policy inference occurs for `execute_objective`; action ID and parameters remain Runtime-owned |
+| K | implemented, verification open | Converge grounded objective transport on the single LocalObjective contract | No pre-observation identity and no separate set/sequence/aggregate decision families |
+| L | reopened | Auto-advance only reducer-authorized singleton member continuations | Reconnect after LocalObjective admission; action ID and parameters remain Runtime-owned |
 | M | completed | Make ProviderCallOrchestrator the sole transient recovery owner when enabled and expose attempt origin | Real `503 -> 200` integration emits two network attempts and one accepted logical response; quota/auth remains fail-closed |
-| N | completed/replaced | Represent future work as dependent canonical TaskPlan steps | Each active `StepSpec.execution` retains a typed selector, never an E-ref; every fresh observation rebuilds selector resolution and current binding authority |
+| N | implemented, verification open | Keep future-resolvable selectors in rolling LocalObjective state | Every fresh observation rebuilds selector resolution and current binding authority; no future E-ref or DOM ID |
 | O | completed | Add Runtime-owned AggregateObjective and value provenance | COUNT/SUM/MIN/MAX and filtered aggregates derive values only after complete source evidence; partial/unknown inputs cannot dispatch destination writes |
 | P | completed | Close bounded compound predicate transport and typed comparisons | And/Or/Not plus Compare reach the Runtime without prose parsing or witness branches; unsupported depth/width/operators fail typed |
 | Q | completed | Replace current-viewport/same-role candidate lists with ScopeEnumerator-owned universes | Snapshot viewport closure is domain-aware; larger scopes require an environment-owned enumerator and otherwise fail closed |
 | R | completed | Wire VisualPredicateClassifier through evidence obligations | Set members, aggregate members/destinations and sequence selectors share visual-leaf classification without granting completeness or bindings |
-| S | superseded/deleted from action policy | Use canonical intake semantic audit and TaskPlan admission | The action policy no longer owns an optional objective validator or any semantic installation path |
-| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | After authority cleanup, Ruff and full suite pass (`2418 passed, 27 skipped`); fresh real benchmark evidence remains required |
+| S | deleted as invalid for AgentLoop | Use workflow intake semantic audit and TaskPlan admission | AgentLoop no longer invokes workflow intake/planning before the first policy turn |
+| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | Full suite `2421 passed, 24 skipped`; fresh live evidence is still required |
 | U | completed | Remove the duplicate `TaskProgram` planner and its schema-repair path | Four public commits were reverted with audit-preserving revert commits; no TaskProgram source/test remains |
-| V | completed | Publish one executable owner/producer/consumer/deletion map for task semantics through completion | `docs/task-execution-authority-map.md` names every owner and required deletion; the duplicate target TaskPlan was removed |
-| W | completed | Migrate set/entity/aggregate semantics into the selected canonical task/frontier owner | executable semantics live directly on canonical `StepSpec`; one active step materializes the single `active_step_execution` state |
-| X | implementation_completed_verification_open | Cut over callers and delete displaced contracts, tools, schemas, tests and docs | Dynamic objective tools/decisions/action payloads, parallel execution table, set-specific control projection and embedded sequence ingress are deleted |
-| Y | in_progress | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI now requires zero semantic constructors in action model policy and direct plan-step materialization; broader held-out/live gates remain |
-| Z | completed | Remove projection-to-objective roundtrips and dynamic objective-establishment decisions | Runtime materializes current execution state from the admitted plan step; action policy returns only current action/control decisions |
+| V | completed | Publish one executable owner/producer/consumer/deletion map | The map now separates target AgentLoop from the transactional TaskSpec/TaskPlan workflow |
+| W | implemented, verification open | Converge set/entity/aggregate semantics into one LocalObjective lifecycle | One `local_objective_state` reducer slot; no TaskPlan dependency |
+| X | implemented, verification open | Delete displaced contracts, tools, projections, tests and docs | Pre-loop preparer, legacy LocalObjective hint, semantic-control mode, TaskProgress, and execution-control projection are deleted |
+| Y | in_progress | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI forbids workflow-plan ingress in AgentLoop; held-out/live gates remain |
+| Z | implemented, verification open | Remove projection-to-objective roundtrips | LocalObjective is admitted from the current typed decision; projections retain no objective reconstruction authority |
 
 ## Archived pre-cutover live evidence
 
@@ -164,7 +164,7 @@ Run: `docs/evidence/runs/m4-6-e-semantic-tools-zhipu-f57f758/`
 
 This evidence was produced by the deleted dynamic-objective path. It remains a
 historical diagnostic witness and is not acceptance evidence for the current
-TaskSpec/TaskPlan cutover. Fresh live revalidation is required.
+LocalObjective convergence. Fresh live revalidation is required.
 
 ## Active implementation scope
 
@@ -209,10 +209,16 @@ benchmark-specific branches.
 
 ## Files changed
 
+- `task/local_objective.py` is the single variant-dispatch owner for establish,
+  refresh, completion, action authorization and action parameters.
 - `task/set_objective_state.py` owns persistent membership, effects, evidence
   obligations, capacity and typed failure.
 - `agent/state.py`, `agent/decisions.py`, `agent/decision_control.py` admit and
-  advance typed set semantics without reconstructing history.
+  advance the one LocalObjective lifecycle without reconstructing history.
+- `model_policy/spec.py` owns the one typed LocalObjective codec; grounded tools
+  project that schema directly instead of maintaining a second schema.
+- Deleted AgentLoop workflow-plan preparation, execution-control projection and
+  the unused open-dict LocalObjective hint contract.
 - `model_boundary/context*.py`, `model_policy/set_objective_catalog.py`, and
   `model_policy/grounded_tool_catalog.py` project and enforce explicit control
   directives, generic objective tools and bounded E-ref assessment batches.

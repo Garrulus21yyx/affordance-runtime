@@ -118,8 +118,8 @@ class ScriptedPolicy:
 
     async def decide(self, context):
         task, world, action_space = context.task, context.world, context.actions
-        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-        del task, world, recent_turns, optional_plan
+        recent_turns = context.history.items
+        del task, world, recent_turns
         decision = self.decisions.pop(0)
         if decision == "first":
             return SelectAction(context.context_id, action_space.options[0].action_id)
@@ -487,24 +487,12 @@ def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> 
     )
 
 
-def test_semantic_control_requires_admitted_task_plan_before_effectful_action() -> None:
-    async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False)])
-        loop = _loop(ScriptedPolicy(["first", "first"]))
-        loop.semantic_control_required = True
-        with pytest.raises(ValueError, match="requires an admitted TaskSpec and TaskPlan"):
-            await AgentEpisodeRunner(loop).run(environment, _task())
-        assert environment.execute_calls == 0
-
-    asyncio.run(scenario())
-
-
 def test_selector_injection_on_offered_action_is_rejected() -> None:
     class InjectingPolicy:
         async def decide(self, context):
             task, world, action_space = context.task, context.world, context.actions
-            recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-            del task, world, recent_turns, optional_plan
+            recent_turns = context.history.items
+            del task, world, recent_turns
             return SelectAction(context.context_id, action_space.options[0].action_id, {"selector": "#other"})
 
     async def scenario() -> None:

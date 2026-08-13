@@ -25,8 +25,8 @@ def shared_state_task() -> TaskGoal:
 class FirstOfferedActionPolicy:
     async def decide(self, context):
         task, world, action_space = context.task, context.world, context.actions
-        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-        del task, recent_turns, optional_plan
+        recent_turns = context.history.items
+        del task, recent_turns
         representation = repr(world)
         assert "selector" not in representation
         assert "action_point" not in representation

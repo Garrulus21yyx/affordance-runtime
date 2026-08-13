@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         Abort,
         AgentDecisionPackage,
         AskUser,
+        EstablishLocalObjective,
         ProposeDone,
         RequestActionPage,
         RequestObservation,
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.state import (
         AgentLoopState,
         AgentLoopStatus,
-        SemanticControlMode,
         Turn,
     )
     from affordance_runtime.task.contracts import TaskGoal
@@ -68,11 +68,14 @@ _EXPORTS = {
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
-    "SemanticControlMode": ("affordance_runtime.agent.state", "SemanticControlMode"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
+    "EstablishLocalObjective": (
+        "affordance_runtime.agent.decisions",
+        "EstablishLocalObjective",
+    ),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
     "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),

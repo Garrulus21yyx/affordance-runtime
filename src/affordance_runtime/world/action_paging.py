@@ -136,6 +136,8 @@ class ActionPager:
         page_size: int | None = None,
         max_destinations_per_option: int = 16,
         max_targets: int = 64,
+        allowed_action_ids: frozenset[str] | None = None,
+        authority_digest: str = "",
     ) -> InternalActionPage:
         query = canonical_action_query(query)
         role = ActionRelevanceRole(relevance_role) if relevance_role else None
@@ -143,7 +145,7 @@ class ActionPager:
         limit = min(self.page_size, page_size or self.page_size)
         if limit <= 0 or max_destinations_per_option <= 0 or max_targets <= 0:
             raise ValueError("paging limits must be positive")
-        objective_digest = _objective_digest(objective)
+        objective_digest = _objective_digest(objective, authority_digest)
         fingerprint = cursor_fingerprint(
             action_space.action_space_id,
             query,
@@ -153,9 +155,19 @@ class ActionPager:
             limit,
             max_destinations_per_option,
             max_targets,
+            tuple(sorted(allowed_action_ids)) if allowed_action_ids is not None else (),
         )
         offset = decode_cursor(cursor, fingerprint) if cursor else 0
-        ranked = _ranked_options(action_space, objective, self.relevance_policy, query, target_id, role, labels)
+        ranked = _ranked_options(
+            action_space,
+            objective,
+            self.relevance_policy,
+            query,
+            target_id,
+            role,
+            labels,
+            allowed_action_ids,
+        )
         if offset > len(ranked):
             raise ValueError("action page cursor is outside the filtered result")
         visible = _select_page_slice(
@@ -283,11 +295,13 @@ def _ranked_options(
     target_id: str,
     role: ActionRelevanceRole | None,
     labels: Mapping[str, str],
+    allowed_action_ids: frozenset[str] | None = None,
 ) -> list[tuple[int, ActionOption, ActionRelevance]]:
     ranked = [
         (index, option, relevance_policy.classify(option, objective))
         for index, option in enumerate(action_space.options)
-        if not target_id or option.target_id == target_id
+        if (allowed_action_ids is None or option.action_id in allowed_action_ids)
+        and (not target_id or option.target_id == target_id)
     ]
     if role is not None:
         ranked = [item for item in ranked if item[2].role == role]
@@ -344,9 +358,9 @@ def _projected_option_weight(option: ActionOption, max_destinations: int) -> int
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
 
 
-def _objective_digest(objective: ActionObjective | None) -> str:
-    if objective is None:
+def _objective_digest(objective: ActionObjective | None, authority_digest: str = "") -> str:
+    if objective is None and not authority_digest:
         return "objective:none"
-    payload = to_json_compatible(objective)
+    payload = (to_json_compatible(objective), authority_digest)
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return f"objective:{digest}"

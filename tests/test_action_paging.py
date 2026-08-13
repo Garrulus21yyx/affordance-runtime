@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _world
@@ -15,7 +15,8 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
-from affordance_runtime.task import LocalObjective, LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
+from affordance_runtime.task.frontier_contracts import ActiveObjective, TargetPresent
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     ActionOption,
@@ -26,6 +27,14 @@ from affordance_runtime.world import (
     ActionSpaceBuilder,
     SemanticTarget,
 )
+
+
+@dataclass(frozen=True)
+class _Objective:
+    direct_target_ids: tuple[str, ...] = ()
+    direct_effects: tuple[str, ...] = ()
+    enabling_target_ids: tuple[str, ...] = ()
+    enabling_action_hints: tuple[str, ...] = ()
 
 
 def _option(index: int, *, action: str = "activate", effect: str = "changed") -> ActionOption:
@@ -48,7 +57,7 @@ def test_action_page_is_bounded_truthful_and_other_remains_retrievable() -> None
     options = tuple(_option(index) for index in range(40))
     space = ActionSpace("obs:1", options)
     pager = ActionPager(page_size=8)
-    objective = LocalObjective({"changed": True}, direct_target_ids=("target:00",))
+    objective = _Objective(direct_target_ids=("target:00",))
 
     default = pager.page(space, objective)
     other = pager.page(space, objective, relevance_role=ActionRelevanceRole.OTHER)
@@ -162,8 +171,7 @@ def test_default_page_ranks_direct_enabling_information_then_other() -> None:
         _option(2, action="read", effect=""),
         _option(3),
     )
-    objective = LocalObjective(
-        {"changed": True},
+    objective = _Objective(
         direct_target_ids=("target:00",),
         enabling_target_ids=("target:01",),
     )
@@ -427,7 +435,7 @@ def test_objective_change_rebuilds_relevance_page_and_context_identity() -> None
         before_page = builder.page(space, state)
         before_context = builder.build(task, state, space, evaluation, action_page=before_page)
         state.set_active_objective(
-            LocalObjective({"enabled": True}, direct_target_ids=("z-other-toggle",))
+            ActiveObjective("objective:1", ("criterion:1",), TargetPresent("z-other-toggle"), "context:1")
         )
         after_page = builder.page(space, state)
         after_context = builder.build(task, state, space, evaluation, action_page=after_page)

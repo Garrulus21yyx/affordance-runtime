@@ -3,11 +3,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from affordance_runtime.agent.decisions import EstablishLocalObjective
 from affordance_runtime.model_policy.spec import (
     SCHEMA_VERSION,
     AgentDecisionPackagePayload,
     AgentDecisionPayload,
     decision_response_schema,
+    payload_to_decision,
 )
 
 
@@ -27,6 +29,7 @@ def test_canonical_package_has_four_objective_operations_and_typed_decisions() -
     assert decision["discriminator"]["propertyName"] == "type"
     assert set(decision["discriminator"]["mapping"]) == {
         "select_action",
+        "establish_local_objective",
         "request_observation",
         "request_action_page",
         "ask_user",
@@ -35,7 +38,7 @@ def test_canonical_package_has_four_objective_operations_and_typed_decisions() -
         "abort",
     }
     assert len(objective["oneOf"]) == 4
-    assert len(decision["oneOf"]) == 7
+    assert len(decision["oneOf"]) == 8
     assert AgentDecisionPackagePayload.model_json_schema() == schema
 
 
@@ -103,3 +106,29 @@ def test_direct_decision_boundary_rejects_non_json_sequence_coercion() -> None:
                 "destination_id": "",
             }
         )
+
+
+def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identity() -> None:
+    payload = AgentDecisionPayload.model_validate(
+        {
+            "type": "establish_local_objective",
+            "context_id": "context:1",
+            "objective": {
+                "kind": "set",
+                "objective_id": "set-objective:1",
+                "scope_id": "scope:viewport",
+                "predicate": {
+                    "kind": "fact_equals",
+                    "field_name": "grid_coordinate",
+                    "expected": {"x": 1, "y": -2},
+                },
+                "quantifier": "exactly_one",
+                "semantic_action": "activate",
+            },
+        }
+    )
+    decision = payload_to_decision(payload, "context:1")
+
+    assert isinstance(decision, EstablishLocalObjective)
+    encoded = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
+    assert "target_id" not in encoded and "action_id" not in encoded and "binding_id" not in encoded

@@ -31,16 +31,16 @@ class FirstPolicy:
 
     async def decide(self, context):
         task, world, action_space = context.task, context.world, context.actions
-        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-        del task, world, recent_turns, optional_plan
+        recent_turns = context.history.items
+        del task, world, recent_turns
         return SelectAction(context.context_id, action_space.options[0].action_id, self.parameters)
 
 
 class MissingPolicy:
     async def decide(self, context):
         task, world, action_space = context.task, context.world, context.actions
-        recent_turns, optional_plan = context.history.items, context.progress.plan_summary
-        del task, world, action_space, recent_turns, optional_plan
+        recent_turns = context.history.items
+        del task, world, action_space, recent_turns
         return SelectAction(context.context_id, "missing-wot-action")
 
 

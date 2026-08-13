@@ -150,7 +150,6 @@ def establish_set_objective_state(
     visible = {item.target_id for item in observation.targets}
     if any(item not in visible for item in candidates):
         raise SetObjectiveStateError(SetObjectiveStateErrorCode.UNKNOWN_CANDIDATE)
-    candidate_role = "*"
     digest = _objective_digest(predicate, quantifier, semantic_action, candidates)
     scope = scope or ScopeSpec(
         f"scope:{digest[:24]}",
@@ -168,6 +167,21 @@ def establish_set_objective_state(
         ActionTemplate(semantic_action, parameters=parameters or {}),
         SchedulingPolicy(),
     )
+    return establish_set_objective(objective, observation, enumerator=enumerator)
+
+
+def establish_set_objective(
+    objective: SetObjective,
+    observation: WorldObservation,
+    *,
+    enumerator: ScopeEnumeratorPort | None = None,
+) -> SetObjectiveState:
+    """Materialize an admitted local objective against the current observation."""
+
+    scope = objective.scope
+    semantic_action = objective.action_template.semantic_action
+    quantifier = objective.quantifier
+    candidate_role = "*"
     enumeration = (enumerator or SnapshotScopeEnumerator()).enumerate(scope, observation)
     candidates = _action_candidate_ids(
         enumeration.entity_ids,
