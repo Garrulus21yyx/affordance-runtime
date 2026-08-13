@@ -44,7 +44,7 @@ from affordance_runtime.model_policy.model_port_bridge import DecisionPerception
 from affordance_runtime.model_policy.objective_spec import OBJECTIVE_SCHEMA_VERSION
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 from affordance_runtime.model_policy.strict_json import validate_json_tree
-from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolTransportKind
+from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec, ToolTransportKind
 from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelConfig,
@@ -85,12 +85,10 @@ closure, evidence, action legality, binding, effects, and completion. Return onl
 """.strip()
 
 
-class GroundedToolCommandPayload(BaseModel):
+class _GroundedCommandPayloadBase(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
     op: str
-    target: str = ""
-    text: str | None = None
     value: object | None = None
 
     @field_validator("op")
@@ -100,6 +98,23 @@ class GroundedToolCommandPayload(BaseModel):
             raise ValueError("grounded operation is invalid")
         return value
 
+    @field_validator("value")
+    @classmethod
+    def _value(cls, value: object | None) -> object | None:
+        validate_json_tree(value)
+        return value
+
+    def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
+        admitted = _admitted_properties(spec, {"value"})
+        return {"value": self.value} if self.value is not None and "value" in admitted else {}
+
+
+class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
+    """Compact action-selection command; retained as the public compatibility name."""
+
+    target: str = ""
+    text: str | None = None
+
     @field_validator("target")
     @classmethod
     def _target(cls, value: str) -> str:
@@ -107,11 +122,25 @@ class GroundedToolCommandPayload(BaseModel):
             raise ValueError("grounded target ref is invalid")
         return value
 
-    @field_validator("value")
-    @classmethod
-    def _value(cls, value: object | None) -> object | None:
-        validate_json_tree(value)
-        return value
+    def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
+        result = super().command_arguments(spec)
+        admitted = _admitted_properties(spec, {"target", "text", "value"})
+        if self.target and "target" in admitted:
+            result["target"] = self.target
+        if self.text is not None and "text" in admitted:
+            result["text"] = self.text
+        return result
+
+
+class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
+    """Compact objective-proposal command with no action-selection fields."""
+
+
+def _admitted_properties(spec: ToolSpec | None, default: set[str]) -> set[str]:
+    if spec is None:
+        return set(default)
+    properties = spec.input_schema.get("properties")
+    return set(properties) if isinstance(properties, Mapping) else set()
 
 
 
@@ -171,6 +200,7 @@ class _GroundedAdapterBase:
         catalog_builder,
         resolver,
         system_prompt: str,
+        payload_base: type[_GroundedCommandPayloadBase],
     ) -> tuple[object, ModelMetadata] | ModelFailure:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_argument_repair_count", 0)
@@ -195,6 +225,7 @@ class _GroundedAdapterBase:
                 messages,
                 catalog.specs,
                 _labeled_entity_operation_aliases(catalog),
+                payload_base,
             )
             if not calls:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
@@ -219,7 +250,7 @@ class _GroundedAdapterBase:
                     raise
                 object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
                 object.__setattr__(self, "last_argument_repair_count", 1)
-                repaired = await self._repair_selected_operation(messages, spec, issue)
+                repaired = await self._repair_selected_operation(messages, spec, issue, payload_base)
                 if repaired.name != call.name:
                     raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
                 decision = resolver(
@@ -264,9 +295,15 @@ class _GroundedAdapterBase:
         metadata = _metadata(self.port, self.transport_kind, include_record=True)
         return decision, metadata
 
-    async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
+    async def _call(
+        self,
+        messages,
+        specs,
+        aliases=(),
+        payload_base: type[_GroundedCommandPayloadBase] = GroundedToolCommandPayload,
+    ) -> tuple[ToolCall, ...]:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
-            payload_type = _command_payload_type(specs, aliases)
+            payload_type = _command_payload_type(specs, aliases, payload_base)
             try:
                 payload = await self.port.generate_structured(messages, payload_type, self.config)
             except StructuredOutputError as exc:
@@ -282,7 +319,7 @@ class _GroundedAdapterBase:
             if spec is None and len(specs) == 1:
                 spec = specs[0]
             operation = spec.name if spec is not None else payload.op
-            return (ToolCall(operation, _command_arguments(payload, spec)),)
+            return (ToolCall(operation, payload.command_arguments(spec)),)
         generate = getattr(self.port, "generate_tool_calls", None)
         if generate is None:
             raise ValueError("model port does not implement admitted native tool calls")
@@ -302,14 +339,20 @@ class _GroundedAdapterBase:
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
             )
 
-    async def _repair_selected_operation(self, messages, spec, issue) -> ToolCall:
-        payload_type = _command_payload_type((spec,))
+    async def _repair_selected_operation(
+        self,
+        messages,
+        spec: ToolSpec,
+        issue,
+        payload_base: type[_GroundedCommandPayloadBase],
+    ) -> ToolCall:
+        payload_type = _command_payload_type((spec,), payload_base=payload_base)
         payload = await self.port.generate_structured(
             _argument_repair_messages(messages, spec, issue),
             payload_type,
             self.config,
         )
-        return ToolCall(payload.op, _command_arguments(payload, spec))
+        return ToolCall(payload.op, payload.command_arguments(spec))
 
 
 @dataclass(frozen=True)
@@ -332,6 +375,7 @@ class GroundedActionAdapter(_GroundedAdapterBase):
             catalog_builder=compile_grounded_action_catalog,
             resolver=resolve_grounded_action_call,
             system_prompt=_ACTION_SYSTEM_PROMPT,
+            payload_base=GroundedToolCommandPayload,
         )
         if isinstance(resolved, ModelFailure):
             return resolved
@@ -359,6 +403,7 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
             catalog_builder=compile_grounded_objective_catalog,
             resolver=resolve_grounded_objective_call,
             system_prompt=_OBJECTIVE_SYSTEM_PROMPT,
+            payload_base=GroundedObjectiveCommandPayload,
         )
         if isinstance(resolved, ModelFailure):
             return resolved
@@ -419,17 +464,21 @@ def _messages(view, request, supports_multimodal, system_prompt):
     )
 
 
-def _command_payload_type(specs, aliases=()):
+def _command_payload_type(
+    specs: tuple[ToolSpec, ...],
+    aliases: tuple[tuple[str, str], ...] = (),
+    payload_base: type[_GroundedCommandPayloadBase] = GroundedToolCommandPayload,
+) -> type[_GroundedCommandPayloadBase]:
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
     if len(names) == 1:
-        return GroundedToolCommandPayload
+        return payload_base
     digest = hashlib.sha256("\0".join(names).encode()).hexdigest()[:12]
     allowed_operation = Literal.__getitem__(names)
     return create_model(
         f"GroundedToolCommand_{digest}",
-        __base__=GroundedToolCommandPayload,
+        __base__=payload_base,
         op=(allowed_operation, ...),
     )
 
@@ -506,22 +555,6 @@ def _argument_repair_messages(messages, spec, issue):
         ),
         *messages[1:],
     )
-
-
-def _command_arguments(payload, spec=None):
-    admitted = (
-        set(spec.input_schema.get("properties", {}))
-        if spec is not None
-        else {"target", "text", "value"}
-    )
-    result = {}
-    if payload.target and "target" in admitted:
-        result["target"] = payload.target
-    if payload.text is not None and "text" in admitted:
-        result["text"] = payload.text
-    if payload.value is not None and "value" in admitted:
-        result["value"] = payload.value
-    return result
 
 
 def _metadata(port, transport_kind, *, include_record=True):

@@ -39,6 +39,7 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
 from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedObjectiveAdapter,
+    GroundedObjectiveCommandPayload,
     GroundedToolCommandPayload,
 )
 from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
@@ -72,9 +73,11 @@ class _ObjectivePort:
     endpoint_class: str = "fixture"
     supports_multimodal: bool = True
     last_call: ModelCallRecord | None = None
+    last_output_schema: type | None = None
 
     async def generate_structured(self, messages, output_schema, config):
         del messages
+        self.last_output_schema = output_schema
         self.last_call = ModelCallRecord(
             provider=self.provider,
             model=self.model,
@@ -266,6 +269,9 @@ def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -
     assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
         "op", "target", "text", "value"
     }
+    assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {
+        "op", "value"
+    }
     assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)
 
 
@@ -309,8 +315,9 @@ def test_objective_nonproposal_tools_resolve_to_typed_outcomes() -> None:
 
 def test_grounded_objective_adapter_returns_only_objective_envelopes() -> None:
     context = _context()
+    port = _ObjectivePort()
     adapter = GroundedObjectiveAdapter(
-        _ObjectivePort(),
+        port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
     )
 
@@ -318,6 +325,8 @@ def test_grounded_objective_adapter_returns_only_objective_envelopes() -> None:
 
     assert isinstance(outcome, ResolvedLocalObjectiveOutcome)
     assert isinstance(outcome.outcome, LocalObjectiveNotRequired)
+    assert port.last_output_schema is not None
+    assert set(port.last_output_schema.model_json_schema()["properties"]) == {"op", "value"}
 
 
 def test_grounded_schema_retry_returns_the_safe_field_violation_to_the_model() -> None:
