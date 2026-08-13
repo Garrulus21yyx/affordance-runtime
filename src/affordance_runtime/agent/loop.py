@@ -96,6 +96,7 @@ class AgentLoop:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     recent_turn_limit: int = 12
+    semantic_control_required: bool = False
 
     async def start(
         self,
@@ -165,7 +166,10 @@ class AgentLoop:
         evidence = StartBoundaryEvidence(receipt, accounting.snapshot())
         current = require_initial_observation(acquisition, evidence)
         state = AgentLoopState(
-            current, remaining_turns=task.loop_budget.max_turns, recent_turn_limit=self.recent_turn_limit
+            current,
+            remaining_turns=task.loop_budget.max_turns,
+            recent_turn_limit=self.recent_turn_limit,
+            semantic_control_required=self.semantic_control_required,
         )
         session = AgentRunSession(
             self,

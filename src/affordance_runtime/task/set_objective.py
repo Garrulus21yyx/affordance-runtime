@@ -46,8 +46,11 @@ class PredicateTruth(StrEnum):
 
 class PredicateAssurance(StrEnum):
     STRUCTURAL = "structural"
+    DERIVED = "derived"
     VISUAL = "visual"
     SEMANTIC = "semantic"
+    SEMANTIC_UNCALIBRATED = "semantic_uncalibrated"
+    SEMANTIC_CALIBRATED = "semantic_calibrated"
 
 
 @dataclass(frozen=True)
@@ -226,6 +229,7 @@ class ScopeSpec:
 class ActionTemplate:
     semantic_action: str
     item_postcondition: PredicateExpr | None = None
+    parameters: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.semantic_action.strip():
@@ -234,6 +238,7 @@ class ActionTemplate:
             self.item_postcondition, _PREDICATE_TYPES
         ):
             raise TypeError("item postcondition must be a typed predicate")
+        object.__setattr__(self, "parameters", freeze_json(self.parameters))
 
 
 class SchedulingMode(StrEnum):
@@ -313,7 +318,7 @@ class PredicateAssessment:
     evaluator_id: str
     observation_epoch: str
     evidence_refs: tuple[str, ...] = ()
-    confidence: float = 1.0
+    confidence: float | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -321,7 +326,10 @@ class PredicateAssessment:
             or len(self.predicate_digest) != 64
             or not self.evaluator_id.strip()
             or not self.observation_epoch.strip()
-            or not 0 <= self.confidence <= 1
+            or (
+                self.confidence is not None
+                and not 0 <= self.confidence <= 1
+            )
         ):
             raise ValueError("predicate assessment is invalid")
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))

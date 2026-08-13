@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 
-Status: `ARCHITECTURE_REOPENED / BOUNDED_WITNESSES_PASS / GENERALIZATION_OPEN`
+Status: `ARCHITECTURE_REOPENED / LIVE_RESULT_3_OF_5 / MANDATORY_INGRESS_IN_PROGRESS / GENERALIZATION_OPEN`
 
 ## Goal
 
@@ -37,6 +37,16 @@ appearance rules.
    task-ready facts without an explicit evidence-demand/admission boundary.
 5. Fixed witnesses cover the successful shape but do not exercise paraphrase,
    distractor, zero-match, long-set, predicate-flip, or provider-conflict cases.
+6. Live evidence at `1f32836` showed that typed establishment remained advisory:
+   the policy could select a raw E-ref before any Runtime objective existed, so
+   persistent membership and completion gates were never activated.
+
+The authority invariant under repair is:
+
+```text
+semantic control enabled AND no admitted typed objective
+=> zero effectful dispatch
+```
 
 ## Work plan
 
@@ -49,6 +59,18 @@ appearance rules.
 | E | completed | Remove task-relative fields and witness-shaped provider publication | Deleted task predicate projection, keyword gate, universal parser and repeated-leaf exact-count scanner; color is generic `appearance.color_family` evidence |
 | F | completed | Add property/metamorphic and integration tests | Capacity, missing fact, zero match, actionability, new candidate, history independence and de-specialization redlines pass |
 | G | in_progress | Run focused suite, full suite, and real five-case regression gate | Focused gate and full suite (`2398 passed, 27 skipped`) pass; clean-SHA live run remains required before verified closure |
+| H | in_progress | Make semantic ingress a Runtime control mode and add an independent action admission gate | In ingress/transition, Catalog exposes only objective/observation controls; forged effectful decisions bind and execute zero times |
+| I | in_progress | Replace opaque exact-value enums with schema-level public-fact tools | Grid coordinate is a typed `{x,y}` value; no 32-value serialization or silent exact-value truncation |
+| J | pending | Re-run the five live witnesses and held-out semantic-control cases | Objective establishment precedes dispatch; wrong/duplicate/premature member dispatch is zero |
+
+## Staged scope
+
+This convergence slice implements mandatory ingress for entity, fact/visual set,
+and parameterized value-entry actions. Aggregate provenance, multi-scope universe
+ownership, bounded normalized compound-predicate transport, an independent task
+semantic validator, and an automatic sequential worker remain explicit follow-up
+work. They must not be simulated with task names, prose keywords, candidate-count
+thresholds, or benchmark-specific branches.
 
 ## Explicit non-goals
 

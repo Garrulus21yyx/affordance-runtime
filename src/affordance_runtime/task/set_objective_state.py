@@ -133,6 +133,7 @@ def establish_set_objective_state(
     semantic_action: str,
     candidate_entity_ids: tuple[str, ...],
     observation: WorldObservation,
+    parameters: dict[str, object] | None = None,
 ) -> SetObjectiveState:
     """Install one admitted objective against a full Runtime observation."""
 
@@ -160,7 +161,7 @@ def establish_set_objective_state(
         scope,
         predicate,
         quantifier,
-        ActionTemplate(semantic_action),
+        ActionTemplate(semantic_action, parameters=parameters or {}),
         SchedulingPolicy(),
     )
     universe = _universe(scope, candidates, observation)
@@ -293,7 +294,7 @@ def set_evidence_obligations(
 
 def install_semantic_assessments(
     state: SetObjectiveState,
-    assessments: tuple[tuple[str, PredicateTruth, float], ...],
+    assessments: tuple[tuple[str, PredicateTruth, float | None], ...],
     *,
     evaluator_id: str = "model-policy-semantic-classifier",
 ) -> SetObjectiveState:
@@ -309,7 +310,10 @@ def install_semantic_assessments(
         not unknown_ids
         or {item[0] for item in submitted} != unknown_ids
         or len(submitted) != len(unknown_ids)
-        or any(not 0 <= confidence <= 1 for _, _, confidence in submitted)
+        or any(
+            confidence is not None and not 0 <= confidence <= 1
+            for _, _, confidence in submitted
+        )
     ):
         raise ValueError("semantic assessment batch must cover every unknown member exactly once")
     replacements = {
@@ -317,7 +321,7 @@ def install_semantic_assessments(
             entity_id,
             state.objective.predicate_digest,
             truth,
-            PredicateAssurance.SEMANTIC,
+            PredicateAssurance.SEMANTIC_UNCALIBRATED,
             evaluator_id,
             state.universe.observation_epoch,
             (f"semantic-assessment:{state.universe.observation_epoch}:{entity_id}",),
@@ -366,7 +370,15 @@ def _assess(
     universe: CandidateUniverse,
     observation: WorldObservation,
 ) -> tuple[PredicateAssessment, ...]:
-    targets = {item.target_id: dict(item.state) for item in observation.targets}
+    targets = {
+        item.target_id: {
+            **dict(item.state),
+            "identity.entity_id": item.target_id,
+            "identity.label": item.label,
+            "identity.role": item.role,
+        }
+        for item in observation.targets
+    }
     for fact in observation.facts:
         if fact.subject_id in targets:
             targets[fact.subject_id][fact.predicate] = fact.value

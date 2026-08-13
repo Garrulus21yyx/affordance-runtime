@@ -391,7 +391,14 @@ def _set_control_view(
 ) -> AgentSetControlView | None:
     active = state.active_set_objective
     if active is None:
-        return None
+        if not state.semantic_control_required:
+            return None
+        return AgentSetControlView(
+            "control_only",
+            state.semantic_control_mode.value,
+            "semantic_objective_required",
+            semantic_mode=state.semantic_control_mode.value,
+        )
     reduction = active.reduction
     if reduction.disposition in {
         SetDisposition.READY_FOR_NEXT_MEMBER,
@@ -417,15 +424,19 @@ def _set_control_view(
                 ("resolve_actionability",),
             )
     elif reduction.disposition is SetDisposition.CERTIFIED:
-        mode = "successor_actions"
-        set_members = set(active.candidate_entity_ids) | {
-            item.entity_id for item in active.obligations
-        }
-        allowed = tuple(
-            option.action_id
-            for option in action_space.options
-            if option.target_id not in set_members
-        )
+        if state.semantic_control_required:
+            mode = "control_only"
+            allowed = ()
+        else:
+            mode = "successor_actions"
+            set_members = set(active.candidate_entity_ids) | {
+                item.entity_id for item in active.obligations
+            }
+            allowed = tuple(
+                option.action_id
+                for option in action_space.options
+                if option.target_id not in set_members
+            )
     elif reduction.disposition is SetDisposition.BLOCKED:
         mode = "blocked"
         allowed = ()
@@ -450,6 +461,8 @@ def _set_control_view(
         active.candidate_entity_ids,
         unknown,
         tuple(item.kind.value for item in set_evidence_obligations(active)),
+        state.semantic_control_mode.value if state.semantic_control_required else "",
+        active.objective.action_template.parameters,
     )
 
 

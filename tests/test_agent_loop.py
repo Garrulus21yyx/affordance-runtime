@@ -487,6 +487,22 @@ def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> 
     )
 
 
+def test_mandatory_semantic_ingress_rejects_forged_effectful_action_without_objective() -> None:
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", False)])
+        loop = _loop(ScriptedPolicy(["first", "first"]))
+        loop.semantic_control_required = True
+        result = await AgentEpisodeRunner(loop).run(environment, _task())
+
+        assert result.status is AgentLoopStatus.BLOCKED
+        assert result.execution_count == 0
+        assert environment.execute_calls == 0
+        assert result.control_transitions[-1].admission is not None
+        assert result.control_transitions[-1].admission.reason_code == "objective_required"
+
+    asyncio.run(scenario())
+
+
 def test_selector_injection_on_offered_action_is_rejected() -> None:
     class InjectingPolicy:
         async def decide(self, context):

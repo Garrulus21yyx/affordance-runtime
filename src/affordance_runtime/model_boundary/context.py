@@ -249,6 +249,8 @@ class AgentSetControlView:
     candidate_target_ids: tuple[str, ...] = field(default=(), repr=False)
     unknown_target_ids: tuple[str, ...] = field(default=(), repr=False)
     evidence_needs: tuple[str, ...] = ()
+    semantic_mode: str = ""
+    objective_parameters: Mapping[str, object] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         values = tuple(self.allowed_action_ids)
@@ -265,6 +267,17 @@ class AgentSetControlView:
             or len(candidates) != len(set(candidates))
             or not set(unknown).issubset(candidates)
             or any(not item.strip() for item in evidence_needs)
+            or (
+                self.semantic_mode
+                and self.semantic_mode not in {
+                    "semantic_ingress",
+                    "evidence_resolution",
+                    "member_execution",
+                    "effect_resolution",
+                    "stability_check",
+                    "objective_transition",
+                }
+            )
         ):
             raise ValueError("set control projection is invalid")
         object.__setattr__(self, "allowed_action_ids", values)
@@ -272,6 +285,7 @@ class AgentSetControlView:
         object.__setattr__(self, "candidate_target_ids", candidates)
         object.__setattr__(self, "unknown_target_ids", unknown)
         object.__setattr__(self, "evidence_needs", evidence_needs)
+        object.__setattr__(self, "objective_parameters", freeze_json(self.objective_parameters))
 
 
 @dataclass(frozen=True)

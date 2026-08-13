@@ -70,6 +70,7 @@ class EstablishSetObjective:
     quantifier: SetQuantifier
     semantic_action: str
     candidate_target_ids: tuple[str, ...]
+    parameters: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -84,16 +85,19 @@ class EstablishSetObjective:
         ):
             raise ValueError("set objective candidate domain is invalid")
         object.__setattr__(self, "candidate_target_ids", values)
+        object.__setattr__(self, "parameters", freeze_json(self.parameters))
 
 
 @dataclass(frozen=True)
 class SetPredicateAssessmentDecision:
     target_id: str
     truth: PredicateTruth
-    confidence: float
+    confidence: float | None
 
     def __post_init__(self) -> None:
-        if not self.target_id.strip() or not 0 <= self.confidence <= 1:
+        if not self.target_id.strip() or (
+            self.confidence is not None and not 0 <= self.confidence <= 1
+        ):
             raise ValueError("set predicate assessment decision is invalid")
 
 

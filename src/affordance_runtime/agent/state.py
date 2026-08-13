@@ -44,6 +44,15 @@ class AgentLoopStatus(StrEnum):
     FAILED = "failed"
 
 
+class SemanticControlMode(StrEnum):
+    SEMANTIC_INGRESS = "semantic_ingress"
+    EVIDENCE_RESOLUTION = "evidence_resolution"
+    MEMBER_EXECUTION = "member_execution"
+    EFFECT_RESOLUTION = "effect_resolution"
+    STABILITY_CHECK = "stability_check"
+    OBJECTIVE_TRANSITION = "objective_transition"
+
+
 @dataclass
 class AgentLoopState:
     current_observation: WorldObservation
@@ -92,6 +101,31 @@ class AgentLoopState:
     control_repetition_total_count: int = 0
     control_issue_consumption_total_count: int = 0
     observation_cursor: str = ""
+    semantic_control_required: bool = False
+    semantic_objective_count: int = 0
+
+    @property
+    def semantic_control_mode(self) -> SemanticControlMode:
+        active = self.active_set_objective
+        if active is None:
+            return (
+                SemanticControlMode.SEMANTIC_INGRESS
+                if self.semantic_objective_count == 0
+                else SemanticControlMode.OBJECTIVE_TRANSITION
+            )
+        disposition = active.reduction.disposition
+        if disposition in {
+            SetDisposition.READY_FOR_NEXT_MEMBER,
+            SetDisposition.AGENT_SELECT_NEXT,
+        }:
+            return SemanticControlMode.MEMBER_EXECUTION
+        if disposition is SetDisposition.NEED_EFFECT_RESOLUTION:
+            return SemanticControlMode.EFFECT_RESOLUTION
+        if disposition is SetDisposition.NEED_STABILITY_CHECK:
+            return SemanticControlMode.STABILITY_CHECK
+        if disposition is SetDisposition.CERTIFIED:
+            return SemanticControlMode.OBJECTIVE_TRANSITION
+        return SemanticControlMode.EVIDENCE_RESOLUTION
 
     @property
     def recent_turns(self) -> tuple[Turn, ...]:

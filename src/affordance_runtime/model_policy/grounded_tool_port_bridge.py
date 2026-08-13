@@ -42,6 +42,8 @@ from affordance_runtime.world.schema_validation import validate_value_issue
 _SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
+When the request quantifies multiple targets, or identifies target(s) by a public state/relation represented by an establish_* objective operation, establish that typed objective before any member action.
+Use a direct click among multiple E* targets only for one target identified by ordinary label or appearance when no offered objective operation represents the criterion.
 Use current public state and the previous tool result: once a requested field is nonempty or satisfied, advance to the next required control.
 When recovery forbids retry or requires a strategy change, never repeat the same operation, target, and arguments.
 Respect prerequisites expressed by the instruction, state, roles, labels, and relations before choosing a submit/final action.

@@ -42,7 +42,12 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
-    from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus, Turn
+    from affordance_runtime.agent.state import (
+        AgentLoopState,
+        AgentLoopStatus,
+        SemanticControlMode,
+        Turn,
+    )
     from affordance_runtime.task.contracts import TaskGoal
 
 _EXPORTS = {
@@ -64,6 +69,7 @@ _EXPORTS = {
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
+    "SemanticControlMode": ("affordance_runtime.agent.state", "SemanticControlMode"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),

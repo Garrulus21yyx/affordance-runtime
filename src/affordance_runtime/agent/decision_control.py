@@ -53,7 +53,7 @@ from affordance_runtime.agent.observation_control import (
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.state import AgentLoopStatus
+from affordance_runtime.agent.state import AgentLoopStatus, SemanticControlMode
 from affordance_runtime.agent.task_evaluation_policy import task_evaluation_disposition
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation
@@ -70,6 +70,7 @@ from affordance_runtime.task.set_objective import SetDisposition
 from affordance_runtime.task.set_objective_state import (
     establish_set_objective_state,
     install_semantic_assessments,
+    set_allowed_action_ids,
 )
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -322,7 +323,9 @@ async def _route_decision(
             semantic_action=decision.semantic_action,
             candidate_entity_ids=decision.candidate_target_ids,
             observation=state.current_observation,
+            parameters=dict(decision.parameters),
         )
+        state.semantic_objective_count += 1
         state.progress_revision += 1
         scope.record_decision_result("set_objective_established")
         scope.set_reason("set_objective_established")
@@ -357,6 +360,29 @@ async def _route_decision(
         return await _wait_refresh(session, decision, waiter, scope)
     if isinstance(decision, RequestActionPage):
         return _request_action_page(session, action_space, context_builder, decision, scope)
+    if state.semantic_control_required:
+        active = state.active_set_objective
+        allowed = (
+            set_allowed_action_ids(active, action_space)
+            if active is not None
+            and state.semantic_control_mode is SemanticControlMode.MEMBER_EXECUTION
+            else frozenset()
+        )
+        if active is None:
+            reason = "objective_required"
+        elif state.semantic_control_mode is not SemanticControlMode.MEMBER_EXECUTION:
+            reason = "effectful_action_not_allowed_in_current_mode"
+        elif decision.action_id not in allowed or dict(decision.parameters) != dict(
+            active.objective.action_template.parameters
+        ):
+            reason = "action_not_authorized_by_active_objective"
+        else:
+            reason = ""
+        if reason:
+            scope.record_admission(AdmissionStatus.REJECTED, reason)
+            scope.record_decision_result(reason)
+            scope.set_reason(reason)
+            return Terminate(AgentLoopStatus.BLOCKED, reason)
     page = session.current_action_page or context_builder.page(action_space, state)
     issue = page.selection_issue(decision.action_id, decision.destination_id)
     if issue is not None:

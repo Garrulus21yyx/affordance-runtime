@@ -144,7 +144,7 @@ def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:
         for node in loop.body
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and node.target.id not in {"recent_turn_limit"}
+        and node.target.id not in {"recent_turn_limit", "semantic_control_required"}
     }
 
     assert len(collaborators) <= 8

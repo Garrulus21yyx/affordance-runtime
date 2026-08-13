@@ -145,18 +145,16 @@ def test_projection_publishes_generic_facts_for_model_selected_exact_objective()
     catalog = compile_grounded_tool_catalog(context)
 
     establish = next(
-        spec for spec in catalog.specs if spec.name == "establish_click_fact_objective"
-    )
-    match = next(
-        value
-        for value in establish.input_schema["properties"]["match"]["enum"]
-        if value.startswith("role=clickable;field=grid_coordinate;")
-        and '"x":1' in value
-        and '"y":-2' in value
+        spec
+        for spec in catalog.specs
+        if 'public fact "grid_coordinate"' in spec.description
     )
     package = resolve_grounded_tool_call(
         catalog,
-        ToolCall(establish.name, {"match": match, "quantifier": "exactly_one"}),
+        ToolCall(
+            establish.name,
+            {"value": {"x": 1, "y": -2}, "quantifier": "exactly_one"},
+        ),
         expected_context_id=context.context_id,
     )
     assert isinstance(package.decision, EstablishSetObjective)
@@ -191,12 +189,48 @@ def test_exact_lattice_relation_is_available_without_screenshot_marks() -> None:
     catalog = compile_grounded_tool_catalog(context)
 
     establish = next(
-        spec for spec in catalog.specs if spec.name == "establish_click_fact_objective"
+        spec
+        for spec in catalog.specs
+        if 'public fact "grid_coordinate"' in spec.description
     )
-    assert any(
-        value.startswith("role=clickable;field=grid_coordinate;")
-        for value in establish.input_schema["properties"]["match"]["enum"]
+    value = establish.input_schema["properties"]["value"]
+    assert value["required"] == ["x", "y"]
+    assert value["properties"] == {"x": {"type": "integer"}, "y": {"type": "integer"}}
+
+
+def test_mandatory_semantic_ingress_hides_direct_grid_actions() -> None:
+    raw = _raw_grid()
+    projection = _projection(raw)
+    task = TaskGoal(
+        "task:grid-mandatory-ingress",
+        raw["goal"],
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
     )
+    action_space = ActionSpaceBuilder().build(task, projection.world)
+    state = AgentLoopState(
+        projection.world,
+        remaining_turns=5,
+        semantic_control_required=True,
+    )
+    context = ContextBuilder().build(
+        task,
+        state,
+        action_space,
+        TaskEvaluation(
+            task.task_id,
+            projection.world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(context)
+
+    assert context.set_control is not None
+    assert context.set_control.semantic_mode == "semantic_ingress"
+    assert not any(spec.name == "click" for spec in catalog.specs)
+    assert any('public fact "grid_coordinate"' in spec.description for spec in catalog.specs)
 
 
 def _raw_grid():

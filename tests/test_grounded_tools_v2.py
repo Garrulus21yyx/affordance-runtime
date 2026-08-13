@@ -62,7 +62,7 @@ from affordance_runtime.world import ActionSpaceBuilder, ObservationGroundingReg
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
 
-def _context(*, with_boxes=True):
+def _context(*, with_boxes=True, mandatory_semantic_control=False):
     raw = raw_observation(
         ax_node("username", "textbox", ""),
         ax_node("password", "textbox", ""),
@@ -98,7 +98,11 @@ def _context(*, with_boxes=True):
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    state = AgentLoopState(projection.world, remaining_turns=5)
+    state = AgentLoopState(
+        projection.world,
+        remaining_turns=5,
+        semantic_control_required=mandatory_semantic_control,
+    )
     evaluation = TaskEvaluation(
         task.task_id,
         projection.world.observation_id,
@@ -172,6 +176,62 @@ def test_schema_equivalent_actions_are_grouped_into_small_verb_tools_and_resolve
     assert package.decision.context_id == context.context_id
     assert package.decision.parameters == {"value": "UV"}
     assert package.decision.action_id.startswith("action:")
+
+
+def test_mandatory_ingress_exposes_only_typed_objective_tools_and_preserves_value() -> None:
+    context = _context(mandatory_semantic_control=True)
+    catalog = compile_grounded_tool_catalog(context)
+    names = {item.name for item in catalog.specs}
+
+    assert "fill" not in names and "click" not in names
+    assert "establish_fill_entity_objective" in names
+    assert "establish_click_entity_objective" in names
+    password_ref = next(
+        item.ref for item in context.grounding.entities if item.label == "Password"
+    )
+    package = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "establish_fill_entity_objective",
+            {"target": password_ref, "text": "UV"},
+        ),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(package.decision, EstablishSetObjective)
+    assert package.decision.quantifier.value == "exactly_one"
+    assert package.decision.parameters == {"value": "UV"}
+
+    fill_action = next(
+        item.action_id
+        for item in context.actions.options
+        if context.grounding.target_refs[item.target_id] == password_ref
+    )
+    execution_context = replace(
+        context,
+        set_control=AgentSetControlView(
+            mode="member_actions_only",
+            disposition="ready_for_next_member",
+            reason_code="member_action_required",
+            allowed_action_ids=(fill_action,),
+            candidate_count=1,
+            matched_count=1,
+            predicate={"kind": "fact_equals", "field_name": "identity.entity_id"},
+            predicate_digest="a" * 64,
+            candidate_target_ids=package.decision.candidate_target_ids,
+            semantic_mode="member_execution",
+            objective_parameters={"value": "UV"},
+        ),
+    )
+    execution_catalog = compile_grounded_tool_catalog(execution_context)
+    execute = resolve_grounded_tool_call(
+        execution_catalog,
+        ToolCall("execute_objective", {}),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(execute.decision, SelectAction)
+    assert execute.decision.action_id == fill_action
+    assert execute.decision.parameters == {"value": "UV"}
 
 
 def test_stale_and_unknown_grounded_refs_are_zero_decision() -> None:
@@ -475,11 +535,11 @@ def test_runtime_set_control_admits_one_member_then_releases_successors() -> Non
     ))
 
     catalog = compile_grounded_tool_catalog(context)
-    click = next(item for item in catalog.specs if item.name == "click")
+    click = next(item for item in catalog.specs if item.name == "execute_objective")
 
     assert click.input_schema["properties"] == {}
     package = resolve_grounded_tool_call(
-        catalog, ToolCall("click", {}), expected_context_id=context.context_id,
+        catalog, ToolCall("execute_objective", {}), expected_context_id=context.context_id,
     )
     assert next(item for item in context.actions.options if item.action_id == package.decision.action_id).target_id == blue_target
 
@@ -557,7 +617,11 @@ def test_model_can_establish_generic_fact_set_without_instruction_scanning() -> 
         ),
     )
     catalog = compile_grounded_tool_catalog(context)
-    establish = next(item for item in catalog.specs if item.name == "establish_click_fact_objective")
+    establish = next(
+        item
+        for item in catalog.specs
+        if 'public fact "appearance.color_family"' in item.description
+    )
     renamed = replace(
         context,
         task=replace(
@@ -569,19 +633,15 @@ def test_model_can_establish_generic_fact_set_without_instruction_scanning() -> 
     renamed_establish = next(
         item
         for item in compile_grounded_tool_catalog(renamed).specs
-        if item.name == "establish_click_fact_objective"
+        if 'public fact "appearance.color_family"' in item.description
     )
     assert renamed_establish.input_schema == establish.input_schema
-    match = next(
-        item for item in establish.input_schema["properties"]["match"]["enum"]
-        if '"blue"' in item
-    )
 
     package = resolve_grounded_tool_call(
         catalog,
         ToolCall(
             establish.name,
-            {"match": match, "quantifier": "all_in_closed_scope"},
+            {"value": "blue", "quantifier": "all_in_closed_scope"},
         ),
         expected_context_id=context.context_id,
     )
