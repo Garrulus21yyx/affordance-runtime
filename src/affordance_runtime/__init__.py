@@ -2,9 +2,12 @@
 
 from affordance_runtime.agent import (
     TargetRuntime,
+    TargetRuntimeStartOutcome,
+    TargetRuntimeUserInputOutcome,
     UserInputRequest,
     UserInputResumed,
     UserInputResumeRejected,
+    compose_target_runtime,
 )
 from affordance_runtime.contracts import ActionContract
 from affordance_runtime.grounding import UnifiedAffordance
@@ -28,6 +31,8 @@ __all__ = [
     "RuntimeClient",
     "NaturalLanguageTaskRequest",
     "TargetRuntime",
+    "TargetRuntimeStartOutcome",
+    "TargetRuntimeUserInputOutcome",
     "TaskBoundary",
     "TaskGoal",
     "UnifiedAffordance",
@@ -35,4 +40,5 @@ __all__ = [
     "UserInputRequest",
     "UserInputResumed",
     "UserInputResumeRejected",
+    "compose_target_runtime",
 ]

@@ -22,11 +22,22 @@ def test_target_benchmark_uses_production_runtime_composition_root() -> None:
     runner = RUNTIME / "benchmarks" / "target_loop" / "runner.py"
     source = runner.read_text(encoding="utf-8")
 
-    assert "TargetRuntime(" in source
+    assert "compose_target_runtime(" in source
+    assert "TargetRuntime(" not in source
     assert "AgentLoop(" not in source
     assert "AgentEpisodeRunner(" not in source
     assert "affordance_runtime.agent.loop" not in _imports(runner)
     assert "affordance_runtime.agent.episode_runner" not in _imports(runner)
+    assert "affordance_runtime.agent.composition" in _imports(runner)
+
+
+def test_target_composition_owner_has_no_benchmark_dependency() -> None:
+    composition = RUNTIME / "agent" / "composition.py"
+
+    assert not any(
+        name.startswith("affordance_runtime.benchmarks")
+        for name in _imports(composition)
+    )
 
 
 def test_all_benchmark_modules_avoid_direct_agent_loop_construction() -> None:

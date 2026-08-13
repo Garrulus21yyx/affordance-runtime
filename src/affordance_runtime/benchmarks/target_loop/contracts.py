@@ -19,6 +19,7 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.decisions import AbortCategory
+from affordance_runtime.agent.local_objective_proposal import LocalObjectiveProposalPort
 from affordance_runtime.agent.policy import (
     ActionEvaluator,
     AgentPolicy,
@@ -295,7 +296,7 @@ class BenchmarkComposition:
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
-    local_objective_proposer: object | None = None
+    local_objective_proposer: LocalObjectiveProposalPort | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:

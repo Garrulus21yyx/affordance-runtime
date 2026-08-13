@@ -174,6 +174,7 @@ differently from Implementation Status, Implementation Status wins.
 - [P5-M4.3 MiniWoB-60 seeded breadth](reviews/2026-08-10-p5-m4-3-miniwob-60-seeded-breadth.md)
 - [P5-M4.4 MiniWoB breadth failure attribution](reviews/2026-08-10-p5-m4-4-miniwob-breadth-failure-attribution.md)
 - [Runtime main-chain convergence audit and legacy-exit plan](reviews/2026-08-13-runtime-chain-convergence-audit.md)
+- [Target default-cutover consumer map](reviews/2026-08-13-target-cutover-consumer-map.md)
 
 These scenarios and review records describe current/legacy baseline behavior or
 revision-scoped findings; they do not redefine target contracts.

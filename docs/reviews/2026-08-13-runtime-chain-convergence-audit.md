@@ -670,3 +670,22 @@ MODEL ACTION + OBJECTIVE PROTOCOL BOUNDARIES IMPLEMENTED
 OFFLINE FULL-SUITE VERIFIED
 PRODUCT DEFAULT / LEGACY DELETION OPEN
 ```
+
+The live consumer-by-consumer cutover inventory is maintained in
+[`2026-08-13-target-cutover-consumer-map.md`](./2026-08-13-target-cutover-consumer-map.md).
+
+## 14. 实施记录：target composition root
+
+2026-08-13 新增 product-owned `compose_target_runtime`，它统一组装
+`AgentDecisionPorts -> TargetRuntime`，并集中执行 objective requirement、decision capability、
+intake、risk、action-space、binding、context 和 wait-controller 的 composition validation。
+`benchmarks/target_loop` 现在只在端口边界添加 instrumentation，再调用同一个 product factory；
+架构门禁禁止 target composition owner 导入 benchmark namespace，也禁止 benchmark 直接构造
+`AgentLoop/AgentEpisodeRunner/TargetRuntime`。
+
+根 package 已显式导出 `compose_target_runtime`、`TargetRuntime`、自然语言 request/start outcome
+和 user-input continuation contracts。CLI `run` 与旧 `RuntimeClient` 仍属于 legacy 默认，消费者映射中
+已明确标注；因此这一步是“单一 target 构造 owner + 显式 target API”，不是默认切换。
+
+离线验证：`2422 passed, 27 skipped`，Ruff 和 diff check 通过。live benchmark 未在本切片运行，
+product default 与 legacy 删除继续保持 open。

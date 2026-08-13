@@ -8,6 +8,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.composition import compose_target_runtime
     from affordance_runtime.agent.control_feedback import (
         ControlFeedback,
         ControlFeedbackKind,
@@ -73,6 +74,10 @@ if TYPE_CHECKING:
     from affordance_runtime.task.contracts import TaskGoal
 
 _EXPORTS = {
+    "compose_target_runtime": (
+        "affordance_runtime.agent.composition",
+        "compose_target_runtime",
+    ),
     "ControlFeedback": ("affordance_runtime.agent.control_feedback", "ControlFeedback"),
     "ControlFeedbackKind": ("affordance_runtime.agent.control_feedback", "ControlFeedbackKind"),
     "ControlFeedbackSource": ("affordance_runtime.agent.control_feedback", "ControlFeedbackSource"),
