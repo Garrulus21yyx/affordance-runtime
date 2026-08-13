@@ -95,3 +95,29 @@ Run totals were 13 provider attempts, 30,639 tokens and 102,726.072 ms model
 latency. The result closes only the grounded argument-envelope defect. Agent
 observation strategy and set/aggregate completion stability remain open; the
 five witnesses still prohibit a generalization claim.
+
+## Default-model focused result at `f28779f`
+
+Subsequent live diagnostics returned to the project default
+`glm-4.1v-thinking-flashx`. A focused clean-SHA `visual-addition` run at
+`f28779f` completed with valid evidence and an authoritative terminal task
+failure. The model immediately selected structural `fill` and then Submit:
+two policy calls, two dispatched actions, zero images, zero visual sources,
+zero argument violations and zero repairs.
+
+This run did not exercise the new observation-decision trace because no
+observation was requested. It nevertheless separates the remaining issue from
+grounding and acquisition: the default model can select and execute the right
+action kinds from the structural world, but its aggregate answer was not
+accepted by the environment. Parameter values are intentionally absent from
+the public trace, so the evidence cannot state which wrong value was entered.
+No arithmetic rule or task-specific counter is admitted from this result.
+
+Inspection of the existing native request found a separate generic context
+defect: each ToolSpec is sent once through the provider-native `tools` field and
+again as a full `tool_menu` inside the user JSON. Entity ref/role/label tuples
+are also repeated from `grounding_index` inside every verb description. This is
+non-authoritative duplicate projection and unnecessary context load. The next
+slice will preserve one Unified World projection and one transport-owned tool
+catalog: native transport uses native ToolSpecs, while compact transport keeps
+the inline menu it actually needs.

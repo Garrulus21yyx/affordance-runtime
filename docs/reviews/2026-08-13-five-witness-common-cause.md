@@ -565,3 +565,19 @@ execution. The current persisted policy trace omits modality/assurance for a
 successfully resolved observation decision. Until that typed public decision
 is retained, evidence cannot attribute the repetition to model strategy or
 acquisition output. The next admitted change is observability only.
+
+That typed trace was implemented at `f28779f`. The first clean focused run with
+the restored default `glm-4.1v-thinking-flashx` did not request observation: it
+directly dispatched structural fill and Submit, then received authoritative
+terminal failure. It had zero image, visual source, schema violation and
+repair. Thus it does not answer which observation modality the stochastic
+4.6V repetition selected, but it does show that default-model aggregate
+semantics can fail after correct structural grounding and dispatch.
+
+The next architecture inspection identified duplicate model presentation in
+the same adapter. Native ToolSpecs are already supplied through the provider's
+tool channel, yet the full schemas are repeated inside the user JSON
+`tool_menu`; target identity summaries are repeated again in verb descriptions
+after already appearing in `grounding_index`. The next correction removes only
+those non-authoritative duplicates. It does not introduce another world,
+planner or semantic preprocessing stage.

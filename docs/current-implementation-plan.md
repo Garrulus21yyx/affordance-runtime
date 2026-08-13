@@ -123,7 +123,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `REOPENED_AGENT_SEMANTICS / STRUCTURE_FIRST_LIVE_4_OF_5 / TOOL_SCHEMA_CONTRADICTION_CLOSED / CONTROL_DECISION_TRACE_GAP / GENERALIZATION_OPEN` | Clean `97918e1` produced a focused structural `visual-addition` success and a valid full run at only 1/5; safe paths localized two `click` failures to `parameters.target` and one observation failure to `parameters.assurance`. The generic `b2f3dac` correction made every entity target explicit and observation arguments unambiguously empty. Its clean full rerun returned to valid 4/5 with the bounded gate accepted, zero invalid arguments and zero repairs: four cases succeeded entirely from structural sources. The residual made two no-gain `RequestObservation` decisions and no execution, but the persisted trace omits the resolved observation modality. The next slice is typed control-decision observability only; no task classifier, second planner, color/count rule or alternate execution path is admitted. See the [schema-alignment evidence](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md), [d325 evidence](evidence/2026-08-14-structure-first-five-witness-d325360.md), [control-context/focused evidence](evidence/2026-08-14-structure-first-control-context-ccea342.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `REOPENED_AGENT_SEMANTICS / STRUCTURE_FIRST_LIVE_4_OF_5 / TOOL_SCHEMA_CONTRADICTION_CLOSED / CONTROL_TRACE_IMPLEMENTED / DUPLICATE_NATIVE_TOOL_PROJECTION / GENERALIZATION_OPEN` | The generic `b2f3dac` explicit-target correction cleanly returned the GLM-4.6V cohort to valid 4/5 with zero invalid arguments/repairs and structural-only success. `f28779f` now persists typed observation subject/modality/assurance without changing behavior. Per user direction, live diagnostics then returned to default `glm-4.1v-thinking-flashx`: its focused `visual-addition` run directly dispatched structural fill and Submit but received authoritative terminal failure, with no observation, image or schema error. Architecture inspection found the native ToolSpecs duplicated inside user JSON and entity mappings duplicated in tool descriptions. The next generic slice removes that repeated projection; no task classifier, second planner, arithmetic/color/count rule or alternate execution path is admitted. See the [schema-alignment evidence](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md), [d325 evidence](evidence/2026-08-14-structure-first-five-witness-d325360.md), [control-context/focused evidence](evidence/2026-08-14-structure-first-control-context-ccea342.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -131,14 +131,14 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 
 ## Next admitted slice
 
-The immediate next gate is a typed observability slice for non-action control
-decisions. The existing benchmark trace must retain the public modality,
-assurance and subject from a resolved `RequestObservation`, just as action
-selections retain their public grounding. It must not record private provider
-responses or change decision, acquisition, binding or execution behavior. A
-focused clean-SHA residual rerun may follow only to determine whether the agent
-repeats structural observation or requests visual evidence that the acquisition
-path fails to produce. A changed score alone does not close generalization.
+The immediate next slice removes duplicate model-facing projection in the same
+grounded adapter. Native requests must carry task + Unified World/history once
+in the user message and ToolSpecs once in the provider-native tool channel.
+Compact-JSON transport may retain the inline menu because it has no native tool
+channel. Per-tool descriptions must refer to `grounding_index` rather than
+repeat every E-ref/role/label tuple. This changes neither catalog authority nor
+decision/acquisition/binding/execution behavior. Targeted transport tests and a
+clean default-4.1V diagnostic are required before any further semantic change.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and
