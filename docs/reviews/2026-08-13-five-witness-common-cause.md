@@ -132,11 +132,47 @@ keyword, task ID or submit guard in Runtime. They are respectively persistent
 set semantics and multimodal aggregate semantics, already within the declared
 scope of the existing LocalObjective algebra and model role.
 
-The next common boundary is the task-capability contract. The frozen external
-breadth manifest declares only low-level `required_primitives`; it labels both
-remaining cases as `activate` and cannot state whether persistent set,
-aggregate, sequence or no LocalObjective semantics are required. Consequently
-the runner can currently only enable the proposer for the entire cohort or for
-none of it. The admitted fix is an explicit, generic task/manifest capability
-consumed by the existing composition. Derivation from benchmark IDs, task-name
-substrings, labels or observed pass/fail is prohibited.
+The next common boundary is agent planning and memory, not another task-family
+classifier. The frozen external breadth manifest declares only low-level
+`required_primitives`; it even labels visual addition as `activate`. That data
+cannot safely drive open semantic behavior. A task or manifest may require a
+generic planning capability, but the agent must decide the plan's semantics.
+Derivation from benchmark IDs, task-name substrings, labels or observed pass/fail
+is prohibited.
+
+## SOTA responsibility correction and bounded-history falsification
+
+Current computer-use systems do not make the harness enumerate open GUI task
+semantics. Native systems put perception, task decomposition, milestone
+tracking, reflection and action choice in the model. Compositional systems put
+high-level planning in a manager agent, action generation in a worker agent and
+localization in grounding experts. In both forms the harness supplies
+observations and a bounded action interface, executes actions, returns new
+observations/errors, and owns safety/control. BrowserGym likewise exposes an
+observation/action/reward environment over Playwright rather than implementing
+task-family policies.
+
+This comparison invalidates a stronger interpretation of the preceding
+task-capability proposal: Runtime and benchmark code must not enumerate
+`set/aggregate/sequence` task families and branch behavior on them. A manifest
+may declare whether planning, visual perception or interaction capabilities are
+available/required, but cannot become a semantic router. Open semantic choice
+remains agent work.
+
+Repository inspection found that `AgentContext` already owned a bounded typed
+history of up to 12 turns, while grounded-tools projected only the final turn.
+Commit `31720e4` closes that loss in place: earlier turns enter one
+`interaction_history`, the final turn remains the nonduplicated
+`previous_tool_result`, and private target identities are still translated only
+to current call-local E-refs. It adds no memory owner, planner or protocol.
+
+The clean-SHA rerun is [valid negative
+evidence](../evidence/runs/p5-m4-6-e-step13-five-witness-seed7-31720e4/report.json):
+2/5 succeeded, all cases reached grounded action execution, and the visual gate
+accepted. This does not show that history reduced performance. The newly failed
+grid case chose the wrong coordinate on its first turn, when history was empty;
+the shades case also submitted on its first turn; visual addition again supplied
+the wrong aggregate. Both two-turn pie cases consumed history and succeeded.
+The 3/5 and 2/5 runs therefore demonstrate model decision variance, not a
+directional performance result. Multi-seed held-out evidence is required before
+claiming an improvement or regression.
