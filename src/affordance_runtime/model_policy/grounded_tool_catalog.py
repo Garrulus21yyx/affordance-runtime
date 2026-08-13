@@ -581,7 +581,7 @@ def _append_task_program_tool(
 ) -> None:
     """Expose one stable whole-task semantic compiler operation."""
 
-    predicate = _predicate_transport_schema()
+    predicate = _task_program_predicate_transport_schema()
     domains = [item.value for item in ScopeEntityDomain]
     extents = [item.value for item in ScopeExtent]
     model_actions = ["click", "type", "select", "press", "drag", "navigate", "scroll", "set_value"]
@@ -675,6 +675,28 @@ def _task_program_scope(raw: Mapping[str, object], step_key: str) -> ScopeSpec:
         extent,
         entity_domain=ScopeEntityDomain(str(raw.get("scope_entity_domain", "structured"))),
     )
+
+
+def _task_program_predicate_from_transport(value: Mapping[str, object]):
+    kind = str(value.get("kind") or "")
+    if kind == "dnf":
+        raw_clauses = value.get("clauses")
+        if not isinstance(raw_clauses, tuple | list):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        clauses = []
+        for clause in raw_clauses:
+            atoms = clause.get("atoms") if isinstance(clause, Mapping) else None
+            if not isinstance(atoms, tuple | list):
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            clauses.append({"all_of": list(atoms)})
+        normalized = {"any_of": clauses}
+    elif kind:
+        normalized = {"any_of": [{"all_of": [dict(value)]}]}
+    elif "any_of" in value:
+        normalized = dict(value)
+    else:
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+    return predicate_from_transport(normalized)
 
 
 def _append_compound_set_objective_tool(
@@ -896,6 +918,73 @@ def _predicate_transport_schema(*, include_visual: bool = True) -> dict[str, obj
     )
 
 
+def _task_program_predicate_transport_schema() -> dict[str, object]:
+    """Model-facing atom-first predicate; Runtime normalizes it to bounded DNF."""
+
+    atom = {
+        "oneOf": [
+            _object_schema(
+                {
+                    "kind": {"type": "string", "const": "fact_equals"},
+                    "field_name": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "expected": {},
+                    "negated": {"type": "boolean"},
+                },
+                ("kind", "field_name", "expected"),
+            ),
+            _object_schema(
+                {
+                    "kind": {"type": "string", "const": "compare"},
+                    "field_name": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "operator": {"type": "string", "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in"]},
+                    "expected": {},
+                    "negated": {"type": "boolean"},
+                },
+                ("kind", "field_name", "operator", "expected"),
+            ),
+            _object_schema(
+                {
+                    "kind": {"type": "string", "const": "visual_concept"},
+                    "text": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "negated": {"type": "boolean"},
+                },
+                ("kind", "text"),
+            ),
+            _object_schema(
+                {
+                    "kind": {"type": "string", "const": "visual_attribute"},
+                    "text": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "negated": {"type": "boolean"},
+                },
+                ("kind", "text"),
+            ),
+        ]
+    }
+    dnf = _object_schema(
+        {
+            "kind": {"type": "string", "const": "dnf"},
+            "clauses": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": _object_schema(
+                    {
+                        "atoms": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "items": atom,
+                        }
+                    },
+                    ("atoms",),
+                ),
+            },
+        },
+        ("kind", "clauses"),
+    )
+    return {"oneOf": [*atom["oneOf"], dnf]}
+
+
 def _append_set_assessment_tool(
     context: AgentContext,
     ref_by_target: Mapping[str, str],
@@ -1084,13 +1173,13 @@ def resolve_grounded_tool_call(
                     ObjectiveStep(
                         f"task-step:{step_key}",
                         EntitySelector(
-                            predicate_from_transport(selector),
+                            _task_program_predicate_from_transport(selector),
                             ScopeEntityDomain(str(raw.get("entity_domain", "structured"))),
                         ),
                         ActionTemplate(action, parameters=dict(raw.get("parameters") or {})),
                         (
                             EntitySelector(
-                                predicate_from_transport(postcondition),
+                                _task_program_predicate_from_transport(postcondition),
                                 ScopeEntityDomain(
                                     str(
                                         raw.get(
@@ -1115,7 +1204,7 @@ def resolve_grounded_tool_call(
                     SetObjective(
                         f"set-objective:{step_key}",
                         scope,
-                        predicate_from_transport(predicate),
+                        _task_program_predicate_from_transport(predicate),
                         SetQuantifier(str(raw["quantifier"])),
                         ActionTemplate(action, parameters=dict(raw.get("parameters") or {})),
                     )
@@ -1135,14 +1224,14 @@ def resolve_grounded_tool_call(
                 AggregateObjective(
                     f"aggregate-objective:{step_key}",
                     scope,
-                    predicate_from_transport(source),
+                    _task_program_predicate_from_transport(source),
                     ValueExtractor(
                         ValueExtractorKind.CONSTANT if operator is AggregateOperator.COUNT else ValueExtractorKind.FACT,
                         value_field,
                         1,
                     ),
                     operator,
-                    predicate_from_transport(destination),
+                    _task_program_predicate_from_transport(destination),
                     action,
                     "value",
                     AggregateOutputFormat.INTEGER_STRING,
