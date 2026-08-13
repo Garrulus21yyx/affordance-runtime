@@ -22,6 +22,7 @@ from affordance_runtime.model_policy.port import (
     StructuredDecisionModelPort,
     StructuredObjectiveModelPort,
 )
+from affordance_runtime.model_policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderCallOrchestrator,
     ProviderCallPolicy,
@@ -29,8 +30,6 @@ from affordance_runtime.model_policy.provider_orchestrator import (
 from affordance_runtime.model_policy.tool_contracts import DYNAMIC_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import FallbackModelPort, ModelConfig, model_port_from_environment
-
-STRUCTURED_PACKAGE_PROTOCOL = "structured_package.v2"
 
 
 def model_policy_from_environment(

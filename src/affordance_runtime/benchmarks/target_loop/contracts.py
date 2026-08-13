@@ -14,6 +14,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    normalize_decision_capabilities,
+)
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import ActionEvaluator, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
@@ -287,6 +291,17 @@ class BenchmarkComposition:
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
     local_objective_proposer: object | None = None
+    required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "required_decisions",
+            normalize_decision_capabilities(
+                self.required_decisions,
+                field_name="benchmark composition required_decisions",
+            ),
+        )
 
 
 @dataclass(frozen=True)

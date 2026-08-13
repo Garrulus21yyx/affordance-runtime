@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    normalize_decision_capabilities,
+)
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
@@ -55,6 +59,13 @@ class AgentDecisionPorts:
             getattr(self.local_objective_proposer, "propose", None)
         ):
             raise TypeError("AgentDecisionPorts objective proposer is invalid")
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return normalize_decision_capabilities(
+            getattr(self.action_policy, "supported_decisions", frozenset()),
+            field_name="action policy supported_decisions",
+        )
 
 
 class ActionEvaluator(Protocol):

@@ -604,3 +604,36 @@ PRODUCT INGRESS / SESSION CONTINUATION / PROTOCOL CAPABILITY OPEN
 LEGACY DEFAULT RETAINED, FEATURE-FROZEN
 CONVERGENCE IMPLEMENTATION NOT YET VERIFIED
 ```
+
+## 12. 实施记录：模型 action 协议能力切片
+
+2026-08-13 本切片实现了 Phase 2 的前三个边界，但不代表整个迁移关闭：
+
+- 当前 GUI visual benchmark 主协议由
+  `PRIMARY_BENCHMARK_ACTION_PROTOCOL = grounded_tools.v2` 唯一声明；Step-13 gate
+  不再复制字符串。历史冻结的 structured breadth profile 保持 compatibility 证据，未改写历史口径。
+- `structured_package.v2` 显式支持完整的七种 `DecisionCapability`；
+  `dynamic_tools.v1` 和 action phase 的 `grounded_tools.v2` 只支持
+  `select_action / request_observation / request_action_page`。objective phase 不冒充 action
+  capability。
+- `BenchmarkComposition.required_decisions` 将 benchmark 所需控制能力传给
+  `TargetRuntime`。构造时若不是 declared capability 的子集，Runtime 在 session、环境 reset
+  和模型调用前抛出带 required/supported/missing 事实的 typed
+  `UnsupportedCompositionError`。
+- provider orchestrator、model policy、pacing 和 instrumentation 包装链保持能力声明透明；
+  fallback ports 若声明不同能力会在 orchestrator 构造时失败。
+- 当前 primary benchmark composition 要求 tool action 三种控制能力；adapter 不能根据 task
+  名称或 case 名称推断、扩大该集合。
+
+仍未完成、不能混入本切片 closure claim 的工作：
+
+- action adapter 与 objective adapter 的静态类型拆分，以及删除 `phase + cast`；
+- objective proposer 的 `NotRequired / NeedsInput / Unsupported` outcome 代数；
+- product 默认入口切换、target-default benchmark 和 legacy 物理删除门禁。
+
+因此此时更准确的状态是：
+
+```text
+MODEL ACTION PROTOCOL CAPABILITIES IMPLEMENTED, OFFLINE VERIFIED
+OBJECTIVE PROTOCOL / PRODUCT DEFAULT / LEGACY DELETION OPEN
+```

@@ -32,6 +32,9 @@ from affordance_runtime.benchmarks.external_smoke.pacing import (
     PacedLocalObjectiveProposer,
     validate_pacing_budget,
 )
+from affordance_runtime.benchmarks.model_protocol import (
+    PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
+)
 from affordance_runtime.benchmarks.target_loop.contracts import (
     CASE_SCHEMA_VERSION,
     BenchmarkCase,
@@ -322,6 +325,7 @@ def _target_case(
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
             local_objective_proposer=paced_objective,
+            required_decisions=PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
         )
 
     return BenchmarkCase(

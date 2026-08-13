@@ -18,6 +18,7 @@ from affordance_runtime.model_policy.model_port_bridge import (
 )
 from affordance_runtime.model_policy.objective_policy import ModelBackedLocalObjectiveProposer
 from affordance_runtime.model_policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model_policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderAttemptReceipt,
     ProviderAttemptStatus,
@@ -48,4 +49,5 @@ __all__ = [
     "DYNAMIC_TOOLS_PROTOCOL",
     "DynamicToolDecisionAdapter",
     "serialize_agent_context",
+    "STRUCTURED_PACKAGE_PROTOCOL",
 ]

@@ -7,6 +7,10 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    normalize_decision_capabilities,
+)
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
@@ -44,6 +48,13 @@ class ModelBackedAgentPolicy:
         transport_timeout = getattr(self.port, "transport_timeout_s", None)
         if transport_timeout is not None and transport_timeout >= self.call_timeout_s:
             raise ValueError("model transport timeout must be strictly below the policy deadline")
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return normalize_decision_capabilities(
+            getattr(self.port, "supported_decisions", frozenset()),
+            field_name="decision model port supported_decisions",
+        )
 
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
         object.__setattr__(self, "last_metadata", None)

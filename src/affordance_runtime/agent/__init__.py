@@ -23,6 +23,13 @@ if TYPE_CHECKING:
         PendingKind,
         ProgressDelta,
     )
+    from affordance_runtime.agent.decision_capability import (
+        ALL_DECISION_CAPABILITIES,
+        TOOL_ACTION_DECISION_CAPABILITIES,
+        DecisionCapability,
+        UnsupportedComposition,
+        UnsupportedCompositionError,
+    )
     from affordance_runtime.agent.decisions import (
         Abort,
         AskUser,
@@ -68,6 +75,10 @@ _EXPORTS = {
     "AcquisitionSummary": ("affordance_runtime.agent.control_transition", "AcquisitionSummary"),
     "AdmissionSummary": ("affordance_runtime.agent.control_transition", "AdmissionSummary"),
     "AdmissionStatus": ("affordance_runtime.agent.control_transition", "AdmissionStatus"),
+    "ALL_DECISION_CAPABILITIES": (
+        "affordance_runtime.agent.decision_capability",
+        "ALL_DECISION_CAPABILITIES",
+    ),
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
     "AgentEpisodeRunner": ("affordance_runtime.agent.episode_runner", "AgentEpisodeRunner"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
@@ -83,6 +94,10 @@ _EXPORTS = {
     ),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
+    "DecisionCapability": (
+        "affordance_runtime.agent.decision_capability",
+        "DecisionCapability",
+    ),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
@@ -96,6 +111,10 @@ _EXPORTS = {
     "RuntimeFailure": ("affordance_runtime.agent.runtime_failure", "RuntimeFailure"),
     "SelectAction": ("affordance_runtime.agent.decisions", "SelectAction"),
     "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
+    "TOOL_ACTION_DECISION_CAPABILITIES": (
+        "affordance_runtime.agent.decision_capability",
+        "TOOL_ACTION_DECISION_CAPABILITIES",
+    ),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
     "UserInputRequest": ("affordance_runtime.agent.user_input", "UserInputRequest"),
@@ -105,6 +124,14 @@ _EXPORTS = {
     "UserInputResumeRejectionCode": (
         "affordance_runtime.agent.user_input",
         "UserInputResumeRejectionCode",
+    ),
+    "UnsupportedComposition": (
+        "affordance_runtime.agent.decision_capability",
+        "UnsupportedComposition",
+    ),
+    "UnsupportedCompositionError": (
+        "affordance_runtime.agent.decision_capability",
+        "UnsupportedCompositionError",
     ),
 }
 

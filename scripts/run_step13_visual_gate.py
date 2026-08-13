@@ -19,6 +19,7 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     run_provider_cohort_arm,
     write_provider_cohort_arm,
 )
+from affordance_runtime.benchmarks.model_protocol import PRIMARY_BENCHMARK_ACTION_PROTOCOL
 from affordance_runtime.model_policy import (
     local_objective_proposer_from_environment,
     model_policy_from_environment,
@@ -76,7 +77,7 @@ def main() -> int:
     policy = model_policy_from_environment(
         call_timeout_s=90,
         perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
-        interaction_protocol="grounded_tools.v2",
+        interaction_protocol=PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     )
     objective_proposer = local_objective_proposer_from_environment(call_timeout_s=90)
     outcome = asyncio.run(run_provider_cohort_arm(

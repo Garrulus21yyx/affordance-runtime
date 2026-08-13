@@ -2,6 +2,7 @@
 
 from typing import Protocol, TypeVar
 
+from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.model_boundary.failures import ModelFailure
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
@@ -24,7 +25,8 @@ class StructuredModelPort(Protocol[ResolvedT_co]):
 
 
 class StructuredDecisionModelPort(StructuredModelPort[ResolvedModelDecision], Protocol):
-    pass
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]: ...
 
 
 class StructuredObjectiveModelPort(StructuredModelPort[ResolvedLocalObjectiveProposal], Protocol):

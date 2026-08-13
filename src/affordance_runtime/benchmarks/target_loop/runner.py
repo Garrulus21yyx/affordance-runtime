@@ -201,6 +201,7 @@ def _build_runtime(composition, instrumentation):
         CountingActionEvaluator(composition.action_evaluator, instrumentation),
         instrument_task_evaluator(composition.task_evaluator, instrumentation),
         risk_policy=composition.risk_policy or RiskPolicy(),
+        required_decisions=composition.required_decisions,
     )
 
 

@@ -8,6 +8,10 @@ import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from affordance_runtime.agent.decision_capability import (
+    ALL_DECISION_CAPABILITIES,
+    DecisionCapability,
+)
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -25,6 +29,7 @@ from affordance_runtime.model_policy.grounding import (
     serialize_compact_decision_guide_v2,
 )
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
+from affordance_runtime.model_policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model_policy.schema_identity import decision_schema_digest, grounding_guide_digest
 from affordance_runtime.model_policy.spec import (
     SCHEMA_VERSION,
@@ -67,6 +72,14 @@ class ModelPortDecisionAdapter:
             raise ValueError("model policy bridge requires a zero retry configuration")
         object.__setattr__(self, "grounding_variant", DecisionGroundingVariant(self.grounding_variant))
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
+
+    @property
+    def interaction_protocol(self) -> str:
+        return STRUCTURED_PACKAGE_PROTOCOL
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return ALL_DECISION_CAPABILITIES
 
     @property
     def grounding_profile_version(self) -> str:

@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    UnsupportedComposition,
+    UnsupportedCompositionError,
+    normalize_decision_capabilities,
+)
 from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
 from affordance_runtime.agent.loop import AgentLoop
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
@@ -64,6 +70,7 @@ class TargetRuntime:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     recent_turn_limit: int = 12
+    required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
@@ -76,6 +83,17 @@ class TargetRuntime:
             raise TypeError("TargetRuntime intake is invalid")
         if not 1 <= self.recent_turn_limit <= 100:
             raise ValueError("TargetRuntime recent turn limit is invalid")
+        required = normalize_decision_capabilities(
+            self.required_decisions,
+            field_name="TargetRuntime required_decisions",
+        )
+        object.__setattr__(self, "required_decisions", required)
+        supported = self.decision_ports.supported_decisions
+        missing = required - supported
+        if missing:
+            raise UnsupportedCompositionError(
+                UnsupportedComposition(required, supported, missing)
+            )
 
     def build_loop(self) -> AgentLoop:
         return AgentLoop(

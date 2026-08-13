@@ -12,6 +12,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
+from affordance_runtime.agent.decision_capability import (
+    TOOL_ACTION_DECISION_CAPABILITIES,
+    DecisionCapability,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -139,6 +143,12 @@ class GroundedToolDecisionAdapter:
     @property
     def interaction_protocol(self) -> str:
         return GROUNDED_TOOLS_PROTOCOL
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        if self.phase is GroundedToolPhase.ACTION_SELECTION:
+            return TOOL_ACTION_DECISION_CAPABILITIES
+        return frozenset()
 
     @property
     def provider_id(self) -> str:

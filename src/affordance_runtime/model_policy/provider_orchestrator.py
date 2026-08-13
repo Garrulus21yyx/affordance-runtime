@@ -9,6 +9,10 @@ from enum import StrEnum
 from time import monotonic
 from typing import Generic, TypeVar
 
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    normalize_decision_capabilities,
+)
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -100,10 +104,30 @@ class ProviderCallOrchestrator(Generic[ResolvedT]):
         keys = tuple(getattr(port, "compatibility_key", "") for port in self.ports)
         if any(not key for key in keys) or len(set(keys)) != 1:
             raise ValueError("fallback providers must share one schema/capability profile")
+        declarations = tuple(getattr(port, "supported_decisions", None) for port in self.ports)
+        if any(item is not None for item in declarations):
+            if any(item is None for item in declarations):
+                raise ValueError("fallback decision ports must all declare supported decisions")
+            capabilities = tuple(
+                normalize_decision_capabilities(
+                    item,
+                    field_name="fallback port supported_decisions",
+                )
+                for item in declarations
+            )
+            if len(set(capabilities)) != 1:
+                raise ValueError("fallback providers must support the same decisions")
 
     @property
     def transport_timeout_s(self) -> float:
         return self.policy.total_elapsed_deadline_s
+
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]:
+        return normalize_decision_capabilities(
+            getattr(self.primary_port, "supported_decisions", frozenset()),
+            field_name="primary port supported_decisions",
+        )
 
     @property
     def primary_port(self) -> StructuredModelPort[ResolvedT]:
