@@ -413,3 +413,20 @@ provider attempts were 16 versus 8, and total tokens were 29,716 versus 18,927.
 Three GLM-4.6V turns required bounded schema repair, while every selected action
 still resolved and dispatched through the same existing protocol. No product
 branch, reviewer, task semantic rule, or benchmark-specific behavior was added.
+
+### Screenshot-only numeric ablation
+
+A follow-up private diagnostic removed the action menu, DOM/world projection,
+history, binding and execution entirely. Both models received the exact same
+seed-7 initial screenshot and original goal, and were asked only which integer
+should be entered. The expected visible aggregate was 10. In the paired call,
+`glm-4.1v-thinking-flashx` returned 10 while `glm-4.6v` returned 11. A separate
+4.1V structured-output attempt had also semantically returned 11, although its
+thinking/answer wrapper failed the requested JSON format.
+
+This ablation demonstrates two bounded facts. First, the aggregate error can
+occur without GUI tools or finalization choice, so action-protocol complexity is
+not necessary for the failure. Second, neither this probe nor the five-case run
+establishes a deterministic 4.6V-over-4.1V ordering: visual counting is
+stochastic for this screenshot even at nominal temperature zero. The probe is
+diagnostic only, is not a benchmark score, and adds no production behavior.
