@@ -43,7 +43,12 @@ from affordance_runtime.model_policy.grounded_tool_port_bridge import (
 )
 from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
 from affordance_runtime.model_policy.tool_contracts import ToolCall
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig
+from affordance_runtime.model_port import (
+    ModelCallRecord,
+    ModelConfig,
+    StructuredOutputError,
+    StructuredOutputViolation,
+)
 from affordance_runtime.task import (
     ActionTemplate,
     FactEquals,
@@ -313,6 +318,39 @@ def test_grounded_objective_adapter_returns_only_objective_envelopes() -> None:
 
     assert isinstance(outcome, ResolvedLocalObjectiveOutcome)
     assert isinstance(outcome.outcome, LocalObjectiveNotRequired)
+
+
+def test_grounded_schema_retry_returns_the_safe_field_violation_to_the_model() -> None:
+    class RepairPort(_ObjectivePort):
+        calls: int = 0
+        repair_messages: tuple = ()
+
+        async def generate_structured(self, messages, output_schema, config):
+            self.calls += 1
+            if self.calls == 1:
+                raise StructuredOutputError(
+                    "private provider response",
+                    violations=(StructuredOutputViolation("target", "value_error"),),
+                )
+            self.repair_messages = tuple(messages)
+            return await super().generate_structured(messages, output_schema, config)
+
+    context = _context()
+    port = RepairPort()
+    adapter = GroundedObjectiveAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+    )
+
+    outcome = asyncio.run(adapter.generate(_objective_request(context)))
+
+    assert isinstance(outcome, ResolvedLocalObjectiveOutcome)
+    assert port.calls == 2
+    repair_system = port.repair_messages[0].content
+    assert isinstance(repair_system, str)
+    assert '"field_path":"target"' in repair_system
+    assert '"code":"value_error"' in repair_system
+    assert "private provider response" not in repair_system
 
 
 def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:

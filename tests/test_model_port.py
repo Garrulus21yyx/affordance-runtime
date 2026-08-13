@@ -217,7 +217,7 @@ def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> 
             model="remote-test",
             private_capture=capture,
         )
-        with pytest.raises(StructuredOutputError):
+        with pytest.raises(StructuredOutputError) as captured:
             asyncio.run(port.generate_structured([], Answer, ModelConfig()))
     finally:
         server.shutdown()
@@ -228,6 +228,10 @@ def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> 
     assert record["status"] == "schema_error"
     assert record["response_content"] == '{"wrong":true}'
     assert record["error"]
+    assert {(item.field_path, item.code) for item in captured.value.violations} == {
+        ("value", "missing"),
+        ("wrong", "extra_forbidden"),
+    }
 
 
 def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> None:

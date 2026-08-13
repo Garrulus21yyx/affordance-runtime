@@ -56,6 +56,7 @@ from affordance_runtime.model_port import (
     ProviderModelError,
     StructuredModelError,
     StructuredOutputError,
+    structured_output_repair_contract,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.world.schema_validation import validate_value_issue
@@ -268,10 +269,10 @@ class _GroundedAdapterBase:
             payload_type = _command_payload_type(specs, aliases)
             try:
                 payload = await self.port.generate_structured(messages, payload_type, self.config)
-            except StructuredOutputError:
+            except StructuredOutputError as exc:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _format_repair_messages(messages),
+                    _format_repair_messages(messages, exc),
                     payload_type,
                     self.config,
                 )
@@ -292,10 +293,10 @@ class _GroundedAdapterBase:
                 self.config,
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
             )
-        except StructuredOutputError:
+        except StructuredOutputError as exc:
             object.__setattr__(self, "last_schema_repair_count", 1)
             return await generate(
-                _format_repair_messages(messages),
+                _format_repair_messages(messages, exc),
                 specs,
                 self.config,
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
@@ -453,7 +454,7 @@ def _labeled_entity_operation_aliases(catalog) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _format_repair_messages(messages):
+def _format_repair_messages(messages, error: StructuredOutputError):
     system = messages[0]
     if not isinstance(system.content, str):
         raise ValueError("grounded command repair requires text system message")
@@ -462,7 +463,12 @@ def _format_repair_messages(messages):
             role="system",
             content=(
                 system.content + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
-                "current tool_menu and use only fields declared by that operation."
+                "current tool_menu and use only fields declared by that operation. Public validation contract: "
+                + json.dumps(
+                    structured_output_repair_contract(error),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
             ),
         ),
         *messages[1:],

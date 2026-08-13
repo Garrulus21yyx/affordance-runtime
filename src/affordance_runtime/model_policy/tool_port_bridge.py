@@ -48,6 +48,7 @@ from affordance_runtime.model_port import (
     ProviderModelError,
     StructuredModelError,
     StructuredOutputError,
+    structured_output_repair_contract,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.world.schema_validation import reject_private_parameter_values, validate_value_issue
@@ -225,10 +226,10 @@ class DynamicToolDecisionAdapter:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
             try:
                 payload = await self.port.generate_structured(messages, CompactToolCallPayload, self.config)
-            except StructuredOutputError:
+            except StructuredOutputError as exc:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _format_repair_messages(messages),
+                    _format_repair_messages(messages, exc),
                     CompactToolCallPayload,
                     self.config,
                 )
@@ -243,10 +244,10 @@ class DynamicToolDecisionAdapter:
                 self.config,
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
             )
-        except StructuredOutputError:
+        except StructuredOutputError as exc:
             object.__setattr__(self, "last_schema_repair_count", 1)
             return await generate(
-                _format_repair_messages(messages),
+                _format_repair_messages(messages, exc),
                 specs,
                 self.config,
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
@@ -292,7 +293,10 @@ def _messages(request, catalog, perception_profile, supports_multimodal):
     )
 
 
-def _format_repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMessage, ...]:
+def _format_repair_messages(
+    messages: tuple[ModelMessage, ...],
+    error: StructuredOutputError,
+) -> tuple[ModelMessage, ...]:
     system = messages[0]
     if not isinstance(system.content, str):
         raise ValueError("tool repair requires a text system message")
@@ -302,7 +306,12 @@ def _format_repair_messages(messages: tuple[ModelMessage, ...]) -> tuple[ModelMe
             content=(
                 system.content + "\n\nThe previous proposal was malformed. Return exactly one JSON object with only "
                 'the keys "tool" and "args". Copy one offered tool name exactly. The args object must '
-                "satisfy that tool's input_schema, including every required property."
+                "satisfy that tool's input_schema, including every required property. Public validation contract: "
+                + json.dumps(
+                    structured_output_repair_contract(error),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
             ),
         ),
         *messages[1:],

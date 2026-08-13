@@ -14,7 +14,11 @@ from affordance_runtime.model_policy.tool_port_bridge import (
     CompactToolCallPayload,
     DynamicToolDecisionAdapter,
 )
-from affordance_runtime.model_port import ModelCallRecord, StructuredOutputError
+from affordance_runtime.model_port import (
+    ModelCallRecord,
+    StructuredOutputError,
+    StructuredOutputViolation,
+)
 
 
 def _required_value_request(context):
@@ -106,10 +110,16 @@ def test_unknown_tool_is_typed_and_zero_package() -> None:
 
 def test_compact_transport_repairs_format_once_without_changing_gui_turn() -> None:
     class RepairPort(_CompactPort):
+        repair_messages: tuple = ()
+
         async def generate_structured(self, messages, output_schema, config):
             if self.calls == 0:
                 self.calls += 1
-                raise StructuredOutputError("malformed compact proposal")
+                raise StructuredOutputError(
+                    "malformed compact proposal",
+                    violations=(StructuredOutputViolation("args.value", "missing"),),
+                )
+            self.repair_messages = tuple(messages)
             return await super().generate_structured(messages, output_schema, config)
 
     async def scenario() -> None:
@@ -121,6 +131,11 @@ def test_compact_transport_repairs_format_once_without_changing_gui_turn() -> No
         assert not isinstance(outcome, ModelFailure)
         assert port.calls == 2
         assert adapter.last_schema_repair_count == 1
+        repair_system = port.repair_messages[0].content
+        assert isinstance(repair_system, str)
+        assert '"field_path":"args.value"' in repair_system
+        assert '"code":"missing"' in repair_system
+        assert "malformed compact proposal" not in repair_system
 
     asyncio.run(scenario())
 

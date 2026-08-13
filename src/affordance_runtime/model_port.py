@@ -103,8 +103,52 @@ class StructuredModelError(RuntimeError):
     """A provider, JSON, or strict-schema failure without secret-bearing payloads."""
 
 
+@dataclass(frozen=True)
+class StructuredOutputViolation:
+    """One bounded response-schema location safe to return to the model."""
+
+    field_path: str
+    code: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.field_path
+            or len(self.field_path) > 160
+            or re.fullmatch(r"[$A-Za-z0-9_.\[\]-]+", self.field_path) is None
+            or not self.code
+            or len(self.code) > 80
+            or re.fullmatch(r"[A-Za-z0-9_.-]+", self.code) is None
+        ):
+            raise ValueError("structured output violation is not safely bounded")
+
+
 class StructuredOutputError(StructuredModelError):
     """A redacted response-content failure eligible for one bounded schema retry."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        violations: tuple[StructuredOutputViolation, ...] = (),
+    ) -> None:
+        if len(violations) > 4 or any(
+            not isinstance(item, StructuredOutputViolation) for item in violations
+        ):
+            raise ValueError("structured output violations must be bounded and typed")
+        self.violations = tuple(violations)
+        super().__init__(message)
+
+
+def structured_output_repair_contract(error: StructuredOutputError) -> dict[str, object]:
+    """Build the one public, value-free schema-repair contract."""
+
+    return {
+        "repair_kind": "structured_output_schema",
+        "violations": [
+            {"field_path": item.field_path, "code": item.code}
+            for item in error.violations
+        ],
+    }
 
 
 class StructuredOutputMode(StrEnum):
@@ -210,6 +254,7 @@ class FallbackModelPort:
         failures: list[str] = []
         failure_details: list[str] = []
         output_failure_count = 0
+        output_violations: tuple[StructuredOutputViolation, ...] = ()
         for offset in range(len(self.ports)):
             port_index = (self.active_port_index + offset) % len(self.ports)
             port = self.ports[port_index]
@@ -219,6 +264,8 @@ class FallbackModelPort:
                 failures.append(f"{port.provider}:{type(exc).__name__}")
                 failure_details.append(f"{port.provider}:{_safe_failure_detail(exc)}")
                 output_failure_count += isinstance(exc, StructuredOutputError)
+                if isinstance(exc, StructuredOutputError) and not output_violations:
+                    output_violations = exc.violations
                 continue
             self.last_call = port.last_call
             self.failures = tuple(failures)
@@ -229,7 +276,10 @@ class FallbackModelPort:
         self.failures = tuple(failures)
         self.failure_details = tuple(failure_details)
         if output_failure_count == len(self.ports):
-            raise StructuredOutputError("all configured model profiles returned invalid structured output")
+            raise StructuredOutputError(
+                "all configured model profiles returned invalid structured output",
+                violations=output_violations,
+            )
         raise StructuredModelError("all configured model profiles failed")
 
 
@@ -352,6 +402,7 @@ class OpenAICompatibleModelPort:
                     raise TypeError("tool call arguments must be an object")
                 calls.append(ToolCall(function["name"], arguments))
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            violations = _schema_failure_violations(exc)
             self._capture_tool(
                 serialized_messages,
                 "schema_error",
@@ -360,7 +411,10 @@ class OpenAICompatibleModelPort:
                 response_id=str(response.get("id") or ""),
                 error=_schema_failure_summary(exc),
             )
-            raise StructuredOutputError("native tool-call response is invalid") from exc
+            raise StructuredOutputError(
+                "native tool-call response is invalid",
+                violations=violations,
+            ) from exc
         usage = response.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
@@ -452,6 +506,7 @@ class OpenAICompatibleModelPort:
                 _structured_json_content(content, output_schema),
             )
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            violations = _schema_failure_violations(exc)
             self._capture(
                 serialized_messages,
                 output_schema,
@@ -461,7 +516,8 @@ class OpenAICompatibleModelPort:
                 error=_schema_failure_summary(exc),
             )
             raise StructuredOutputError(
-                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
+                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
+                violations=violations,
             ) from exc
         usage = response.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
@@ -596,6 +652,7 @@ class OllamaModelPort:
             content = str(response["message"]["content"])
             parsed = output_schema.model_validate_json(content)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            violations = _schema_failure_violations(exc)
             self._capture(
                 messages,
                 output_schema,
@@ -604,7 +661,8 @@ class OllamaModelPort:
                 error=_schema_failure_summary(exc),
             )
             raise StructuredOutputError(
-                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
+                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
+                violations=violations,
             ) from exc
         prompt_tokens = int(response.get("prompt_eval_count") or 0)
         completion_tokens = int(response.get("eval_count") or 0)
@@ -876,15 +934,29 @@ def _reject_json_constant(value: str) -> None:
 def _schema_failure_summary(error: Exception) -> str:
     """Expose schema failure shape without retaining response field values."""
 
-    if isinstance(error, ValidationError):
-        parts = []
-        for item in error.errors()[:4]:
-            location = ".".join(str(part) for part in item.get("loc", ()))
-            parts.append(f"{location}:{item.get('type', 'validation_error')}")
-        return ",".join(parts) or "validation_error"
-    if isinstance(error, json.JSONDecodeError):
-        return "invalid_json"
+    violations = _schema_failure_violations(error)
+    if violations:
+        return ",".join(f"{item.field_path}:{item.code}" for item in violations)
     return type(error).__name__
+
+
+def _schema_failure_violations(error: Exception) -> tuple[StructuredOutputViolation, ...]:
+    if isinstance(error, ValidationError):
+        return tuple(
+            StructuredOutputViolation(
+                _safe_schema_token(".".join(str(part) for part in item.get("loc", ())), "$", 160),
+                _safe_schema_token(str(item.get("type") or "validation_error"), "validation_error", 80),
+            )
+            for item in error.errors()[:4]
+        )
+    if isinstance(error, json.JSONDecodeError):
+        return (StructuredOutputViolation("$", "invalid_json"),)
+    return ()
+
+
+def _safe_schema_token(value: str, fallback: str, limit: int) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_.\[\]$-]+", "_", value).strip("_")
+    return (normalized or fallback)[:limit]
 
 
 def _post_json(

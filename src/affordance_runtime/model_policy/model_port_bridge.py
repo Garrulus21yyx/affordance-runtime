@@ -49,6 +49,7 @@ from affordance_runtime.model_port import (
     ProviderModelError,
     StructuredModelError,
     StructuredOutputError,
+    structured_output_repair_contract,
 )
 
 
@@ -129,10 +130,10 @@ class ModelPortDecisionAdapter:
                     output_schema,
                     self.config,
                 )
-            except StructuredOutputError:
+            except StructuredOutputError as exc:
                 object.__setattr__(self, "last_schema_repair_count", 1)
                 payload = await self.port.generate_structured(
-                    _decision_schema_repair_messages(messages),
+                    _decision_schema_repair_messages(messages, exc),
                     output_schema,
                     self.config,
                 )
@@ -193,6 +194,7 @@ class ModelPortDecisionAdapter:
 
 def _decision_schema_repair_messages(
     messages: tuple[ModelMessage, ...],
+    error: StructuredOutputError,
 ) -> tuple[ModelMessage, ...]:
     repair_instruction = (
         "The previous response was rejected because it did not match the required typed decision. "
@@ -202,9 +204,14 @@ def _decision_schema_repair_messages(
     system = messages[0]
     if system.role != "system" or not isinstance(system.content, str):
         raise ValueError("decision repair requires one public text system instruction")
+    contract = json.dumps(
+        structured_output_repair_contract(error),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     repaired_system = ModelMessage(
         role="system",
-        content=f"{system.content}\n\n{repair_instruction}",
+        content=f"{system.content}\n\n{repair_instruction} Public validation contract: {contract}",
     )
     return (repaired_system, *messages[1:])
 
