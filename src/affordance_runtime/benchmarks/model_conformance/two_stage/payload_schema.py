@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from affordance_runtime.model_policy.spec import (
     AbortPayload,
     AskUserPayload,
+    EstablishLocalObjectivePayload,
     ProposeDonePayload,
     RequestActionPagePayload,
     RequestObservationPayload,
@@ -25,6 +26,7 @@ from .contracts import DecisionKind
 
 BRANCH_MODELS: Mapping[DecisionKind, type[BaseModel]] = {
     DecisionKind.SELECT_ACTION: SelectActionPayload,
+    DecisionKind.ESTABLISH_LOCAL_OBJECTIVE: EstablishLocalObjectivePayload,
     DecisionKind.REQUEST_OBSERVATION: RequestObservationPayload,
     DecisionKind.REQUEST_ACTION_PAGE: RequestActionPagePayload,
     DecisionKind.ASK_USER: AskUserPayload,

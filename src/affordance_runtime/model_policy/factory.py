@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-from affordance_runtime.agent.task_plan_preparation import CanonicalAgentTaskPlanPreparer
-from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
@@ -23,7 +21,6 @@ from affordance_runtime.model_policy.provider_orchestrator import (
 from affordance_runtime.model_policy.tool_contracts import DYNAMIC_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import FallbackModelPort, ModelConfig, model_port_from_environment
-from affordance_runtime.task_planner import StrictTaskPlanner
 
 STRUCTURED_PACKAGE_PROTOCOL = "structured_package.v2"
 
@@ -115,20 +112,6 @@ def model_policy_from_environment(
     return ModelBackedAgentPolicy(
         orchestrator,
         call_timeout_s=call_timeout_s,
-    )
-
-
-def task_plan_preparer_from_environment(
-    environment: Mapping[str, str] | None = None,
-) -> CanonicalAgentTaskPlanPreparer:
-    """Compose planning explicitly; never attach semantic authority to AgentPolicy."""
-
-    port = model_port_from_environment(environment)
-    if isinstance(port, FallbackModelPort):
-        raise ValueError("TaskPlan preparation profile forbids provider fallback")
-    return CanonicalAgentTaskPlanPreparer(
-        LLMIntentCompiler(port),
-        StrictTaskPlanner(port),
     )
 
 

@@ -6,8 +6,7 @@ PACKAGE = ROOT / "src" / "affordance_runtime"
 TARGET_CORE = (
     PACKAGE / "agent",
     PACKAGE / "task" / "contracts.py",
-    PACKAGE / "task" / "step_execution.py",
-    PACKAGE / "task" / "execution_control.py",
+    PACKAGE / "task" / "local_objective.py",
     PACKAGE / "world",
     PACKAGE / "execution" / "contracts.py",
     PACKAGE / "evaluation",
@@ -145,10 +144,10 @@ def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:
         for node in loop.body
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and node.target.id not in {"recent_turn_limit", "semantic_control_required"}
+        and node.target.id != "recent_turn_limit"
     }
 
-    assert len(collaborators) <= 9
+    assert len(collaborators) <= 8
 
 
 def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writes() -> None:

@@ -8,12 +8,11 @@
 ```text
 reset → initial ObservationAcquisition
 → evaluate current task state
-→ generate/admit TaskPlan when absent or typed replan is required
-→ select active StepSpec from authoritative PlanProgress
-→ materialize/refresh one StepExecutionState against current observation
-→ build Internal ActionSpace and current ActionChoiceCatalog
+→ optionally plan/replace milestones
+→ select LocalObjective
+→ build Internal ActionSpace and current page
 → project disposable AgentContext
-→ policy returns action/control-only AgentDecision with context_id
+→ policy returns typed AgentDecision with context_id
 → reject stale decision with zero execution
 → risk decision / human confirmation
 → bind current request
@@ -38,11 +37,10 @@ ActionSpace.
 
 ## 2. Loop state
 
-The serial target state contains admitted TaskSpec/TaskPlan, authoritative
-PlanProgress, exactly one active StepExecutionState, current observation and
-choice-catalog refs, an exact transition total plus bounded recent
-ControlTransition suffix, pending semantic confirmation, pending uncertain
-request, budget, and final result.
+The serial target state contains current observation ref, an exact transition
+total plus bounded recent ControlTransition suffix, optional TaskPlan and
+VerifiedTaskState/frontier, pending semantic confirmation, pending
+uncertain request, budget, and final result.
 Externally meaningful states are RUNNING, WAITING_USER,
 WAITING_CONFIRMATION, CANCELLED, DONE, BLOCKED, and FAILED.
 

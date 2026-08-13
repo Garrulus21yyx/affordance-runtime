@@ -5,8 +5,8 @@
 
 Current target authority:
 
-- [Canonical GUI Agent Execution Architecture](task-execution-authority-map.md)
-- [Canonical GUI Agent Authority Cutover Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+- [Target AgentLoop Authority Map](task-execution-authority-map.md)
+- [Unified World Interface and E2E AgentLoop Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 
 Current truth and scheduling:
 
@@ -19,19 +19,18 @@ Governance:
 - [Documentation Index](README.md)
 - [Documentation Governance](documentation-governance.md)
 - [Architecture Governance](architecture-governance-track.md)
-- [Canonical GUI Agent Execution Architecture](task-execution-authority-map.md)
+- [Task Execution Authority Map](task-execution-authority-map.md)
 
-The target center is the unified world interface and the single chain defined
-by the authority map: admitted TaskSpec/TaskPlan semantics, observation-bound
-active-step resolution, action-only Agent decisions, current binding, one
-dispatch, fresh evaluation, and plan/task progress. Adapters declare independent
-and post-action acquisition capabilities separately from evidence/source
-assurance; unsupported and failed acquisition stay typed. AgentLoopState remains
-current run-control authority, while a bounded decision-scoped
-ControlTransition records what just happened without becoming a durable ledger
-or replay authority. Schemas, owners, state transitions, ordering, and
-invariants are defined only in the authority map; this entrypoint does not
-restate them.
+The target center is the unified world interface and a short typed
+acquire–decide–execute/acquire–evaluate loop. Adapters declare independent and
+post-action acquisition capabilities separately from evidence/source assurance;
+unsupported and failed acquisition stay typed. AgentLoopState remains current
+run-control authority, while a bounded decision-scoped ControlTransition records
+what just happened without becoming a durable ledger or replay authority. One
+`local_objective_state` owns observation-grounded sequence, set, or aggregate
+execution relevance; it is established only after observation and never owns
+task legality or private bindings. Schemas and invariants remain solely in the
+authority map and scoped normative contracts linked above.
 
 TaskSpec/ActionContract/StateKernel/RuntimeCommitter documents describe the
 retained implementation baseline or archive history unless the target

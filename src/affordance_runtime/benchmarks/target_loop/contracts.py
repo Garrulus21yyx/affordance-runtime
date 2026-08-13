@@ -286,8 +286,6 @@ class BenchmarkComposition:
     action_evaluator: ActionEvaluator
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
-    task_plan_preparer: object | None = None
-    semantic_control_required: bool = False
 
 
 @dataclass(frozen=True)

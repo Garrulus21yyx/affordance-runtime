@@ -1,4 +1,4 @@
-"""Route active TaskPlan-step evidence obligations to source-specific providers."""
+"""Route local-objective evidence obligations to source-specific providers."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from io import BytesIO
 
 from PIL import Image
 
-from affordance_runtime.agent.attempt_receipt import safe_exception_class
-from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.task.aggregate_objective import (
     AggregateDisposition,
     AggregateObjectiveState,
@@ -40,20 +38,20 @@ from affordance_runtime.visual_disambiguation import VisualCandidate
 from affordance_runtime.visual_predicate_classification import VisualPredicateClassificationRequest
 
 
-async def resolve_visual_step_execution_evidence(session) -> bool:
+async def resolve_visual_local_objective_evidence(session) -> bool:
     """Resolve visual leaves without giving the provider scope or action authority."""
 
     classifier = getattr(session.environment, "visual_predicate_classifier", None)
     if classifier is None:
         return False
-    execution = session.state.active_step_execution
+    execution = session.state.local_objective_state
     if isinstance(execution, ObjectiveSequenceState) and execution.selector_resolution is not None:
         return await _resolve_selector(
             session,
             execution.selector_resolution,
             lambda resolved: setattr(
                 session.state,
-                "active_step_execution",
+                "local_objective_state",
                 install_sequence_selector_resolution(execution, resolved),
             ),
         )
@@ -81,7 +79,7 @@ async def resolve_visual_step_execution_evidence(session) -> bool:
     made_call = False
     try:
         for leaf in leaves:
-            current = session.state.active_step_execution
+            current = session.state.local_objective_state
             if not isinstance(current, SetObjectiveState | AggregateObjectiveState):
                 break
             leaf_digest = predicate_digest(leaf)
@@ -109,7 +107,7 @@ async def resolve_visual_step_execution_evidence(session) -> bool:
                 assessments = tuple((item.target_id, by_ref[item.ref].truth) for item in candidates)
                 evaluator_id = _evaluator_id(classifier)
                 if isinstance(current, SetObjectiveState):
-                    session.state.active_step_execution = install_visual_leaf_assessments(
+                    session.state.local_objective_state = install_visual_leaf_assessments(
                         current,
                         session.state.current_observation,
                         leaf,
@@ -117,7 +115,7 @@ async def resolve_visual_step_execution_evidence(session) -> bool:
                         evaluator_id=evaluator_id,
                     )
                 else:
-                    session.state.active_step_execution = install_aggregate_visual_leaf_assessments(
+                    session.state.local_objective_state = install_aggregate_visual_leaf_assessments(
                         current,
                         session.state.current_observation,
                         leaf,
@@ -131,9 +129,9 @@ async def resolve_visual_step_execution_evidence(session) -> bool:
                 )
                 made_call = True
                 _record_success(session.environment, len(returned))
-    except Exception as exc:
+    except Exception:
         _record_failure(session.environment)
-        _raise_evidence_failure(session, exc)
+        return False
     return _commit_attempts(session, attempted) if made_call else False
 
 
@@ -187,9 +185,9 @@ async def _resolve_selector(session, resolution: SelectorResolutionState, instal
                 )
                 made_call = True
                 _record_success(session.environment, len(returned))
-    except Exception as exc:
+    except Exception:
         _record_failure(session.environment)
-        _raise_evidence_failure(session, exc)
+        return False
     if not made_call:
         return False
     install(current)
@@ -223,7 +221,7 @@ async def _resolve_aggregate_destination(session, state: AggregateObjectiveState
             ),
             enumerator=session.state.scope_enumerator,
         )
-    session.state.active_step_execution = current
+    session.state.local_objective_state = current
     return True
 
 
@@ -298,16 +296,6 @@ def _record_success(environment, count):
 def _record_failure(environment):
     if hasattr(environment, "visual_predicate_classification_failure_count"):
         environment.visual_predicate_classification_failure_count += 1
-
-
-def _raise_evidence_failure(session, exc: Exception) -> None:
-    session.pending_runtime_failure = RuntimeFailure(
-        FailureStage.ACQUISITION,
-        FailureKind.INVALID_OUTPUT if isinstance(exc, ValueError) else FailureKind.CALL_FAILED,
-        "visual_evidence_provider_failed",
-        exception_class=safe_exception_class(exc),
-    )
-    raise exc
 
 
 def _commit_attempts(session, attempted):

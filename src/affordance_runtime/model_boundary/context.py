@@ -89,7 +89,7 @@ class AgentProgressView:
     unresolved_criteria: BoundedSection[str]
     unresolved_outputs: BoundedSection[str]
     events: BoundedSection[AgentProgressEventView]
-    active_plan_step: bool = False
+    local_objective_open: bool = False
     truncated: bool = False
 
 
@@ -166,48 +166,6 @@ class AgentGroundingIndexView:
 
 
 @dataclass(frozen=True)
-class AgentExecutionControlView:
-    """Disposable projection of Runtime-owned active-step authority."""
-
-    mode: str
-    disposition: str
-    reason_code: str
-    allowed_action_ids: tuple[str, ...] = field(default=(), repr=False)
-    candidate_count: int = 0
-    matched_count: int = 0
-    certified: bool = False
-    predicate: Mapping[str, object] = field(default_factory=dict)
-    predicate_digest: str = ""
-    candidate_target_ids: tuple[str, ...] = field(default=(), repr=False)
-    unknown_target_ids: tuple[str, ...] = field(default=(), repr=False)
-    evidence_needs: tuple[str, ...] = ()
-    semantic_mode: str = ""
-    objective_parameters: Mapping[str, object] = field(default_factory=dict, repr=False)
-
-    def __post_init__(self) -> None:
-        allowed = tuple(self.allowed_action_ids)
-        candidates = tuple(self.candidate_target_ids)
-        unknown = tuple(self.unknown_target_ids)
-        if (
-            self.mode not in {"control_only", "member_actions_only", "blocked"}
-            or len(allowed) != len(set(allowed))
-            or self.candidate_count < 0
-            or self.matched_count < 0
-            or self.matched_count > self.candidate_count
-            or (self.predicate_digest and len(self.predicate_digest) != 64)
-            or len(candidates) != len(set(candidates))
-            or not set(unknown).issubset(candidates)
-        ):
-            raise ValueError("execution control projection is invalid")
-        object.__setattr__(self, "allowed_action_ids", allowed)
-        object.__setattr__(self, "candidate_target_ids", candidates)
-        object.__setattr__(self, "unknown_target_ids", unknown)
-        object.__setattr__(self, "evidence_needs", tuple(self.evidence_needs))
-        object.__setattr__(self, "predicate", freeze_json(self.predicate))
-        object.__setattr__(self, "objective_parameters", freeze_json(self.objective_parameters))
-
-
-@dataclass(frozen=True)
 class AgentContext:
     context_id: str
     task: AgentTaskView
@@ -222,7 +180,6 @@ class AgentContext:
     control_feedback: AgentControlFeedbackView | None = None
     image_inputs: tuple[AgentImageInput, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
-    execution_control: AgentExecutionControlView | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -232,7 +189,3 @@ class AgentContext:
             raise TypeError("AgentContext image inputs must be bounded and typed")
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")
-        if self.execution_control is not None and not isinstance(
-            self.execution_control, AgentExecutionControlView
-        ):
-            raise TypeError("AgentContext execution control must be typed")

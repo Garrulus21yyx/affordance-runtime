@@ -141,8 +141,9 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     catalog = compile_grounded_tool_catalog(context)
 
     assert target.target_id in dict(context.grounding.target_refs)
-    assert not [spec.name for spec in catalog.specs if spec.name.startswith("establish_")]
-    assert any(spec.name == "click" for spec in catalog.specs)
+    assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
+        "establish_local_objective"
+    ]
 
 
 def test_exact_lattice_relation_is_available_before_model_target_selection() -> None:
@@ -170,8 +171,9 @@ def test_exact_lattice_relation_is_available_before_model_target_selection() -> 
 
     catalog = compile_grounded_tool_catalog(context)
 
-    assert not [spec.name for spec in catalog.specs if spec.name.startswith("establish_")]
-    assert any(spec.name == "click" for spec in catalog.specs)
+    assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
+        "establish_local_objective"
+    ]
 
 
 def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> None:
@@ -202,8 +204,10 @@ def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> N
 
     catalog = compile_grounded_tool_catalog(context)
 
-    assert any(spec.name == "click" for spec in catalog.specs)
-    assert not any(spec.name.startswith("establish_") for spec in catalog.specs)
+    assert not any(spec.name == "click" for spec in catalog.specs)
+    assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
+        "establish_local_objective"
+    ]
 
 
 def _raw_grid():

@@ -21,6 +21,12 @@ _MODULE_EXPORTS = {
         "refresh_aggregate_objective_state",
     },
     "affordance_runtime.task.intent_context": {"IntentContext", "IntentExcerpt", "IntentSourceKind"},
+    "affordance_runtime.task.local_objective": {
+        "LocalObjective", "LocalObjectiveState", "establish_local_objective",
+        "local_objective_action_parameters", "local_objective_allowed_action_ids", "local_objective_authority_digest",
+        "local_objective_complete", "local_objective_observation_id",
+        "refresh_local_objective",
+    },
     "affordance_runtime.task.selector_resolution": {
         "SelectorResolutionDisposition", "SelectorResolutionState", "install_selector_visual_leaf_assessments",
         "resolve_entity_selector",

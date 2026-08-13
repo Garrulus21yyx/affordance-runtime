@@ -3,7 +3,7 @@
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
 > **Updated:** 2026-08-13
 > **Current reviewed M4.5-B closure SHA:** `NONE`
-> **Target:** [Canonical GUI Agent Execution Architecture](task-execution-authority-map.md)
+> **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 
 ## Status vocabulary
 
@@ -17,27 +17,24 @@ The old transactional `Coordinator → RuntimeDelta → RuntimeCommitter →
 StateKernel` path remains the current product baseline/default. It is frozen
 against new product capability but has not been deleted.
 
-The exact-head live gate exposed an authority inversion. The implementation
-candidate now reuses admitted
-`TaskSpec -> TaskPlan<StepSpec.execution>` semantics through an explicit planning
-composition seam after initial observation, while the recurrent Agent interface
-contains action/control decisions only. It does not import the transactional
-Coordinator/StateKernel execution core or require pre-observation GUI identity.
-
-The authority cutover is implemented in the working candidate: explicit
-TaskSpec/TaskPlan preparation occurs after initial observation; admitted
-`StepSpec.execution` materializes the sole active step state; and the recurrent
-Agent can return only action/control decisions. The former exact-head five-case
-`0/5` run remains negative evidence for `f3ca2df`, not evidence for this
-candidate. Fresh five-case execution is pending, so this is implementation
-completion without verified benchmark closure.
+The target GUI `AgentLoop` and transactional workflow runtime are now explicitly
+separate. AgentLoop starts from `TaskGoal + IntentContext`, observes before any
+page target identity exists, and uses the current `WorldObservation ->
+ActionSpace -> AgentContext -> AgentDecision` chain. The incorrectly imported
+`LLMIntentCompiler -> TaskSpec -> StrictTaskPlanner -> TaskPlan` start path,
+hidden policy preparer capability, semantic-control mode, AgentLoop TaskProgress,
+and execution-control projection were deleted. Canonical TaskSpec/TaskPlan remain
+owned by the separate Coordinator workflow runtime. Set/sequence/aggregate
+reducers now enter through one typed LocalObjective decision, share one state
+slot and one lifecycle owner, and re-resolve on every fresh observation. Fresh
+live benchmark revalidation remains open.
 
 The target path now has:
 
 | Capability | Status |
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
-| canonical TaskPlan / StepSpec contracts | `INTEGRATED_NON_DEFAULT / LIVE_VERIFICATION_OPEN`; explicitly composed into AgentLoop and materialized into the active step state |
+| canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
@@ -59,13 +56,13 @@ The target path now has:
 | P5-M0.1.1 one-shot context epoch | `CLOSED`; monotonic per-session policy generation, stale/page-cycle/replay zero-call |
 | ContextIdentity | `CLOSED`; task/observation/action-space/page/progress/pending/generation digest |
 | IntentContextView | `CLOSED_FOR_BOUNDED_CONTEXT_ONLY`; always `context_only`, never TaskGoal authority |
-| active step rolling execution | `INTEGRATED_NON_DEFAULT / LIVE_VERIFICATION_OPEN`; one plan-produced sequence/set/aggregate execution slot refreshes on fresh observations |
+| LocalObjective rolling execution | `INTEGRATED_NON_DEFAULT / IMPLEMENTED_NOT_LIVE_VERIFIED`; one post-observation semantic contract, legality and risk unchanged |
 | action paging | `CLOSED_FOR_DETERMINISTIC_CURSOR_PAGER`; traversable Runtime-issued cursor; only current-page IDs admitted |
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
 | current M0 model projections | `INTEGRATED_NON_DEFAULT` |
 | P5-M1 model policy core | `CLOSED`; canonical context projection, adapter-owned single parse to typed decision, and Runtime admission |
-| P5-M1.1 strict decision boundary | `CUTOVER_IMPLEMENTED / LIVE_VERIFICATION_OPEN`; seven-variant recurrent union contains action/control decisions only |
+| P5-M1.1 strict decision boundary | `REOPENED / DETERMINISTIC_ARCHITECTURE_VERIFIED / NOT_LIVE_VERIFIED`; duplicate/non-finite/depth/node/byte limits and canonical eight-variant spec including one LocalObjective constructor; raw-response policy compatibility path deleted |
 | P5-M1.1 existing ModelPort bridge | `CLOSED`; existing transport owner, outer deadline, zero retry/no fallback, typed metadata/failures |
 | local HTTP provider-transport proof | `CLOSED`; one request/one execution plus 429/500/schema/deadline zero-call proofs |
 | deterministic ActionEvaluator/TaskEvaluator | `RETAINED` |
@@ -676,8 +673,8 @@ may branch on a MiniWoB task slug, case ID, readiness cohort,
 reviewed-source rule, reward or answer; only benchmark inventory/reporting
 owners may retain that metadata. BrowserGym-specific mechanics remain isolated
 to the environment adapter, while the capability contracts are intended for
-real GUI surfaces. The active convergence path is the
-[Canonical GUI Agent Authority Cutover Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md).
+real GUI surfaces. The
+active convergence plan is the [LocalObjective de-specialization record](superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md).
 
 The active plan now also freezes the v1 complexity diagnosis and reuse boundary.
 `grounded_tools.v2` replaces the full-context scrub + pre-policy hypothesis +
@@ -689,16 +686,12 @@ are reused or outsourced behind typed ports. Runtime continues to own current
 epoch, ActionSpace/ref resolution, admission, dispatch truth/no-replay,
 risk/confirmation, evidence validation and task disposition.
 
-P5-E is `AUTHORITY_CUTOVER_IMPLEMENTED_NOT_LIVE_VERIFIED`. The target
-composition now prepares and admits TaskSpec/TaskPlan explicitly after the
-initial observation, materializes the active `StepSpec.execution` into one
-`active_step_execution` slot, and refreshes that semantic state against every
-fresh observation. The recurrent Agent decision/tool schemas are action-only;
-the former LocalObjective decision, state slot, facade and provider payload are
-deleted. Focused and full local regression evidence is recorded in the active
-cutover execution record. A fresh five-case live gate, held-out variations and
-fresh-context review are still required; therefore `GENERALIZATION_OPEN` and no
-benchmark closure claim remains the truthful status.
+P5-E is `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED /
+LIVE_REVALIDATION_PENDING`. Sequence, set and aggregate semantics enter through
+one `EstablishLocalObjective` decision after observation, share one state slot,
+and re-resolve from current evidence. The old TaskFrontier, VerifiedTaskState,
+RequirementHypothesis and objective-operation package are deleted. Focused and
+full-suite verification do not yet constitute a fresh live benchmark closure.
 
 ## Control-transition and long-horizon gap status
 

@@ -118,9 +118,8 @@ multi-source backend may additionally scope offers by source, modality,
 assurance and cost. Capability=true never asserts that a particular call
 succeeded, and high-assurance evidence never grants an unavailable capture.
 
-`ObservationOrchestrator` selects surfaces from TaskGoal/TaskSpec, the active
-StepExecutionState's evidence obligations, budget, coverage gaps, and conflicts.
-`WorldFusion` returns accepted semantic
+`ObservationOrchestrator` selects surfaces from TaskGoal, LocalObjective,
+budget, coverage gaps and conflicts. `WorldFusion` returns accepted semantic
 targets, explicit conflicts, or a need to reobserve; it does not maintain a
 long-lived probabilistic execution authority.
 

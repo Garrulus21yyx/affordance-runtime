@@ -143,7 +143,6 @@ async def run_provider_cohort_arm(
     visual_predicate_classifier=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
-    task_plan_preparer=None,
 ) -> PerceptionArmOutcome:
     """Run one explicitly named provider cohort without weakening frozen A/B."""
 
@@ -158,7 +157,6 @@ async def run_provider_cohort_arm(
         visual_predicate_classifier=visual_predicate_classifier,
         progress_dir=progress_dir,
         progress_profile=progress_profile,
-        task_plan_preparer=task_plan_preparer,
     )
 
 
@@ -174,7 +172,6 @@ async def _run_arm(
     visual_predicate_classifier=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
-    task_plan_preparer=None,
 ):
     adapter = _adapter(policy, require_frozen_mistral=require_frozen_mistral)
     if adapter.perception_profile is not perception_profile:
@@ -194,7 +191,6 @@ async def _run_arm(
         visual_point_grounder,
         visual_candidate_disambiguator,
         visual_predicate_classifier,
-        task_plan_preparer,
     )
     target = replace(
         target,
