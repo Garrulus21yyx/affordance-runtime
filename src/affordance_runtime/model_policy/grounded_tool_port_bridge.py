@@ -183,8 +183,13 @@ class GroundedToolDecisionAdapter:
             catalog = compile_grounded_tool_catalog(request.policy_context)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
-            messages = _messages(catalog.view, request, self.port.supports_multimodal)
-            calls = await self._call(messages, catalog.specs)
+            automatic = _runtime_sequential_member_call(request.policy_context, catalog)
+            messages = ()
+            if automatic is not None:
+                calls = (automatic,)
+            else:
+                messages = _messages(catalog.view, request, self.port.supports_multimodal)
+                calls = await self._call(messages, catalog.specs)
             if not calls:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
             if len(calls) != 1:
@@ -249,7 +254,7 @@ class GroundedToolDecisionAdapter:
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
         return ModelDecisionResponse(
             json.dumps(_package_payload(package), separators=(",", ":"), ensure_ascii=False),
-            _metadata(self.port, self.transport_kind),
+            _metadata(self.port, self.transport_kind, include_record=automatic is None),
         )
 
     async def _call(self, messages, specs) -> tuple[ToolCall, ...]:
@@ -319,6 +324,18 @@ def _messages(view, request, supports_multimodal):
         ModelMessage(role="system", content=_SYSTEM_PROMPT),
         ModelMessage(role="user", content=tuple(parts)),
     )
+
+
+def _runtime_sequential_member_call(context, catalog) -> ToolCall | None:
+    """Consume only a Runtime-authorized singleton continuation without inference."""
+
+    control = context.set_control
+    if control is None or control.semantic_mode != "member_execution":
+        return None
+    execute = tuple(item for item in catalog.specs if item.name == "execute_objective")
+    if len(execute) != 1 or execute[0].input_schema.get("required"):
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    return ToolCall("execute_objective", {})
 
 
 def _command_payload_type(specs):
@@ -461,8 +478,8 @@ def _package_payload(package):
     return {"objective_operation": {"kind": "none"}, "decision": value}
 
 
-def _metadata(port, transport_kind):
-    record = port.last_call
+def _metadata(port, transport_kind, *, include_record=True):
+    record = port.last_call if include_record else None
     return ModelMetadata(
         provider_id=port.provider,
         model_id=port.model,

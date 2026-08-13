@@ -379,6 +379,50 @@ def test_compact_command_accepts_typed_fact_value_and_quantifier() -> None:
     assert payload.quantifier == "exactly_one"
 
 
+def test_runtime_authorized_member_continuation_skips_model_inference() -> None:
+    async def scenario():
+        context = _context(mandatory_semantic_control=True)
+        login_target = next(
+            target_id
+            for target_id, ref in context.grounding.target_refs.items()
+            if next(item for item in context.grounding.entities if item.ref == ref).label == "Login"
+        )
+        login_action = next(
+            item.action_id for item in context.actions.options if item.target_id == login_target
+        )
+        execution_context = replace(
+            context,
+            set_control=AgentSetControlView(
+                mode="member_actions_only",
+                disposition="ready_for_next_member",
+                reason_code="member_action_required",
+                allowed_action_ids=(login_action,),
+                candidate_count=1,
+                matched_count=1,
+                predicate={"kind": "fact_equals", "field_name": "identity.entity_id"},
+                predicate_digest="a" * 64,
+                candidate_target_ids=(login_target,),
+                semantic_mode="member_execution",
+            ),
+        )
+        port = _CompactPort([])
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+        )
+
+        response = await adapter.generate(_build_request(execution_context))
+
+        assert not isinstance(response, ModelFailure)
+        parsed = parse_agent_decision(response.raw_payload, context.context_id)
+        assert isinstance(parsed, SelectAction)
+        assert parsed.action_id == login_action
+        assert port.calls == 0
+        assert response.metadata.total_tokens == 0
+
+    asyncio.run(scenario())
+
+
 def test_selected_grounded_operation_gets_one_typed_argument_repair_without_changing_operation() -> None:
     async def scenario():
         context = _context()
