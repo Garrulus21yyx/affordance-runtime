@@ -55,3 +55,18 @@ other schema mismatch. The next diagnostic-only change records the already
 computed public violation code/paths, selected operation and operation-match
 boolean. It stores no argument values or provider response text and changes no
 Runtime behavior.
+
+## Safe-path result at `97918e1`
+
+The added safe trace first captured a focused positive witness:
+`visual-addition` completed as structural `fill -> activate` in two policy
+calls, with zero images, visual sources and repairs. A subsequent clean full
+run completed 5/5 with valid evidence but only 1/5 success. Its three tool
+failures identified `parameters.target` for two selected `click` calls and
+`parameters.assurance` for `observe_visual`.
+
+These paths exposed a broader prose/schema contradiction rather than an
+aggregate-task contract: descriptions encouraged the model to emit an E-ref or
+assurance while the selected singleton/observation schema prohibited it. The
+generic correction and the separate four-of-five blue set-completeness failure
+are recorded in the [schema-alignment evidence](2026-08-14-grounded-tool-schema-alignment-97918e1.md).

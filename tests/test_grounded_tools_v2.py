@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, replace
 
 import numpy as np
+import pytest
 from browsergym_adapter_support import ax_node, raw_observation
 
 from affordance_runtime.agent import RequestObservation, SelectAction
@@ -38,7 +39,11 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model_policy.grounded_tool_contracts import (
+    GroundedToolPhase,
+    GroundedToolResolutionCode,
+    GroundedToolResolutionError,
+)
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
     GroundedObjectiveAdapter,
@@ -120,7 +125,7 @@ class _ActionPort:
             latency_ms=1,
             response_id="response:action",
         )
-        return output_schema.model_validate({"op": "click"})
+        return output_schema.model_validate({"op": "click", "target": "E3"})
 
 
 def _context(*, local_objective=None):
@@ -449,14 +454,44 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
     )
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     assert {item.name for item in catalog.specs} == {"fill"}
+    fill = catalog.specs[0]
+    assert to_json_compatible(fill.input_schema) == {
+        "type": "object",
+        "properties": {
+            "target": {"type": "string", "enum": ["E2"]},
+            "text": {"type": "string"},
+        },
+        "required": ["target", "text"],
+        "additionalProperties": False,
+    }
     decision = resolve_grounded_tool_call(
         catalog,
-        ToolCall("fill", {"text": "UV"}),
+        ToolCall("fill", {"target": "E2", "text": "UV"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(decision, SelectAction)
     assert decision.parameters == {"value": "UV"}
     assert decision.action_id.startswith("action:")
+
+
+def test_single_target_action_never_uses_implicit_runtime_target_inference() -> None:
+    context = _context()
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    click = next(item for item in catalog.specs if item.name == "click")
+
+    assert to_json_compatible(click.input_schema) == {
+        "type": "object",
+        "properties": {"target": {"type": "string", "enum": ["E3"]}},
+        "required": ["target"],
+        "additionalProperties": False,
+    }
+    with pytest.raises(GroundedToolResolutionError) as caught:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall("click", {}),
+            expected_context_id=context.context_id,
+        )
+    assert caught.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -> None:

@@ -329,8 +329,6 @@ def resolve_grounded_tool_call(
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref = str(call.arguments.get("target") or "")
     actions = dict(binding.actions)
-    if not ref and len(binding.actions) == 1:
-        ref = binding.actions[0][0]
     if ref not in actions:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
     parameters = {"value": call.arguments[binding.parameter_field]} if binding.parameter_field else {}
@@ -382,11 +380,10 @@ def _shape_key(verb: str, schema: Mapping[str, object]) -> str:
 
 
 def _verb_schema(verb: str, refs: list[str], parameter_schema: Mapping[str, object]):
-    properties: dict[str, object] = {}
-    required: list[str] = []
-    if len(refs) > 1:
-        properties["target"] = {"type": "string", "enum": refs}
-        required.append("target")
+    properties: dict[str, object] = {
+        "target": {"type": "string", "enum": refs},
+    }
+    required: list[str] = ["target"]
     parameter_field = ""
     if verb == "fill":
         properties["text"] = {"type": "string"}
@@ -416,7 +413,10 @@ def _local_objective_schema() -> dict[str, object]:
 
 def _tool_description(verb: str, refs: list[str], entity_by_ref: Mapping[str, AgentGroundingEntityView]) -> str:
     values = [f"{ref}({entity_by_ref[ref].role},{entity_by_ref[ref].label!r})" for ref in refs]
-    return f"{verb} one target authorized by the current Runtime action page. Targets: {'; '.join(values)}"[:500]
+    return (
+        f"{verb} one target authorized by the current Runtime action page. "
+        f"Pass exactly one required target argument from: {'; '.join(values)}"
+    )[:500]
 
 
 def _task_brief(context: AgentContext):
@@ -495,4 +495,7 @@ def _observation_tool_description(context: AgentContext, capability) -> str:
             f"A current {capability.modality} source is already present with "
             f"{current.projection_coverage} projection; refresh only when new currentness evidence is needed."
         )
-    return f"{state} Requested assurance: {capability.assurance}."
+    return (
+        f"{state} This tool takes no arguments; Runtime supplies the declared "
+        f"{capability.assurance} assurance."
+    )

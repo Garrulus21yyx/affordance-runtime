@@ -529,3 +529,26 @@ did not enforce the prompt's `operation_must_remain` rule. The corrective slice
 keeps native repair native with exactly one offered ToolSpec and constrains a
 single compact operation with Literal just like a multi-operation catalog.
 Argument validation, one-repair budget and Runtime resolution remain unchanged.
+
+## Stable entity-action envelope after safe violation tracing
+
+The next clean diagnostic at `97918e1` demonstrated substantial stochastic
+variance: a focused structural `visual-addition` run succeeded in two actions,
+while the same-profile full five-case run was evidence-valid at only 1/5. The
+new safe paths made three failures comparable: two selected `click` calls
+violated `parameters.target`, and `observe_visual` violated
+`parameters.assurance`.
+
+This uncovered another shared protocol ambiguity. Action prose told the model
+to copy E-refs, but the schema removed `target` for singleton verb groups and
+Runtime inferred it privately. Observation prose exposed assurance even though
+the tool accepted no arguments. The correction closes the public envelope:
+every entity action explicitly requires a current public E-ref, while
+observation is explicitly a no-argument selection whose assurance is supplied
+by Runtime capability authority. No model-visible action ID, selector or
+binding is exposed.
+
+The same full run also selected four blue entities and then Submit, causing an
+authoritative terminal failure. That is a distinct agent set-completeness
+error. It remains open and is not converted into a color counter, singleton
+heuristic, Submit rule or benchmark-specific verifier.

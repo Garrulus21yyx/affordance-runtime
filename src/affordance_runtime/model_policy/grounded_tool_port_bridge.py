@@ -77,7 +77,9 @@ Before choosing, reason internally in this order:
 4. Choose the single next action that advances one unmet requirement without undoing completed work.
 Tasks may require multiple turns. Before any action that may finalize or commit the task, verify that every
 observable prerequisite in the instruction is already satisfied.
-Copy the chosen operation and E* target exactly from the current tool menu and grounding_index. When recovery
+Follow the chosen tool's input schema exactly. For an entity action, copy its required public E* target exactly
+from the current tool menu and grounding_index. Do not add target, assurance, or other arguments when the selected
+tool schema does not declare them. When recovery
 forbids retry or requires a strategy change, do not repeat the same operation, target, and arguments.
 Return only the required command. Do not invent screen points, private selectors, IDs, tools, targets, or explanations.
 The Runtime independently validates action authority, currentness, risk, execution, effects, and task completion.
