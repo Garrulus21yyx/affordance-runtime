@@ -312,3 +312,53 @@ that candidate, but must not infer task completion from a task name, benchmark
 ID, button label or hidden expected value. Such a review must reuse the
 existing `AgentLoop`/model policy boundary; it cannot introduce a second
 planner or execution path.
+
+## Prompt-shape SOTA comparison and admitted first change
+
+The active grounded-tools action request already includes the original task,
+marked screenshot, public grounding index, current state, bounded action/result
+history, and each offered tool's name, description and JSON argument schema.
+Tool definition or task delivery is therefore not absent. The prompt-shape gap
+is narrower: its system message began with a command to choose one operation,
+did not explicitly establish a persistent GUI-agent role, and described useful
+signals without prescribing a stable deliberation order.
+
+Primary implementation comparisons:
+
+- [UI-TARS computer-use prompt](https://github.com/bytedance/UI-TARS/blob/582f3a7e/codes/ui_tars/prompt.py)
+  explicitly starts with “You are a GUI agent”, supplies task, screenshots and
+  action history, enumerates the action space, and asks one response to contain
+  a small plan/Thought followed by one Action. It does not require a separate
+  manager or verifier for each short step and does not include task-specific
+  few-shot examples in this prompt.
+- [Agent S2 worker procedural memory](https://github.com/simular-ai/Agent-S/blob/main/gui_agents/s2/memory/procedural_memory.py)
+  gives the worker one current subtask plus screenshot/history/tool methods and
+  asks a single response to verify the previous action, analyze the screenshot,
+  choose the next semantic action and ground exactly one executable action.
+  Manager/reflection modules are additional roles for longer-horizon planning
+  and trajectory failure, not a Runtime task-family classifier.
+- [AgentLab GenericAgent configuration](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/agents/generic_agent/agent_configs.py)
+  enables thinking and abstract/concrete format examples in representative
+  configurations. Its own GPT-3.5 comments say explicit plan and critic are
+  usually detrimental while thinking and examples are useful, including for
+  MiniWoB. This is model/configuration evidence, not a universal law.
+- [OpenAI Computer Use](https://developers.openai.com/api/docs/guides/tools-computer-use)
+  uses the same iterative shape: task plus current screenshot, model-selected
+  UI actions, harness execution, fresh screenshot and repeat. It does not ask
+  the harness to compile arbitrary task semantics before action selection.
+
+The admitted first change therefore stays within the existing action adapter:
+the system prompt now establishes one GUI-agent role and requires an internal
+order of end-state identification, current observation analysis, previous
+effect verification, and one next action. It explicitly treats tasks as
+multi-turn and requires observable prerequisites to be checked before a
+finalizing/commit action. The wire remains one simple command and Runtime
+authority is unchanged.
+
+No few-shot example is added in this slice. The failed witnesses produced
+schema-valid, privately resolvable tool calls, so output formatting is not the
+shared failure. Any later examples must be abstract protocol examples selected
+by a predeclared held-out A/B; GUI task, label, benchmark and witness examples
+are prohibited. A separate manager, critic or verifier is likewise deferred
+until the single-agent prompt contract is measured and a shared residual cause
+demonstrates that another role is necessary.
