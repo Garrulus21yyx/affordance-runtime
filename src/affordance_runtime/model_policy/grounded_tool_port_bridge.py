@@ -413,10 +413,28 @@ class GroundedToolDecisionAdapter:
                     ProviderAttemptOrigin.LOCAL_CIRCUIT if exc.circuit_open else ProviderAttemptOrigin.NETWORK
                 ),
             )
-        except StructuredOutputError:
-            return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded command violated its flat schema")
-        except StructuredModelError:
-            return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded command response was invalid")
+        except StructuredOutputError as exc:
+            object.__setattr__(
+                self,
+                "last_internal_error_code",
+                f"{phase}:structured_output:{str(exc)[:180]}",
+            )
+            return _failure(
+                ModelFailureKind.SCHEMA_ERROR,
+                "grounded command violated its typed schema",
+                attempt_origin=self.last_attempt_origin,
+            )
+        except StructuredModelError as exc:
+            object.__setattr__(
+                self,
+                "last_internal_error_code",
+                f"{phase}:structured_model:{type(exc).__name__}",
+            )
+            return _failure(
+                ModelFailureKind.INVALID_RESPONSE,
+                "grounded command response was invalid",
+                attempt_origin=self.last_attempt_origin,
+            )
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             object.__setattr__(self, "last_internal_error_code", f"{phase}:{type(exc).__name__}")
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
