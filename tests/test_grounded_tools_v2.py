@@ -368,6 +368,32 @@ def test_compact_grounded_bridge_transports_typed_objective_decision() -> None:
     asyncio.run(scenario())
 
 
+def test_labeled_entity_ingress_accepts_familiar_verb_without_direct_dispatch() -> None:
+    async def scenario():
+        context = _context(mandatory_semantic_control=True)
+        password_ref = next(
+            item.ref for item in context.grounding.entities if item.label == "Password"
+        )
+        port = _CompactPort([{
+            "op": "fill",
+            "target": password_ref,
+            "text": "UV",
+        }])
+        adapter = GroundedToolDecisionAdapter(
+            port,
+            ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0),
+        )
+
+        response = await adapter.generate(_build_request(context))
+
+        assert not isinstance(response, ModelFailure)
+        parsed = parse_agent_decision(response.raw_payload, context.context_id)
+        assert isinstance(parsed, EstablishSetObjective)
+        assert parsed.parameters == {"value": "UV"}
+
+    asyncio.run(scenario())
+
+
 def test_compact_command_accepts_typed_fact_value_and_quantifier() -> None:
     payload = GroundedToolCommandPayload.model_validate({
         "op": "establish_click_where_grid_coordinate_equals",

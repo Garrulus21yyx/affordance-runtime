@@ -390,7 +390,7 @@ def _append_set_objective_tools(
                     },
                 }
                 specs.append(ToolSpec(
-                    _fact_objective_tool_name(verb, field_name, fact_index),
+                    _fact_objective_tool_name(verb, role, field_name, fact_index),
                     (
                         f'Establish a typed {verb} objective where public fact "{field_name}" '
                         f'for candidate role "{role}" equals the supplied value. '
@@ -518,9 +518,15 @@ def _fact_value_schema(values: tuple[object, ...]) -> dict[str, object] | None:
     return None
 
 
-def _fact_objective_tool_name(verb: str, field_name: str, index: int) -> str:
-    token = re.sub(r"[^a-z0-9]+", "_", field_name.casefold()).strip("_") or "fact"
-    value = f"establish_{verb}_where_{token}_equals"
+def _fact_objective_tool_name(
+    verb: str,
+    role: str,
+    field_name: str,
+    index: int,
+) -> str:
+    role_token = re.sub(r"[^a-z0-9]+", "_", role.casefold()).strip("_") or "entity"
+    field_token = re.sub(r"[^a-z0-9]+", "_", field_name.casefold()).strip("_") or "fact"
+    value = f"establish_{verb}_{role_token}_where_{field_token}_equals"
     if len(value) <= 64:
         return value
     digest = hashlib.sha256(f"{field_name}\0{index}".encode()).hexdigest()[:8]

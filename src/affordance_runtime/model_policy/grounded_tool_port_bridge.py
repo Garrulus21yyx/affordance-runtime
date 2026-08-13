@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -189,7 +191,11 @@ class GroundedToolDecisionAdapter:
                 calls = (automatic,)
             else:
                 messages = _messages(catalog.view, request, self.port.supports_multimodal)
-                calls = await self._call(messages, catalog.specs)
+                calls = await self._call(
+                    messages,
+                    catalog.specs,
+                    _labeled_entity_operation_aliases(catalog),
+                )
             if not calls:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
             if len(calls) != 1:
@@ -257,9 +263,9 @@ class GroundedToolDecisionAdapter:
             _metadata(self.port, self.transport_kind, include_record=automatic is None),
         )
 
-    async def _call(self, messages, specs) -> tuple[ToolCall, ...]:
+    async def _call(self, messages, specs, aliases=()) -> tuple[ToolCall, ...]:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
-            payload_type = _command_payload_type(specs)
+            payload_type = _command_payload_type(specs, aliases)
             try:
                 payload = await self.port.generate_structured(messages, payload_type, self.config)
             except StructuredOutputError:
@@ -267,7 +273,9 @@ class GroundedToolDecisionAdapter:
                 payload = await self.port.generate_structured(
                     _format_repair_messages(messages), payload_type, self.config,
                 )
-            spec = next((item for item in specs if item.name == payload.op), None)
+            alias_map = dict(aliases)
+            operation_name = alias_map.get(payload.op, payload.op)
+            spec = next((item for item in specs if item.name == operation_name), None)
             if spec is None and len(specs) == 1:
                 spec = specs[0]
             operation = spec.name if spec is not None else payload.op
@@ -338,8 +346,8 @@ def _runtime_sequential_member_call(context, catalog) -> ToolCall | None:
     return ToolCall("execute_objective", {})
 
 
-def _command_payload_type(specs):
-    names = tuple(item.name for item in specs)
+def _command_payload_type(specs, aliases=()):
+    names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
     if len(names) == 1:
@@ -350,6 +358,29 @@ def _command_payload_type(specs):
         f"GroundedToolCommand_{digest}",
         __base__=GroundedToolCommandPayload,
         op=(allowed_operation, ...),
+    )
+
+
+def _labeled_entity_operation_aliases(catalog) -> tuple[tuple[str, str], ...]:
+    """Accept familiar verb names only when every selectable entity has a public label."""
+
+    labels = {
+        str(item.get("ref", "")): str(item.get("label", "")).strip()
+        for item in catalog.view.grounding_index
+    }
+    proposed: dict[str, list[str]] = {}
+    for spec in catalog.specs:
+        match = re.fullmatch(r"establish_(.+?)_entity_objective(?:_\d+)?", spec.name)
+        if match is None:
+            continue
+        target = spec.input_schema.get("properties", {}).get("target")
+        refs = tuple(target.get("enum", ())) if isinstance(target, Mapping) else ()
+        if refs and all(labels.get(str(ref), "") for ref in refs):
+            proposed.setdefault(match.group(1), []).append(spec.name)
+    return tuple(
+        (verb, names[0])
+        for verb, names in sorted(proposed.items())
+        if len(names) == 1 and verb not in {item.name for item in catalog.specs}
     )
 
 
