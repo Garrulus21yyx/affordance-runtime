@@ -19,6 +19,8 @@ from affordance_runtime.task.hypothesis_contracts import (
     RequirementHypothesisState,
 )
 from affordance_runtime.task.planning_contracts import LocalObjective, TaskPlan
+from affordance_runtime.task.set_objective import SetDisposition
+from affordance_runtime.task.set_objective_state import SetObjectiveState, refresh_set_objective_state
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
@@ -53,6 +55,7 @@ class AgentLoopState:
     control_terminal_status: AgentLoopStatus | None = None
     plan: TaskPlan | None = None
     active_objective: LocalObjective | ActiveObjective | None = None
+    active_set_objective: SetObjectiveState | None = None
     verified_task_state: VerifiedTaskState | None = None
     requirement_hypotheses: RequirementHypothesisState = field(
         default_factory=RequirementHypothesisState,
@@ -109,6 +112,39 @@ class AgentLoopState:
         if not isinstance(reduced, ControlAccepted):
             raise ControlReductionError(reduced)
         self._install_control_reducer_state(reduced.state)
+        if (
+            self.active_set_objective is not None
+            and transition.after_observation_id
+            != self.active_set_objective.universe.observation_epoch
+        ):
+            action = transition.action_evaluation
+            intent = transition.intent
+            settled_members = {
+                *self.active_set_objective.candidate_entity_ids,
+                *(item.entity_id for item in self.active_set_objective.obligations),
+            }
+            certified_successor = (
+                self.active_set_objective.reduction.disposition is SetDisposition.CERTIFIED
+                and intent is not None
+                and intent.target_id not in settled_members
+            )
+            if certified_successor:
+                self.progress_revision += 1
+                return
+            acted_entity_id = (
+                intent.target_id
+                if intent is not None
+                and intent.semantic_action
+                == self.active_set_objective.objective.action_template.semantic_action
+                else ""
+            )
+            self.active_set_objective = refresh_set_objective_state(
+                self.active_set_objective,
+                self.current_observation,
+                acted_entity_id=acted_entity_id,
+                action_status=action.status if action is not None and acted_entity_id else None,
+                effect_evidence_refs=action.evidence_refs if action is not None and acted_entity_id else (),
+            )
         self.progress_revision += 1
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:

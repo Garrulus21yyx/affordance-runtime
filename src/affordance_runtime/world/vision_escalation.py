@@ -7,12 +7,10 @@ runtime facts; it performs no acquisition or model I/O.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.world.contracts import SurfaceObservation
-from affordance_runtime.task.set_objective import has_universal_quantifier
 
 
 class VisionEscalationMode(StrEnum):
@@ -29,8 +27,6 @@ class VisionEvidenceNeed(StrEnum):
     NONE = "none"
     OPEN_WORLD_ENTITY_DISCOVERY = "open_world_entity_discovery"
     SINGLE_TARGET_DISAMBIGUATION = "single_target_disambiguation"
-    OPEN_VOCABULARY_PREDICATE_CLASSIFICATION = "open_vocabulary_predicate_classification"
-    VISUAL_VALUE_REASONING = "visual_value_reasoning"
     POSTCONDITION_DIAGNOSIS = "postcondition_diagnosis"
 
 
@@ -49,96 +45,68 @@ class VisionEscalationDecision:
         }
 
 
-def decide_visual_escalation(
+def derive_visual_evidence_needs(
     structured: SurfaceObservation,
+    *,
+    explicitly_requested: bool = False,
+    terminal: bool = False,
+    postcondition_unresolved: bool = False,
+) -> tuple[VisionEvidenceNeed, ...]:
+    """Derive typed evidence obligations from current Runtime facts only."""
+
+    if terminal:
+        return ()
+    if explicitly_requested:
+        return (VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY,)
+    if postcondition_unresolved:
+        return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
+    if not structured.bindings:
+        return (VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY,)
+    if _actionable_targets_are_ambiguous(structured):
+        return (VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,)
+    return ()
+
+
+def decide_visual_escalation(
+    evidence_needs: tuple[VisionEvidenceNeed, ...],
     *,
     visual_available: bool,
     candidate_verification_available: bool | None = None,
     discovery_available: bool | None = None,
     diagnosis_available: bool | None = None,
-    predicate_classification_available: bool = False,
-    structured_predicate_available: bool = False,
     marked_candidate_policy_available: bool = False,
-    explicitly_requested: bool = False,
-    terminal: bool = False,
-    postcondition_unresolved: bool = False,
-    task_instruction: str = "",
 ) -> VisionEscalationDecision:
-    """Choose one current-epoch visual disposition.
+    """Route typed evidence obligations to one optional visual capability."""
 
-    Empty structured action authority and indistinguishable actionable targets
-    are concrete evidence gaps. Coverage alone is not sufficient: a truncated
-    inventory may still contain the unique current action, so it must not turn
-    provider presence into automatic acquisition.
-    """
-
-    if terminal:
+    if not evidence_needs:
         return VisionEscalationDecision(
             VisionEscalationMode.SKIP,
-            "terminal_state_needs_no_visual",
+            "structured_evidence_sufficient",
         )
-
-    requested_mode: VisionEscalationMode | None = None
-    reason_code = "structured_evidence_sufficient"
-    if explicitly_requested:
+    evidence_need = evidence_needs[0]
+    if evidence_need is VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY:
         requested_mode = VisionEscalationMode.DISCOVER_VISUAL_ENTITIES
-        reason_code = "explicit_visual_observation"
-        evidence_need = VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY
-    elif postcondition_unresolved:
+        reason_code = "open_world_entity_discovery_required"
+    elif evidence_need is VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS:
         requested_mode = VisionEscalationMode.DIAGNOSE_POSTCONDITION
         reason_code = "postcondition_visual_diagnosis"
-        evidence_need = VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS
-    elif not structured.bindings:
-        requested_mode = VisionEscalationMode.DISCOVER_VISUAL_ENTITIES
-        reason_code = "structured_action_unavailable"
-        evidence_need = VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY
-    elif _actionable_targets_are_ambiguous(structured):
-        if _requires_visual_value_reasoning(structured, task_instruction):
-            return VisionEscalationDecision(
-                VisionEscalationMode.SKIP,
-                "visual_value_reasoning_delegated_to_screenshot_policy",
-                VisionEvidenceNeed.VISUAL_VALUE_REASONING,
-            )
-        if has_universal_quantifier(task_instruction) and structured_predicate_available:
-            return VisionEscalationDecision(
-                VisionEscalationMode.SKIP,
-                "structured_set_predicate_available",
-                VisionEvidenceNeed.NONE,
-            )
-        if has_universal_quantifier(task_instruction) and not predicate_classification_available:
-            return VisionEscalationDecision(
-                VisionEscalationMode.SKIP,
-                "set_predicate_classification_delegated_to_policy",
-                VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION,
-            )
-        if marked_candidate_policy_available and not has_universal_quantifier(task_instruction):
+    elif evidence_need is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION:
+        if marked_candidate_policy_available:
             return VisionEscalationDecision(
                 VisionEscalationMode.SKIP,
                 "marked_candidate_choice_delegated_to_screenshot_policy",
                 VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
             )
         requested_mode = VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
-        if has_universal_quantifier(task_instruction):
-            reason_code = "open_vocabulary_predicate_classification_required"
-            evidence_need = VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
-        else:
-            reason_code = "structured_candidates_ambiguous"
-            evidence_need = VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
-    elif _requires_visual_value_reasoning(structured, task_instruction):
+        reason_code = "structured_candidates_ambiguous"
+    else:
         return VisionEscalationDecision(
-            VisionEscalationMode.SKIP,
-            "visual_value_reasoning_delegated_to_screenshot_policy",
-            VisionEvidenceNeed.VISUAL_VALUE_REASONING,
+            VisionEscalationMode.UNAVAILABLE,
+            "unsupported_visual_evidence_need",
+            evidence_need,
         )
-
-    if requested_mode is None:
-        return VisionEscalationDecision(VisionEscalationMode.SKIP, reason_code)
     mode_available = {
-        VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES: (
-            predicate_classification_available
-            if evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
-            else candidate_verification_available
-        ),
+        VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES: candidate_verification_available,
         VisionEscalationMode.DISCOVER_VISUAL_ENTITIES: discovery_available,
         VisionEscalationMode.DIAGNOSE_POSTCONDITION: diagnosis_available,
     }[requested_mode]
@@ -165,23 +133,3 @@ def _actionable_targets_are_ambiguous(structured: SurfaceObservation) -> bool:
         for target in candidates
     ]
     return len(set(descriptors)) < len(descriptors)
-
-
-_VISUAL_VALUE_PATTERN = re.compile(
-    r"\b(?:how many|count|sum|total number|calculate|addition|add up)\b",
-    re.IGNORECASE,
-)
-def _requires_visual_value_reasoning(
-    structured: SurfaceObservation,
-    instruction: str,
-) -> bool:
-    if not _VISUAL_VALUE_PATTERN.search(instruction):
-        return False
-    actionable = {
-        target.target_id: target
-        for target in structured.targets
-        if target.target_id in {binding.target_id for binding in structured.bindings}
-    }
-    roles = {target.role.casefold().strip() for target in actionable.values()}
-    primitives = {binding.primitive_action for binding in structured.bindings}
-    return bool(roles & {"textbox", "input", "spinbutton"} or primitives & {"fill", "type"})

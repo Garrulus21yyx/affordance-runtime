@@ -234,6 +234,47 @@ class AgentGroundingIndexView:
 
 
 @dataclass(frozen=True)
+class AgentSetControlView:
+    """Disposable projection of Runtime-owned quantified-objective authority."""
+
+    mode: str
+    disposition: str
+    reason_code: str
+    allowed_action_ids: tuple[str, ...] = field(default=(), repr=False)
+    candidate_count: int = 0
+    matched_count: int = 0
+    certified: bool = False
+    predicate: Mapping[str, object] = field(default_factory=dict)
+    predicate_digest: str = ""
+    candidate_target_ids: tuple[str, ...] = field(default=(), repr=False)
+    unknown_target_ids: tuple[str, ...] = field(default=(), repr=False)
+    evidence_needs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        values = tuple(self.allowed_action_ids)
+        candidates = tuple(self.candidate_target_ids)
+        unknown = tuple(self.unknown_target_ids)
+        evidence_needs = tuple(self.evidence_needs)
+        if (
+            self.mode not in {"control_only", "member_actions_only", "successor_actions", "blocked"}
+            or len(values) != len(set(values))
+            or self.candidate_count < 0
+            or self.matched_count < 0
+            or self.matched_count > self.candidate_count
+            or (self.predicate_digest and len(self.predicate_digest) != 64)
+            or len(candidates) != len(set(candidates))
+            or not set(unknown).issubset(candidates)
+            or any(not item.strip() for item in evidence_needs)
+        ):
+            raise ValueError("set control projection is invalid")
+        object.__setattr__(self, "allowed_action_ids", values)
+        object.__setattr__(self, "predicate", freeze_json(self.predicate))
+        object.__setattr__(self, "candidate_target_ids", candidates)
+        object.__setattr__(self, "unknown_target_ids", unknown)
+        object.__setattr__(self, "evidence_needs", evidence_needs)
+
+
+@dataclass(frozen=True)
 class AgentContext:
     context_id: str
     task: AgentTaskView
@@ -248,6 +289,7 @@ class AgentContext:
     control_feedback: AgentControlFeedbackView | None = None
     image_inputs: tuple[AgentImageInput, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
+    set_control: AgentSetControlView | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -257,3 +299,5 @@ class AgentContext:
             raise TypeError("AgentContext image inputs must be bounded and typed")
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")
+        if self.set_control is not None and not isinstance(self.set_control, AgentSetControlView):
+            raise TypeError("AgentContext set control must be typed")

@@ -93,18 +93,19 @@ identity; action-space admission and currentness own DOM execution authority.
 Region-proposer action claims are discarded at all current adapter boundaries;
 an unmatched V-ref remains observation-only.
 
-The BrowserGym adapter may publish current visible computed-style color family,
-selected state, and observation-only repeated DOM leaf-group counts. It does
-not expose fixture `data-*` answers, selectors, CSS classes, or new executable
-bindings. The generic quantified-objective compiler can use those public facts
-as a `FactEquals` predicate. Catalog consumes only the reducer disposition and
+The BrowserGym adapter may publish current visible computed-style color family
+as `appearance.color_family` and current selected state. It does not promote a
+repeated-leaf appearance heuristic into an exact count, and does not expose
+fixture `data-*` answers, selectors, CSS classes, or new executable bindings.
+The main Agent may explicitly establish a typed `FactEquals` objective from
+bounded public facts. Catalog consumes only the Runtime control directive and
 never branches on a color, task name or benchmark case. Runtime admission and
 DOM identity remain authoritative.
 
 Regular-lattice semantics follow the same rule. Current element bboxes and
 visible numeric label bboxes may derive row/column membership and Cartesian
-values. If the generic task-predicate compiler matches one public coordinate
-value to exactly one current actionable entity, the reducer exposes a singleton zero-target
-operation and privately retains its DOM action ID. It emits no model coordinate
+values. The main Agent can select one public coordinate value through the same
+generic typed objective tool; the reducer then exposes only the admitted member
+action and privately retains its DOM action ID. It emits no model coordinate
 or point. Incomplete, irregular, duplicate, ambiguous or multiple-grid evidence
 does not activate this closure.

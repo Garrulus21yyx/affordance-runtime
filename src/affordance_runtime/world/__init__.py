@@ -73,10 +73,11 @@ from affordance_runtime.world.source_profile import (
 )
 from affordance_runtime.world.view import AgentTargetView, AgentWorldView, build_agent_world_view
 from affordance_runtime.world.vision_escalation import (
-    VisionEvidenceNeed,
     VisionEscalationDecision,
     VisionEscalationMode,
+    VisionEvidenceNeed,
     decide_visual_escalation,
+    derive_visual_evidence_needs,
 )
 
 __all__ = [
@@ -143,6 +144,7 @@ __all__ = [
     "VisionEvidenceNeed",
     "VisionEscalationMode",
     "decide_visual_escalation",
+    "derive_visual_evidence_needs",
     "VerificationStrength",
     "build_agent_world_view",
     "assurance_satisfies",

@@ -5,7 +5,7 @@ import random
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import AgentLoopState, SelectAction
+from affordance_runtime.agent import AgentLoopState, EstablishSetObjective
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
     BrowserGymEntityIdentityMap,
 )
@@ -107,7 +107,7 @@ def test_irregular_or_duplicate_cells_do_not_publish_coordinates() -> None:
     assert result.memberships == ()
 
 
-def test_projection_publishes_derived_facts_and_catalog_closes_unique_target() -> None:
+def test_projection_publishes_generic_facts_for_model_selected_exact_objective() -> None:
     raw = _raw_grid()
     projection = _projection(raw)
     matching = [
@@ -144,23 +144,28 @@ def test_projection_publishes_derived_facts_and_catalog_closes_unique_target() -
     )
     catalog = compile_grounded_tool_catalog(context)
 
-    click = next(spec for spec in catalog.specs if spec.name == "click")
-    assert click.input_schema["properties"] == {}
-    assert "quantified objective" in click.description
+    establish = next(
+        spec for spec in catalog.specs if spec.name == "establish_click_fact_objective"
+    )
+    match = next(
+        value
+        for value in establish.input_schema["properties"]["match"]["enum"]
+        if value.startswith("role=clickable;field=grid_coordinate;")
+        and '"x":1' in value
+        and '"y":-2' in value
+    )
     package = resolve_grounded_tool_call(
         catalog,
-        ToolCall("click", {}),
+        ToolCall(establish.name, {"match": match, "quantifier": "exactly_one"}),
         expected_context_id=context.context_id,
     )
-    assert isinstance(package.decision, SelectAction)
-    selected = next(
-        option for option in context.actions.options
-        if option.action_id == package.decision.action_id
-    )
-    assert selected.target_id == target.target_id
+    assert isinstance(package.decision, EstablishSetObjective)
+    assert package.decision.predicate.field_name == "grid_coordinate"
+    assert package.decision.predicate.expected == {"x": 1, "y": -2}
+    assert target.target_id in package.decision.candidate_target_ids
 
 
-def test_exact_lattice_relation_closes_without_screenshot_marks() -> None:
+def test_exact_lattice_relation_is_available_without_screenshot_marks() -> None:
     raw = _raw_grid()
     raw.pop("screenshot")
     projection = _projection(raw)
@@ -185,8 +190,13 @@ def test_exact_lattice_relation_closes_without_screenshot_marks() -> None:
 
     catalog = compile_grounded_tool_catalog(context)
 
-    click = next(spec for spec in catalog.specs if spec.name == "click")
-    assert click.input_schema["properties"] == {}
+    establish = next(
+        spec for spec in catalog.specs if spec.name == "establish_click_fact_objective"
+    )
+    assert any(
+        value.startswith("role=clickable;field=grid_coordinate;")
+        for value in establish.input_schema["properties"]["match"]["enum"]
+    )
 
 
 def _raw_grid():

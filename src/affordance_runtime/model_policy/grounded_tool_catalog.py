@@ -9,9 +9,12 @@ from typing import Mapping
 
 from affordance_runtime.agent.decisions import (
     AgentDecisionPackage,
+    EstablishSetObjective,
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    SetPredicateAssessmentDecision,
+    SubmitSetPredicateAssessments,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import (
@@ -28,11 +31,17 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     ToolPolicyView,
 )
 from affordance_runtime.model_policy.set_objective_catalog import (
-    CatalogSetProjection,
-    project_catalog_set_objective,
+    SetCatalogDirective,
+    SetCatalogMode,
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.task.frontier_contracts import NoObjectiveOperation
+from affordance_runtime.task.set_objective import (
+    FactEquals,
+    PredicateTruth,
+    SetQuantifier,
+    VisualConcept,
+)
 from affordance_runtime.world.schema_validation import validate_value
 
 
@@ -57,6 +66,24 @@ class _ObserveBinding:
     assurance: str
 
 
+@dataclass(frozen=True)
+class _SetFactBinding:
+    semantic_action: str
+    choices: tuple[tuple[str, FactEquals, tuple[str, ...]], ...]
+
+
+@dataclass(frozen=True)
+class _SetVisualBinding:
+    semantic_action: str
+    candidates_by_role: tuple[tuple[str, tuple[str, ...]], ...]
+
+
+@dataclass(frozen=True)
+class _SetAssessmentBinding:
+    predicate_digest: str
+    refs: tuple[tuple[str, str], ...]
+
+
 def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
     if context.actions.options and (
         not context.grounding.entities or not context.grounding.target_refs
@@ -64,20 +91,28 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
-    set_projection = project_catalog_set_objective(context)
-    admitted_target_ids = set_projection.admitted_target_ids if set_projection is not None else ()
-    completed_member_ids = set_projection.completed_member_ids if set_projection is not None else ()
-    target_filter = admitted_target_ids[0] if len(admitted_target_ids) == 1 else ""
-    _reject_ambiguous_unmarked_targets(
-        context, ref_by_target, entity_by_ref, target_filter=target_filter,
-    )
+    set_directive = _projected_set_directive(context) if context.set_control is not None else None
+    allowed_action_ids = set_directive.allowed_action_ids if set_directive is not None else None
+    target_filter = ""
+    if set_directive is not None and set_directive.mode is SetCatalogMode.MEMBER_ACTIONS_ONLY:
+        admitted_targets = tuple(
+            option.target_id
+            for option in context.actions.options
+            if option.action_id in set_directive.allowed_action_ids
+        )
+        target_filter = admitted_targets[0] if len(set(admitted_targets)) == 1 else ""
+    if set_directive is None or set_directive.mode in {
+        SetCatalogMode.MEMBER_ACTIONS_ONLY,
+        SetCatalogMode.SUCCESSOR_ACTIONS,
+    }:
+        _reject_ambiguous_unmarked_targets(
+            context, ref_by_target, entity_by_ref, target_filter=target_filter,
+        )
     settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
 
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
-        if admitted_target_ids and option.target_id not in admitted_target_ids:
-            continue
-        if option.target_id in completed_member_ids:
+        if allowed_action_ids is not None and option.action_id not in allowed_action_ids:
             continue
         if (option.target_id, option.semantic_action) in settled_effects:
             continue
@@ -101,6 +136,15 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
             _object_schema({}),
         ))
         bindings.append(_ObserveBinding(capability.modality, capability.assurance))
+    _append_set_assessment_tool(context, ref_by_target, specs, bindings)
+    if set_directive is None and not context.actions.truncated and not context.actions.has_more:
+        _append_set_objective_tools(
+            context,
+            ref_by_target,
+            entity_by_ref,
+            specs,
+            bindings,
+        )
     verb_counts: dict[str, int] = {}
     for (verb, _shape), values in grouped.items():
         verb_counts[verb] = verb_counts.get(verb, 0) + 1
@@ -109,7 +153,11 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         refs = [ref for ref, _option in values]
         schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
         description = _tool_description(verb, refs, entity_by_ref)
-        if admitted_target_ids and len(values) == 1:
+        if (
+            set_directive is not None
+            and set_directive.mode is SetCatalogMode.MEMBER_ACTIONS_ONLY
+            and len(values) == 1
+        ):
             description = f"{verb} the next member admitted by the current quantified objective."
         specs.append(ToolSpec(
             name,
@@ -140,7 +188,7 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
     view = ToolPolicyView(
         _task_brief(context),
         tuple(_grounding_entity(item) for item in context.grounding.entities),
-        _current_state(context, ref_by_target, set_projection),
+        _current_state(context, ref_by_target),
         _previous_result(context, ref_by_target),
         tuple(specs),
     )
@@ -170,6 +218,169 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         view,
         encoded_bytes,
     )
+
+
+def _projected_set_directive(context: AgentContext) -> SetCatalogDirective:
+    control = context.set_control
+    if control is None:
+        raise ValueError("set control projection is absent")
+    return SetCatalogDirective(
+        SetCatalogMode(control.mode),
+        frozenset(control.allowed_action_ids),
+        control.reason_code,
+    )
+
+
+def _append_set_objective_tools(
+    context: AgentContext,
+    ref_by_target: Mapping[str, str],
+    entity_by_ref: Mapping[str, AgentGroundingEntityView],
+    specs: list[ToolSpec],
+    bindings: list[object],
+) -> None:
+    """Offer generic semantic-set establishment; it performs no GUI action."""
+
+    options_by_action: dict[str, list[AgentActionOptionView]] = {}
+    for option in context.actions.options:
+        if option.parameter_schema.get("required") or option.parameter_schema.get("properties"):
+            continue
+        options_by_action.setdefault(option.semantic_action, []).append(option)
+    for semantic_action, options in options_by_action.items():
+        action_roles = {
+            entity_by_ref[ref_by_target[option.target_id]].role.casefold().strip()
+            for option in options
+        }
+        candidates_by_role: dict[str, list[str]] = {}
+        fields_by_role: dict[str, dict[str, set[str]]] = {}
+        raw_values: dict[tuple[str, str, str], object] = {}
+        # Scope enumeration is independent of actionability.  A TRUE visual
+        # entity without a current action route must remain in the universe so
+        # the controller can fail closed instead of certifying a filtered set.
+        for target_id, ref in ref_by_target.items():
+            entity = entity_by_ref.get(ref)
+            if entity is None:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+            role = entity.role.casefold().strip()
+            if role not in action_roles:
+                continue
+            candidates_by_role.setdefault(role, []).append(target_id)
+            for field_name, value in entity.state.items():
+                if not _set_fact_value(value):
+                    continue
+                encoded = json.dumps(
+                    to_json_compatible(value),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                fields_by_role.setdefault(role, {}).setdefault(field_name, set()).add(encoded)
+                raw_values[(role, field_name, encoded)] = value
+        fact_choices = []
+        for role, fields in sorted(fields_by_role.items()):
+            role_candidates = tuple(candidates_by_role.get(role, ()))
+            if len(role_candidates) < 2:
+                continue
+            for field_name, values in sorted(fields.items()):
+                for encoded in sorted(values):
+                    label = f"role={role};field={field_name};value={encoded}"
+                    fact_choices.append((
+                        label,
+                        FactEquals(field_name, raw_values[(role, field_name, encoded)]),
+                        role_candidates,
+                    ))
+        verb = _verb(semantic_action)
+        if fact_choices:
+            bounded = tuple(fact_choices[:32])
+            specs.append(ToolSpec(
+                f"establish_{verb}_fact_objective",
+                "Establish a quantified objective over a typed current public fact; this performs no action.",
+                _object_schema({
+                    "match": {"type": "string", "enum": [item[0] for item in bounded]},
+                    "quantifier": {
+                        "type": "string",
+                        "enum": [
+                            SetQuantifier.EXACTLY_ONE.value,
+                            SetQuantifier.ALL_IN_CLOSED_SCOPE.value,
+                        ],
+                    },
+                }, ("match", "quantifier")),
+            ))
+            bindings.append(_SetFactBinding(semantic_action, bounded))
+        roles = tuple(
+            (role, tuple(target_ids))
+            for role, target_ids in sorted(candidates_by_role.items())
+            if len(target_ids) >= 2
+        )
+        if roles:
+            specs.append(ToolSpec(
+                f"establish_{verb}_visual_objective",
+                "Establish an open-vocabulary visual concept objective over one typed candidate role; this performs no action.",
+                _object_schema({
+                    "candidate_role": {"type": "string", "enum": [item[0] for item in roles]},
+                    "concept": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "quantifier": {
+                        "type": "string",
+                        "enum": [
+                            SetQuantifier.EXACTLY_ONE.value,
+                            SetQuantifier.ALL_IN_CLOSED_SCOPE.value,
+                        ],
+                    },
+                }, ("candidate_role", "concept", "quantifier")),
+            ))
+            bindings.append(_SetVisualBinding(semantic_action, roles))
+
+
+def _append_set_assessment_tool(
+    context: AgentContext,
+    ref_by_target: Mapping[str, str],
+    specs: list[ToolSpec],
+    bindings: list[object],
+) -> None:
+    """Expose one complete E-ref classification batch for current UNKNOWNs."""
+
+    control = context.set_control
+    if control is None or not control.unknown_target_ids:
+        return
+    refs = tuple(
+        (ref_by_target[target_id], target_id)
+        for target_id in control.unknown_target_ids
+        if target_id in ref_by_target
+    )
+    if len(refs) != len(control.unknown_target_ids):
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    properties = {
+        ref: {
+            "type": "string",
+            "enum": [
+                PredicateTruth.TRUE.value,
+                PredicateTruth.FALSE.value,
+                PredicateTruth.UNKNOWN.value,
+            ],
+        }
+        for ref, _target_id in refs
+    }
+    specs.append(ToolSpec(
+        "classify_set_candidates",
+        (
+            "Classify every listed E-ref against the current typed visual predicate. "
+            "This supplies semantic evidence only and performs no action."
+        ),
+        _object_schema(properties, tuple(properties)),
+    ))
+    bindings.append(_SetAssessmentBinding(control.predicate_digest, refs))
+
+
+def _set_fact_value(value: object) -> bool:
+    if value is None or isinstance(value, bool | int | float):
+        return True
+    if isinstance(value, str):
+        return bool(value.strip()) and len(value) <= 80
+    if isinstance(value, Mapping):
+        encoded = json.dumps(
+            to_json_compatible(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        )
+        return len(encoded) <= 160
+    return False
 
 
 def resolve_grounded_tool_call(
@@ -211,6 +422,49 @@ def resolve_grounded_tool_call(
                 binding.modality,
                 binding.assurance,
                 f"acquire fresh {binding.modality} grounding",
+            ),
+        )
+    if isinstance(binding, _SetFactBinding):
+        match = str(call.arguments["match"])
+        quantifier = SetQuantifier(str(call.arguments["quantifier"]))
+        _, predicate, candidates = next(item for item in binding.choices if item[0] == match)
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            EstablishSetObjective(
+                expected_context_id,
+                predicate,
+                quantifier,
+                binding.semantic_action,
+                candidates,
+            ),
+        )
+    if isinstance(binding, _SetVisualBinding):
+        role = str(call.arguments["candidate_role"])
+        candidates = dict(binding.candidates_by_role)[role]
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            EstablishSetObjective(
+                expected_context_id,
+                VisualConcept(str(call.arguments["concept"])),
+                SetQuantifier(str(call.arguments["quantifier"])),
+                binding.semantic_action,
+                candidates,
+            ),
+        )
+    if isinstance(binding, _SetAssessmentBinding):
+        return AgentDecisionPackage(
+            NoObjectiveOperation(),
+            SubmitSetPredicateAssessments(
+                expected_context_id,
+                binding.predicate_digest,
+                tuple(
+                    SetPredicateAssessmentDecision(
+                        target_id,
+                        PredicateTruth(str(call.arguments[ref])),
+                        1.0,
+                    )
+                    for ref, target_id in binding.refs
+                ),
             ),
         )
     assert isinstance(binding, _VerbBinding)
@@ -383,7 +637,7 @@ def _grounding_entity(item):
     }
 
 
-def _current_state(context, ref_by_target, set_projection: CatalogSetProjection | None):
+def _current_state(context, ref_by_target):
     frontier = context.progress.task_frontier
     value = {
         "task_status": str(context.progress.validated_task_status),
@@ -400,15 +654,20 @@ def _current_state(context, ref_by_target, set_projection: CatalogSetProjection 
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
     }
-    if set_projection is not None:
+    if context.set_control is not None:
         value["quantified_objective"] = {
-            "quantifier": set_projection.objective.quantifier.value,
-            "scope_coverage": set_projection.universe.coverage.value,
-            "disposition": set_projection.reduction.disposition.value,
-            "reason": set_projection.reduction.reason_code,
-            "candidate_count": len(set_projection.universe.entity_ids),
-            "matched_count": len(set_projection.reduction.true_entity_ids),
-            "certified": set_projection.reduction.certificate is not None,
+            "disposition": context.set_control.disposition,
+            "reason": context.set_control.reason_code,
+            "candidate_count": context.set_control.candidate_count,
+            "matched_count": context.set_control.matched_count,
+            "certified": context.set_control.certified,
+            "predicate": to_json_compatible(context.set_control.predicate),
+            "unknown_candidates": [
+                ref_by_target[item]
+                for item in context.set_control.unknown_target_ids
+                if item in ref_by_target
+            ],
+            "evidence_needs": list(context.set_control.evidence_needs),
         }
     return value
 

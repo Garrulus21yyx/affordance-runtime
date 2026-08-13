@@ -11,9 +11,9 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_environment import 
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
-    PRIVATE_VISUAL_GROUPS_KEY,
 )
 from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.task.set_objective import PredicateTruth
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguationRequest
 from affordance_runtime.visual_grounding import (
     VisualGroundingPoint,
@@ -25,7 +25,6 @@ from affordance_runtime.visual_predicate_classification import (
     VisualPredicateClassification,
     VisualPredicateClassificationRequest,
 )
-from affordance_runtime.task.set_objective import PredicateTruth
 from affordance_runtime.world import (
     ActionSpaceBuilder,
     ObservationRequestKind,
@@ -220,7 +219,7 @@ def test_visual_selection_is_recomputed_after_action_instead_of_sticking() -> No
     asyncio.run(scenario())
 
 
-def test_set_predicate_is_not_misrouted_to_single_e_ref_disambiguation() -> None:
+def test_marked_main_policy_owns_ambiguous_candidates_without_task_text_routing() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(
             ("left", "", (20, 20, 40, 30)),
@@ -229,12 +228,19 @@ def test_set_predicate_is_not_misrouted_to_single_e_ref_disambiguation() -> None
         )
         proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
         disambiguator = _Disambiguator("E1")
-        environment, task = _open(FakeBrowserGym(raw), proposer, disambiguator=disambiguator)
+        environment, task = BrowserGymMiniWobEnvironment.open(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_region_proposer=proposer,
+            visual_candidate_disambiguator=disambiguator,
+            marked_candidate_policy_available=True,
+        )
         try:
             acquired = await environment.reset(task)
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
-            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
             assert disambiguator.calls == []
             assert len(acquired.observation.bindings) == 2
@@ -269,10 +275,10 @@ def test_marked_screenshot_policy_owns_ambiguous_e_ref_choice_without_provider_c
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
             assert (
                 environment.last_visual_escalation.evidence_need
-                is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
+                is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
             )
             assert environment.last_visual_escalation.reason_code == (
-                "set_predicate_classification_delegated_to_policy"
+                "marked_candidate_choice_delegated_to_screenshot_policy"
             )
             assert disambiguator.calls == []
             assert len(acquired.observation.bindings) == 2
@@ -283,7 +289,7 @@ def test_marked_screenshot_policy_owns_ambiguous_e_ref_choice_without_provider_c
     asyncio.run(scenario())
 
 
-def test_batch_visual_predicate_evidence_preserves_all_dom_bindings() -> None:
+def test_auxiliary_predicate_classifier_is_not_automatically_invoked() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(
             ("left", "", (20, 20, 40, 30)),
@@ -293,19 +299,28 @@ def test_batch_visual_predicate_evidence_preserves_all_dom_bindings() -> None:
         proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
         disambiguator = _Disambiguator("E1")
         classifier = _PredicateClassifier((PredicateTruth.TRUE, PredicateTruth.FALSE))
-        environment, task = _open(
-            FakeBrowserGym(raw), proposer, disambiguator=disambiguator, classifier=classifier,
+        environment, task = BrowserGymMiniWobEnvironment.open(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_region_proposer=proposer,
+            visual_candidate_disambiguator=disambiguator,
+            visual_predicate_classifier=classifier,
+            marked_candidate_policy_available=True,
         )
         try:
             acquired = await environment.reset(task)
 
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
-            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
-            assert len(classifier.calls) == 1
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION
+            assert classifier.calls == []
             assert disambiguator.calls == []
             assert len(acquired.observation.bindings) == 2
-            assert {fact.value for fact in acquired.observation.facts if fact.predicate == "task_predicate_truth"} == {"true", "false"}
+            assert not any(
+                fact.predicate.startswith("task_predicate")
+                for fact in acquired.observation.facts
+            )
         finally:
             await environment.close()
 
@@ -328,7 +343,7 @@ def test_visual_value_task_stays_with_screenshot_policy_instead_of_e_ref() -> No
             assert acquired.observation is not None
             assert environment.last_visual_escalation is not None
             assert environment.last_visual_escalation.mode is VisionEscalationMode.SKIP
-            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.VISUAL_VALUE_REASONING
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.NONE
             assert disambiguator.calls == []
         finally:
             await environment.close()
@@ -336,7 +351,7 @@ def test_visual_value_task_stays_with_screenshot_policy_instead_of_e_ref() -> No
     asyncio.run(scenario())
 
 
-def test_repeated_visible_dom_leaf_groups_publish_counts_without_action_authority() -> None:
+def test_unowned_repeated_leaf_payload_is_not_promoted_to_semantic_truth() -> None:
     async def scenario() -> None:
         raw = raw_observation(
             ax_node("answer", "textbox", ""),
@@ -344,7 +359,7 @@ def test_repeated_visible_dom_leaf_groups_publish_counts_without_action_authorit
             goal="Count the shapes and enter the total number.",
         )
         raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
-        raw[PRIVATE_VISUAL_GROUPS_KEY] = [
+        raw["_browsergym_private_visual_groups"] = [
             {"count": 8, "bbox": [20, 20, 50, 40]},
             {"count": 2, "bbox": [100, 40, 30, 20]},
         ]
@@ -357,15 +372,9 @@ def test_repeated_visible_dom_leaf_groups_publish_counts_without_action_authorit
             groups = [
                 item for item in acquired.observation.targets if item.role == "visual-group"
             ]
-            assert [item.state["count"] for item in groups] == [8, 2]
-            assert all(
-                binding.target_id not in {item.target_id for item in groups}
-                for binding in acquired.observation.bindings
-            )
+            assert groups == []
             assert environment.last_visual_escalation is not None
-            assert environment.last_visual_escalation.evidence_need is (
-                VisionEvidenceNeed.VISUAL_VALUE_REASONING
-            )
+            assert environment.last_visual_escalation.evidence_need is VisionEvidenceNeed.NONE
             assert proposer.calls == []
         finally:
             await environment.close()
@@ -663,7 +672,7 @@ def test_unlabeled_clickable_computed_color_is_public_without_hidden_dom_attribu
             target = next(
                 item for item in acquired.observation.targets if item.role == "clickable"
             )
-            assert target.state == {"color_family": "blue"}
+            assert target.state == {"appearance.color_family": "blue"}
             assert "data-color" not in repr(target)
         finally:
             await environment.close()

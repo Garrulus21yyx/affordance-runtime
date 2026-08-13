@@ -14,6 +14,7 @@ from affordance_runtime.task.frontier_contracts import (
     ReplaceObjective,
     RetainObjective,
 )
+from affordance_runtime.task.set_objective import PredicateExpr, PredicateTruth, SetQuantifier
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
@@ -58,6 +59,61 @@ class SelectAction:
         if not self.action_id.strip():
             raise ValueError("selection requires an offered action id")
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+
+
+@dataclass(frozen=True)
+class EstablishSetObjective:
+    """Admit model-proposed set semantics without granting an action."""
+
+    context_id: str
+    predicate: PredicateExpr
+    quantifier: SetQuantifier
+    semantic_action: str
+    candidate_target_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        if not self.semantic_action.strip():
+            raise ValueError("set objective requires a semantic action")
+        values = tuple(self.candidate_target_ids)
+        if (
+            not values
+            or len(values) > 256
+            or len(values) != len(set(values))
+            or any(not item.strip() or len(item) > 240 for item in values)
+        ):
+            raise ValueError("set objective candidate domain is invalid")
+        object.__setattr__(self, "candidate_target_ids", values)
+
+
+@dataclass(frozen=True)
+class SetPredicateAssessmentDecision:
+    target_id: str
+    truth: PredicateTruth
+    confidence: float
+
+    def __post_init__(self) -> None:
+        if not self.target_id.strip() or not 0 <= self.confidence <= 1:
+            raise ValueError("set predicate assessment decision is invalid")
+
+
+@dataclass(frozen=True)
+class SubmitSetPredicateAssessments:
+    context_id: str
+    predicate_digest: str
+    assessments: tuple[SetPredicateAssessmentDecision, ...]
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        values = tuple(self.assessments)
+        if (
+            len(self.predicate_digest) != 64
+            or not values
+            or len(values) > 256
+            or len({item.target_id for item in values}) != len(values)
+        ):
+            raise ValueError("set predicate assessment batch is invalid")
+        object.__setattr__(self, "assessments", values)
 
 
 @dataclass(frozen=True)
@@ -157,7 +213,17 @@ class Abort:
             raise ValueError("abort category is unsupported") from exc
 
 
-AgentDecision: TypeAlias = SelectAction | RequestObservation | RequestActionPage | AskUser | ProposeDone | Wait | Abort
+AgentDecision: TypeAlias = (
+    SelectAction
+    | EstablishSetObjective
+    | SubmitSetPredicateAssessments
+    | RequestObservation
+    | RequestActionPage
+    | AskUser
+    | ProposeDone
+    | Wait
+    | Abort
+)
 
 
 @dataclass(frozen=True)
@@ -177,6 +243,8 @@ class AgentDecisionPackage:
             self.decision,
             (
                 SelectAction,
+                EstablishSetObjective,
+                SubmitSetPredicateAssessments,
                 RequestObservation,
                 RequestActionPage,
                 AskUser,

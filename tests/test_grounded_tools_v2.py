@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from dataclasses import dataclass, field, replace
 
@@ -10,7 +9,15 @@ import pytest
 from browsergym_adapter_support import ax_node, raw_observation
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentDecisionPackage, AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import (
+    AgentDecisionPackage,
+    AgentEpisodeRunner,
+    AgentLoop,
+    AgentLoopStatus,
+    EstablishSetObjective,
+    SelectAction,
+    SubmitSetPredicateAssessments,
+)
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
@@ -29,7 +36,9 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary import AgentTurnView, ContextBuilder, ModelFailure
-from affordance_runtime.model_boundary.world_projection import PublicFactView
+from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
+from affordance_runtime.model_boundary.budgets import BoundedSection
+from affordance_runtime.model_boundary.context import AgentSetControlView
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
@@ -406,7 +415,7 @@ def test_unclassified_set_language_does_not_fake_structural_completion() -> None
     assert "click" in {item.name for item in catalog.specs}
 
 
-def test_structural_set_objective_admits_one_member_then_releases_successor() -> None:
+def test_runtime_set_control_admits_one_member_then_releases_successors() -> None:
     context = _context()
     entities = tuple(
         replace(item, label="", state={"color_family": "red"})
@@ -418,7 +427,6 @@ def test_structural_set_objective_admits_one_member_then_releases_successor() ->
     )
     context = replace(
         context,
-        task=replace(context.task, instruction="Select all the blue shades and press Login."),
         grounding=replace(context.grounding, entities=entities),
         actions=replace(
             context.actions,
@@ -436,88 +444,251 @@ def test_structural_set_objective_admits_one_member_then_releases_successor() ->
             ),
         ),
     )
+    blue_target = next(
+        target_id
+        for target_id, ref in context.grounding.target_refs.items()
+        if next(item for item in entities if item.ref == ref).state.get("color_family") == "blue"
+    )
+    blue_action = next(
+        item.action_id for item in context.actions.options if item.target_id == blue_target
+    )
+    digest = "a" * 64
+    context = replace(context, set_control=AgentSetControlView(
+        mode="member_actions_only",
+        disposition="ready_for_next_member",
+        reason_code="member_action_required",
+        allowed_action_ids=(blue_action,),
+        candidate_count=2,
+        matched_count=1,
+        predicate={"kind": "fact_equals", "field_name": "color_family", "expected": "blue"},
+        predicate_digest=digest,
+        candidate_target_ids=tuple(
+            target_id for target_id in context.grounding.target_refs if target_id != next(
+                item.target_id
+                for item in context.actions.options
+                if next(
+                    entity for entity in entities
+                    if entity.ref == context.grounding.target_refs[item.target_id]
+                ).label == "Login"
+            )
+        ),
+    ))
 
     catalog = compile_grounded_tool_catalog(context)
     click = next(item for item in catalog.specs if item.name == "click")
 
     assert click.input_schema["properties"] == {}
-    blue = next(item.ref for item in entities if item.state.get("color_family") == "blue")
     package = resolve_grounded_tool_call(
         catalog, ToolCall("click", {}), expected_context_id=context.context_id,
     )
-    blue_target = next(target_id for target_id, ref in context.grounding.target_refs.items() if ref == blue)
     assert next(item for item in context.actions.options if item.action_id == package.decision.action_id).target_id == blue_target
 
     settled = replace(
         context,
-        history=replace(
-            context.history,
-            items=(AgentTurnView(
-                "selectaction",
-                "activate",
-                blue_target,
-                dispatch_status="sent",
-                action_evaluation_status="effect_confirmed",
-                task_evaluation_status="incomplete",
-            ),),
-            total_count=1,
+        set_control=replace(
+            context.set_control,
+            mode="successor_actions",
+            disposition="certified",
+            reason_code="closed_scope_set_complete",
+            allowed_action_ids=tuple(
+                item.action_id
+                for item in context.actions.options
+                if item.target_id not in context.set_control.candidate_target_ids
+            ),
+            certified=True,
         ),
     )
     successor_catalog = compile_grounded_tool_catalog(settled)
     successor_click = next(item for item in successor_catalog.specs if item.name == "click")
-    successor = resolve_grounded_tool_call(
+    assert successor_click.input_schema["properties"] == {}
+    login_ref = next(item.ref for item in entities if item.label == "Login")
+    package = resolve_grounded_tool_call(
         successor_catalog, ToolCall("click", {}), expected_context_id=settled.context_id,
     )
-    login_target = next(
-        target_id for target_id, ref in settled.grounding.target_refs.items()
-        if next(item for item in entities if item.ref == ref).label == "Login"
+    selected = next(
+        item for item in settled.actions.options if item.action_id == package.decision.action_id
     )
-    assert next(item for item in settled.actions.options if item.action_id == successor.decision.action_id).target_id == login_target
-    assert successor_click.input_schema["properties"] == {}
+    assert settled.grounding.target_refs[selected.target_id] == login_ref
+
+
+def test_model_can_establish_generic_fact_set_without_instruction_scanning() -> None:
+    context = _context()
+    entities = tuple(
+        replace(item, label="", role="clickable", state={"appearance.color_family": "red"})
+        if item.label == "Username"
+        else replace(item, label="", role="clickable", state={"appearance.color_family": "blue"})
+        if item.label == "Password"
+        else item
+        for item in context.grounding.entities
+    )
+    actions = tuple(
+        replace(
+            item,
+            semantic_action="activate",
+            parameter_schema={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        )
+        for item in context.actions.options
+        if next(
+            entity for entity in entities
+            if entity.ref == context.grounding.target_refs[item.target_id]
+        ).role == "clickable"
+    )
+    context = replace(
+        context,
+        task=replace(context.task, instruction="Arbitrary paraphrase with no recognized quantifier token."),
+        grounding=replace(
+            context.grounding,
+            entities=tuple(item for item in entities if item.role == "clickable"),
+            target_refs={
+                target_id: ref
+                for target_id, ref in context.grounding.target_refs.items()
+                if any(item.ref == ref and item.role == "clickable" for item in entities)
+            },
+        ),
+        actions=replace(
+            context.actions,
+            options=actions,
+            total_count=len(actions),
+            page_size=len(actions),
+        ),
+    )
+    catalog = compile_grounded_tool_catalog(context)
+    establish = next(item for item in catalog.specs if item.name == "establish_click_fact_objective")
+    renamed = replace(
+        context,
+        task=replace(
+            context.task,
+            task_id="task:held-out-renamed",
+            instruction="请选择当前范围内所有符合目标视觉属性的对象。",
+        ),
+    )
+    renamed_establish = next(
+        item
+        for item in compile_grounded_tool_catalog(renamed).specs
+        if item.name == "establish_click_fact_objective"
+    )
+    assert renamed_establish.input_schema == establish.input_schema
+    match = next(
+        item for item in establish.input_schema["properties"]["match"]["enum"]
+        if '"blue"' in item
+    )
+
+    package = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            establish.name,
+            {"match": match, "quantifier": "all_in_closed_scope"},
+        ),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(package.decision, EstablishSetObjective)
+    assert package.decision.predicate.field_name == "appearance.color_family"
+    assert package.decision.predicate.expected == "blue"
+    assert len(package.decision.candidate_target_ids) == 2
+
+
+def test_unclosed_set_scope_exposes_only_real_control_tools() -> None:
+    context = _context()
+    entities = tuple(
+        replace(item, label="", state={"color_family": "blue"})
+        if item.label == "Password"
+        else replace(item, label="", state={"color_family": "red"})
+        if item.label == "Username"
+        else item
+        for item in context.grounding.entities
+    )
+    context = replace(
+        context,
+        grounding=replace(context.grounding, entities=entities),
+        world=replace(
+            context.world,
+            targets=BoundedSection(
+                context.world.targets.items,
+                context.world.targets.total_count + 1,
+                True,
+            ),
+            observation_capabilities=(ObservationCapabilityView("screenshot", "semantic"),),
+        ),
+    )
+    context = replace(context, set_control=AgentSetControlView(
+        mode="control_only",
+        disposition="need_scope_closure",
+        reason_code="scope_not_closed",
+        candidate_count=2,
+        predicate={"kind": "fact_equals", "field_name": "color_family", "expected": "blue"},
+        predicate_digest="b" * 64,
+        candidate_target_ids=tuple(context.grounding.target_refs)[:2],
+    ))
+
+    catalog = compile_grounded_tool_catalog(context)
+
+    assert [item.name for item in catalog.specs] == ["observe_screenshot"]
+    assert catalog.view.current_state["quantified_objective"]["disposition"] == "need_scope_closure"
+
+
+def test_zero_true_members_pending_stability_exposes_no_effectful_action() -> None:
+    context = _context()
+    context = replace(
+        context,
+        world=replace(
+            context.world,
+            observation_capabilities=(ObservationCapabilityView("screenshot", "semantic"),),
+        ),
+        set_control=AgentSetControlView(
+            mode="control_only",
+            disposition="need_stability_check",
+            reason_code="fresh_scope_stability_required",
+            candidate_count=3,
+            predicate={"kind": "visual_concept", "concept": "apple"},
+            predicate_digest="c" * 64,
+            candidate_target_ids=tuple(context.grounding.target_refs),
+        ),
+    )
+
+    catalog = compile_grounded_tool_catalog(context)
+
+    assert [item.name for item in catalog.specs] == ["observe_screenshot"]
+    assert catalog.view.current_state["quantified_objective"]["disposition"] == "need_stability_check"
 
 
 def test_open_vocabulary_batch_evidence_admits_true_refs_without_point_execution() -> None:
     context = _context()
-    instruction = "Click all apples, then press Login."
-    digest = hashlib.sha256(instruction.encode()).hexdigest()
+    digest = "d" * 64
     target_ids = tuple(context.grounding.target_refs)
     truth_by_target = {
         target_id: "true" if index == 0 else "false"
         for index, target_id in enumerate(target_ids)
     }
-    facts = tuple(
-        PublicFactView(f"fact:{target_id}:{field}", target_id, field, value)
-        for target_id in target_ids
-        for field, value in (
-            ("task_predicate_digest", digest),
-            ("task_predicate_truth", truth_by_target[target_id]),
-            ("task_predicate_confidence", 0.95),
-        )
-    )
     context = replace(
         context,
-        task=replace(context.task, instruction=instruction),
-        world=replace(context.world, facts=replace(
-            context.world.facts, items=facts, total_count=len(facts), truncated=False,
-        )),
-        actions=replace(
-            context.actions,
-            options=tuple(replace(
-                item,
-                semantic_action="activate",
-                parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
-            ) for item in context.actions.options),
+        set_control=AgentSetControlView(
+            mode="control_only",
+            disposition="need_unknown_resolution",
+            reason_code="predicate_unknown",
+            candidate_count=len(target_ids),
+            predicate={"kind": "visual_concept", "concept": "apple"},
+            predicate_digest=digest,
+            candidate_target_ids=target_ids,
+            unknown_target_ids=target_ids,
         ),
     )
 
     catalog = compile_grounded_tool_catalog(context)
-    click = next(item for item in catalog.specs if item.name == "click")
-    assert click.input_schema["properties"] == {}
+    classify = next(item for item in catalog.specs if item.name == "classify_set_candidates")
+    by_ref = {ref: truth_by_target[target_id] for target_id, ref in context.grounding.target_refs.items()}
     package = resolve_grounded_tool_call(
-        catalog, ToolCall("click", {}), expected_context_id=context.context_id,
+        catalog, ToolCall(classify.name, by_ref), expected_context_id=context.context_id,
     )
-    selected = next(item for item in context.actions.options if item.action_id == package.decision.action_id)
-    assert truth_by_target[selected.target_id] == "true"
+    assert isinstance(package.decision, SubmitSetPredicateAssessments)
+    assert package.decision.predicate_digest == digest
+    assert {
+        item.target_id: item.truth.value for item in package.decision.assessments
+    } == truth_by_target
 
 
 def test_confirmed_current_fill_is_removed_from_next_model_tool_menu() -> None:

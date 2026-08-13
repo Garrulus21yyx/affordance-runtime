@@ -9,6 +9,7 @@ from affordance_runtime.task.set_objective import (
     CandidateUniverse,
     FactEquals,
     Not,
+    Or,
     PredicateAssessment,
     PredicateAssurance,
     PredicateTruth,
@@ -119,6 +120,12 @@ def test_predicate_algebra_uses_three_valued_logic() -> None:
     rotten = {predicate_digest(VisualConcept("rotten")): PredicateTruth.FALSE}
     assert evaluate_predicate(predicate, {"kind": "apple"}, rotten) is PredicateTruth.TRUE
     assert evaluate_predicate(predicate, {"kind": "pear"}) is PredicateTruth.FALSE
+
+
+def test_predicate_digest_is_type_discriminated_for_composites() -> None:
+    operands = (FactEquals("kind", "apple"), FactEquals("color", "red"))
+
+    assert predicate_digest(And(operands)) != predicate_digest(Or(operands))
 
 
 def test_assessment_order_is_irrelevant_and_stale_epoch_fails_closed() -> None:

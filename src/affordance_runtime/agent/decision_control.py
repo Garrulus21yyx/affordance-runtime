@@ -31,10 +31,12 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     AgentDecisionPackage,
     AskUser,
+    EstablishSetObjective,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    SubmitSetPredicateAssessments,
     Wait,
     package_decision,
 )
@@ -64,6 +66,11 @@ from affordance_runtime.task.frontier import (
     synchronize_verified_task_state,
 )
 from affordance_runtime.task.frontier_contracts import ActiveObjective
+from affordance_runtime.task.set_objective import SetDisposition
+from affordance_runtime.task.set_objective_state import (
+    establish_set_objective_state,
+    install_semantic_assessments,
+)
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     ObservationRequestKind,
@@ -93,6 +100,8 @@ SelectionExecutor = Callable[
 _DECISION_TYPES = (
     Abort,
     AskUser,
+    EstablishSetObjective,
+    SubmitSetPredicateAssessments,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -300,6 +309,37 @@ async def _route_decision(
     if isinstance(decision, Abort):
         scope.set_reason(f"abort_{decision.category}")
         return Terminate(AgentLoopStatus.FAILED, f"abort_{decision.category}", decision.reason)
+    if isinstance(decision, EstablishSetObjective):
+        if (
+            state.active_set_objective is not None
+            and state.active_set_objective.reduction.disposition is not SetDisposition.CERTIFIED
+        ):
+            scope.set_reason("set_objective_already_active")
+            return Continue("set_objective_already_active")
+        state.active_set_objective = establish_set_objective_state(
+            predicate=decision.predicate,
+            quantifier=decision.quantifier,
+            semantic_action=decision.semantic_action,
+            candidate_entity_ids=decision.candidate_target_ids,
+            observation=state.current_observation,
+        )
+        state.progress_revision += 1
+        scope.record_decision_result("set_objective_established")
+        scope.set_reason("set_objective_established")
+        return Continue("set_objective_established")
+    if isinstance(decision, SubmitSetPredicateAssessments):
+        active = state.active_set_objective
+        if active is None or active.objective.predicate_digest != decision.predicate_digest:
+            scope.set_reason("set_assessment_objective_mismatch")
+            return Continue("set_assessment_objective_mismatch")
+        state.active_set_objective = install_semantic_assessments(
+            active,
+            tuple((item.target_id, item.truth, item.confidence) for item in decision.assessments),
+        )
+        state.progress_revision += 1
+        scope.record_decision_result("set_assessments_installed")
+        scope.set_reason("set_assessments_installed")
+        return Continue("set_assessments_installed")
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator, scope)
     if isinstance(decision, RequestObservation):

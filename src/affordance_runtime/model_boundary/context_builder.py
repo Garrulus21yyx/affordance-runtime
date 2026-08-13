@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.progress_projection import project_progress_events
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
 from affordance_runtime.model_boundary.budgets import (
     DEFAULT_MAX_TOTAL_WAIT_MS,
@@ -26,6 +28,7 @@ from affordance_runtime.model_boundary.context import (
     AgentProgressView,
     AgentRequirementHypothesisView,
     AgentRequirementStateView,
+    AgentSetControlView,
     AgentTaskFrontierView,
     ContextIdentity,
     DecisionMode,
@@ -56,6 +59,12 @@ from affordance_runtime.task.hypothesis_contracts import (
     TrackedHypothesisStatus,
 )
 from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.task.set_objective import SetDisposition
+from affordance_runtime.task.set_objective import predicate_public_value as set_predicate_public_value
+from affordance_runtime.task.set_objective_state import (
+    set_allowed_action_ids,
+    set_evidence_obligations,
+)
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
@@ -162,6 +171,7 @@ class ContextBuilder:
             project_control_feedback(state.pending_control_feedback),
             grounding.images,
             grounding.index,
+            _set_control_view(state, action_space),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
@@ -375,6 +385,74 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
     )
 
 
+def _set_control_view(
+    state: AgentLoopState,
+    action_space: ActionSpace,
+) -> AgentSetControlView | None:
+    active = state.active_set_objective
+    if active is None:
+        return None
+    reduction = active.reduction
+    if reduction.disposition in {
+        SetDisposition.READY_FOR_NEXT_MEMBER,
+        SetDisposition.AGENT_SELECT_NEXT,
+    }:
+        allowed = tuple(sorted(set_allowed_action_ids(active, action_space)))
+        if allowed:
+            mode = "member_actions_only"
+        else:
+            mode = "blocked"
+            return AgentSetControlView(
+                mode,
+                "need_actionability_resolution",
+                "true_member_action_unavailable",
+                (),
+                len(active.universe.entity_ids),
+                len(reduction.true_entity_ids),
+                False,
+                set_predicate_public_value(active.objective.predicate),
+                active.objective.predicate_digest,
+                active.candidate_entity_ids,
+                (),
+                ("resolve_actionability",),
+            )
+    elif reduction.disposition is SetDisposition.CERTIFIED:
+        mode = "successor_actions"
+        set_members = set(active.candidate_entity_ids) | {
+            item.entity_id for item in active.obligations
+        }
+        allowed = tuple(
+            option.action_id
+            for option in action_space.options
+            if option.target_id not in set_members
+        )
+    elif reduction.disposition is SetDisposition.BLOCKED:
+        mode = "blocked"
+        allowed = ()
+    else:
+        mode = "control_only"
+        allowed = ()
+    unknown = tuple(
+        item.entity_id
+        for item in active.assessments
+        if item.truth.value == "unknown"
+    )
+    return AgentSetControlView(
+        mode,
+        reduction.disposition.value,
+        reduction.reason_code,
+        allowed,
+        len(active.universe.entity_ids),
+        len(reduction.true_entity_ids),
+        reduction.certificate is not None,
+        set_predicate_public_value(active.objective.predicate),
+        active.objective.predicate_digest,
+        active.candidate_entity_ids,
+        unknown,
+        tuple(item.kind.value for item in set_evidence_obligations(active)),
+    )
+
+
 def _fit_context(
     context: AgentContext,
     max_bytes: int,
@@ -439,4 +517,7 @@ def _fit_context(
 
 
 def _semantic_serialized_size(context: AgentContext) -> int:
-    return serialized_size(replace(context, image_inputs=()))
+    payload = to_json_compatible(replace(context, image_inputs=()))
+    if context.set_control is None:
+        payload.pop("set_control", None)
+    return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())

@@ -18,7 +18,6 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile im
 )
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
-PRIVATE_VISUAL_GROUPS_KEY = "_browsergym_private_visual_groups"
 MAX_SEMANTIC_TEXT = 240
 MIN_DOM_CLICKABLE_VISIBILITY = 0.5
 MIN_DOM_CLICKABLE_AREA = 20.0
@@ -187,7 +186,7 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         record.bid not in suppressed_clickable_bids
         and is_inventory_target_browsergym_role(record.role)
         for record in records
-    ) + _recognized_visual_group_count(raw)
+    )
     return BrowserGymSemanticAnalysis(
         tuple(controls),
         BrowserGymInventoryAnalysis(
@@ -515,14 +514,12 @@ def _canonical_control(
     if isinstance(physical, dict) and physical.get("selected") is True:
         public_state.append(("selected", True))
     if (
-        record.role == "clickable"
-        and not record.name.strip()
-        and isinstance(physical, dict)
+        isinstance(physical, dict)
         and physical.get("color_family") in {
             "red", "yellow", "green", "cyan", "blue", "magenta", "gray",
         }
     ):
-        public_state.append(("color_family", physical["color_family"]))
+        public_state.append(("appearance.color_family", physical["color_family"]))
     labels = tuple(sorted(item.name for item in option_records if item.name))
     selected = tuple(sorted(
         item.name for item in option_records if dict(item.state).get("selected") is True and item.name
@@ -563,18 +560,6 @@ def _physical_properties(raw: dict[str, object]) -> dict[str, object]:
             "private control properties are malformed",
         )
     return value
-
-
-def _recognized_visual_group_count(raw: dict[str, object]) -> int:
-    value = raw.get(PRIVATE_VISUAL_GROUPS_KEY)
-    if not isinstance(value, list):
-        return 0
-    return sum(
-        isinstance(item, dict)
-        and isinstance(item.get("count"), int)
-        and 2 <= item["count"] <= 64
-        for item in value[:32]
-    )
 
 
 def _availability(value: object) -> BrowserGymControlAvailability:

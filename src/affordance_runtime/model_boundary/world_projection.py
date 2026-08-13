@@ -287,6 +287,11 @@ def _public_value(value: Any, depth: int = 0) -> Any:
 
 def _private_key(key: str) -> bool:
     normalized = key.casefold().replace("-", "_")
+    # A derived lattice coordinate is a semantic relation, not an executor
+    # route or pixel coordinate.  Keep it visible while route-shaped fields
+    # remain private.
+    if normalized == "grid_coordinate":
+        return False
     return (
         normalized in _PRIVATE_KEYS
         or any(normalized.endswith(f"_{marker}") for marker in _PRIVATE_KEYS)

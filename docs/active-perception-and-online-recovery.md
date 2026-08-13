@@ -42,12 +42,12 @@ outside tiny controls, keeping both the target pixels and the reference
 legible. Agent tools require an explicit E-ref only when more than one target
 is legal for that semantic operation; for a singleton, the ephemeral tool
 binding already carries the sole identity and Runtime resolves it privately.
-The BrowserGym projection may also expose observation-only repeated-leaf group
-counts, current selected state, and a normalized color family derived from
-visible computed style. These are public current-frame evidence, not bindings
-or hidden task answers. A generic quantified-objective compiler may turn a
-mechanically mentioned public value into `FactEquals`; no color name, task slug
-or widget kind is encoded in Catalog. `CandidateUniverse` keeps scope coverage
+The BrowserGym projection also exposes current selected state and a normalized
+`appearance.color_family` derived from visible computed style. It no longer
+promotes repeated-leaf similarity to an exact count. These are public
+current-frame facts, not bindings or hidden task answers. The main Agent may
+explicitly propose a bounded `FactEquals`; no color name, task slug or widget
+kind is encoded in Catalog. `CandidateUniverse` keeps scope coverage
 separate from predicate-classification coverage, and the reducer releases one
 independent member at a time. A successor is exposed only after all admitted
 members have confirmed effects and a fresh stable scope produces a
@@ -59,8 +59,8 @@ reason to call a point grounder. For one bounded regular lattice, the adapter
 clusters current executable element centers into complete rows/columns and fits
 visible numeric label groups independently for each axis. A successful fit
 publishes observation-bound grid membership and Cartesian values on the
-existing DOM targets. The same generic public-predicate compiler can match one
-of these values and reduce an `EXACTLY_ONE` objective to one current action.
+existing DOM targets. The same generic typed objective tool can select one of
+these values and reduce an `EXACTLY_ONE` objective to one current action.
 The lattice provider does not parse task text. Missing axes, irregular spacing,
 duplicate/empty cells, ambiguous mappings or multiple lattices produce a typed
 non-result and no coordinate fact. No derived fact creates a binding; execution

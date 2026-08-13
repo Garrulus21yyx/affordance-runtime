@@ -17,13 +17,6 @@ from typing import Mapping, TypeAlias
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,95}")
-_UNIVERSAL_QUANTIFIER = re.compile(r"\b(?:all|every|each)\b", re.IGNORECASE)
-
-
-def has_universal_quantifier(instruction: str) -> bool:
-    return _UNIVERSAL_QUANTIFIER.search(instruction) is not None
-
-
 class ScopeExtent(StrEnum):
     CURRENT_VIEWPORT = "current_viewport"
     CURRENT_CONTAINER = "current_container"
@@ -132,9 +125,39 @@ PredicateExpr: TypeAlias = FactEquals | VisualConcept | VisualAttribute | Spatia
 _PREDICATE_TYPES = (FactEquals, VisualConcept, VisualAttribute, SpatialRelation, And, Or, Not)
 
 
+def predicate_public_value(predicate: PredicateExpr) -> dict[str, object]:
+    """Return the closed, type-discriminated public predicate algebra."""
+
+    if isinstance(predicate, FactEquals):
+        return {
+            "kind": "fact_equals",
+            "field_name": predicate.field_name,
+            "expected": to_json_compatible(predicate.expected),
+        }
+    if isinstance(predicate, VisualConcept):
+        return {"kind": "visual_concept", "concept": predicate.concept}
+    if isinstance(predicate, VisualAttribute):
+        return {"kind": "visual_attribute", "attribute": predicate.attribute}
+    if isinstance(predicate, SpatialRelation):
+        return {
+            "kind": "spatial_relation",
+            "relation": predicate.relation,
+            "argument": to_json_compatible(predicate.argument),
+        }
+    if isinstance(predicate, Not):
+        return {"kind": "not", "operand": predicate_public_value(predicate.operand)}
+    return {
+        "kind": "and" if isinstance(predicate, And) else "or",
+        "operands": [predicate_public_value(item) for item in predicate.operands],
+    }
+
+
 def predicate_digest(predicate: PredicateExpr) -> str:
     payload = json.dumps(
-        to_json_compatible(predicate), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        predicate_public_value(predicate),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     )
     return hashlib.sha256(payload.encode()).hexdigest()
 

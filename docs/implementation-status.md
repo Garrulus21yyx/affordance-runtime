@@ -629,6 +629,23 @@ under `docs/evidence/runs/m4-6-e-phase6-set-completion-zhipu-fb19bc2/`.
 The final full suite passes (`2383 passed, 27 skipped`). Independent broad
 generalization review remains open.
 
+Phase 7 reopens and supersedes Phase 6's architectural closure claim. The five
+MiniWoB cases are regression witnesses, not Runtime specifications. The current
+implementation removes the raw-instruction set compiler, universal/count
+keyword routing, task-relative `task_predicate_truth` projection and
+repeated-leaf exact-count scanner. A persistent `SetObjectiveState` now owns
+candidate scope, three-valued assessments, member obligations, actionability,
+effects, stability and certificate state independently of bounded model
+history. The main Agent establishes typed structural or visual predicates via
+bounded tools; semantic classification returns a complete E-ref assessment
+batch and never grants action authority. Catalog consumes an explicit
+fail-closed directive, and a certified set excludes its member actions before
+releasing only out-of-set successors. Typed evidence obligations drive the
+visual router without task prose. Focused invariant, held-out and architecture
+redline tests pass, and the frozen implementation full suite passes (`2398
+passed, 27 skipped`). Real five-case revalidation is still pending, so
+generalization and verified closure remain open.
+
 The older `BrowserSession` perception/coordinator path remains migration debt:
 it can derive task-level visual needs and heuristically group semantic entities,
 but it does not own the new evidence gate or explicit correspondence authority.

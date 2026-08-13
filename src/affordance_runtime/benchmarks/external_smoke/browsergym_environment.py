@@ -59,9 +59,6 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_visual_projection i
     browsergym_visual_frame,
     project_browsergym_visual_source,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_visual_predicate import (
-    project_browsergym_visual_predicate_source,
-)
 from affordance_runtime.benchmarks.external_smoke.environment import (
     ExternalVerifierResult,
     ExternalVerifierStatus,
@@ -70,10 +67,6 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
-from affordance_runtime.task.set_objective_compiler import (
-    PublicCandidateEvidence,
-    compile_public_task_predicate,
-)
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -97,10 +90,10 @@ from affordance_runtime.world import (
     SourceRequirement,
     SourceSelection,
     VisionEscalationDecision,
-    VisionEvidenceNeed,
     VisionEscalationMode,
     WorldObservationRequest,
     decide_visual_escalation,
+    derive_visual_evidence_needs,
 )
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
@@ -114,22 +107,6 @@ class BrowserGymPort(Protocol):
     def capture_current(self) -> tuple[dict[str, object], dict[str, object]]: ...
     def currentness_probe(self, bid: str) -> object: ...
     def close(self) -> None: ...
-
-
-def _structured_predicate_available(structured_source, instruction: str) -> bool:
-    actionable = {item.target_id for item in structured_source.bindings}
-    fields = {
-        item.target_id: dict(item.state)
-        for item in structured_source.targets
-        if item.target_id in actionable
-    }
-    for fact in structured_source.facts:
-        if fact.subject_id in fields:
-            fields[fact.subject_id][fact.predicate] = fact.value
-    return compile_public_task_predicate(
-        instruction,
-        tuple(PublicCandidateEvidence(target_id, values) for target_id, values in fields.items()),
-    ) is not None
 
 
 @dataclass
@@ -510,45 +487,31 @@ class BrowserGymMiniWobEnvironment:
                     self.last_visual_escalation.mode
                     is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
                 ):
-                    if self.last_visual_escalation.evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION:
-                        assert self.visual_predicate_classifier is not None
-                        self.visual_predicate_classifier_calls += 1
-                        classification = project_browsergym_visual_predicate_source(
-                            raw,
-                            observation_id=visual_observation_id,
-                            acquisition_root_id=observation_id,
-                            instruction=self._task.instruction,
-                            structured_source=projection.world.sources[0],
-                            classifier=self.visual_predicate_classifier,
-                        )
-                        visual_source = classification.source
-                        self.visual_predicate_assessment_count += classification.assessment_count
-                    else:
-                        assert self.visual_candidate_disambiguator is not None
-                        self.visual_disambiguator_calls += 1
-                        disambiguation = project_browsergym_visual_disambiguation_source(
-                            raw,
-                            observation_id=visual_observation_id,
-                            acquisition_root_id=observation_id,
-                            instruction=self._task.instruction,
-                            structured_source=projection.world.sources[0],
-                            disambiguator=self.visual_candidate_disambiguator,
-                            evidence_need=self.last_visual_escalation.evidence_need,
-                        )
-                        visual_source = disambiguation.source
-                        if disambiguation.selected_target_id:
-                            self.visual_disambiguator_selection_count += 1
-                            self.visual_correspondence_matched_count += 1
-                        candidate_binding_filter = {
-                            binding.binding_id
-                            for binding in sources[0].bindings
-                            if binding.target_id == disambiguation.selected_target_id
-                        }
-                        private_bindings = [
-                            binding
-                            for binding in private_bindings
-                            if binding.binding_id in candidate_binding_filter
-                        ]
+                    assert self.visual_candidate_disambiguator is not None
+                    self.visual_disambiguator_calls += 1
+                    disambiguation = project_browsergym_visual_disambiguation_source(
+                        raw,
+                        observation_id=visual_observation_id,
+                        acquisition_root_id=observation_id,
+                        instruction=self._task.instruction,
+                        structured_source=projection.world.sources[0],
+                        disambiguator=self.visual_candidate_disambiguator,
+                        evidence_need=self.last_visual_escalation.evidence_need,
+                    )
+                    visual_source = disambiguation.source
+                    if disambiguation.selected_target_id:
+                        self.visual_disambiguator_selection_count += 1
+                        self.visual_correspondence_matched_count += 1
+                    candidate_binding_filter = {
+                        binding.binding_id
+                        for binding in sources[0].bindings
+                        if binding.target_id == disambiguation.selected_target_id
+                    }
+                    private_bindings = [
+                        binding
+                        for binding in private_bindings
+                        if binding.binding_id in candidate_binding_filter
+                    ]
                     visual_private_bindings: tuple[BrowserGymVisualBinding, ...] = ()
                 else:
                     if self.visual_region_proposer is not None:
@@ -590,11 +553,7 @@ class BrowserGymMiniWobEnvironment:
             except Exception as exc:
                 stage = VisualProviderStage.REGION_PROPOSAL
                 if self.last_visual_escalation is not None and self.last_visual_escalation.mode is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES:
-                    stage = (
-                        VisualProviderStage.PREDICATE_CLASSIFICATION
-                        if self.last_visual_escalation.evidence_need is VisionEvidenceNeed.OPEN_VOCABULARY_PREDICATE_CLASSIFICATION
-                        else VisualProviderStage.CANDIDATE_DISAMBIGUATION
-                    )
+                    stage = VisualProviderStage.CANDIDATE_DISAMBIGUATION
                 self._record_visual_provider_failure(
                     classify_visual_provider_failure(stage, exc)
                 )
@@ -654,25 +613,22 @@ class BrowserGymMiniWobEnvironment:
         terminal: bool,
     ) -> ObservationSelectionPlan:
         explicit_visual = any(item.source == "browsergym_visual" for item in plan.selections)
-        decision = decide_visual_escalation(
+        evidence_needs = derive_visual_evidence_needs(
             structured_source,
+            explicitly_requested=explicit_visual,
+            terminal=terminal,
+        )
+        decision = decide_visual_escalation(
+            evidence_needs,
             visual_available=any((
                 self.visual_region_proposer,
                 self.visual_candidate_disambiguator,
                 self.visual_predicate_classifier,
             )),
             candidate_verification_available=self.visual_candidate_disambiguator is not None,
-            predicate_classification_available=self.visual_predicate_classifier is not None,
-            structured_predicate_available=_structured_predicate_available(
-                structured_source,
-                self._task.instruction if self._task is not None else "",
-            ),
             discovery_available=self.visual_region_proposer is not None,
             diagnosis_available=self.visual_region_proposer is not None,
             marked_candidate_policy_available=self.marked_candidate_policy_available,
-            explicitly_requested=explicit_visual,
-            terminal=terminal,
-            task_instruction=self._task.instruction if self._task is not None else "",
         )
         self.last_visual_escalation = decision
         if decision.selects_visual:

@@ -88,9 +88,13 @@ normative:
     lifecycle: current
 
 reference:
+  - role: set_objective_de_specialization_convergence_record
+    path: docs/superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md
+    lifecycle: current
   - role: dom_first_evidence_gated_vision_convergence_record
     path: docs/superpowers/plans/2026-08-12-dom-first-evidence-gated-vision-convergence.md
-    lifecycle: current
+    lifecycle: immutable_record
+    superseded_by: docs/superpowers/plans/2026-08-13-m4-6-e-set-objective-de-specialization-plan.md
   - role: step13_visual_binding_implementation_record
     path: docs/superpowers/plans/2026-08-12-step13-visual-binding-implementation.md
     lifecycle: immutable_record

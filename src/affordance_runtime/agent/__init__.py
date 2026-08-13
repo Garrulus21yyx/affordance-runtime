@@ -27,10 +27,13 @@ if TYPE_CHECKING:
         Abort,
         AgentDecisionPackage,
         AskUser,
+        EstablishSetObjective,
         ProposeDone,
         RequestActionPage,
         RequestObservation,
         SelectAction,
+        SetPredicateAssessmentDecision,
+        SubmitSetPredicateAssessments,
         Wait,
     )
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
@@ -65,6 +68,12 @@ _EXPORTS = {
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
+    "EstablishSetObjective": (
+        "affordance_runtime.agent.decisions", "EstablishSetObjective",
+    ),
+    "SetPredicateAssessmentDecision": (
+        "affordance_runtime.agent.decisions", "SetPredicateAssessmentDecision",
+    ),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
     "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),
@@ -76,6 +85,9 @@ _EXPORTS = {
     "RequestObservation": ("affordance_runtime.agent.decisions", "RequestObservation"),
     "RuntimeFailure": ("affordance_runtime.agent.runtime_failure", "RuntimeFailure"),
     "SelectAction": ("affordance_runtime.agent.decisions", "SelectAction"),
+    "SubmitSetPredicateAssessments": (
+        "affordance_runtime.agent.decisions", "SubmitSetPredicateAssessments",
+    ),
     "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
