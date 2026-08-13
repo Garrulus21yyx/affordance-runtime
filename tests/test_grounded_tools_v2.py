@@ -217,10 +217,18 @@ def test_mandatory_ingress_exposes_only_typed_objective_tools_and_preserves_valu
 
     def predicate(label: str) -> dict[str, object]:
         return {
-            "kind": "fact_equals",
-            "field_name": "identity.label",
-            "expected": label,
-            "negated": False,
+            "any_of": [
+                {
+                    "all_of": [
+                        {
+                            "kind": "fact_equals",
+                            "field_name": "identity.label",
+                            "expected": label,
+                            "negated": False,
+                        }
+                    ]
+                }
+            ]
         }
 
     package = resolve_grounded_tool_call(
@@ -257,10 +265,18 @@ def test_aggregate_ingress_derives_count_contract_without_model_supplied_result(
 
     def predicate(field: str, value: str) -> dict[str, object]:
         return {
-            "kind": "fact_equals",
-            "field_name": field,
-            "expected": value,
-            "negated": False,
+            "any_of": [
+                {
+                    "all_of": [
+                        {
+                            "kind": "fact_equals",
+                            "field_name": field,
+                            "expected": value,
+                            "negated": False,
+                        }
+                    ]
+                }
+            ]
         }
 
     package = resolve_grounded_tool_call(

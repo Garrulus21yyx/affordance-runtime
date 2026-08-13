@@ -63,7 +63,6 @@ from affordance_runtime.world.schema_validation import validate_value_issue
 _SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
 When establish_task_program is offered, compile the complete bounded instruction into its ordered typed steps once. Include later controls such as submit even if they are not yet visible. Runtime will re-resolve every selector after a fresh observation.
-For one target condition, emit predicate as one direct typed atom. Use kind=dnf with clauses/atoms only for a genuine compound OR-of-AND condition. Never copy JSON Schema keywords such as items or oneOf into the command.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
 When the request quantifies multiple targets, or identifies target(s) by a public state/relation represented by an establish_* objective operation, establish that typed objective before any member action.
 When an explicit target condition already appears in current_state, use its public fact objective; do not replace available structural evidence with a visual concept.
@@ -136,44 +135,6 @@ class _ProgramPredicate(_TaskProgramPayloadBase):
     any_of: list[_ProgramAllOf] = Field(min_length=1, max_length=4)
 
 
-class _ProgramDnfClause(_TaskProgramPayloadBase):
-    atoms: list[_ProgramAtom] = Field(min_length=1, max_length=8)
-
-
-class _ProgramDnfPredicate(_TaskProgramPayloadBase):
-    kind: Literal["dnf"]
-    clauses: list[_ProgramDnfClause] = Field(min_length=1, max_length=4)
-
-
-_ProgramPredicateInput = Annotated[
-    _ProgramFactAtom
-    | _ProgramCompareAtom
-    | _ProgramVisualConceptAtom
-    | _ProgramVisualAttributeAtom
-    | _ProgramDnfPredicate,
-    Field(discriminator="kind"),
-]
-
-
-def _normalize_program_predicate_input(value):
-    """Accept the prior transport in tests/persistence without advertising it to models."""
-
-    if not isinstance(value, dict) or "any_of" not in value:
-        return value
-    clauses = value.get("any_of")
-    if not isinstance(clauses, list):
-        return value
-    return {
-        "kind": "dnf",
-        "clauses": [
-            {"atoms": clause.get("all_of")}
-            if isinstance(clause, dict)
-            else clause
-            for clause in clauses
-        ],
-    }
-
-
 _ProgramAction = Literal["click", "type", "select", "press", "drag", "navigate", "scroll", "set_value"]
 _ProgramDomain = Literal["structured", "all_visible", "fused"]
 _ProgramExtent = Literal[
@@ -186,22 +147,17 @@ _ProgramExtent = Literal[
 
 class _ProgramEntityStep(_TaskProgramPayloadBase):
     kind: Literal["entity"]
-    predicate: _ProgramPredicateInput
+    predicate: _ProgramPredicate
     semantic_action: _ProgramAction
     entity_domain: _ProgramDomain = "structured"
     parameters: dict[str, object] = Field(default_factory=dict)
-    postcondition_predicate: _ProgramPredicateInput | None = None
+    postcondition_predicate: _ProgramPredicate | None = None
     postcondition_domain: _ProgramDomain = "structured"
-
-    @field_validator("predicate", "postcondition_predicate", mode="before")
-    @classmethod
-    def _predicate(cls, value):
-        return _normalize_program_predicate_input(value)
 
 
 class _ProgramSetStep(_TaskProgramPayloadBase):
     kind: Literal["set"]
-    predicate: _ProgramPredicateInput
+    predicate: _ProgramPredicate
     quantifier: Literal["exactly_one", "all_in_closed_scope"]
     semantic_action: _ProgramAction
     parameters: dict[str, object] = Field(default_factory=dict)
@@ -209,27 +165,17 @@ class _ProgramSetStep(_TaskProgramPayloadBase):
     scope_root: str = "current-viewport"
     scope_entity_domain: _ProgramDomain = "structured"
 
-    @field_validator("predicate", mode="before")
-    @classmethod
-    def _predicate(cls, value):
-        return _normalize_program_predicate_input(value)
-
 
 class _ProgramAggregateStep(_TaskProgramPayloadBase):
     kind: Literal["aggregate"]
-    source_predicate: _ProgramPredicateInput
+    source_predicate: _ProgramPredicate
     operator: Literal["count", "sum", "min", "max"]
-    destination_predicate: _ProgramPredicateInput
+    destination_predicate: _ProgramPredicate
     semantic_action: _ProgramAction = "type"
     value_field: str = ""
     scope_extent: _ProgramExtent = "current_viewport"
     scope_root: str = "current-viewport"
     scope_entity_domain: _ProgramDomain = "structured"
-
-    @field_validator("source_predicate", "destination_predicate", mode="before")
-    @classmethod
-    def _predicate(cls, value):
-        return _normalize_program_predicate_input(value)
 
 
 _ProgramStep = Annotated[
@@ -699,11 +645,8 @@ def _task_program_repair_messages(messages):
             content=(
                 system.content
                 + "\n\nReturn exactly one JSON object with op=establish_task_program and a nested steps array. "
-                "For a single condition, predicate is one direct typed atom, for example "
-                '{"kind":"fact_equals","field_name":"identity.label","expected":"visible label"}. '
-                "Use kind=dnf with clauses/atoms only for a genuinely compound OR-of-AND predicate. "
-                "Return no reasoning, Markdown, schema keywords such as items/oneOf, wrapper object, E-ref, "
-                "opaque identity, or coordinate."
+                "Each step and predicate must preserve the nested typed structure required by the supplied JSON "
+                "Schema. Return no reasoning, Markdown, wrapper object, E-ref, opaque identity, or coordinate."
             ),
         ),
         *messages[1:],
