@@ -69,12 +69,13 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
     ref_by_target = dict(context.grounding.target_refs)
     entity_by_ref = {item.ref: item for item in context.grounding.entities}
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
-    for option in context.actions.options:
-        ref = ref_by_target.get(option.target_id)
-        if ref is None:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        verb = _verb(option.semantic_action)
-        grouped.setdefault((verb, _shape_key(verb, option.parameter_schema)), []).append((ref, option))
+    if context.progress.local_objective_open:
+        for option in context.actions.options:
+            ref = ref_by_target.get(option.target_id)
+            if ref is None:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+            verb = _verb(option.semantic_action)
+            grouped.setdefault((verb, _shape_key(verb, option.parameter_schema)), []).append((ref, option))
 
     specs: list[ToolSpec] = []
     bindings: list[object] = []
@@ -83,7 +84,8 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
             ToolSpec(
                 "establish_local_objective",
                 "Install one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
-                "Use semantic predicates only; never put E-refs, DOM IDs, screen points, private selectors, or bindings here.",
+                "Use semantic predicates only. Runtime assigns objective/scope/step IDs; never put E-refs, DOM IDs, "
+                "screen points, private selectors, or bindings here.",
                 _object_schema({"value": _local_objective_schema()}, ("value",)),
             )
         )

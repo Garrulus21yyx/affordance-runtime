@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StringConstraints, field_validator
@@ -99,7 +101,6 @@ class SelectActionPayload(_Payload):
 class LocalObjectiveStepPayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
-    step_id: Id240
     predicate: dict[str, Any]
     entity_domain: Literal["structured", "all_visible", "fused"] = "structured"
     semantic_action: Id240
@@ -132,16 +133,12 @@ class LocalObjectiveStepPayload(BaseModel):
 class SequenceLocalObjectivePayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
     kind: Literal["sequence"]
-    objective_id: Id240
     steps: Annotated[list[LocalObjectiveStepPayload], Field(min_length=1, max_length=8)]
 
 
 class SetLocalObjectivePayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
     kind: Literal["set"]
-    objective_id: Id240
-    scope_id: Id240
-    scope_root: Id240 = "current-viewport"
     scope_extent: Literal[
         "current_viewport", "current_container", "current_document", "current_application_state"
     ] = "current_viewport"
@@ -162,9 +159,6 @@ class SetLocalObjectivePayload(BaseModel):
 class AggregateLocalObjectivePayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
     kind: Literal["aggregate"]
-    objective_id: Id240
-    scope_id: Id240
-    scope_root: Id240 = "current-viewport"
     scope_extent: Literal[
         "current_viewport", "current_container", "current_document", "current_application_state"
     ] = "current_viewport"
@@ -459,11 +453,12 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
 
 def local_objective_from_payload(payload: LocalObjectiveSpecPayload):
     if isinstance(payload, SequenceLocalObjectivePayload):
+        digest = _local_objective_payload_digest(payload)
         return ObjectiveSequence(
-            payload.objective_id,
+            f"sequence:{digest}",
             tuple(
                 ObjectiveStep(
-                    item.step_id,
+                    f"step:{index + 1}",
                     EntitySelector(
                         predicate_from_public_value(item.predicate),
                         ScopeEntityDomain(item.entity_domain),
@@ -476,18 +471,19 @@ def local_objective_from_payload(payload: LocalObjectiveSpecPayload):
                     if item.postcondition is not None
                     else None,
                 )
-                for item in payload.steps
+                for index, item in enumerate(payload.steps)
             ),
         )
+    digest = _local_objective_payload_digest(payload)
     scope = ScopeSpec(
-        payload.scope_id,
-        payload.scope_root,
+        f"scope:{digest}",
+        _scope_root(payload.scope_extent),
         ScopeExtent(payload.scope_extent),
         entity_domain=ScopeEntityDomain(payload.entity_domain),
     )
     if isinstance(payload, SetLocalObjectivePayload):
         return SetObjective(
-            payload.objective_id,
+            f"set-objective:{digest}",
             scope,
             predicate_from_public_value(payload.predicate),
             SetQuantifier(payload.quantifier),
@@ -504,7 +500,7 @@ def local_objective_from_payload(payload: LocalObjectiveSpecPayload):
         )
     assert isinstance(payload, AggregateLocalObjectivePayload)
     return AggregateObjective(
-        payload.objective_id,
+        f"aggregate-objective:{digest}",
         scope,
         predicate_from_public_value(payload.predicate),
         ValueExtractor(
@@ -526,10 +522,8 @@ def local_objective_to_payload(objective) -> LocalObjectiveSpecPayload:
     if isinstance(objective, ObjectiveSequence):
         return SequenceLocalObjectivePayload(
             kind="sequence",
-            objective_id=objective.sequence_id,
             steps=[
                 LocalObjectiveStepPayload(
-                    step_id=step.step_id,
                     predicate=predicate_public_value(step.selector.predicate),
                     entity_domain=step.selector.entity_domain.value,
                     semantic_action=step.action_template.semantic_action,
@@ -546,9 +540,6 @@ def local_objective_to_payload(objective) -> LocalObjectiveSpecPayload:
     if isinstance(objective, SetObjective):
         return SetLocalObjectivePayload(
             kind="set",
-            objective_id=objective.objective_id,
-            scope_id=objective.scope.scope_id,
-            scope_root=objective.scope.root_entity_id,
             scope_extent=objective.scope.extent.value,
             entity_domain=objective.scope.entity_domain.value,
             predicate=predicate_public_value(objective.predicate),
@@ -564,9 +555,6 @@ def local_objective_to_payload(objective) -> LocalObjectiveSpecPayload:
     if isinstance(objective, AggregateObjective):
         return AggregateLocalObjectivePayload(
             kind="aggregate",
-            objective_id=objective.objective_id,
-            scope_id=objective.source_scope.scope_id,
-            scope_root=objective.source_scope.root_entity_id,
             scope_extent=objective.source_scope.extent.value,
             entity_domain=objective.source_scope.entity_domain.value,
             predicate=predicate_public_value(objective.member_predicate),
@@ -580,6 +568,20 @@ def local_objective_to_payload(objective) -> LocalObjectiveSpecPayload:
             output_format=objective.output_format.value,
         )
     raise TypeError("local objective variant is unsupported")
+
+
+def _local_objective_payload_digest(payload: LocalObjectiveSpecPayload) -> str:
+    encoded = json.dumps(payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()[:24]
+
+
+def _scope_root(extent: str) -> str:
+    return {
+        "current_viewport": "current-viewport",
+        "current_container": "current-container",
+        "current_document": "current-document",
+        "current_application_state": "current-application-state",
+    }[extent]
 
 
 def payload_to_package(

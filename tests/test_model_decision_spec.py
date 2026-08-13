@@ -115,8 +115,6 @@ def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identi
             "context_id": "context:1",
             "objective": {
                 "kind": "set",
-                "objective_id": "set-objective:1",
-                "scope_id": "scope:viewport",
                 "predicate": {
                     "kind": "fact_equals",
                     "field_name": "grid_coordinate",
@@ -130,5 +128,10 @@ def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identi
     decision = payload_to_decision(payload, "context:1")
 
     assert isinstance(decision, EstablishLocalObjective)
+    assert decision.objective.objective_id.startswith("set-objective:")
     encoded = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
     assert "target_id" not in encoded and "action_id" not in encoded and "binding_id" not in encoded
+    objective_schema = AgentDecisionPayload.model_json_schema()["$defs"]["SetLocalObjectivePayload"]
+    assert not set(objective_schema["properties"]).intersection(
+        {"objective_id", "scope_id", "scope_root", "target_id", "action_id", "binding_id"}
+    )

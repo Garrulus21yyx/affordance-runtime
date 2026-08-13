@@ -146,7 +146,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     ]
 
 
-def test_exact_lattice_relation_is_available_without_model_semantic_tools() -> None:
+def test_exact_lattice_relation_is_available_before_model_target_selection() -> None:
     raw = _raw_grid()
     raw.pop("screenshot")
     projection = _projection(raw)
@@ -204,7 +204,7 @@ def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> N
 
     catalog = compile_grounded_tool_catalog(context)
 
-    assert any(spec.name == "click" for spec in catalog.specs)
+    assert not any(spec.name == "click" for spec in catalog.specs)
     assert [spec.name for spec in catalog.specs if spec.name.startswith("establish_")] == [
         "establish_local_objective"
     ]

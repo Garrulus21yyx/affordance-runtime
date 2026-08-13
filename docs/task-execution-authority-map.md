@@ -57,6 +57,8 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 
 - Before observation: only task/source identities exist.
 - At observation: Runtime may issue semantic entity IDs and private binding IDs.
+- When AgentPolicy proposes a LocalObjective: it supplies only typed semantics;
+  Runtime assigns objective, scope, and step identities after validation.
 - In one AgentContext: the projection may issue call-local E-refs.
 - At selection: Runtime accepts only the current ActionSpace member.
 - Before execution: target and binding are revalidated against the current world.

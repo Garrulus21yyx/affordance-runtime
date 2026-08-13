@@ -26,13 +26,23 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
 )
 from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolCommandPayload
 from affordance_runtime.model_policy.tool_contracts import ToolCall
-from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.task import (
+    ActionTemplate,
+    FactEquals,
+    RiskProfile,
+    ScopeExtent,
+    ScopeSpec,
+    SetObjective,
+    SetQuantifier,
+    TaskGoal,
+)
+from affordance_runtime.task.local_objective import establish_local_objective
 from affordance_runtime.world import ActionSpaceBuilder
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
 
-def _context():
+def _context(*, local_objective=None):
     raw = raw_observation(
         ax_node("username", "textbox", ""),
         ax_node("password", "textbox", ""),
@@ -70,6 +80,12 @@ def _context():
         risk_profile=RiskProfile.LOW,
     )
     state = AgentLoopState(projection.world, remaining_turns=5)
+    if local_objective is not None:
+        state.local_objective_state = establish_local_objective(
+            local_objective,
+            projection.world,
+            enumerator=state.scope_enumerator,
+        )
     return ContextBuilder().build(
         task,
         state,
@@ -93,13 +109,20 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
 
 
 def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:
-    context = _context()
+    context = _context(
+        local_objective=SetObjective(
+            "set-objective:fill-password",
+            ScopeSpec("scope:viewport", "current-viewport", ScopeExtent.CURRENT_VIEWPORT),
+            FactEquals("identity.label", "Password"),
+            SetQuantifier.EXACTLY_ONE,
+            ActionTemplate("fill", parameters={"value": "UV"}),
+        )
+    )
     catalog = compile_grounded_tool_catalog(context)
-    assert {item.name for item in catalog.specs} == {"establish_local_objective", "fill", "click"}
-    refs = {item.label: item.ref for item in context.grounding.entities}
+    assert {item.name for item in catalog.specs} == {"fill"}
     package = resolve_grounded_tool_call(
         catalog,
-        ToolCall("fill", {"target": refs["Password"], "text": "UV"}),
+        ToolCall("fill", {"text": "UV"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(package, AgentDecisionPackage)
@@ -116,6 +139,7 @@ def test_catalog_has_one_local_objective_constructor_and_a_stable_command_envelo
     assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
         "op", "target", "text", "value"
     }
+    assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)
 
 
 def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:
@@ -128,8 +152,6 @@ def test_local_objective_tool_carries_semantics_without_pre_observation_target_i
             {
                 "value": {
                     "kind": "set",
-                    "objective_id": "set-objective:1",
-                    "scope_id": "scope:viewport",
                     "predicate": {
                         "kind": "fact_equals",
                         "field_name": "grid_coordinate",
