@@ -727,3 +727,20 @@ currentness、execute 和 task revision；不需要复制 BrowserGym 环境。�
 alias，以承接历史测试和外部 import，不再拥有算法。架构门禁保证产品 evaluator 不导入 benchmark。
 focused verification 为 `31 passed, 8 skipped`，全量离线验证为 `2428 passed, 27 skipped`。
 CLI/default 和 live benchmark 仍然 open。
+
+## 18. 实施记录：product DOM structural effect evidence
+
+2026-08-13 在准备 target CLI 时发现，原机械 evaluator 的 activate 分支要求 screenshot artifact；
+普通 `DomSurfaceAdapter` 即使产生可靠结构化状态变化也只能得到 `UNKNOWN`。若直接接 CLI，链路可以启动，
+但 DOM 点击后无法形成已验证 progress。
+
+`ProductionActionEvaluator` 现在先检查目标的公开 before/after semantics，并且只在存在 changed fact、
+current typed source lineage、structural assurance、source coverage 与 world coverage 均完整时确认
+`structural_target_diff_v1` effect。没有结构化变化时不会凭 dispatch receipt 确认 no-effect；已有
+`visual_diff_v1` 路径保持不变。
+
+新增真实 Playwright E2E 通过
+`compose_target_runtime -> UnifiedWorldEnvironment -> DomSurfaceAdapter -> ProductionActionEvaluator ->
+ProductionTaskEvaluator` 完成一次 button activation。策略只看到并选择公开 action ID，selector/binding
+仍由 Runtime 内部持有。focused verification 为 `15 passed`，全量离线验证为
+`2429 passed, 27 skipped`。显式 target CLI、default cutover 和 live benchmark 仍然 open。

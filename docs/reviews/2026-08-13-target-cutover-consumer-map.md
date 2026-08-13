@@ -9,7 +9,7 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 | root `affordance-runtime run` | legacy `run_scenario -> compose_run_coordinator -> RunCoordinator` | keep default in this slice; retarget reference scenarios before Phase 3 |
 | public `RuntimeClient` / `LegacyRuntimeClient` | legacy `RunCoordinator` | import-compatible, explicitly named legacy compatibility; feature-frozen |
 | public `TargetRuntimeClient` | `compose_target_runtime -> TargetRuntime -> ThinTaskIntake -> AgentLoop` | executable natural-language target lifecycle; not yet CLI/default |
-| product browser world | `BrowserSession -> DomSurfaceAdapter -> UnifiedWorldEnvironment` | target `WorldEnvironment` implementation already exists; CLI wiring remains open |
+| product browser world | `BrowserSession -> DomSurfaceAdapter -> UnifiedWorldEnvironment` | real-browser target-runtime E2E passes with product action/task evaluators; CLI wiring remains open |
 | product action evaluation | `ProductionActionEvaluator` | public before/after facts only; BrowserGym name is compatibility-only |
 | `benchmarks/target_loop` | product `compose_target_runtime` with harness-only decorators | target/shared claim owner |
 | `benchmarks/external_breadth` and current visual Step-13 gate | target-loop benchmark composition | target benchmark owner; live evidence remains profile-specific |

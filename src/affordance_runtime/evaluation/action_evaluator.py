@@ -92,15 +92,35 @@ def _evaluation(request, before, after, status, refs=()) -> ActionEvaluation:
 
 
 def _evaluate_activate(before, request, after) -> ActionEvaluation:
+    target_changed = _target_semantics(before, request.intent.target_id) != _target_semantics(
+        after, request.intent.target_id,
+    )
+    structural_refs = _changed_target_fact_refs(
+        before,
+        after,
+        request.intent.target_id,
+    )
+    if target_changed and structural_refs:
+        return ActionEvaluation(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
+            ActionEvaluationStatus.EFFECT_CONFIRMED,
+            "public target semantics changed with current structural evidence",
+            structural_refs,
+            {
+                "verification_profile": "structural_target_diff_v1",
+                "expected_effects": request.selection.semantic_effects,
+                "observed_effect": ActionEvaluationStatus.EFFECT_CONFIRMED.value,
+                "target_changed": True,
+            },
+        )
     before_digests = _screenshot_digests(before)
     after_digests = _screenshot_digests(after)
     evidence_ref = _screenshot_evidence_ref(after)
     if not before_digests or not after_digests or evidence_ref is None:
         return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
     screenshot_changed = before_digests != after_digests
-    target_changed = _target_semantics(before, request.intent.target_id) != _target_semantics(
-        after, request.intent.target_id,
-    )
     status = (
         ActionEvaluationStatus.EFFECT_CONFIRMED
         if screenshot_changed or target_changed
@@ -125,6 +145,41 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
             "screenshot_changed": screenshot_changed,
             "target_changed": target_changed,
         },
+    )
+
+
+def _changed_target_fact_refs(before, after, target_id: str) -> tuple[str, ...]:
+    before_values = {
+        fact.predicate: fact.value
+        for fact in before.facts
+        if fact.subject_id == target_id
+    }
+    if not before_values:
+        return ()
+    index = WorldEvidenceIndex.from_observation(after)
+    refs = tuple(
+        record.evidence_ref
+        for record in index.records
+        if record.kind == "fact"
+        and record.subject_id == target_id
+        and record.predicate in before_values
+        and record.value != before_values[record.predicate]
+        and evidence_source_is_current(record, after)
+        and assurance_satisfies(record.source_assurance, "structural")
+        and _source_coverage_complete(record.source_observation_id, after)
+    )
+    return tuple(dict.fromkeys(refs))
+
+
+def _source_coverage_complete(source_observation_id: str, observation) -> bool:
+    source = next(
+        (item for item in observation.sources if item.observation_id == source_observation_id),
+        None,
+    )
+    return bool(
+        source is not None
+        and source.coverage == CoverageState.COMPLETE
+        and observation.coverage.get(source.surface) == CoverageState.COMPLETE
     )
 
 

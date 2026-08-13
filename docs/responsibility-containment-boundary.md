@@ -301,6 +301,9 @@ postcondition algorithm is now product-owned by `evaluation/action_evaluator.py`
 as `ProductionActionEvaluator`; the historical
 `BrowserGymMechanicalActionEvaluator` name is only a compatibility alias.
 The evaluator owns fill/select and public activate before/after evidence;
+DOM activation is confirmed only by a public target transition backed by changed,
+current, structural-assurance fact records with complete source coverage. Screenshot
+activation retains its separate visual-diff evidence profile.
 `agent/progress_control` owns run-scoped semantic digests and
 execute/suppress/terminate disposition; `agent/session_snapshot` owns a
 read-only privacy-safe in-flight view. Progress projection cannot modify
