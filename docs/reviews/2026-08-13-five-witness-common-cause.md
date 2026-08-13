@@ -95,3 +95,48 @@ No parallel chain is authorized.
 No task name, coordinate grammar, SVG family, label, fixture or benchmark ID may
 enter production behavior. The five cases remain witnesses and cannot justify a
 case-shaped branch or a generalization claim.
+
+## Existing-mainline remediation result
+
+Commit `b354398` removed only the Step-13 runner's unconditional objective
+proposer and `REQUIRED` override. It did not add or replace a planner, adapter,
+protocol, world source, evaluator or executor. The clean-SHA rerun wrote progress
+outside the worktree and produced [valid public report
+evidence](../evidence/runs/p5-m4-6-e-step13-five-witness-seed7-b354398/report.json):
+
+- 5/5 completed, 3/5 succeeded;
+- `run_evidence_valid=true` and the bounded visual gate accepted;
+- every case reached the existing action adapter;
+- all action calls resolved through grounded tools and private Runtime binding;
+- no unknown operation, grounding authority or execution failure explains the
+  remaining two cases.
+
+| Case | Outcome | Turns / executions | Failure boundary |
+|---|---|---:|---|
+| `miniwob-60-05` | success | 1 / 1 | none |
+| `miniwob-60-34` | success | 2 / 2 | none |
+| `miniwob-60-42` | task failed | 1 / 1 | agent submitted before satisfying the set |
+| `miniwob-60-49` | success | 2 / 2 | none |
+| `miniwob-60-60` | task failed | 2 / 2 | agent supplied the wrong visual aggregate, then submitted |
+
+A separate private replay, retained only outside the repository, checked the
+actual failed-turn context. For `click-shades`, Unified World exposed public
+`appearance.color_family` and `selected` state for every clickable entity. The
+agent selected two blue entities, then submitted while more unselected blue
+entities remained. For `visual-addition`, the screenshot represented eight
+blocks plus two blocks; the agent filled `11` and submitted. BrowserGym then
+returned authoritative terminal failure in both cases.
+
+These failures must not be repaired by a color loop, block counter, instruction
+keyword, task ID or submit guard in Runtime. They are respectively persistent
+set semantics and multimodal aggregate semantics, already within the declared
+scope of the existing LocalObjective algebra and model role.
+
+The next common boundary is the task-capability contract. The frozen external
+breadth manifest declares only low-level `required_primitives`; it labels both
+remaining cases as `activate` and cannot state whether persistent set,
+aggregate, sequence or no LocalObjective semantics are required. Consequently
+the runner can currently only enable the proposer for the entire cohort or for
+none of it. The admitted fix is an explicit, generic task/manifest capability
+consumed by the existing composition. Derivation from benchmark IDs, task-name
+substrings, labels or observed pass/fail is prohibited.

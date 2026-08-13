@@ -246,6 +246,9 @@ reference:
   - role: runtime_main_chain_convergence_audit_and_legacy_exit_plan
     path: docs/reviews/2026-08-13-runtime-chain-convergence-audit.md
     lifecycle: current
+  - role: five_witness_live_common_cause_review
+    path: docs/reviews/2026-08-13-five-witness-common-cause.md
+    lifecycle: current
   - role: target_default_cutover_consumer_map
     path: docs/reviews/2026-08-13-target-cutover-consumer-map.md
     lifecycle: current
