@@ -11,7 +11,7 @@ from affordance_runtime.model_policy.spec import (
 )
 
 
-def test_canonical_package_has_four_objective_operations_and_seven_decisions() -> None:
+def test_canonical_package_has_four_objective_operations_and_nine_decisions() -> None:
     schema = decision_response_schema()
     objective = schema["properties"]["objective_operation"]
     decision = schema["properties"]["decision"]
@@ -24,6 +24,8 @@ def test_canonical_package_has_four_objective_operations_and_seven_decisions() -
     assert decision["discriminator"]["propertyName"] == "type"
     assert set(decision["discriminator"]["mapping"]) == {
         "select_action",
+        "establish_set_objective",
+        "submit_set_predicate_assessments",
         "request_observation",
         "request_action_page",
         "ask_user",
@@ -32,7 +34,7 @@ def test_canonical_package_has_four_objective_operations_and_seven_decisions() -
         "abort",
     }
     assert len(objective["oneOf"]) == 4
-    assert len(decision["oneOf"]) == 7
+    assert len(decision["oneOf"]) == 9
     assert AgentDecisionPackagePayload.model_json_schema() == schema
 
 

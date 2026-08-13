@@ -9,6 +9,7 @@ from affordance_runtime.agent import (
     AgentFailureCode,
     AgentLoop,
     AgentLoopStatus,
+    EstablishSetObjective,
     ProposeDone,
     RequestObservation,
     SelectAction,
@@ -27,6 +28,7 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import (
+    FactEquals,
     HypothesisItemRejection,
     HypothesisPredicateAssessment,
     HypothesisProposalMode,
@@ -37,6 +39,7 @@ from affordance_runtime.task import (
     RequirementHypothesisProposal,
     RequirementHypothesisProposalBatch,
     RiskProfile,
+    SetQuantifier,
     TaskGoal,
 )
 from affordance_runtime.task.contracts import criterion_id
@@ -499,6 +502,36 @@ def test_mandatory_semantic_ingress_rejects_forged_effectful_action_without_obje
         assert environment.execute_calls == 0
         assert result.control_transitions[-1].admission is not None
         assert result.control_transitions[-1].admission.reason_code == "objective_required"
+
+    asyncio.run(scenario())
+
+
+def test_semantic_objective_establishment_is_a_non_effectful_control_transition() -> None:
+    class ObjectivePolicy:
+        calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if self.calls > 1:
+                return Abort(context.context_id, "stop after establishment", "policy")
+            return EstablishSetObjective(
+                context.context_id,
+                FactEquals("identity.entity_id", "shared-toggle"),
+                SetQuantifier.EXACTLY_ONE,
+                "activate",
+                ("shared-toggle",),
+            )
+
+    async def scenario() -> None:
+        environment = StaticEnvironment([_world("obs-1", False)])
+        loop = _loop(ObjectivePolicy())
+        loop.semantic_control_required = True
+        session = await AgentEpisodeRunner(loop).start(environment, _task())
+
+        result = await session.run_until_pause()
+
+        assert result.execution_count == 0
+        assert dict(result.control_transition_kind_counts)["EstablishSetObjective"] == 1
 
     asyncio.run(scenario())
 

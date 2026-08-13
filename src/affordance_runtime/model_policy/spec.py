@@ -1,4 +1,4 @@
-"""Canonical seven-variant structured model decision specification."""
+"""Canonical closed structured model decision specification."""
 
 from __future__ import annotations
 
