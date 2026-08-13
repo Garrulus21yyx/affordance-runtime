@@ -26,7 +26,7 @@ def test_level_one_requires_actual_select_action_contract() -> None:
         }
     )
     assert value.action_id == "action:x"
-    assert len(AgentDecisionPayload.model_json_schema()["oneOf"]) == 12
+    assert len(AgentDecisionPayload.model_json_schema()["oneOf"]) == 11
 
 
 def test_level_two_context_is_minimal_but_uses_actual_ids() -> None:

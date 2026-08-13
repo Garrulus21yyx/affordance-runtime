@@ -190,45 +190,6 @@ def test_comparison_and_bounded_transport_preserve_three_valued_semantics() -> N
     assert evaluate_predicate(predicate, {}, semantic) is PredicateTruth.UNKNOWN
 
 
-def test_model_predicate_uses_public_label_alias_but_never_opaque_identity() -> None:
-    label = predicate_from_transport(
-        {
-            "any_of": [
-                {
-                    "all_of": [
-                        {
-                            "kind": "fact_equals",
-                            "field_name": "label",
-                            "expected": "held-out",
-                            "negated": False,
-                        }
-                    ]
-                }
-            ]
-        }
-    )
-
-    assert isinstance(label, FactEquals)
-    assert label.field_name == "identity.label"
-    with pytest.raises(ValueError, match="opaque entity identity"):
-        predicate_from_transport(
-            {
-                "any_of": [
-                    {
-                        "all_of": [
-                            {
-                                "kind": "fact_equals",
-                                "field_name": "identity.entity_id",
-                                "expected": "invented",
-                                "negated": False,
-                            }
-                        ]
-                    }
-                ]
-            }
-        )
-
-
 def test_compare_in_and_type_mismatch_fail_closed() -> None:
     included = Compare("rank", CompareOperator.IN, (1, 2))
     ordered = Compare("rank", CompareOperator.LTE, 2)

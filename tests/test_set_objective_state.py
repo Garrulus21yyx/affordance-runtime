@@ -17,7 +17,6 @@ from affordance_runtime.task import (
     SetObjectiveStateErrorCode,
     SetQuantifier,
     TaskGoal,
-    VisualAttribute,
     VisualConcept,
 )
 from affordance_runtime.task.set_objective_state import (
@@ -265,31 +264,6 @@ def test_visual_predicate_creates_typed_evidence_obligation_then_admits_batch() 
 
     assert classified.reduction.disposition is SetDisposition.READY_FOR_NEXT_MEMBER
     assert set_evidence_obligations(classified) == ()
-
-
-def test_visual_attribute_reuses_one_unambiguous_public_state_field() -> None:
-    world = _world(1, ("blue", "red", "blue"))
-    state = establish_set_objective_state(
-        predicate=VisualAttribute("blue"),
-        quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
-        semantic_action="activate",
-        candidate_entity_ids=tuple(item.target_id for item in world.targets),
-        observation=world,
-        scope=ScopeSpec(
-            "scope:closed-public-attribute",
-            "current-viewport",
-            ScopeExtent.CURRENT_VIEWPORT,
-            entity_domain=ScopeEntityDomain.STRUCTURED,
-        ),
-    )
-
-    assert [item.truth for item in state.assessments] == [
-        PredicateTruth.TRUE,
-        PredicateTruth.FALSE,
-        PredicateTruth.TRUE,
-    ]
-    assert state.reduction.disposition is SetDisposition.READY_FOR_NEXT_MEMBER
-    assert set_evidence_obligations(state) == ()
 
 
 def test_compound_predicate_combines_structural_and_visual_leaf_evidence() -> None:

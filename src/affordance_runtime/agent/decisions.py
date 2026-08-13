@@ -23,7 +23,6 @@ from affordance_runtime.task.set_objective import (
     ScopeExtent,
     SetQuantifier,
 )
-from affordance_runtime.task.task_program import TaskProgram
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
@@ -120,15 +119,15 @@ class EstablishAggregateObjective:
 
 @dataclass(frozen=True)
 class EstablishObjectiveSequence:
-    """Install a future-resolvable sequence or full typed task program."""
+    """Install future-resolvable typed steps without granting an action."""
 
     context_id: str
-    sequence: ObjectiveSequence | TaskProgram
+    sequence: ObjectiveSequence
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
-        if not isinstance(self.sequence, ObjectiveSequence | TaskProgram):
-            raise TypeError("sequence decision requires typed persistent task semantics")
+        if not isinstance(self.sequence, ObjectiveSequence):
+            raise TypeError("sequence decision requires a typed objective sequence")
 
 
 @dataclass(frozen=True)

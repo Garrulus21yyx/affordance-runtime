@@ -13,7 +13,6 @@ class DecisionKind(StrEnum):
     SELECT_ACTION = "select_action"
     ESTABLISH_AGGREGATE_OBJECTIVE = "establish_aggregate_objective"
     ESTABLISH_OBJECTIVE_SEQUENCE = "establish_objective_sequence"
-    ESTABLISH_TASK_PROGRAM = "establish_task_program"
     ESTABLISH_SET_OBJECTIVE = "establish_set_objective"
     SUBMIT_SET_PREDICATE_ASSESSMENTS = "submit_set_predicate_assessments"
     REQUEST_OBSERVATION = "request_observation"

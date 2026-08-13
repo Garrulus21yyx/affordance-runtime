@@ -60,12 +60,9 @@ from affordance_runtime.task.set_objective import (
     ScopeEntityDomain,
     ScopeExtent,
     ScopeSpec,
-    SetObjective,
     SetQuantifier,
     VisualConcept,
 )
-from affordance_runtime.task.task_program import TaskProgram, task_program_digest
-from affordance_runtime.task_action_family_resolution import action_family_value
 from affordance_runtime.world.schema_validation import validate_value
 
 
@@ -128,13 +125,6 @@ class _SequenceBinding:
 
 
 @dataclass(frozen=True)
-class _TaskProgramBinding:
-    """Stable whole-task compiler contract; it owns no world or action authority."""
-
-    semantic_actions: tuple[str, ...] = SUPPORTED_SEQUENCE_ACTIONS
-
-
-@dataclass(frozen=True)
 class _CompoundSetBinding:
     semantic_actions: tuple[str, ...]
     targets_by_ref: tuple[tuple[str, str], ...]
@@ -171,15 +161,7 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
             entity_by_ref,
             target_filter=target_filter,
         )
-    # Once a typed objective admits a member action, its current parameters and
-    # obligation state are authoritative.  The free-policy history heuristic
-    # below cannot suppress that action: a later program step may intentionally
-    # write a different value to the same entity.
-    settled_effects = (
-        set()
-        if set_directive is not None and set_directive.mode is SetCatalogMode.MEMBER_ACTIONS_ONLY
-        else _settled_parameter_effects(context, ref_by_target, entity_by_ref)
-    )
+    settled_effects = _settled_parameter_effects(context, ref_by_target, entity_by_ref)
 
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     for option in context.actions.options:
@@ -202,12 +184,14 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         and context.set_control is not None
         and context.set_control.semantic_mode in {"semantic_ingress", "objective_transition"}
     )
+    objective_candidate_ids = (
+        set(context.set_control.objective_candidate_action_ids)
+        if context.set_control is not None and context.set_control.semantic_mode == "objective_transition"
+        else {item.action_id for item in context.actions.options}
+    )
+    unique_grounded_ingress = semantic_ingress and len(objective_candidate_ids) == 1
     seen_modalities: set[str] = set()
-    # Ingress always receives a current observation. Re-observing from the
-    # same control mode cannot establish task semantics and creates a local
-    # no-progress loop. Evidence-resolution modes still expose observation
-    # capabilities below through the ordinary non-ingress path.
-    for capability in () if semantic_ingress else context.world.observation_capabilities:
+    for capability in () if unique_grounded_ingress else context.world.observation_capabilities:
         if capability.modality in seen_modalities:
             continue
         seen_modalities.add(capability.modality)
@@ -220,9 +204,12 @@ def compile_grounded_tool_catalog(context: AgentContext) -> GroundedToolCatalog:
         )
         bindings.append(_ObserveBinding(capability.modality, capability.assurance))
     _append_set_assessment_tool(context, ref_by_target, specs, bindings)
-    if semantic_ingress:
-        _append_task_program_tool(specs, bindings)
-    if set_directive is None and not context.actions.truncated and not context.actions.has_more:
+    if semantic_ingress and context.set_control is not None and context.set_control.semantic_mode == "semantic_ingress":
+        _append_objective_sequence_tool(context, specs, bindings)
+    if semantic_ingress and not unique_grounded_ingress:
+        _append_compound_set_objective_tool(context, specs, bindings)
+        _append_aggregate_objective_tool(context, specs, bindings)
+    if (set_directive is None or semantic_ingress) and not context.actions.truncated and not context.actions.has_more:
         _append_set_objective_tools(
             context,
             ref_by_target,
@@ -516,17 +503,6 @@ def _append_objective_sequence_tool(
     """Offer a bounded future-resolvable plan without future identities."""
 
     semantic_actions = SUPPORTED_SEQUENCE_ACTIONS
-    model_actions = tuple(
-        dict.fromkeys(
-            {
-                "activate": "click",
-                "type_text": "type",
-                "select_option": "select",
-                "press_key": "press",
-            }.get(action, action)
-            for action in semantic_actions
-        )
-    )
     selector_schema = _predicate_transport_schema()
     step_schema = _object_schema(
         {
@@ -536,8 +512,8 @@ def _append_objective_sequence_tool(
                 "enum": [item.value for item in ScopeEntityDomain],
                 "default": ScopeEntityDomain.STRUCTURED.value,
             },
-            "semantic_action": {"type": "string", "enum": list(model_actions)},
-            "parameters": {"type": "object", "additionalProperties": True, "default": {}},
+            "semantic_action": {"type": "string", "enum": list(semantic_actions)},
+            "parameters": {"type": "object", "additionalProperties": True},
             "postcondition_predicate": {"anyOf": [selector_schema, {"type": "null"}]},
             "postcondition_entity_domain": {
                 "type": "string",
@@ -548,6 +524,8 @@ def _append_objective_sequence_tool(
         (
             "predicate",
             "semantic_action",
+            "parameters",
+            "postcondition_predicate",
         ),
     )
     specs.append(
@@ -555,7 +533,7 @@ def _append_objective_sequence_tool(
             "establish_objective_sequence",
             (
                 "Use for an explicit ordered multi-step instruction, especially when later controls "
-                "appear after earlier effects. Establish 2-8 typed future-resolvable GUI steps. Each predicate is "
+                "appear after earlier effects. Establish 1-8 typed future-resolvable GUI steps. Each predicate is "
                 "re-evaluated after a fresh observation; use public fields such as "
                 "identity.label and never future E-refs or coordinates. Performs no action."
             ),
@@ -563,7 +541,7 @@ def _append_objective_sequence_tool(
                 {
                     "steps": {
                         "type": "array",
-                        "minItems": 2,
+                        "minItems": 1,
                         "maxItems": 8,
                         "items": step_schema,
                     }
@@ -573,108 +551,6 @@ def _append_objective_sequence_tool(
         )
     )
     bindings.append(_SequenceBinding())
-
-
-def _append_task_program_tool(
-    specs: list[ToolSpec],
-    bindings: list[object],
-) -> None:
-    """Expose one stable whole-task semantic compiler operation."""
-
-    predicate = _predicate_transport_schema()
-    domains = [item.value for item in ScopeEntityDomain]
-    extents = [item.value for item in ScopeExtent]
-    model_actions = ["click", "type", "select", "press", "drag", "navigate", "scroll", "set_value"]
-    parameters = {"type": "object", "additionalProperties": True}
-    entity = _object_schema(
-        {
-            "kind": {"type": "string", "const": "entity"},
-            "predicate": predicate,
-            "entity_domain": {"type": "string", "enum": domains},
-            "semantic_action": {"type": "string", "enum": model_actions},
-            "parameters": parameters,
-            "postcondition_predicate": {"anyOf": [predicate, {"type": "null"}]},
-            "postcondition_domain": {"type": "string", "enum": domains},
-        },
-        ("kind", "predicate", "semantic_action"),
-    )
-    set_step = _object_schema(
-        {
-            "kind": {"type": "string", "const": "set"},
-            "predicate": predicate,
-            "quantifier": {
-                "type": "string",
-                "enum": [SetQuantifier.EXACTLY_ONE.value, SetQuantifier.ALL_IN_CLOSED_SCOPE.value],
-            },
-            "semantic_action": {"type": "string", "enum": model_actions},
-            "parameters": parameters,
-            "scope_extent": {"type": "string", "enum": extents},
-            "scope_root": {"type": "string", "minLength": 1, "maxLength": 160},
-            "scope_entity_domain": {"type": "string", "enum": domains},
-        },
-        ("kind", "predicate", "quantifier", "semantic_action"),
-    )
-    aggregate = _object_schema(
-        {
-            "kind": {"type": "string", "const": "aggregate"},
-            "source_predicate": predicate,
-            "operator": {"type": "string", "enum": [item.value for item in AggregateOperator]},
-            "value_field": {"type": "string", "maxLength": 120},
-            "destination_predicate": predicate,
-            "semantic_action": {"type": "string", "enum": model_actions},
-            "scope_extent": {"type": "string", "enum": extents},
-            "scope_root": {"type": "string", "minLength": 1, "maxLength": 160},
-            "scope_entity_domain": {"type": "string", "enum": domains},
-        },
-        ("kind", "source_predicate", "operator", "destination_predicate", "semantic_action"),
-    )
-    specs.append(
-        ToolSpec(
-            "establish_task_program",
-            (
-                "Compile the complete bounded task once into ordered entity, quantified-set, or aggregate steps. "
-                "Later selectors may name controls not yet visible and are re-resolved after fresh observations. "
-                "Use public facts or visual concepts, never E-refs, opaque IDs, coordinates, or computed aggregate "
-                "answers. Include explicit successor actions such as submit. Performs no GUI action."
-            ),
-            _object_schema(
-                {
-                    "steps": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 8,
-                        "items": {"oneOf": [entity, set_step, aggregate]},
-                    }
-                },
-                ("steps",),
-            ),
-        )
-    )
-    bindings.append(_TaskProgramBinding())
-
-
-def _task_program_scope(raw: Mapping[str, object], step_key: str) -> ScopeSpec:
-    extent = ScopeExtent(str(raw.get("scope_extent", ScopeExtent.CURRENT_VIEWPORT.value)))
-    default_root = {
-        ScopeExtent.CURRENT_VIEWPORT: "current-viewport",
-        ScopeExtent.CURRENT_CONTAINER: "current-container",
-        ScopeExtent.CURRENT_DOCUMENT: "current-document",
-        ScopeExtent.CURRENT_APPLICATION_STATE: "current-application-state",
-    }[extent]
-    root = str(raw.get("scope_root") or default_root)
-    if root not in {
-        "current-viewport",
-        "current-container",
-        "current-document",
-        "current-application-state",
-    }:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-    return ScopeSpec(
-        f"scope:task-program:{step_key}",
-        root,
-        extent,
-        entity_domain=ScopeEntityDomain(str(raw.get("scope_entity_domain", "structured"))),
-    )
 
 
 def _append_compound_set_objective_tool(
@@ -1052,111 +928,6 @@ def resolve_grounded_tool_call(
                 "",
             ),
         )
-    if isinstance(binding, _TaskProgramBinding):
-        raw_steps = call.arguments.get("steps")
-        if not isinstance(raw_steps, tuple | list):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        raw_digest = hashlib.sha256(
-            json.dumps(
-                to_json_compatible(raw_steps),
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode()
-        ).hexdigest()[:24]
-        steps = []
-        for index, raw in enumerate(raw_steps):
-            if not isinstance(raw, Mapping):
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            kind = str(raw.get("kind") or "")
-            action = action_family_value(str(raw.get("semantic_action") or ""))
-            if action not in binding.semantic_actions:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            step_key = f"{raw_digest}:{index + 1}"
-            if kind == "entity":
-                selector = raw.get("predicate")
-                postcondition = raw.get("postcondition_predicate")
-                if not isinstance(selector, Mapping) or (
-                    postcondition is not None and not isinstance(postcondition, Mapping)
-                ):
-                    raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-                steps.append(
-                    ObjectiveStep(
-                        f"task-step:{step_key}",
-                        EntitySelector(
-                            predicate_from_transport(selector),
-                            ScopeEntityDomain(str(raw.get("entity_domain", "structured"))),
-                        ),
-                        ActionTemplate(action, parameters=dict(raw.get("parameters") or {})),
-                        (
-                            EntitySelector(
-                                predicate_from_transport(postcondition),
-                                ScopeEntityDomain(
-                                    str(
-                                        raw.get(
-                                            "postcondition_domain",
-                                            raw.get("entity_domain", "structured"),
-                                        )
-                                    )
-                                ),
-                            )
-                            if isinstance(postcondition, Mapping)
-                            else None
-                        ),
-                    )
-                )
-                continue
-            scope = _task_program_scope(raw, step_key)
-            if kind == "set":
-                predicate = raw.get("predicate")
-                if not isinstance(predicate, Mapping):
-                    raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-                steps.append(
-                    SetObjective(
-                        f"set-objective:{step_key}",
-                        scope,
-                        predicate_from_transport(predicate),
-                        SetQuantifier(str(raw["quantifier"])),
-                        ActionTemplate(action, parameters=dict(raw.get("parameters") or {})),
-                    )
-                )
-                continue
-            if kind != "aggregate":
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            source = raw.get("source_predicate")
-            destination = raw.get("destination_predicate")
-            if not isinstance(source, Mapping) or not isinstance(destination, Mapping):
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            operator = AggregateOperator(str(raw["operator"]))
-            value_field = str(raw.get("value_field") or "")
-            if operator is not AggregateOperator.COUNT and not value_field:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            steps.append(
-                AggregateObjective(
-                    f"aggregate-objective:{step_key}",
-                    scope,
-                    predicate_from_transport(source),
-                    ValueExtractor(
-                        ValueExtractorKind.CONSTANT if operator is AggregateOperator.COUNT else ValueExtractorKind.FACT,
-                        value_field,
-                        1,
-                    ),
-                    operator,
-                    predicate_from_transport(destination),
-                    action,
-                    "value",
-                    AggregateOutputFormat.INTEGER_STRING,
-                )
-            )
-        typed_steps = tuple(steps)
-        digest = task_program_digest(typed_steps)[:24]
-        return AgentDecisionPackage(
-            NoObjectiveOperation(),
-            EstablishObjectiveSequence(
-                expected_context_id,
-                TaskProgram(f"task-program:{digest}", typed_steps),
-            ),
-        )
     if isinstance(binding, _SequenceBinding):
         raw_steps = call.arguments.get("steps")
         if not isinstance(raw_steps, tuple | list):
@@ -1165,7 +936,7 @@ def resolve_grounded_tool_call(
         for index, raw in enumerate(raw_steps):
             if not isinstance(raw, Mapping):
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            semantic_action = action_family_value(str(raw["semantic_action"]))
+            semantic_action = str(raw["semantic_action"])
             if semantic_action not in binding.semantic_actions:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
             selector = raw["predicate"]
@@ -1181,7 +952,7 @@ def resolve_grounded_tool_call(
                         predicate_from_transport(selector),
                         ScopeEntityDomain(str(raw.get("selector_entity_domain", "structured"))),
                     ),
-                    ActionTemplate(semantic_action, parameters=dict(raw.get("parameters") or {})),
+                    ActionTemplate(semantic_action, parameters=dict(raw["parameters"])),
                     (
                         EntitySelector(
                             predicate_from_transport(postcondition),
@@ -1206,7 +977,7 @@ def resolve_grounded_tool_call(
                         "predicate": to_json_compatible(raw["predicate"]),
                         "selector_entity_domain": raw.get("selector_entity_domain", "structured"),
                         "semantic_action": raw["semantic_action"],
-                        "parameters": to_json_compatible(raw.get("parameters") or {}),
+                        "parameters": to_json_compatible(raw["parameters"]),
                         "postcondition_predicate": to_json_compatible(raw.get("postcondition_predicate")),
                         "postcondition_entity_domain": raw.get(
                             "postcondition_entity_domain",

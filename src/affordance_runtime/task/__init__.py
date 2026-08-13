@@ -109,16 +109,6 @@ from affordance_runtime.task.set_objective_state import (
     set_allowed_action_ids,
     set_evidence_obligations,
 )
-from affordance_runtime.task.task_program import (
-    MAX_TASK_PROGRAM_STEPS,
-    TaskProgram,
-    TaskProgramDisposition,
-    TaskProgramState,
-    advance_task_program_state,
-    establish_task_program_state,
-    task_program_public_value,
-    task_program_step_id,
-)
 
 __all__ = [
     "EvaluationSpec",
@@ -218,12 +208,4 @@ __all__ = [
     "SelectorResolutionState",
     "install_selector_visual_leaf_assessments",
     "resolve_entity_selector",
-    "MAX_TASK_PROGRAM_STEPS",
-    "TaskProgram",
-    "TaskProgramDisposition",
-    "TaskProgramState",
-    "advance_task_program_state",
-    "establish_task_program_state",
-    "task_program_public_value",
-    "task_program_step_id",
 ]

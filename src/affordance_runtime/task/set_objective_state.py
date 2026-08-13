@@ -33,10 +33,8 @@ from affordance_runtime.task.set_objective import (
     predicate_digest,
     predicate_public_value,
     reduce_set_objective,
-    structural_visual_leaf_evidence,
     visual_predicate_leaves,
 )
-from affordance_runtime.task_action_family_resolution import action_family_value
 from affordance_runtime.world.contracts import (
     ActionSpace,
     WorldObservation,
@@ -294,9 +292,7 @@ def set_allowed_action_ids(
     return frozenset(
         option.action_id
         for option in action_space.options
-        if option.target_id in admitted
-        and action_family_value(option.semantic_action)
-        == action_family_value(state.objective.action_template.semantic_action)
+        if option.target_id in admitted and option.semantic_action == state.objective.action_template.semantic_action
     )
 
 
@@ -466,7 +462,7 @@ def _action_candidate_ids(
     actionable = {
         binding.target_id
         for binding in observation.bindings
-        if action_family_value(binding.semantic_action) == action_family_value(semantic_action)
+        if binding.semantic_action == semantic_action
     }
     visual_only = {
         entity_id
@@ -489,10 +485,10 @@ def _assess(
     semantic_leaf_assessments: tuple[PredicateAssessment, ...],
 ) -> tuple[PredicateAssessment, ...]:
     targets = target_public_fields(observation)
-    semantic_by_entity = structural_visual_leaf_evidence(objective.predicate, targets)
+    semantic_by_entity: dict[str, dict[str, PredicateTruth]] = {}
     for item in semantic_leaf_assessments:
         if item.observation_epoch == universe.observation_epoch:
-            semantic_by_entity.setdefault(item.entity_id, {}).setdefault(item.predicate_digest, item.truth)
+            semantic_by_entity.setdefault(item.entity_id, {})[item.predicate_digest] = item.truth
     return tuple(
         PredicateAssessment(
             entity_id,

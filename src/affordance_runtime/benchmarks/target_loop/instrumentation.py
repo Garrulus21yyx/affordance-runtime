@@ -27,7 +27,6 @@ from affordance_runtime.model_policy.requirement_proposer import ModelRequiremen
 from affordance_runtime.task.aggregate_objective import aggregate_objective_public_value
 from affordance_runtime.task.objective_sequence import sequence_public_value
 from affordance_runtime.task.set_objective import predicate_public_value
-from affordance_runtime.task.task_program import TaskProgram, task_program_public_value
 from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
 
@@ -214,7 +213,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
         event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
-        event["tool_internal_error_code"] = str(getattr(adapter, "last_internal_error_code", ""))
     if isinstance(outcome, AgentDecisionPackage):
         event["outcome"] = "decision_package"
         event["objective_operation"] = _objective_operation_trace(outcome.objective_operation)
@@ -405,10 +403,7 @@ def _decision_trace(decision):
             }
         )
     elif isinstance(decision, EstablishObjectiveSequence):
-        if isinstance(decision.sequence, TaskProgram):
-            value["task_program"] = task_program_public_value(decision.sequence)
-        else:
-            value["sequence"] = sequence_public_value(decision.sequence)
+        value["sequence"] = sequence_public_value(decision.sequence)
     elif isinstance(decision, EstablishAggregateObjective):
         value["aggregate"] = aggregate_objective_public_value(decision.objective)
     return value

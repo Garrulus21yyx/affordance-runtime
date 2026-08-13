@@ -21,7 +21,6 @@ from affordance_runtime.task.set_objective import (
     ScopeSpec,
     evaluate_predicate,
     predicate_digest,
-    structural_visual_leaf_evidence,
     visual_predicate_leaves,
 )
 from affordance_runtime.task.set_objective_state import target_public_fields
@@ -99,11 +98,10 @@ def resolve_entity_selector(
         for item in semantic_leaf_assessments
         if item.observation_epoch == observation.observation_id and item.entity_id in universe.entity_ids
     )
-    fields = target_public_fields(observation)
-    scoped_fields = {entity_id: fields.get(entity_id, {}) for entity_id in universe.entity_ids}
-    semantic_by_entity = structural_visual_leaf_evidence(predicate, scoped_fields)
+    semantic_by_entity: dict[str, dict[str, PredicateTruth]] = {}
     for item in current_leaf_evidence:
-        semantic_by_entity.setdefault(item.entity_id, {}).setdefault(item.predicate_digest, item.truth)
+        semantic_by_entity.setdefault(item.entity_id, {})[item.predicate_digest] = item.truth
+    fields = target_public_fields(observation)
     truth = tuple(
         (
             entity_id,

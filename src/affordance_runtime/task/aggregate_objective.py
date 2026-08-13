@@ -35,10 +35,8 @@ from affordance_runtime.task.set_objective import (
     evaluate_predicate,
     predicate_digest,
     predicate_public_value,
-    structural_visual_leaf_evidence,
 )
 from affordance_runtime.task.set_objective_state import target_public_fields
-from affordance_runtime.task_action_family_resolution import action_family_value
 from affordance_runtime.world.contracts import ActionSpace, WorldObservation
 
 MAX_AGGREGATE_MEMBERS = 256
@@ -349,8 +347,7 @@ def aggregate_allowed_action_ids(
     return frozenset(
         option.action_id
         for option in action_space.options
-        if option.target_id == state.destination_entity_id
-        and action_family_value(option.semantic_action) == action_family_value(state.objective.semantic_action)
+        if option.target_id == state.destination_entity_id and option.semantic_action == state.objective.semantic_action
     )
 
 
@@ -398,11 +395,10 @@ def _derive(
             objective, universe, (), (), issue_code="aggregate_capacity_exceeded", revision=revision
         )
     fields = target_public_fields(observation)
-    scoped_fields = {entity_id: fields.get(entity_id, {}) for entity_id in universe.entity_ids}
-    semantic_by_entity = structural_visual_leaf_evidence(objective.member_predicate, scoped_fields)
+    semantic_by_entity: dict[str, dict[str, PredicateTruth]] = {}
     for item in semantic_leaf_assessments:
         if item.observation_epoch == observation.observation_id:
-            semantic_by_entity.setdefault(item.entity_id, {}).setdefault(item.predicate_digest, item.truth)
+            semantic_by_entity.setdefault(item.entity_id, {})[item.predicate_digest] = item.truth
     member_truth = tuple(
         (
             entity_id,

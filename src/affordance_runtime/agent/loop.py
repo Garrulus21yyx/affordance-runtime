@@ -359,7 +359,6 @@ class AgentLoop:
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
             elif await resolve_visual_set_evidence(session):
-                state.reconcile_task_program()
                 continue
             else:
                 outcome = await run_policy_turn(

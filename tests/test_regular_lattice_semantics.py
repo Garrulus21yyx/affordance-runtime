@@ -230,7 +230,7 @@ def test_mandatory_semantic_ingress_hides_direct_grid_actions() -> None:
     assert context.set_control is not None
     assert context.set_control.semantic_mode == "semantic_ingress"
     assert not any(spec.name == "click" for spec in catalog.specs)
-    assert tuple(spec.name for spec in catalog.specs) == ("establish_task_program",)
+    assert any('public fact "grid_coordinate"' in spec.description for spec in catalog.specs)
 
 
 def _raw_grid():

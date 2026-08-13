@@ -57,11 +57,8 @@ from affordance_runtime.task.set_objective import (
     ScopeEntityDomain,
     ScopeExtent,
     ScopeSpec,
-    SetObjective,
     SetQuantifier,
 )
-from affordance_runtime.task.task_program import TaskProgram
-from affordance_runtime.task_action_family_resolution import action_family_value
 from affordance_runtime.world.schema_validation import reject_private_parameter_values
 
 SCHEMA_VERSION = "agent-decision-package.v2"
@@ -176,93 +173,6 @@ class EstablishObjectiveSequencePayload(_Payload):
     steps: Annotated[list[ObjectiveSequenceStepPayload], Field(min_length=1, max_length=8)]
 
 
-class _TaskProgramStepPayload(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-    step_id: Id240
-
-
-class TaskProgramEntityStepPayload(_TaskProgramStepPayload):
-    kind: Literal["entity"]
-    predicate: dict[str, Any]
-    selector_entity_domain: Literal["structured", "all_visible", "fused"]
-    semantic_action: Id240
-    parameters: dict[str, Any]
-    postcondition: dict[str, Any] | None = None
-    postcondition_entity_domain: Literal["structured", "all_visible", "fused"] | None = None
-
-    @field_validator("predicate", "postcondition")
-    @classmethod
-    def _predicate(cls, value: dict[str, Any] | None):
-        if value is not None:
-            validate_json_tree(value)
-            predicate_from_public_value(value)
-        return value
-
-
-class TaskProgramSetStepPayload(_TaskProgramStepPayload):
-    kind: Literal["set"]
-    predicate: dict[str, Any]
-    quantifier: Literal["exactly_one", "all_in_closed_scope"]
-    scope_extent: Literal[
-        "current_viewport",
-        "current_container",
-        "current_document",
-        "current_application_state",
-    ]
-    scope_root: Id240
-    scope_entity_domain: Literal["structured", "all_visible", "fused"]
-    semantic_action: Id240
-    parameters: dict[str, Any]
-
-    @field_validator("predicate")
-    @classmethod
-    def _predicate(cls, value: dict[str, Any]):
-        validate_json_tree(value)
-        predicate_from_public_value(value)
-        return value
-
-
-class TaskProgramAggregateStepPayload(_TaskProgramStepPayload):
-    kind: Literal["aggregate"]
-    scope_extent: Literal[
-        "current_viewport",
-        "current_container",
-        "current_document",
-        "current_application_state",
-    ]
-    scope_root: Id240
-    scope_entity_domain: Literal["structured", "all_visible", "fused"]
-    source_predicate: dict[str, Any]
-    value_extractor_kind: Literal["constant", "fact"]
-    value_field: Optional120
-    constant: float
-    operator: Literal["count", "sum", "min", "max"]
-    destination_predicate: dict[str, Any]
-    semantic_action: Id240
-    parameter_name: Item120
-    output_format: Literal["integer_string", "decimal_string", "number"]
-
-    @field_validator("source_predicate", "destination_predicate")
-    @classmethod
-    def _predicate(cls, value: dict[str, Any]):
-        validate_json_tree(value)
-        predicate_from_public_value(value)
-        return value
-
-
-TaskProgramStepPayload: TypeAlias = Annotated[
-    TaskProgramEntityStepPayload | TaskProgramSetStepPayload | TaskProgramAggregateStepPayload,
-    Field(discriminator="kind"),
-]
-
-
-class EstablishTaskProgramPayload(_Payload):
-    type: Literal["establish_task_program"]
-    program_id: Id240
-    steps: Annotated[list[TaskProgramStepPayload], Field(min_length=1, max_length=8)]
-
-
 class EstablishAggregateObjectivePayload(_Payload):
     type: Literal["establish_aggregate_objective"]
     objective_id: Id240
@@ -362,7 +272,6 @@ DecisionPayload: TypeAlias = Annotated[
     SelectActionPayload
     | EstablishAggregateObjectivePayload
     | EstablishObjectiveSequencePayload
-    | EstablishTaskProgramPayload
     | EstablishSetObjectivePayload
     | SubmitSetPredicateAssessmentsPayload
     | RequestObservationPayload
@@ -549,7 +458,7 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
                             predicate_from_public_value(item.selector),
                             ScopeEntityDomain(item.selector_entity_domain),
                         ),
-                        ActionTemplate(action_family_value(item.semantic_action), parameters=item.parameters),
+                        ActionTemplate(item.semantic_action, parameters=item.parameters),
                         (
                             EntitySelector(
                                 predicate_from_public_value(item.postcondition),
@@ -562,70 +471,6 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
                     for item in value.steps
                 ),
             ),
-        )
-    if isinstance(value, EstablishTaskProgramPayload):
-        steps = []
-        for item in value.steps:
-            if isinstance(item, TaskProgramEntityStepPayload):
-                steps.append(
-                    ObjectiveStep(
-                        item.step_id,
-                        EntitySelector(
-                            predicate_from_public_value(item.predicate),
-                            ScopeEntityDomain(item.selector_entity_domain),
-                        ),
-                        ActionTemplate(action_family_value(item.semantic_action), parameters=item.parameters),
-                        (
-                            EntitySelector(
-                                predicate_from_public_value(item.postcondition),
-                                ScopeEntityDomain(item.postcondition_entity_domain or item.selector_entity_domain),
-                            )
-                            if item.postcondition is not None
-                            else None
-                        ),
-                    )
-                )
-            elif isinstance(item, TaskProgramSetStepPayload):
-                steps.append(
-                    SetObjective(
-                        item.step_id,
-                        ScopeSpec(
-                            f"scope:{item.step_id}",
-                            item.scope_root,
-                            ScopeExtent(item.scope_extent),
-                            entity_domain=ScopeEntityDomain(item.scope_entity_domain),
-                        ),
-                        predicate_from_public_value(item.predicate),
-                        SetQuantifier(item.quantifier),
-                        ActionTemplate(action_family_value(item.semantic_action), parameters=item.parameters),
-                    )
-                )
-            else:
-                steps.append(
-                    AggregateObjective(
-                        item.step_id,
-                        ScopeSpec(
-                            f"scope:{item.step_id}",
-                            item.scope_root,
-                            ScopeExtent(item.scope_extent),
-                            entity_domain=ScopeEntityDomain(item.scope_entity_domain),
-                        ),
-                        predicate_from_public_value(item.source_predicate),
-                        ValueExtractor(
-                            ValueExtractorKind(item.value_extractor_kind),
-                            item.value_field,
-                            item.constant,
-                        ),
-                        AggregateOperator(item.operator),
-                        predicate_from_public_value(item.destination_predicate),
-                        action_family_value(item.semantic_action),
-                        item.parameter_name,
-                        AggregateOutputFormat(item.output_format),
-                    )
-                )
-        return EstablishObjectiveSequence(
-            value.context_id,
-            TaskProgram(value.program_id, tuple(steps)),
         )
     if isinstance(value, EstablishAggregateObjectivePayload):
         return EstablishAggregateObjective(

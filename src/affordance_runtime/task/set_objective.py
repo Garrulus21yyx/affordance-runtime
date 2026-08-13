@@ -231,64 +231,6 @@ def visual_predicate_leaves(predicate: PredicateExpr) -> tuple[VisualConcept | V
     return ()
 
 
-def structural_visual_leaf_evidence(
-    predicate: PredicateExpr,
-    public_fields_by_entity: Mapping[str, Mapping[str, object]],
-) -> dict[str, dict[str, PredicateTruth]]:
-    """Resolve exact visual terms from stronger public facts when correspondence is explicit.
-
-    This never interprets free-form phrases. A concept may correspond to an
-    exact public label; an attribute may correspond to one unambiguous public
-    state field whose current value exactly equals the requested scalar. When
-    no such correspondence exists, the leaf remains unknown for a visual
-    provider rather than being guessed false.
-    """
-
-    result: dict[str, dict[str, PredicateTruth]] = {}
-    for leaf in visual_predicate_leaves(predicate):
-        text = _semantic_scalar_text(leaf.concept if isinstance(leaf, VisualConcept) else leaf.attribute)
-        if not text:
-            continue
-        if isinstance(leaf, VisualConcept):
-            matching_fields = ("identity.label",) if any(
-                _semantic_scalar_text(fields.get("identity.label")) == text
-                for fields in public_fields_by_entity.values()
-            ) else ()
-        else:
-            matching_fields = tuple(
-                field_name
-                for field_name in sorted({name for fields in public_fields_by_entity.values() for name in fields})
-                if not field_name.startswith("identity.")
-                and any(
-                    _semantic_scalar_text(fields.get(field_name)) == text
-                    for fields in public_fields_by_entity.values()
-                )
-            )
-            if len(matching_fields) != 1:
-                matching_fields = ()
-        if not matching_fields:
-            continue
-        field_name = matching_fields[0]
-        digest = predicate_digest(leaf)
-        for entity_id, fields in public_fields_by_entity.items():
-            if field_name not in fields:
-                truth = PredicateTruth.UNKNOWN
-            else:
-                truth = (
-                    PredicateTruth.TRUE
-                    if _semantic_scalar_text(fields[field_name]) == text
-                    else PredicateTruth.FALSE
-                )
-            result.setdefault(entity_id, {})[digest] = truth
-    return result
-
-
-def _semantic_scalar_text(value: object) -> str:
-    if isinstance(value, bool) or not isinstance(value, str | int | float):
-        return ""
-    return " ".join(str(value).casefold().split())
-
-
 def evaluate_predicate(
     predicate: PredicateExpr,
     public_fields: Mapping[str, object],
