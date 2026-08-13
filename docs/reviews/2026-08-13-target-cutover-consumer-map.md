@@ -11,6 +11,7 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 | root package target API | `compose_target_runtime -> TargetRuntime -> ThinTaskIntake -> AgentLoop` | explicit supported target entry; not yet default |
 | `benchmarks/target_loop` | product `compose_target_runtime` with harness-only decorators | target/shared claim owner |
 | `benchmarks/external_breadth` and current visual Step-13 gate | target-loop benchmark composition | target benchmark owner; live evidence remains profile-specific |
+| `benchmarks/model_conformance` target runtime attempts | product `compose_target_runtime` | protocol/conformance evidence; no direct Runtime construction |
 | legacy local SaaS / full-Coordinator BrowserGym commands | legacy benchmark/composition | historical or legacy acceptance only; cannot establish target closure |
 | direct `RunCoordinator` scripts | legacy diagnostics | make explicitly legacy or delete with their causal owner during Phase 4 |
 
@@ -19,6 +20,9 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 - Tests importing `agent/task/world/model_boundary/model_policy` and protecting target invariants are target/shared.
 - Tests whose subject is `compose_run_coordinator`, `RunCoordinator`, `RuntimeCommitter`, `StateKernel`, legacy planning stages, or legacy `RuntimeClient` are legacy unless the same invariant is independently owned by target tests.
 - Benchmark report and frozen evidence readers remain historical/shared; they are not production runtime consumers.
+- All shipped target consumers under `src/affordance_runtime` must resolve through
+  `compose_target_runtime`; direct `TargetRuntime` construction is reserved for its
+  product composition owner and focused constructor unit tests.
 - A legacy test is not migrated by renaming it. Its claim must either be protected through `compose_target_runtime`, retained as an explicitly historical contract, or deleted with the legacy behavior.
 
 ## Default-cutover blockers

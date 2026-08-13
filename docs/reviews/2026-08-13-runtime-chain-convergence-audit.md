@@ -689,3 +689,15 @@ intake、risk、action-space、binding、context 和 wait-controller 的 composi
 
 离线验证：`2422 passed, 27 skipped`，Ruff 和 diff check 通过。live benchmark 未在本切片运行，
 product default 与 legacy 删除继续保持 open。
+
+## 15. 实施记录：target consumer composition 收敛
+
+2026-08-13 对整个 `src/affordance_runtime` 再次扫描后，发现
+`benchmarks/model_conformance/runtime_decision_matrix.py` 和 `loop_attempt.py` 仍直接构造
+`TargetRuntime`。两处现已改为调用 product-owned `compose_target_runtime`；模型策略、evaluator、
+context builder 和 wait controller 仍按原值注入，因此此改动只收敛装配 authority，不改变决策语义。
+
+架构门禁现在覆盖完整 source tree：除 `agent/composition.py` 这个 owner 外，任何 shipped module
+直接调用 `TargetRuntime(...)` 都会失败；benchmark namespace 同时禁止直接构造
+`AgentLoop / AgentEpisodeRunner / TargetRuntime`。focused verification 为 `15 passed`，全量离线验证为
+`2423 passed, 27 skipped`。CLI/default、live benchmark 和 legacy 删除仍然 open。

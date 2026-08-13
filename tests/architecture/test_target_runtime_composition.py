@@ -40,7 +40,7 @@ def test_target_composition_owner_has_no_benchmark_dependency() -> None:
     )
 
 
-def test_all_benchmark_modules_avoid_direct_agent_loop_construction() -> None:
+def test_all_benchmark_modules_use_product_target_composition_owner() -> None:
     violations = []
     for path in sorted((RUNTIME / "benchmarks").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -48,7 +48,23 @@ def test_all_benchmark_modules_avoid_direct_agent_loop_construction() -> None:
             if not isinstance(node, ast.Call):
                 continue
             name = node.func.id if isinstance(node.func, ast.Name) else ""
-            if name in {"AgentLoop", "AgentEpisodeRunner"}:
+            if name in {"AgentLoop", "AgentEpisodeRunner", "TargetRuntime"}:
+                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:{name}")
+    assert violations == []
+
+
+def test_product_composition_is_only_source_target_runtime_constructor() -> None:
+    violations = []
+    composition = RUNTIME / "agent" / "composition.py"
+    for path in sorted(RUNTIME.rglob("*.py")):
+        if path == composition:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = node.func.id if isinstance(node.func, ast.Name) else ""
+            if name == "TargetRuntime":
                 violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:{name}")
     assert violations == []
 

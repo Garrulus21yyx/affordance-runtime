@@ -15,7 +15,6 @@ from affordance_runtime.agent import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    TargetRuntime,
     Wait,
 )
 from affordance_runtime.agent.accounting import RunAccounting
@@ -24,9 +23,9 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptOperation,
     AttemptReceipt,
 )
+from affordance_runtime.agent.composition import compose_target_runtime
 from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
-from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.support import (
@@ -145,8 +144,8 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
     else:
         environment = shared_environment("dom")
     context_builder = ContextBuilder(pager=ActionPager(page_size=1)) if paging else ContextBuilder()
-    result = await TargetRuntime(
-        AgentDecisionPorts(policy),
+    result = await compose_target_runtime(
+        policy,
         CurrentFactActionEvaluator(),
         evaluator,
         context_builder=context_builder,

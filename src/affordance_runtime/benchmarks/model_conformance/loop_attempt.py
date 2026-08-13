@@ -6,8 +6,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from affordance_runtime.agent import Abort, AgentLoopStatus, SelectAction, TargetRuntime
-from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent import Abort, AgentLoopStatus, SelectAction
+from affordance_runtime.agent.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_adapter_task, real_dom_environment
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
@@ -56,8 +56,8 @@ async def run_level_four_attempt(
     instrumentation = BenchmarkInstrumentation()
     environment = real_dom_environment(instrumentation)
     try:
-        result = await TargetRuntime(
-            AgentDecisionPorts(policy),
+        result = await compose_target_runtime(
+            policy,
             CurrentFactActionEvaluator(),
             ProductionTaskEvaluator(),
         ).run_task(environment, real_adapter_task())
