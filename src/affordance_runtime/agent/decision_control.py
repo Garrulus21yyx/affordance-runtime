@@ -82,12 +82,10 @@ from affordance_runtime.task.objective_sequence import (
 )
 from affordance_runtime.task.semantic_validation import TaskSemanticValidationStatus
 from affordance_runtime.task.set_objective import (
-    ScopeEntityDomain,
     ScopeSpec,
     SetDisposition,
     predicate_digest,
     predicate_public_value,
-    visual_predicate_leaves,
 )
 from affordance_runtime.task.set_objective_state import (
     establish_set_objective_state,
@@ -440,11 +438,7 @@ async def _route_decision(
                 f"scope:{predicate_digest(decision.predicate)[:16]}:{decision.scope_extent.value}",
                 decision.scope_root_target_id,
                 decision.scope_extent,
-                entity_domain=(
-                    ScopeEntityDomain.ALL_VISIBLE
-                    if visual_predicate_leaves(decision.predicate)
-                    else ScopeEntityDomain.STRUCTURED
-                ),
+                entity_domain=decision.scope_entity_domain,
             ),
             enumerator=state.scope_enumerator,
         )

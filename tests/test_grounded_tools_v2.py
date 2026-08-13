@@ -37,7 +37,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary import AgentTurnView, ContextBuilder, ModelFailure
+from affordance_runtime.model_boundary import AgentTurnView, ContextBuilder, ModelFailure, ProviderAttemptOrigin
 from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.context import AgentSetControlView
@@ -569,6 +569,7 @@ def test_runtime_authorized_member_continuation_skips_model_inference() -> None:
         assert parsed.action_id == login_action
         assert port.calls == 0
         assert response.metadata.total_tokens == 0
+        assert adapter.last_attempt_origin is ProviderAttemptOrigin.LOCAL_RUNTIME
 
     asyncio.run(scenario())
 

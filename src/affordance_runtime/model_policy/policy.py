@@ -57,7 +57,7 @@ class ModelBackedAgentPolicy:
         except TimeoutError:
             return _policy_failure(ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False))
         except Exception:
-            return _policy_failure(ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "provider call failed", False))
+            return _policy_failure(ModelFailure(ModelFailureKind.INTERNAL_ERROR, "decision port failed", False))
         finally:
             object.__setattr__(
                 self,

@@ -169,15 +169,19 @@ def establish_set_objective_state(
         SchedulingPolicy(),
     )
     enumeration = (enumerator or SnapshotScopeEnumerator()).enumerate(scope, observation)
-    candidates = enumeration.entity_ids
-    if not candidates:
+    candidates = _action_candidate_ids(
+        enumeration.entity_ids,
+        semantic_action,
+        observation,
+    )
+    if not candidates and quantifier is not SetQuantifier.ALL_IN_CLOSED_SCOPE:
         raise SetObjectiveStateError(SetObjectiveStateErrorCode.EMPTY_CANDIDATE_DOMAIN)
     if len(candidates) > MAX_SET_MEMBERS:
         raise SetObjectiveStateError(SetObjectiveStateErrorCode.SET_CAPACITY_EXCEEDED)
     universe = CandidateUniverse(
         enumeration.scope_id,
         enumeration.observation_epoch,
-        enumeration.entity_ids,
+        candidates,
         enumeration.coverage,
         enumeration.evidence_refs,
     )
@@ -206,12 +210,17 @@ def refresh_set_objective_state(
 
     current_targets = {item.target_id for item in observation.targets}
     historical = tuple(item for item in state.obligations if item.entity_id not in current_targets)
-    current_candidates = tuple(item.target_id for item in observation.targets)
+    current_candidates = _action_candidate_ids(
+        tuple(item.target_id for item in observation.targets),
+        state.objective.action_template.semantic_action,
+        observation,
+    )
     if len(current_candidates) > MAX_SET_MEMBERS:
         return replace(state, issue_code="set_capacity_exceeded", revision=state.revision + 1)
     universe = _universe(
         state.objective.scope,
         current_candidates,
+        state.objective.action_template.semantic_action,
         observation,
         enumerator,
     )
@@ -422,11 +431,16 @@ def install_visual_leaf_assessments(
 def _universe(
     scope: ScopeSpec,
     candidates: tuple[str, ...],
+    semantic_action: str,
     observation: WorldObservation,
     enumerator: ScopeEnumeratorPort | None,
 ) -> CandidateUniverse:
     enumeration = (enumerator or SnapshotScopeEnumerator()).enumerate(scope, observation)
-    entity_ids = enumeration.entity_ids
+    entity_ids = _action_candidate_ids(
+        enumeration.entity_ids,
+        semantic_action,
+        observation,
+    )
     if len(entity_ids) > MAX_SET_MEMBERS:
         entity_ids = candidates
     return CandidateUniverse(
@@ -436,6 +450,32 @@ def _universe(
         enumeration.coverage,
         enumeration.evidence_refs,
     )
+
+
+def _action_candidate_ids(
+    scoped_entity_ids: tuple[str, ...],
+    semantic_action: str,
+    observation: WorldObservation,
+) -> tuple[str, ...]:
+    """Separate action-member domain from the wider observation scope."""
+
+    actionable = {
+        binding.target_id
+        for binding in observation.bindings
+        if binding.semantic_action == semantic_action
+    }
+    visual_only = {
+        entity_id
+        for source in observation.sources
+        for entity_id in source.visual_only_target_ids
+    }
+    admitted = actionable | visual_only
+    # Synthetic/unit observations may intentionally omit private bindings and
+    # pass an already bounded candidate domain.  A real observation with any
+    # route data must never fall back to its wider informational inventory.
+    if not observation.bindings and not visual_only:
+        return scoped_entity_ids
+    return tuple(entity_id for entity_id in scoped_entity_ids if entity_id in admitted)
 
 
 def _assess(

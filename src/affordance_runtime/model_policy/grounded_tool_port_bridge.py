@@ -92,6 +92,7 @@ class GroundedToolCommandPayload(BaseModel):
     semantic_action: str | None = None
     scope_extent: str | None = None
     scope_root: str | None = None
+    scope_entity_domain: str | None = None
     operator: str | None = None
     value_field: str | None = None
 
@@ -127,6 +128,13 @@ class GroundedToolCommandPayload(BaseModel):
     def _bounded_semantic_text(cls, value: str | None) -> str | None:
         if value is not None and (not value.strip() or len(value) > 160):
             raise ValueError("grounded semantic text is invalid")
+        return value
+
+    @field_validator("scope_entity_domain")
+    @classmethod
+    def _scope_entity_domain(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"structured", "all_visible", "fused"}:
+            raise ValueError("grounded scope entity domain is invalid")
         return value
 
     @field_validator("assessments")
@@ -168,6 +176,11 @@ class GroundedToolDecisionAdapter:
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
+    last_attempt_origin: ProviderAttemptOrigin = field(
+        default=ProviderAttemptOrigin.UNKNOWN,
+        init=False,
+        compare=False,
+    )
     transport_kind: ToolTransportKind = field(init=False)
 
     def __post_init__(self) -> None:
@@ -211,6 +224,7 @@ class GroundedToolDecisionAdapter:
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
+        object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
         if request.schema_version != SCHEMA_VERSION or request.policy_context is None:
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
         try:
@@ -220,8 +234,10 @@ class GroundedToolDecisionAdapter:
             automatic = _runtime_sequential_member_call(request.policy_context, catalog)
             messages = ()
             if automatic is not None:
+                object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.LOCAL_RUNTIME)
                 calls = (automatic,)
             else:
+                object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
                 messages = _messages(catalog.view, request, self.port.supports_multimodal)
                 calls = await self._call(
                     messages,
@@ -488,6 +504,7 @@ def _command_arguments(payload, spec=None):
             "semantic_action",
             "scope_extent",
             "scope_root",
+            "scope_entity_domain",
             "operator",
             "value_field",
         }
@@ -513,7 +530,8 @@ def _command_arguments(payload, spec=None):
         "destination_predicate",
         "semantic_action",
         "scope_extent",
-        "scope_root",
+            "scope_root",
+            "scope_entity_domain",
         "operator",
         "value_field",
     ):
@@ -572,6 +590,7 @@ def _package_payload(package):
             "parameters": to_json_compatible(decision.parameters),
             "scope_extent": decision.scope_extent.value,
             "scope_root_target_id": decision.scope_root_target_id,
+            "scope_entity_domain": decision.scope_entity_domain.value,
         }
     elif isinstance(decision, SubmitSetPredicateAssessments):
         value = {

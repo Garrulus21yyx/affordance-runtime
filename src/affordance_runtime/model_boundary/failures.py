@@ -31,6 +31,7 @@ class ProviderAttemptOrigin(StrEnum):
     """Where one provider-attempt outcome was produced."""
 
     NETWORK = "network"
+    LOCAL_RUNTIME = "local_runtime"
     LOCAL_CIRCUIT = "local_circuit"
     ORCHESTRATOR_TIMEOUT = "orchestrator_timeout"
     UNKNOWN = "unknown"

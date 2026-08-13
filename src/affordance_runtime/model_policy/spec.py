@@ -116,6 +116,7 @@ class EstablishSetObjectivePayload(_Payload):
         "current_application_state",
     ] = "current_viewport"
     scope_root_target_id: Id240 = "current-viewport"
+    scope_entity_domain: Literal["structured", "all_visible", "fused"] = "structured"
 
     @field_validator("predicate")
     @classmethod
@@ -137,9 +138,11 @@ class ObjectiveSequenceStepPayload(BaseModel):
 
     step_id: Id240
     selector: dict[str, Any]
+    selector_entity_domain: Literal["structured", "all_visible", "fused"] = "structured"
     semantic_action: Id240
     parameters: dict[str, Any]
     postcondition: dict[str, Any] | None = None
+    postcondition_entity_domain: Literal["structured", "all_visible", "fused"] | None = None
 
     @field_validator("selector")
     @classmethod
@@ -451,10 +454,16 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
                 tuple(
                     ObjectiveStep(
                         item.step_id,
-                        EntitySelector(predicate_from_public_value(item.selector)),
+                        EntitySelector(
+                            predicate_from_public_value(item.selector),
+                            ScopeEntityDomain(item.selector_entity_domain),
+                        ),
                         ActionTemplate(item.semantic_action, parameters=item.parameters),
                         (
-                            EntitySelector(predicate_from_public_value(item.postcondition))
+                            EntitySelector(
+                                predicate_from_public_value(item.postcondition),
+                                ScopeEntityDomain(item.postcondition_entity_domain or item.selector_entity_domain),
+                            )
                             if item.postcondition is not None
                             else None
                         ),
@@ -497,6 +506,7 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
             value.parameters,
             ScopeExtent(value.scope_extent),
             value.scope_root_target_id,
+            ScopeEntityDomain(value.scope_entity_domain),
         )
     if isinstance(value, SubmitSetPredicateAssessmentsPayload):
         return SubmitSetPredicateAssessments(

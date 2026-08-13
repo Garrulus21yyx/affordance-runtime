@@ -399,6 +399,7 @@ def _decision_trace(decision):
                 "quantifier": decision.quantifier.value,
                 "semantic_action": decision.semantic_action,
                 "scope_extent": decision.scope_extent.value,
+                "scope_entity_domain": decision.scope_entity_domain.value,
             }
         )
     elif isinstance(decision, EstablishObjectiveSequence):

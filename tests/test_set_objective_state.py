@@ -28,6 +28,7 @@ from affordance_runtime.task.set_objective_state import (
     set_evidence_obligations,
 )
 from affordance_runtime.world import (
+    ActionBinding,
     ActionOption,
     ActionRisk,
     ActionSpace,
@@ -76,6 +77,26 @@ def _space(world: WorldObservation) -> ActionSpace:
     )
 
 
+def _binding(world_id: str, target_id: str) -> ActionBinding:
+    return ActionBinding(
+        f"binding:{target_id}",
+        world_id,
+        world_id,
+        f"revision:{world_id}",
+        f"fingerprint:{target_id}",
+        target_id,
+        target_id,
+        "dom",
+        "dom",
+        "activate",
+        "click",
+        "local_reversible",
+        ("ui_activated",),
+        {"type": "object", "properties": {}, "additionalProperties": False},
+        {"selector": f"#{target_id}"},
+    )
+
+
 def test_set_state_persists_more_than_recent_history_and_predicate_flip() -> None:
     initial = _world(1, tuple("blue" if index < 13 else "red" for index in range(20)))
     state = establish_set_objective_state(
@@ -119,6 +140,34 @@ def test_missing_candidate_fact_is_unknown_not_removed_from_universe() -> None:
     assert state.reduction.disposition is SetDisposition.NEED_UNKNOWN_RESOLUTION
 
 
+def test_action_member_domain_excludes_informational_scope_entities() -> None:
+    world_id = "observation:action-domain"
+    actionable = (
+        SemanticTarget("entity:grid-a", "clickable", "", {"grid_coordinate": {"x": 0, "y": 0}}),
+        SemanticTarget("entity:grid-b", "clickable", "", {"grid_coordinate": {"x": 1, "y": -2}}),
+    )
+    label = SemanticTarget("entity:axis-label", "generic", "-2")
+    world = WorldObservation(
+        world_id,
+        (*actionable, label),
+        (),
+        tuple(_binding(world_id, target.target_id) for target in actionable),
+        {"dom": CoverageState.COMPLETE},
+    )
+
+    state = establish_set_objective_state(
+        predicate=FactEquals("grid_coordinate", {"x": 1, "y": -2}),
+        quantifier=SetQuantifier.EXACTLY_ONE,
+        semantic_action="activate",
+        candidate_entity_ids=tuple(target.target_id for target in world.targets),
+        observation=world,
+    )
+
+    assert state.universe.entity_ids == ("entity:grid-a", "entity:grid-b")
+    assert state.reduction.disposition is SetDisposition.READY_FOR_NEXT_MEMBER
+    assert state.reduction.next_entity_id == "entity:grid-b"
+
+
 def test_zero_match_requires_fresh_stability_before_certificate() -> None:
     initial = _world(1, ("red", "red"))
     state = establish_set_objective_state(
@@ -134,6 +183,28 @@ def test_zero_match_requires_fresh_stability_before_certificate() -> None:
 
     assert stable.reduction.disposition is SetDisposition.CERTIFIED
     assert stable.certificate is not None
+
+
+def test_empty_closed_action_domain_is_valid_for_all_quantifier() -> None:
+    initial = _world(1, ())
+    state = establish_set_objective_state(
+        predicate=VisualConcept("held-out concept"),
+        quantifier=SetQuantifier.ALL_IN_CLOSED_SCOPE,
+        semantic_action="activate",
+        candidate_entity_ids=(),
+        observation=initial,
+        scope=ScopeSpec(
+            "scope:empty-structured",
+            "current-viewport",
+            ScopeExtent.CURRENT_VIEWPORT,
+            entity_domain=ScopeEntityDomain.STRUCTURED,
+        ),
+    )
+
+    assert state.universe.entity_ids == ()
+    assert state.reduction.disposition is SetDisposition.NEED_STABILITY_CHECK
+    stable = refresh_set_objective_state(state, _world(2, ()))
+    assert stable.reduction.disposition is SetDisposition.CERTIFIED
 
 
 def test_current_action_ids_are_rebound_from_stable_entity_membership() -> None:

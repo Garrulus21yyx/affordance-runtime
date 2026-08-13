@@ -19,6 +19,7 @@ from affordance_runtime.task.objective_sequence import ObjectiveSequence
 from affordance_runtime.task.set_objective import (
     PredicateExpr,
     PredicateTruth,
+    ScopeEntityDomain,
     ScopeExtent,
     SetQuantifier,
 )
@@ -80,6 +81,7 @@ class EstablishSetObjective:
     parameters: dict[str, Any] = field(default_factory=dict)
     scope_extent: ScopeExtent = ScopeExtent.CURRENT_VIEWPORT
     scope_root_target_id: str = "current-viewport"
+    scope_entity_domain: ScopeEntityDomain = ScopeEntityDomain.STRUCTURED
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -94,7 +96,11 @@ class EstablishSetObjective:
             raise ValueError("set objective candidate domain is invalid")
         object.__setattr__(self, "candidate_target_ids", values)
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
-        if not isinstance(self.scope_extent, ScopeExtent) or not self.scope_root_target_id.strip():
+        if (
+            not isinstance(self.scope_extent, ScopeExtent)
+            or not self.scope_root_target_id.strip()
+            or not isinstance(self.scope_entity_domain, ScopeEntityDomain)
+        ):
             raise ValueError("set objective scope contract is invalid")
 
 

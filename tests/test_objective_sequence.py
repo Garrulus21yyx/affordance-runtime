@@ -11,7 +11,12 @@ from affordance_runtime.task.objective_sequence import (
     refresh_objective_sequence_state,
     sequence_allowed_action_ids,
 )
-from affordance_runtime.task.set_objective import ActionTemplate, FactEquals, VisualConcept
+from affordance_runtime.task.set_objective import (
+    ActionTemplate,
+    FactEquals,
+    ScopeEntityDomain,
+    VisualConcept,
+)
 from affordance_runtime.world import (
     ActionBinding,
     ActionSpaceBuilder,
@@ -135,7 +140,10 @@ def test_visual_sequence_selector_enters_the_shared_scope_evidence_lifecycle() -
         (
             ObjectiveStep(
                 "visual-future-step",
-                EntitySelector(VisualConcept("held-out fruit")),
+                EntitySelector(
+                    VisualConcept("held-out fruit"),
+                    ScopeEntityDomain.ALL_VISIBLE,
+                ),
                 ActionTemplate("activate"),
             ),
         ),
@@ -149,3 +157,26 @@ def test_visual_sequence_selector_enters_the_shared_scope_evidence_lifecycle() -
     assert state.disposition is SequenceDisposition.NEED_EVIDENCE
     assert state.selector_resolution is not None
     assert state.selector_resolution.scope.entity_domain.value == "all_visible"
+
+
+def test_visual_selector_can_classify_a_structurally_closed_domain() -> None:
+    sequence = ObjectiveSequence(
+        "sequence:visual-over-dom",
+        (
+            ObjectiveStep(
+                "visual-dom-step",
+                EntitySelector(VisualConcept("held-out fruit"), ScopeEntityDomain.STRUCTURED),
+                ActionTemplate("activate"),
+            ),
+        ),
+    )
+
+    state = establish_objective_sequence_state(
+        sequence,
+        _world("observation:visual-dom", "candidate"),
+    )
+
+    assert state.disposition is SequenceDisposition.NEED_EVIDENCE
+    assert state.selector_resolution is not None
+    assert state.selector_resolution.universe.coverage.value == "complete"
+    assert state.selector_resolution.scope.entity_domain is ScopeEntityDomain.STRUCTURED

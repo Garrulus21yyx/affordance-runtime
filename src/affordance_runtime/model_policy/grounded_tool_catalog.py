@@ -62,7 +62,6 @@ from affordance_runtime.task.set_objective import (
     ScopeSpec,
     SetQuantifier,
     VisualConcept,
-    visual_predicate_leaves,
 )
 from affordance_runtime.world.schema_validation import validate_value
 
@@ -508,9 +507,19 @@ def _append_objective_sequence_tool(
     step_schema = _object_schema(
         {
             "predicate": selector_schema,
+            "selector_entity_domain": {
+                "type": "string",
+                "enum": [item.value for item in ScopeEntityDomain],
+                "default": ScopeEntityDomain.STRUCTURED.value,
+            },
             "semantic_action": {"type": "string", "enum": list(semantic_actions)},
             "parameters": {"type": "object", "additionalProperties": True},
             "postcondition_predicate": {"anyOf": [selector_schema, {"type": "null"}]},
+            "postcondition_entity_domain": {
+                "type": "string",
+                "enum": [item.value for item in ScopeEntityDomain],
+                "default": ScopeEntityDomain.STRUCTURED.value,
+            },
         },
         (
             "predicate",
@@ -565,7 +574,9 @@ def _append_compound_set_objective_tool(
             "establish_compound_set_objective",
             (
                 "Establish a scope-relative quantified objective from a bounded boolean "
-                "predicate. Runtime owns candidate enumeration and completion; this performs no action."
+                "predicate. Runtime owns candidate enumeration and completion; this performs no action. "
+                "Keep scope_entity_domain=structured when DOM/AX enumerates the candidates even if a "
+                "visual predicate classifies them; use all_visible only when visual-only entities must be discovered."
             ),
             _object_schema(
                 {
@@ -586,8 +597,19 @@ def _append_compound_set_objective_tool(
                         "type": "string",
                         "enum": ["current-viewport", *[item.ref for item in context.grounding.entities]],
                     },
+                    "scope_entity_domain": {
+                        "type": "string",
+                        "enum": [item.value for item in ScopeEntityDomain],
+                        "default": ScopeEntityDomain.STRUCTURED.value,
+                    },
                 },
-                ("predicate", "quantifier", "semantic_action", "scope_extent", "scope_root"),
+                (
+                    "predicate",
+                    "quantifier",
+                    "semantic_action",
+                    "scope_extent",
+                    "scope_root",
+                ),
             ),
         )
     )
@@ -630,7 +652,8 @@ def _append_aggregate_objective_tool(
             "establish_aggregate_objective",
             (
                 "Required when the task asks to derive COUNT/SUM/MIN/MAX. Derive it from a closed source scope and write the Runtime-derived "
-                "value to one destination. Never provide the result value yourself."
+                "value to one destination. Never provide the result value yourself. Keep "
+                "scope_entity_domain=structured when DOM/AX owns candidate enumeration, including when visual evidence classifies them."
             ),
             _object_schema(
                 {
@@ -652,6 +675,11 @@ def _append_aggregate_objective_tool(
                     "scope_root": {
                         "type": "string",
                         "enum": ["current-viewport", *[item.ref for item in context.grounding.entities]],
+                    },
+                    "scope_entity_domain": {
+                        "type": "string",
+                        "enum": [item.value for item in ScopeEntityDomain],
+                        "default": ScopeEntityDomain.STRUCTURED.value,
                     },
                 },
                 (
@@ -920,10 +948,23 @@ def resolve_grounded_tool_call(
             steps.append(
                 ObjectiveStep(
                     f"step:{index + 1}",
-                    EntitySelector(predicate_from_transport(selector)),
+                    EntitySelector(
+                        predicate_from_transport(selector),
+                        ScopeEntityDomain(str(raw.get("selector_entity_domain", "structured"))),
+                    ),
                     ActionTemplate(semantic_action, parameters=dict(raw["parameters"])),
                     (
-                        EntitySelector(predicate_from_transport(postcondition))
+                        EntitySelector(
+                            predicate_from_transport(postcondition),
+                            ScopeEntityDomain(
+                                str(
+                                    raw.get(
+                                        "postcondition_entity_domain",
+                                        raw.get("selector_entity_domain", "structured"),
+                                    )
+                                )
+                            ),
+                        )
                         if isinstance(postcondition, Mapping)
                         else None
                     ),
@@ -934,9 +975,14 @@ def resolve_grounded_tool_call(
                 [
                     {
                         "predicate": to_json_compatible(raw["predicate"]),
+                        "selector_entity_domain": raw.get("selector_entity_domain", "structured"),
                         "semantic_action": raw["semantic_action"],
                         "parameters": to_json_compatible(raw["parameters"]),
                         "postcondition_predicate": to_json_compatible(raw.get("postcondition_predicate")),
+                        "postcondition_entity_domain": raw.get(
+                            "postcondition_entity_domain",
+                            raw.get("selector_entity_domain", "structured"),
+                        ),
                     }
                     for raw in raw_steps
                 ],
@@ -971,6 +1017,7 @@ def resolve_grounded_tool_call(
                 {},
                 ScopeExtent(str(call.arguments["scope_extent"])),
                 root_target,
+                ScopeEntityDomain(str(call.arguments.get("scope_entity_domain", "structured"))),
             ),
         )
     if isinstance(binding, _AggregateBinding):
@@ -997,6 +1044,7 @@ def resolve_grounded_tool_call(
             "semantic_action": semantic_action,
             "scope_extent": call.arguments["scope_extent"],
             "scope_root": root_target,
+            "scope_entity_domain": call.arguments.get("scope_entity_domain", "structured"),
         }
         digest = hashlib.sha256(
             json.dumps(
@@ -1016,11 +1064,7 @@ def resolve_grounded_tool_call(
                         f"scope:{digest}",
                         root_target,
                         ScopeExtent(str(call.arguments["scope_extent"])),
-                        entity_domain=(
-                            ScopeEntityDomain.ALL_VISIBLE
-                            if visual_predicate_leaves(member)
-                            else ScopeEntityDomain.STRUCTURED
-                        ),
+                        entity_domain=ScopeEntityDomain(str(call.arguments.get("scope_entity_domain", "structured"))),
                     ),
                     member,
                     ValueExtractor(

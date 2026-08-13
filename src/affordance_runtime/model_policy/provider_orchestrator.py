@@ -164,6 +164,15 @@ class ProviderCallOrchestrator:
                             ProviderFailureCode.TIMEOUT,
                             attempt_origin=ProviderAttemptOrigin.ORCHESTRATOR_TIMEOUT,
                         )
+                    except Exception as exc:
+                        # A local adapter/catalog defect is not provider
+                        # unavailability and must never enter provider retry.
+                        outcome = ModelFailure(
+                            ModelFailureKind.INTERNAL_ERROR,
+                            f"decision port raised {type(exc).__name__}",
+                            False,
+                            attempt_origin=ProviderAttemptOrigin.UNKNOWN,
+                        )
                     if isinstance(outcome, ModelDecisionResponse):
                         if accepted:
                             return ModelFailure(
@@ -277,7 +286,7 @@ class ProviderCallOrchestrator:
             scheduled_delay_s,
             response_id,
             (
-                ProviderAttemptOrigin.NETWORK
+                getattr(port, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
                 if status is ProviderAttemptStatus.ACCEPTED
                 else failure.attempt_origin
                 if failure is not None

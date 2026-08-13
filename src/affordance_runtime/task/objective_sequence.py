@@ -18,6 +18,9 @@ from affordance_runtime.task.selector_resolution import (
 from affordance_runtime.task.set_objective import (
     ActionTemplate,
     PredicateExpr,
+    ScopeEntityDomain,
+    ScopeExtent,
+    ScopeSpec,
     predicate_public_value,
 )
 from affordance_runtime.task_action_family_resolution import action_family_value
@@ -39,11 +42,19 @@ SUPPORTED_SEQUENCE_ACTIONS = (
 @dataclass(frozen=True)
 class EntitySelector:
     predicate: PredicateExpr
+    entity_domain: ScopeEntityDomain = ScopeEntityDomain.STRUCTURED
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.entity_domain, ScopeEntityDomain):
+            raise TypeError("entity selector domain must be typed")
 
     @property
     def digest(self) -> str:
         payload = json.dumps(
-            predicate_public_value(self.predicate),
+            {
+                "predicate": predicate_public_value(self.predicate),
+                "entity_domain": self.entity_domain.value,
+            },
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
@@ -252,10 +263,14 @@ def sequence_public_value(sequence: ObjectiveSequence) -> dict[str, object]:
             {
                 "step_id": step.step_id,
                 "selector": predicate_public_value(step.selector.predicate),
+                "selector_entity_domain": step.selector.entity_domain.value,
                 "semantic_action": step.action_template.semantic_action,
                 "parameters": to_json_compatible(step.action_template.parameters),
                 "postcondition": (
                     predicate_public_value(step.postcondition.predicate) if step.postcondition is not None else None
+                ),
+                "postcondition_entity_domain": (
+                    step.postcondition.entity_domain.value if step.postcondition is not None else None
                 ),
             }
             for step in sequence.steps
@@ -272,7 +287,7 @@ def _resolve(
     if state.pending_postcondition is not None:
         resolution = _resolution(
             state,
-            state.pending_postcondition.predicate,
+            state.pending_postcondition,
             observation,
             f"sequence:{state.sequence.sequence_id}:postcondition:{state.active_index}",
             enumerator,
@@ -292,7 +307,7 @@ def _resolve(
         )
     resolution = _resolution(
         state,
-        step.selector.predicate,
+        step.selector,
         observation,
         f"sequence:{state.sequence.sequence_id}:step:{state.active_index}",
         enumerator,
@@ -302,7 +317,7 @@ def _resolve(
 
 def _resolution(
     state: ObjectiveSequenceState,
-    predicate: PredicateExpr,
+    selector: EntitySelector,
     observation: WorldObservation,
     selector_id: str,
     enumerator: ScopeEnumeratorPort | None,
@@ -310,12 +325,20 @@ def _resolution(
     prior = state.selector_resolution
     return resolve_entity_selector(
         selector_id,
-        predicate,
+        selector.predicate,
         observation,
+        scope=ScopeSpec(
+            f"scope:{selector_id}:{selector.digest[:16]}",
+            "current-viewport",
+            ScopeExtent.CURRENT_VIEWPORT,
+            entity_domain=selector.entity_domain,
+        ),
         enumerator=enumerator,
         semantic_leaf_assessments=(
             prior.semantic_leaf_assessments
-            if prior is not None and predicate_public_value(prior.predicate) == predicate_public_value(predicate)
+            if prior is not None
+            and predicate_public_value(prior.predicate) == predicate_public_value(selector.predicate)
+            and prior.scope.entity_domain is selector.entity_domain
             else ()
         ),
     )

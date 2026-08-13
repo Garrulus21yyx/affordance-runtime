@@ -54,6 +54,17 @@ class _Port:
         return self.outcomes.pop(0)
 
 
+@dataclass
+class _RaisingPort:
+    provider_id: str = "provider"
+    model_id: str = "model"
+    compatibility_key: str = "schema:grounding"
+
+    async def generate(self, request):
+        del request
+        raise AssertionError("local adapter defect")
+
+
 def test_retryable_rate_limit_retries_without_creating_a_new_request() -> None:
     port = _Port(
         [
@@ -111,6 +122,21 @@ def test_nonretryable_failure_fails_immediately_without_fallback() -> None:
     assert outcome.kind is ModelFailureKind.REFUSED
     assert primary.calls == 1 and fallback.calls == 0
     assert orchestrator.last_fallback_count == 0
+
+
+def test_local_adapter_exception_is_internal_not_provider_unavailable() -> None:
+    orchestrator = ProviderCallOrchestrator(
+        (_RaisingPort(),),
+        ProviderCallPolicy(3, (0.0, 0.0), 0.0, 1.0, 2.0),
+    )
+
+    outcome = asyncio.run(orchestrator.generate(_request()))
+
+    assert isinstance(outcome, ModelFailure)
+    assert outcome.kind is ModelFailureKind.INTERNAL_ERROR
+    assert len(orchestrator.last_attempts) == 1
+    assert orchestrator.last_attempts[0].status is ProviderAttemptStatus.NON_RETRYABLE_FAILURE
+    assert orchestrator.last_attempts[0].origin is ProviderAttemptOrigin.UNKNOWN
 
 
 def test_exhaustion_is_typed_and_fallback_is_compatible() -> None:
