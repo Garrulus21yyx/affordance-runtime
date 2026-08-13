@@ -17,7 +17,10 @@ def test_every_root_reference_scenario_has_explicit_typed_readiness() -> None:
         "settings",
         "export",
     )
-    assert [item.scenario for item in REFERENCE_TARGET_READINESS if item.ready] == ["settings"]
+    assert [item.scenario for item in REFERENCE_TARGET_READINESS if item.ready] == [
+        "pricing",
+        "settings",
+    ]
     assert all(item.blockers for item in REFERENCE_TARGET_READINESS if not item.ready)
     assert all(
         isinstance(blocker, ReferenceTargetBlocker)
@@ -31,13 +34,10 @@ def test_current_reference_default_cutover_fails_with_deterministic_evidence() -
         require_reference_target_cutover_ready()
 
     assert tuple(item.scenario for item in caught.value.readiness) == (
-        "pricing",
         "export",
     )
     assert str(caught.value) == (
         "target reference cutover is blocked: "
-        "pricing=[interaction_effect_boundary_required,structural_document_content_required,"
-        "structured_output_projection_required], "
         "export=[materialized_download_required,output_integrity_evidence_required]"
     )
 
@@ -64,4 +64,15 @@ def test_settings_readiness_names_the_executable_target_acceptance() -> None:
     assert settings.target_acceptance_test == (
         "tests/test_reference_target_settings.py::"
         "test_target_settings_confirms_action_then_completes_from_unified_authoritative_world"
+    )
+
+
+def test_pricing_readiness_names_the_executable_target_acceptance() -> None:
+    pricing = next(item for item in REFERENCE_TARGET_READINESS if item.scenario == "pricing")
+
+    assert pricing.ready
+    assert pricing.blockers == frozenset()
+    assert pricing.target_acceptance_test == (
+        "tests/test_reference_target_pricing.py::"
+        "test_target_pricing_reveals_records_and_returns_current_structured_dom_output"
     )

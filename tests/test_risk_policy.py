@@ -160,3 +160,20 @@ def test_low_read_and_low_allowed_effect_are_allowed() -> None:
 
     assert policy.assess(read_task, read).decision == RiskDecisionKind.ALLOW
     assert policy.assess(_task(), low_effect).decision == RiskDecisionKind.ALLOW
+
+
+def test_read_only_risk_policy_allows_only_effect_free_low_risk_interaction() -> None:
+    policy = RiskPolicy()
+    task = TaskGoal("read", "Reveal local details")
+    interaction = _selection(
+        effect_category="interaction",
+        semantic_effects=(),
+        risk=ActionRisk.LOW,
+        parameters={},
+    )
+
+    assert policy.assess(task, interaction).decision == RiskDecisionKind.ALLOW
+    assert policy.assess(
+        task,
+        replace(interaction, semantic_effects=("update",)),
+    ).decision == RiskDecisionKind.BLOCK

@@ -819,4 +819,40 @@ settings 的 readiness 现绑定可执行 acceptance
 `tests/test_reference_target_settings.py::test_target_settings_confirms_action_then_completes_from_unified_authoritative_world`；
 pricing 与 export blockers 仍使聚合 default cutover fail closed。该实现先通过 broad focused gate
 `117 passed`，最终变更集再次通过直接相关 gate `59 passed`、`mypy src`（495 个源码文件）、Ruff、
-`git diff --check` 与全量 `2452 passed, 27 skipped in 95.97s`。新远端 CI 结果在本切片推送后另行记录。
+`git diff --check` 与全量 `2452 passed, 27 skipped in 95.97s`。原 feature SHA 的远端 run
+`31742943533` 因 CI 安装缺少 NumPy 而 collection 失败；`64d15ae` 同时补齐依赖并让 tee 管道保留
+pytest exit code，replacement target attestation `31743521672` 与 BrowserGym conformance
+`31743521683` 均通过。
+
+## 22. 实施记录：pricing interaction 与结构化 DOM 输出
+
+2026-08-13 pricing remediation 继续使用同一个 DOM `SurfaceObservation` 和
+`UnifiedWorldEnvironment`，没有查询 `/api/pricing`，也没有让 evaluator 读取 fixture oracle。
+`DomSurfaceAdapter` 新增显式 trusted interaction operation registration；只有产品 operation
+registry 已声明为 local、reversible、interaction-only 的操作才能以 `interaction` 类别进入只读
+ActionSpace。页面自己声称的 effect class 不能单独取得这项权限。
+
+同一次 DOM capture 会在有结构化记录或任务明确请求 `structured_document` 时，投影有界的可见
+document records。目前声明的最小语法是 article 中的 definition list；hidden 内容不发布，selector、
+DOM ID、raw HTML 与执行路由不进入 public target/output。投影形成 `dom_document` 与 record targets、
+current structural facts，以及带当前 DOM evidence ref 的 `structured_document` artifact。
+
+action verification 同时收敛了一个原有假阳性：`focused=true` 不再证明 activation effect。
+普通控件仍以 target structural diff 验证；注册的 interaction-only activation 必须产生当前、完整、
+structural world fact change，pricing 中具体由可见 record inventory 的变化证明。
+
+真实 Playwright acceptance
+`tests/test_reference_target_pricing.py::test_target_pricing_reveals_records_and_returns_current_structured_dom_output`
+走通：
+
+```text
+NaturalLanguageTaskRequest -> ThinTaskIntake -> DOM WorldObservation
+-> model SelectAction(Pro reveal) -> private bind/execute -> 1 visible record
+-> model SelectAction(Enterprise reveal) -> private bind/execute -> 2 visible records
+-> ProductionTaskEvaluator -> structured_document output -> DONE
+```
+
+该路径执行恰好两次，模型只提交公开 action ID；训练 fixture 与 held-out DOM 顺序的结构投影均有测试，
+pricing readiness 已绑定上述 executable acceptance。export 仍使总 default cutover fail closed。最终本地
+验证为 123 个 focused tests、Ruff、`mypy src`（496 个源码文件）、`git diff --check` 与全量
+`2461 passed, 27 skipped in 96.50s`。

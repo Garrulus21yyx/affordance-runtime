@@ -46,7 +46,17 @@ def _decision(
         return RiskDecisionKind.BLOCK, "semantic effect is explicitly forbidden by the task"
     if effects.difference(task.allowed_effects):
         return RiskDecisionKind.BLOCK, "semantic effect is outside the task's allowed effects"
-    if task.risk_profile == RiskProfile.READ_ONLY and selection.semantic_action != "read":
+    read_only_interaction = (
+        selection.effect_category == "interaction"
+        and selection.semantic_action == "activate"
+        and not selection.semantic_effects
+        and selection.risk is ActionRisk.LOW
+    )
+    if (
+        task.risk_profile == RiskProfile.READ_ONLY
+        and selection.semantic_action != "read"
+        and not read_only_interaction
+    ):
         return RiskDecisionKind.BLOCK, "read-only task cannot execute effects"
     if effective_risk in {ActionRisk.MEDIUM, ActionRisk.HIGH, ActionRisk.IRREVERSIBLE}:
         return RiskDecisionKind.NEEDS_CONFIRMATION, "action risk requires semantic confirmation"
@@ -56,6 +66,7 @@ def _decision(
 def _consequences(selection: AdmittedActionSelection) -> tuple[str, ...]:
     categories = {
         "observation": "observe current state",
+        "interaction": "reveal or navigate local interface state",
         "local_reversible": "change local state",
         "external": "affect an external system",
         "irreversible": "cause an irreversible effect",

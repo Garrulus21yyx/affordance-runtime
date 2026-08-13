@@ -239,11 +239,17 @@ def _effects_allowed(task: TaskGoal, binding: ActionBinding) -> bool:
         and not effects
         and binding.risk == ActionRisk.LOW
     )
+    interaction_action = (
+        binding.effect_category == EffectCategory.INTERACTION
+        and binding.semantic_action == "activate"
+        and not effects
+        and binding.risk == ActionRisk.LOW
+    )
     if binding.semantic_action == "read" and not observation_action:
         return False
     if task.risk_profile == RiskProfile.READ_ONLY:
-        return observation_action
-    return observation_action or bool(effects) and effects.issubset(task.allowed_effects)
+        return observation_action or interaction_action
+    return observation_action or interaction_action or bool(effects) and effects.issubset(task.allowed_effects)
 
 
 def _risk_rank(risk: ActionRisk) -> int:

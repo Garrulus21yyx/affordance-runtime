@@ -6,12 +6,15 @@ from dataclasses import dataclass, field
 from time import time
 from typing import TYPE_CHECKING
 
+from affordance_runtime.effect_authority_contracts import EffectClass, Externality, Reversibility
+from affordance_runtime.effect_operation_policy import semantics_for_operation
 from affordance_runtime.execution.contracts import (
     ActionError,
     ActionResult,
     BoundActionRequest,
     DispatchStatus,
 )
+from affordance_runtime.surfaces.dom.document import project_structured_document
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_dom_action
@@ -33,10 +36,23 @@ if TYPE_CHECKING:
 @dataclass
 class DomSurfaceAdapter:
     session: BrowserSession
+    trusted_interaction_operations: frozenset[str] = frozenset()
     surface: str = field(default="dom", init=False)
     _observation_id: str = field(default="", init=False)
     _source_revision: str = field(default="", init=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        operations = frozenset(self.trusted_interaction_operations)
+        for operation in operations:
+            semantics = semantics_for_operation(operation)
+            if semantics is None or (
+                semantics.effect_class is not EffectClass.INTERACTION_ONLY
+                or semantics.externality is not Externality.LOCAL
+                or semantics.reversibility is not Reversibility.REVERSIBLE
+            ):
+                raise ValueError("trusted DOM interaction operation is not registered as local reversible interaction")
+        self.trusted_interaction_operations = operations
 
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
@@ -59,9 +75,23 @@ class DomSurfaceAdapter:
         if self._task is None:
             raise RuntimeError("DOM surface adapter must be reset before observation")
         observation_id = snapshot.observation.snapshot_id
-        targets = tuple(_target(affordance) for affordance in snapshot.affordance_model.affordances)
+        document = project_structured_document(
+            str(snapshot.observation.metadata.get("html") or ""),
+            snapshot.observation.url,
+        )
+        document_enabled = (
+            len(document.targets) > 1
+            or "structured_document" in self._task.requested_outputs
+        )
+        action_targets = tuple(_target(affordance) for affordance in snapshot.affordance_model.affordances)
+        targets = (*action_targets, *(document.targets if document_enabled else ()))
         binding_results = tuple(
-            _binding(self._task, observation_id, affordance)
+            _binding(
+                self._task,
+                observation_id,
+                affordance,
+                self.trusted_interaction_operations,
+            )
             for affordance in snapshot.affordance_model.affordances
         )
         bindings = tuple(binding for binding in binding_results if binding is not None)
@@ -91,11 +121,12 @@ class DomSurfaceAdapter:
             targets,
             facts,
             bindings,
-            CoverageState.COMPLETE,
+            CoverageState.TRUNCATED if document_enabled and document.truncated else CoverageState.COMPLETE,
             {
                 "url": snapshot.observation.url,
                 "screenshot_ref": snapshot.observation.screenshot_ref,
                 "unsupported_actions": unsupported,
+                **({"structured_document": document.artifact} if document_enabled else {}),
             },
             acquisition_root_id=f"browser:{snapshot.observation.page_revision}",
         )
@@ -175,12 +206,22 @@ def _target(affordance: Affordance) -> SemanticTarget:
     )
 
 
-def _binding(task: TaskGoal, observation_id: str, affordance: Affordance) -> ActionBinding | None:
+def _binding(
+    task: TaskGoal,
+    observation_id: str,
+    affordance: Affordance,
+    trusted_interaction_operations: frozenset[str],
+) -> ActionBinding | None:
     try:
         metadata = action_metadata("dom", affordance.action)
     except ValueError:
         return None
-    classification = classify_dom_action(task, affordance, metadata.semantic_action)
+    classification = classify_dom_action(
+        task,
+        affordance,
+        metadata.semantic_action,
+        trusted_interaction_operations=trusted_interaction_operations,
+    )
     return ActionBinding(
         binding_id=f"{observation_id}:{affordance.id}:{affordance.action}",
         world_observation_id=observation_id,

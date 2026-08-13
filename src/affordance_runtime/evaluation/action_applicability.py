@@ -52,6 +52,17 @@ def _before_values(observation: WorldObservation, subject_id: str, predicate: st
 
 
 def _effect_supported(obligation, records, before, after) -> bool:
+    if obligation.kind == VerificationObligationKind.STRUCTURAL_WORLD_CHANGE:
+        return any(
+            item is not None
+            and item.kind == "fact"
+            and item.predicate != "focused"
+            and evidence_source_is_current(item, after)
+            and _assurance(item.source_assurance, "structural")
+            and _source_coverage_complete(item.source_observation_id, after)
+            and _before_values(before, item.subject_id, item.predicate) != (item.value,)
+            for item in records
+        )
     if obligation.kind == VerificationObligationKind.ARTIFACT_CREATED:
         before_kinds = {str(key) for source in before.sources for key in source.artifacts}
         return obligation.output_id not in before_kinds and any(
@@ -69,7 +80,10 @@ def _effect_supported(obligation, records, before, after) -> bool:
 
 
 def _no_effect_supported(obligation, records, before, after, index) -> bool:
-    if obligation.kind == VerificationObligationKind.ARTIFACT_CREATED:
+    if obligation.kind in {
+        VerificationObligationKind.ARTIFACT_CREATED,
+        VerificationObligationKind.STRUCTURAL_WORLD_CHANGE,
+    }:
         return False
     before_values = _before_values(before, obligation.subject_id, obligation.predicate)
     relevant = tuple(
@@ -102,13 +116,28 @@ def no_effect_assurance_floor(required: str) -> ObservationAssurance:
 def _has_relevant_conflict(after, obligations) -> bool:
     keys = {
         (item.subject_id, item.predicate) for item in obligations
-        if item.kind != VerificationObligationKind.ARTIFACT_CREATED
+        if item.kind not in {
+            VerificationObligationKind.ARTIFACT_CREATED,
+            VerificationObligationKind.STRUCTURAL_WORLD_CHANGE,
+        }
     }
     return any((item.subject_id, item.predicate) in keys for item in after.conflicts)
 
 
 def _assurance(actual: str, required: str) -> bool:
     return assurance_satisfies(actual, required) if required else True
+
+
+def _source_coverage_complete(source_observation_id: str, observation) -> bool:
+    source = next(
+        (item for item in observation.sources if item.observation_id == source_observation_id),
+        None,
+    )
+    return bool(
+        source is not None
+        and source.coverage == CoverageState.COMPLETE
+        and observation.coverage.get(source.surface) == CoverageState.COMPLETE
+    )
 
 
 def _unknown(evaluation: ActionEvaluation, reason: str) -> ActionEvaluation:

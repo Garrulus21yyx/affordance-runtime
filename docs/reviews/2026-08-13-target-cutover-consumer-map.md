@@ -32,10 +32,10 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 
 1. Retarget or explicitly retire the root pricing/settings/export scenario acceptance
    paths. The executable `REFERENCE_TARGET_READINESS` gate currently records:
-   pricing needs interaction-effect boundary plus structural document/output projection;
-   settings now passes the target client through a registered authoritative HTTP state
-   surface fused with DOM; export still needs materialized download plus output-integrity
-   evidence.
+   pricing now passes the target client through trusted interaction-only admission and a
+   generic structured-document projection owned by the DOM surface; settings passes through
+   a registered authoritative HTTP state surface fused with DOM; export still needs
+   materialized download plus output-integrity evidence.
 2. **Completed offline:** `TargetRuntimeClient` owns target start/run/continuation semantics;
    the existing Coordinator client is also exported as `LegacyRuntimeClient` without
    breaking the `RuntimeClient` compatibility import.

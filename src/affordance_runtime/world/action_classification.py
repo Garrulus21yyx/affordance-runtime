@@ -5,12 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.effect_authority_contracts import EffectClass, Externality, Reversibility
+from affordance_runtime.effect_operation_policy import semantics_for_operation
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
 from affordance_runtime.world.contracts import ActionRisk
 
 
 class EffectCategory(StrEnum):
     OBSERVATION = "observation"
+    INTERACTION = "interaction"
     LOCAL_REVERSIBLE = "local_reversible"
     EXTERNAL = "external"
     IRREVERSIBLE = "irreversible"
@@ -24,13 +27,26 @@ class ActionClassification:
     observation_barrier: bool
 
 
-def classify_dom_action(task: TaskGoal, affordance: object, semantic_action: str) -> ActionClassification:
+def classify_dom_action(
+    task: TaskGoal,
+    affordance: object,
+    semantic_action: str,
+    *,
+    trusted_interaction_operations: frozenset[str] = frozenset(),
+) -> ActionClassification:
     role = str(getattr(affordance, "role", "")).casefold()
     externality = str(getattr(affordance, "externality", "")).casefold()
     reversibility = str(getattr(affordance, "reversibility", "")).casefold()
     operation_ref = str(getattr(affordance, "operation_ref", "")).casefold()
     classification = classify_surface_action(task, role, semantic_action)
     category = classification.category
+    operation_semantics = semantics_for_operation(operation_ref)
+    if operation_ref in trusted_interaction_operations and operation_semantics is not None and (
+        operation_semantics.effect_class is EffectClass.INTERACTION_ONLY
+        and operation_semantics.externality is Externality.LOCAL
+        and operation_semantics.reversibility is Reversibility.REVERSIBLE
+    ):
+        category = EffectCategory.INTERACTION
     if externality in {"external", "external_system", "remote"} or operation_ref.startswith("external."):
         category = EffectCategory.EXTERNAL
     if reversibility in {"irreversible", "none"}:
@@ -106,6 +122,7 @@ def _business_effects(task: TaskGoal, hint: str, category: EffectCategory) -> tu
 def _category_risk(category: EffectCategory) -> ActionRisk:
     return {
         EffectCategory.OBSERVATION: ActionRisk.LOW,
+        EffectCategory.INTERACTION: ActionRisk.LOW,
         EffectCategory.LOCAL_REVERSIBLE: ActionRisk.LOW,
         EffectCategory.EXTERNAL: ActionRisk.HIGH,
         EffectCategory.IRREVERSIBLE: ActionRisk.IRREVERSIBLE,

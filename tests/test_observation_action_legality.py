@@ -86,3 +86,17 @@ def test_read_only_task_still_excludes_business_effects() -> None:
     options = _space(task, (read, effect)).options
 
     assert tuple(option.semantic_action for option in options) == ("read",)
+
+
+def test_read_only_task_admits_only_low_risk_effect_free_interaction_shape() -> None:
+    task = TaskGoal("inspect", "Reveal and inspect details")
+    valid = _binding("activate", EffectCategory.INTERACTION, (), ActionRisk.LOW)
+    invalid = (
+        replace(valid, binding_id="binding:interaction:effect", semantic_effects=("update",)),
+        replace(valid, binding_id="binding:interaction:risk", risk=ActionRisk.HIGH),
+        replace(valid, binding_id="binding:interaction:read", semantic_action="read"),
+    )
+
+    options = _space(task, (valid, *invalid)).options
+
+    assert tuple(option.effect_category for option in options) == (EffectCategory.INTERACTION,)

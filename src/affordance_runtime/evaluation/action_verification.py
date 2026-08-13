@@ -10,6 +10,7 @@ from affordance_runtime.evaluation.criterion_normalization import normalize_task
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.world.action_classification import EffectCategory
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.source_profile import ObservationAssurance
 
@@ -18,6 +19,7 @@ class VerificationObligationKind(StrEnum):
     FACT_TRANSITION_TO = "fact_transition_to"
     CRITERION_PROGRESS = "criterion_progress"
     ARTIFACT_CREATED = "artifact_created"
+    STRUCTURAL_WORLD_CHANGE = "structural_world_change"
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,10 @@ class RuntimeVerificationObligation:
         fields = (self.subject_id, self.predicate, self.criterion_id, self.output_id, self.required_assurance)
         if any(len(item) > 240 for item in fields):
             raise ValueError("verification obligation field exceeds its bound")
-        if self.kind == VerificationObligationKind.ARTIFACT_CREATED:
+        if self.kind == VerificationObligationKind.STRUCTURAL_WORLD_CHANGE:
+            if any((self.subject_id, self.predicate, self.criterion_id, self.output_id)):
+                raise ValueError("structural world-change verification has no preselected subject")
+        elif self.kind == VerificationObligationKind.ARTIFACT_CREATED:
             if not self.output_id:
                 raise ValueError("artifact verification requires an output ID")
         elif not self.subject_id or not self.predicate or not self.criterion_id:
@@ -51,6 +56,11 @@ def derive_action_verification_obligations(
 ) -> tuple[RuntimeVerificationObligation, ...]:
     subjects = {request.intent.target_id, request.intent.destination_id} - {""}
     obligations: list[RuntimeVerificationObligation] = []
+    selection = getattr(request, "selection", None)
+    if getattr(selection, "effect_category", "") == EffectCategory.INTERACTION:
+        obligations.append(RuntimeVerificationObligation(
+            VerificationObligationKind.STRUCTURAL_WORLD_CHANGE,
+        ))
     primitive = _primitive_value_obligation(request)
     if primitive is not None:
         obligations.append(primitive)

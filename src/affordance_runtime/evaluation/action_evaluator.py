@@ -1,5 +1,7 @@
 """Production mechanical action-effect evaluation from current public world state."""
 
+from dataclasses import replace
+
 from affordance_runtime.evaluation.contracts import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
@@ -100,19 +102,29 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
         after,
         request.intent.target_id,
     )
-    if target_changed and structural_refs:
+    structural_refs = tuple(dict.fromkeys((*structural_refs, *_changed_world_fact_refs(before, after))))
+    if structural_refs:
         return ActionEvaluation(
             request.request_id,
             before.observation_id,
             after.observation_id,
             ActionEvaluationStatus.EFFECT_CONFIRMED,
-            "public target semantics changed with current structural evidence",
+            (
+                "public target semantics changed with current structural evidence"
+                if target_changed
+                else "public structural world facts changed after interaction"
+            ),
             structural_refs,
             {
-                "verification_profile": "structural_target_diff_v1",
+                "verification_profile": (
+                    "structural_target_diff_v1"
+                    if target_changed
+                    else "structural_world_diff_v1"
+                ),
                 "expected_effects": request.selection.semantic_effects,
                 "observed_effect": ActionEvaluationStatus.EFFECT_CONFIRMED.value,
-                "target_changed": True,
+                "target_changed": target_changed,
+                "structural_world_changed": True,
             },
         )
     before_digests = _screenshot_digests(before)
@@ -162,8 +174,30 @@ def _changed_target_fact_refs(before, after, target_id: str) -> tuple[str, ...]:
         for record in index.records
         if record.kind == "fact"
         and record.subject_id == target_id
+        and record.predicate != "focused"
         and record.predicate in before_values
         and record.value != before_values[record.predicate]
+        and evidence_source_is_current(record, after)
+        and assurance_satisfies(record.source_assurance, "structural")
+        and _source_coverage_complete(record.source_observation_id, after)
+    )
+    return tuple(dict.fromkeys(refs))
+
+
+def _changed_world_fact_refs(before, after) -> tuple[str, ...]:
+    before_values: dict[tuple[str, str], tuple[object, ...]] = {}
+    for fact in before.facts:
+        before_values.setdefault((fact.subject_id, fact.predicate), ())
+        before_values[(fact.subject_id, fact.predicate)] += (fact.value,)
+    conflicted = {(item.subject_id, item.predicate) for item in after.conflicts}
+    index = WorldEvidenceIndex.from_observation(after)
+    refs = tuple(
+        record.evidence_ref
+        for record in index.records
+        if record.kind == "fact"
+        and record.predicate != "focused"
+        and (record.subject_id, record.predicate) not in conflicted
+        and before_values.get((record.subject_id, record.predicate), ()) != (record.value,)
         and evidence_source_is_current(record, after)
         and assurance_satisfies(record.source_assurance, "structural")
         and _source_coverage_complete(record.source_observation_id, after)
@@ -209,4 +243,7 @@ def _screenshot_evidence_ref(observation) -> str | None:
 
 def _target_semantics(observation, target_id: str):
     target = next((item for item in observation.targets if item.target_id == target_id), None)
-    return None if target is None else target_semantics(target)
+    if target is None:
+        return None
+    state = {key: value for key, value in target.state.items() if key != "focused"}
+    return target_semantics(replace(target, state=state))

@@ -78,3 +78,22 @@ def test_explicit_direct_hint_takes_precedence_for_read_action() -> None:
 
     assert relevance.role == ActionRelevanceRole.DIRECT
     assert "explicit_direct_target" in relevance.reason_codes
+
+
+def test_registered_interaction_action_is_enabling_without_business_effect() -> None:
+    option = ActionOption(
+        "action:reveal",
+        "obs:1",
+        "activate",
+        "target:reveal",
+        "interaction",
+        {"type": "object", "properties": {}, "additionalProperties": False},
+        "schema:1",
+        ("binding:1",),
+        "reveal details",
+    )
+
+    relevance = ActionRelevancePolicy().classify(option, None)
+
+    assert relevance.role == ActionRelevanceRole.ENABLING
+    assert relevance.reason_codes == ("interaction_action",)

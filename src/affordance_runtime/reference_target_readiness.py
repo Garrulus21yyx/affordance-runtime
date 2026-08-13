@@ -43,11 +43,11 @@ class ReferenceTargetReadiness:
 REFERENCE_TARGET_READINESS = (
     ReferenceTargetReadiness(
         "pricing",
-        frozenset({
-            ReferenceTargetBlocker.INTERACTION_EFFECT_BOUNDARY,
-            ReferenceTargetBlocker.STRUCTURAL_DOCUMENT_CONTENT,
-            ReferenceTargetBlocker.STRUCTURED_OUTPUT,
-        }),
+        frozenset(),
+        (
+            "tests/test_reference_target_pricing.py::"
+            "test_target_pricing_reveals_records_and_returns_current_structured_dom_output"
+        ),
     ),
     ReferenceTargetReadiness(
         "settings",

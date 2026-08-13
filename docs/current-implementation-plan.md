@@ -27,8 +27,8 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Product evaluation/DOM evidence | done, pushed | product action evaluator plus structural DOM activation proof and real Playwright E2E |
 | Explicit target CLI | done, pushed | `target-run`, strict intake, thread-bound browser session, real CLI E2E; legacy `run` unchanged |
 | Reference cutover readiness | done, pushed | typed pricing/settings/export blockers; aggregate cutover fails closed |
-| Authoritative HTTP JSON surface | implemented, locally verified | read-only registered state adapter; authoritative+DOM same-capture fusion; real settings confirmation/persistence target E2E; settings readiness blocker removed; `mypy src`, focused tests and full `2452 passed, 27 skipped` are green |
-| Pricing structural/output projection | pending | project interaction effect, static document content, and structured output without a case oracle |
+| Authoritative HTTP JSON surface | done, pushed (`0b3ab68`; CI fix `64d15ae`) | read-only registered state adapter; authoritative+DOM same-capture fusion; real settings confirmation/persistence target E2E; settings readiness blocker removed; replacement target attestation and BrowserGym conformance are green |
+| Pricing structural/output projection | implemented, locally verified | trusted interaction-only operation admission; generic visible document-record projection inside `DomSurfaceAdapter`; current `structured_document` output; target E2E reaches `DONE` with two executions and no pricing API/oracle; 123 focused and full `2461 passed, 27 skipped` are green |
 | Export materialization/integrity | pending | product download artifact and output-integrity evidence |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
 | Root default switch | pending | only after reference readiness, held-out gate, and fresh-context topology review |
@@ -50,6 +50,12 @@ Remote run `31740915053` stopped before mypy and the target gates because the
 repository-wide Ruff step found six import-only test issues. Those concrete
 failures are corrected in the current slice; this is recorded as the cause of
 that run, not as a new permanent per-push policy.
+
+Remote run `31742943533` then passed Ruff, mypy, target boundaries and docs but
+exposed a separate CI environment defect: the declared dev install omitted
+NumPy, and `pytest | tee` masked collection failure until attestation. Commit
+`64d15ae` declares the dependency and preserves pytest exit status with
+`pipefail`; replacement runs `31743521672` and `31743521683` are green.
 
 ## Slice status
 

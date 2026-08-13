@@ -71,4 +71,10 @@ class ActionRelevancePolicy:
             and not option.semantic_effects
         ):
             return ActionRelevance(ActionRelevanceRole.INFORMATION, 0.5, ("observation_action",))
+        if (
+            option.semantic_action == "activate"
+            and option.effect_category == EffectCategory.INTERACTION
+            and not option.semantic_effects
+        ):
+            return ActionRelevance(ActionRelevanceRole.ENABLING, 0.5, ("interaction_action",))
         return ActionRelevance(ActionRelevanceRole.OTHER, 0.0, ("no_explicit_match",))
