@@ -30,7 +30,11 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 
 ## Default-cutover blockers
 
-1. Retarget or explicitly retire the root pricing/settings/export scenario acceptance paths.
+1. Retarget or explicitly retire the root pricing/settings/export scenario acceptance
+   paths. The executable `REFERENCE_TARGET_READINESS` gate currently records:
+   pricing needs interaction-effect boundary plus structural document/output projection;
+   settings needs an authoritative HTTP state source; export needs materialized download
+   plus output-integrity evidence.
 2. **Completed offline:** `TargetRuntimeClient` owns target start/run/continuation semantics;
    the existing Coordinator client is also exported as `LegacyRuntimeClient` without
    breaking the `RuntimeClient` compatibility import.
@@ -42,3 +46,9 @@ Status: evidence-backed migration inventory; not a default-cutover or deletion c
 5. Perform a fresh-context topology review showing that root API, CLI, and current benchmark resolve through the same product composition identity.
 
 Until those conditions pass, deleting legacy production owners or their tests would be premature. Once they pass, remaining legacy consumer imports become a concrete deletion list rather than a reason to preserve two defaults.
+
+New evidence sources must remain surface adapters inside the existing unified world:
+DOM, Visual, WoT, and a future HTTP fact source each emit `SurfaceObservation`; the
+single `UnifiedWorldEnvironment -> WorldFusion` owner produces `WorldObservation` and
+routes internal bindings. Evaluators and reference cases may not query fixture oracles
+out of band.

@@ -770,3 +770,20 @@ boundary JSON → ThinTaskIntake → ReadyTask → ThreadBoundBrowserSession
 focused verification 为 `25 passed`；真实 Playwright `target-run` 完成一次 DOM activation；全量离线验证为
 `2438 passed, 27 skipped`。旧 `run`、`RuntimeClient` compatibility、target-default live held-out gate 和
 legacy 删除仍然 open。
+
+## 20. 实施记录：reference target readiness gate
+
+2026-08-13 对 pricing/settings/export 做真实世界证据核对后，三者均尚不能诚实切换：pricing 缺
+interaction-only authority 以及静态文档/结构化输出投影；settings 的 DOM surface 只暴露 action button，
+不拥有 `/api/state` authoritative persisted fact；export 缺 download materialization 和 hash/integrity
+evidence。已有 confirmation lifecycle 只能授权动作，不能制造 completion evidence。
+
+新增闭合 `ReferenceTargetBlocker` algebra、每场景 `ReferenceTargetReadiness` 和聚合
+`require_reference_target_cutover_ready()`。ready 状态必须 blockers 为空且绑定一个 executable target
+acceptance test；缺场景、重复/不完整 profile 或任何 blocker 都确定性 fail closed。该 readiness 只属于
+entrypoint migration gate，架构门禁禁止它进入 agent/model-policy/world 控制面。
+
+未来 settings HTTP fact source 必须与 DOM/Visual/WoT 一样作为 `SurfaceAdapter` 加入现有
+`UnifiedWorldEnvironment -> WorldFusion`，仍然只产生一个 `WorldObservation`；禁止 evaluator 或 case
+旁路查询 fixture oracle。focused verification 为 `14 passed`；全量离线验证为
+`2443 passed, 27 skipped`。default cutover 和三项 capability remediation 仍然 open。

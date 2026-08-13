@@ -76,6 +76,16 @@ def test_target_product_entry_has_no_legacy_or_benchmark_dependency() -> None:
         assert "affordance_runtime.runtime_client" not in imports
 
 
+def test_reference_cutover_readiness_cannot_enter_runtime_or_model_policy() -> None:
+    forbidden_import = "affordance_runtime.reference_target_readiness"
+    violations = []
+    for directory in (RUNTIME / "agent", RUNTIME / "model_policy", RUNTIME / "world"):
+        for path in sorted(directory.rglob("*.py")):
+            if forbidden_import in _imports(path):
+                violations.append(str(path.relative_to(ROOT)))
+    assert violations == []
+
+
 def test_all_benchmark_modules_use_product_target_composition_owner() -> None:
     violations = []
     for path in sorted((RUNTIME / "benchmarks").rglob("*.py")):
