@@ -165,6 +165,7 @@ class RegionIntent:
 
 InteractionIntent: TypeAlias = ElementIntent | CollectionIntent | RelationIntent | RegionIntent
 
+
 SPATIAL_POINT_CAPABILITY = "spatial.point.current_geometry"
 
 
@@ -488,6 +489,7 @@ class StepSpec:
     operation_class: str = ""
     material_bindings: tuple[tuple[str, str], ...] = ()
     task_usage: str = "execute"
+    execution: object | None = None
 
     def __post_init__(self) -> None:
         _require_nonblank("step_id", self.step_id)

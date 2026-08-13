@@ -12,14 +12,10 @@ from pydantic import BaseModel
 from affordance_runtime.model_policy.spec import (
     AbortPayload,
     AskUserPayload,
-    EstablishAggregateObjectivePayload,
-    EstablishObjectiveSequencePayload,
-    EstablishSetObjectivePayload,
     ProposeDonePayload,
     RequestActionPagePayload,
     RequestObservationPayload,
     SelectActionPayload,
-    SubmitSetPredicateAssessmentsPayload,
     WaitPayload,
 )
 from affordance_runtime.model_policy.strict_json import strict_json_loads
@@ -29,10 +25,6 @@ from .contracts import DecisionKind
 
 BRANCH_MODELS: Mapping[DecisionKind, type[BaseModel]] = {
     DecisionKind.SELECT_ACTION: SelectActionPayload,
-    DecisionKind.ESTABLISH_AGGREGATE_OBJECTIVE: EstablishAggregateObjectivePayload,
-    DecisionKind.ESTABLISH_OBJECTIVE_SEQUENCE: EstablishObjectiveSequencePayload,
-    DecisionKind.ESTABLISH_SET_OBJECTIVE: EstablishSetObjectivePayload,
-    DecisionKind.SUBMIT_SET_PREDICATE_ASSESSMENTS: SubmitSetPredicateAssessmentsPayload,
     DecisionKind.REQUEST_OBSERVATION: RequestObservationPayload,
     DecisionKind.REQUEST_ACTION_PAGE: RequestActionPagePayload,
     DecisionKind.ASK_USER: AskUserPayload,

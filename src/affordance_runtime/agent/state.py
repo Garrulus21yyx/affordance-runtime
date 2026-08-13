@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TypeAlias
 
 from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
@@ -33,8 +32,13 @@ from affordance_runtime.task.planning_contracts import LocalObjective
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.task.set_objective import SetDisposition
 from affordance_runtime.task.set_objective_state import SetObjectiveState, refresh_set_objective_state
+from affordance_runtime.task.step_execution import (
+    StepExecutionState,
+    materialize_step_execution,
+)
 from affordance_runtime.task_action_family_resolution import action_family_value
 from affordance_runtime.task_plan_contracts import TaskPlan
+from affordance_runtime.task_plan_progress import TaskProgress
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
@@ -59,17 +63,11 @@ class AgentLoopStatus(StrEnum):
 
 
 class SemanticControlMode(StrEnum):
-    SEMANTIC_INGRESS = "semantic_ingress"
     EVIDENCE_RESOLUTION = "evidence_resolution"
     MEMBER_EXECUTION = "member_execution"
     EFFECT_RESOLUTION = "effect_resolution"
     STABILITY_CHECK = "stability_check"
     OBJECTIVE_TRANSITION = "objective_transition"
-
-
-StepExecutionState: TypeAlias = (
-    SetObjectiveState | ObjectiveSequenceState | AggregateObjectiveState
-)
 
 
 @dataclass
@@ -82,6 +80,8 @@ class AgentLoopState:
     continued_control_root_ids: tuple[str, ...] = ()
     control_terminal_status: AgentLoopStatus | None = None
     plan: TaskPlan | None = None
+    task_progress: TaskProgress | None = None
+    task_spec_identity: str = ""
     active_objective: LocalObjective | ActiveObjective | None = None
     active_step_execution: StepExecutionState | None = None
     scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
@@ -122,7 +122,6 @@ class AgentLoopState:
     control_issue_consumption_total_count: int = 0
     observation_cursor: str = ""
     semantic_control_required: bool = False
-    semantic_objective_count: int = 0
     visual_evidence_attempt_keys: tuple[str, ...] = ()
 
     @property
@@ -147,11 +146,7 @@ class AgentLoopState:
                 return SemanticControlMode.OBJECTIVE_TRANSITION
             return SemanticControlMode.EVIDENCE_RESOLUTION
         if not isinstance(active, SetObjectiveState):
-            return (
-                SemanticControlMode.SEMANTIC_INGRESS
-                if self.semantic_objective_count == 0
-                else SemanticControlMode.OBJECTIVE_TRANSITION
-            )
+            return SemanticControlMode.OBJECTIVE_TRANSITION
         disposition = active.reduction.disposition
         if disposition in {
             SetDisposition.READY_FOR_NEXT_MEMBER,
@@ -262,7 +257,79 @@ class AgentLoopState:
                 effect_evidence_refs=action.evidence_refs if action is not None and acted_entity_id else (),
                 enumerator=self.scope_enumerator,
             )
+        self._advance_plan_after_execution()
         self.progress_revision += 1
+
+    def install_plan(self, plan: TaskPlan, *, task_spec_identity: str) -> None:
+        """Install one admitted plan and materialize only its current step."""
+
+        if not task_spec_identity.strip():
+            raise ValueError("AgentLoop plan requires admitted TaskSpec identity")
+        if self.plan is not None or self.task_progress is not None or self.active_step_execution is not None:
+            raise ValueError("AgentLoop plan can only be installed once")
+        if not any(step.execution is not None for step in plan.steps):
+            raise ValueError("semantic AgentLoop plan requires executable step semantics")
+        if any(step.execution is None for step in plan.steps):
+            raise ValueError("every semantic AgentLoop step requires one execution contract")
+        self.plan = plan
+        self.task_spec_identity = task_spec_identity
+        self.task_progress = TaskProgress()
+        self._materialize_active_plan_step()
+        self.progress_revision += 1
+
+    def _materialize_active_plan_step(self) -> None:
+        if self.plan is None or self.task_progress is None:
+            self.active_step_execution = None
+            return
+        step_id = self.task_progress.activate_next(self.plan)
+        if not step_id:
+            self.active_step_execution = None
+            return
+        step = self.plan.step(step_id)
+        if step is None or step.execution is None:
+            raise ValueError("active TaskPlan step has no execution contract")
+        self.active_step_execution = materialize_step_execution(
+            step.step_id,
+            step.execution,
+            self.current_observation,
+            enumerator=self.scope_enumerator,
+        )
+
+    def _advance_plan_after_execution(self) -> None:
+        active = self.active_step_execution
+        if self.plan is None or self.task_progress is None or active is None:
+            return
+        complete = (
+            isinstance(active, ObjectiveSequenceState)
+            and active.disposition is SequenceDisposition.COMPLETE
+            or isinstance(active, AggregateObjectiveState)
+            and active.disposition is AggregateDisposition.COMPLETE
+            or isinstance(active, SetObjectiveState)
+            and active.reduction.disposition is SetDisposition.CERTIFIED
+        )
+        if not complete:
+            return
+        evidence_refs = (
+            active.effect_evidence_refs
+            if isinstance(active, ObjectiveSequenceState | AggregateObjectiveState)
+            else active.certificate.closure_evidence_refs
+            if active.certificate is not None
+            else ()
+        )
+        step_id = self.task_progress.active_step_id
+        if not step_id:
+            raise ValueError("completed execution has no active TaskPlan step")
+        step = self.plan.step(step_id)
+        assert step is not None
+        self.task_progress.complete(
+            plan=self.plan,
+            step_id=step_id,
+            criterion_ids=tuple(item.criterion_id for item in step.completion_criteria),
+            evidence_refs=tuple(evidence_refs),
+            state_version=self.progress_revision,
+        )
+        self.active_step_execution = None
+        self._materialize_active_plan_step()
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:
         from affordance_runtime.agent.control_reducer import (

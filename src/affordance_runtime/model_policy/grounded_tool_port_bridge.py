@@ -12,14 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
-from affordance_runtime.agent.decisions import (
-    EstablishAggregateObjective,
-    EstablishObjectiveSequence,
-    EstablishSetObjective,
-    RequestActionPage,
-    SelectAction,
-    SubmitSetPredicateAssessments,
-)
+from affordance_runtime.agent.decisions import RequestActionPage, SelectAction
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -54,18 +47,12 @@ from affordance_runtime.model_port import (
     StructuredOutputError,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
-from affordance_runtime.task.objective_sequence import sequence_public_value
-from affordance_runtime.task.set_objective import predicate_public_value
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 _SYSTEM_PROMPT = """
 Choose exactly one offered operation that advances the GUI task.
 The marked screenshot and grounding_index use the same E* references. Copy operation and target exactly.
-When the request quantifies multiple targets, or identifies target(s) by a public state/relation represented by an establish_* objective operation, establish that typed objective before any member action.
-When an explicit target condition already appears in current_state, use its public fact objective; do not replace available structural evidence with a visual concept.
-When the task requires a count, sum, minimum, or maximum to be entered, establish an aggregate objective and never supply the computed result yourself.
-When the instruction explicitly describes ordered steps whose later controls appear only after earlier effects, establish one bounded objective sequence so each future selector is re-resolved after a fresh observation.
-Use a direct click among multiple E* targets only for one target identified by ordinary label or appearance when no offered objective operation represents the criterion.
+Task semantics, quantifiers, aggregates, and future selectors are owned by the admitted TaskPlan. Choose only among actions authorized for its current step.
 Use current public state and the previous tool result: once a requested field is nonempty or satisfied, advance to the next required control.
 When recovery forbids retry or requires a strategy change, never repeat the same operation, target, and arguments.
 Respect prerequisites expressed by the instruction, state, roles, labels, and relations before choosing a submit/final action.
@@ -81,20 +68,6 @@ class GroundedToolCommandPayload(BaseModel):
     target: str = ""
     text: str | None = None
     value: object | None = None
-    quantifier: str | None = None
-    candidate_role: str | None = None
-    concept: str | None = None
-    assessments: dict[str, str] | None = None
-    steps: list[dict[str, object]] | None = None
-    predicate: dict[str, object] | None = None
-    source_predicate: dict[str, object] | None = None
-    destination_predicate: dict[str, object] | None = None
-    semantic_action: str | None = None
-    scope_extent: str | None = None
-    scope_root: str | None = None
-    scope_entity_domain: str | None = None
-    operator: str | None = None
-    value_field: str | None = None
 
     @field_validator("op")
     @classmethod
@@ -116,54 +89,6 @@ class GroundedToolCommandPayload(BaseModel):
         validate_json_tree(value)
         return value
 
-    @field_validator("quantifier")
-    @classmethod
-    def _quantifier(cls, value: str | None) -> str | None:
-        if value is not None and value not in {"exactly_one", "all_in_closed_scope"}:
-            raise ValueError("grounded quantifier is invalid")
-        return value
-
-    @field_validator("candidate_role", "concept")
-    @classmethod
-    def _bounded_semantic_text(cls, value: str | None) -> str | None:
-        if value is not None and (not value.strip() or len(value) > 160):
-            raise ValueError("grounded semantic text is invalid")
-        return value
-
-    @field_validator("scope_entity_domain")
-    @classmethod
-    def _scope_entity_domain(cls, value: str | None) -> str | None:
-        if value is not None and value not in {"structured", "all_visible", "fused"}:
-            raise ValueError("grounded scope entity domain is invalid")
-        return value
-
-    @field_validator("assessments")
-    @classmethod
-    def _assessments(cls, value: dict[str, str] | None) -> dict[str, str] | None:
-        if value is not None and (
-            not value
-            or len(value) > 256
-            or any(
-                not ref.startswith("E") or not ref[1:].isdigit() or truth not in {"true", "false", "unknown"}
-                for ref, truth in value.items()
-            )
-        ):
-            raise ValueError("grounded assessments are invalid")
-        return value
-
-    @field_validator("steps")
-    @classmethod
-    def _steps(cls, value: list[dict[str, object]] | None) -> list[dict[str, object]] | None:
-        if value is not None and not 1 <= len(value) <= 8:
-            raise ValueError("grounded objective steps are invalid")
-        validate_json_tree(value)
-        return value
-
-    @field_validator("predicate", "source_predicate", "destination_predicate")
-    @classmethod
-    def _predicate_transport(cls, value: dict[str, object] | None) -> dict[str, object] | None:
-        validate_json_tree(value)
-        return value
 
 
 @dataclass(frozen=True)
@@ -393,7 +318,7 @@ def _messages(view, request, supports_multimodal):
 def _runtime_sequential_member_call(context, catalog) -> ToolCall | None:
     """Consume only a Runtime-authorized singleton continuation without inference."""
 
-    control = context.set_control
+    control = context.execution_control
     if control is None or control.semantic_mode != "member_execution":
         return None
     execute = tuple(item for item in catalog.specs if item.name == "execute_objective")
@@ -490,24 +415,7 @@ def _command_arguments(payload, spec=None):
     admitted = (
         set(spec.input_schema.get("properties", {}))
         if spec is not None
-        else {
-            "target",
-            "text",
-            "value",
-            "quantifier",
-            "candidate_role",
-            "concept",
-            "steps",
-            "predicate",
-            "source_predicate",
-            "destination_predicate",
-            "semantic_action",
-            "scope_extent",
-            "scope_root",
-            "scope_entity_domain",
-            "operator",
-            "value_field",
-        }
+        else {"target", "text", "value"}
     )
     result = {}
     if payload.target and "target" in admitted:
@@ -516,30 +424,6 @@ def _command_arguments(payload, spec=None):
         result["text"] = payload.text
     if payload.value is not None and "value" in admitted:
         result["value"] = payload.value
-    if payload.quantifier is not None and "quantifier" in admitted:
-        result["quantifier"] = payload.quantifier
-    if payload.candidate_role is not None and "candidate_role" in admitted:
-        result["candidate_role"] = payload.candidate_role
-    if payload.concept is not None and "concept" in admitted:
-        result["concept"] = payload.concept
-    if payload.steps is not None and "steps" in admitted:
-        result["steps"] = payload.steps
-    for name in (
-        "predicate",
-        "source_predicate",
-        "destination_predicate",
-        "semantic_action",
-        "scope_extent",
-            "scope_root",
-            "scope_entity_domain",
-        "operator",
-        "value_field",
-    ):
-        value = getattr(payload, name)
-        if value is not None and name in admitted:
-            result[name] = value
-    if payload.assessments is not None and set(payload.assessments) == admitted:
-        result.update(payload.assessments)
     return result
 
 
@@ -552,52 +436,6 @@ def _package_payload(package):
             "action_id": decision.action_id,
             "parameters": to_json_compatible(decision.parameters),
             "destination_id": decision.destination_id,
-        }
-    elif isinstance(decision, EstablishObjectiveSequence):
-        value = {
-            "type": "establish_objective_sequence",
-            "context_id": decision.context_id,
-            **sequence_public_value(decision.sequence),
-        }
-    elif isinstance(decision, EstablishAggregateObjective):
-        objective = decision.objective
-        value = {
-            "type": "establish_aggregate_objective",
-            "context_id": decision.context_id,
-            "objective_id": objective.objective_id,
-            "scope_id": objective.source_scope.scope_id,
-            "scope_extent": objective.source_scope.extent.value,
-            "scope_root_target_id": objective.source_scope.root_entity_id,
-            "scope_entity_domain": objective.source_scope.entity_domain.value,
-            "member_predicate": predicate_public_value(objective.member_predicate),
-            "value_extractor_kind": objective.value_extractor.kind.value,
-            "value_field": objective.value_extractor.field_name,
-            "constant": float(objective.value_extractor.constant),
-            "operator": objective.operator.value,
-            "destination_predicate": predicate_public_value(objective.destination_selector),
-            "semantic_action": objective.semantic_action,
-            "parameter_name": objective.parameter_name,
-            "output_format": objective.output_format.value,
-        }
-    elif isinstance(decision, EstablishSetObjective):
-        value = {
-            "type": "establish_set_objective",
-            "context_id": decision.context_id,
-            "predicate": predicate_public_value(decision.predicate),
-            "quantifier": decision.quantifier.value,
-            "semantic_action": decision.semantic_action,
-            "candidate_target_ids": list(decision.candidate_target_ids),
-            "parameters": to_json_compatible(decision.parameters),
-            "scope_extent": decision.scope_extent.value,
-            "scope_root_target_id": decision.scope_root_target_id,
-            "scope_entity_domain": decision.scope_entity_domain.value,
-        }
-    elif isinstance(decision, SubmitSetPredicateAssessments):
-        value = {
-            "type": "submit_set_predicate_assessments",
-            "context_id": decision.context_id,
-            "predicate_digest": decision.predicate_digest,
-            "assessments": [{"target_id": item.target_id, "truth": item.truth.value} for item in decision.assessments],
         }
     else:
         assert isinstance(decision, RequestActionPage)

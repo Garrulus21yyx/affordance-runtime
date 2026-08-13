@@ -32,6 +32,12 @@ cutover boundary.
 No further model schema tuning is allowed before that owner migration is
 defined.  Projection schemas serialize canonical state; they do not define it.
 
+The migration must also avoid an over-extended causal/provenance chain. Runtime
+correctness requires only the admitted task/plan identity, active step identity,
+current observation/action-space identity, one execution result, and validated
+effect evidence. Model projections, tool catalogs, prompts, benchmark records,
+and transition summaries are not additional causal authorities.
+
 ## Goal
 
 Remove benchmark-shaped soft specialization from quantified GUI objectives. The
@@ -121,31 +127,32 @@ authority.
 |---|---|---|---|
 | A | completed | Add explicit fail-closed set Catalog directive | Empty allowlist now means zero effectful actions; no-objective is represented separately |
 | B | completed | Add Runtime-owned persistent set-objective state and typed transitions | More than 12 members, predicate flip, identity reorder, new candidates and E-ref renumbering preserve obligations |
-| C | completed | Route set semantics through typed model decisions | Main Agent establishes `FactEquals`/`VisualConcept` objectives explicitly; Catalog and Vision do not parse task prose |
+| C | superseded/deleted | Remove typed objective establishment from action decisions | Canonical TaskPlan is now the only producer; Catalog and Vision do not parse task prose |
 | D | completed | Introduce typed evidence obligations and demote visual routing | Set reducer projects evidence needs; visual acquisition routes typed needs derived from current facts |
 | E | completed | Remove task-relative fields and witness-shaped provider publication | Deleted task predicate projection, keyword gate, universal parser and repeated-leaf exact-count scanner; color is generic `appearance.color_family` evidence |
 | F | completed | Add property/metamorphic and integration tests | Capacity, missing fact, zero match, actionability, new candidate, history independence and de-specialization redlines pass |
 | G | completed | Run focused suite, full suite, and real five-case regression gate | Full suite `2410 passed, 24 skipped`; live run `f57f758` completed all five with 3 successes and 2 typed provider-unavailable outcomes |
-| H | completed | Make semantic ingress a Runtime control mode and add an independent action admission gate | In ingress/transition, Catalog exposes only objective/observation controls; forged effectful decisions bind and execute zero times |
-| I | completed | Replace opaque exact-value enums with schema-level public-fact tools | Grid coordinate is a typed `{x,y}` value; no 32-value serialization or silent exact-value truncation |
+| H | superseded/deleted | Replace action-loop semantic ingress with pre-loop TaskSpec/TaskPlan admission | Without an admitted plan, semantic execution dispatches zero actions; the action loop has no objective-construction mode |
+| I | superseded/deleted | Move public-fact selection out of action tools | The planner's discriminated execution transport maps once into typed `StepSpec.execution`; no exact-value action-tool enums remain |
 | J | in_progress | Re-run the five live witnesses and held-out semantic-control cases | Grid, quantified shades, and aggregate value-entry witnesses completed; both pie witnesses established/executed their first objective then hit provider unavailable during successor ingress |
-| K | completed | Close grounded compact transport over typed objective decisions | Compact commands carry quantifier, object-valued facts, visual selectors and assessment maps; the canonical parser admits establishment/assessment payloads |
+| K | superseded/deleted | Delete grounded objective transport | Grounded commands carry only current action/control choices; quantifiers, predicates and aggregates exist only in planner transport and admitted plan data |
 | L | completed | Auto-advance only reducer-authorized singleton member continuations | No policy inference occurs for `execute_objective`; action ID and parameters remain Runtime-owned |
 | M | completed | Make ProviderCallOrchestrator the sole transient recovery owner when enabled and expose attempt origin | Real `503 -> 200` integration emits two network attempts and one accepted logical response; quota/auth remains fail-closed |
-| N | completed | Add persistent typed selectors and bounded objective sequences resolved after every fresh observation | Future steps retain predicates, never E-refs; every observation rebuilds selector resolution and current binding authority |
+| N | completed/replaced | Represent future work as dependent canonical TaskPlan steps | Each active `StepSpec.execution` retains a typed selector, never an E-ref; every fresh observation rebuilds selector resolution and current binding authority |
 | O | completed | Add Runtime-owned AggregateObjective and value provenance | COUNT/SUM/MIN/MAX and filtered aggregates derive values only after complete source evidence; partial/unknown inputs cannot dispatch destination writes |
 | P | completed | Close bounded compound predicate transport and typed comparisons | And/Or/Not plus Compare reach the Runtime without prose parsing or witness branches; unsupported depth/width/operators fail typed |
 | Q | completed | Replace current-viewport/same-role candidate lists with ScopeEnumerator-owned universes | Snapshot viewport closure is domain-aware; larger scopes require an environment-owned enumerator and otherwise fail closed |
 | R | completed | Wire VisualPredicateClassifier through evidence obligations | Set members, aggregate members/destinations and sequence selectors share visual-leaf classification without granting completeness or bindings |
-| S | completed | Add independent task-semantic objective validation | Optional independent assurance returns SUPPORTED/CONTRADICTED/UNKNOWN before installation; default ingress avoids a mandatory second provider call |
-| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | After authority cleanup, Ruff and full suite pass (`2441 passed, 27 skipped`); real benchmark is blocked on canonical TaskSpec/TaskPlan entry rather than another schema patch |
+| S | superseded/deleted from action policy | Use canonical intake semantic audit and TaskPlan admission | The action policy no longer owns an optional objective validator or any semantic installation path |
+| T | in_progress | Run property/model/integration, held-out and real benchmark convergence gates | After authority cleanup, Ruff and full suite pass (`2418 passed, 27 skipped`); fresh real benchmark evidence remains required |
 | U | completed | Remove the duplicate `TaskProgram` planner and its schema-repair path | Four public commits were reverted with audit-preserving revert commits; no TaskProgram source/test remains |
 | V | completed | Publish one executable owner/producer/consumer/deletion map for task semantics through completion | `docs/task-execution-authority-map.md` names every owner and required deletion; the duplicate target TaskPlan was removed |
-| W | in_progress | Migrate set/sequence/aggregate semantics into the selected canonical task/frontier owner | The three mutually exclusive AgentLoop slots are now one discriminated `active_step_execution`; creation still must move from model-facing ingress to active canonical StepSpec |
-| X | pending | Cut over callers and delete displaced contracts, tools, schemas, tests and docs | No dual read/write compatibility remains inside core; only explicitly bounded edge adapters may survive |
-| Y | pending | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI rejects new semantic owners in Catalog, model transport, benchmark code, or projections |
+| W | completed | Migrate set/entity/aggregate semantics into the selected canonical task/frontier owner | executable semantics live directly on canonical `StepSpec`; one active step materializes the single `active_step_execution` state |
+| X | implementation_completed_verification_open | Cut over callers and delete displaced contracts, tools, schemas, tests and docs | Dynamic objective tools/decisions/action payloads, parallel execution table, set-specific control projection and embedded sequence ingress are deleted |
+| Y | in_progress | Replace schema-patch acceptance with authority/state-machine/boundary properties | CI now requires zero semantic constructors in action model policy and direct plan-step materialization; broader held-out/live gates remain |
+| Z | completed | Remove projection-to-objective roundtrips and dynamic objective-establishment decisions | Runtime materializes current execution state from the admitted plan step; action policy returns only current action/control decisions |
 
-## Latest live evidence
+## Archived pre-cutover live evidence
 
 Run: `docs/evidence/runs/m4-6-e-semantic-tools-zhipu-f57f758/`
 
@@ -155,10 +162,9 @@ Run: `docs/evidence/runs/m4-6-e-semantic-tools-zhipu-f57f758/`
 - both pie witnesses: first `+` objective established and executed correctly; successor ingress ended with typed provider-unavailable before the visible `0` objective could be admitted.
 - No point grounder or visual binding obtained execution authority.
 
-This evidence closes the mandatory-ingress/action-gate implementation slice but
-does not close the five-case named regression or broader generalization. The two
-remaining live failures are provider-capacity/call-amplification outcomes rather
-than raw E-ref bypasses.
+This evidence was produced by the deleted dynamic-objective path. It remains a
+historical diagnostic witness and is not acceptance evidence for the current
+TaskSpec/TaskPlan cutover. Fresh live revalidation is required.
 
 ## Active implementation scope
 

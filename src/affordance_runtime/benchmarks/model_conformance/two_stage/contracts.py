@@ -11,10 +11,6 @@ _PUBLIC_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,239}$")
 
 class DecisionKind(StrEnum):
     SELECT_ACTION = "select_action"
-    ESTABLISH_AGGREGATE_OBJECTIVE = "establish_aggregate_objective"
-    ESTABLISH_OBJECTIVE_SEQUENCE = "establish_objective_sequence"
-    ESTABLISH_SET_OBJECTIVE = "establish_set_objective"
-    SUBMIT_SET_PREDICATE_ASSESSMENTS = "submit_set_predicate_assessments"
     REQUEST_OBSERVATION = "request_observation"
     REQUEST_ACTION_PAGE = "request_action_page"
     ASK_USER = "ask_user"

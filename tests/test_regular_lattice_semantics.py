@@ -5,7 +5,7 @@ import random
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import AgentLoopState, EstablishSetObjective
+from affordance_runtime.agent import AgentLoopState
 from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
     BrowserGymEntityIdentityMap,
 )
@@ -25,11 +25,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary import ContextBuilder
-from affordance_runtime.model_policy.grounded_tool_catalog import (
-    compile_grounded_tool_catalog,
-    resolve_grounded_tool_call,
-)
-from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import ActionSpaceBuilder
 from affordance_runtime.world.regular_lattice import (
@@ -107,7 +103,7 @@ def test_irregular_or_duplicate_cells_do_not_publish_coordinates() -> None:
     assert result.memberships == ()
 
 
-def test_projection_publishes_generic_facts_for_model_selected_exact_objective() -> None:
+def test_projection_publishes_generic_grid_facts_without_model_objective_construction() -> None:
     raw = _raw_grid()
     projection = _projection(raw)
     matching = [
@@ -144,26 +140,11 @@ def test_projection_publishes_generic_facts_for_model_selected_exact_objective()
     )
     catalog = compile_grounded_tool_catalog(context)
 
-    establish = next(
-        spec
-        for spec in catalog.specs
-        if 'public fact "grid_coordinate"' in spec.description
-    )
-    package = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            establish.name,
-            {"value": {"x": 1, "y": -2}, "quantifier": "exactly_one"},
-        ),
-        expected_context_id=context.context_id,
-    )
-    assert isinstance(package.decision, EstablishSetObjective)
-    assert package.decision.predicate.field_name == "grid_coordinate"
-    assert package.decision.predicate.expected == {"x": 1, "y": -2}
-    assert target.target_id in package.decision.candidate_target_ids
+    assert target.target_id in dict(context.grounding.target_refs)
+    assert not any(spec.name.startswith("establish_") for spec in catalog.specs)
 
 
-def test_exact_lattice_relation_is_available_without_screenshot_marks() -> None:
+def test_exact_lattice_relation_is_available_without_model_semantic_tools() -> None:
     raw = _raw_grid()
     raw.pop("screenshot")
     projection = _projection(raw)
@@ -188,17 +169,10 @@ def test_exact_lattice_relation_is_available_without_screenshot_marks() -> None:
 
     catalog = compile_grounded_tool_catalog(context)
 
-    establish = next(
-        spec
-        for spec in catalog.specs
-        if 'public fact "grid_coordinate"' in spec.description
-    )
-    value = establish.input_schema["properties"]["value"]
-    assert value["required"] == ["x", "y"]
-    assert value["properties"] == {"x": {"type": "integer"}, "y": {"type": "integer"}}
+    assert not any(spec.name.startswith("establish_") for spec in catalog.specs)
 
 
-def test_mandatory_semantic_ingress_hides_direct_grid_actions() -> None:
+def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> None:
     raw = _raw_grid()
     projection = _projection(raw)
     task = TaskGoal(
@@ -211,7 +185,6 @@ def test_mandatory_semantic_ingress_hides_direct_grid_actions() -> None:
     state = AgentLoopState(
         projection.world,
         remaining_turns=5,
-        semantic_control_required=True,
     )
     context = ContextBuilder().build(
         task,
@@ -227,10 +200,9 @@ def test_mandatory_semantic_ingress_hides_direct_grid_actions() -> None:
 
     catalog = compile_grounded_tool_catalog(context)
 
-    assert context.set_control is not None
-    assert context.set_control.semantic_mode == "semantic_ingress"
-    assert not any(spec.name == "click" for spec in catalog.specs)
-    assert any('public fact "grid_coordinate"' in spec.description for spec in catalog.specs)
+    assert context.execution_control is None
+    assert any(spec.name == "click" for spec in catalog.specs)
+    assert not any(spec.name.startswith("establish_") for spec in catalog.specs)
 
 
 def _raw_grid():

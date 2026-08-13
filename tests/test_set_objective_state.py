@@ -350,11 +350,11 @@ def test_true_member_without_current_action_route_blocks_catalog_control() -> No
         ),
     )
 
-    assert context.set_control is not None
-    assert context.set_control.mode == "blocked"
-    assert context.set_control.disposition == "need_actionability_resolution"
-    assert context.set_control.allowed_action_ids == ()
-    assert context.set_control.evidence_needs == ("resolve_actionability",)
+    assert context.execution_control is not None
+    assert context.execution_control.mode == "blocked"
+    assert context.execution_control.disposition == "need_actionability_resolution"
+    assert context.execution_control.allowed_action_ids == ()
+    assert context.execution_control.evidence_needs == ("resolve_actionability",)
 
 
 def test_new_same_role_candidate_invalidates_scope_and_becomes_an_obligation() -> None:

@@ -488,14 +488,10 @@ class BenchmarkCaseResult:
             "",
             "Abort",
             "AskUser",
-            "EstablishAggregateObjective",
-            "EstablishObjectiveSequence",
-            "EstablishSetObjective",
             "ProposeDone",
             "RequestActionPage",
             "RequestObservation",
             "SelectAction",
-            "SubmitSetPredicateAssessments",
             "Wait",
         }:
             raise ValueError("benchmark decision type is outside the closed vocabulary")

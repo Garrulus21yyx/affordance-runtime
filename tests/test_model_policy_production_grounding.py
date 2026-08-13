@@ -63,7 +63,6 @@ def test_factory_grounding_precedence_and_default(monkeypatch) -> None:
     policy, _ = _factory(monkeypatch, {"LLM_ACTIVE_PROFILE": "local"})
     assert policy.port.grounding_variant is DecisionGroundingVariant.FORMAT_ONLY
     assert policy.port.grounding_profile_version == FORMAT_ONLY_PROFILE_VERSION
-    assert policy.semantic_validator is None
 
     policy, _ = _factory(
         monkeypatch,
@@ -78,18 +77,6 @@ def test_factory_grounding_precedence_and_default(monkeypatch) -> None:
         grounding_variant="compact-contract",
     )
     assert policy.port.grounding_variant is DecisionGroundingVariant.COMPACT_CONTRACT
-
-
-def test_independent_semantic_review_is_explicit_opt_in(monkeypatch) -> None:
-    policy, _ = _factory(
-        monkeypatch,
-        {
-            "LLM_ACTIVE_PROFILE": "local",
-            "LLM_ENABLE_OBJECTIVE_SEMANTIC_VALIDATOR": "true",
-        },
-    )
-
-    assert policy.semantic_validator is not None
 
 
 def test_factory_compact_v2_fails_closed_without_experimental_gate(monkeypatch) -> None:

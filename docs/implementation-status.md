@@ -22,15 +22,20 @@ The task-authority convergence review is active. Canonical `TaskSpec` and
 to the target AgentLoop; the old Coordinator/StateKernel execution core will not
 be imported. The duplicate target `TaskPlan<Milestone>` and the attempted
 `TaskProgram` were deleted. AgentLoop now has one discriminated
-`active_step_execution` slot, but TaskSpec/TaskPlan entry, plan progress, and
-removal of dynamic `establish_*_objective` model ingress are not yet complete.
+`active_step_execution` slot. The target loop now prepares and admits TaskSpec
+and TaskPlan through the canonical authorities, owns canonical TaskProgress, and
+materializes execution only from the typed contract stored directly on the
+active `StepSpec`; the temporary parallel step-execution table was removed.
+Dynamic
+`establish_*_objective` model ingress has been removed. Fresh live benchmark
+revalidation remains open.
 
 The target path now has:
 
 | Capability | Status |
 |---|---|
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
-| canonical TaskPlan / StepSpec contracts | `MIGRATION_IN_PROGRESS`; duplicate target TaskPlan/Milestone deleted, AgentLoop consumption not yet connected |
+| canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / VERIFICATION_OPEN`; duplicate planners deleted and AgentLoop consumption connected; fresh live evidence pending |
 | VerifiedTaskState | `PARTIAL_PROJECTION_ONLY`; plan/objective/progress views and evidence-linked current facts exist, but no verified milestone/frontier lifecycle or promotion authority |
 | TaskProgressAuditor | `NOT_STARTED`; future P5-E owner, separate from local repetition containment |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |

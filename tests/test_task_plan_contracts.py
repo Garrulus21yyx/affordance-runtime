@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from affordance_runtime.criteria import AllOf
@@ -257,6 +259,8 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
         _candidate(_step("step:a", depends_on=("missing",)))
     with pytest.raises(ValueError, match="cycle"):
         _candidate(_step("step:a", depends_on=("step:b",)), _step("step:b", depends_on=("step:a",)))
+    with pytest.raises(TypeError, match="unsupported step execution"):
+        _candidate(replace(_step("step:opaque"), execution=object()))
     with pytest.raises(ValueError, match="forbidden implementation detail"):
         PlanProposal(
             task_spec_identity="sha256:task",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, is_dataclass
 from enum import StrEnum
 from typing import Any, Awaitable, Protocol
@@ -96,9 +97,12 @@ class TaskPlan(StrictModel):
     steps: tuple[StepSpec, ...]
     assumptions: tuple[str, ...] = ()
 
+    def model_post_init(self, __context: object) -> None:
+        del __context
+        _validate_step_execution_algebra(self.steps)
+
     def step(self, step_id: str) -> StepSpec | None:
         return next((item for item in self.steps if item.step_id == step_id), None)
-
 
 def project_task_plan_views(
     plan: TaskPlan,
@@ -189,6 +193,7 @@ class PlanProposal:
             raise ValueError("draft source refs cannot be empty")
         _reject_forbidden_text((*self.assumptions,))
         _validate_draft_step_graph(self.steps)
+        _validate_step_execution_algebra(self.steps)
         if self.based_on_observation_ref:
             _require_nonblank("based_on_observation_ref", self.based_on_observation_ref)
         if self.based_on_state_version < -1:
@@ -691,16 +696,33 @@ def _digest(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _validate_step_execution_algebra(steps: tuple[StepSpec, ...]) -> None:
+    """Validate the closed execution union without coupling foundation imports."""
+
+    executions = tuple(step.execution for step in steps if step.execution is not None)
+    if not executions:
+        return
+    from affordance_runtime.task.step_execution import (
+        AggregateStepExecution,
+        EntityStepExecution,
+        SetStepExecution,
+    )
+
+    supported = EntityStepExecution | SetStepExecution | AggregateStepExecution
+    if any(not isinstance(item, supported) for item in executions):
+        raise TypeError("TaskPlan contains an unsupported step execution contract")
+
+
 def _stable_value(value: object) -> object:
     if is_dataclass(value) and not isinstance(value, type):
         return {key: _stable_value(item) for key, item in vars(value).items()}
     if hasattr(value, "model_dump"):
-        return _stable_value(value.model_dump(mode="json"))  # type: ignore[attr-defined]
+        return _stable_value(value.model_dump(mode="python"))  # type: ignore[attr-defined]
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, tuple):
         return [_stable_value(item) for item in value]
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _stable_value(item) for key, item in value.items()}
     return value
 

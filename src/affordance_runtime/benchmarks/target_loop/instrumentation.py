@@ -6,13 +6,7 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import (
-    AgentDecisionPackage,
-    EstablishAggregateObjective,
-    EstablishObjectiveSequence,
-    EstablishSetObjective,
-    SelectAction,
-)
+from affordance_runtime.agent.decisions import AgentDecisionPackage, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -24,9 +18,6 @@ from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.contracts import ModelMetadata
 from affordance_runtime.model_policy.requirement_proposer import ModelRequirementHypothesisProposer
-from affordance_runtime.task.aggregate_objective import aggregate_objective_public_value
-from affordance_runtime.task.objective_sequence import sequence_public_value
-from affordance_runtime.task.set_objective import predicate_public_value
 from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
 
@@ -184,7 +175,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             if feedback is not None
             else None
         ),
-        "semantic_control": _semantic_control_trace(context.set_control),
+        "semantic_control": _semantic_control_trace(context.execution_control),
         "provider_attempts": tuple(
             {
                 "attempt_number": item.attempt_number,
@@ -222,7 +213,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             event["selected_grounding"] = selected
     elif isinstance(
         outcome,
-        SelectAction | EstablishSetObjective | EstablishObjectiveSequence | EstablishAggregateObjective,
+        SelectAction,
     ):
         event["outcome"] = type(outcome).__name__
         event["decision"] = _decision_trace(outcome)
@@ -392,20 +383,6 @@ def _decision_trace(decision):
         item = getattr(decision, name, None)
         if item not in (None, ""):
             value[name] = item.value if hasattr(item, "value") else item
-    if isinstance(decision, EstablishSetObjective):
-        value.update(
-            {
-                "predicate": predicate_public_value(decision.predicate),
-                "quantifier": decision.quantifier.value,
-                "semantic_action": decision.semantic_action,
-                "scope_extent": decision.scope_extent.value,
-                "scope_entity_domain": decision.scope_entity_domain.value,
-            }
-        )
-    elif isinstance(decision, EstablishObjectiveSequence):
-        value["sequence"] = sequence_public_value(decision.sequence)
-    elif isinstance(decision, EstablishAggregateObjective):
-        value["aggregate"] = aggregate_objective_public_value(decision.objective)
     return value
 
 

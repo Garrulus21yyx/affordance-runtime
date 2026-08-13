@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
+from affordance_runtime.agent.task_plan_preparation import CanonicalAgentTaskPlanPreparer
+from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedToolDecisionAdapter
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
@@ -20,7 +22,7 @@ from affordance_runtime.model_policy.provider_orchestrator import (
 from affordance_runtime.model_policy.tool_contracts import DYNAMIC_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import FallbackModelPort, ModelConfig, model_port_from_environment
-from affordance_runtime.task.semantic_validation import ModelTaskSemanticValidator
+from affordance_runtime.task_planner import StrictTaskPlanner
 
 STRUCTURED_PACKAGE_PROTOCOL = "structured_package.v2"
 
@@ -73,22 +75,6 @@ def model_policy_from_environment(
         provider_circuit_break_s=0.0 if provider_recovery else 60.0,
         prompt_version="p5-m1.1",
     )
-    # Independent semantic review is an optional assurance arm.  The typed
-    # ingress call itself remains the default parser so ordinary objectives do
-    # not pay a second provider call (or inherit its timeout/failure surface).
-    semantic_validator = (
-        ModelTaskSemanticValidator(
-            port,
-            config.model_copy(
-                update={
-                    "max_tokens": 160,
-                    "prompt_version": "task-semantic-validator.v1",
-                }
-            ),
-        )
-        if _enabled(env.get("LLM_ENABLE_OBJECTIVE_SEMANTIC_VALIDATOR", "false"))
-        else None
-    )
     selected_protocol = interaction_protocol or env.get(
         "LLM_INTERACTION_PROTOCOL",
         STRUCTURED_PACKAGE_PROTOCOL,
@@ -115,11 +101,15 @@ def model_policy_from_environment(
         )
     else:
         raise ValueError("unsupported model interaction protocol")
+    task_plan_preparer = CanonicalAgentTaskPlanPreparer(
+        LLMIntentCompiler(port),
+        StrictTaskPlanner(port),
+    ) if selected_protocol == GROUNDED_TOOLS_PROTOCOL else None
     if not provider_recovery:
         return ModelBackedAgentPolicy(
             adapter,
             call_timeout_s=call_timeout_s,
-            semantic_validator=semantic_validator,
+            task_plan_preparer=task_plan_preparer,
         )
     orchestrator = ProviderCallOrchestrator(
         (adapter,),
@@ -128,7 +118,7 @@ def model_policy_from_environment(
     return ModelBackedAgentPolicy(
         orchestrator,
         call_timeout_s=call_timeout_s,
-        semantic_validator=semantic_validator,
+        task_plan_preparer=task_plan_preparer,
     )
 
 

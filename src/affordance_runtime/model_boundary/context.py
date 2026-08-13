@@ -234,8 +234,8 @@ class AgentGroundingIndexView:
 
 
 @dataclass(frozen=True)
-class AgentSetControlView:
-    """Disposable projection of Runtime-owned quantified-objective authority."""
+class AgentExecutionControlView:
+    """Disposable projection of Runtime-owned current-step authority."""
 
     mode: str
     disposition: str
@@ -273,7 +273,6 @@ class AgentSetControlView:
             or (
                 self.semantic_mode
                 and self.semantic_mode not in {
-                    "semantic_ingress",
                     "evidence_resolution",
                     "member_execution",
                     "effect_resolution",
@@ -282,7 +281,7 @@ class AgentSetControlView:
                 }
             )
         ):
-            raise ValueError("set control projection is invalid")
+            raise ValueError("execution control projection is invalid")
         object.__setattr__(self, "allowed_action_ids", values)
         object.__setattr__(self, "predicate", freeze_json(self.predicate))
         object.__setattr__(self, "candidate_target_ids", candidates)
@@ -307,7 +306,7 @@ class AgentContext:
     control_feedback: AgentControlFeedbackView | None = None
     image_inputs: tuple[AgentImageInput, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
-    set_control: AgentSetControlView | None = field(default=None, repr=False)
+    execution_control: AgentExecutionControlView | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -317,5 +316,7 @@ class AgentContext:
             raise TypeError("AgentContext image inputs must be bounded and typed")
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")
-        if self.set_control is not None and not isinstance(self.set_control, AgentSetControlView):
-            raise TypeError("AgentContext set control must be typed")
+        if self.execution_control is not None and not isinstance(
+            self.execution_control, AgentExecutionControlView
+        ):
+            raise TypeError("AgentContext execution control must be typed")

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
+from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.criteria import LiteralValue, PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.evaluation import ActionEvaluationStatus
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    SourceReference,
+    StepSpec,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.objective_sequence import (
     EntitySelector,
     ObjectiveSequence,
+    ObjectiveSequenceState,
     ObjectiveStep,
     SequenceDisposition,
     establish_objective_sequence_state,
@@ -16,6 +26,14 @@ from affordance_runtime.task.set_objective import (
     FactEquals,
     ScopeEntityDomain,
     VisualConcept,
+)
+from affordance_runtime.task.step_execution import EntityStepExecution
+from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceSourceKind,
+    SatisfactionMode,
 )
 from affordance_runtime.world import (
     ActionBinding,
@@ -106,6 +124,87 @@ def test_future_selector_resolves_new_identity_after_fresh_observation() -> None
     bound = ActionBinder().bind(selection, after, "context:fresh")
     assert bound.binding.source_observation_id == "observation:after"
     assert bound.binding.binding_id.startswith("binding:observation:after:")
+
+
+def test_agent_state_materializes_execution_only_from_current_task_plan_step() -> None:
+    world = _world("observation:plan", "+")
+    refs = (SourceReference("request", "request:step"),)
+    execution = EntityStepExecution(
+        EntitySelector(FactEquals("identity.label", "+")),
+        ActionTemplate("activate"),
+    )
+    step = StepSpec(
+        "expand",
+        "activate plus",
+        ElementIntent("+", refs),
+        (
+            PredicateExpr(
+                "criterion:expand",
+                SubjectExpr("target", "+", "activated"),
+                PredicateOperator.EQUALS,
+                CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    minimum_assurance=AssuranceLevel.STRUCTURAL,
+                    allowed_source_kinds=(EvidenceSourceKind.DOM_STATE,),
+                    causal_lineage_required=True,
+                ),
+                LiteralValue(True),
+            ),
+        ),
+        refs,
+        ("requirement:test",),
+        execution=execution,
+    )
+    choose_zero = replace(
+        step,
+        step_id="choose-zero",
+        objective="activate zero",
+        interaction=ElementIntent("0", refs),
+        completion_criteria=(replace(step.completion_criteria[0], criterion_id="criterion:choose-zero"),),
+        depends_on=("expand",),
+        execution=EntityStepExecution(
+            EntitySelector(FactEquals("identity.label", "0")),
+            ActionTemplate("activate"),
+        ),
+    )
+    plan = TaskPlan(
+        plan_id="plan:canonical",
+        task_id="task:sequence",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=0,
+        based_on_observation_ref=world.observation_id,
+        generated_by=TaskPlanGeneratorSource.RULE,
+        steps=(step, choose_zero),
+    )
+    state = AgentLoopState(world, semantic_control_required=True)
+
+    state.install_plan(plan, task_spec_identity="sha256:admitted-task")
+
+    assert state.plan is plan
+    assert state.task_spec_identity == "sha256:admitted-task"
+    assert state.task_progress is not None
+    assert state.task_progress.active_step_id == "expand"
+    assert isinstance(state.active_step_execution, ObjectiveSequenceState)
+    assert state.active_step_execution.resolved_target_id == "entity:0:+"
+
+    after = _world("observation:after-expand", "0")
+    state.current_observation = after
+    active = state.active_step_execution
+    state.active_step_execution = replace(
+        active,
+        active_index=1,
+        observation_epoch=after.observation_id,
+        disposition=SequenceDisposition.COMPLETE,
+        completed_step_ids=("expand",),
+        effect_evidence_refs=("effect:expand",),
+    )
+    state._advance_plan_after_execution()
+
+    assert state.task_progress.active_step_id == "choose-zero"
+    assert isinstance(state.active_step_execution, ObjectiveSequenceState)
+    assert state.active_step_execution.observation_epoch == after.observation_id
+    assert state.active_step_execution.resolved_target_id == "entity:0:0"
 
 
 def test_selector_ambiguity_and_absence_fail_closed() -> None:

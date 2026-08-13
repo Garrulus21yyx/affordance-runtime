@@ -31,14 +31,10 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     AgentDecisionPackage,
     AskUser,
-    EstablishAggregateObjective,
-    EstablishObjectiveSequence,
-    EstablishSetObjective,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    SubmitSetPredicateAssessments,
     Wait,
     package_decision,
 )
@@ -62,11 +58,8 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task.aggregate_objective import (
-    AggregateDisposition,
     AggregateObjectiveState,
     aggregate_allowed_action_ids,
-    aggregate_objective_public_value,
-    establish_aggregate_objective_state,
 )
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.task.frontier import (
@@ -77,22 +70,10 @@ from affordance_runtime.task.frontier import (
 from affordance_runtime.task.frontier_contracts import ActiveObjective
 from affordance_runtime.task.objective_sequence import (
     ObjectiveSequenceState,
-    SequenceDisposition,
-    establish_objective_sequence_state,
     sequence_allowed_action_ids,
-    sequence_public_value,
-)
-from affordance_runtime.task.semantic_validation import TaskSemanticValidationStatus
-from affordance_runtime.task.set_objective import (
-    ScopeSpec,
-    SetDisposition,
-    predicate_digest,
-    predicate_public_value,
 )
 from affordance_runtime.task.set_objective_state import (
     SetObjectiveState,
-    establish_set_objective_state,
-    install_semantic_assessments,
     set_allowed_action_ids,
 )
 from affordance_runtime.world.acquisition import (
@@ -124,10 +105,6 @@ SelectionExecutor = Callable[
 _DECISION_TYPES = (
     Abort,
     AskUser,
-    EstablishAggregateObjective,
-    EstablishObjectiveSequence,
-    EstablishSetObjective,
-    SubmitSetPredicateAssessments,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -326,33 +303,6 @@ async def _route_decision(
     prepared_objective,
 ) -> LoopDirective:
     state = session.state
-    objective_proposal = isinstance(
-        decision,
-        EstablishAggregateObjective | EstablishObjectiveSequence | EstablishSetObjective,
-    )
-    semantic_validator = getattr(session.agent_loop.policy, "semantic_validator", None) if objective_proposal else None
-    if semantic_validator is not None:
-        try:
-            semantic_validation = await semantic_validator.validate(
-                session.task,
-                _semantic_objective_public_value(decision),
-                state.current_observation,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            scope.record_decision_result("objective_semantic_validation_failed")
-            scope.set_reason("objective_semantic_validation_failed")
-            return Continue("objective_semantic_validation_failed")
-        if semantic_validation.status is not TaskSemanticValidationStatus.SUPPORTED:
-            reason = (
-                "objective_semantic_contradicted"
-                if semantic_validation.status is TaskSemanticValidationStatus.CONTRADICTED
-                else "objective_semantic_unknown"
-            )
-            scope.record_decision_result(reason)
-            scope.set_reason(reason)
-            return Continue(reason)
     if not isinstance(decision, SelectAction):
         state.commit_objective_operation(prepared_objective)
     if isinstance(decision, AskUser):
@@ -362,71 +312,6 @@ async def _route_decision(
     if isinstance(decision, Abort):
         scope.set_reason(f"abort_{decision.category}")
         return Terminate(AgentLoopStatus.FAILED, f"abort_{decision.category}", decision.reason)
-    if isinstance(decision, EstablishObjectiveSequence):
-        if _step_execution_unfinished(state.active_step_execution):
-            scope.set_reason("semantic_objective_already_active")
-            return Continue("semantic_objective_already_active")
-        state.active_step_execution = establish_objective_sequence_state(
-            decision.sequence,
-            state.current_observation,
-            enumerator=state.scope_enumerator,
-        )
-        state.semantic_objective_count += 1
-        state.progress_revision += 1
-        scope.record_decision_result("objective_sequence_established")
-        scope.set_reason("objective_sequence_established")
-        return Continue("objective_sequence_established")
-    if isinstance(decision, EstablishAggregateObjective):
-        if _step_execution_unfinished(state.active_step_execution):
-            scope.set_reason("semantic_objective_already_active")
-            return Continue("semantic_objective_already_active")
-        state.active_step_execution = establish_aggregate_objective_state(
-            decision.objective,
-            state.current_observation,
-            enumerator=state.scope_enumerator,
-        )
-        state.semantic_objective_count += 1
-        state.progress_revision += 1
-        scope.record_decision_result("aggregate_objective_established")
-        scope.set_reason("aggregate_objective_established")
-        return Continue("aggregate_objective_established")
-    if isinstance(decision, EstablishSetObjective):
-        if _step_execution_unfinished(state.active_step_execution):
-            scope.set_reason("set_objective_already_active")
-            return Continue("set_objective_already_active")
-        state.active_step_execution = establish_set_objective_state(
-            predicate=decision.predicate,
-            quantifier=decision.quantifier,
-            semantic_action=decision.semantic_action,
-            candidate_entity_ids=decision.candidate_target_ids,
-            observation=state.current_observation,
-            parameters=dict(decision.parameters),
-            scope=ScopeSpec(
-                f"scope:{predicate_digest(decision.predicate)[:16]}:{decision.scope_extent.value}",
-                decision.scope_root_target_id,
-                decision.scope_extent,
-                entity_domain=decision.scope_entity_domain,
-            ),
-            enumerator=state.scope_enumerator,
-        )
-        state.semantic_objective_count += 1
-        state.progress_revision += 1
-        scope.record_decision_result("set_objective_established")
-        scope.set_reason("set_objective_established")
-        return Continue("set_objective_established")
-    if isinstance(decision, SubmitSetPredicateAssessments):
-        active = state.active_step_execution
-        if not isinstance(active, SetObjectiveState) or active.objective.predicate_digest != decision.predicate_digest:
-            scope.set_reason("set_assessment_objective_mismatch")
-            return Continue("set_assessment_objective_mismatch")
-        state.active_step_execution = install_semantic_assessments(
-            active,
-            tuple((item.target_id, item.truth, item.confidence) for item in decision.assessments),
-        )
-        state.progress_revision += 1
-        scope.record_decision_result("set_assessments_installed")
-        scope.set_reason("set_assessments_installed")
-        return Continue("set_assessments_installed")
     if isinstance(decision, ProposeDone):
         return await _propose_done(session, decision, task_evaluator, scope)
     if isinstance(decision, RequestObservation):
@@ -499,33 +384,6 @@ async def _route_decision(
         prepared_objective,
         scope,
     )
-
-
-def _step_execution_unfinished(active) -> bool:
-    if active is None:
-        return False
-    if isinstance(active, ObjectiveSequenceState):
-        return active.disposition is not SequenceDisposition.COMPLETE
-    if isinstance(active, AggregateObjectiveState):
-        return active.disposition is not AggregateDisposition.COMPLETE
-    assert isinstance(active, SetObjectiveState)
-    return active.reduction.disposition is not SetDisposition.CERTIFIED
-
-
-def _semantic_objective_public_value(decision) -> dict[str, object]:
-    if isinstance(decision, EstablishAggregateObjective):
-        return aggregate_objective_public_value(decision.objective)
-    if isinstance(decision, EstablishObjectiveSequence):
-        return sequence_public_value(decision.sequence)
-    assert isinstance(decision, EstablishSetObjective)
-    return {
-        "kind": "set_action",
-        "predicate": predicate_public_value(decision.predicate),
-        "quantifier": decision.quantifier.value,
-        "semantic_action": decision.semantic_action,
-        "scope_extent": decision.scope_extent.value,
-        "parameters": dict(decision.parameters),
-    }
 
 
 async def _policy_observation(

@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
+from affordance_runtime.agent.task_plan_preparation import AgentTaskPlanPreparerPort
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest, ModelDecisionResponse, ModelMetadata
@@ -15,7 +16,6 @@ from affordance_runtime.model_policy.parser import parse_agent_decision
 from affordance_runtime.model_policy.port import StructuredDecisionModelPort
 from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS, SCHEMA_VERSION, decision_response_schema
 from affordance_runtime.model_policy.serialization import serialize_agent_context
-from affordance_runtime.task.semantic_validation import TaskSemanticValidatorPort
 
 _PUBLIC_FAILURES = {
     ModelFailureKind.PROVIDER_UNAVAILABLE: "model decision provider is unavailable",
@@ -35,7 +35,7 @@ class ModelBackedAgentPolicy:
     last_metadata: ModelMetadata | None = field(default=None, init=False, compare=False)
     last_provider_attempts: tuple[object, ...] = field(default=(), init=False, compare=False)
     last_fallback_count: int = field(default=0, init=False, compare=False)
-    semantic_validator: TaskSemanticValidatorPort | None = field(default=None, repr=False)
+    task_plan_preparer: AgentTaskPlanPreparerPort | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not 0 < self.call_timeout_s <= 300:

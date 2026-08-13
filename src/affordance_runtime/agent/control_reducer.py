@@ -26,14 +26,10 @@ _TERMINAL = {"done", "blocked", "cancelled", "failed"}
 _DECISION_KIND_NAMES = {
     "Abort",
     "AskUser",
-    "EstablishAggregateObjective",
-    "EstablishObjectiveSequence",
-    "EstablishSetObjective",
     "ProposeDone",
     "RequestActionPage",
     "RequestObservation",
     "SelectAction",
-    "SubmitSetPredicateAssessments",
     "Wait",
 }
 

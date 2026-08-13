@@ -11,10 +11,10 @@ def _source(relative: str) -> str:
     return (RUNTIME / relative).read_text(encoding="utf-8")
 
 
-def test_set_control_and_vision_do_not_parse_task_prose_or_benchmark_slugs() -> None:
+def test_execution_control_and_vision_do_not_parse_task_prose_or_benchmark_slugs() -> None:
     governed = (
         "task/set_objective_state.py",
-        "model_policy/set_objective_catalog.py",
+        "model_policy/execution_control_catalog.py",
         "world/vision_escalation.py",
     )
     banned = (

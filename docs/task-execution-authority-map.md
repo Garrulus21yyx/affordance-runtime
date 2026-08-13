@@ -19,7 +19,7 @@ projection, or benchmark code.
 UserRequest
   -> TaskSpecAuthority
   -> TaskPlanAuthority
-  -> admitted TaskPlan<StepSpec>
+  -> admitted TaskPlan<StepSpec.execution>
   -> AgentLoop plan-progress owner
   -> current StepSpec
   -> current step-execution reducer
@@ -43,7 +43,7 @@ does not define another objective algebra or retain authoritative task state.
 | plan proposal | `TaskPlanGeneratorPort` | admitted TaskSpec + bounded current observation | authority-free `PlanProposal` | model transport schema, ActionSpace |
 | plan admission/version | `TaskPlanAuthority` | planning request + proposal | admitted `TaskPlan<StepSpec>` | generator, AgentLoop, projection |
 | plan storage/progress after cutover | one AgentLoop plan-progress reducer | admitted plan + validated step evidence | active/completed/failed step state | transition history, Catalog, evaluator proposal |
-| current step meaning | active canonical `StepSpec` | admitted plan + plan progress | typed interaction/completion obligations | raw task prose, E-ref, benchmark slug |
+| current step meaning | active canonical `StepSpec` | admitted plan + plan progress | interaction, completion and one typed execution contract on the same step | raw task prose, E-ref, benchmark slug, parallel execution table |
 | step execution lifecycle | one discriminated step-execution state | current StepSpec + fresh observation | evidence/action/effect/stability disposition | three mutually exclusive AgentLoop slots |
 | scope closure | `ScopeEnumeratorPort` | typed scope + observation epoch | candidate universe + coverage | visual classifier, main model |
 | predicate/value evidence | evidence router and typed providers | frozen universe + evidence obligation | assessments with source/assurance | Catalog, executor |
@@ -62,8 +62,8 @@ does not define another objective algebra or retain authoritative task state.
 | `task_plan_contracts.TaskPlan<StepSpec>` | canonical | retain and connect to AgentLoop |
 | `task.planning_contracts.TaskPlan<Milestone>` | duplicate, no lifecycle owner | deleted 2026-08-13 |
 | `task.task_program.TaskProgram` | duplicate whole-task planner | reverted/deleted 2026-08-13 |
-| `AgentLoopState.active_step_execution` | one discriminated current-step reducer state | retained as the execution lifecycle; next connect its creation exclusively to active StepSpec |
-| dynamic `establish_*_objective` Catalog tools | temporary semantic ingress | delete after TaskSpec/TaskPlan entry is connected; Catalog returns to action/control projection only |
+| `AgentLoopState.active_step_execution` | one discriminated current-step reducer state | materialized exclusively from the active admitted TaskPlan step |
+| dynamic `establish_*_objective` Catalog tools and Agent decisions | displaced semantic ingress | deleted 2026-08-13; Catalog is action/control projection only |
 | `TaskGoal` | target-loop duplicate of admitted task meaning | keep only during bounded entry migration, then delete or reduce to an external adapter input |
 | `StateKernel/Coordinator` | retained default execution core | do not import into AgentLoop; delete after canonical plan/progress cutover and default switch |
 
@@ -101,10 +101,29 @@ case-shaped branches.
   TaskPlan authority;
 - every effectful dispatch traces to one active canonical plan step, one current
   ActionSpace option, one current binding, and one admitted effect boundary;
+- executable semantics live directly on `StepSpec`; there is no parallel
+  step-to-execution projection or second identity join;
 - observations refresh selector/evidence/binding state without recreating task
   semantics;
 - DOM, derived, and visual evidence share the same lifecycle and differ only by
   provider/source assurance;
-- Catalog and model schemas contain no domain-state constructors after cutover;
+- Catalog and action-model schemas contain no domain-state constructors; the
+  planner wire schema is the only model boundary that can propose typed step
+  execution semantics, and `TaskPlanAuthority` must admit them;
 - obsolete types, tools, tests, documents, and imports are absent rather than
   maintained as internal compatibility.
+
+## Projection and causal-boundary rule
+
+Canonical authority is never reconstructed from an AgentContext, E-ref, tool
+catalog, tool result, or benchmark record. These projections may be bounded and
+lossy because Runtime retains their source objects. The only bidirectional wire
+codec is the planner proposal for the explicitly supported execution algebra;
+unsupported variants fail admission.
+
+The planner wire union maps once into `StepSpec.execution`; it is never decoded
+again from AgentContext or a tool call. The execution chain retains only the
+admitted TaskSpec identity, admitted plan and active step identity, current
+observation/action-space identity, one action result, and validated effect
+evidence. No event ledger, duplicated causal record, or transitive provenance
+graph is required for this scope.

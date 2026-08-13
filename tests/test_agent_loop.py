@@ -9,7 +9,6 @@ from affordance_runtime.agent import (
     AgentFailureCode,
     AgentLoop,
     AgentLoopStatus,
-    EstablishSetObjective,
     ProposeDone,
     RequestObservation,
     SelectAction,
@@ -28,7 +27,6 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import (
-    FactEquals,
     HypothesisItemRejection,
     HypothesisPredicateAssessment,
     HypothesisProposalMode,
@@ -39,16 +37,11 @@ from affordance_runtime.task import (
     RequirementHypothesisProposal,
     RequirementHypothesisProposalBatch,
     RiskProfile,
-    SetQuantifier,
     TaskGoal,
 )
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.task.frontier import synchronize_verified_task_state
 from affordance_runtime.task.frontier_contracts import LiteralExpected, TargetFieldEquals
-from affordance_runtime.task.semantic_validation import (
-    TaskSemanticValidation,
-    TaskSemanticValidationStatus,
-)
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     AcquisitionOrigin,
@@ -494,97 +487,14 @@ def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> 
     )
 
 
-def test_mandatory_semantic_ingress_rejects_forged_effectful_action_without_objective() -> None:
+def test_semantic_control_requires_admitted_task_plan_before_effectful_action() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
         loop = _loop(ScriptedPolicy(["first", "first"]))
         loop.semantic_control_required = True
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
-
-        assert result.status is AgentLoopStatus.BLOCKED
-        assert result.execution_count == 0
+        with pytest.raises(ValueError, match="requires an admitted TaskSpec and TaskPlan"):
+            await AgentEpisodeRunner(loop).run(environment, _task())
         assert environment.execute_calls == 0
-        assert result.control_transitions[-1].admission is not None
-        assert result.control_transitions[-1].admission.reason_code == "objective_required"
-
-    asyncio.run(scenario())
-
-
-def test_semantic_objective_establishment_is_a_non_effectful_control_transition() -> None:
-    class ObjectivePolicy:
-        calls = 0
-
-        async def decide(self, context):
-            self.calls += 1
-            if self.calls > 1:
-                return Abort(context.context_id, "stop after establishment", "policy")
-            return EstablishSetObjective(
-                context.context_id,
-                FactEquals("identity.entity_id", "shared-toggle"),
-                SetQuantifier.EXACTLY_ONE,
-                "activate",
-                ("shared-toggle",),
-            )
-
-    async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False)])
-        loop = _loop(ObjectivePolicy())
-        loop.semantic_control_required = True
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
-
-        result = await session.run_until_pause()
-
-        assert result.execution_count == 0
-        assert dict(result.control_transition_kind_counts)["EstablishSetObjective"] == 1
-
-    asyncio.run(scenario())
-
-
-def test_contradicted_semantic_objective_is_never_installed_or_dispatched() -> None:
-    class Validator:
-        calls = 0
-
-        async def validate(self, task, objective, observation):
-            del task, objective, observation
-            self.calls += 1
-            return TaskSemanticValidation(
-                TaskSemanticValidationStatus.CONTRADICTED,
-                "wrong_quantifier",
-                "fixture:validator",
-            )
-
-    class ObjectivePolicy:
-        def __init__(self):
-            self.calls = 0
-            self.semantic_validator = Validator()
-
-        async def decide(self, context):
-            self.calls += 1
-            if self.calls > 1:
-                return Abort(context.context_id, "stop after rejection", "policy")
-            return EstablishSetObjective(
-                context.context_id,
-                FactEquals("identity.entity_id", "shared-toggle"),
-                SetQuantifier.ALL_IN_CLOSED_SCOPE,
-                "activate",
-                (),
-            )
-
-    async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False)])
-        policy = ObjectivePolicy()
-        loop = _loop(policy)
-        loop.semantic_control_required = True
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
-
-        result = await session.run_until_pause()
-
-        assert result.execution_count == 0
-        assert environment.execute_calls == 0
-        assert policy.semantic_validator.calls == 1
-        assert session.state.active_step_execution is None
-        assert session.state.semantic_objective_count == 0
-        assert any(item.reason_code == "objective_semantic_contradicted" for item in result.control_transitions)
 
     asyncio.run(scenario())
 

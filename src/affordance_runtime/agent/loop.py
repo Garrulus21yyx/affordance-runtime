@@ -67,6 +67,8 @@ from affordance_runtime.task.hypothesis_contracts import (
 from affordance_runtime.task.hypothesis_runtime import admit_requirement_hypotheses
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
+from affordance_runtime.task_plan_contracts import TaskPlan
+from affordance_runtime.task_spec_authority import AdmittedTaskSpec
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -114,6 +116,9 @@ class AgentLoop:
         task: TaskGoal,
         environment: WorldEnvironment,
         intent_context: IntentContext | None = None,
+        *,
+        plan: TaskPlan | None = None,
+        admitted_task: AdmittedTaskSpec | None = None,
     ) -> AgentRunSession:
         accounting = RunAccounting()
         attempt_id = accounting.next_attempt_id()
@@ -176,6 +181,11 @@ class AgentLoop:
         accounting.record(receipt)
         evidence = StartBoundaryEvidence(receipt, accounting.snapshot())
         current = require_initial_observation(acquisition, evidence)
+        task_plan_preparer = getattr(self.policy, "task_plan_preparer", None)
+        if plan is None and admitted_task is None and task_plan_preparer is not None:
+            prepared = await task_plan_preparer.prepare(task, current)
+            admitted_task = prepared.admitted_task
+            plan = prepared.plan
         state = AgentLoopState(
             current,
             remaining_turns=task.loop_budget.max_turns,
@@ -183,6 +193,18 @@ class AgentLoop:
             semantic_control_required=self.semantic_control_required,
             scope_enumerator=_environment_scope_enumerator(environment),
         )
+        if plan is not None:
+            if admitted_task is None:
+                raise ValueError("TaskPlan installation requires an admitted TaskSpec")
+            if (
+                admitted_task.task_spec.task_id != task.task_id
+                or plan.task_id != task.task_id
+                or plan.task_revision != admitted_task.task_spec.revision
+            ):
+                raise ValueError("TaskGoal, admitted TaskSpec, and TaskPlan identity mismatch")
+            state.install_plan(plan, task_spec_identity=admitted_task.task_spec.identity)
+        elif self.semantic_control_required:
+            raise ValueError("semantic AgentLoop requires an admitted TaskSpec and TaskPlan")
         session = AgentRunSession(
             self,
             task,
@@ -282,8 +304,13 @@ class AgentLoop:
         task: TaskGoal,
         environment: WorldEnvironment,
         intent_context: IntentContext | None = None,
+        *,
+        plan: TaskPlan | None = None,
+        admitted_task: AdmittedTaskSpec | None = None,
     ) -> AgentResult:
-        return await (await self.start(task, environment, intent_context)).run_until_pause()
+        return await (
+            await self.start(task, environment, intent_context, plan=plan, admitted_task=admitted_task)
+        ).run_until_pause()
 
     async def _run_session(self, session: AgentRunSession) -> AgentResult:
         return project_result(session, await self._run_control(session))

@@ -1,211 +1,68 @@
-"""Stable task and optional planning contracts for the target runtime."""
+"""Stable lazy facade for target task contracts.
 
-from affordance_runtime.task.aggregate_objective import (
-    AggregateDisposition,
-    AggregateObjective,
-    AggregateObjectiveState,
-    AggregateOperator,
-    AggregateOutputFormat,
-    AggregateValueEvidence,
-    ValueExtractor,
-    ValueExtractorKind,
-    aggregate_allowed_action_ids,
-    aggregate_objective_public_value,
-    establish_aggregate_objective_state,
-    install_aggregate_destination_visual_leaf_assessments,
-    install_aggregate_visual_leaf_assessments,
-    refresh_aggregate_objective_state,
-)
-from affordance_runtime.task.contracts import (
-    EvaluationSpec,
-    LoopBudget,
-    MaterialBinding,
-    RiskProfile,
-    TaskGoal,
-)
-from affordance_runtime.task.hypothesis_contracts import (
-    HypothesisItemRejection,
-    HypothesisPredicateAssessment,
-    HypothesisProposalMode,
-    HypothesisRejectionCode,
-    HypothesisSetCompleteness,
-    RequirementHypothesisFailure,
-    RequirementHypothesisFailureKind,
-    RequirementHypothesisProposal,
-    RequirementHypothesisProposalBatch,
-    RequirementHypothesisProposer,
-    RequirementHypothesisState,
-    TrackedHypothesisStatus,
-    TrackedRequirementHypothesis,
-)
-from affordance_runtime.task.hypothesis_runtime import (
-    HypothesisAdmissionCode,
-    HypothesisAdmissionResult,
-    admit_requirement_hypotheses,
-    assess_requirement_hypotheses,
-)
-from affordance_runtime.task.intent_context import IntentContext, IntentExcerpt, IntentSourceKind
-from affordance_runtime.task.planning_contracts import LocalObjective
-from affordance_runtime.task.predicate_transport import predicate_from_transport
-from affordance_runtime.task.selector_resolution import (
-    SelectorResolutionDisposition,
-    SelectorResolutionState,
-    install_selector_visual_leaf_assessments,
-    resolve_entity_selector,
-)
-from affordance_runtime.task.semantic_validation import (
-    ModelTaskSemanticValidator,
-    TaskSemanticValidation,
-    TaskSemanticValidationStatus,
-    TaskSemanticValidatorPort,
-)
-from affordance_runtime.task.set_objective import (
-    ActionObligationStatus,
-    ActionTemplate,
-    And,
-    CandidateUniverse,
-    Compare,
-    CompareOperator,
-    FactEquals,
-    MemberOrdering,
-    Not,
-    Or,
-    PredicateAssessment,
-    PredicateAssurance,
-    PredicateTruth,
-    SchedulingMode,
-    SchedulingPolicy,
-    ScopeCoverage,
-    ScopeEntityDomain,
-    ScopeExtent,
-    ScopeSpec,
-    SetCompletionCertificate,
-    SetDisposition,
-    SetMemberObligation,
-    SetObjective,
-    SetObjectiveReduction,
-    SetQuantifier,
-    SpatialRelation,
-    StabilityStatus,
-    VisualAttribute,
-    VisualConcept,
-    evaluate_predicate,
-    predicate_digest,
-    predicate_public_value,
-    reduce_set_objective,
-    transition_obligation,
-    visual_predicate_leaves,
-)
-from affordance_runtime.task.set_objective_state import (
-    MAX_SET_MEMBERS,
-    SetEvidenceNeedKind,
-    SetEvidenceObligation,
-    SetObjectiveState,
-    SetObjectiveStateError,
-    SetObjectiveStateErrorCode,
-    establish_set_objective_state,
-    install_semantic_assessments,
-    refresh_set_objective_state,
-    set_allowed_action_ids,
-    set_evidence_obligations,
-)
-from affordance_runtime.task_plan_contracts import TaskPlan
+The package facade performs no eager imports.  This keeps canonical planning
+contracts independent from target execution implementations while preserving
+the public import surface.
+"""
 
-__all__ = [
-    "EvaluationSpec",
-    "AggregateDisposition",
-    "AggregateObjective",
-    "AggregateObjectiveState",
-    "AggregateOperator",
-    "AggregateOutputFormat",
-    "AggregateValueEvidence",
-    "ValueExtractor",
-    "ValueExtractorKind",
-    "aggregate_allowed_action_ids",
-    "aggregate_objective_public_value",
-    "establish_aggregate_objective_state",
-    "install_aggregate_destination_visual_leaf_assessments",
-    "install_aggregate_visual_leaf_assessments",
-    "refresh_aggregate_objective_state",
-    "LocalObjective",
-    "LoopBudget",
-    "IntentContext",
-    "IntentExcerpt",
-    "IntentSourceKind",
-    "HypothesisProposalMode",
-    "HypothesisSetCompleteness",
-    "HypothesisPredicateAssessment",
-    "HypothesisItemRejection",
-    "HypothesisRejectionCode",
-    "HypothesisAdmissionCode",
-    "HypothesisAdmissionResult",
-    "MaterialBinding",
-    "RiskProfile",
-    "RequirementHypothesisFailure",
-    "RequirementHypothesisFailureKind",
-    "RequirementHypothesisProposal",
-    "RequirementHypothesisProposalBatch",
-    "RequirementHypothesisProposer",
-    "RequirementHypothesisState",
-    "TrackedRequirementHypothesis",
-    "TrackedHypothesisStatus",
-    "admit_requirement_hypotheses",
-    "assess_requirement_hypotheses",
-    "TaskGoal",
-    "TaskPlan",
-    "ActionObligationStatus",
-    "ActionTemplate",
-    "And",
-    "CandidateUniverse",
-    "Compare",
-    "CompareOperator",
-    "FactEquals",
-    "MemberOrdering",
-    "Not",
-    "Or",
-    "PredicateAssessment",
-    "PredicateAssurance",
-    "PredicateTruth",
-    "SchedulingMode",
-    "SchedulingPolicy",
-    "ScopeCoverage",
-    "ScopeEntityDomain",
-    "ScopeExtent",
-    "ScopeSpec",
-    "SetCompletionCertificate",
-    "SetDisposition",
-    "SetMemberObligation",
-    "SetObjective",
-    "SetObjectiveReduction",
-    "SetQuantifier",
-    "SpatialRelation",
-    "StabilityStatus",
-    "VisualAttribute",
-    "VisualConcept",
-    "evaluate_predicate",
-    "predicate_digest",
-    "predicate_public_value",
-    "reduce_set_objective",
-    "transition_obligation",
-    "visual_predicate_leaves",
-    "predicate_from_transport",
-    "MAX_SET_MEMBERS",
-    "SetEvidenceNeedKind",
-    "SetEvidenceObligation",
-    "SetObjectiveStateError",
-    "SetObjectiveStateErrorCode",
-    "SetObjectiveState",
-    "establish_set_objective_state",
-    "install_semantic_assessments",
-    "refresh_set_objective_state",
-    "set_allowed_action_ids",
-    "set_evidence_obligations",
-    "ModelTaskSemanticValidator",
-    "TaskSemanticValidation",
-    "TaskSemanticValidationStatus",
-    "TaskSemanticValidatorPort",
-    "SelectorResolutionDisposition",
-    "SelectorResolutionState",
-    "install_selector_visual_leaf_assessments",
-    "resolve_entity_selector",
-]
+from __future__ import annotations
+
+from importlib import import_module
+
+_MODULE_EXPORTS = {
+    "affordance_runtime.task.contracts": {
+        "EvaluationSpec", "LoopBudget", "MaterialBinding", "RiskProfile", "TaskGoal",
+    },
+    "affordance_runtime.task.aggregate_objective": {
+        "AggregateDisposition", "AggregateObjective", "AggregateObjectiveState", "AggregateOperator",
+        "AggregateOutputFormat", "AggregateValueEvidence", "ValueExtractor", "ValueExtractorKind",
+        "aggregate_allowed_action_ids", "aggregate_objective_public_value", "establish_aggregate_objective_state",
+        "install_aggregate_destination_visual_leaf_assessments", "install_aggregate_visual_leaf_assessments",
+        "refresh_aggregate_objective_state",
+    },
+    "affordance_runtime.task.hypothesis_contracts": {
+        "HypothesisItemRejection", "HypothesisPredicateAssessment", "HypothesisProposalMode",
+        "HypothesisRejectionCode", "HypothesisSetCompleteness", "RequirementHypothesisFailure",
+        "RequirementHypothesisFailureKind", "RequirementHypothesisProposal", "RequirementHypothesisProposalBatch",
+        "RequirementHypothesisProposer", "RequirementHypothesisState", "TrackedHypothesisStatus",
+        "TrackedRequirementHypothesis",
+    },
+    "affordance_runtime.task.hypothesis_runtime": {
+        "HypothesisAdmissionCode", "HypothesisAdmissionResult", "admit_requirement_hypotheses",
+        "assess_requirement_hypotheses",
+    },
+    "affordance_runtime.task.intent_context": {"IntentContext", "IntentExcerpt", "IntentSourceKind"},
+    "affordance_runtime.task.planning_contracts": {"LocalObjective"},
+    "affordance_runtime.task.selector_resolution": {
+        "SelectorResolutionDisposition", "SelectorResolutionState", "install_selector_visual_leaf_assessments",
+        "resolve_entity_selector",
+    },
+    "affordance_runtime.task.set_objective": {
+        "ActionObligationStatus", "ActionTemplate", "And", "CandidateUniverse", "Compare", "CompareOperator",
+        "FactEquals", "MemberOrdering", "Not", "Or", "PredicateAssessment", "PredicateAssurance",
+        "PredicateTruth", "SchedulingMode", "SchedulingPolicy", "ScopeCoverage", "ScopeEntityDomain",
+        "ScopeExtent", "ScopeSpec", "SetCompletionCertificate", "SetDisposition", "SetMemberObligation",
+        "SetObjective", "SetObjectiveReduction", "SetQuantifier", "SpatialRelation", "StabilityStatus",
+        "VisualAttribute", "VisualConcept", "evaluate_predicate", "predicate_digest", "predicate_public_value",
+        "reduce_set_objective", "transition_obligation", "visual_predicate_leaves",
+    },
+    "affordance_runtime.task.set_objective_state": {
+        "MAX_SET_MEMBERS", "SetEvidenceNeedKind", "SetEvidenceObligation", "SetObjectiveState",
+        "SetObjectiveStateError", "SetObjectiveStateErrorCode", "establish_set_objective_state",
+        "install_semantic_assessments", "refresh_set_objective_state", "set_allowed_action_ids",
+        "set_evidence_obligations",
+    },
+    "affordance_runtime.task_plan_contracts": {"TaskPlan"},
+}
+
+_EXPORTS = {name: module for module, names in _MODULE_EXPORTS.items() for name in names}
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(name)
+    value = getattr(import_module(module), name)
+    globals()[name] = value
+    return value

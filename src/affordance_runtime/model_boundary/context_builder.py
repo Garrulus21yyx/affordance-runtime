@@ -21,6 +21,7 @@ from affordance_runtime.model_boundary.budgets import (
 from affordance_runtime.model_boundary.context import (
     AgentBudgetView,
     AgentContext,
+    AgentExecutionControlView,
     AgentHypothesisRejectionView,
     AgentObjectiveCheckpointView,
     AgentObjectiveView,
@@ -28,7 +29,6 @@ from affordance_runtime.model_boundary.context import (
     AgentProgressView,
     AgentRequirementHypothesisView,
     AgentRequirementStateView,
-    AgentSetControlView,
     AgentTaskFrontierView,
     ContextIdentity,
     DecisionMode,
@@ -185,7 +185,7 @@ class ContextBuilder:
             project_control_feedback(state.pending_control_feedback),
             grounding.images,
             grounding.index,
-            _set_control_view(state, action_space),
+            _execution_control_view(state, action_space),
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 
@@ -399,10 +399,10 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
     )
 
 
-def _set_control_view(
+def _execution_control_view(
     state: AgentLoopState,
     action_space: ActionSpace,
-) -> AgentSetControlView | None:
+) -> AgentExecutionControlView | None:
     execution = state.active_step_execution
     if isinstance(execution, ObjectiveSequenceState):
         sequence = execution
@@ -420,7 +420,7 @@ def _set_control_view(
         else:
             mode = "blocked"
         selector = step.selector if step is not None else sequence.pending_postcondition
-        return AgentSetControlView(
+        return AgentExecutionControlView(
             mode,
             sequence.disposition.value,
             sequence.reason_code,
@@ -470,7 +470,7 @@ def _set_control_view(
             AggregateDisposition.NEED_DESTINATION: "resolve_destination",
             AggregateDisposition.NEED_EFFECT_RESOLUTION: "verify_item_effect",
         }.get(aggregate.disposition)
-        return AgentSetControlView(
+        return AgentExecutionControlView(
             mode,
             aggregate.disposition.value,
             aggregate.reason_code,
@@ -491,7 +491,7 @@ def _set_control_view(
     if active is None:
         if not state.semantic_control_required:
             return None
-        return AgentSetControlView(
+        return AgentExecutionControlView(
             "control_only",
             state.semantic_control_mode.value,
             "semantic_objective_required",
@@ -507,7 +507,7 @@ def _set_control_view(
             mode = "member_actions_only"
         else:
             mode = "blocked"
-            return AgentSetControlView(
+            return AgentExecutionControlView(
                 mode,
                 "need_actionability_resolution",
                 "true_member_action_unavailable",
@@ -539,7 +539,7 @@ def _set_control_view(
         mode = "control_only"
         allowed = ()
     unknown = tuple(item.entity_id for item in active.assessments if item.truth.value == "unknown")
-    return AgentSetControlView(
+    return AgentExecutionControlView(
         mode,
         reduction.disposition.value,
         reduction.reason_code,
@@ -627,6 +627,6 @@ def _fit_context(
 
 def _semantic_serialized_size(context: AgentContext) -> int:
     payload = to_json_compatible(replace(context, image_inputs=()))
-    if context.set_control is None:
-        payload.pop("set_control", None)
+    if context.execution_control is None:
+        payload.pop("execution_control", None)
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())

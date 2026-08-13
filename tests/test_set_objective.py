@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from affordance_runtime.task.predicate_transport import predicate_from_transport
 from affordance_runtime.task.set_objective import (
     ActionObligationStatus,
     ActionTemplate,
@@ -152,34 +151,12 @@ def test_predicate_digest_is_type_discriminated_for_composites() -> None:
     assert predicate_digest(And(operands)) != predicate_digest(Or(operands))
 
 
-def test_comparison_and_bounded_transport_preserve_three_valued_semantics() -> None:
-    predicate = predicate_from_transport(
-        {
-            "any_of": [
-                {
-                    "all_of": [
-                        {
-                            "kind": "visual_concept",
-                            "text": "apple",
-                            "negated": False,
-                        },
-                        {
-                            "kind": "compare",
-                            "field_name": "layout.row_index",
-                            "operator": "lte",
-                            "expected": 2,
-                            "negated": False,
-                        },
-                        {
-                            "kind": "visual_attribute",
-                            "text": "rotten",
-                            "negated": True,
-                        },
-                    ]
-                }
-            ]
-        }
-    )
+def test_comparison_preserves_three_valued_semantics() -> None:
+    predicate = And((
+        VisualConcept("apple"),
+        Compare("layout.row_index", CompareOperator.LTE, 2),
+        Not(VisualAttribute("rotten")),
+    ))
     semantic = {
         predicate_digest(VisualConcept("apple")): PredicateTruth.TRUE,
         predicate_digest(VisualAttribute("rotten")): PredicateTruth.FALSE,

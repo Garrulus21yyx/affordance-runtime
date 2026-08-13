@@ -49,10 +49,16 @@ def test_agent_loop_has_one_step_execution_slot() -> None:
         assert duplicate not in "\n".join(
             path.read_text(encoding="utf-8") for path in _python_sources()
         )
+    plan_source = (RUNTIME / "task_plan_contracts.py").read_text(encoding="utf-8")
+    assert "step_executions" not in plan_source
+    assert "step.execution" in plan_source
+    production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
+    assert "AgentSetControlView" not in production
+    assert "set_control" not in production
+    assert not (RUNTIME / "model_policy" / "set_objective_catalog.py").exists()
 
 
-def test_temporary_model_semantic_producers_cannot_spread() -> None:
-    """Ratchet the known ingress debt until canonical-plan cutover deletes it."""
+def test_model_policy_has_no_task_semantic_producers() -> None:
 
     markers = (
         "EstablishSetObjective",
@@ -67,11 +73,14 @@ def test_temporary_model_semantic_producers_cannot_spread() -> None:
         for path in (RUNTIME / "model_policy").rglob("*.py")
         if any(marker in path.read_text(encoding="utf-8") for marker in markers)
     }
-    assert producers == {
-        "model_policy/grounded_tool_catalog.py",
-        "model_policy/grounded_tool_port_bridge.py",
-        "model_policy/spec.py",
-    }
+    assert producers == set()
+
+
+def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
+    source = (RUNTIME / "agent" / "decisions.py").read_text(encoding="utf-8")
+    assert "EstablishSetObjective" not in source
+    assert "EstablishObjectiveSequence" not in source
+    assert "EstablishAggregateObjective" not in source
 
 
 def test_normative_architecture_links_the_authority_map() -> None:

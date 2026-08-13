@@ -7,21 +7,12 @@ from enum import StrEnum
 from typing import Any, TypeAlias
 
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.task.aggregate_objective import AggregateObjective
 from affordance_runtime.task.frontier_contracts import (
     NoObjectiveOperation,
     ObjectiveOperation,
     ProposeObjective,
     ReplaceObjective,
     RetainObjective,
-)
-from affordance_runtime.task.objective_sequence import ObjectiveSequence
-from affordance_runtime.task.set_objective import (
-    PredicateExpr,
-    PredicateTruth,
-    ScopeEntityDomain,
-    ScopeExtent,
-    SetQuantifier,
 )
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
@@ -67,97 +58,6 @@ class SelectAction:
         if not self.action_id.strip():
             raise ValueError("selection requires an offered action id")
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
-
-
-@dataclass(frozen=True)
-class EstablishSetObjective:
-    """Admit model-proposed set semantics without granting an action."""
-
-    context_id: str
-    predicate: PredicateExpr
-    quantifier: SetQuantifier
-    semantic_action: str
-    candidate_target_ids: tuple[str, ...]
-    parameters: dict[str, Any] = field(default_factory=dict)
-    scope_extent: ScopeExtent = ScopeExtent.CURRENT_VIEWPORT
-    scope_root_target_id: str = "current-viewport"
-    scope_entity_domain: ScopeEntityDomain = ScopeEntityDomain.STRUCTURED
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        if not self.semantic_action.strip():
-            raise ValueError("set objective requires a semantic action")
-        values = tuple(self.candidate_target_ids)
-        if (
-            len(values) > 256
-            or len(values) != len(set(values))
-            or any(not item.strip() or len(item) > 240 for item in values)
-        ):
-            raise ValueError("set objective candidate domain is invalid")
-        object.__setattr__(self, "candidate_target_ids", values)
-        object.__setattr__(self, "parameters", freeze_json(self.parameters))
-        if (
-            not isinstance(self.scope_extent, ScopeExtent)
-            or not self.scope_root_target_id.strip()
-            or not isinstance(self.scope_entity_domain, ScopeEntityDomain)
-        ):
-            raise ValueError("set objective scope contract is invalid")
-
-
-@dataclass(frozen=True)
-class EstablishAggregateObjective:
-    """Install a Runtime-derived aggregate; the model cannot submit its result."""
-
-    context_id: str
-    objective: AggregateObjective
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        if not isinstance(self.objective, AggregateObjective):
-            raise TypeError("aggregate decision requires a typed objective")
-
-
-@dataclass(frozen=True)
-class EstablishObjectiveSequence:
-    """Install future-resolvable typed steps without granting an action."""
-
-    context_id: str
-    sequence: ObjectiveSequence
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        if not isinstance(self.sequence, ObjectiveSequence):
-            raise TypeError("sequence decision requires a typed objective sequence")
-
-
-@dataclass(frozen=True)
-class SetPredicateAssessmentDecision:
-    target_id: str
-    truth: PredicateTruth
-    confidence: float | None
-
-    def __post_init__(self) -> None:
-        if not self.target_id.strip() or (self.confidence is not None and not 0 <= self.confidence <= 1):
-            raise ValueError("set predicate assessment decision is invalid")
-
-
-@dataclass(frozen=True)
-class SubmitSetPredicateAssessments:
-    context_id: str
-    predicate_digest: str
-    assessments: tuple[SetPredicateAssessmentDecision, ...]
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        values = tuple(self.assessments)
-        if (
-            len(self.predicate_digest) != 64
-            or not values
-            or len(values) > 256
-            or len({item.target_id for item in values}) != len(values)
-        ):
-            raise ValueError("set predicate assessment batch is invalid")
-        object.__setattr__(self, "assessments", values)
 
 
 @dataclass(frozen=True)
@@ -259,10 +159,6 @@ class Abort:
 
 AgentDecision: TypeAlias = (
     SelectAction
-    | EstablishAggregateObjective
-    | EstablishObjectiveSequence
-    | EstablishSetObjective
-    | SubmitSetPredicateAssessments
     | RequestObservation
     | RequestActionPage
     | AskUser
@@ -289,10 +185,6 @@ class AgentDecisionPackage:
             self.decision,
             (
                 SelectAction,
-                EstablishAggregateObjective,
-                EstablishObjectiveSequence,
-                EstablishSetObjective,
-                SubmitSetPredicateAssessments,
                 RequestObservation,
                 RequestActionPage,
                 AskUser,
