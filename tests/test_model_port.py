@@ -645,6 +645,7 @@ def test_zhipu_visual_profile_uses_prompt_schema_without_text_only_response_form
         answer = asyncio.run(
             port.generate_structured(
                 [
+                    ModelMessage(role="system", content="You are a GUI agent."),
                     ModelMessage(
                         role="user",
                         content=(
@@ -669,6 +670,10 @@ def test_zhipu_visual_profile_uses_prompt_schema_without_text_only_response_form
     assert "response_format" not in request
     assert "thinking" not in request
     assert request["messages"][0]["role"] == "system"
+    assert request["messages"][0]["content"].startswith("You are a GUI agent.\n\n")
+    assert request["messages"][0]["content"].index("You are a GUI agent.") < request["messages"][0][
+        "content"
+    ].index("Return exactly one JSON object")
     assert '"value"' in request["messages"][0]["content"]
     assert request["messages"][1]["content"][0]["type"] == "text"
     assert request["messages"][1]["content"][1]["type"] == "image_url"

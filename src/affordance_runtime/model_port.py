@@ -717,14 +717,20 @@ def _messages_with_structured_output_contract(
         sort_keys=True,
         separators=(",", ":"),
     )
-    instruction = ModelMessage(
-        role="system",
-        content=(
-            "Return exactly one JSON object and no Markdown or explanatory text. "
-            "The object must satisfy this JSON Schema; unknown fields are forbidden: "
-            f"{encoded_schema}"
-        ),
+    contract = (
+        "Return exactly one JSON object and no Markdown or explanatory text. "
+        "The object must satisfy this JSON Schema; unknown fields are forbidden: "
+        f"{encoded_schema}"
     )
+    if messages and messages[0].role == "system" and isinstance(messages[0].content, str):
+        return (
+            ModelMessage(
+                role="system",
+                content=f"{messages[0].content}\n\n{contract}",
+            ),
+            *messages[1:],
+        )
+    instruction = ModelMessage(role="system", content=contract)
     return (instruction, *messages)
 
 

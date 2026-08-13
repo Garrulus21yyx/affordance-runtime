@@ -353,7 +353,11 @@ order of end-state identification, current observation analysis, previous
 effect verification, and one next action. It explicitly treats tasks as
 multi-turn and requires observable prerequisites to be checked before a
 finalizing/commit action. The wire remains one simple command and Runtime
-authority is unchanged.
+authority is unchanged. The shared prompt-based structured-output transport
+also preserves that existing role at the start of the first system message and
+appends its JSON Schema contract afterward. Previously the transport inserted
+a schema-only system message before the role, so the provider-facing order did
+not match the source prompt's intended hierarchy.
 
 No few-shot example is added in this slice. The failed witnesses produced
 schema-valid, privately resolvable tool calls, so output formatting is not the
