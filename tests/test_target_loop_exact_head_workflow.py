@@ -8,6 +8,7 @@ def test_exact_head_workflow_runs_full_gate_and_uploads_sha_bound_artifact() -> 
     assert "full-exact-head-regression:" in text
     assert "python -m pytest --collect-only -q" in text
     assert "python -m pytest -q" in text
+    assert text.count("set -o pipefail") >= 2
     assert "ruff check src tests" in text
     assert "mypy src" in text
     assert "git diff --check" in text

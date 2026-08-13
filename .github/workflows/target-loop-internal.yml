@@ -18,9 +18,13 @@ jobs:
       - run: python -m pip install -e '.[dev,web,visual,parent]'
       - run: python -m playwright install --with-deps chromium
       - name: Collect exact test manifest
-        run: python -m pytest --collect-only -q | tee /tmp/target-loop-collection.txt
+        run: |
+          set -o pipefail
+          python -m pytest --collect-only -q | tee /tmp/target-loop-collection.txt
       - name: Run full pytest collection
-        run: python -m pytest -q | tee /tmp/target-loop-pytest.txt
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/target-loop-pytest.txt
       - name: Ruff
         run: ruff check src tests
       - name: Mypy

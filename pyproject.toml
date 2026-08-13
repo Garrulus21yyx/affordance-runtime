@@ -34,6 +34,7 @@ external-smoke = [
 dev = [
   "build>=1.2",
   "hypothesis>=6.112,<7",
+  "numpy>=1.26,<3",
   "Pillow>=11,<13",
   "pytest>=8.0",
   "ruff>=0.4",
