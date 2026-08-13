@@ -11,7 +11,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
 from affordance_runtime.benchmarks.external_breadth.contracts import (
     MiniWobBreadthCase,
     MiniWobBreadthManifest,
@@ -22,7 +21,6 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
 )
 from affordance_runtime.benchmarks.model_protocol import PRIMARY_BENCHMARK_ACTION_PROTOCOL
 from affordance_runtime.model_policy import (
-    local_objective_proposer_from_environment,
     model_policy_from_environment,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
@@ -80,7 +78,6 @@ def main() -> int:
         perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
         interaction_protocol=PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     )
-    objective_proposer = local_objective_proposer_from_environment(call_timeout_s=90)
     outcome = asyncio.run(run_provider_cohort_arm(
         manifest,
         policy,
@@ -89,8 +86,6 @@ def main() -> int:
         visual_point_grounder=glm_visual_point_grounder_from_environment(),
         visual_candidate_disambiguator=visual_candidate_disambiguator_from_environment(),
         visual_predicate_classifier=visual_predicate_classifier_from_environment(),
-        local_objective_proposer=objective_proposer,
-        local_objective_requirement=LocalObjectiveProposalRequirement.REQUIRED,
         progress_dir=args.output_dir,
         progress_profile="M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
     ))
