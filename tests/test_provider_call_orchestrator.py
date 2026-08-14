@@ -196,6 +196,7 @@ def test_real_model_port_503_then_200_dispatches_two_network_attempts() -> None:
                                             "op": "fill",
                                             "target": "E1",
                                             "text": "donovan",
+                                            "memory": {"items": []},
                                         }
                                     )
                                 }
@@ -248,6 +249,8 @@ def test_real_model_port_503_then_200_dispatches_two_network_attempts() -> None:
         thread.join(timeout=2)
 
     assert isinstance(outcome, ResolvedModelDecision)
+    assert outcome.working_memory is not None
+    assert outcome.working_memory.items == ()
     assert len(requests) == 2
     assert [item.origin for item in orchestrator.last_attempts] == [
         ProviderAttemptOrigin.NETWORK,

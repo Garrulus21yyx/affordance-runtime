@@ -45,6 +45,11 @@ def _imports(path: Path) -> set[str]:
     return result
 
 
+def _referenced_names(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+
+
 def test_target_core_does_not_import_legacy_contract_or_transaction_owners() -> None:
     violations = []
     for root in TARGET_CORE:
@@ -75,14 +80,15 @@ def test_risk_and_confirmation_keep_surface_private_dependencies_out() -> None:
 
 
 def test_policy_and_evaluators_do_not_import_concrete_execution_owners() -> None:
-    policy_imports = _imports(PACKAGE / "agent" / "policy.py")
-    policy_text = (PACKAGE / "agent" / "policy.py").read_text(encoding="utf-8")
+    policy_path = PACKAGE / "agent" / "policy.py"
+    policy_imports = _imports(policy_path)
+    policy_names = _referenced_names(policy_path)
 
     assert not any(name.startswith(POLICY_FORBIDDEN_PREFIXES) for name in policy_imports)
     assert "affordance_runtime.world.binder" not in policy_imports
     assert "affordance_runtime.world.orchestrator" not in policy_imports
-    assert "ActionSpace" not in policy_text.replace("AgentActionSpaceView", "")
-    assert "Turn" not in policy_text.replace("AgentTurnView", "")
+    assert "ActionSpace" not in policy_names
+    assert "Turn" not in policy_names
 
 
 def test_model_boundary_has_no_concrete_surface_execution_or_fixture_dependencies() -> None:
