@@ -109,7 +109,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `STOPPED_AFTER_VALID_1_OF_5 / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E ATOMIC_AGENT_MEMORY_IMPLEMENTED` |
+| P5-M4.6 evidence-directed short-loop remediation | `TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -716,27 +716,33 @@ integrated fill/select local liveness guard; it is not a planner. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`ATOMIC_AGENT_MEMORY_IMPLEMENTED / VALID_DIAGNOSTIC_1_OF_5 / STOPPED_AFTER_FAILURE`
-after the optional checklist topology was replaced and
-the mandatory topology was live-exercised;
+`TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN`
+after the failed atomic-memory diagnostic admitted a bounded cognition split;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.
 
-At `8f33d8a`, the grounded policy requires one atomic response containing both
-the current action/control decision and the complete next bounded
-model-authored advisory memory. This supersedes the optional
-`UpdateWorkingMemory` decision from `2758364`, which is deleted. After the
-response's context is admitted as current, `AgentLoop` stores its memory and
-routes its decision through the unchanged ActionSpace/admission/private-binding/
-execution chain. The next disposable `AgentContext` injects that stored memory.
-The memory produces no separate environment step or control transition, owns no
-ActionSpace/action ID/private binding, and cannot filter, authorize, dispatch
-or complete a task. Grounded-tools declares `attached_working_memory`
-explicitly; structured-package and dynamic-tools do not. This remains an
-implemented and live-exercised cognition-continuity experiment, not general
-long-horizon closure. No independent planner or critic is configured.
+At `eb19c0d`, grounded action selection performs two cognition calls inside one
+`AgentPolicy` turn. The task-state updater first receives the original task,
+fresh Unified World, explicit Runtime-observed transition after the previous
+decision, and prior advisory task state. It emits a complete bounded state with
+goal clauses, requirement status, derived facts, next step, finalization
+readiness and blockers. The actor then receives that just-authored state plus
+the same fresh world and clean Runtime-issued tools. This establishes the causal
+edge missing from `8f33d8a`: updated task state precedes and conditions the
+current action rather than being a sibling action argument.
+
+One `GroundedPolicyContextBinder` owns provider message construction and loads a
+versioned packaged YAML prompt bundle. Task state is an independent
+`AgentContext` projection; world transition remains Runtime evidence and task
+state remains non-authoritative Agent belief. Grounded action schemas contain
+only their legal action arguments, and `supported_decisions` no longer pretends
+that attached memory is a decision capability. After current-context admission,
+`AgentLoop` stores the state and routes the action through the unchanged
+ActionSpace/admission/private-binding/execution/evaluation chain. There is still
+one possible environment action and no second Runtime path, planner, classifier,
+critic, task-family branch or semantic Runtime guard.
 
 The clean default-4.1V five-witness run at `d524221` is evidence-valid at 1/5.
 All 12 completed turns contain non-empty attached memory, closing the question
@@ -746,8 +752,9 @@ pie's second memory says expand while its action clicks `Y`; color-set memory
 retains only one next click and times out; addition memory stores no numeric
 derivation before submit. All completed turns also required structured-output
 repair and two target repairs, producing 27 provider attempts. Semantic
-consistency and schema/latency are therefore distinct open causes. Work stops
-without a production or prompt change, a critic, or a rerun.
+consistency and schema/latency are therefore distinct historical causes. That
+run validates only the superseded `8f33d8a` topology and is the baseline for the
+new bounded experiment; `eb19c0d` has no live benchmark result yet.
 
 The earlier default-4.1V five-case diagnostic at `b309c9d` completed
 with raw 3/5 but is formally invalid because its in-repository output directory

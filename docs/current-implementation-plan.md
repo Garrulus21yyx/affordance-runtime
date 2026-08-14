@@ -123,7 +123,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `ATOMIC_AGENT_MEMORY_IMPLEMENTED / VALID_DIAGNOSTIC_1_OF_5 / STOPPED_AFTER_FAILURE / AGENT_SEMANTICS_OPEN / GENERALIZATION_OPEN` | `8f33d8a` replaces optional `update_checklist` with one mandatory grounded response envelope and next-context injection. The clean default-4.1V run at `d524221` is valid at 1/5: all 12 completed turns carried non-empty memory, proving the topology is active, but grid and pie traces directly contradict memory and action, color-set memory never retains completed membership and times out, and addition memory stores no derived result before submission. Every completed turn also required structured-output repair; two target repairs yielded 27 provider attempts, so schema/latency and semantic consistency are distinct causes. Per the stop instruction, no production/prompt change or rerun follows. A full critic is not yet selected; the smallest future experiment is a two-call AgentPolicy-internal state-update → memory-conditioned-action topology with the same single Runtime execution chain. See the [atomic-memory evidence](evidence/2026-08-14-atomic-agent-memory-8f33d8a.md), [valid run](evidence/runs/p5-m4-6-e-atomic-memory-five-witness-d524221/report.json) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN / CRITIC_NOT_ADMITTED / GENERALIZATION_OPEN` | `eb19c0d` replaces the failed single-response atomic-memory topology with two model calls inside the same `AgentPolicy`: a task-state updater reconciles the previous advisory belief with the fresh Unified World and explicit previous-decision transition, then the actor receives that updated state and clean Runtime-issued tools. Memory is no longer an action parameter or decision capability. One binder owns the model context and a packaged YAML prompt bundle; the existing ActionSpace/admission/private-binding/execution/evaluation chain remains the sole Runtime path and only one environment action can occur. The historical default-4.1V run at `d524221` remains a valid 1/5 baseline for the superseded topology; no live result or task-quality claim exists for `eb19c0d`. See the [task-state context evidence](evidence/2026-08-14-task-state-context-eb19c0d.md), [atomic-memory diagnostic](evidence/2026-08-14-atomic-agent-memory-8f33d8a.md), [valid historical run](evidence/runs/p5-m4-6-e-atomic-memory-five-witness-d524221/report.json) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -131,18 +131,15 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 
 ## Next admitted slice
 
-The mandatory atomic memory topology is implemented and live-exercised, but the
-valid default-4.1V diagnostic is only 1/5. Work is stopped after causal trace
-analysis as instructed. Before any future implementation, freeze one A/B:
-current single response versus a two-call AgentPolicy-internal state update
-followed by an action conditioned on that memory. Both arms must retain the
-same Unified World input, model/provider and single Runtime execution chain.
-Also isolate the compact schema variable because every completed current-arm
-turn required repair. Runtime must continue to own only deterministic
-capability, legality, binding, execution, currentness and authoritative outcome
-facts. Do not add task-specific rules, reinstate the dormant LocalObjective
-planner, place semantic guards in Runtime, or repeat the same five witnesses
-until a favorable stochastic sample appears.
+The two-call `task-state update -> memory-conditioned action` arm is implemented
+and pushed at `eb19c0d`. The next admitted work is validation, not another
+architecture layer: wait for exact-head remote CI, then run one frozen
+default-4.1V five-witness diagnostic with the same Unified World, provider and
+single Runtime execution chain. The run must record both cognition calls,
+task-state schema repair separately from action repair, the complete task state,
+and the selected action. If the semantic failures remain, stop after causal
+trace analysis rather than adding a critic, task rule, Runtime semantic guard,
+LocalObjective planner, or repeated favorable-score sampling.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and
@@ -410,8 +407,7 @@ Implement one independently measurable slice at a time:
    never replayed — `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth and a referentially closed grounded-tool policy surface —
-   `ATOMIC_AGENT_MEMORY_IMPLEMENTED / VALID_DIAGNOSTIC_1_OF_5 /
-   STOPPED_AFTER_FAILURE`. Existing SoM utilities are reused as a
+   `TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN`. Existing SoM utilities are reused as a
    deterministic current-screenshot projection, not reimplemented and not made
    an execution authority.
 
@@ -439,9 +435,9 @@ archive stopped 7c14190 8/60 as INCOMPLETE_DIAGNOSTIC
 ```
 
 This historical staging list is no longer an active execution queue. The
-atomic-memory diagnostic reached valid 1/5 evidence and triggered the explicit
-stop boundary above. No later arrow is authorized until a new predeclared
-cognition-topology A/B is accepted.
+atomic-memory diagnostic reached valid 1/5 evidence; `eb19c0d` implements the
+smallest evidence-admitted cognition change. No later arrow is authorized until
+its one frozen live diagnostic is analyzed.
 
 SoM marks and AX aliases remain non-authoritative.
 `ActionSpace` is still the only legal-action owner, and every accepted tool
