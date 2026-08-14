@@ -2,7 +2,7 @@
 
 Date: 2026-08-14  
 Implementation: `275836498b64fd33b7c89b1327a2f5b38ed84678`  
-Status: `IMPLEMENTED_NOT_BENCHMARK_VALIDATED`
+Status: `IMPLEMENTED / DIAGNOSTIC_RUN_COMPLETE / FORMAL_EVIDENCE_INVALID / CHECKLIST_NOT_EXERCISED`
 
 ## Why this slice exists
 
@@ -78,16 +78,54 @@ This avoids claiming checklist support for adapters that cannot emit it.
 These checks prove the control and authority boundary, not task-performance
 improvement.
 
-## Next falsification step
+## One default-model diagnostic at `b309c9d`
 
-Run the frozen five-case cohort with the default
-`glm-4.1v-thinking-flashx` against a clean commit containing this slice. Inspect
-first whether the model uses `update_checklist`, whether a following call takes
-an environment action, and whether the checklist evolves coherently. Then
-compare task outcomes with the prior clean 1/5 run.
+A single five-case run used default `glm-4.1v-thinking-flashx`, structure-first
+perception and `grounded_tools.v2` at
+`b309c9d10233be96082feb96e19ca3bc92290a84`. It completed all cases with raw
+diagnostic outcomes of 3 success and 2 task failure, but
+`run_evidence_valid=false`. The sole formal error was:
 
-If the model ignores the checklist or repeatedly rewrites it without acting,
-stop and analyze prompt/tool-use alignment. If it maintains a coherent
-checklist but still chooses actions that contradict it, that is the first
-evidence for considering a bounded semantic critic. A critic is not admitted
-before that boundary is observed.
+```text
+git identity was dirty or changed during the arm
+```
+
+This was an invocation error: the new output directory was created inside the
+repository, so the final identity gate correctly observed the runner's own
+untracked evidence files. It is not a provider, GUI, schema or case-execution
+failure. The raw traces are retained only as invalid diagnostic evidence and
+must not be used as a benchmark improvement claim.
+
+| Case | Raw outcome | Policy behavior |
+|---|---|---|
+| grid coordinate | success | one structural `SelectAction` |
+| pie/no-delay | success | two structural `SelectAction` calls |
+| multi-target color | task failed | seven structural actions; reactivated an entity while current public state exposed `selected=true`, then submitted |
+| pie | success | two structural `SelectAction` calls |
+| visual addition | task failed | filled, filled again after the public textbox value became `6`, then submitted an environment-rejected answer |
+
+Across the cohort there were 15 policy calls, all 15 resolved as
+`SelectAction`. There were zero `UpdateWorkingMemory` decisions, images,
+argument violations or repairs. Every call's catalog included
+`update_checklist`, but the model never selected it.
+
+## Causal conclusion and stop boundary
+
+This run does not validate or falsify checklist-assisted action quality because
+the checklist mechanism was never exercised. It does falsify the weaker
+assumption that merely offering an optional cognitive tool changes this
+default policy topology. The 3/5 versus prior 1/5 cannot be attributed to the
+new mechanism; both pie successes occurred without it and are consistent with
+the already observed provider variance. The two residual failures remain at
+the same semantic boundary as before: completed-set continuity and aggregate
+answer validation.
+
+An independent critic is still premature: no persisted checklist existed for
+an actor to contradict. Work stops after this analysis. If resumed, the next
+architecture choice must isolate one general variable that actually guarantees
+cognitive continuity, for example a bounded policy-internal initial state
+update or provider-native session memory. It must not infer complexity from
+benchmark names, add task-family rules, or create a second execution path.
+
+The raw invalid diagnostic is preserved at
+[`../runs/p5-m4-6-e-advisory-checklist-five-witness-b309c9d/`](../runs/p5-m4-6-e-advisory-checklist-five-witness-b309c9d/).

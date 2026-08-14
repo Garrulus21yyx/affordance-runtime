@@ -51,10 +51,15 @@ M4.6-E resumed with the minimal advisory-checklist slice at `2758364`. The
 prior clean `90c3997` default `glm-4.1v-thinking-flashx` evidence completed 5/5
 but succeeded 1/5, with all 16 decisions admitted as structural actions and
 zero image inputs, visual sources, argument violations or repairs. The new
-grounded `update_checklist` control preserves bounded model-authored task
-continuity without an environment step or Runtime action authority; critic and
-second-planner designs remain deferred. Fresh default-model five-case
-validation is pending.
+grounded `update_checklist` control can preserve bounded model-authored task
+continuity without an environment step or Runtime action authority. In the
+single subsequent default-model diagnostic, raw outcomes were 3/5 but formal
+evidence was invalid because the in-repository output directory dirtied the
+run identity. All 15 decisions were `SelectAction`; the model never used the
+checklist. No performance improvement is attributed, critic and second-planner
+designs remain deferred, and implementation is paused for an architecture
+choice about guaranteed policy-state initialization versus provider-native
+session continuity.
 See the [current implementation plan](current-implementation-plan.md) and
 [checklist slice](evidence/2026-08-14-advisory-agent-checklist-2758364.md).
 

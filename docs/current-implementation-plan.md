@@ -123,7 +123,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `ADVISORY_CHECKLIST_IMPLEMENTED_NOT_BENCHMARK_VALIDATED / AGENT_SEMANTICS_OPEN / CRITIC_DEFERRED / GENERALIZATION_OPEN` | The clean default `glm-4.1v-thinking-flashx` run at `90c3997` remained 1/5 after tool/schema/projection closure. `2758364` now tests the smallest GlassBrowser-like continuity hypothesis: one typed `update_checklist` control fully replaces bounded model-authored advisory task memory, consumes no environment step, owns no ActionSpace/binding/execution authority, and returns to the existing grounded action → Runtime chain on the next policy call. Structured and dynamic protocols do not falsely claim this capability; primary grounded composition requires it explicitly. No task classifier, second planner, candidate generator, critic, arithmetic/color/count rule or alternate execution path is present. Focused 98-test and affected-boundary 146-test suites, Ruff and `mypy src` pass. Fresh default-model five-case benchmark validation is next. See the [checklist slice](evidence/2026-08-14-advisory-agent-checklist-2758364.md), [stopping analysis](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `PAUSED_AFTER_CHECKLIST_NOT_EXERCISED / DIAGNOSTIC_3_OF_5_FORMAL_EVIDENCE_INVALID / AGENT_SEMANTICS_OPEN / CRITIC_DEFERRED / GENERALIZATION_OPEN` | `2758364` implements the smallest GlassBrowser-like continuity mechanism: typed, advisory `update_checklist` with no environment step or Runtime authority. One default 4.1V diagnostic at `b309c9d` produced raw 3/5, but the formal evidence gate correctly rejected the run because the output directory itself dirtied the repository. More importantly, all 15 policy calls were `SelectAction`; the offered checklist was never selected. Both pie successes therefore cannot be attributed to memory, while color-set continuity and visual-addition aggregation still failed. This falsifies “optional tool availability alone changes cognition,” not the checklist concept. No critic is justified because no persisted checklist existed for the actor to contradict. Implementation and reruns stop here pending an explicit choice about guaranteed policy-internal state initialization or provider-native session continuity. See the [checklist diagnostic](evidence/2026-08-14-advisory-agent-checklist-2758364.md), [raw invalid run](evidence/runs/p5-m4-6-e-advisory-checklist-five-witness-b309c9d/report.json) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -131,14 +131,15 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 
 ## Next admitted slice
 
-The only active slice is clean benchmark falsification of the advisory
-checklist at `2758364`. Run the same frozen five cases with default 4.1V once,
-inspect checklist use and action continuity, and stop for causal analysis if it
-still fails. Runtime must continue to own only deterministic capability,
-legality, binding, execution, currentness and authoritative outcome facts. Do
-not add task-specific rules, reinstate the dormant LocalObjective planner, add
-a critic before checklist/actor contradiction is observed, or repeatedly rerun the
-same five witnesses until a favorable stochastic sample appears.
+No implementation or rerun slice is active. The optional checklist was present
+but unused in the single default-model diagnostic, so the next decision is
+architectural rather than another prompt patch: whether to guarantee one
+bounded policy-internal state-initialization call or preserve provider-native
+session continuity. Runtime must continue to own only deterministic
+capability, legality, binding, execution, currentness and authoritative outcome
+facts. Do not add task-specific rules, reinstate the dormant LocalObjective
+planner, add a critic before checklist/actor contradiction is observed, or
+repeat the same five witnesses until a favorable stochastic sample appears.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and

@@ -1,0 +1,688 @@
+{
+  "case": {
+    "agent_failure_code": "",
+    "case_failure_code": "verified_terminal_task_failure",
+    "case_id": "miniwob-60-60",
+    "case_schema_version": "target-loop-case.v8",
+    "cleanup_exception_class": "",
+    "cleanup_failure_code": "",
+    "cleanup_failures": 0,
+    "exception_class": "",
+    "execution_completed": true,
+    "failure_code": "",
+    "failure_facts": {
+      "agent_failure_code": "",
+      "cleanup_code": "",
+      "cleanup_exception_class": "",
+      "component_code": "",
+      "component_exception_class": "",
+      "component_origin": "none",
+      "harness_integrity_code": "",
+      "policy_failure_code": "",
+      "runtime_failure": null,
+      "runtime_reason_code": "",
+      "task_outcome_code": "verified_terminal_task_failure",
+      "task_outcome_kind": "terminal_failure",
+      "watchdog_code": ""
+    },
+    "failure_origin": "none",
+    "harness_integrity_code": "",
+    "harness_integrity_failures": 0,
+    "harness_schema_version": "target-loop-harness.v6",
+    "last_action_space_option_count": 2,
+    "last_decision_type": "SelectAction",
+    "last_policy_failure_code": "",
+    "last_progress_event_type": "action_effect_evaluated",
+    "last_world_coverage": "complete",
+    "last_world_target_count": 25,
+    "latency_ms": 25555.83243072033,
+    "latest_action_evaluation_status": "unknown",
+    "latest_semantic_attempt_key_digest": "",
+    "latest_task_status": "blocked",
+    "manifest_digest": "b96861e70f60190df85cfd1ddb1541c5cad842c918dab025bd37743deab69cda",
+    "measurements": {
+      "admitted_decision_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "already_satisfied_suppressions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "browsergym_probe_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "browsergym_reset_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_step_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "cleanup_failures": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "click_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "completion_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1818
+      },
+      "currentness_probes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "duplicate_unknown_attempts": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "executions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "fallback_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "fill_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "forbidden_effect_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "invalid_tool_argument_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "model_latency_ms": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 18453.696
+      },
+      "multiple_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "no_progress_terminations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observation_contract_exceptions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 4
+      },
+      "official_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "policy_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "policy_schema_repair_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "prompt_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 5866
+      },
+      "provider_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "provider_retry_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "select_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "sent_unknown_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_tool_catalog_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_zero_call_violations": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "structural_binding_dispatch_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "structural_source_acquired_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 4
+      },
+      "tool_argument_repair_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "tool_catalog_bytes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 18510
+      },
+      "tool_catalog_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 15
+      },
+      "tool_grounding_gap_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "total_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 7684
+      },
+      "turns": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "unknown_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "valid_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "visual_binding_acquired_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_binding_dispatch_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_candidate_disambiguation_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_ambiguous_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_conflict_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_matched_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_unmatched_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_disambiguator_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_disambiguator_selection_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_gate_selected_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_gate_skipped_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 4
+      },
+      "visual_point_grounder_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_point_grounder_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_point_grounding_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_predicate_assessment_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_predicate_classification_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_predicate_classifier_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_proposer_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_abstained_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_other_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_structured_output_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_transport_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_region_proposal_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_source_acquired_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "zero_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      }
+    },
+    "no_progress_count": 0,
+    "partial_episode_available": false,
+    "pending_kind": "",
+    "profile_id": "grounded-tools-v2-structure-first.v1",
+    "runtime_reason_code": "",
+    "same_attempt_streak": 0,
+    "schema_version": "target-loop-case.v8",
+    "seed": 7,
+    "status": "blocked",
+    "suite_id": "m4-6-e-step13-visual-binding-targeted",
+    "terminal_reason_code": null,
+    "termination_origin": "",
+    "watchdog_triggered": false
+  },
+  "perception_profile": "structure-first.v1",
+  "policy_trace": [
+    {
+      "context_id": "context:bafaba5c38e3d81ac941909df1faee08c376dc37230b52e4bd8e1309c7df04c0",
+      "decision": {
+        "action_id": "action:eec129a04a7cea72",
+        "context_id": "context:bafaba5c38e3d81ac941909df1faee08c376dc37230b52e4bd8e1309c7df04c0",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": null,
+      "interaction_protocol": "grounded_tools.v2",
+      "model_image_input_count": 0,
+      "outcome": "SelectAction",
+      "policy_call": 1,
+      "provider_attempts": [
+        {
+          "attempt_number": 1,
+          "failure_code": "",
+          "failure_kind": "",
+          "network_dispatched": true,
+          "origin": "network",
+          "profile_index": 0,
+          "response_id": "202608140830291b5be5cd35774598",
+          "scheduled_delay_s": 0.0,
+          "status": "accepted"
+        }
+      ],
+      "runtime_transition": {
+        "action_evaluation_status": "effect_confirmed",
+        "action_evidence": {},
+        "action_evidence_fields": [],
+        "admission_reason_code": "action_admitted",
+        "admission_status": "admitted",
+        "destination_id": "",
+        "dispatch_status": "sent",
+        "feedback": null,
+        "reason_code": "action_effect_confirmed",
+        "resulting_status": "",
+        "semantic_action": "fill",
+        "sequence": 1,
+        "target_id": "entity:15cd86622bcb26d7e9e9ed0ef7528c15",
+        "task_evaluation_status": "incomplete",
+        "task_outcome_code": "verified_running",
+        "task_outcome_kind": "running_incomplete",
+        "transition_id": "transition:1:797ad1032ee119ff14a3"
+      },
+      "selected_grounding": {
+        "label": "",
+        "marked": false,
+        "ref": "E20",
+        "role": "textbox",
+        "semantic_action": "fill",
+        "state": {
+          "appearance.color_family": "gray",
+          "required": false,
+          "value": ""
+        }
+      },
+      "selected_source_modalities": [
+        "structural"
+      ],
+      "tool_argument_repair_count": 0,
+      "tool_argument_repaired_operation_match": false,
+      "tool_argument_selected_operation": "",
+      "tool_argument_violation_code": "",
+      "tool_argument_violation_paths": [],
+      "tool_catalog_bytes": 5903,
+      "tool_catalog_count": 5,
+      "tool_resolution_code": "accepted",
+      "tool_transport": "compact_json",
+      "visible_action_count": 2
+    },
+    {
+      "context_id": "context:4235338b29d9d8cd0748a136776949ae476d222ad62109a5ca89989590172a47",
+      "decision": {
+        "action_id": "action:71eab9596bd2c23d",
+        "context_id": "context:4235338b29d9d8cd0748a136776949ae476d222ad62109a5ca89989590172a47",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": null,
+      "interaction_protocol": "grounded_tools.v2",
+      "model_image_input_count": 0,
+      "outcome": "SelectAction",
+      "policy_call": 2,
+      "provider_attempts": [
+        {
+          "attempt_number": 1,
+          "failure_code": "",
+          "failure_kind": "",
+          "network_dispatched": true,
+          "origin": "network",
+          "profile_index": 0,
+          "response_id": "2026081408303693f4d91bde1e4a72",
+          "scheduled_delay_s": 0.0,
+          "status": "accepted"
+        }
+      ],
+      "runtime_transition": {
+        "action_evaluation_status": "effect_confirmed",
+        "action_evidence": {},
+        "action_evidence_fields": [],
+        "admission_reason_code": "action_admitted",
+        "admission_status": "admitted",
+        "destination_id": "",
+        "dispatch_status": "sent",
+        "feedback": null,
+        "reason_code": "action_effect_confirmed",
+        "resulting_status": "",
+        "semantic_action": "fill",
+        "sequence": 2,
+        "target_id": "entity:15cd86622bcb26d7e9e9ed0ef7528c15",
+        "task_evaluation_status": "incomplete",
+        "task_outcome_code": "verified_running",
+        "task_outcome_kind": "running_incomplete",
+        "transition_id": "transition:2:9472715dc0315e16c8bb"
+      },
+      "selected_grounding": {
+        "label": "",
+        "marked": false,
+        "ref": "E20",
+        "role": "textbox",
+        "semantic_action": "fill",
+        "state": {
+          "appearance.color_family": "gray",
+          "required": false,
+          "value": "6"
+        }
+      },
+      "selected_source_modalities": [
+        "structural"
+      ],
+      "tool_argument_repair_count": 0,
+      "tool_argument_repaired_operation_match": false,
+      "tool_argument_selected_operation": "",
+      "tool_argument_violation_code": "",
+      "tool_argument_violation_paths": [],
+      "tool_catalog_bytes": 6210,
+      "tool_catalog_count": 5,
+      "tool_resolution_code": "accepted",
+      "tool_transport": "compact_json",
+      "visible_action_count": 2
+    },
+    {
+      "context_id": "context:bdea142e4c9148abb26c22876a17250c0a1fefce39eea9526970d5d8912e9aa8",
+      "decision": {
+        "action_id": "action:3969ea4ae506f0a6",
+        "context_id": "context:bdea142e4c9148abb26c22876a17250c0a1fefce39eea9526970d5d8912e9aa8",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": null,
+      "interaction_protocol": "grounded_tools.v2",
+      "model_image_input_count": 0,
+      "outcome": "SelectAction",
+      "policy_call": 3,
+      "provider_attempts": [
+        {
+          "attempt_number": 1,
+          "failure_code": "",
+          "failure_kind": "",
+          "network_dispatched": true,
+          "origin": "network",
+          "profile_index": 0,
+          "response_id": "202608140830445545b2a998934864",
+          "scheduled_delay_s": 0.0,
+          "status": "accepted"
+        }
+      ],
+      "runtime_transition": {
+        "action_evaluation_status": "unknown",
+        "action_evidence": {
+          "expected_effects": [
+            "external_ui_interaction"
+          ],
+          "observed_effect": "effect_confirmed",
+          "structural_world_changed": true,
+          "target_changed": true,
+          "verification_profile": "structural_target_diff_v1"
+        },
+        "action_evidence_fields": [
+          "expected_effects",
+          "observed_effect",
+          "structural_world_changed",
+          "target_changed",
+          "verification_profile"
+        ],
+        "admission_reason_code": "action_admitted",
+        "admission_status": "admitted",
+        "destination_id": "",
+        "dispatch_status": "sent",
+        "feedback": null,
+        "reason_code": "task_terminal_failure",
+        "resulting_status": "blocked",
+        "semantic_action": "activate",
+        "sequence": 3,
+        "target_id": "entity:b1f4b6f3e5a4bb3d5847956224291272",
+        "task_evaluation_status": "blocked",
+        "task_outcome_code": "verified_terminal_task_failure",
+        "task_outcome_kind": "terminal_failure",
+        "transition_id": "transition:3:d658bc4ee4fc9e05e220"
+      },
+      "selected_grounding": {
+        "label": "Submit",
+        "marked": false,
+        "ref": "E21",
+        "role": "button",
+        "semantic_action": "activate",
+        "state": {
+          "appearance.color_family": "gray"
+        }
+      },
+      "selected_source_modalities": [
+        "structural"
+      ],
+      "tool_argument_repair_count": 0,
+      "tool_argument_repaired_operation_match": false,
+      "tool_argument_selected_operation": "",
+      "tool_argument_violation_code": "",
+      "tool_argument_violation_paths": [],
+      "tool_catalog_bytes": 6397,
+      "tool_catalog_count": 5,
+      "tool_resolution_code": "accepted",
+      "tool_transport": "compact_json",
+      "visible_action_count": 2
+    }
+  ],
+  "profile": "M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
+  "typed_outcome": "task_failed"
+}

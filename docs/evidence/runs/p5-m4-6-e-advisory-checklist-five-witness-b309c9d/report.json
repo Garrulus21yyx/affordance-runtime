@@ -1,0 +1,38 @@
+{
+  "case_ids": [
+    "miniwob-60-05",
+    "miniwob-60-34",
+    "miniwob-60-42",
+    "miniwob-60-49",
+    "miniwob-60-60"
+  ],
+  "completed_cases": 5,
+  "errors": [
+    "git identity was dirty or changed during the arm"
+  ],
+  "generalization_claim_prohibited": true,
+  "grounding_profile": "grounded_tools.v2",
+  "implementation_sha": "b309c9d10233be96082feb96e19ca3bc92290a84",
+  "model_id": "glm-4.1v-thinking-flashx",
+  "model_latency_ms": 73420.798,
+  "outcome_counts": {
+    "success": 3,
+    "task_failed": 2
+  },
+  "perception_profile": "structure-first.v1",
+  "profile": "M4_6_E_STEP13_VISUAL_BINDING_TARGETED",
+  "provider_attempts": 15,
+  "provider_id": "zhipu",
+  "run_evidence_valid": false,
+  "schema_version": "miniwob-perception-ab.v2",
+  "success_count": 3,
+  "total_tokens": 36530,
+  "visual_gate_acceptance": {
+    "accepted": true,
+    "errors": [],
+    "no_effect_opportunities": 0,
+    "no_effect_repeat_violations": 0,
+    "structural_svg_case_count": 3,
+    "witness_case_count": 5
+  }
+}
