@@ -41,6 +41,39 @@ legacy adapters that declare they require it. Focused tests, the full
 `2474 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
 received a fresh live benchmark run.
 
+The current working tree implements a compact referentially closed
+action-candidate boundary. `ContextBuilder` decorates each current option once
+with a bounded public target selector. Per operation/schema group it hoists
+shared target semantics and computes the smallest public facet subset that
+uniquely distinguishes legal choices. The binder renders `actions.groups`; the
+catalog consumes the same `option.operation` and `option.selection_key` and
+maps the admitted semantic value to the existing opaque action binding.
+Objective proposal receives neither this group section nor its action menu.
+Verified grid coordinates and parent-scoped labels use the same bounded facet
+algebra. E-ref is only a fallback for candidates that remain publicly
+indistinguishable. Facts already owned by current candidates are
+omitted only from the grounded provider rendering; canonical
+`AgentContext.world` remains available to every other consumer. Provider JSON
+preserves task-first section order. Ruff, mypy and the full `2487 passed, 27
+skipped` suite pass. Clean snapshot `b6e0546` completed the single seed-7 grid
+witness in one provider call and one dispatch with zero repair, selecting the
+Runtime target at `(1,-2)`. This is focused current live evidence only; the
+complete five-case revalidation remains pending. See the
+[semantic-facet evidence](evidence/2026-08-14-semantic-facet-action-compaction-b6e0546.md).
+
+P5-M4.6-F P0 is implemented locally and full-verified. `ControlTransition`
+captures the matching decision-start `before_task_evaluation` as a root fact;
+`ContextBuilder` deterministically projects only the latest root into a bounded
+`AgentTransitionDigestView` and stores it in disposable
+`AgentContext.last_transition`. The view contains previous decision, execution,
+effect and task/criterion/output status transitions. The latest root is not
+also rendered in older `history`. Existing confirmation and user-input
+continuation reducers replace the same root slot and consume its identity once.
+There is no `RuntimeTransitionDigest`, retained digest store, model call,
+working memory, updater, canonical world graph delta or semantic ActionSpace
+delta. Ruff, mypy and the full `2485 passed, 27 skipped` suite pass; live
+benchmark evidence remains unverified.
+
 The target path now has:
 
 | Capability | Status |
@@ -56,7 +89,7 @@ The target path now has:
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded transition state | `INTEGRATED_NON_DEFAULT`; evaluations are retained on canonical ControlTransition values |
-| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; every accepted decision produces one immutable root; terminal exceptions latch the session; ordered execution/acquisition/probe/evaluation facts are monotonic; confirmation continuation updates that root exactly once |
+| lossless ControlTransition | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; every accepted decision owns one root slot whose immutable value may be replaced/finalized exactly once by its admitted confirmation continuation; terminal exceptions latch the session; ordered execution/acquisition/probe/evaluation facts are monotonic |
 | local ProgressController | `CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS`; other semantic actions are not precondition-contained and this owner is not a planner |
 | SurfaceAdapter / UnifiedWorldEnvironment | complete for DOM, Visual-only, and WoT single-surface minimums; semantic fusion pending |
 | StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
@@ -728,6 +761,7 @@ M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
 `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN`;
+M4.6-F is `IMPLEMENTED_LOCALLY / FULL_VERIFIED_2485_PASS_27_SKIP / LIVE_UNVERIFIED`;
 the atomic-memory and updater diagnostics remain only negative evidence;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,

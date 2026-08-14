@@ -8,12 +8,18 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
 from affordance_runtime.model_boundary.control_feedback_projection import AgentControlFeedbackView
 from affordance_runtime.model_boundary.world_projection import ModelWorldView, PublicFactView
+
+if TYPE_CHECKING:
+    from affordance_runtime.model_boundary.transition_digest_projection import (
+        AgentTransitionDigestView,
+    )
 
 
 class DecisionMode(StrEnum):
@@ -180,6 +186,7 @@ class AgentContext:
     control_feedback: AgentControlFeedbackView | None = None
     image_inputs: tuple[AgentImageInput, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
+    last_transition: AgentTransitionDigestView | None = None
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -189,3 +196,10 @@ class AgentContext:
             raise TypeError("AgentContext image inputs must be bounded and typed")
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")
+        if self.last_transition is not None:
+            from affordance_runtime.model_boundary.transition_digest_projection import (
+                AgentTransitionDigestView,
+            )
+
+            if not isinstance(self.last_transition, AgentTransitionDigestView):
+                raise TypeError("AgentContext last transition must be a typed projection")

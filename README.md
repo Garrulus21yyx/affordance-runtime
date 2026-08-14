@@ -10,7 +10,8 @@ thick, infrastructure-thin execution**. The loop is powerful because it sees,
 grounds, generates legal actions, validates, and replans well—not because it
 contains a large transaction kernel.
 
-The project center is:
+The target project center is below. The locally implemented M4.6-F P0 projects
+the latest canonical root once as `last_transition`; live revalidation remains open:
 
 ```text
 TaskGoal
@@ -24,6 +25,7 @@ TaskGoal
 → fresh WorldObservation from execute or capability-admitted capture
 → validated ActionEvaluation / TaskEvaluation
 → bounded ControlTransition + AgentLoopState update
+→ next context projects that same root as optional last_transition
 → continue / ask / stop
 ```
 
@@ -100,8 +102,9 @@ The next target slices are deliberately narrow and separate:
 P5-M4.5-A typed acquisition lifecycle: COMPLETE_NON_DEFAULT
 → P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED
 → P5-M4.5-C diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
-→ P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC
+→ P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E prior DOM-first evidence DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC; current context cutover SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN
   (M4.6-B residual contract implementation `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`)
+→ P5-M4.6-F latest-transition projection: IMPLEMENTED_LOCALLY / FULL_VERIFIED_2485_PASS_27_SKIP / LIVE_UNVERIFIED
 → P5-M4.7 supported-subset multi-seed gate: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 → P5-E VerifiedTaskState + TaskProgressAuditor + milestone planning
 ```
@@ -120,7 +123,8 @@ failure tests remain the retry evidence. D remains
 implemented-not-verified pending independent held-out review, so M4.6-E is blocked.
 `ControlTransition` remains run-scoped, in-memory and non-replayable. Dispatch,
 acquisition and after-world facts are recorded monotonically before evaluator
-completion; confirmation continuation updates the same root. AgentLoopState
+completion; an admitted confirmation continuation may replace/finalize the
+immutable value in the same root slot exactly once. AgentLoopState
 remains current-state authority. The baseline is retained, not
 rolled back, and transaction/commit/recovery machinery remains frozen. See
 [Implementation Status](docs/implementation-status.md) for exact code truth and

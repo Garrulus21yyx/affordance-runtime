@@ -124,6 +124,8 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
 | P5-M4.6 evidence-directed remediation | `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN / GENERALIZATION_OPEN` | The mandatory updater diagnosed at `cdb4bc9` is removed rather than repaired. `AgentContext` is the sole internal task/world/progress/history/pending/budget context; one YAML-backed binder creates one provider input; the valid grounded action path makes one semantic call. Catalog owns only current tools and opaque bindings. Legacy serialization is generated only for legacy adapters, not on the grounded path. No critic, second planner, working-memory envelope, task rule or alternate Runtime path is admitted. Focused tests, full `2474 passed, 27 skipped`, Ruff and mypy are green. Historical updater and atomic-memory runs remain negative evidence. See the [active convergence plan](plans/2026-08-14-single-agent-context-convergence.md). |
+| P5-M4.6-E action-candidate closure | `SEMANTIC_FACET_COMPACTION_IMPLEMENTED_LOCALLY / FULL_VERIFIED_2487_PASS_27_SKIP / FOCUSED_GRID_LIVE_PASS / FULL_FIVE_PENDING` | `ContextBuilder` closes each current option once over bounded public target semantics. Per operation/schema group it hoists shared semantics, mechanically chooses the smallest unique public facet set, and makes the Actor return only that difference; Runtime privately maps it to the existing action ID. Coordinates and parent-scoped labels use the same algebra. E-ref remains only a fallback for publicly indistinguishable candidates. Ruff, mypy and the full suite pass. Exact clean snapshot `b6e0546` completed the single seed-7 grid witness in one provider call and one dispatch with zero repair; this does not replace the five-case gate. |
+| P5-M4.6-F latest-transition projection | `IMPLEMENTED_LOCALLY / FULL_VERIFIED_2489_PASS_24_SKIP / LIVE_EXERCISED_NOT_ISOLATED` | `AgentContext.last_transition` is a deterministic bounded projection of the latest canonical `ControlTransition`. P0 exposes typed previous decision, execution outcome, effect assessment and criterion/output/task-status transitions. The root captures the matching before evaluation; the existing continuation reducer replaces that same immutable root once. The latest item is removed from older history. No provider call, memory updater, parallel Runtime digest store, world graph diff or ActionSpace diff is present. |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -131,14 +133,12 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 
 ## Next admitted slice
 
-Finish and push the single-`AgentContext` convergence slice. The updater is not
-a supported contract to repair: it was a second cognition path and a second
-context owner. The current grounded path instead binds original task, fresh
-Unified World, verified progress, bounded chronological action/effect history,
-pending state, budgets, control feedback and current tools into one model call.
-After final local verification, the next evidence step is one fresh default-4.1V
-targeted run. If it fails, analyze and stop; do not add a critic, task rule,
-Runtime semantic guard, LocalObjective planner or favorable-score retry.
+P5-M4.6-E and M4.6-F P0 are locally full-verified. The focused semantic-grid
+binding witness passes on the exact-final snapshot `0c36f67`; it does not replace the gate. The next
+admitted evidence step is one fresh default-4.1V five-witness benchmark using
+the unchanged valid one-call grounded action path. If it fails, analyze and stop; do not add
+a critic, task rule, model-authored memory, parallel digest store, Runtime
+semantic guard, LocalObjective planner or favorable-score retry.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and

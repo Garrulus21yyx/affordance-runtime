@@ -1,0 +1,23 @@
+{
+  "case_ids": [
+    "miniwob-60-05"
+  ],
+  "completed_cases": 1,
+  "errors": [],
+  "generalization_claim_prohibited": true,
+  "grounding_profile": "grounded_tools.v2",
+  "implementation_sha": "b6e054630c013fd1889d961becde83896290b3f7",
+  "model_id": "glm-4.1v-thinking-flashx",
+  "model_latency_ms": 5752.048,
+  "outcome_counts": {
+    "success": 1
+  },
+  "perception_profile": "structure-first.v1",
+  "profile": "M4_6_E_SEMANTIC_FACET_GRID_FOCUSED",
+  "provider_attempts": 1,
+  "provider_id": "zhipu",
+  "run_evidence_valid": true,
+  "schema_version": "miniwob-perception-ab.v2",
+  "success_count": 1,
+  "total_tokens": 3335
+}

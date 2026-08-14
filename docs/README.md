@@ -17,7 +17,8 @@ Exactly two documents define the target and its migration:
 The retired task-contract-centered filename is a historical pointer only and
 does not define current Runtime authority.
 
-Core target order:
+Core target order follows. The M4.6-F P0 `last_transition` projection is locally
+implemented and full-verified; live revalidation remains open:
 
 ```text
 TaskGoal
@@ -30,6 +31,7 @@ TaskGoal
 → fresh WorldObservation from execute or capability-admitted capture
 → ActionEvaluation + TaskEvaluation
 → bounded ControlTransition + AgentLoopState update
+→ next context projects that same root as optional last_transition
 → continue / reobserve / ask user / stop
 ```
 
@@ -86,8 +88,9 @@ formal exit, performance and generalization remain unclaimed. M4.6 is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`; M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, and M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; M4.6-E is
-`ARCHITECTURE_REOPENED / IMPLEMENTATION_IN_PROGRESS / GENERALIZATION_OPEN` with task-grounded perception and
-non-authoritative hypothesis vertical slices implemented. Grounded-tools v2
+`SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 /
+LIVE_NOT_RUN / GENERALIZATION_OPEN`; its earlier task-grounded perception and
+non-authoritative hypothesis vertical slices remain implementation history. Grounded-tools v2
 already reuses the SoM renderer and passed its single-BrowserGym-source targeted
 gate. Runtime-owned source selection, provenance-preserving WorldFusion,
 one-route selection, a per-frame visual evidence gate, explicit same-acquisition
@@ -135,7 +138,11 @@ M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B
 COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C
 COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D
 REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E
-DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`.
+prior DOM-first evidence DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED /
+LIVE_GATE_FAILED_DIAGNOSTIC; current context cutover
+SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 /
+LIVE_NOT_RUN;
+M4.6-F LATEST_TRANSITION_P0_IMPLEMENTED_LOCALLY_FULL_VERIFIED_LIVE_UNVERIFIED`.
 Implementation Status is authoritative.
 
 ## 3. Maintained policies and contracts

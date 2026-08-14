@@ -91,20 +91,18 @@ def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
 ) -> GroundedToolCatalog:
-    if context.actions.options and (not context.grounding.entities or not context.grounding.target_refs):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    ref_by_target = dict(context.grounding.target_refs)
     grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     objective_open = context.progress.local_objective_open
     if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL and objective_open:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     if phase is GroundedToolPhase.ACTION_SELECTION:
         for option in context.actions.options:
-            ref = ref_by_target.get(option.target_id)
-            if ref is None:
+            if not option.target_ref or not option.selection_key or not option.operation:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-            verb = _verb(option.semantic_action)
-            grouped.setdefault((verb, _shape_key(verb, option.parameter_schema)), []).append((ref, option))
+            grouped.setdefault(
+                (option.operation, _shape_key(option.operation, option.parameter_schema)),
+                [],
+            ).append((option.selection_key, option))
 
     specs: list[ToolSpec] = []
     bindings: list[object] = []
@@ -369,10 +367,6 @@ def resolve_grounded_objective_call(
     return outcome
 
 
-def _verb(semantic_action: str) -> str:
-    return {"activate": "click", "fill": "fill", "select": "select"}.get(semantic_action, semantic_action)
-
-
 def _shape_key(verb: str, schema: Mapping[str, object]) -> str:
     return verb + ":" + json.dumps(to_json_compatible(schema), sort_keys=True, separators=(",", ":"))
 
@@ -410,7 +404,8 @@ def _local_objective_schema() -> dict[str, object]:
 def _tool_description(verb: str) -> str:
     return (
         f"{verb} one entity authorized by the current Runtime action page. "
-        "Pass exactly one required target E-ref from world.entities."
+        "Pass exactly one semantic target choice from the matching actions.groups entry. "
+        "Runtime resolves that choice to one current private action binding."
     )
 
 

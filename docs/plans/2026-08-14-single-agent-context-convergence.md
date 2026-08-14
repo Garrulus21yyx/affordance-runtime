@@ -2,7 +2,7 @@
 
 Date: 2026-08-14
 
-Status: `IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN`
+Status: `CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LATEST_TRANSITION_P0_IMPLEMENTED_LOCALLY_FULL_VERIFIED / LIVE_NOT_RUN`
 
 ## Goal
 
@@ -65,6 +65,138 @@ reason to add another repair or cognition stage.
 - no benchmark rerun in this implementation slice;
 - no deletion of Runtime control history, Unified World or public grounding;
 - no claim that one-call cognition is benchmark-closed before fresh evidence.
+
+## Adopted follow-up: one latest-transition projection
+
+The one-context cutover removed duplicate context and model-memory ownership,
+but the current snapshot and bounded history still leave the Actor to infer the
+latest causal link. The implemented P0 adds one optional `last_transition`
+field to AgentContext. Its authority chain is intentionally singular:
+
+```text
+WorldObservation / receipts / ActionEvaluation / TaskEvaluation
+                              |
+                              v
+               exactly one root ControlTransition
+                              |
+                    one-way bounded projection
+                              v
+                  AgentTransitionDigestView
+                              |
+                              v
+                 AgentContext.last_transition
+```
+
+`ControlTransition` remains the sole canonical accounting record for an
+accepted decision. No independent Runtime digest may be retained beside it. An
+internal typed delta, if needed because before/after values are available only
+at transition closure, is an immutable child of the same root and shares its
+lineage and lifecycle. The model-facing digest is disposable and cannot be
+used to reconstruct Runtime state.
+
+P0 contains only:
+
+- typed previous decision and public semantic operands;
+- execution receipt outcome;
+- ActionEvaluation-owned effect assessment;
+- TaskEvaluation-derived task, criterion and output status transitions, with
+  missing baselines represented explicitly.
+
+The following owners remain independent and are not copied into the digest:
+
+- `progress`: authoritative current verified/unresolved snapshot projection;
+- `world`: current public Unified World projection;
+- `actions`: sole current model-facing selection set;
+- `control_feedback`: sole current Runtime next-decision constraint;
+- `history`: older bounded action anchors.
+
+The projection is deterministic, public-safe, bounded and adds no provider
+call. Optional natural-language leaves are mechanically rendered from typed
+public fields only. Model-authored memory, reflection and task-state updater
+remain outside this slice.
+
+Canonical world graph mutation and semantic ActionSpace delta are deferred
+extensions. They require benchmark evidence after P0, comparable acquisition
+coverage, pre-paging canonical diff, stable semantic action keys and truthful
+truncation. They cannot introduce a second world/action authority.
+
+## Action-agent horizon boundary
+
+The target Action Agent is intentionally short-horizon. Its `TaskGoal` must be
+scoped like the current GUI benchmark cases: decide and execute the next
+observation-local semantic action, then return the authoritative transition and
+fresh world to its caller. It is not responsible for keeping an unresolved
+top-level business goal alive across catalog, details, cart, checkout and
+confirmation pages.
+
+A long-horizon instruction such as `下单 MacBook Air` belongs to a higher-level
+orchestrator/planning agent. That owner may issue consecutive bounded action
+tasks such as:
+
+```text
+top-level goal: 下单 MacBook Air
+  -> action task: add MacBook Air to the cart
+  -> inspect returned transition/current world
+  -> action task: proceed from the current cart
+  -> inspect returned transition/current world
+  -> action task: confirm the admitted simulated order
+```
+
+Each action task has its own current success contract. The higher-level owner,
+not the Action Agent's `TaskEvaluation`, decides whether another subtask is
+needed. Therefore this slice must not make `UNKNOWN` nonterminal merely because
+some current action exists, reinterpret arbitrary local page change as progress
+toward a top-level goal, add long-horizon memory, or weaken confirmation and
+effect-verification boundaries.
+
+`AgentContext.last_transition` supports this split by explaining the latest
+bounded action inside one Action Agent call chain. It is not a long-horizon
+planner or memory store. The local `semantic-shop.html` fixture is retained only
+as a future orchestration probe and is not registered in the current Action
+Agent mock benchmark manifest.
+
+## Referentially closed action-candidate implementation plan
+
+Status: `SEMANTIC_FACET_COMPACTION_IMPLEMENTED / FULL_VERIFIED / FOCUSED_LIVE_PASS / FULL_GATE_OPEN`
+
+Goal: remove the model-side join between `world.entities`, the current action
+page and a bare tool-target enum. One `ContextBuilder` projection must produce
+the current public action candidates; the grounded catalog and provider binder
+must consume that projection without rebuilding target semantics.
+
+| Step | Status | Deliverable |
+|---|---|---|
+| Audit current action/context/catalog/binder ownership and compatibility consumers | complete | exact read/write/identity map |
+| Add one bounded referentially closed candidate view under `AgentContext.actions` | complete | verb + bounded target selector + deterministic minimal semantic discriminator |
+| Make grounded catalog and binder consume the same candidate projection | complete | compact groups and tool enums consume the option-owned key; no entity/action rejoin |
+| Keep model output minimal and semantic | complete | shared structure once; Actor returns only the differing public value plus declared business value |
+| Narrow repair semantics | complete | target replacement is a fresh semantic selection, not format-only repair |
+| Add ownership, privacy, budget, determinism and grid-regression properties | complete | focused and architecture tests |
+| Update normative/status docs and run fresh-reader review | complete | first review found and implementation removed objective-phase leakage and target-drift repair; final re-review found no blocker |
+| Run proportional full verification | complete | focused/architecture tests, Ruff, mypy and full `2487 passed, 27 skipped` suite pass |
+| Run one exact focused live regression | complete | clean `b6e0546`, grid seed 7, 1/1 success, one provider call/dispatch, zero repair |
+| Revalidate unchanged five-witness gate | pending | required before any generalization or closure claim |
+
+Non-goals: no task-text coordinate parser, benchmark-specific candidate
+narrowing, per-target tool explosion, screen-coordinate action argument,
+parallel action catalog, model-authored memory, or new provider call.
+
+## M4.6-F P0 implementation workplan
+
+Status: `IMPLEMENTED_LOCALLY / FULL_VERIFIED_2485_PASS_27_SKIP / LIVE_UNVERIFIED`
+
+| Step | Status | Files / evidence |
+|---|---|---|
+| Audit root transition, continuation reducer, current projection and context budget boundaries | complete | before evaluation is available at scope creation; continuation already replaces one root and is exactly-once guarded |
+| Define bounded immutable `AgentTransitionDigestView` P0 contract | complete | `agent/control_transition.py`, `model_boundary/transition_digest_projection.py` |
+| Project only the latest canonical root into `AgentContext.last_transition` | complete | `model_boundary/context.py`, `context_builder.py`, `budgets.py`; no retained digest store or provider call |
+| Make continuation replace/finalize the same root-derived projection exactly once | complete | existing reducer root replacement + consumed-root guard; projection/property regression added |
+| Render the view through the single grounded context binder | complete | `grounded_policy_context.py`, `grounded_agent.yaml`; latest item removed from older history |
+| Add owner, projection, exceptional-path, budget and no-call properties | complete | `test_transition_digest_projection.py`, control/context/architecture regressions |
+| Update implementation truth and run full verification | complete | Ruff, mypy, full `2485 passed, 27 skipped`; live benchmark remains separate |
+
+Implementation files modified by each step must be recorded in this table or
+the final status section before the slice is marked locally verified.
 
 ## Falsifiable exit criteria
 

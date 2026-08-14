@@ -12,6 +12,7 @@ from affordance_runtime.agent.progress_projection import project_progress_events
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
+from affordance_runtime.model_boundary.action_candidate_projection import close_action_candidates
 from affordance_runtime.model_boundary.budgets import (
     DEFAULT_MAX_TOTAL_WAIT_MS,
     BoundedSection,
@@ -36,6 +37,7 @@ from affordance_runtime.model_boundary.control_transition_projection import (
 from affordance_runtime.model_boundary.grounding_projection import GroundingProjection
 from affordance_runtime.model_boundary.projection import project_action_page
 from affordance_runtime.model_boundary.task_projection import project_task
+from affordance_runtime.model_boundary.transition_digest_projection import project_latest_transition
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
@@ -112,7 +114,10 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        history_items = project_control_transitions(state.recent_control_transitions)[-self.budget.max_history_turns :]
+        earlier_transition_total = max(0, state.control_transition_total_count - 1)
+        history_items = project_control_transitions(
+            state.recent_control_transitions[:-1]
+        )[-self.budget.max_history_turns :]
         identity = _context_identity(state, action_space, page, context_generation)
         truncation = {
             "intent": project_intent_context(intent_context, self.budget).excerpts.truncated,
@@ -121,12 +126,19 @@ class ContextBuilder:
             "conflicts": world.conflicts.truncated,
             "artifacts": world.artifact_summaries.truncated,
             "actions": actions.truncated,
-            "history": state.control_transition_total_count > len(history_items),
+            "history": earlier_transition_total > len(history_items),
         }
         grounding = self.grounding_projection.project(
             state.current_observation,
             world,
             actions,
+        )
+        actions = close_action_candidates(actions, grounding.index)
+        last_transition = project_latest_transition(
+            state.recent_control_transitions,
+            grounding.index,
+            max_progress_changes=self.budget.max_transition_progress_changes,
+            max_evidence_refs=self.budget.max_transition_evidence_refs,
         )
         context = AgentContext(
             identity.context_id,
@@ -137,7 +149,7 @@ class ContextBuilder:
             actions,
             BoundedSection(
                 history_items,
-                state.control_transition_total_count,
+                earlier_transition_total,
                 truncation["history"],
             ),
             _pending_view(state),
@@ -151,6 +163,7 @@ class ContextBuilder:
             project_control_feedback(state.pending_control_feedback),
             grounding.images,
             grounding.index,
+            last_transition,
         )
         return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
 

@@ -387,15 +387,19 @@ def test_non_action_decisions_are_projected_into_recurrent_semantic_history() ->
                     "refresh public state",
                 )
             if self.calls == 2:
-                observed = context.history.items[-1]
+                observed = context.last_transition
+                assert observed is not None
+                observed = observed.previous_decision
                 assert observed.decision_kind == "requestobservation"
-                assert observed.semantic_summary["subject_id"] == "shared-toggle"
-                assert observed.semantic_summary["reason"] == "refresh public state"
+                assert observed.details["subject_id"] == "shared-toggle"
+                assert observed.details["reason"] == "refresh public state"
                 return RequestActionPage(context.context_id, query="enable")
-            paged = context.history.items[-1]
+            latest = context.last_transition
+            assert latest is not None
+            paged = latest.previous_decision
             assert paged.decision_kind == "requestactionpage"
-            assert paged.semantic_summary["query"] == "enable"
-            assert paged.semantic_summary["result"] in {"page_changed", "page_unchanged"}
+            assert paged.details["query"] == "enable"
+            assert paged.details["result"] in {"page_changed", "page_unchanged"}
             return Abort(context.context_id, "history verified", "policy")
 
     async def scenario() -> None:

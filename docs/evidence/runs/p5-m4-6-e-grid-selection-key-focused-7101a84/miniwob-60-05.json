@@ -1,0 +1,555 @@
+{
+  "case": {
+    "agent_failure_code": "",
+    "case_failure_code": "",
+    "case_id": "miniwob-60-05",
+    "case_schema_version": "target-loop-case.v8",
+    "cleanup_exception_class": "",
+    "cleanup_failure_code": "",
+    "cleanup_failures": 0,
+    "exception_class": "",
+    "execution_completed": true,
+    "failure_code": "",
+    "failure_facts": {
+      "agent_failure_code": "",
+      "cleanup_code": "",
+      "cleanup_exception_class": "",
+      "component_code": "",
+      "component_exception_class": "",
+      "component_origin": "none",
+      "harness_integrity_code": "",
+      "policy_failure_code": "",
+      "runtime_failure": null,
+      "runtime_reason_code": "",
+      "task_outcome_code": "verified_success",
+      "task_outcome_kind": "terminal_success",
+      "watchdog_code": ""
+    },
+    "failure_origin": "none",
+    "harness_integrity_code": "",
+    "harness_integrity_failures": 0,
+    "harness_schema_version": "target-loop-harness.v6",
+    "last_action_space_option_count": 25,
+    "last_decision_type": "SelectAction",
+    "last_policy_failure_code": "",
+    "last_progress_event_type": "",
+    "last_world_coverage": "complete",
+    "last_world_target_count": 54,
+    "latency_ms": 7863.8552483171225,
+    "latest_action_evaluation_status": "unknown",
+    "latest_semantic_attempt_key_digest": "",
+    "latest_task_status": "complete",
+    "manifest_digest": "1aa5927619e01c6c486b4b589295e782ff512d35fba5a49a62546df9f0f8ff75",
+    "measurements": {
+      "admitted_decision_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "already_satisfied_suppressions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "browsergym_probe_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_reset_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "browsergym_step_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "cleanup_failures": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "click_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "completion_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 362
+      },
+      "currentness_probes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "duplicate_unknown_attempts": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "executions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "fallback_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "fill_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "forbidden_effect_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "invalid_tool_argument_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "model_latency_ms": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 4461.422
+      },
+      "multiple_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "no_progress_terminations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observation_contract_exceptions": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "observations": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "official_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "policy_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "policy_schema_repair_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "prompt_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 4955
+      },
+      "provider_attempts": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "provider_retry_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "select_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "sent_unknown_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_tool_catalog_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "stale_zero_call_violations": {
+        "measured": true,
+        "opportunities": 0,
+        "unit": "count",
+        "value": 0
+      },
+      "structural_binding_dispatch_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "structural_source_acquired_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "tool_argument_repair_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "tool_catalog_bytes": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1831
+      },
+      "tool_catalog_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 3
+      },
+      "tool_grounding_gap_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "total_tokens": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 5317
+      },
+      "turns": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "unknown_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "valid_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 1
+      },
+      "visual_binding_acquired_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_binding_dispatch_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_candidate_disambiguation_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_ambiguous_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_conflict_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_matched_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_correspondence_unmatched_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_disambiguator_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_disambiguator_selection_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_gate_selected_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_gate_skipped_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 2
+      },
+      "visual_point_grounder_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_point_grounder_success_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_point_grounding_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_predicate_assessment_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_predicate_classification_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_predicate_classifier_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_proposer_calls": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_abstained_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_other_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_structured_output_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_provider_transport_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_region_proposal_failure_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "visual_source_acquired_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      },
+      "zero_tool_call_count": {
+        "measured": true,
+        "opportunities": null,
+        "unit": "count",
+        "value": 0
+      }
+    },
+    "no_progress_count": 0,
+    "partial_episode_available": false,
+    "pending_kind": "",
+    "profile_id": "grounded-tools-v2-structure-first.v1",
+    "runtime_reason_code": "",
+    "same_attempt_streak": 0,
+    "schema_version": "target-loop-case.v8",
+    "seed": 7,
+    "status": "done",
+    "suite_id": "m4-6-e-grid-selection-key-focused-v2",
+    "terminal_reason_code": null,
+    "termination_origin": "runtime",
+    "watchdog_triggered": false
+  },
+  "perception_profile": "structure-first.v1",
+  "policy_trace": [
+    {
+      "context_id": "context:97a1a86260898a77f6dc408af0de45d9e7b2961ec31c4fd552bf1fc73baadc97",
+      "decision": {
+        "action_id": "action:e10d3770d0aeee35",
+        "context_id": "context:97a1a86260898a77f6dc408af0de45d9e7b2961ec31c4fd552bf1fc73baadc97",
+        "kind": "SelectAction"
+      },
+      "decision_mode": "act",
+      "exception": "",
+      "feedback": null,
+      "interaction_protocol": "grounded_tools.v2",
+      "model_image_input_count": 0,
+      "outcome": "SelectAction",
+      "policy_call": 1,
+      "policy_model_call_count": 1,
+      "provider_attempts": [
+        {
+          "attempt_number": 1,
+          "failure_code": "",
+          "failure_kind": "",
+          "network_dispatched": true,
+          "origin": "network",
+          "profile_index": 0,
+          "response_id": "2026081418222234cbb221d537494a",
+          "scheduled_delay_s": 0.0,
+          "status": "accepted"
+        }
+      ],
+      "runtime_transition": {
+        "action_evaluation_status": "unknown",
+        "action_evidence": {
+          "expected_effects": [
+            "external_ui_interaction"
+          ],
+          "observed_effect": "effect_confirmed",
+          "structural_world_changed": true,
+          "target_changed": true,
+          "verification_profile": "structural_target_diff_v1"
+        },
+        "action_evidence_fields": [
+          "expected_effects",
+          "observed_effect",
+          "structural_world_changed",
+          "target_changed",
+          "verification_profile"
+        ],
+        "admission_reason_code": "action_admitted",
+        "admission_status": "admitted",
+        "destination_id": "",
+        "dispatch_status": "sent",
+        "feedback": null,
+        "reason_code": "task_complete",
+        "resulting_status": "done",
+        "semantic_action": "activate",
+        "sequence": 1,
+        "target_id": "entity:567790d87d1773b197ea30e18bef5085",
+        "task_evaluation_status": "complete",
+        "task_outcome_code": "verified_success",
+        "task_outcome_kind": "terminal_success",
+        "transition_id": "transition:1:ea08c25b4a71d6deb2f8"
+      },
+      "selected_grounding": {
+        "label": "",
+        "marked": false,
+        "ref": "E38",
+        "role": "clickable",
+        "semantic_action": "activate",
+        "state": {
+          "appearance.color_family": "other",
+          "grid_coordinate": {
+            "x": 1,
+            "y": -2
+          },
+          "grid_coordinate_confidence": 1.0,
+          "grid_membership": {
+            "column_index": 3,
+            "grid_id": "grid:e7667ca06579d53e",
+            "row_index": 4
+          }
+        }
+      },
+      "selected_source_modalities": [
+        "structural"
+      ],
+      "tool_argument_repair_count": 0,
+      "tool_argument_repaired_operation_match": false,
+      "tool_argument_selected_operation": "",
+      "tool_argument_violation_code": "",
+      "tool_argument_violation_paths": [],
+      "tool_catalog_bytes": 1831,
+      "tool_catalog_count": 3,
+      "tool_resolution_code": "accepted",
+      "tool_transport": "compact_json",
+      "visible_action_count": 25
+    }
+  ],
+  "profile": "M4_6_E_GRID_SELECTION_KEY_FOCUSED_V2",
+  "typed_outcome": "success"
+}

@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
@@ -100,8 +100,11 @@ class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     @field_validator("target")
     @classmethod
     def _target(cls, value: str) -> str:
-        if value and (not value.startswith("E") or not value[1:].isdigit()):
-            raise ValueError("grounded target ref is invalid")
+        # The dynamically generated Literal is the exact current-candidate
+        # authority. This base validator only bounds the public call-local
+        # handle; it must not re-impose the superseded E-ref representation.
+        if len(value) > 240 or any(ord(character) < 32 for character in value):
+            raise ValueError("grounded target selection key is invalid")
         return value
 
     def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
@@ -250,9 +253,18 @@ class _GroundedAdapterBase:
             object.__setattr__(self, "last_argument_violation_code", issue.code.value)
             object.__setattr__(self, "last_argument_violation_paths", issue.public_field_paths)
             object.__setattr__(self, "last_selected_operation", spec.name)
+            if _semantic_target_violation(spec, issue.public_field_paths):
+                # A different E-ref is a different GUI decision, not argument-format repair.
+                raise
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
             object.__setattr__(self, "last_argument_repair_count", 1)
-            repaired = await self._repair_selected_operation(messages, spec, issue, payload_base)
+            repaired = await self._repair_selected_operation(
+                messages,
+                spec,
+                issue,
+                payload_base,
+                call,
+            )
             object.__setattr__(self, "last_repaired_operation_match", repaired.name == call.name)
             if repaired.name != call.name:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
@@ -361,8 +373,10 @@ class _GroundedAdapterBase:
         spec: ToolSpec,
         issue,
         payload_base: type[_GroundedCommandPayloadBase],
+        original_call: ToolCall,
     ) -> ToolCall:
-        repair_messages = _argument_repair_messages(messages, spec, issue)
+        repair_spec = _target_fixed_repair_spec(spec, original_call)
+        repair_messages = _argument_repair_messages(messages, repair_spec, issue)
         if self.transport_kind is not ToolTransportKind.COMPACT_JSON:
             generate = getattr(self.port, "generate_tool_calls", None)
             if generate is None:
@@ -370,7 +384,7 @@ class _GroundedAdapterBase:
             object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             calls = await generate(
                 repair_messages,
-                (spec,),
+                (repair_spec,),
                 self.config,
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
             )
@@ -378,10 +392,14 @@ class _GroundedAdapterBase:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
             if len(calls) != 1:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
-            return calls[0]
-        payload_type = _command_payload_type((spec,), payload_base=payload_base)
-        payload = await self._generate_structured(repair_messages, payload_type)
-        return ToolCall(payload.op, payload.command_arguments(spec))
+            repaired = calls[0]
+        else:
+            payload_type = _command_payload_type((repair_spec,), payload_base=payload_base)
+            payload = await self._generate_structured(repair_messages, payload_type)
+            repaired = ToolCall(payload.op, payload.command_arguments(repair_spec))
+        if _target_changed(original_call, repaired, repair_spec):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        return repaired
 
 
 @dataclass(frozen=True)
@@ -525,13 +543,59 @@ def _command_payload_type(
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
-    digest = hashlib.sha256("\0".join(names).encode()).hexdigest()[:12]
+    target_refs = tuple(dict.fromkeys(
+        str(ref)
+        for spec in specs
+        for ref in _schema_target_refs(spec.input_schema)
+    ))
+    digest = hashlib.sha256("\0".join((*names, *target_refs)).encode()).hexdigest()[:12]
     allowed_operation = Literal.__getitem__(names)
+    fields: dict[str, Any] = {"op": (allowed_operation, ...)}
+    if issubclass(payload_base, GroundedToolCommandPayload) and target_refs:
+        fields["target"] = (Literal.__getitem__(("", *target_refs)), "")
     return create_model(
         f"GroundedToolCommand_{digest}",
         __base__=payload_base,
-        op=(allowed_operation, ...),
+        **fields,
     )
+
+
+def _semantic_target_violation(spec: ToolSpec, field_paths: tuple[str, ...]) -> bool:
+    return bool(_schema_target_refs(spec.input_schema)) and any(
+        path == "parameters.target" or path.startswith("parameters.target.")
+        for path in field_paths
+    )
+
+
+def _target_fixed_repair_spec(spec: ToolSpec, original_call: ToolCall) -> ToolSpec:
+    refs = _schema_target_refs(spec.input_schema)
+    original_target = original_call.arguments.get("target")
+    if not refs or not isinstance(original_target, str) or original_target not in refs:
+        return spec
+    schema = to_json_compatible(spec.input_schema)
+    if not isinstance(schema, dict):
+        raise ValueError("grounded tool schema is invalid")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise ValueError("grounded tool properties are invalid")
+    target_schema = properties.get("target")
+    if not isinstance(target_schema, dict):
+        raise ValueError("grounded target schema is invalid")
+    target_schema["enum"] = [original_target]
+    return ToolSpec(spec.name, spec.description, schema)
+
+
+def _target_changed(original: ToolCall, repaired: ToolCall, spec: ToolSpec) -> bool:
+    return bool(_schema_target_refs(spec.input_schema)) and (
+        repaired.arguments.get("target") != original.arguments.get("target")
+    )
+
+
+def _schema_target_refs(schema: Mapping[str, object]) -> tuple[object, ...]:
+    properties = schema.get("properties", {})
+    target = properties.get("target") if isinstance(properties, Mapping) else None
+    refs = target.get("enum", ()) if isinstance(target, Mapping) else ()
+    return tuple(refs) if isinstance(refs, list | tuple) else ()
 
 
 def _labeled_entity_operation_aliases(
@@ -542,7 +606,11 @@ def _labeled_entity_operation_aliases(
 
     if context is None:
         raise ValueError("grounded aliases require one canonical AgentContext")
-    labels = {item.ref: item.label.strip() for item in context.grounding.entities}
+    labels = {
+        item.selection_key: item.target_label.strip()
+        for item in context.actions.options
+        if item.selection_key
+    }
     proposed: dict[str, list[str]] = {}
     for spec in catalog.specs:
         match = re.fullmatch(r"establish_(.+?)_entity_objective(?:_\d+)?", spec.name)

@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from affordance_runtime.agent.control_transition import ControlTransition, Turn
 from affordance_runtime.agent.decisions import (
     Abort,
+    AgentDecision,
     AskUser,
     ProposeDone,
     RequestActionPage,
@@ -45,7 +46,7 @@ def _project_turn(turn: Turn) -> AgentTurnView:
         turn.action_evaluation.status if turn.action_evaluation is not None else "",
         turn.task_evaluation.status if turn.task_evaluation is not None else "",
         (task_reason or action_reason)[:_MAX_STRING],
-        _decision_summary(turn),
+        project_decision_summary(turn.decision, turn.decision_result),
     )
 
 
@@ -58,7 +59,7 @@ def _project_transition(transition: ControlTransition) -> AgentTurnView:
     if task is not None and task.observation_id != transition.after_observation_id:
         task = None
     intent = transition.intent
-    summary = dict(_decision_summary(turn))
+    summary = dict(project_decision_summary(turn.decision, turn.decision_result))
     summary.update({
         "resulting_status": str(transition.resulting_status or ""),
         "reason_code": transition.reason_code,
@@ -82,8 +83,12 @@ def _project_transition(transition: ControlTransition) -> AgentTurnView:
     )
 
 
-def _decision_summary(turn: Turn) -> Mapping[str, object]:
-    decision = turn.decision
+def project_decision_summary(
+    decision: AgentDecision,
+    decision_result: str = "",
+) -> Mapping[str, object]:
+    """Deterministically project non-action decision details for model views."""
+
     if isinstance(decision, RequestObservation):
         return {
             "subject_id": _bounded(decision.subject_id),
@@ -97,7 +102,7 @@ def _decision_summary(turn: Turn) -> Mapping[str, object]:
             "target_id": _bounded(decision.target_id),
             "relevance_role": decision.relevance_role,
             "cursor_requested": bool(decision.cursor),
-            "result": turn.decision_result,
+            "result": decision_result,
         }
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}
@@ -111,7 +116,7 @@ def _decision_summary(turn: Turn) -> Mapping[str, object]:
         return {
             "reason": decision.reason,
             "max_wait_ms": decision.max_wait_ms,
-            "result": turn.decision_result,
+            "result": decision_result,
         }
     if isinstance(decision, Abort):
         return {"category": decision.category, "reason": decision.reason}

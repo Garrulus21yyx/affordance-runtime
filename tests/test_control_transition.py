@@ -119,6 +119,24 @@ def test_transition_rejects_old_task_evaluation_epoch_before_model_projection() 
     assert view.semantic_summary["execution_attempt_count"] == 0
 
 
+def test_transition_rejects_before_evaluation_from_another_observation() -> None:
+    state = AgentLoopState(_world("before", False))
+    scope = ControlTransitionScope(state, Wait("context:one", "wait", 1))
+    scope.set_reason("runtime_exception")
+    transition = scope.finalize(state, None)
+
+    with pytest.raises(ValueError, match="before task evaluation"):
+        replace(
+            transition,
+            before_task_evaluation=TaskEvaluation(
+                _task().task_id,
+                "another-observation",
+                TaskEvaluationStatus.INCOMPLETE,
+                "wrong epoch",
+            ),
+        )
+
+
 @pytest.mark.parametrize("reason_code", ("", "Raw message", "selector:#x", "x" * 97))
 def test_transition_rejects_unbounded_or_unstable_reason_codes(reason_code: str) -> None:
     state = AgentLoopState(_world("before", False))

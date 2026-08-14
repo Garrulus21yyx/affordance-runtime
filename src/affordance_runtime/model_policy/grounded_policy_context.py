@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -15,7 +16,7 @@ import yaml
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.context import AgentContext
-from affordance_runtime.model_boundary.contracts import AgentTurnView
+from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentTurnView
 from affordance_runtime.model_boundary.projection import project_public_value
 from affordance_runtime.model_policy.contracts import ModelDecisionRequest
 from affordance_runtime.model_policy.grounded_tool_contracts import MAX_GROUNDED_WORKSPACE_BYTES
@@ -68,7 +69,7 @@ class GroundedPolicyContextBinder:
         include_tool_menu: bool,
     ) -> tuple[ModelMessage, ...]:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        public = self._public_context(context, include_images)
+        public = self._public_context(context, include_images, include_action_candidates=True)
         if include_tool_menu:
             public["tools"] = _tool_menu(tools)
         return self._messages(self.prompts.actor, public, request, include_images)
@@ -84,17 +85,27 @@ class GroundedPolicyContextBinder:
         include_tool_menu: bool,
     ) -> tuple[ModelMessage, ...]:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        public = self._public_context(context, include_images)
+        public = self._public_context(context, include_images, include_action_candidates=False)
         if include_tool_menu:
             public["tools"] = _tool_menu(tools)
         return self._messages(self.prompts.objective_proposer, public, request, include_images)
 
     @staticmethod
-    def _public_context(context: AgentContext, include_images: bool) -> dict[str, object]:
+    def _public_context(
+        context: AgentContext,
+        include_images: bool,
+        *,
+        include_action_candidates: bool,
+    ) -> dict[str, object]:
         refs = dict(context.grounding.target_refs)
         evidence_refs = _evidence_refs(context)
-        return {
-            "context_id": context.context_id,
+        actionable_refs = (
+            frozenset(option.target_ref for option in context.actions.options if option.target_ref)
+            if include_action_candidates
+            else frozenset()
+        )
+        represented_fact_fields = _candidate_fact_fields(context)
+        public = {
             "task": _task(context),
             "intent": {
                 "excerpts": _section(
@@ -103,14 +114,26 @@ class GroundedPolicyContextBinder:
                 ),
                 "authority": context.intent.authority,
             },
-            "world": _world(context, refs, evidence_refs, include_images),
+            "world": _world(
+                context,
+                refs,
+                evidence_refs,
+                include_images,
+                excluded_entity_refs=actionable_refs,
+                represented_fact_fields=represented_fact_fields,
+            ),
             "progress": _progress(context, refs, evidence_refs),
+            "last_transition": to_json_compatible(context.last_transition),
             "history": _section(context.history, lambda item: _turn(item, refs)),
+            "control_feedback": _control_feedback(context, refs),
             "pending": to_json_compatible(context.pending),
             "budgets": to_json_compatible(context.budgets),
             "decision_mode": context.decision_mode.value,
-            "control_feedback": _control_feedback(context, refs),
+            "context_id": context.context_id,
         }
+        if include_action_candidates:
+            public["actions"] = _actions(context, include_images)
+        return public
 
     @staticmethod
     def _include_images(
@@ -130,7 +153,7 @@ class GroundedPolicyContextBinder:
         request: ModelDecisionRequest,
         include_images: bool,
     ) -> tuple[ModelMessage, ...]:
-        text = json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        text = json.dumps(public, separators=(",", ":"), ensure_ascii=False)
         if len(text.encode()) > MAX_GROUNDED_WORKSPACE_BYTES:
             raise ValueError("grounded AgentContext exceeds its model workspace bound")
         if not include_images:
@@ -183,6 +206,9 @@ def _world(
     refs: Mapping[str, str],
     evidence_refs: Mapping[str, str],
     include_images: bool,
+    *,
+    excluded_entity_refs: frozenset[str] = frozenset(),
+    represented_fact_fields: Mapping[str, frozenset[str]] | None = None,
 ) -> dict[str, object]:
     world = context.world
     return {
@@ -197,9 +223,10 @@ def _world(
                 "marked": item.marked if include_images else False,
             }
             for item in context.grounding.entities
+            if item.ref not in excluded_entity_refs
         ),
         "facts": _section(
-            world.facts,
+            _without_candidate_owned_facts(world.facts, represented_fact_fields or {}),
             lambda item: {
                 "evidence_ref": evidence_refs[item.fact_ref],
                 "subject": _subject(item.subject_id, refs),
@@ -220,6 +247,91 @@ def _world(
         "observation_capabilities": to_json_compatible(world.observation_capabilities),
         "traversal": to_json_compatible(world.traversal),
     }
+
+
+def _actions(context: AgentContext, include_images: bool) -> dict[str, object]:
+    grouped: dict[tuple[str, str], list[AgentActionOptionView]] = defaultdict(list)
+    for option in context.actions.options:
+        shape = json.dumps(
+            to_json_compatible(option.parameter_schema),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        grouped[(option.operation, shape)].append(option)
+    return {
+        "groups": tuple(
+            _action_group(operation, tuple(options), include_images)
+            for (operation, _shape), options in grouped.items()
+        ),
+        "total_count": context.actions.total_count,
+        "truncated": context.actions.truncated,
+        "has_more": context.actions.has_more,
+    }
+
+
+def _action_group(
+    operation: str,
+    options: tuple[AgentActionOptionView, ...],
+    include_images: bool,
+) -> dict[str, object]:
+    semantics = tuple(dict(option.target_semantics) for option in options)
+    shared = _common_mapping(semantics)
+    fields = tuple(dict.fromkeys(field for option in options for field in option.selection_fields))
+    result: dict[str, object] = {
+        "operation": operation,
+        "shared_target": to_json_compatible(shared),
+        "choose_by": fields,
+        "choices": tuple(option.selection_key for option in options),
+    }
+    effects = {tuple(option.semantic_effects) for option in options}
+    if len(effects) == 1:
+        result["expected_effects"] = next(iter(effects))
+    if include_images:
+        marked = tuple(option.selection_key for option in options if option.target_marked)
+        if marked:
+            result["marked_choices"] = marked
+    return result
+
+
+def _common_mapping(values: tuple[Mapping[str, object], ...]) -> dict[str, object]:
+    if not values:
+        return {}
+    result: dict[str, object] = {}
+    for key in values[0]:
+        if not all(key in item for item in values[1:]):
+            continue
+        candidates = tuple(item[key] for item in values)
+        if all(isinstance(item, Mapping) for item in candidates):
+            nested = _common_mapping(tuple(dict(item) for item in candidates if isinstance(item, Mapping)))
+            if nested:
+                result[key] = nested
+        elif all(item == candidates[0] for item in candidates[1:]):
+            result[key] = candidates[0]
+    return result
+
+
+def _candidate_fact_fields(context: AgentContext) -> dict[str, frozenset[str]]:
+    represented: dict[str, frozenset[str]] = {}
+    for option in context.actions.options:
+        fields = set(option.target_state)
+        if "semantic_grid_coordinate" in fields:
+            fields.remove("semantic_grid_coordinate")
+            fields.update(("grid_coordinate", "grid_membership", "grid_coordinate_confidence"))
+        represented[option.target_id] = frozenset(fields)
+    return represented
+
+
+def _without_candidate_owned_facts(
+    facts: BoundedSection[Any],
+    represented: Mapping[str, frozenset[str]],
+) -> BoundedSection[Any]:
+    items = tuple(
+        item
+        for item in facts.items
+        if item.predicate not in represented.get(item.subject_id, frozenset())
+    )
+    return BoundedSection(items, facts.total_count, facts.total_count > len(items))
 
 
 def _progress(

@@ -1,0 +1,14 @@
+{
+  "case_ids": [
+    "miniwob-60-05"
+  ],
+  "complete": true,
+  "completed_case_ids": [
+    "miniwob-60-05"
+  ],
+  "completed_cases": 1,
+  "perception_profile": "structure-first.v1",
+  "profile": "M4_6_E_GRID_SELECTION_KEY_FOCUSED_V2",
+  "schema_version": "miniwob-perception-ab.v2",
+  "total_cases": 1
+}

@@ -579,6 +579,19 @@ def _group_context_text(node: dict[str, Any], container_context: str) -> str:
     return ""
 
 
+def _semantic_scope(node: dict[str, Any]) -> tuple[str, str]:
+    """Return the nearest explicitly named public structural container."""
+
+    for ancestor in node.get("context_ancestors", ()):
+        if ancestor.get("tag") not in _CONTEXT_CONTAINER_TAGS:
+            continue
+        attributes = ancestor.get("attr", {})
+        label = str(attributes.get("aria-label") or "").strip()
+        if label:
+            return str(attributes.get("role") or ancestor.get("tag") or "group"), label[:160]
+    return "", ""
+
+
 def _annotate_pagination_nodes(nodes: list[dict[str, Any]]) -> None:
     """Attach structural pagination facts without interpreting task intent."""
 
@@ -836,6 +849,7 @@ class DomAdapter:
                 tuple(node.get("context_ancestors", ())),
             )
             group_context = _group_context_text(node, context_text) if context_text else ""
+            semantic_scope_role, semantic_scope_label = _semantic_scope(node)
             affordance_id = f"dom_{node['tag']}_{node['nth']}"
             target_fingerprint = (
                 "sha256:"
@@ -953,6 +967,14 @@ class DomAdapter:
                         **({"context_text": context_text} if action == "press" and context_text else {}),
                         **({"container_context": context_text} if context_text else {}),
                         **({"group_context": group_context} if group_context else {}),
+                        **(
+                            {
+                                "semantic_scope_role": semantic_scope_role,
+                                "semantic_scope_label": semantic_scope_label,
+                            }
+                            if semantic_scope_label
+                            else {}
+                        ),
                         **(
                             {
                                 "disclosure": True,

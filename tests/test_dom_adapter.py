@@ -434,6 +434,18 @@ def test_dom_adapter_does_not_bind_native_button_identity_to_mutable_siblings() 
     assert "container_context" not in model.affordances[0].state
 
 
+def test_dom_adapter_projects_nearest_explicit_accessible_scope_without_changing_identity() -> None:
+    model = _authored_adapter().transduce(
+        '<article aria-label="MacBook Air"><div><button data-runtime-handle="cart">加入购物车</button></div></article>',
+        environment_revision="rev-1",
+    )
+
+    button = model.affordances[0]
+    assert button.state["semantic_scope_role"] == "article"
+    assert button.state["semantic_scope_label"] == "MacBook Air"
+    assert "container_context" not in button.state
+
+
 def test_dom_adapter_normalizes_collection_positions() -> None:
     model = _authored_adapter().transduce(
         '<a data-result="2">third</a><button aria-posinset="4">fourth</button>',

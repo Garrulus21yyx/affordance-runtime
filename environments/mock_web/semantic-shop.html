@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Northstar Lab Store</title>
+<style>
+:root{--ink:#101b2d;--mist:#eef4f8;--paper:#fbfdff;--blue:#2155d9;--apricot:#ffb86c;--green:#117a65;--line:#cbd8e4}
+*{box-sizing:border-box}body{margin:0;background:var(--mist);color:var(--ink);font-family:"Avenir Next","Segoe UI",sans-serif;min-height:100vh}
+button{font:inherit}button:focus-visible{outline:3px solid var(--apricot);outline-offset:3px}
+.shell{max-width:1180px;margin:auto;padding:28px 30px 64px}
+header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:20px}
+.brand{font-family:"Arial Narrow","Avenir Next",sans-serif;font-size:20px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.status{font:600 12px ui-monospace,monospace;letter-spacing:.08em;color:#526578}.status b{color:var(--blue)}
+.hero{display:grid;grid-template-columns:1.3fr .7fr;gap:44px;padding:62px 0 44px;align-items:end}
+.hero h1{font-family:Georgia,serif;font-size:clamp(48px,7vw,88px);font-weight:400;line-height:.92;letter-spacing:-.06em;margin:0;max-width:760px}
+.hero p{font-size:17px;line-height:1.6;color:#526578;margin:0 0 8px;max-width:360px}
+.rail{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:24px}.rail span{height:6px;background:#d4dfe8}.rail .active{background:var(--blue)}
+.products{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.product{position:relative;background:var(--paper);border:1px solid var(--line);padding:30px;min-height:350px;overflow:hidden}
+.product::before{content:"";position:absolute;width:180px;height:180px;border:34px solid color-mix(in srgb,var(--accent) 28%,transparent);border-radius:50%;right:-45px;top:-55px}
+.eyebrow{font:700 11px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:#62788c}
+.product h2{font-family:Georgia,serif;font-size:38px;font-weight:400;letter-spacing:-.04em;margin:58px 0 8px}
+.spec{color:#5b6e80;line-height:1.6;max-width:330px;min-height:52px}.price{font:700 17px ui-monospace,monospace;margin:28px 0 18px}
+.action-wrap{border-top:1px solid var(--line);padding-top:18px}.action{width:100%;border:0;background:var(--ink);color:white;padding:14px 18px;font-weight:700;cursor:pointer;text-align:left}.action:hover{background:var(--blue)}
+.panel{max-width:720px;margin:64px auto 0;background:var(--paper);border:1px solid var(--line);padding:34px}.panel[style*="display: none"]{display:none!important}
+.panel h2{font-family:Georgia,serif;font-size:42px;font-weight:400;letter-spacing:-.04em;margin:8px 0 30px}
+.order-row{display:flex;justify-content:space-between;align-items:start;border-block:1px solid var(--line);padding:22px 0;margin-bottom:30px}.order-row strong{font-size:20px}.order-row span{font:600 14px ui-monospace,monospace;color:#526578}
+.primary{border:0;background:var(--blue);color:white;padding:14px 22px;font-weight:750;cursor:pointer}.primary:hover{background:#173fa5}
+.confirm-note{color:#5b6e80;line-height:1.6}.success{border-left:8px solid var(--green)}.success h2{color:var(--green)}
+.receipt{display:block;width:100%;margin-top:24px;border:1px solid #a9c9c0;background:#edf8f5;color:var(--green);padding:14px 18px;text-align:left;font-weight:750}
+@media(max-width:760px){.shell{padding:20px}.hero,.products{grid-template-columns:1fr}.hero{gap:24px;padding-top:40px}.product{min-height:310px}}
+@media(prefers-reduced-motion:no-preference){.panel{animation:arrive .28s ease-out}@keyframes arrive{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="brand">Northstar / Lab Store</div>
+    <div class="status">SECURE DEMO · <b id="stage-label">选择商品</b></div>
+  </header>
+
+  <main>
+    <section id="catalog-stage">
+      <div class="hero">
+        <h1>Choose the machine.<br>Keep the intent.</h1>
+        <div><div class="rail" aria-hidden="true"><span class="active"></span><span></span><span></span></div><p>这是一个本地实验商店。所有订单都是模拟数据，不会产生付款或外部副作用。</p></div>
+      </div>
+      <div class="products" aria-label="可购买商品">
+        <article class="product" aria-label="MacBook Air" style="--accent:#2155d9">
+          <div class="eyebrow">Portable / 13-inch</div>
+          <h2>MacBook Air</h2>
+          <div class="spec">M4 · 16GB memory · 512GB storage<br>Midnight</div>
+          <div class="price">¥ 9,499</div>
+          <div class="action-wrap"><button class="action add-cart" data-product="air">加入购物车</button></div>
+        </article>
+        <article class="product" aria-label="MacBook Pro" style="--accent:#ffb86c">
+          <div class="eyebrow">Performance / 14-inch</div>
+          <h2>MacBook Pro</h2>
+          <div class="spec">M4 Pro · 24GB memory · 1TB storage<br>Space Black</div>
+          <div class="price">¥ 18,999</div>
+          <div class="action-wrap"><button class="action add-cart" data-product="pro">加入购物车</button></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="cart-stage" class="panel" aria-label="购物车" style="display: none">
+      <div class="eyebrow">Step 02 / Cart review</div>
+      <h2>核对购物车</h2>
+      <div class="order-row"><strong id="cart-product">—</strong><span id="cart-price">—</span></div>
+      <button id="checkout" class="primary">去结算</button>
+    </section>
+
+    <section id="confirm-stage" class="panel" aria-label="订单确认" style="display: none">
+      <div class="eyebrow">Step 03 / Confirm</div>
+      <h2>确认模拟订单</h2>
+      <p class="confirm-note">订单商品：<strong id="confirm-product">—</strong><br>配送：实验室自提 · 无需付款</p>
+      <button id="confirm-order" class="primary">确认下单</button>
+    </section>
+
+    <section id="success-stage" class="panel success" role="status" aria-label="订单已完成" style="display: none">
+      <div class="eyebrow">Complete</div>
+      <h2>订单已确认</h2>
+      <p id="success-copy">—</p>
+      <button id="order-receipt" class="receipt" type="button" disabled aria-expanded="true" aria-controls="order-none">本地订单回执</button>
+    </section>
+  </main>
+</div>
+<script>
+const products={air:{name:'MacBook Air',price:'¥ 9,499'},pro:{name:'MacBook Pro',price:'¥ 18,999'}};
+let selected='';
+function show(stage,label){
+  ['catalog','cart','confirm','success'].forEach(name=>document.getElementById(name+'-stage').style.display=name===stage?'block':'none');
+  document.getElementById('stage-label').textContent=label;
+}
+document.querySelectorAll('.add-cart').forEach(button=>button.addEventListener('click',()=>{
+  selected=button.dataset.product;
+  document.getElementById('cart-product').textContent=products[selected].name;
+  document.getElementById('cart-price').textContent=products[selected].price;
+  show('cart','核对购物车');
+}));
+document.getElementById('checkout').addEventListener('click',()=>{
+  document.getElementById('confirm-product').textContent=products[selected].name;
+  show('confirm','确认订单');
+});
+document.getElementById('confirm-order').addEventListener('click',event=>{
+  document.getElementById('success-copy').textContent=products[selected].name+' 已进入本地模拟订单。';
+  const receipt=document.getElementById('order-receipt');
+  receipt.setAttribute('aria-controls','order-macbook-'+selected);
+  receipt.textContent='订单已确认：'+products[selected].name;
+  show('success','已完成');
+});
+</script>
+</body>
+</html>

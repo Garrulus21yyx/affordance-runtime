@@ -1,7 +1,7 @@
 # Target AgentLoop Authority Map
 
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
-> **Updated:** 2026-08-13
+> **Updated:** 2026-08-14
 > **Scope:** target GUI AgentLoop only
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
@@ -31,6 +31,7 @@ UserRequest
        -> execute once
        -> fresh observation
        -> ActionEvaluation + TaskEvaluation
+       -> exactly one root ControlTransition
        -> serial AgentLoopState
        -> continue/reobserve/ask/wait/done/abort
        -> AskUser pause -> admitted next TaskGoal revision -> same session
@@ -49,9 +50,10 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 | supplemental context | `IntentContext` | bounded source excerpts | context-only hints | task/effect authority |
 | observed world | `WorldEnvironment` | current environment | `WorldObservation` | task semantics |
 | legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, LocalObjective |
+| public action candidates | `ContextBuilder` | current action page + public grounded targets | referentially closed `AgentContext.actions` options | legality, private binding, durable identity, screen coordinates |
 | rolling semantic proposal | `LocalObjectiveProposalPort` | TaskGoal + bounded post-observation context | authority-free LocalObjective proposal or typed failure | admission, retained state, action choice |
 | rolling relevance | one `LocalObjective` lifecycle | admitted proposal + current evidence | relevance/evidence/member state | whole-task planning, effect grants |
-| model presentation | `ContextBuilder` | read-only current state | disposable `AgentContext` | retained truth, identity authority |
+| model presentation | `ContextBuilder` | read-only current state + latest canonical `ControlTransition` | disposable `AgentContext`, including an optional bounded `last_transition` projection | retained truth, identity authority, a second transition owner |
 | choice | `AgentPolicy` | one AgentContext | typed context-bound action/control decision | objective construction, binding, executor route, completion truth |
 | admission | AgentLoop decision/action admission | context identity + current ActionSpace | admitted selection or typed rejection | prompt compliance |
 | execution route | currentness/binder/risk chain | admitted selection + fresh world | `BoundActionRequest` | model coordinates/selector |
@@ -78,6 +80,73 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 
 No intake or planner may invent an exact DOM/entity target. No E-ref or model
 point becomes durable identity.
+
+## Current action-candidate chain
+
+The model must not join a task requirement, an entity list and a separate bare
+target enum. One current model-boundary projection closes every offered action
+over the public semantics needed to distinguish its target:
+
+```text
+WorldObservation + internal ActionSpace/current page
+  -> ModelWorldView + one call-local grounding index
+  -> ContextBuilder.close_action_candidates
+  -> AgentContext.actions option
+       operation + complete public target selector + private-binding lookup key
+  -> GroundedPolicyContextBinder actions.groups
+       shared target semantics once + minimal differing semantic choices
+  -> GroundedToolCatalog schema + opaque action binding
+  -> model returns only operation + semantic choice + declared business value
+  -> Runtime admission against the still-current internal ActionSpace
+```
+
+`AgentContext.actions` is a disposable view, not another ActionSpace. The
+catalog consumes `option.operation` and `option.selection_key` from that view; it
+must not rebuild them by joining `target_id` through
+`context.grounding.target_refs`. In the provider message, actionable entity
+semantics occur under compact `actions.groups` and are excluded from
+`world.entities`; the latter contains contextual, currently non-actionable
+entities only. Each group hoists fields common to every legal candidate and
+exposes the smallest bounded public facet set that uniquely distinguishes the
+candidates. The tool enum repeats only those semantic choices as a validation
+constraint; it is not a second semantic projection.
+
+This candidate section exists only in `ACTION_SELECTION`. The
+`OBJECTIVE_PROPOSAL` binder does not publish `actions.groups` and does not
+remove those entities from its contextual world. Objective proposal therefore
+cannot acquire click/fill/select authority through the shared context binder.
+
+Target choice follows one bounded facet algebra: `role`, `label`, scalar or
+short scalar-list public state, and one public parent scope as `within.role /
+within.label`. This is not a model-authored selector DSL. Runtime removes fields
+common to a group and finds a deterministic minimal distinguishing subset. For
+two identically labelled "加入购物车" buttons scoped by different products, the
+model sees the button semantics once and chooses only `MacBook Air` or
+`MacBook Pro`. A verified domain grid coordinate is the same generic state
+facet and becomes a choice such as `(1,-2)`. Screen points, bounding boxes, DOM
+selectors, action IDs and binding IDs are never action arguments. Construction
+metadata such as row/column indices and confidence is omitted. Only candidates
+that remain publicly indistinguishable after the supported facets receive an
+explicit call-local E-ref fallback.
+
+Changing a semantic choice changes the selected GUI entity. Therefore a target outside
+the current tool enum is a semantic-selection failure, not a format-only
+argument repair. Compact structured output constrains `target` to current
+group choices. Native-tool output fails closed on an invalid choice and cannot
+invoke argument repair to substitute another target. If a valid target was
+selected but another business argument needs repair, the repair schema pins
+that exact choice and Runtime verifies it again after repair.
+
+This division is consistent with current GUI-agent research, but is an
+engineering inference rather than a claim that those systems use this exact
+schema. [UI-TARS](https://arxiv.org/abs/2501.12326) standardizes atomic GUI
+operations while treating grounding as a separate localization problem;
+[GUI-Actor](https://arxiv.org/abs/2506.03143) reports that text-generating raw
+coordinates weakens spatial-semantic alignment and instead separates semantic
+intent from region localization. Here the Runtime-owned binding table provides
+that separation without training a new grounding model: the general model
+selects a public semantic difference, and Runtime resolves the exact current
+entity and executor route.
 
 `LocalObjectiveProposalPort` is an explicit AgentLoop composition dependency,
 not a hidden `AgentPolicy` capability. Runtime validates its proposal against
@@ -108,6 +177,41 @@ scope ownership, identity, action authority, binding, or completion rules.
 Projections are one-way and disposable. Runtime never reconstructs authoritative
 task, objective, world, or binding state from AgentContext, a tool catalog,
 E-ref, screenshot mark, tool result, benchmark row, or diagnostic trace.
+
+The transition-to-context chain is also unique and one-way:
+
+```text
+WorldObservation / execution receipt / ActionEvaluation / TaskEvaluation
+                              |
+                              v
+               exactly one root ControlTransition
+                              |
+                    public bounded projection
+                              v
+            AgentContext.last_transition (optional view)
+```
+
+`ControlTransition` remains the only canonical accounting object for one
+accepted policy decision. A typed delta or digest computed while closing that
+transition is owned by that same root and cannot be persisted, updated, or
+interpreted as a parallel transition authority. `AgentTransitionDigestView` is
+only the disposable model-facing projection; Runtime cannot reconstruct the
+root transition or current state from it.
+
+The implemented P0 stores no internal digest. The root retains its matching
+decision-start `before_task_evaluation`; `ContextBuilder` compares it with the
+root's final TaskEvaluation and projects the latest root directly. The latest
+root is excluded from `AgentContext.history`, which contains only older bounded
+anchors. Confirmation and user-input continuation use the existing reducer to
+replace that same immutable root once and consume its source identity.
+
+`AgentContext.progress` answers what is verified or unresolved now.
+`AgentContext.last_transition` answers how the most recent accepted decision
+led to the current observation/evaluation. It does not duplicate the current
+world, current action page, current progress snapshot, or current control
+instruction. Runtime-owned `control_feedback` remains the sole projection of
+next-decision constraints; it is not copied into the past-tense transition
+view.
 
 Provider protocol adapters parse a model response exactly once into the typed
 contract for that phase: either an authority-free `LocalObjective` proposal or

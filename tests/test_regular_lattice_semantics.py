@@ -25,6 +25,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary import ContextBuilder
+from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import ActionSpaceBuilder
@@ -145,7 +146,38 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
             "ongoing",
         ),
     )
+    candidate = next(
+        option for option in context.actions.options if option.target_id == target.target_id
+    )
+    assert candidate.target_ref == dict(context.grounding.target_refs)[target.target_id]
+    assert candidate.selection_key == "(1,-2)"
+    assert candidate.selection_fields == ("state.semantic_grid_coordinate",)
+    assert candidate.target_state["semantic_grid_coordinate"] == (1, -2)
+    assert "grid_coordinate" not in candidate.target_state
+    assert "grid_membership" not in candidate.target_state
+    assert "grid_coordinate_confidence" not in candidate.target_state
+    assert {
+        fact.predicate
+        for fact in context.world.facts.items
+        if fact.subject_id == target.target_id
+    }.issuperset({"grid_coordinate", "grid_membership", "grid_coordinate_confidence"})
+    public = GroundedPolicyContextBinder._public_context(
+        context,
+        False,
+        include_action_candidates=True,
+    )
+    assert not {
+        fact["field"]
+        for fact in public["world"]["facts"]["items"]
+        if fact["subject"] == candidate.target_ref
+    }.intersection({"grid_coordinate", "grid_membership", "grid_coordinate_confidence"})
     from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+
+    action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    click = next(spec for spec in action_catalog.specs if spec.name == "click")
+    target_values = click.input_schema["properties"]["target"]["enum"]
+    assert candidate.selection_key in target_values
+    assert candidate.target_ref not in target_values
 
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
 

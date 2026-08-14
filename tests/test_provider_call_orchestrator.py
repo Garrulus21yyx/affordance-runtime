@@ -194,7 +194,7 @@ def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_
                                     "content": json.dumps(
                                         {
                                             "op": "fill",
-                                            "target": "E1",
+                                            "target": "Username",
                                             "text": "donovan",
                                         }
                                     )

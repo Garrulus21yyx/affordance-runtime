@@ -247,6 +247,7 @@ def _resize(section: BoundedSection[Any], items: tuple[Any, ...]) -> BoundedSect
 
 def _project_target(target, relation_limit: int) -> ModelTargetView:
     public_state = _public_items(target.state)
+    public_state.sort(key=lambda item: 0 if item[0].casefold() == "grid_coordinate" else 1)
     public_relations = _public_items(target.relations)
     state = dict(public_state[:_MAX_STATE_FIELDS])
     relations = dict(public_relations[:relation_limit])

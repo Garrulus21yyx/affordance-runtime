@@ -29,11 +29,21 @@ internals, evaluate effects, or persist telemetry.
 
 Before policy invocation, Runtime projects TaskGoal, bounded IntentContext,
 progress, WorldObservation, current action page, bounded ControlTransition
-summaries, pending state
-and budgets into a disposable AgentContext.
+summaries, an optional bounded causal projection of the latest ControlTransition,
+pending state and budgets into a disposable AgentContext.
 The policy never receives the internal ActionSpace or ControlTransition objects. Its opaque
 action ID is resolved and admitted only against the still-current internal
 ActionSpace.
+
+The current action page is closed over one call-local grounding projection
+before the context becomes visible to policy. Each `AgentContext.actions`
+option contains the public operation and one target record with E-ref, role,
+label and distinguishing semantic state. The binder publishes those options
+once as `actions.candidates`; the tool catalog consumes the same fields and
+adds only schemas plus opaque Runtime bindings. It does not rejoin target IDs
+through the grounding index. The actor returns only operation, E-ref and any
+declared business input. It never supplies screen coordinates or repeats the
+target state.
 
 ## 2. Loop state
 
@@ -63,8 +73,80 @@ A confirmation/user continuation that changes state may carry a typed
 continuation source referencing the root transition, but cannot masquerade as
 another policy decision. A provider failure before a valid decision, initial
 pre-policy completion and harness watchdog have no accepted decision and do not
-fabricate one. ControlTransition is run-scoped and bounded, not a durable event
+fabricate one. `ControlTransition` is run-scoped and bounded, not a durable event
 log, replay source, global bus, commit record or state-reconstruction authority.
+
+## 2.2 Latest-transition projection
+
+The next `AgentContext` contains one optional `last_transition` value that establishes
+an explicit causal bridge from the previous accepted decision to the current
+state. The ownership path is closed:
+
+```text
+Runtime evidence
+  -> ActionEvaluation / TaskEvaluation
+  -> exactly one root ControlTransition
+  -> AgentTransitionDigestView
+  -> AgentContext.last_transition
+```
+
+There is no independently retained `RuntimeTransitionDigest`, no second
+transition store, and no model-authored transition summary. The root captures
+the matching decision-start `before_task_evaluation`; the model-facing digest
+is computed directly and disposably from that root when building the next
+context. Confirmation and user-input continuations replace the immutable root
+in that same bounded slot and consume its source identity exactly once; they do
+not create a competing digest lifecycle.
+
+The first implementation slice is deliberately bounded:
+
+```text
+AgentTransitionDigestView
+  schema_version
+  transition_id + before/after observation lineage
+  typed previous_decision
+  execution_outcome
+  effect_assessment
+  task/criterion/output progress transitions
+```
+
+`previous_decision` retains decision kind, public semantic action and current
+target/destination refs where they exist, plus bounded details for non-action
+control decisions. It deliberately does not repeat action parameters already
+owned by prior intent/history contracts. It may decorate a still-current
+target with a call-local E-ref, but old E-refs/action IDs never become durable
+identity or reusable action authority. `execution_outcome` comes only from the
+execution receipt. `effect_assessment` comes only from ActionEvaluation.
+Progress transitions are deterministic comparisons of the before/after
+TaskEvaluation values and preserve missing baselines explicitly; an absent
+criterion is not rewritten as `unknown` or `unsatisfied`.
+
+This view complements rather than replaces the current snapshot:
+
+```text
+AgentContext.progress          = what is true now
+AgentContext.last_transition   = what changed in the latest accepted decision
+AgentContext.history           = older bounded action anchors
+AgentContext.world/actions     = what is observable and executable now
+AgentContext.control_feedback  = current Runtime-owned next-decision constraint
+```
+
+The latest root appears only in `last_transition`; `history` contains older
+bounded anchors. This prevents the same latest decision/effect account from
+being rendered twice in one provider message.
+
+The projection is deterministic, public-safe, bounded and zero-provider-call.
+Natural-language leaves, when useful, are mechanically rendered from typed
+public fields and evidence; they cannot add a relation, lifecycle claim,
+effect, progress transition, or decision constraint.
+
+Canonical public-world graph delta and semantic ActionSpace delta are later,
+evidence-gated extensions. World delta must be computed before model paging
+and only over comparable acquisition/coverage scopes; non-comparable absence
+cannot be called `left_observation` or deletion. ActionSpace delta compares a
+stable semantic base key rather than observation-scoped action IDs, while the
+current `actions` page remains the sole model-facing selection set. These
+extensions are not required for the initial latest-transition slice.
 
 ## 3. Feedback
 

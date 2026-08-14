@@ -48,6 +48,8 @@ class ContextProjectionBudget:
     max_action_options: int = 32
     max_destinations_per_option: int = 16
     max_history_turns: int = 12
+    max_transition_progress_changes: int = 32
+    max_transition_evidence_refs: int = 16
     max_artifact_summaries: int = 16
     max_unresolved_items: int = 32
     max_total_serialized_bytes: int = 64 * 1024

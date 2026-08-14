@@ -161,6 +161,7 @@ class ControlTransition:
     request_id: str = ""
     decision_result: str = ""
     control_feedback: ControlFeedback | None = None
+    before_task_evaluation: TaskEvaluation | None = None
 
     def __post_init__(self) -> None:
         from affordance_runtime.agent.state import AgentLoopStatus
@@ -209,6 +210,10 @@ class ControlTransition:
             self.task_evaluation, TaskEvaluation
         ):
             raise TypeError("control transition task evaluation must be typed")
+        if self.before_task_evaluation is not None and not isinstance(
+            self.before_task_evaluation, TaskEvaluation
+        ):
+            raise TypeError("control transition before task evaluation must be typed")
         if self.control_feedback is not None and not isinstance(
             self.control_feedback, ControlFeedback
         ):
@@ -230,6 +235,17 @@ class ControlTransition:
             and self.task_evaluation.observation_id != self.after_observation_id
         ):
             raise ValueError("task evaluation must match transition after observation")
+        if (
+            self.before_task_evaluation is not None
+            and self.before_task_evaluation.observation_id != self.before_observation_id
+        ):
+            raise ValueError("before task evaluation must match transition before observation")
+        if (
+            self.before_task_evaluation is not None
+            and self.task_evaluation is not None
+            and self.before_task_evaluation.task_id != self.task_evaluation.task_id
+        ):
+            raise ValueError("transition task evaluation identity changed within one root")
         _require_reason_code(self.reason_code)
 
     def as_turn(self) -> Turn:
@@ -344,6 +360,13 @@ class _FactAccumulator:
         self._decision = decision
         self._before_id = state.current_observation.observation_id
         self._progress_total = state.progress_event_total_count
+        self._before_task_evaluation = (
+            state.current_task_evaluation
+            if state.current_task_evaluation is not None
+            and state.current_task_evaluation.observation_id
+            == state.current_observation.observation_id
+            else None
+        )
         self._intent: ActionIntent | None = None
         self._request_id = ""
         self._result: ActionResult | None = None
@@ -499,6 +522,7 @@ class ControlTransitionScope(_FactAccumulator):
             turn.request_id,
             turn.decision_result,
             self._control_feedback,
+            self._before_task_evaluation,
         )
         state._append_control_transition(transition)
         if state.pending_confirmation is not None:

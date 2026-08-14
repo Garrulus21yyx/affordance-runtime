@@ -151,6 +151,39 @@ def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
     assert "establish_local_objective" not in catalog
 
 
+def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -> None:
+    builder = (RUNTIME / "model_boundary" / "context_builder.py").read_text(encoding="utf-8")
+    catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
+    binder = (RUNTIME / "model_policy" / "grounded_policy_context.py").read_text(encoding="utf-8")
+
+    assert "close_action_candidates(actions, grounding.index)" in builder
+    assert "option.selection_key" in catalog and "option.operation" in catalog
+    assert "context.grounding.target_refs" not in catalog
+    assert 'public["actions"] = _actions(context, include_images)' in binder
+    assert '"groups": tuple(' in binder and '"shared_target"' in binder
+    assert '"screen_coordinate"' not in binder and '"x"' not in binder and '"y"' not in binder
+
+
+def test_latest_transition_has_one_root_owned_projection_chain() -> None:
+    transition = (RUNTIME / "agent" / "control_transition.py").read_text(encoding="utf-8")
+    reducer = (RUNTIME / "agent" / "control_reducer.py").read_text(encoding="utf-8")
+    builder = (RUNTIME / "model_boundary" / "context_builder.py").read_text(encoding="utf-8")
+    projection = (
+        RUNTIME / "model_boundary" / "transition_digest_projection.py"
+    ).read_text(encoding="utf-8")
+
+    assert "class ControlTransition:" in transition
+    assert "before_task_evaluation" in transition
+    assert "project_latest_transition(" in builder
+    assert "state.recent_control_transitions" in builder
+    assert "values[index] = updated" in reducer
+    assert "continued_root_ids" in reducer
+    assert "class RuntimeTransitionDigest" not in "\n".join(
+        path.read_text(encoding="utf-8") for path in RUNTIME.rglob("*.py")
+    )
+    assert "ModelPort" not in projection and "provider" not in projection
+
+
 def test_normative_architecture_links_the_authority_map() -> None:
     assert "task-execution-authority-map.md" in (ROOT / "docs" / "architecture.md").read_text(
         encoding="utf-8"

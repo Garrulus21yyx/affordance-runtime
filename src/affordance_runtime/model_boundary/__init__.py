@@ -55,6 +55,10 @@ if TYPE_CHECKING:
         ObservationSourceSummary,
     )
     from affordance_runtime.model_boundary.task_projection import project_task
+    from affordance_runtime.model_boundary.transition_digest_projection import (
+        AgentTransitionDigestView,
+        project_latest_transition,
+    )
 
 _EXPORTS = {
     "AgentControlFeedbackView": (
@@ -74,6 +78,10 @@ _EXPORTS = {
     "AgentProgressView": ("affordance_runtime.model_boundary.context", "AgentProgressView"),
     "AgentSuccessCriterionView": ("affordance_runtime.model_boundary.contracts", "AgentSuccessCriterionView"),
     "AgentTaskView": ("affordance_runtime.model_boundary.contracts", "AgentTaskView"),
+    "AgentTransitionDigestView": (
+        "affordance_runtime.model_boundary.transition_digest_projection",
+        "AgentTransitionDigestView",
+    ),
     "AgentTurnView": ("affordance_runtime.model_boundary.contracts", "AgentTurnView"),
     "BoundedSection": ("affordance_runtime.model_boundary.budgets", "BoundedSection"),
     "ContextBuilder": ("affordance_runtime.model_boundary.context_builder", "ContextBuilder"),
@@ -111,6 +119,10 @@ _EXPORTS = {
     ),
     "project_plan": ("affordance_runtime.model_boundary.projection", "project_plan"),
     "project_task": ("affordance_runtime.model_boundary.task_projection", "project_task"),
+    "project_latest_transition": (
+        "affordance_runtime.model_boundary.transition_digest_projection",
+        "project_latest_transition",
+    ),
     "project_turns": ("affordance_runtime.model_boundary.projection", "project_turns"),
 }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -77,11 +78,44 @@ class AgentActionOptionView:
     relevance_role: str = "other"
     relevance_score: float = 0.0
     relevance_reason_codes: tuple[str, ...] = ()
+    operation: str = ""
+    target_ref: str = ""
+    selection_key: str = ""
+    selection_fields: tuple[str, ...] = ()
+    target_semantics: Mapping[str, object] = field(default_factory=dict)
+    target_role: str = ""
+    target_state: Mapping[str, object] = field(default_factory=dict)
+    target_marked: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "relevance_reason_codes", tuple(self.relevance_reason_codes))
+        object.__setattr__(self, "selection_fields", tuple(self.selection_fields))
+        object.__setattr__(self, "target_semantics", freeze_json(self.target_semantics))
+        object.__setattr__(self, "target_state", freeze_json(self.target_state))
+        closed = bool(
+            self.operation
+            and self.target_ref
+            and self.selection_key
+            and self.selection_fields
+            and self.target_semantics
+            and self.target_role
+        )
+        if any(
+            (
+                self.operation,
+                self.target_ref,
+                self.selection_key,
+                self.selection_fields,
+                self.target_semantics,
+                self.target_role,
+                self.target_state,
+            )
+        ) and not closed:
+            raise ValueError("action candidate target projection is incomplete")
+        if self.target_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.target_ref) is None:
+            raise ValueError("action candidate target ref is invalid")
 
 
 @dataclass(frozen=True)
