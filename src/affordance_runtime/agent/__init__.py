@@ -40,7 +40,6 @@ if TYPE_CHECKING:
         RequestActionPage,
         RequestObservation,
         SelectAction,
-        UpdateWorkingMemory,
         Wait,
     )
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
@@ -52,7 +51,7 @@ if TYPE_CHECKING:
         LocalObjectiveUnsupportedReason,
     )
     from affordance_runtime.agent.loop import AgentLoop
-    from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
+    from affordance_runtime.agent.policy import AgentPolicyTurn, LocalObjectiveProposalRequirement
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
     from affordance_runtime.agent.runtime import (
         TargetRuntime,
@@ -110,6 +109,7 @@ _EXPORTS = {
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
+    "AgentPolicyTurn": ("affordance_runtime.agent.policy", "AgentPolicyTurn"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "TargetRuntime": ("affordance_runtime.agent.runtime", "TargetRuntime"),
     "TargetRuntimeStartOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeStartOutcome"),
@@ -173,10 +173,6 @@ _EXPORTS = {
         "TOOL_ACTION_DECISION_CAPABILITIES",
     ),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
-    "UpdateWorkingMemory": (
-        "affordance_runtime.agent.decisions",
-        "UpdateWorkingMemory",
-    ),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
     "WorkingMemoryItem": (
         "affordance_runtime.agent.working_memory",

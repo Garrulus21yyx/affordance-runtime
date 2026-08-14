@@ -86,10 +86,12 @@ def _open(
     if with_point:
         first = proposer.regions[0]
         x, y, width, height = first.bbox_xywh
-        point_grounder = _Grounder(VisualGroundingPoint(
-            point or (x + width / 2, y + height / 2),
-            normalized=first.normalized,
-        ))
+        point_grounder = _Grounder(
+            VisualGroundingPoint(
+                point or (x + width / 2, y + height / 2),
+                normalized=first.normalized,
+            )
+        )
     return BrowserGymMiniWobEnvironment.open(
         "browsergym/miniwob.click-button",
         7,
@@ -138,10 +140,7 @@ def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acqu
                 "browsergym_visual",
             }
             assert acquired.observation.bindings == ()
-            visual = next(
-                source for source in acquired.observation.sources
-                if source.surface == "browsergym_visual"
-            )
+            visual = next(source for source in acquired.observation.sources if source.surface == "browsergym_visual")
             assert len(visual.targets) == 1
             assert visual.bindings == ()
             assert environment.visual_point_grounder_calls == 0
@@ -222,9 +221,11 @@ def test_changed_screenshot_does_not_make_observation_only_visual_entity_executa
 def test_unsupported_visual_primitive_never_creates_action_authority() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
-        proposer = _Proposer([
-            VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9, primitive_action="drag"),
-        ])
+        proposer = _Proposer(
+            [
+                VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9, primitive_action="drag"),
+            ]
+        )
         environment, task = _open(fake, proposer, with_point=False)
         try:
             await environment.reset(task)
@@ -242,34 +243,36 @@ def test_unsupported_visual_primitive_never_creates_action_authority() -> None:
 def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
-        proposer = _Proposer([
-            VisualRegion(
-                (0.25, 0.2, 0.2, 0.3),
-                "blue circle",
-                0.9,
-                role="shape",
-                primitive_action="observe_only",
-                state={"color": "blue", "shape": "circle", "row": 2, "column": 3},
-            ),
-            VisualRegion(
-                (0.55, 0.2, 0.2, 0.3),
-                "uncertain target",
-                0.49,
-                role="option",
-                state={"selected": False},
-            ),
-        ])
+        proposer = _Proposer(
+            [
+                VisualRegion(
+                    (0.25, 0.2, 0.2, 0.3),
+                    "blue circle",
+                    0.9,
+                    role="shape",
+                    primitive_action="observe_only",
+                    state={"color": "blue", "shape": "circle", "row": 2, "column": 3},
+                ),
+                VisualRegion(
+                    (0.55, 0.2, 0.2, 0.3),
+                    "uncertain target",
+                    0.49,
+                    role="option",
+                    state={"selected": False},
+                ),
+            ]
+        )
         environment, task = _open(fake, proposer, with_point=False)
         try:
             acquired = await environment.reset(task)
             assert acquired.observation is not None
-            visual = next(
-                source for source in acquired.observation.sources
-                if source.surface == "browsergym_visual"
-            )
+            visual = next(source for source in acquired.observation.sources if source.surface == "browsergym_visual")
             assert len(visual.targets) == 2
             assert {(fact.predicate, fact.value) for fact in visual.facts} >= {
-                ("color", "blue"), ("shape", "circle"), ("row", 2), ("column", 3),
+                ("color", "blue"),
+                ("shape", "circle"),
+                ("row", 2),
+                ("column", 3),
                 ("selected", False),
             }
             assert visual.bindings == ()
@@ -294,9 +297,7 @@ def test_optional_visual_failure_preserves_structural_world_with_typed_gap() -> 
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
             assert acquired.reason_code == "world_acquired_with_optional_gap"
-            result = next(
-                item for item in acquired.source_results if item.source == "browsergym_visual"
-            )
+            result = next(item for item in acquired.source_results if item.source == "browsergym_visual")
             assert result.status is SourceAcquisitionStatus.FAILED
             assert acquired.observation.bindings == ()
             assert fake.capture_count == 1
@@ -334,12 +335,17 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
             assert "observe_visual" in {item.name for item in catalog.specs}
             decision = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("observe_visual", {}),
+                ToolCall("observe_visual", {"memory": {"items": []}}),
                 expected_context_id=context.context_id,
             )
-            assert isinstance(decision, RequestObservation)
-            assert decision.modality == "visual"
-            assert decision.required_assurance == "weak"
+            from affordance_runtime.model_policy.grounded_tool_contracts import (
+                GroundedActionResolution,
+            )
+
+            assert isinstance(decision, GroundedActionResolution)
+            assert isinstance(decision.decision, RequestObservation)
+            assert decision.decision.modality == "visual"
+            assert decision.decision.required_assurance == "weak"
         finally:
             await environment.close()
 

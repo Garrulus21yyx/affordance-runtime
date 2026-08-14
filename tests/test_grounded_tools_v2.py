@@ -11,7 +11,6 @@ from browsergym_adapter_support import ax_node, raw_observation
 from affordance_runtime.agent import (
     RequestObservation,
     SelectAction,
-    UpdateWorkingMemory,
     WorkingMemoryItemStatus,
 )
 from affordance_runtime.agent.local_objective_proposal import (
@@ -45,6 +44,7 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
     resolve_grounded_tool_call,
 )
 from affordance_runtime.model_policy.grounded_tool_contracts import (
+    GroundedActionResolution,
     GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
@@ -82,6 +82,32 @@ from affordance_runtime.task.local_objective import establish_local_objective
 from affordance_runtime.world import ActionSpaceBuilder
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
+
+
+def _expected_memory_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string", "minLength": 1, "maxLength": 240},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed"],
+                        },
+                    },
+                    "required": ["description", "status"],
+                    "additionalProperties": False,
+                },
+                "maxItems": 12,
+            },
+        },
+        "required": ["items"],
+        "additionalProperties": False,
+    }
 
 
 @dataclass
@@ -130,7 +156,13 @@ class _ActionPort:
             latency_ms=1,
             response_id="response:action",
         )
-        return output_schema.model_validate({"op": "click", "target": "E3"})
+        return output_schema.model_validate(
+            {
+                "op": "click",
+                "target": "E3",
+                "memory": {"items": []},
+            }
+        )
 
 
 def _context(*, local_objective=None):
@@ -188,11 +220,15 @@ def _context(*, local_objective=None):
 def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    public = json.dumps(to_json_compatible({
-        "index": catalog.view.grounding_index,
-        "state": catalog.view.current_state,
-        "tools": [item.input_schema for item in catalog.specs],
-    }))
+    public = json.dumps(
+        to_json_compatible(
+            {
+                "index": catalog.view.grounding_index,
+                "state": catalog.view.current_state,
+                "tools": [item.input_schema for item in catalog.specs],
+            }
+        )
+    )
     assert [item.ref for item in context.grounding.entities] == ["E1", "E2", "E3"]
     assert all(item.marked for item in context.grounding.entities)
     assert "bbox" not in public
@@ -269,17 +305,17 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
             del config, require_one
             self.calls += 1
             if self.calls == 1:
-                return (ToolCall("observe_visual", {"unexpected": "value"}),)
+                return (ToolCall("observe_visual", {}),)
             self.repair_messages = tuple(messages)
             assert len(tools) == 1
             assert tools[0].name == "observe_visual"
             assert to_json_compatible(tools[0].input_schema) == {
                 "type": "object",
-                "properties": {},
-                "required": [],
+                "properties": {"memory": _expected_memory_schema()},
+                "required": ["memory"],
                 "additionalProperties": False,
             }
-            return (ToolCall("observe_visual", {}),)
+            return (ToolCall("observe_visual", {"memory": {"items": []}}),)
 
         async def generate_structured(self, messages, output_schema, config):
             del messages, output_schema, config
@@ -311,7 +347,7 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
     assert adapter.last_argument_violation_code == "invalid_action_parameters"
-    assert adapter.last_argument_violation_paths == ("parameters.unexpected",)
+    assert adapter.last_argument_violation_paths == ("parameters.memory",)
     assert adapter.last_selected_operation == "observe_visual"
     assert adapter.last_repaired_operation_match is True
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
@@ -325,7 +361,7 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
     assert '"selected_operation":"observe_visual"' in repair_system
-    assert '"field_paths":["parameters.unexpected"]' in repair_system
+    assert '"field_paths":["parameters.memory"]' in repair_system
 
 
 def test_native_transport_carries_unified_world_and_tools_once() -> None:
@@ -343,7 +379,12 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
             del config, require_one
             self.messages = tuple(messages)
             self.tools = tuple(tools)
-            return (ToolCall("click", {"target": "E3"}),)
+            return (
+                ToolCall(
+                    "click",
+                    {"target": "E3", "memory": {"items": []}},
+                ),
+            )
 
     context = _context()
     port = NativePort()
@@ -365,38 +406,40 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
         "current_state",
         "previous_tool_result",
     }
-    assert {item.name for item in port.tools} == {"fill", "click", "update_checklist"}
-    action_tools = tuple(item for item in port.tools if item.name != "update_checklist")
-    assert all("E1(" not in item.description for item in action_tools)
-    assert all("target E-ref from grounding_index" in item.description for item in action_tools)
+    assert {item.name for item in port.tools} == {"fill", "click"}
+    assert all("E1(" not in item.description for item in port.tools)
+    assert all("target E-ref from grounding_index" in item.description for item in port.tools)
+    assert all("memory" in item.input_schema["required"] for item in port.tools)
 
 
-def test_grounded_checklist_is_a_typed_advisory_control_not_an_action_binding() -> None:
+def test_grounded_action_atomically_resolves_mandatory_advisory_memory() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "update_checklist",
+            "click",
             {
-                "value": {
+                "target": "E3",
+                "memory": {
                     "items": [
                         {
                             "description": "Complete every remaining public requirement",
                             "status": "in_progress",
                         }
                     ]
-                }
+                },
             },
         ),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
 
-    assert isinstance(outcome, UpdateWorkingMemory)
-    assert outcome.items[0].status is WorkingMemoryItemStatus.IN_PROGRESS
-    assert outcome.context_id == context.context_id
+    assert isinstance(outcome, GroundedActionResolution)
+    assert isinstance(outcome.decision, SelectAction)
+    assert outcome.working_memory.items[0].status is WorkingMemoryItemStatus.IN_PROGRESS
+    assert outcome.decision.context_id == context.context_id
     assert catalog.view.current_state["agent_working_memory"] == {
         "authority": "advisory",
         "revision": 0,
@@ -405,11 +448,15 @@ def test_grounded_checklist_is_a_typed_advisory_control_not_an_action_binding() 
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
-    payload_type = _command_payload_type((ToolSpec(
-        "observe_visual",
-        "Acquire visual evidence.",
-        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
-    ),))
+    payload_type = _command_payload_type(
+        (
+            ToolSpec(
+                "observe_visual",
+                "Acquire visual evidence.",
+                {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            ),
+        )
+    )
 
     operation_schema = payload_type.model_json_schema()["properties"]["op"]
     assert operation_schema["const"] == "observe_visual"
@@ -543,22 +590,32 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
         )
     )
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    assert {item.name for item in catalog.specs} == {"fill", "update_checklist"}
+    assert {item.name for item in catalog.specs} == {"fill"}
     fill = catalog.specs[0]
     assert to_json_compatible(fill.input_schema) == {
         "type": "object",
         "properties": {
             "target": {"type": "string", "enum": ["E2"]},
             "text": {"type": "string"},
+            "memory": _expected_memory_schema(),
         },
-        "required": ["target", "text"],
+        "required": ["target", "text", "memory"],
         "additionalProperties": False,
     }
-    decision = resolve_grounded_tool_call(
+    outcome = resolve_grounded_tool_call(
         catalog,
-        ToolCall("fill", {"target": "E2", "text": "UV"}),
+        ToolCall(
+            "fill",
+            {
+                "target": "E2",
+                "text": "UV",
+                "memory": {"items": []},
+            },
+        ),
         expected_context_id=context.context_id,
     )
+    assert isinstance(outcome, GroundedActionResolution)
+    decision = outcome.decision
     assert isinstance(decision, SelectAction)
     assert decision.parameters == {"value": "UV"}
     assert decision.action_id.startswith("action:")
@@ -571,14 +628,17 @@ def test_single_target_action_never_uses_implicit_runtime_target_inference() -> 
 
     assert to_json_compatible(click.input_schema) == {
         "type": "object",
-        "properties": {"target": {"type": "string", "enum": ["E3"]}},
-        "required": ["target"],
+        "properties": {
+            "target": {"type": "string", "enum": ["E3"]},
+            "memory": _expected_memory_schema(),
+        },
+        "required": ["target", "memory"],
         "additionalProperties": False,
     }
     with pytest.raises(GroundedToolResolutionError) as caught:
         resolve_grounded_tool_call(
             catalog,
-            ToolCall("click", {}),
+            ToolCall("click", {"memory": {"items": []}}),
             expected_context_id=context.context_id,
         )
     assert caught.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
@@ -593,11 +653,14 @@ def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -
         "local_objective_unsupported",
     ]
     assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
-        "op", "target", "text", "value"
+        "op",
+        "target",
+        "text",
+        "value",
+        "memory",
     }
-    assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {
-        "op", "value"
-    }
+    assert "memory" in GroundedToolCommandPayload.model_json_schema()["required"]
+    assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {"op", "value"}
     assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)
 
 
@@ -698,10 +761,19 @@ def test_local_objective_tool_carries_semantics_without_pre_observation_target_i
             {
                 "value": {
                     "kind": "set",
-                    "predicate": {"any_of": [{"all_of": [{
-                        "kind": "fact_equals", "field_name": "grid_coordinate",
-                        "expected": {"x": 1, "y": -2},
-                    }]}]},
+                    "predicate": {
+                        "any_of": [
+                            {
+                                "all_of": [
+                                    {
+                                        "kind": "fact_equals",
+                                        "field_name": "grid_coordinate",
+                                        "expected": {"x": 1, "y": -2},
+                                    }
+                                ]
+                            }
+                        ]
+                    },
                     "quantifier": "exactly_one",
                     "semantic_action": "activate",
                 }

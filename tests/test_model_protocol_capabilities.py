@@ -76,6 +76,7 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert dynamic.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
+    assert DecisionCapability.ATTACHED_WORKING_MEMORY in grounded.supported_decisions
     assert GroundedToolDecisionAdapter is GroundedActionAdapter
 
 
@@ -101,17 +102,14 @@ def test_grounded_action_and_objective_adapters_are_distinct_static_types() -> N
 def test_model_policy_preserves_adapter_capabilities() -> None:
     adapter = DynamicToolDecisionAdapter(_Transport(), _config())
 
-    assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == (
-        TOOL_ACTION_DECISION_CAPABILITIES
-    )
+    assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == (TOOL_ACTION_DECISION_CAPABILITIES)
 
 
 def test_runtime_accepts_exactly_subsets_of_declared_capabilities() -> None:
     supported = TOOL_ACTION_DECISION_CAPABILITIES
     evaluator = _Evaluator()
     all_subsets = chain.from_iterable(
-        combinations(tuple(ALL_DECISION_CAPABILITIES), size)
-        for size in range(len(ALL_DECISION_CAPABILITIES) + 1)
+        combinations(tuple(ALL_DECISION_CAPABILITIES), size) for size in range(len(ALL_DECISION_CAPABILITIES) + 1)
     )
 
     for subset in all_subsets:

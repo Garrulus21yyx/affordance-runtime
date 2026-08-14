@@ -6,12 +6,8 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import (
-    RequestObservation,
-    SelectAction,
-    UpdateWorkingMemory,
-)
-from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.decisions import RequestObservation, SelectAction
+from affordance_runtime.agent.policy import AgentPolicyTurn, PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
@@ -226,9 +222,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     }
     adapter = _dynamic_tool_adapter(policy)
     if adapter is not None:
-        image_input_count = int(
-            getattr(adapter, "last_image_input_count", len(context.image_inputs))
-        )
+        image_input_count = int(getattr(adapter, "last_image_input_count", len(context.image_inputs)))
         event["interaction_protocol"] = getattr(adapter, "interaction_protocol", "dynamic_tools.v1")
         event["tool_transport"] = getattr(getattr(adapter, "transport_kind", None), "value", "")
         event["tool_resolution_code"] = getattr(
@@ -239,40 +233,36 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
         event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
         event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
-        event["tool_argument_violation_code"] = str(
-            getattr(adapter, "last_argument_violation_code", "")
-        )
-        event["tool_argument_violation_paths"] = tuple(
-            getattr(adapter, "last_argument_violation_paths", ())
-        )
-        event["tool_argument_selected_operation"] = str(
-            getattr(adapter, "last_selected_operation", "")
-        )
-        event["tool_argument_repaired_operation_match"] = bool(
-            getattr(adapter, "last_repaired_operation_match", False)
-        )
+        event["tool_argument_violation_code"] = str(getattr(adapter, "last_argument_violation_code", ""))
+        event["tool_argument_violation_paths"] = tuple(getattr(adapter, "last_argument_violation_paths", ()))
+        event["tool_argument_selected_operation"] = str(getattr(adapter, "last_selected_operation", ""))
+        event["tool_argument_repaired_operation_match"] = bool(getattr(adapter, "last_repaired_operation_match", False))
         event["model_image_input_count"] = image_input_count
-    if isinstance(outcome, (SelectAction, RequestObservation, UpdateWorkingMemory)):
-        event["outcome"] = type(outcome).__name__
-        event["decision"] = _decision_trace(outcome)
-        if isinstance(outcome, SelectAction):
+    policy_turn = outcome if isinstance(outcome, AgentPolicyTurn) else None
+    decision = policy_turn.decision if policy_turn is not None else outcome
+    if policy_turn is not None:
+        event["working_memory"] = tuple(
+            {"description": item.description, "status": item.status.value} for item in policy_turn.working_memory.items
+        )
+    if isinstance(decision, (SelectAction, RequestObservation)):
+        event["outcome"] = type(decision).__name__
+        event["decision"] = _decision_trace(decision)
+        if isinstance(decision, SelectAction):
             selected = _selected_grounding_trace(
                 context,
-                outcome,
-                image_attached=bool(
-                    getattr(adapter, "last_image_input_count", len(context.image_inputs))
-                ),
+                decision,
+                image_attached=bool(getattr(adapter, "last_image_input_count", len(context.image_inputs))),
             )
             if selected is not None:
                 event["selected_grounding"] = selected
-    elif isinstance(outcome, PolicyFailure):
+    elif isinstance(decision, PolicyFailure):
         event["outcome"] = "policy_failure"
         event["policy_failure"] = {
-            "kind": str(outcome.kind),
-            "retryable": outcome.retryable,
+            "kind": str(decision.kind),
+            "retryable": decision.retryable,
         }
     else:
-        event["outcome"] = "exception" if exception else type(outcome).__name__
+        event["outcome"] = "exception" if exception else type(decision).__name__
     return event
 
 
@@ -337,11 +327,6 @@ def _selected_grounding_trace(context, decision, *, image_attached: bool):
 
 def _decision_trace(decision):
     value: dict[str, object] = {"kind": type(decision).__name__, "context_id": decision.context_id}
-    if isinstance(decision, UpdateWorkingMemory):
-        value["checklist"] = tuple(
-            {"description": item.description, "status": item.status.value}
-            for item in decision.items
-        )
     for name in (
         "action_id",
         "destination_id",

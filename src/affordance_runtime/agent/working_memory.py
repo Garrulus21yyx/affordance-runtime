@@ -32,7 +32,7 @@ class WorkingMemoryItem:
 
 @dataclass(frozen=True)
 class AgentWorkingMemory:
-    """Advisory checklist authored by the policy and scoped to one run."""
+    """Advisory task memory authored by the policy and scoped to one run."""
 
     items: tuple[WorkingMemoryItem, ...] = ()
 

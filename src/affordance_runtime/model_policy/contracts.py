@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.agent.local_objective_proposal import LocalObjectiveResolvedOutcome
+from affordance_runtime.agent.working_memory import AgentWorkingMemory
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.context import AgentImageInput
 
@@ -103,9 +104,7 @@ class ModelDecisionRequest:
         object.__setattr__(self, "context_id", context_id)
         object.__setattr__(self, "decision_schema", freeze_json(self.decision_schema))
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
-        if len(self.image_inputs) > 2 or any(
-            not isinstance(item, AgentImageInput) for item in self.image_inputs
-        ):
+        if len(self.image_inputs) > 2 or any(not isinstance(item, AgentImageInput) for item in self.image_inputs):
             raise TypeError("model request image inputs must be bounded and typed")
         if self.policy_context is not None:
             from affordance_runtime.model_boundary.context import AgentContext
@@ -122,10 +121,13 @@ class ResolvedModelDecision:
 
     decision: AgentDecision
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
+    working_memory: AgentWorkingMemory | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("resolved model outcome requires one typed AgentDecision")
+        if self.working_memory is not None and not isinstance(self.working_memory, AgentWorkingMemory):
+            raise TypeError("resolved model working memory must be typed")
 
 
 @dataclass(frozen=True)

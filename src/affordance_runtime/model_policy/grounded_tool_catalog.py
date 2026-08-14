@@ -15,11 +15,9 @@ from typing import Mapping
 from pydantic import TypeAdapter, ValidationError
 
 from affordance_runtime.agent.decisions import (
-    AgentDecision,
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    UpdateWorkingMemory,
 )
 from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveNeedsInput,
@@ -32,6 +30,7 @@ from affordance_runtime.agent.local_objective_proposal import (
 from affordance_runtime.agent.working_memory import (
     MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
     MAX_WORKING_MEMORY_ITEMS,
+    AgentWorkingMemory,
     WorkingMemoryItem,
     WorkingMemoryItemStatus,
 )
@@ -41,6 +40,7 @@ from affordance_runtime.model_boundary.contracts import AgentActionOptionView, A
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
+    GroundedActionResolution,
     GroundedToolCatalog,
     GroundedToolPhase,
     GroundedToolResolutionCode,
@@ -73,11 +73,6 @@ class _NextActionsBinding:
 class _ObserveBinding:
     modality: str
     assurance: str
-
-
-@dataclass(frozen=True)
-class _WorkingMemoryBinding:
-    pass
 
 
 @dataclass(frozen=True)
@@ -125,11 +120,11 @@ def compile_grounded_tool_catalog(
         specs.extend(
             (
                 ToolSpec(
-                "propose_local_objective",
-                "Propose one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
-                "Use semantic predicates only. Runtime assigns objective/scope/step IDs; never put E-refs, DOM IDs, "
-                "screen points, private selectors, or bindings here.",
-                _object_schema({"value": _local_objective_schema()}, ("value",)),
+                    "propose_local_objective",
+                    "Propose one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
+                    "Use semantic predicates only. Runtime assigns objective/scope/step IDs; never put E-refs, DOM IDs, "
+                    "screen points, private selectors, or bindings here.",
+                    _object_schema({"value": _local_objective_schema()}, ("value",)),
                 ),
                 ToolSpec(
                     "local_objective_not_required",
@@ -192,11 +187,13 @@ def compile_grounded_tool_catalog(
             if capability.modality in seen_modalities:
                 continue
             seen_modalities.add(capability.modality)
-            specs.append(ToolSpec(
-                f"observe_{capability.modality}",
-                _observation_tool_description(context, capability),
-                _object_schema({}),
-            ))
+            specs.append(
+                ToolSpec(
+                    f"observe_{capability.modality}",
+                    _observation_tool_description(context, capability),
+                    _object_schema({}),
+                )
+            )
             bindings.append(_ObserveBinding(capability.modality, capability.assurance))
 
     verb_counts: dict[str, int] = {}
@@ -209,26 +206,23 @@ def compile_grounded_tool_catalog(
         bindings.append(_VerbBinding(tuple((ref, option.action_id) for ref, option in values), parameter_field))
 
     if phase is GroundedToolPhase.ACTION_SELECTION and context.actions.has_more:
-        specs.append(ToolSpec(
-            "next_actions",
-            "Inspect the next in-memory page of currently legal actions.",
-            _object_schema({}),
-        ))
-        bindings.append(_NextActionsBinding(
-            context.actions.active_query,
-            context.actions.active_target_filter,
-            context.actions.active_relevance_filter,
-            context.actions.next_cursor,
-        ))
+        specs.append(
+            ToolSpec(
+                "next_actions",
+                "Inspect the next in-memory page of currently legal actions.",
+                _object_schema({}),
+            )
+        )
+        bindings.append(
+            _NextActionsBinding(
+                context.actions.active_query,
+                context.actions.active_target_filter,
+                context.actions.active_relevance_filter,
+                context.actions.next_cursor,
+            )
+        )
     if phase is GroundedToolPhase.ACTION_SELECTION:
-        specs.append(ToolSpec(
-            "update_checklist",
-            "Replace the agent's advisory task checklist when progress cannot be safely reconstructed from "
-            "the latest tool result alone. This changes no environment state, grants no action authority, "
-            "and must be followed by a current environment tool unless the checklist genuinely needs revision.",
-            _working_memory_schema(),
-        ))
-        bindings.append(_WorkingMemoryBinding())
+        specs = [_with_working_memory(spec) for spec in specs]
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -244,11 +238,14 @@ def compile_grounded_tool_catalog(
         "grounding_index": view.grounding_index,
         "current_state": view.current_state,
         "previous_tool_result": view.previous_tool_result,
-        "tools": tuple({
-            "name": item.name,
-            "description": item.description,
-            "input_schema": to_json_compatible(item.input_schema),
-        } for item in specs),
+        "tools": tuple(
+            {
+                "name": item.name,
+                "description": item.description,
+                "input_schema": to_json_compatible(item.input_schema),
+            }
+            for item in specs
+        ),
     }
     encoded = json.dumps(to_json_compatible(public), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     encoded_bytes = len(encoded.encode())
@@ -274,7 +271,7 @@ def resolve_grounded_tool_call(
     *,
     expected_context_id: str,
     expected_catalog_id: str | None = None,
-) -> AgentDecision | LocalObjectiveResolvedOutcome:
+) -> GroundedActionResolution | LocalObjectiveResolvedOutcome:
     if catalog.context_id != expected_context_id or (
         expected_catalog_id is not None and catalog.catalog_id != expected_catalog_id
     ):
@@ -332,40 +329,26 @@ def resolve_grounded_tool_call(
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
+    try:
+        working_memory = _working_memory_from_arguments(call.arguments)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
     if isinstance(binding, _NextActionsBinding):
         decision = RequestActionPage(
             expected_context_id, binding.query, binding.target_id, binding.relevance_role, binding.cursor
         )
-        return decision
+        return GroundedActionResolution(decision, working_memory)
     if isinstance(binding, _ObserveBinding):
-        return RequestObservation(
-            expected_context_id,
-            "current_world",
-            binding.modality,
-            binding.assurance,
-            f"acquire fresh {binding.modality} grounding",
+        return GroundedActionResolution(
+            RequestObservation(
+                expected_context_id,
+                "current_world",
+                binding.modality,
+                binding.assurance,
+                f"acquire fresh {binding.modality} grounding",
+            ),
+            working_memory,
         )
-    if isinstance(binding, _WorkingMemoryBinding):
-        try:
-            value = call.arguments["value"]
-            if not isinstance(value, Mapping):
-                raise TypeError
-            raw_items = value["items"]
-            if not isinstance(raw_items, tuple):
-                raise TypeError
-            items = tuple(
-                WorkingMemoryItem(
-                    str(item["description"]),
-                    WorkingMemoryItemStatus(str(item["status"])),
-                )
-                for item in raw_items
-                if isinstance(item, Mapping)
-            )
-            if len(items) != len(raw_items):
-                raise TypeError
-            return UpdateWorkingMemory(expected_context_id, items)
-        except (KeyError, TypeError, ValueError) as exc:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
     if not isinstance(binding, _VerbBinding):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref = str(call.arguments.get("target") or "")
@@ -373,7 +356,10 @@ def resolve_grounded_tool_call(
     if ref not in actions:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
     parameters = {"value": call.arguments[binding.parameter_field]} if binding.parameter_field else {}
-    return SelectAction(expected_context_id, actions[ref], parameters, "")
+    return GroundedActionResolution(
+        SelectAction(expected_context_id, actions[ref], parameters, ""),
+        working_memory,
+    )
 
 
 def resolve_grounded_action_call(
@@ -382,14 +368,14 @@ def resolve_grounded_action_call(
     *,
     expected_context_id: str,
     expected_catalog_id: str | None = None,
-) -> AgentDecision:
+) -> GroundedActionResolution:
     outcome = resolve_grounded_tool_call(
         catalog,
         call,
         expected_context_id=expected_context_id,
         expected_catalog_id=expected_catalog_id,
     )
-    if not isinstance(outcome, AgentDecision):
+    if not isinstance(outcome, GroundedActionResolution):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     return outcome
 
@@ -407,7 +393,7 @@ def resolve_grounded_objective_call(
         expected_context_id=expected_context_id,
         expected_catalog_id=expected_catalog_id,
     )
-    if isinstance(outcome, AgentDecision):
+    if isinstance(outcome, GroundedActionResolution):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     return outcome
 
@@ -434,9 +420,7 @@ def _verb_schema(verb: str, refs: list[str], parameter_schema: Mapping[str, obje
         raw_properties = parameter_schema.get("properties", {})
         if not isinstance(raw_properties, Mapping):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        properties["value"] = to_json_compatible(
-            dict(raw_properties).get("value", {"type": "string"})
-        )
+        properties["value"] = to_json_compatible(dict(raw_properties).get("value", {"type": "string"}))
         required.append("value")
         parameter_field = "value"
     elif parameter_schema.get("required"):
@@ -469,19 +453,47 @@ def _working_memory_schema() -> dict[str, object]:
     )
     return _object_schema(
         {
-            "value": _object_schema(
-                {
-                    "items": {
-                        "type": "array",
-                        "items": item,
-                        "maxItems": MAX_WORKING_MEMORY_ITEMS,
-                    },
-                },
-                ("items",),
-            )
+            "items": {
+                "type": "array",
+                "items": item,
+                "maxItems": MAX_WORKING_MEMORY_ITEMS,
+            },
         },
-        ("value",),
+        ("items",),
     )
+
+
+def _with_working_memory(spec: ToolSpec) -> ToolSpec:
+    schema = to_json_compatible(spec.input_schema)
+    if not isinstance(schema, dict):
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    properties = schema.get("properties")
+    required = schema.get("required")
+    if not isinstance(properties, dict) or not isinstance(required, list) or "memory" in properties:
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    properties["memory"] = _working_memory_schema()
+    required.append("memory")
+    return ToolSpec(spec.name, spec.description, schema)
+
+
+def _working_memory_from_arguments(arguments: Mapping[str, object]) -> AgentWorkingMemory:
+    raw = arguments["memory"]
+    if not isinstance(raw, Mapping):
+        raise TypeError
+    raw_items = raw["items"]
+    if not isinstance(raw_items, tuple):
+        raise TypeError
+    items = tuple(
+        WorkingMemoryItem(
+            str(item["description"]),
+            WorkingMemoryItemStatus(str(item["status"])),
+        )
+        for item in raw_items
+        if isinstance(item, Mapping)
+    )
+    if len(items) != len(raw_items):
+        raise TypeError
+    return AgentWorkingMemory(items)
 
 
 def _tool_description(verb: str) -> str:
@@ -514,11 +526,14 @@ def _grounding_entity(item: AgentGroundingEntityView):
 def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
     value = {
         "task_status": str(context.progress.validated_task_status),
-        "verified_public_facts": [{
-            "subject": ref_by_target.get(item.subject_id, "task"),
-            "field": item.predicate,
-            "value": to_json_compatible(item.value),
-        } for item in context.progress.verified_public_facts],
+        "verified_public_facts": [
+            {
+                "subject": ref_by_target.get(item.subject_id, "task"),
+                "field": item.predicate,
+                "value": to_json_compatible(item.value),
+            }
+            for item in context.progress.verified_public_facts
+        ],
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
         "agent_working_memory": {
@@ -532,10 +547,7 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
                 for item in context.working_memory.items
             ],
         },
-        "interaction_history": [
-            _turn_result(item, ref_by_target)
-            for item in context.history.items[:-1]
-        ],
+        "interaction_history": [_turn_result(item, ref_by_target) for item in context.history.items[:-1]],
     }
     return value
 
@@ -578,7 +590,4 @@ def _observation_tool_description(context: AgentContext, capability) -> str:
             f"A current {capability.modality} source is already present with "
             f"{current.projection_coverage} projection; refresh only when new currentness evidence is needed."
         )
-    return (
-        f"{state} This tool takes no arguments; Runtime supplies the declared "
-        f"{capability.assurance} assurance."
-    )
+    return f"{state} This tool takes no arguments; Runtime supplies the declared {capability.assurance} assurance."

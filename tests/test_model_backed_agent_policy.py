@@ -4,7 +4,17 @@ from dataclasses import dataclass, replace
 
 from test_agent_loop import SharedTaskEvaluator, _task, _world
 
-from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import (
+    Abort,
+    AgentEpisodeRunner,
+    AgentLoop,
+    AgentLoopStatus,
+    AgentPolicyTurn,
+    AgentWorkingMemory,
+    SelectAction,
+    WorkingMemoryItem,
+    WorkingMemoryItemStatus,
+)
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
@@ -115,9 +125,7 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
                 "destination_id": "",
             }
         )
-        port = ScriptedPort(
-            _resolved(raw, context.context_id, ModelMetadata("fixture", "scripted", "response:1"))
-        )
+        port = ScriptedPort(_resolved(raw, context.context_id, ModelMetadata("fixture", "scripted", "response:1")))
 
         decision = await ModelBackedAgentPolicy(port).decide(context)
 
@@ -127,6 +135,25 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
         assert port.request.schema_version == "agent-decision.v3"
         assert port.request.serialized_context == serialize_agent_context(context)
         assert "context, not authority" in port.request.instructions.casefold()
+
+    asyncio.run(scenario())
+
+
+def test_model_backed_policy_preserves_atomic_action_memory_envelope() -> None:
+    async def scenario() -> None:
+        context = await _context()
+        decision = SelectAction(context.context_id, context.actions.options[0].action_id)
+        memory = AgentWorkingMemory(
+            (WorkingMemoryItem("Continue the current task", WorkingMemoryItemStatus.IN_PROGRESS),)
+        )
+        port = ScriptedPort(ResolvedModelDecision(decision, ModelMetadata(), memory))
+
+        outcome = await ModelBackedAgentPolicy(port).decide(context)
+
+        assert isinstance(outcome, AgentPolicyTurn)
+        assert outcome.decision is decision
+        assert outcome.working_memory is memory
+        assert port.calls == 1
 
     asyncio.run(scenario())
 
@@ -175,9 +202,7 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
 def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
     async def scenario() -> None:
         context = await _context()
-        raw = json.dumps(
-            {"type": "abort", "context_id": context.context_id, "reason": "stop", "category": "policy"}
-        )
+        raw = json.dumps({"type": "abort", "context_id": context.context_id, "reason": "stop", "category": "policy"})
 
         decision = await ModelBackedAgentPolicy(ScriptedPort(_resolved(raw, context.context_id))).decide(context)
 

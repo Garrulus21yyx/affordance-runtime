@@ -16,6 +16,10 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
+from affordance_runtime.agent.working_memory import (
+    MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
+    MAX_WORKING_MEMORY_ITEMS,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
@@ -37,6 +41,7 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
 )
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
+    GroundedActionResolution,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
@@ -77,10 +82,12 @@ Before choosing, reason internally in this order:
 4. Choose the single next action that advances one unmet requirement without undoing completed work.
 Tasks may require multiple turns. Before any action that may finalize or commit the task, verify that every
 observable prerequisite in the instruction is already satisfied.
-When a task has multiple requirements whose progress cannot be recovered reliably from the latest tool result,
-use update_checklist once to externalize the current plan and completion state. It is advisory memory, not an
-environment action. On the following turn, inspect the fresh world and choose an environment tool; update the
-checklist again only when the plan or completion state has actually changed.
+Every command schema requires memory. Return the complete next advisory task memory together with the current
+tool call. Preserve still-valid completed and pending items from current_state.agent_working_memory, update them
+from the fresh public world, and keep the list empty only when no cross-turn task state is useful. Do not mark the
+chosen action's intended effect completed until a fresh observation confirms it. Memory grants no authority and
+will be injected into the next policy context; the current tool still follows the ordinary Runtime action/control
+path.
 Follow the chosen tool's input schema exactly. For an entity action, copy its required public E* target exactly
 from the current tool menu and grounding_index. Do not add target, assurance, or other arguments when the selected
 tool schema does not declare them. When recovery
@@ -124,9 +131,40 @@ class _GroundedCommandPayloadBase(BaseModel):
         return {"value": self.value} if self.value is not None and "value" in admitted else {}
 
 
+class GroundedWorkingMemoryItemPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    description: str
+    status: Literal["pending", "in_progress", "completed"]
+
+    @field_validator("description")
+    @classmethod
+    def _description(cls, value: str) -> str:
+        if not value.strip() or len(value) > MAX_WORKING_MEMORY_DESCRIPTION_CHARS:
+            raise ValueError("working-memory description is invalid")
+        return value
+
+
+class GroundedWorkingMemoryPayload(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    items: list[GroundedWorkingMemoryItemPayload]
+
+    @field_validator("items")
+    @classmethod
+    def _items(
+        cls,
+        value: list[GroundedWorkingMemoryItemPayload],
+    ) -> list[GroundedWorkingMemoryItemPayload]:
+        if len(value) > MAX_WORKING_MEMORY_ITEMS:
+            raise ValueError("working memory exceeds its item bound")
+        return value
+
+
 class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     """Compact action-selection command; retained as the public compatibility name."""
 
+    memory: GroundedWorkingMemoryPayload
     target: str = ""
     text: str | None = None
 
@@ -139,7 +177,9 @@ class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
 
     def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
         result = super().command_arguments(spec)
-        admitted = _admitted_properties(spec, {"target", "text", "value"})
+        admitted = _admitted_properties(spec, {"memory", "target", "text", "value"})
+        if "memory" in admitted:
+            result["memory"] = to_json_compatible(self.memory.model_dump())
         if self.target and "target" in admitted:
             result["target"] = self.target
         if self.text is not None and "text" in admitted:
@@ -156,7 +196,6 @@ def _admitted_properties(spec: ToolSpec | None, default: set[str]) -> set[str]:
         return set(default)
     properties = spec.input_schema.get("properties")
     return set(properties) if isinstance(properties, Mapping) else set()
-
 
 
 @dataclass(frozen=True)
@@ -240,9 +279,7 @@ class _GroundedAdapterBase:
             object.__setattr__(
                 self,
                 "last_image_input_count",
-                len(request.image_inputs)
-                if perception_uses_images(request, self.perception_profile)
-                else 0,
+                len(request.image_inputs) if perception_uses_images(request, self.perception_profile) else 0,
             )
             object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
             messages = _messages(
@@ -420,12 +457,14 @@ class GroundedActionAdapter(_GroundedAdapterBase):
 
     @property
     def compatibility_key(self) -> str:
-        return ":".join((
-            GROUNDED_TOOLS_PROTOCOL,
-            "action_selection",
-            self.perception_profile.value,
-            self.transport_kind.value,
-        ))
+        return ":".join(
+            (
+                GROUNDED_TOOLS_PROTOCOL,
+                "action_selection",
+                self.perception_profile.value,
+                self.transport_kind.value,
+            )
+        )
 
     async def generate(
         self,
@@ -441,24 +480,28 @@ class GroundedActionAdapter(_GroundedAdapterBase):
         )
         if isinstance(resolved, ModelFailure):
             return resolved
-        decision, metadata = resolved
-        from affordance_runtime.agent.decisions import AgentDecision
-
-        if not isinstance(decision, AgentDecision):
+        resolution, metadata = resolved
+        if not isinstance(resolution, GroundedActionResolution):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "action adapter resolved an objective")
-        return ResolvedModelDecision(decision, metadata)
+        return ResolvedModelDecision(
+            resolution.decision,
+            metadata,
+            resolution.working_memory,
+        )
 
 
 @dataclass(frozen=True)
 class GroundedObjectiveAdapter(_GroundedAdapterBase):
     @property
     def compatibility_key(self) -> str:
-        return ":".join((
-            GROUNDED_TOOLS_PROTOCOL,
-            "objective_proposal",
-            self.perception_profile.value,
-            self.transport_kind.value,
-        ))
+        return ":".join(
+            (
+                GROUNDED_TOOLS_PROTOCOL,
+                "objective_proposal",
+                self.perception_profile.value,
+                self.transport_kind.value,
+            )
+        )
 
     async def generate(
         self,
@@ -513,8 +556,7 @@ def _messages(
     if include_images and (not supports_multimodal or not request.image_inputs):
         raise ValueError("selected grounded perception requires a current image input")
     grounding_index = tuple(
-        dict(item) if include_images else {**dict(item), "marked": False}
-        for item in view.grounding_index
+        dict(item) if include_images else {**dict(item), "marked": False} for item in view.grounding_index
     )
     public = {
         "task_brief": to_json_compatible(view.task_brief),

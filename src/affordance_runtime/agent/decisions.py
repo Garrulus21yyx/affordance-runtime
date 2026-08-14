@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias
 
-from affordance_runtime.agent.working_memory import AgentWorkingMemory, WorkingMemoryItem
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
@@ -93,19 +92,6 @@ class RequestActionPage:
 
 
 @dataclass(frozen=True)
-class UpdateWorkingMemory:
-    """Replace advisory model task memory without requesting an environment effect."""
-
-    context_id: str
-    items: tuple[WorkingMemoryItem, ...]
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        memory = AgentWorkingMemory(tuple(self.items))
-        object.__setattr__(self, "items", memory.items)
-
-
-@dataclass(frozen=True)
 class AskUser:
     context_id: str
     question: str
@@ -164,13 +150,4 @@ class Abort:
             raise ValueError("abort category is unsupported") from exc
 
 
-AgentDecision: TypeAlias = (
-    SelectAction
-    | RequestObservation
-    | RequestActionPage
-    | UpdateWorkingMemory
-    | AskUser
-    | ProposeDone
-    | Wait
-    | Abort
-)
+AgentDecision: TypeAlias = SelectAction | RequestObservation | RequestActionPage | AskUser | ProposeDone | Wait | Abort

@@ -11,6 +11,7 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.agent.working_memory import AgentWorkingMemory
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
 from affordance_runtime.model_boundary.context import AgentContext
@@ -37,7 +38,21 @@ class PolicyFailure:
             raise ValueError("policy failure requires a bounded public reason")
 
 
-AgentPolicyOutcome: TypeAlias = AgentDecision | PolicyFailure
+@dataclass(frozen=True)
+class AgentPolicyTurn:
+    """One action/control decision and its atomically authored next memory."""
+
+    decision: AgentDecision
+    working_memory: AgentWorkingMemory
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision, AgentDecision):
+            raise TypeError("policy turn requires one typed AgentDecision")
+        if not isinstance(self.working_memory, AgentWorkingMemory):
+            raise TypeError("policy turn requires typed working memory")
+
+
+AgentPolicyOutcome: TypeAlias = AgentDecision | AgentPolicyTurn | PolicyFailure
 
 
 class AgentPolicy(Protocol):
@@ -57,9 +72,7 @@ class AgentDecisionPorts:
 
     action_policy: AgentPolicy
     local_objective_proposer: LocalObjectiveProposalPort | None = None
-    local_objective_requirement: LocalObjectiveProposalRequirement = (
-        LocalObjectiveProposalRequirement.NOT_REQUIRED
-    )
+    local_objective_requirement: LocalObjectiveProposalRequirement = LocalObjectiveProposalRequirement.NOT_REQUIRED
 
     def __post_init__(self) -> None:
         if not callable(getattr(self.action_policy, "decide", None)):
@@ -73,9 +86,7 @@ class AgentDecisionPorts:
             raise TypeError("objective proposal requirement must be typed")
         configured = self.local_objective_proposer is not None
         if configured != (requirement is LocalObjectiveProposalRequirement.REQUIRED):
-            raise ValueError(
-                "objective proposer configuration must match its explicit requirement"
-            )
+            raise ValueError("objective proposer configuration must match its explicit requirement")
 
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:

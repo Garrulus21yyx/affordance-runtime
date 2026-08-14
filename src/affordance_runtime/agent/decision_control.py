@@ -33,7 +33,6 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    UpdateWorkingMemory,
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
@@ -52,7 +51,7 @@ from affordance_runtime.agent.observation_control import (
     capture_admission_failure,
     capture_for_session,
 )
-from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
+from affordance_runtime.agent.policy import AgentPolicy, AgentPolicyTurn, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
@@ -103,7 +102,6 @@ _DECISION_TYPES = (
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    UpdateWorkingMemory,
     Wait,
 )
 
@@ -164,14 +162,17 @@ async def run_policy_turn(
             outcome.reason,
             policy_failure=outcome,
         )
-    decision = outcome
+    decision: AgentDecision
+    if isinstance(outcome, AgentPolicyTurn):
+        policy_turn = outcome
+        decision = outcome.decision
+    else:
+        policy_turn = None
+        decision = outcome
     if not accept_current_decision(session, decision):
         return Continue("stale_decision")
-    if isinstance(decision, UpdateWorkingMemory):
-        changed = state.replace_working_memory(decision.items)
-        return Continue(
-            "agent_working_memory_updated" if changed else "agent_working_memory_unchanged"
-        )
+    if policy_turn is not None:
+        state.replace_working_memory(policy_turn.working_memory.items)
     scope = ControlTransitionScope(state, decision)
     routed: LoopDirective
     coverage = NegativeClaimCoverageGate().assess(
@@ -250,14 +251,16 @@ async def run_policy_turn(
         raise
     transition = scope.finalize(state, routed)
     if isinstance(decision, AskUser) and state.pending_user_question:
-        state.set_pending_user_request(build_user_input_request(
-            task_id=session.task.task_id,
-            task_revision=state.task_revision,
-            context_id=decision.context_id,
-            source_transition_id=transition.transition_id,
-            question=decision.question,
-            requested_fields=decision.requested_fields,
-        ))
+        state.set_pending_user_request(
+            build_user_input_request(
+                task_id=session.task.task_id,
+                task_revision=state.task_revision,
+                context_id=decision.context_id,
+                source_transition_id=transition.transition_id,
+                question=decision.question,
+                requested_fields=decision.requested_fields,
+            )
+        )
     return routed
 
 
@@ -327,14 +330,16 @@ async def run_objective_proposal_turn(
             outcome.question,
         )
         transition = scope.finalize(state, routed)
-        state.set_pending_user_request(build_user_input_request(
-            task_id=session.task.task_id,
-            task_revision=state.task_revision,
-            context_id=context.context_id,
-            source_transition_id=transition.transition_id,
-            question=outcome.question,
-            requested_fields=outcome.requested_fields,
-        ))
+        state.set_pending_user_request(
+            build_user_input_request(
+                task_id=session.task.task_id,
+                task_revision=state.task_revision,
+                context_id=context.context_id,
+                source_transition_id=transition.transition_id,
+                question=outcome.question,
+                requested_fields=outcome.requested_fields,
+            )
+        )
         return routed
     if isinstance(outcome, LocalObjectiveUnsupported):
         return Terminate(
@@ -435,6 +440,7 @@ async def _route_decision(
         scope,
     )
 
+
 async def _policy_observation(
     session: AgentRunSession,
     action_space: ActionSpace,
@@ -487,10 +493,7 @@ async def _policy_observation(
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     state.current_task_evaluation = evaluation
-    if (
-        state.unresolved_observable_request is not None
-        and evaluation.status is not TaskEvaluationStatus.UNKNOWN
-    ):
+    if state.unresolved_observable_request is not None and evaluation.status is not TaskEvaluationStatus.UNKNOWN:
         state.clear_unknown_effect_observation()
     scope.record_evaluations(task=evaluation)
     disposition = task_evaluation_disposition_for_world(

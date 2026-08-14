@@ -11,7 +11,7 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     normalize_decision_capabilities,
 )
-from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
+from affordance_runtime.agent.policy import AgentPolicyOutcome, AgentPolicyTurn, PolicyFailure
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import (
@@ -87,6 +87,8 @@ class ModelBackedAgentPolicy:
             object.__setattr__(self, "last_metadata", outcome.metadata)
             if outcome.decision.context_id != context.context_id:
                 return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
+            if outcome.working_memory is not None:
+                return AgentPolicyTurn(outcome.decision, outcome.working_memory)
             return outcome.decision
         return _policy_failure(
             ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)

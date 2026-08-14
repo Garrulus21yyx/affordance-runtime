@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
 
+from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.agent.working_memory import AgentWorkingMemory
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_policy.tool_contracts import ToolSpec
 
@@ -71,6 +73,20 @@ class GroundedToolCatalog:
             raise ValueError("grounded catalog must align specs and bindings")
         object.__setattr__(self, "specs", tuple(self.specs))
         object.__setattr__(self, "bindings", tuple(self.bindings))
+
+
+@dataclass(frozen=True)
+class GroundedActionResolution:
+    """One current action/control decision with mandatory next-turn memory."""
+
+    decision: AgentDecision
+    working_memory: AgentWorkingMemory
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision, AgentDecision):
+            raise TypeError("grounded action resolution requires a typed decision")
+        if not isinstance(self.working_memory, AgentWorkingMemory):
+            raise TypeError("grounded action resolution requires typed working memory")
 
 
 class GroundedToolResolutionError(ValueError):

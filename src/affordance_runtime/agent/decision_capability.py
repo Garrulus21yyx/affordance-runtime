@@ -13,7 +13,7 @@ class DecisionCapability(StrEnum):
     SELECT_ACTION = "select_action"
     REQUEST_OBSERVATION = "request_observation"
     REQUEST_ACTION_PAGE = "request_action_page"
-    UPDATE_WORKING_MEMORY = "update_working_memory"
+    ATTACHED_WORKING_MEMORY = "attached_working_memory"
     ASK_USER = "ask_user"
     PROPOSE_DONE = "propose_done"
     WAIT = "wait"
@@ -31,13 +31,11 @@ TOOL_ACTION_DECISION_CAPABILITIES = frozenset(
 GROUNDED_ACTION_DECISION_CAPABILITIES = frozenset(
     {
         *TOOL_ACTION_DECISION_CAPABILITIES,
-        DecisionCapability.UPDATE_WORKING_MEMORY,
+        DecisionCapability.ATTACHED_WORKING_MEMORY,
     }
 )
 STRUCTURED_PACKAGE_DECISION_CAPABILITIES = frozenset(
-    capability
-    for capability in DecisionCapability
-    if capability is not DecisionCapability.UPDATE_WORKING_MEMORY
+    capability for capability in DecisionCapability if capability is not DecisionCapability.ATTACHED_WORKING_MEMORY
 )
 
 
