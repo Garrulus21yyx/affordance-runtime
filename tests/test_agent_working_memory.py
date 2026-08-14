@@ -29,17 +29,25 @@ def test_working_memory_is_installed_atomically_with_the_current_action() -> Non
                 return AgentPolicyTurn(
                     SelectAction(context.context_id, context.actions.options[0].action_id),
                     AgentWorkingMemory(
-                        (
+                        items=(
                             WorkingMemoryItem(
                                 "Complete the current public task",
                                 WorkingMemoryItemStatus.IN_PROGRESS,
                             ),
-                        )
+                        ),
+                        goal="Complete the current public task",
+                        derived_facts=("The first action remains unverified",),
+                        next_step="Inspect the fresh world",
+                        blockers=("The requested end state is not yet observed",),
                     ),
                 )
             assert context.working_memory.revision == 1
             assert context.working_memory.items[0].description == "Complete the current public task"
             assert context.working_memory.items[0].status == "in_progress"
+            assert context.working_memory.goal == "Complete the current public task"
+            assert context.working_memory.derived_facts == ("The first action remains unverified",)
+            assert context.working_memory.next_step == "Inspect the fresh world"
+            assert context.working_memory.blockers == ("The requested end state is not yet observed",)
             return Abort(context.context_id, "memory observed", "policy")
 
     async def scenario() -> None:

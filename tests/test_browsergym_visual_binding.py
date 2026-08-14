@@ -335,7 +335,7 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
             assert "observe_visual" in {item.name for item in catalog.specs}
             decision = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("observe_visual", {"memory": {"items": []}}),
+                ToolCall("observe_visual", {}),
                 expected_context_id=context.context_id,
             )
             from affordance_runtime.model_policy.grounded_tool_contracts import (

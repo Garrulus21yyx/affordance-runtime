@@ -7,7 +7,6 @@ from enum import StrEnum
 from typing import Mapping
 
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.agent.working_memory import AgentWorkingMemory
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_policy.tool_contracts import ToolSpec
 
@@ -36,8 +35,9 @@ class GroundedToolResolutionCode(StrEnum):
 class ToolPolicyView:
     task_brief: Mapping[str, object]
     grounding_index: tuple[Mapping[str, object], ...]
-    current_state: Mapping[str, object]
-    previous_tool_result: Mapping[str, object]
+    current_world: Mapping[str, object]
+    world_transition: Mapping[str, object]
+    agent_task_state: Mapping[str, object]
     tools: tuple[ToolSpec, ...]
 
     def __post_init__(self) -> None:
@@ -47,8 +47,9 @@ class ToolPolicyView:
             "grounding_index",
             tuple(freeze_json(item) for item in self.grounding_index),
         )
-        object.__setattr__(self, "current_state", freeze_json(self.current_state))
-        object.__setattr__(self, "previous_tool_result", freeze_json(self.previous_tool_result))
+        object.__setattr__(self, "current_world", freeze_json(self.current_world))
+        object.__setattr__(self, "world_transition", freeze_json(self.world_transition))
+        object.__setattr__(self, "agent_task_state", freeze_json(self.agent_task_state))
         object.__setattr__(self, "tools", tuple(self.tools))
 
 
@@ -77,16 +78,13 @@ class GroundedToolCatalog:
 
 @dataclass(frozen=True)
 class GroundedActionResolution:
-    """One current action/control decision with mandatory next-turn memory."""
+    """One current action/control decision resolved from a clean action tool."""
 
     decision: AgentDecision
-    working_memory: AgentWorkingMemory
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("grounded action resolution requires a typed decision")
-        if not isinstance(self.working_memory, AgentWorkingMemory):
-            raise TypeError("grounded action resolution requires typed working memory")
 
 
 class GroundedToolResolutionError(ValueError):

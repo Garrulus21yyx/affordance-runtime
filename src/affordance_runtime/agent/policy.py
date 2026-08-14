@@ -40,7 +40,7 @@ class PolicyFailure:
 
 @dataclass(frozen=True)
 class AgentPolicyTurn:
-    """One action/control decision and its atomically authored next memory."""
+    """One action/control decision plus the task state that governed it."""
 
     decision: AgentDecision
     working_memory: AgentWorkingMemory

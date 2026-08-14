@@ -12,7 +12,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.model_boundary.budgets import ContextProjectionBudget, serialized_size
+from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_boundary.world_projection import project_model_world
 from affordance_runtime.task import TaskGoal
@@ -429,7 +429,20 @@ def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
     reasons = tuple(f"turn-{index}-" + "x" * 400 for index in range(6))
     state = AgentLoopState(observation)
     _append_abort_transitions(state, reasons)
-    budget = ContextProjectionBudget(max_history_turns=6, max_total_serialized_bytes=3_000)
+    unbounded = ContextBuilder(ContextProjectionBudget(max_history_turns=6)).build(
+        task,
+        state,
+        ActionSpace(observation.observation_id, ()),
+        evaluation,
+    )
+    newest_only = replace(
+        unbounded,
+        history=BoundedSection((unbounded.history.items[-1],), unbounded.history.total_count, True),
+    )
+    budget = ContextProjectionBudget(
+        max_history_turns=6,
+        max_total_serialized_bytes=serialized_size(newest_only),
+    )
 
     context = ContextBuilder(budget).build(
         task,

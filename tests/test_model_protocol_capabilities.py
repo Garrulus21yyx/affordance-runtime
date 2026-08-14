@@ -76,7 +76,7 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert dynamic.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
-    assert DecisionCapability.ATTACHED_WORKING_MEMORY in grounded.supported_decisions
+    assert grounded.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert GroundedToolDecisionAdapter is GroundedActionAdapter
 
 

@@ -300,11 +300,16 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
 
 def _working_memory_view(state: AgentLoopState) -> AgentWorkingMemoryView:
     return AgentWorkingMemoryView(
-        tuple(
+        items=tuple(
             AgentWorkingMemoryItemView(item.description, item.status.value)
             for item in state.working_memory.items
         ),
-        state.working_memory_revision,
+        revision=state.working_memory_revision,
+        goal=state.working_memory.goal,
+        derived_facts=state.working_memory.derived_facts,
+        next_step=state.working_memory.next_step,
+        ready_to_finalize=state.working_memory.ready_to_finalize,
+        blockers=state.working_memory.blockers,
     )
 
 

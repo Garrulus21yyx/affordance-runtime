@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.7",
+  "PyYAML>=6.0,<7",
 ]
 
 [project.scripts]
@@ -39,10 +40,14 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.4",
   "mypy>=1.10",
+  "types-PyYAML>=6.0,<7",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+affordance_runtime = ["model_policy/prompts/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

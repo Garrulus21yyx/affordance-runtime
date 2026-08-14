@@ -172,7 +172,7 @@ async def run_policy_turn(
     if not accept_current_decision(session, decision):
         return Continue("stale_decision")
     if policy_turn is not None:
-        state.replace_working_memory(policy_turn.working_memory.items)
+        state.replace_working_memory(policy_turn.working_memory)
     scope = ControlTransitionScope(state, decision)
     routed: LoopDirective
     coverage = NegativeClaimCoverageGate().assess(

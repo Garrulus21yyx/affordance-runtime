@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import re
@@ -17,8 +16,15 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
 )
 from affordance_runtime.agent.working_memory import (
+    MAX_WORKING_MEMORY_BLOCKERS,
+    MAX_WORKING_MEMORY_DERIVED_FACTS,
     MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
+    MAX_WORKING_MEMORY_GOAL_CHARS,
     MAX_WORKING_MEMORY_ITEMS,
+    MAX_WORKING_MEMORY_NEXT_STEP_CHARS,
+    AgentWorkingMemory,
+    WorkingMemoryItem,
+    WorkingMemoryItemStatus,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.failures import (
@@ -32,6 +38,9 @@ from affordance_runtime.model_policy.contracts import (
     ModelMetadata,
     ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
+)
+from affordance_runtime.model_policy.grounded_policy_context import (
+    GroundedPolicyContextBinder,
 )
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_action_catalog,
@@ -56,10 +65,8 @@ from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec, T
 from affordance_runtime.model_port import (
     FallbackModelPort,
     ModelConfig,
-    ModelImageURLPart,
     ModelMessage,
     ModelPort,
-    ModelTextPart,
     ProviderFailureKind,
     ProviderModelError,
     StructuredModelError,
@@ -68,43 +75,6 @@ from affordance_runtime.model_port import (
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.world.schema_validation import validate_value_issue
-
-_ACTION_SYSTEM_PROMPT = """
-You are a GUI agent operating the current public interface to complete task_brief.instruction.
-You receive the current public Unified World, bounded interaction history, the previous tool result, and a
-menu of currently legal tools. Prefer explicit structured roles, labels, state, and relations. A marked
-screenshot is attached only when the current observation includes acquired visual evidence. If the public
-evidence is insufficient, select an offered observation tool instead of guessing.
-Before choosing, reason internally in this order:
-1. Identify the requested end state and any requirements that remain unmet.
-2. Inspect current public state, roles, labels, relations, available tools, and any attached screenshot.
-3. Verify from the fresh state whether the previous tool had its intended effect; revise the strategy when it did not.
-4. Choose the single next action that advances one unmet requirement without undoing completed work.
-Tasks may require multiple turns. Before any action that may finalize or commit the task, verify that every
-observable prerequisite in the instruction is already satisfied.
-Every command schema requires memory. Return the complete next advisory task memory together with the current
-tool call. Preserve still-valid completed and pending items from current_state.agent_working_memory, update them
-from the fresh public world, and keep the list empty only when no cross-turn task state is useful. Do not mark the
-chosen action's intended effect completed until a fresh observation confirms it. Memory grants no authority and
-will be injected into the next policy context; the current tool still follows the ordinary Runtime action/control
-path.
-Follow the chosen tool's input schema exactly. For an entity action, copy its required public E* target exactly
-from the current tool menu and grounding_index. Do not add target, assurance, or other arguments when the selected
-tool schema does not declare them. When recovery
-forbids retry or requires a strategy change, do not repeat the same operation, target, and arguments.
-Return only the required command. Do not invent screen points, private selectors, IDs, tools, targets, or explanations.
-The Runtime independently validates action authority, currentness, risk, execution, effects, and task completion.
-""".strip()
-
-_OBJECTIVE_SYSTEM_PROMPT = """
-Resolve the optional LocalObjective phase with exactly one offered outcome.
-Propose a bounded observation-resolvable objective only when it is useful; otherwise declare not_required,
-request specific missing user input, or fail closed as unsupported.
-Use semantic predicates over public facts or visual concepts. Never use E-refs, action IDs, DOM IDs,
-bindings, private selectors, screen points, or coordinates. A sequence may contain future-resolvable
-semantic steps when the instruction already determines them. Runtime owns admission, identity, scope
-closure, evidence, action legality, binding, effects, and completion. Return only one offered outcome.
-""".strip()
 
 
 class _GroundedCommandPayloadBase(BaseModel):
@@ -161,10 +131,43 @@ class GroundedWorkingMemoryPayload(BaseModel):
         return value
 
 
+class GroundedTaskStatePayload(GroundedWorkingMemoryPayload):
+    """Complete advisory task state produced before action selection."""
+
+    goal: str
+    derived_facts: list[str]
+    next_step: str
+    ready_to_finalize: bool
+    blockers: list[str]
+
+    @field_validator("goal")
+    @classmethod
+    def _goal(cls, value: str) -> str:
+        if not value.strip() or len(value) > MAX_WORKING_MEMORY_GOAL_CHARS:
+            raise ValueError("task-state goal is invalid")
+        return value
+
+    @field_validator("next_step")
+    @classmethod
+    def _next_step(cls, value: str) -> str:
+        if len(value) > MAX_WORKING_MEMORY_NEXT_STEP_CHARS:
+            raise ValueError("task-state next step is invalid")
+        return value
+
+    @field_validator("derived_facts")
+    @classmethod
+    def _derived_facts(cls, value: list[str]) -> list[str]:
+        return _bounded_task_state_statements(value, MAX_WORKING_MEMORY_DERIVED_FACTS)
+
+    @field_validator("blockers")
+    @classmethod
+    def _blockers(cls, value: list[str]) -> list[str]:
+        return _bounded_task_state_statements(value, MAX_WORKING_MEMORY_BLOCKERS)
+
+
 class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     """Compact action-selection command; retained as the public compatibility name."""
 
-    memory: GroundedWorkingMemoryPayload
     target: str = ""
     text: str | None = None
 
@@ -177,9 +180,7 @@ class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
 
     def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
         result = super().command_arguments(spec)
-        admitted = _admitted_properties(spec, {"memory", "target", "text", "value"})
-        if "memory" in admitted:
-            result["memory"] = to_json_compatible(self.memory.model_dump())
+        admitted = _admitted_properties(spec, {"target", "text", "value"})
         if self.target and "target" in admitted:
             result["target"] = self.target
         if self.text is not None and "text" in admitted:
@@ -189,6 +190,15 @@ class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
 
 class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
     """Compact objective-proposal command with no action-selection fields."""
+
+
+def _bounded_task_state_statements(value: list[str], limit: int) -> list[str]:
+    if len(value) > limit or any(
+        not item.strip() or len(item) > MAX_WORKING_MEMORY_DESCRIPTION_CHARS
+        for item in value
+    ):
+        raise ValueError("task-state statements are invalid")
+    return value
 
 
 def _admitted_properties(spec: ToolSpec | None, default: set[str]) -> set[str]:
@@ -203,7 +213,11 @@ class _GroundedAdapterBase:
     port: ModelPort
     config: ModelConfig
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
+    context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
+    last_model_call_count: int = field(default=0, init=False, compare=False)
+    last_task_state_schema_repair_count: int = field(default=0, init=False, compare=False)
+    last_task_state_call_record: object | None = field(default=None, init=False, compare=False, repr=False)
     last_argument_repair_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
@@ -228,6 +242,8 @@ class _GroundedAdapterBase:
         profile = DecisionPerceptionProfile(self.perception_profile)
         object.__setattr__(self, "perception_profile", profile)
         object.__setattr__(self, "transport_kind", tool_transport_for_model(self.port.provider, self.port.model))
+        if not isinstance(self.context_binder, GroundedPolicyContextBinder):
+            raise TypeError("grounded adapter requires one typed context binder")
 
     @property
     def interaction_protocol(self) -> str:
@@ -249,17 +265,11 @@ class _GroundedAdapterBase:
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
 
-    async def _generate(
-        self,
-        request: ModelDecisionRequest,
-        *,
-        expected_schema: str,
-        catalog_builder,
-        resolver,
-        system_prompt: str,
-        payload_base: type[_GroundedCommandPayloadBase],
-    ) -> tuple[object, ModelMetadata] | ModelFailure:
+    def _reset_diagnostics(self) -> None:
         object.__setattr__(self, "last_schema_repair_count", 0)
+        object.__setattr__(self, "last_model_call_count", 0)
+        object.__setattr__(self, "last_task_state_schema_repair_count", 0)
+        object.__setattr__(self, "last_task_state_call_record", None)
         object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
@@ -270,72 +280,109 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_selected_operation", "")
         object.__setattr__(self, "last_repaired_operation_match", False)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
+
+    def _compile_catalog(self, request: ModelDecisionRequest, expected_schema: str, catalog_builder):
         if request.schema_version != expected_schema or request.policy_context is None:
-            return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded tool request lacks canonical context")
+            raise ValueError("grounded tool request lacks canonical context")
+        catalog = catalog_builder(request.policy_context)
+        object.__setattr__(self, "last_catalog_count", len(catalog.specs))
+        object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
+        object.__setattr__(
+            self,
+            "last_image_input_count",
+            len(request.image_inputs) if perception_uses_images(request, self.perception_profile) else 0,
+        )
+        object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
+        return catalog
+
+    async def _resolve_catalog(
+        self,
+        request: ModelDecisionRequest,
+        catalog,
+        messages,
+        resolver,
+        payload_base: type[_GroundedCommandPayloadBase],
+    ) -> tuple[object, ModelMetadata]:
+        calls = await self._call(
+            messages,
+            catalog.specs,
+            _labeled_entity_operation_aliases(catalog),
+            payload_base,
+        )
+        if not calls:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
+        if len(calls) != 1:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
+        call = calls[0]
         try:
-            catalog = catalog_builder(request.policy_context)
-            object.__setattr__(self, "last_catalog_count", len(catalog.specs))
-            object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
-            object.__setattr__(
-                self,
-                "last_image_input_count",
-                len(request.image_inputs) if perception_uses_images(request, self.perception_profile) else 0,
+            decision = resolver(
+                catalog,
+                call,
+                expected_context_id=request.context_id,
+                expected_catalog_id=catalog.catalog_id,
             )
-            object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
-            messages = _messages(
-                catalog.view,
-                request,
-                self.port.supports_multimodal,
-                system_prompt,
-                self.perception_profile,
-                include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
-            )
-            calls = await self._call(
-                messages,
-                catalog.specs,
-                _labeled_entity_operation_aliases(catalog),
-                payload_base,
-            )
-            if not calls:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
-            if len(calls) != 1:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
-            call = calls[0]
-            try:
-                decision = resolver(
-                    catalog,
-                    call,
-                    expected_context_id=request.context_id,
-                    expected_catalog_id=catalog.catalog_id,
-                )
-            except GroundedToolResolutionError as exc:
-                if exc.code is not GroundedToolResolutionCode.INVALID_ARGUMENTS or self.last_argument_repair_count:
-                    raise
-                spec = next((item for item in catalog.specs if item.name == call.name), None)
-                if spec is None:
-                    raise
-                issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
-                if issue is None:
-                    raise
-                object.__setattr__(self, "last_argument_violation_code", issue.code.value)
-                object.__setattr__(self, "last_argument_violation_paths", issue.public_field_paths)
-                object.__setattr__(self, "last_selected_operation", spec.name)
-                object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
-                object.__setattr__(self, "last_argument_repair_count", 1)
-                repaired = await self._repair_selected_operation(messages, spec, issue, payload_base)
-                object.__setattr__(self, "last_repaired_operation_match", repaired.name == call.name)
-                if repaired.name != call.name:
-                    raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-                decision = resolver(
-                    catalog,
-                    repaired,
-                    expected_context_id=request.context_id,
-                    expected_catalog_id=catalog.catalog_id,
-                )
         except GroundedToolResolutionError as exc:
+            if exc.code is not GroundedToolResolutionCode.INVALID_ARGUMENTS or self.last_argument_repair_count:
+                raise
+            spec = next((item for item in catalog.specs if item.name == call.name), None)
+            if spec is None:
+                raise
+            issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
+            if issue is None:
+                raise
+            object.__setattr__(self, "last_argument_violation_code", issue.code.value)
+            object.__setattr__(self, "last_argument_violation_paths", issue.public_field_paths)
+            object.__setattr__(self, "last_selected_operation", spec.name)
+            object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
+            object.__setattr__(self, "last_argument_repair_count", 1)
+            repaired = await self._repair_selected_operation(messages, spec, issue, payload_base)
+            object.__setattr__(self, "last_repaired_operation_match", repaired.name == call.name)
+            if repaired.name != call.name:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            decision = resolver(
+                catalog,
+                repaired,
+                expected_context_id=request.context_id,
+                expected_catalog_id=catalog.catalog_id,
+            )
+        object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
+        return decision, _metadata(
+            self.port,
+            self.transport_kind,
+            self.perception_profile,
+            include_record=True,
+            prompt_version=self.context_binder.prompts.version,
+            prior_record=self.last_task_state_call_record,
+        )
+
+    async def _update_task_state(self, catalog, request: ModelDecisionRequest) -> AgentWorkingMemory:
+        messages = self.context_binder.task_state_messages(
+            catalog.view,
+            request,
+            supports_multimodal=self.port.supports_multimodal,
+            perception_profile=self.perception_profile,
+        )
+        try:
+            payload = await self._generate_structured(messages, GroundedTaskStatePayload)
+        except StructuredOutputError as exc:
+            object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
+            object.__setattr__(self, "last_task_state_schema_repair_count", 1)
+            payload = await self._generate_structured(
+                _task_state_repair_messages(messages, exc),
+                GroundedTaskStatePayload,
+            )
+        object.__setattr__(self, "last_task_state_call_record", self.port.last_call)
+        return _task_state_from_payload(payload)
+
+    async def _generate_structured(self, messages, output_schema):
+        object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
+        return await self.port.generate_structured(messages, output_schema, self.config)
+
+    def _failure_from_exception(self, exc: Exception) -> ModelFailure:
+        if isinstance(exc, GroundedToolResolutionError):
             object.__setattr__(self, "last_resolution_code", exc.code)
             return _failure(ModelFailureKind.SCHEMA_ERROR, exc.code.value)
-        except ProviderModelError as exc:
+        if isinstance(exc, ProviderModelError):
             if exc.kind is ProviderFailureKind.QUOTA_EXHAUSTED:
                 return _failure(
                     ModelFailureKind.REFUSED,
@@ -357,21 +404,14 @@ class _GroundedAdapterBase:
                     ProviderAttemptOrigin.LOCAL_CIRCUIT if exc.circuit_open else ProviderAttemptOrigin.NETWORK
                 ),
             )
-        except StructuredOutputError:
-            return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded command violated its flat schema")
-        except StructuredModelError:
-            return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded command response was invalid")
-        except (TypeError, ValueError, json.JSONDecodeError):
+        if isinstance(exc, StructuredOutputError):
+            return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded cognition violated its structured schema")
+        if isinstance(exc, StructuredModelError):
+            return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded cognition response was invalid")
+        if isinstance(exc, (TypeError, ValueError, json.JSONDecodeError)):
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
-        object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
-        metadata = _metadata(
-            self.port,
-            self.transport_kind,
-            self.perception_profile,
-            include_record=True,
-        )
-        return decision, metadata
+        raise exc
 
     async def _call(
         self,
@@ -383,13 +423,12 @@ class _GroundedAdapterBase:
         if self.transport_kind is ToolTransportKind.COMPACT_JSON:
             payload_type = _command_payload_type(specs, aliases, payload_base)
             try:
-                payload = await self.port.generate_structured(messages, payload_type, self.config)
+                payload = await self._generate_structured(messages, payload_type)
             except StructuredOutputError as exc:
-                object.__setattr__(self, "last_schema_repair_count", 1)
-                payload = await self.port.generate_structured(
+                object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
+                payload = await self._generate_structured(
                     _format_repair_messages(messages, exc),
                     payload_type,
-                    self.config,
                 )
             alias_map = dict(aliases)
             operation_name = alias_map.get(payload.op, payload.op)
@@ -402,6 +441,7 @@ class _GroundedAdapterBase:
         if generate is None:
             raise ValueError("model port does not implement admitted native tool calls")
         try:
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             return await generate(
                 messages,
                 specs,
@@ -409,7 +449,8 @@ class _GroundedAdapterBase:
                 require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
             )
         except StructuredOutputError as exc:
-            object.__setattr__(self, "last_schema_repair_count", 1)
+            object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             return await generate(
                 _format_repair_messages(messages, exc),
                 specs,
@@ -429,6 +470,7 @@ class _GroundedAdapterBase:
             generate = getattr(self.port, "generate_tool_calls", None)
             if generate is None:
                 raise ValueError("model port does not implement admitted native tool calls")
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             calls = await generate(
                 repair_messages,
                 (spec,),
@@ -441,11 +483,7 @@ class _GroundedAdapterBase:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
             return calls[0]
         payload_type = _command_payload_type((spec,), payload_base=payload_base)
-        payload = await self.port.generate_structured(
-            repair_messages,
-            payload_type,
-            self.config,
-        )
+        payload = await self._generate_structured(repair_messages, payload_type)
         return ToolCall(payload.op, payload.command_arguments(spec))
 
 
@@ -470,23 +508,39 @@ class GroundedActionAdapter(_GroundedAdapterBase):
         self,
         request: ModelDecisionRequest,
     ) -> ResolvedModelDecision | ModelFailure:
-        resolved = await self._generate(
-            request,
-            expected_schema=SCHEMA_VERSION,
-            catalog_builder=compile_grounded_action_catalog,
-            resolver=resolve_grounded_action_call,
-            system_prompt=_ACTION_SYSTEM_PROMPT,
-            payload_base=GroundedToolCommandPayload,
-        )
-        if isinstance(resolved, ModelFailure):
-            return resolved
-        resolution, metadata = resolved
+        self._reset_diagnostics()
+        try:
+            catalog = self._compile_catalog(request, SCHEMA_VERSION, compile_grounded_action_catalog)
+            task_state = await self._update_task_state(catalog, request)
+            messages = self.context_binder.actor_messages(
+                catalog.view,
+                request,
+                task_state,
+                supports_multimodal=self.port.supports_multimodal,
+                perception_profile=self.perception_profile,
+                include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
+            )
+            resolution, metadata = await self._resolve_catalog(
+                request,
+                catalog,
+                messages,
+                resolve_grounded_action_call,
+                GroundedToolCommandPayload,
+            )
+        except (
+            GroundedToolResolutionError,
+            ProviderModelError,
+            StructuredModelError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            return self._failure_from_exception(exc)
         if not isinstance(resolution, GroundedActionResolution):
             return _failure(ModelFailureKind.INTERNAL_ERROR, "action adapter resolved an objective")
         return ResolvedModelDecision(
             resolution.decision,
             metadata,
-            resolution.working_memory,
+            task_state,
         )
 
 
@@ -507,17 +561,35 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
         self,
         request: ModelDecisionRequest,
     ) -> ResolvedLocalObjectiveOutcome | ModelFailure:
-        resolved = await self._generate(
-            request,
-            expected_schema=OBJECTIVE_SCHEMA_VERSION,
-            catalog_builder=compile_grounded_objective_catalog,
-            resolver=resolve_grounded_objective_call,
-            system_prompt=_OBJECTIVE_SYSTEM_PROMPT,
-            payload_base=GroundedObjectiveCommandPayload,
-        )
-        if isinstance(resolved, ModelFailure):
-            return resolved
-        outcome, metadata = resolved
+        self._reset_diagnostics()
+        try:
+            catalog = self._compile_catalog(
+                request,
+                OBJECTIVE_SCHEMA_VERSION,
+                compile_grounded_objective_catalog,
+            )
+            messages = self.context_binder.objective_messages(
+                catalog.view,
+                request,
+                supports_multimodal=self.port.supports_multimodal,
+                perception_profile=self.perception_profile,
+                include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
+            )
+            outcome, metadata = await self._resolve_catalog(
+                request,
+                catalog,
+                messages,
+                resolve_grounded_objective_call,
+                GroundedObjectiveCommandPayload,
+            )
+        except (
+            GroundedToolResolutionError,
+            ProviderModelError,
+            StructuredModelError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            return self._failure_from_exception(exc)
         from affordance_runtime.agent.local_objective_proposal import (
             LocalObjectiveNeedsInput,
             LocalObjectiveNotRequired,
@@ -541,55 +613,6 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
 # Temporary name compatibility. The old name now denotes action selection only;
 # it has no phase field and cannot be cast into an objective port.
 GroundedToolDecisionAdapter = GroundedActionAdapter
-
-
-def _messages(
-    view,
-    request,
-    supports_multimodal,
-    system_prompt,
-    perception_profile,
-    *,
-    include_tool_menu: bool,
-):
-    include_images = perception_uses_images(request, perception_profile)
-    if include_images and (not supports_multimodal or not request.image_inputs):
-        raise ValueError("selected grounded perception requires a current image input")
-    grounding_index = tuple(
-        dict(item) if include_images else {**dict(item), "marked": False} for item in view.grounding_index
-    )
-    public = {
-        "task_brief": to_json_compatible(view.task_brief),
-        "grounding_index": to_json_compatible(grounding_index),
-        "current_state": to_json_compatible(view.current_state),
-        "previous_tool_result": to_json_compatible(view.previous_tool_result),
-    }
-    if include_tool_menu:
-        public["tool_menu"] = tuple(
-            {
-                "op": item.name,
-                "description": item.description,
-                "arguments": to_json_compatible(item.input_schema),
-            }
-            for item in view.tools
-        )
-    text = json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    if not include_images:
-        return (
-            ModelMessage(role="system", content=system_prompt),
-            ModelMessage(role="user", content=text),
-        )
-    parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
-    for image in request.image_inputs:
-        encoded = base64.b64encode(image.data).decode("ascii")
-        parts.append(ModelImageURLPart(image_url=f"data:{image.mime_type};base64,{encoded}"))
-    return (
-        ModelMessage(
-            role="system",
-            content=system_prompt,
-        ),
-        ModelMessage(role="user", content=tuple(parts)),
-    )
 
 
 def _command_payload_type(
@@ -626,6 +649,45 @@ def _labeled_entity_operation_aliases(catalog) -> tuple[tuple[str, str], ...]:
         (verb, names[0])
         for verb, names in sorted(proposed.items())
         if len(names) == 1 and verb not in {item.name for item in catalog.specs}
+    )
+
+
+def _task_state_from_payload(payload: GroundedTaskStatePayload) -> AgentWorkingMemory:
+    return AgentWorkingMemory(
+        items=tuple(
+            WorkingMemoryItem(
+                item.description,
+                WorkingMemoryItemStatus(item.status),
+            )
+            for item in payload.items
+        ),
+        goal=payload.goal,
+        derived_facts=tuple(payload.derived_facts),
+        next_step=payload.next_step,
+        ready_to_finalize=payload.ready_to_finalize,
+        blockers=tuple(payload.blockers),
+    )
+
+
+def _task_state_repair_messages(messages, error: StructuredOutputError):
+    system = messages[0]
+    if not isinstance(system.content, str):
+        raise ValueError("task-state repair requires text system message")
+    return (
+        ModelMessage(
+            role="system",
+            content=(
+                system.content
+                + "\n\nRepair only the task-state response. Return exactly one object matching the supplied "
+                "task-state JSON schema. Do not select or describe a tool call. Public validation contract: "
+                + json.dumps(
+                    structured_output_repair_contract(error),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            ),
+        ),
+        *messages[1:],
     )
 
 
@@ -681,19 +743,27 @@ def _argument_repair_messages(messages, spec, issue):
     )
 
 
-def _metadata(port, transport_kind, perception_profile, *, include_record=True):
+def _metadata(
+    port,
+    transport_kind,
+    perception_profile,
+    *,
+    include_record=True,
+    prompt_version="",
+    prior_record=None,
+):
     record = port.last_call if include_record else None
     return ModelMetadata(
         provider_id=port.provider,
         model_id=port.model,
         response_id=record.response_id if record is not None else "",
         endpoint_class=port.endpoint_class,
-        prompt_version=record.prompt_version if record is not None else "",
+        prompt_version=prompt_version or (record.prompt_version if record is not None else ""),
         schema_version=GROUNDED_TOOLS_PROTOCOL,
-        latency_ms=record.latency_ms if record is not None else 0,
-        prompt_tokens=record.prompt_tokens if record is not None else 0,
-        completion_tokens=record.completion_tokens if record is not None else 0,
-        total_tokens=record.total_tokens if record is not None else 0,
+        latency_ms=sum(item.latency_ms for item in (prior_record, record) if item is not None),
+        prompt_tokens=sum(item.prompt_tokens for item in (prior_record, record) if item is not None),
+        completion_tokens=sum(item.completion_tokens for item in (prior_record, record) if item is not None),
+        total_tokens=sum(item.total_tokens for item in (prior_record, record) if item is not None),
         perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",
         grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,

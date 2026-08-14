@@ -238,12 +238,25 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_argument_selected_operation"] = str(getattr(adapter, "last_selected_operation", ""))
         event["tool_argument_repaired_operation_match"] = bool(getattr(adapter, "last_repaired_operation_match", False))
         event["model_image_input_count"] = image_input_count
+        event["policy_model_call_count"] = int(getattr(adapter, "last_model_call_count", 0))
+        event["task_state_schema_repair_count"] = int(
+            getattr(adapter, "last_task_state_schema_repair_count", 0)
+        )
     policy_turn = outcome if isinstance(outcome, AgentPolicyTurn) else None
     decision = policy_turn.decision if policy_turn is not None else outcome
     if policy_turn is not None:
-        event["working_memory"] = tuple(
-            {"description": item.description, "status": item.status.value} for item in policy_turn.working_memory.items
-        )
+        memory = policy_turn.working_memory
+        event["working_memory"] = {
+            "goal": memory.goal,
+            "items": tuple(
+                {"description": item.description, "status": item.status.value}
+                for item in memory.items
+            ),
+            "derived_facts": memory.derived_facts,
+            "next_step": memory.next_step,
+            "ready_to_finalize": memory.ready_to_finalize,
+            "blockers": memory.blockers,
+        }
     if isinstance(decision, (SelectAction, RequestObservation)):
         event["outcome"] = type(decision).__name__
         event["decision"] = _decision_trace(decision)
@@ -454,7 +467,8 @@ class CountingDecisionPort:
             attempts = tuple(getattr(self.wrapped, "last_attempts", ()))
             attempt_count = len(attempts) or 1
             schema_repairs = _decision_schema_repair_count(self.wrapped)
-            self.instrumentation.provider_attempts += attempt_count + schema_repairs
+            model_calls = _decision_model_call_count(self.wrapped)
+            self.instrumentation.provider_attempts += max(model_calls, attempt_count + schema_repairs)
             self.instrumentation.policy_schema_repair_count += schema_repairs
             _record_dynamic_tool_metrics(self.instrumentation, self.wrapped)
             self.instrumentation.provider_retry_count += max(0, attempt_count - 1)
@@ -466,6 +480,13 @@ def _decision_schema_repair_count(port: object) -> int:
     if isinstance(values, tuple):
         return sum(int(getattr(item, "last_schema_repair_count", 0)) for item in values)
     return int(getattr(port, "last_schema_repair_count", 0))
+
+
+def _decision_model_call_count(port: object) -> int:
+    values = getattr(port, "ports", None)
+    if isinstance(values, tuple):
+        return sum(int(getattr(item, "last_model_call_count", 0)) for item in values)
+    return int(getattr(port, "last_model_call_count", 0))
 
 
 def _record_dynamic_tool_metrics(instrumentation, port: object) -> None:

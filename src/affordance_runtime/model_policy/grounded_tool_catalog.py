@@ -27,13 +27,6 @@ from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveUnsupported,
     LocalObjectiveUnsupportedReason,
 )
-from affordance_runtime.agent.working_memory import (
-    MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
-    MAX_WORKING_MEMORY_ITEMS,
-    AgentWorkingMemory,
-    WorkingMemoryItem,
-    WorkingMemoryItemStatus,
-)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext, AgentGroundingEntityView
 from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentTurnView
@@ -221,8 +214,6 @@ def compile_grounded_tool_catalog(
                 context.actions.next_cursor,
             )
         )
-    if phase is GroundedToolPhase.ACTION_SELECTION:
-        specs = [_with_working_memory(spec) for spec in specs]
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -231,13 +222,15 @@ def compile_grounded_tool_catalog(
         tuple(_grounding_entity(item) for item in context.grounding.entities),
         _current_state(context, ref_by_target),
         _previous_result(context, ref_by_target),
+        _agent_task_state(context),
         tuple(specs),
     )
     public = {
         "task_brief": view.task_brief,
         "grounding_index": view.grounding_index,
-        "current_state": view.current_state,
-        "previous_tool_result": view.previous_tool_result,
+        "current_world": view.current_world,
+        "world_transition": view.world_transition,
+        "agent_task_state": view.agent_task_state,
         "tools": tuple(
             {
                 "name": item.name,
@@ -329,15 +322,11 @@ def resolve_grounded_tool_call(
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-    try:
-        working_memory = _working_memory_from_arguments(call.arguments)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
     if isinstance(binding, _NextActionsBinding):
         decision = RequestActionPage(
             expected_context_id, binding.query, binding.target_id, binding.relevance_role, binding.cursor
         )
-        return GroundedActionResolution(decision, working_memory)
+        return GroundedActionResolution(decision)
     if isinstance(binding, _ObserveBinding):
         return GroundedActionResolution(
             RequestObservation(
@@ -347,7 +336,6 @@ def resolve_grounded_tool_call(
                 binding.assurance,
                 f"acquire fresh {binding.modality} grounding",
             ),
-            working_memory,
         )
     if not isinstance(binding, _VerbBinding):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -358,7 +346,6 @@ def resolve_grounded_tool_call(
     parameters = {"value": call.arguments[binding.parameter_field]} if binding.parameter_field else {}
     return GroundedActionResolution(
         SelectAction(expected_context_id, actions[ref], parameters, ""),
-        working_memory,
     )
 
 
@@ -436,66 +423,6 @@ def _local_objective_schema() -> dict[str, object]:
     return TypeAdapter(LocalObjectiveSpecPayload).json_schema()
 
 
-def _working_memory_schema() -> dict[str, object]:
-    item = _object_schema(
-        {
-            "description": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
-            },
-            "status": {
-                "type": "string",
-                "enum": [status.value for status in WorkingMemoryItemStatus],
-            },
-        },
-        ("description", "status"),
-    )
-    return _object_schema(
-        {
-            "items": {
-                "type": "array",
-                "items": item,
-                "maxItems": MAX_WORKING_MEMORY_ITEMS,
-            },
-        },
-        ("items",),
-    )
-
-
-def _with_working_memory(spec: ToolSpec) -> ToolSpec:
-    schema = to_json_compatible(spec.input_schema)
-    if not isinstance(schema, dict):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    properties = schema.get("properties")
-    required = schema.get("required")
-    if not isinstance(properties, dict) or not isinstance(required, list) or "memory" in properties:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    properties["memory"] = _working_memory_schema()
-    required.append("memory")
-    return ToolSpec(spec.name, spec.description, schema)
-
-
-def _working_memory_from_arguments(arguments: Mapping[str, object]) -> AgentWorkingMemory:
-    raw = arguments["memory"]
-    if not isinstance(raw, Mapping):
-        raise TypeError
-    raw_items = raw["items"]
-    if not isinstance(raw_items, tuple):
-        raise TypeError
-    items = tuple(
-        WorkingMemoryItem(
-            str(item["description"]),
-            WorkingMemoryItemStatus(str(item["status"])),
-        )
-        for item in raw_items
-        if isinstance(item, Mapping)
-    )
-    if len(items) != len(raw_items):
-        raise TypeError
-    return AgentWorkingMemory(items)
-
-
 def _tool_description(verb: str) -> str:
     return (
         f"{verb} one entity authorized by the current Runtime action page. "
@@ -536,17 +463,6 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
         ],
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
-        "agent_working_memory": {
-            "authority": "advisory",
-            "revision": context.working_memory.revision,
-            "items": [
-                {
-                    "description": item.description,
-                    "status": item.status,
-                }
-                for item in context.working_memory.items
-            ],
-        },
         "interaction_history": [_turn_result(item, ref_by_target) for item in context.history.items[:-1]],
     }
     return value
@@ -556,6 +472,23 @@ def _previous_result(context: AgentContext, ref_by_target: Mapping[str, str]):
     if not context.history.items:
         return {}
     return _turn_result(context.history.items[-1], ref_by_target)
+
+
+def _agent_task_state(context: AgentContext) -> dict[str, object]:
+    memory = context.working_memory
+    return {
+        "authority": "advisory_agent_belief",
+        "revision": memory.revision,
+        "goal": memory.goal,
+        "items": [
+            {"description": item.description, "status": item.status}
+            for item in memory.items
+        ],
+        "derived_facts": list(memory.derived_facts),
+        "next_step": memory.next_step,
+        "ready_to_finalize": memory.ready_to_finalize,
+        "blockers": list(memory.blockers),
+    }
 
 
 def _turn_result(item: AgentTurnView, ref_by_target: Mapping[str, str]) -> dict[str, object]:
