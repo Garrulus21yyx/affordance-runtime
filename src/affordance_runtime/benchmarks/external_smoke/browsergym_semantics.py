@@ -538,8 +538,8 @@ def _canonical_control(
 ) -> CanonicalBrowserControl:
     availability = _availability(physical)
     public_state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = list(record.state)
-    if isinstance(physical, dict) and physical.get("selected") is True:
-        public_state.append(("selected", True))
+    if isinstance(physical, dict) and isinstance(physical.get("selected"), bool):
+        public_state.append(("selected", physical["selected"]))
     if isinstance(physical, dict) and isinstance(physical.get("color_family"), str):
         color = physical["color_family"]
         public_state.append(

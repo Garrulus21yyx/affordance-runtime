@@ -1,4 +1,4 @@
-version: grounded-agent-context.v3
+version: grounded-agent-context.v4
 
 actor: |-
   You are a general GUI agent operating a real current interface to achieve task.instruction. The user message is
@@ -6,6 +6,8 @@ actor: |-
   public DOM, WoT, visual, or other SurfaceAdapter projection; progress contains verified and unresolved task
   facts. world.documents preserves the current public structural hierarchy; each node carries its current public
   state, evidence, relations, and source membership. world.sources states source modality and coverage, while
+  world.facet_collections mechanically groups repeated public node facets within one role and partitions each
+  collection by fully observed boolean state; use its member_count and completeness instead of recounting raw nodes.
   world.media states whether current screenshots exist and whether they are actually attached. last_transition is
   the authoritative bounded causal account of the latest accepted decision and its
   execution, effect, and progress delta; history contains earlier verified decisions and observed results; and

@@ -258,6 +258,85 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert {item["label"] for item in nodes} == {"Username", "Password", "Login"}
 
 
+def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state() -> None:
+    shades = (
+        ("blue-a", "blue", True),
+        ("blue-b", "blue", True),
+        ("blue-c", "blue", False),
+        ("red-a", "red", False),
+        ("red-b", "red", False),
+    )
+    raw = raw_observation(
+        *(ax_node(bid, "graphics-symbol", "") for bid, _color, _selected in shades),
+        ax_node("submit", "button", "Submit"),
+        goal="Select all the blue shades and press Submit.",
+    )
+    raw["screenshot"] = np.full((120, 240, 3), 255, dtype=np.uint8)
+    for index, (bid, color, selected) in enumerate(shades):
+        raw["extra_element_properties"][bid].update(
+            {"clickable": True, "visibility": 1.0, "bbox": [10 + index * 25, 20, 18, 18]}
+        )
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid].update(
+            {
+                "bbox": [10 + index * 25, 20, 18, 18],
+                "color_family": color,
+                "selected": selected,
+            }
+        )
+    projection = project_browsergym_observation(
+        raw,
+        observation_id="observation:collections",
+        source_revision="revision:collections",
+        page_identity="page:collections",
+        episode_identity="episode:collections",
+        verifier=BrowserGymVerifierSnapshot(
+            "run:collections",
+            "observation:collections",
+            "observation:collections",
+            VerifierFactSource.RESET,
+            ExternalVerifierStatus.INCOMPLETE,
+            ExternalVerifierReason.VERIFIED_RUNNING,
+        ),
+        entity_identity=_IDENTITY,
+    )
+    task = TaskGoal(
+        "task:collections",
+        raw["goal"],
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    state = AgentLoopState(projection.world, remaining_turns=5)
+    context = ContextBuilder().build(
+        task,
+        state,
+        ActionSpaceBuilder().build(task, projection.world),
+        TaskEvaluation(
+            task.task_id,
+            projection.world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+
+    public = _bound_public_context(context)
+    section = public["world"]["facet_collections"]
+    blue = next(
+        item
+        for item in section["items"]
+        if item["scope_role"] == "clickable"
+        and item["field"] == "appearance.color_family"
+        and item["value"] == "blue"
+    )
+    selected = next(item for item in blue["boolean_partitions"] if item["field"] == "selected")
+
+    assert blue["member_count"] == 3
+    assert blue["completeness"] == "complete_for_snapshot"
+    assert len(selected["true_member_refs"]) == 2
+    assert len(selected["false_member_refs"]) == 1
+    assert set(selected["true_member_refs"] + selected["false_member_refs"]) == set(blue["member_refs"])
+    assert section["truncated"] is False
+
+
 def test_objective_context_does_not_expose_action_selection_candidates() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)

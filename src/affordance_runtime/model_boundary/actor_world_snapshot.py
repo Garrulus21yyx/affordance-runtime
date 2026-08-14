@@ -9,12 +9,16 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
 if TYPE_CHECKING:
     from affordance_runtime.model_boundary.context import AgentGroundingIndexView, AgentImageInput
+
+
+_MAX_FACET_COLLECTIONS = 24
 
 
 @dataclass(frozen=True)
@@ -108,12 +112,52 @@ class ActorWorldMediaView:
 
 
 @dataclass(frozen=True)
+class ActorWorldBooleanPartitionView:
+    field: str
+    true_member_refs: tuple[str, ...]
+    false_member_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "true_member_refs", tuple(self.true_member_refs))
+        object.__setattr__(self, "false_member_refs", tuple(self.false_member_refs))
+        if set(self.true_member_refs).intersection(self.false_member_refs):
+            raise ValueError("Actor world boolean partition members must be disjoint")
+
+
+@dataclass(frozen=True)
+class ActorWorldFacetCollectionView:
+    scope_role: str
+    field: str
+    value: object
+    member_refs: tuple[str, ...]
+    member_count: int
+    completeness: str
+    boolean_partitions: tuple[ActorWorldBooleanPartitionView, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", freeze_json(self.value))
+        object.__setattr__(self, "member_refs", tuple(self.member_refs))
+        object.__setattr__(self, "boolean_partitions", tuple(self.boolean_partitions))
+        if self.member_count != len(self.member_refs) or len(set(self.member_refs)) != self.member_count:
+            raise ValueError("Actor world facet collection members must be complete and unique")
+        if self.completeness not in {"complete_for_snapshot", "partial", "unknown"}:
+            raise ValueError("Actor world facet collection completeness is invalid")
+        members = set(self.member_refs)
+        if any(
+            set(partition.true_member_refs).union(partition.false_member_refs) != members
+            for partition in self.boolean_partitions
+        ):
+            raise ValueError("Actor world boolean partitions must cover their facet collection")
+
+
+@dataclass(frozen=True)
 class ActorWorldSnapshot:
     snapshot_id: str
     documents: tuple[ActorWorldDocumentView, ...]
     sources: tuple[ActorWorldSourceView, ...]
     media: tuple[ActorWorldMediaView, ...]
     global_facts: tuple[ActorWorldGlobalFactView, ...]
+    facet_collections: BoundedSection[ActorWorldFacetCollectionView]
     artifacts: tuple[Mapping[str, object], ...]
     conflicts: tuple[Mapping[str, object], ...]
     observation_capabilities: tuple[Mapping[str, str], ...]
@@ -124,6 +168,8 @@ class ActorWorldSnapshot:
         object.__setattr__(self, "sources", tuple(self.sources))
         object.__setattr__(self, "media", tuple(self.media))
         object.__setattr__(self, "global_facts", tuple(self.global_facts))
+        if not isinstance(self.facet_collections, BoundedSection):
+            raise TypeError("Actor world facet collections must be a bounded section")
         object.__setattr__(self, "artifacts", tuple(freeze_json(item) for item in self.artifacts))
         object.__setattr__(self, "conflicts", tuple(freeze_json(item) for item in self.conflicts))
         object.__setattr__(
@@ -206,6 +252,7 @@ def actor_world_for_delivery(
         snapshot.sources,
         media,
         snapshot.global_facts,
+        snapshot.facet_collections,
         snapshot.artifacts,
         snapshot.conflicts,
         snapshot.observation_capabilities,
@@ -418,12 +465,26 @@ def project_actor_world_snapshot(
         {"modality": item.modality, "assurance": item.assurance}
         for item in world.observation_capabilities
     )
+    facet_collections = _facet_collections(
+        visible,
+        refs,
+        complete_for_snapshot=(
+            not world.targets.truncated
+            and any(
+                source.entity_inventory.status == "complete"
+                and source.projection_coverage == "complete"
+                and source.freshness == "current"
+                for source in world.sources
+            )
+        ),
+    )
     return ActorWorldSnapshot(
         f"snapshot:{hashlib.sha256(observation.observation_id.encode()).hexdigest()[:16]}",
         documents,
         sources,
         media,
         tuple(global_facts),
+        facet_collections,
         tuple(
             {
                 "evidence_ref": f"A{index}",
@@ -437,6 +498,78 @@ def project_actor_world_snapshot(
         capabilities,
         world.traversal,
     )
+
+
+def _facet_collections(
+    visible: Mapping[str, ModelTargetView],
+    refs: Mapping[str, str],
+    *,
+    complete_for_snapshot: bool,
+) -> BoundedSection[ActorWorldFacetCollectionView]:
+    """Index repeated public facets without interpreting task or action semantics."""
+
+    targets_by_role: dict[str, list[ModelTargetView]] = defaultdict(list)
+    for target in visible.values():
+        targets_by_role[target.role].append(target)
+    collections: list[ActorWorldFacetCollectionView] = []
+    for role in sorted(targets_by_role):
+        role_targets = targets_by_role[role]
+        shared_fields = set.intersection(*(set(item.state) for item in role_targets))
+        for field_name in sorted(shared_fields):
+            field_values = [item.state[field_name] for item in role_targets]
+            if any(not _collection_facet_value(value) for value in field_values):
+                continue
+            grouped: dict[str, tuple[object, list[ModelTargetView]]] = {}
+            for target, value in zip(role_targets, field_values, strict=True):
+                key = repr(freeze_json(value))
+                grouped.setdefault(key, (value, []))[1].append(target)
+            for key in sorted(grouped):
+                value, members = grouped[key]
+                if len(members) < 2:
+                    continue
+                ordered_members = sorted(members, key=lambda item: _ref_order(refs[item.target_id]))
+                member_refs = tuple(refs[item.target_id] for item in ordered_members)
+                boolean_fields = sorted(set.intersection(*(set(item.state) for item in members)))
+                partitions = tuple(
+                    ActorWorldBooleanPartitionView(
+                        boolean_field,
+                        tuple(
+                            refs[item.target_id]
+                            for item in ordered_members
+                            if item.state[boolean_field] is True
+                        ),
+                        tuple(
+                            refs[item.target_id]
+                            for item in ordered_members
+                            if item.state[boolean_field] is False
+                        ),
+                    )
+                    for boolean_field in boolean_fields
+                    if all(isinstance(item.state[boolean_field], bool) for item in members)
+                )
+                collections.append(
+                    ActorWorldFacetCollectionView(
+                        role,
+                        field_name,
+                        value,
+                        member_refs,
+                        len(member_refs),
+                        "complete_for_snapshot" if complete_for_snapshot else "partial",
+                        partitions,
+                    )
+                )
+    collections.sort(key=lambda item: (item.scope_role, item.field, repr(item.value)))
+    shown = tuple(collections[:_MAX_FACET_COLLECTIONS])
+    return BoundedSection(shown, len(collections), len(collections) > len(shown))
+
+
+def _collection_facet_value(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, str | int | float)
+
+
+def _ref_order(value: str) -> tuple[str, int]:
+    prefix, suffix = value[:1], value[1:]
+    return prefix, int(suffix) if suffix.isdigit() else 0
 
 
 def _source_memberships(observation, visible, source_refs) -> dict[str, tuple[str, ...]]:
