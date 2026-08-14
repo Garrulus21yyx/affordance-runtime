@@ -69,6 +69,7 @@ class PrivateResolutionEntry:
     selector_values: Mapping[str, object]
     action_id: str
     destination_id: str | None
+    target_ref: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "selector_values", freeze_json(self.selector_values))
@@ -185,7 +186,12 @@ class GroundedToolCompiler:
             "additionalProperties": False,
         }
         resolutions = tuple(
-            PrivateResolutionEntry(values, row.option.action_id, row.destination.destination_id if row.destination else None)
+            PrivateResolutionEntry(
+                values,
+                row.option.action_id,
+                row.destination.destination_id if row.destination else None,
+                row.option.target_ref,
+            )
             for row, values in zip(rows, selector_values, strict=True)
         )
         if len({_token(item.selector_values) for item in resolutions}) != len(resolutions):

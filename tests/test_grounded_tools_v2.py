@@ -675,6 +675,57 @@ def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing()
     assert normalized == ToolCall("activate_blue", {"grounding_ref": "E10"})
 
 
+def test_unique_constant_target_accepts_a_redundant_current_grounding_ref() -> None:
+    selected_spec = ToolSpec(
+        "activate_blue",
+        "Activate a blue target.",
+        {
+            "type": "object",
+            "properties": {"grounding_ref": {"type": "string", "enum": ["E5"]}},
+            "required": ["grounding_ref"],
+            "additionalProperties": False,
+        },
+    )
+    submit_spec = ToolSpec(
+        "activate_submit",
+        "Activate Submit.",
+        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    )
+    selected_binding = CompiledGroundedTool(
+        "activate",
+        selected_spec,
+        SelectorMode.GROUNDING_FALLBACK,
+        (
+            CompiledSelectorField(
+                "grounding_ref",
+                ("grounding_ref",),
+                {"type": "string", "enum": ["E5"]},
+            ),
+        ),
+        (PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue", None, "E5"),),
+    )
+    submit_binding = CompiledGroundedTool(
+        "activate",
+        submit_spec,
+        SelectorMode.CONSTANT_TARGET,
+        (),
+        (PrivateResolutionEntry({}, "action:submit", None, "E17"),),
+    )
+    catalog = SimpleNamespace(
+        specs=(selected_spec, submit_spec),
+        bindings=(selected_binding, submit_binding),
+    )
+
+    assert _normalize_catalog_call(
+        catalog,
+        ToolCall("activate_blue", {"grounding_ref": "E17"}),
+    ) == ToolCall("activate_submit", {})
+    assert _normalize_catalog_call(
+        catalog,
+        ToolCall("activate_blue", {"grounding_ref": "E99"}),
+    ) == ToolCall("activate_blue", {"grounding_ref": "E99"})
+
+
 def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -> None:
     schema = {
         "type": "object",

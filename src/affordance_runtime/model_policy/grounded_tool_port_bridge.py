@@ -244,8 +244,13 @@ class _GroundedAdapterBase:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
         call = calls[0]
         normalized = _normalize_catalog_call(catalog, call)
-        if normalized.name != call.name:
-            object.__setattr__(self, "last_routing_normalization", "unique_same_operation_argument_owner")
+        if normalized != call:
+            normalization = (
+                "redundant_grounding_to_constant"
+                if normalized.arguments != call.arguments
+                else "unique_same_operation_argument_owner"
+            )
+            object.__setattr__(self, "last_routing_normalization", normalization)
             object.__setattr__(self, "last_routing_original_operation", call.name)
             object.__setattr__(self, "last_routing_normalized_operation", normalized.name)
             call = normalized
@@ -630,6 +635,9 @@ def _normalize_catalog_call(catalog: object, call: ToolCall) -> ToolCall:
     selected_binding = bindings[selected_index]
     if not isinstance(selected_binding, CompiledGroundedTool):
         return call
+    constant = _constant_grounding_owner(specs, bindings, selected_binding, call)
+    if constant is not None:
+        return ToolCall(constant.name, {})
     matches: list[ToolSpec] = []
     for spec, binding in zip(specs, bindings, strict=True):
         if (
@@ -645,6 +653,36 @@ def _normalize_catalog_call(catalog: object, call: ToolCall) -> ToolCall:
     if len(matches) != 1:
         return call
     return ToolCall(matches[0].name, call.arguments)
+
+
+def _constant_grounding_owner(
+    specs: tuple[ToolSpec, ...],
+    bindings: tuple[object, ...],
+    selected: CompiledGroundedTool,
+    call: ToolCall,
+) -> ToolSpec | None:
+    if set(call.arguments) != {"grounding_ref"} or not isinstance(
+        call.arguments.get("grounding_ref"), str
+    ):
+        return None
+    grounding_ref = call.arguments["grounding_ref"]
+    matches = []
+    for spec, binding in zip(specs, bindings, strict=True):
+        if (
+            not isinstance(binding, CompiledGroundedTool)
+            or binding.canonical_operation != selected.canonical_operation
+            or binding.selector_fields
+            or len(binding.private_resolutions) != 1
+        ):
+            continue
+        resolution = binding.private_resolutions[0]
+        if (
+            resolution.destination_id is None
+            and resolution.target_ref == grounding_ref
+            and validate_value_issue({}, spec.input_schema, path="parameters") is None
+        ):
+            matches.append(spec)
+    return matches[0] if len(matches) == 1 else None
 
 
 def _semantic_selector_violation(binding: object, field_paths: tuple[str, ...]) -> bool:
