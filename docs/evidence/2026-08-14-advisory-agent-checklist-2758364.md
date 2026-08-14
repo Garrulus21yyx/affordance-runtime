@@ -4,6 +4,12 @@ Date: 2026-08-14
 Implementation: `275836498b64fd33b7c89b1327a2f5b38ed84678`  
 Status: `IMPLEMENTED / DIAGNOSTIC_RUN_COMPLETE / FORMAL_EVIDENCE_INVALID / CHECKLIST_NOT_EXERCISED`
 
+> **Superseded topology:** `8f33d8a` deletes the optional
+> `update_checklist`/`UpdateWorkingMemory` decision. Grounded action responses
+> now carry mandatory next-turn advisory memory atomically with the current
+> action. This record remains the historical evidence that optional tool
+> availability was not exercised; it is not the current design.
+
 ## Why this slice exists
 
 The clean default-model run at `90c3997` showed one direct grounding success

@@ -1,7 +1,7 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-13
+> **Updated:** 2026-08-14
 > **Current reviewed M4.5-B closure SHA:** `NONE`
 > **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 
@@ -716,28 +716,33 @@ integrated fill/select local liveness guard; it is not a planner. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`CHECKLIST_NOT_EXERCISED_IN_INVALID_DIAGNOSTIC` after its earlier
-vision-convergence gate and default-model 1/5 diagnostic;
+`ATOMIC_AGENT_MEMORY_IMPLEMENTED / LIVE_NOT_RUN` after the optional checklist
+topology was falsified by an invalid diagnostic that exercised zero updates;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.
 
-At `275836498b64fd33b7c89b1327a2f5b38ed84678`, the grounded policy adds one
-bounded model-authored advisory checklist. `UpdateWorkingMemory` is a typed
-full replacement stored in the run-scoped AgentLoop state and projected into
-the next disposable context. It produces no environment step or control
-transition, owns no ActionSpace/action ID/private binding, and cannot filter,
-authorize, dispatch or complete a task. Grounded-tools declares this capability
-explicitly; structured-package and dynamic-tools do not. This is an
-implemented-not-benchmark-validated cognition-continuity experiment, not
-general long-horizon closure. No independent planner or critic is configured.
+At `8f33d8a`, the grounded policy requires one atomic response containing both
+the current action/control decision and the complete next bounded
+model-authored advisory memory. This supersedes the optional
+`UpdateWorkingMemory` decision from `2758364`, which is deleted. After the
+response's context is admitted as current, `AgentLoop` stores its memory and
+routes its decision through the unchanged ActionSpace/admission/private-binding/
+execution chain. The next disposable `AgentContext` injects that stored memory.
+The memory produces no separate environment step or control transition, owns no
+ActionSpace/action ID/private binding, and cannot filter, authorize, dispatch
+or complete a task. Grounded-tools declares `attached_working_memory`
+explicitly; structured-package and dynamic-tools do not. This remains an
+implemented-not-live-validated cognition-continuity experiment, not general
+long-horizon closure. No independent planner or critic is configured.
 
-The single subsequent default-4.1V five-case diagnostic at `b309c9d` completed
+The earlier default-4.1V five-case diagnostic at `b309c9d` completed
 with raw 3/5 but is formally invalid because its in-repository output directory
 made the final git-identity check dirty. It emitted 15 `SelectAction` decisions
 and zero `UpdateWorkingMemory` decisions, so no success is attributed to the
-new memory mechanism. This establishes that optional checklist availability
+optional memory mechanism. This establishes that optional checklist availability
 alone did not change the observed policy topology. It does not establish that
-a maintained checklist is ineffective. M4.6-E is paused; no critic or repeated
-five-case rerun is admitted from this diagnostic.
+a maintained memory is ineffective. This diagnostic admits neither a critic nor
+repeated sampling for a favorable score. It predates and therefore does not
+validate the mandatory atomic envelope at `8f33d8a`.
