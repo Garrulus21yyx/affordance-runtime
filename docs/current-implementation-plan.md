@@ -123,7 +123,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `TASK_STATE_CONTEXT_IMPLEMENTED / LIVE_SCHEMA_BLOCKED_AT_CDB4BC9 / STOPPED / CRITIC_NOT_ADMITTED / GENERALIZATION_OPEN` | `eb19c0d` replaces the failed single-response atomic-memory topology with two model calls inside the same `AgentPolicy`: a task-state updater reconciles the previous advisory belief with the fresh Unified World and explicit previous-decision transition, then the actor receives that updated state and clean Runtime-issued tools. Memory is no longer an action parameter or decision capability. The clean exact-head default-4.1V run at `cdb4bc9` completed 5/5 but reached only 1 success because 4 cases terminated in updater `structured_output_failure`. All 7 initial updater responses required repair; only 3 repairs succeeded, so cross-turn memory quality remains unassessed. No critic, task rule or alternate Runtime path is admitted. See the [task-state context evidence](evidence/2026-08-14-task-state-context-eb19c0d.md), [current raw run](evidence/runs/p5-m4-6-e-task-state-context-five-witness-cdb4bc9/report.json), [atomic-memory diagnostic](evidence/2026-08-14-atomic-agent-memory-8f33d8a.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / LIVE_NOT_RUN / GENERALIZATION_OPEN` | The mandatory updater diagnosed at `cdb4bc9` is removed rather than repaired. `AgentContext` is the sole internal task/world/progress/history/pending/budget context; one YAML-backed binder creates one provider input; the valid grounded action path makes one semantic call. Catalog owns only current tools and opaque bindings. Legacy serialization is generated only for legacy adapters, not on the grounded path. No critic, second planner, working-memory envelope, task rule or alternate Runtime path is admitted. Focused tests, full `2474 passed, 27 skipped`, Ruff and mypy are green. Historical updater and atomic-memory runs remain negative evidence. See the [active convergence plan](plans/2026-08-14-single-agent-context-convergence.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -131,17 +131,14 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 
 ## Next admitted slice
 
-The two-call `task-state update -> memory-conditioned action` arm is implemented
-at `eb19c0d` and its first clean default-4.1V diagnostic is complete at
-`cdb4bc9`. Work is stopped at the model/protocol boundary: 7/7 initial updater
-responses violated the task-state schema and the single bounded repair recovered
-only 3/7, yielding 1 success and 4 typed structured-output failures. The three
-admitted states were semantically useful, but multi-turn persistence and
-finalization were not reached often enough to assess. No critic, task rule,
-Runtime semantic guard, LocalObjective planner or favorable-score rerun is
-admitted from this evidence. Any resumed slice must first make the existing
-updater contract observable and reliable without creating another cognition or
-execution path.
+Finish and push the single-`AgentContext` convergence slice. The updater is not
+a supported contract to repair: it was a second cognition path and a second
+context owner. The current grounded path instead binds original task, fresh
+Unified World, verified progress, bounded chronological action/effect history,
+pending state, budgets, control feedback and current tools into one model call.
+After final local verification, the next evidence step is one fresh default-4.1V
+targeted run. If it fails, analyze and stop; do not add a critic, task rule,
+Runtime semantic guard, LocalObjective planner or favorable-score retry.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and
@@ -409,7 +406,7 @@ Implement one independently measurable slice at a time:
    never replayed — `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`;
 5. M4.6-E stable opaque target identity followed by staged observable/executable
    semantic breadth and a referentially closed grounded-tool policy surface —
-   `TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN`. Existing SoM utilities are reused as a
+   `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / LIVE_NOT_RUN`. Existing SoM utilities are reused as a
    deterministic current-screenshot projection, not reimplemented and not made
    an execution authority.
 

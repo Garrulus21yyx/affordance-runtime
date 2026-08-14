@@ -23,8 +23,6 @@ from affordance_runtime.model_boundary.context import (
     AgentContext,
     AgentPendingView,
     AgentProgressView,
-    AgentWorkingMemoryItemView,
-    AgentWorkingMemoryView,
     ContextIdentity,
     DecisionMode,
     IntentContextView,
@@ -135,7 +133,6 @@ class ContextBuilder:
             project_task(task),
             project_intent_context(intent_context, self.budget),
             _progress_view(task, state, task_evaluation, world.facts.items, self.budget.max_unresolved_items),
-            _working_memory_view(state),
             world,
             actions,
             BoundedSection(
@@ -295,21 +292,6 @@ def _pending_view(state: AgentLoopState) -> AgentPendingView:
         "user input required" if state.pending_user_question else "",
         confirmation,
         "effect outcome remains uncertain" if state.pending_unknown_request is not None else "",
-    )
-
-
-def _working_memory_view(state: AgentLoopState) -> AgentWorkingMemoryView:
-    return AgentWorkingMemoryView(
-        items=tuple(
-            AgentWorkingMemoryItemView(item.description, item.status.value)
-            for item in state.working_memory.items
-        ),
-        revision=state.working_memory_revision,
-        goal=state.working_memory.goal,
-        derived_facts=state.working_memory.derived_facts,
-        next_step=state.working_memory.next_step,
-        ready_to_finalize=state.working_memory.ready_to_finalize,
-        blockers=state.working_memory.blockers,
     )
 
 

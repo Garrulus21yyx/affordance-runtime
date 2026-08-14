@@ -38,6 +38,7 @@ from affordance_runtime.model_boundary.acquisition_projection import Observation
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import AgentTurnView
 from affordance_runtime.model_policy.contracts import ResolvedLocalObjectiveOutcome
+from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
@@ -52,7 +53,6 @@ from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
     GroundedObjectiveAdapter,
     GroundedObjectiveCommandPayload,
-    GroundedTaskStatePayload,
     GroundedToolCommandPayload,
     _command_payload_type,
 )
@@ -82,21 +82,6 @@ from affordance_runtime.task.local_objective import establish_local_objective
 from affordance_runtime.world import ActionSpaceBuilder
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
-
-
-def _task_state_payload() -> dict[str, object]:
-    return {
-        "goal": "Enter the requested credentials and submit the form",
-        "items": [
-            {"description": "Enter username", "status": "pending"},
-            {"description": "Enter password", "status": "pending"},
-            {"description": "Submit the form", "status": "pending"},
-        ],
-        "derived_facts": [],
-        "next_step": "Enter the username",
-        "ready_to_finalize": False,
-        "blockers": ["The credential fields are not complete"],
-    }
 
 
 @dataclass
@@ -131,16 +116,12 @@ class _ActionPort:
     endpoint_class: str = "fixture"
     supports_multimodal: bool = True
     last_call: ModelCallRecord | None = None
-    task_state_messages: tuple = ()
-    action_messages: tuple = ()
+    messages: tuple = ()
     calls: int = 0
 
     async def generate_structured(self, messages, output_schema, config):
         self.calls += 1
-        if output_schema is GroundedTaskStatePayload:
-            self.task_state_messages = tuple(messages)
-        else:
-            self.action_messages = tuple(messages)
+        self.messages = tuple(messages)
         self.last_call = ModelCallRecord(
             provider=self.provider,
             model=self.model,
@@ -151,8 +132,6 @@ class _ActionPort:
             latency_ms=1,
             response_id=f"response:{self.calls}",
         )
-        if output_schema is GroundedTaskStatePayload:
-            return output_schema.model_validate(_task_state_payload())
         return output_schema.model_validate({"op": "click", "target": "E3"})
 
 
@@ -208,20 +187,28 @@ def _context(*, local_objective=None):
     )
 
 
+def _bound_public_context(context) -> dict[str, object]:
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    messages = GroundedPolicyContextBinder().action_messages(
+        context,
+        catalog.specs,
+        _action_request(context),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+        include_tool_menu=True,
+    )
+    content = messages[1].content
+    assert isinstance(content, str)
+    return json.loads(content)
+
+
 def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    public = json.dumps(
-        to_json_compatible(
-            {
-                "index": catalog.view.grounding_index,
-                "state": catalog.view.current_world,
-                "tools": [item.input_schema for item in catalog.specs],
-            }
-        )
-    )
+    public = json.dumps(_bound_public_context(context))
     assert [item.ref for item in context.grounding.entities] == ["E1", "E2", "E3"]
     assert all(item.marked for item in context.grounding.entities)
+    assert not hasattr(catalog, "view")
     assert "bbox" not in public
     assert "entity:" not in public and "action:" not in public and "binding:" not in public
 
@@ -241,26 +228,27 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert outcome.metadata.perception_profile == "structure-first.v1"
     assert adapter.compatibility_key.split(":")[2] == "structure-first.v1"
     assert adapter.last_image_input_count == 0
-    assert port.calls == 2
-    assert adapter.last_model_call_count == 2
-    task_state_content = port.task_state_messages[1].content
-    assert isinstance(task_state_content, str)
-    task_state_input = json.loads(task_state_content)
-    assert set(task_state_input) == {
-        "task_goal",
-        "current_unified_world",
-        "world_transition",
-        "previous_agent_task_state",
-    }
-    assert task_state_input["world_transition"]["initial_observation"] is True
-    assert task_state_input["previous_agent_task_state"]["authority"] == "advisory_agent_belief"
-    user_content = port.action_messages[1].content
+    assert port.calls == 1
+    assert adapter.last_model_call_count == 1
+    user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert public["task_goal"]["instruction"] == context.task.instruction
-    assert all(item["marked"] is False for item in public["current_unified_world"]["entities"])
-    assert public["agent_task_state"]["next_step"] == "Enter the username"
-    assert "tool_menu" in public
+    assert set(public) == {
+        "context_id",
+        "task",
+        "intent",
+        "world",
+        "progress",
+        "history",
+        "pending",
+        "budgets",
+        "decision_mode",
+        "control_feedback",
+        "tools",
+    }
+    assert public["task"]["instruction"] == context.task.instruction
+    assert all(item["marked"] is False for item in public["world"]["entities"])
+    assert public["progress"]["validated_task_status"] == "incomplete"
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 0
     assert trace["selected_grounding"]["marked"] is False
@@ -283,13 +271,13 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert not isinstance(outcome, ModelFailure)
-    user_content = port.action_messages[1].content
+    user_content = port.messages[1].content
     assert isinstance(user_content, tuple)
     assert isinstance(user_content[0], ModelTextPart)
     assert isinstance(user_content[1], ModelImageURLPart)
     assert adapter.last_image_input_count == 1
     public = json.loads(user_content[0].text)
-    assert any(item["marked"] is True for item in public["current_unified_world"]["entities"])
+    assert any(item["marked"] is True for item in public["world"]["entities"])
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 1
     assert trace["selected_grounding"]["marked"] is True
@@ -321,11 +309,6 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
                 "additionalProperties": False,
             }
             return (ToolCall("observe_visual", {}),)
-
-        async def generate_structured(self, messages, output_schema, config):
-            del messages, config
-            assert output_schema is GroundedTaskStatePayload
-            return output_schema.model_validate(_task_state_payload())
 
     context = _context()
     context = replace(
@@ -381,11 +364,6 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
         messages: tuple = ()
         tools: tuple[ToolSpec, ...] = ()
 
-        async def generate_structured(self, messages, output_schema, config):
-            del messages, config
-            assert output_schema is GroundedTaskStatePayload
-            return output_schema.model_validate(_task_state_payload())
-
         async def generate_tool_calls(self, messages, tools, config, *, require_one):
             del config, require_one
             self.messages = tuple(messages)
@@ -412,18 +390,24 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     assert isinstance(user_content, str)
     public = json.loads(user_content)
     assert set(public) == {
-        "task_goal",
-        "current_unified_world",
-        "world_transition",
-        "agent_task_state",
+        "context_id",
+        "task",
+        "intent",
+        "world",
+        "progress",
+        "history",
+        "pending",
+        "budgets",
+        "decision_mode",
+        "control_feedback",
     }
     assert {item.name for item in port.tools} == {"fill", "click"}
     assert all("E1(" not in item.description for item in port.tools)
-    assert all("target E-ref from grounding_index" in item.description for item in port.tools)
+    assert all("target E-ref from world.entities" in item.description for item in port.tools)
     assert all("memory" not in item.input_schema["properties"] for item in port.tools)
 
 
-def test_grounded_action_resolution_is_clean_and_task_state_is_separate_context() -> None:
+def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
@@ -440,15 +424,12 @@ def test_grounded_action_resolution_is_clean_and_task_state_is_separate_context(
     assert isinstance(outcome, GroundedActionResolution)
     assert isinstance(outcome.decision, SelectAction)
     assert outcome.decision.context_id == context.context_id
-    assert catalog.view.agent_task_state == {
-        "authority": "advisory_agent_belief",
-        "revision": 0,
-        "goal": "",
-        "items": [],
-        "derived_facts": [],
-        "next_step": "",
-        "ready_to_finalize": False,
-        "blockers": [],
+    assert set(catalog.__dataclass_fields__) == {
+        "catalog_id",
+        "context_id",
+        "specs",
+        "bindings",
+        "serialized_bytes",
     }
 
 
@@ -510,12 +491,12 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
         ),
     )
 
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    history = _bound_public_context(context)["history"]
 
-    assert catalog.view.current_world["interaction_history"] == (
+    assert history["items"] == [
         {
             "decision": "selectaction",
-            "verb": "fill",
+            "semantic_action": "fill",
             "target": refs[0],
             "parameters": {"value": "donovan"},
             "dispatch": "sent",
@@ -525,7 +506,7 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
         },
         {
             "decision": "selectaction",
-            "verb": "fill",
+            "semantic_action": "fill",
             "target": refs[1],
             "parameters": {"value": "UV"},
             "dispatch": "sent",
@@ -533,17 +514,19 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
             "task": "incomplete",
             "reason": "action_effect_confirmed",
         },
-    )
-    assert catalog.view.world_transition == {
-        "decision": "selectaction",
-        "verb": "click",
-        "target": refs[2],
-        "parameters": {},
-        "dispatch": "sent",
-        "effect": "unknown",
-        "task": "incomplete",
-        "reason": "action_unknown_low_local",
-    }
+        {
+            "decision": "selectaction",
+            "semantic_action": "activate",
+            "target": refs[2],
+            "parameters": {},
+            "dispatch": "sent",
+            "effect": "unknown",
+            "task": "incomplete",
+            "reason": "action_unknown_low_local",
+        },
+    ]
+    assert history["total_count"] == 3
+    assert history["truncated"] is False
 
 
 def test_grounded_history_retains_observation_modality_and_tool_describes_current_source() -> None:
@@ -577,7 +560,7 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
 
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
-    previous = catalog.view.world_transition
+    previous = _bound_public_context(context)["history"]["items"][0]
     assert previous["decision_details"]["modality"] == "structural"
     descriptions = {item.name: item.description for item in catalog.specs}
     assert "current structural source is already present" in descriptions["observe_structural"]
@@ -752,7 +735,7 @@ def test_grounded_schema_retry_returns_the_safe_field_violation_to_the_model() -
     assert "private provider response" not in repair_system
 
 
-def test_task_state_schema_retry_is_separate_from_action_schema() -> None:
+def test_action_schema_retry_repairs_the_same_model_decision() -> None:
     class RepairPort(_ActionPort):
         repair_messages: tuple = ()
 
@@ -760,8 +743,8 @@ def test_task_state_schema_retry_is_separate_from_action_schema() -> None:
             if self.calls == 0:
                 self.calls += 1
                 raise StructuredOutputError(
-                    "private task-state response",
-                    violations=(StructuredOutputViolation("ready_to_finalize", "bool_type"),),
+                    "private action response",
+                    violations=(StructuredOutputViolation("target", "string_type"),),
                 )
             if self.calls == 1:
                 self.repair_messages = tuple(messages)
@@ -778,14 +761,13 @@ def test_task_state_schema_retry_is_separate_from_action_schema() -> None:
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert not isinstance(outcome, ModelFailure)
-    assert port.calls == 3
-    assert adapter.last_task_state_schema_repair_count == 1
+    assert port.calls == 2
     assert adapter.last_schema_repair_count == 1
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
-    assert '"field_path":"ready_to_finalize"' in repair_system
-    assert "Do not select or describe a tool call" in repair_system
-    assert "private task-state response" not in repair_system
+    assert '"field_path":"target"' in repair_system
+    assert "Return exactly one flat JSON object" in repair_system
+    assert "private action response" not in repair_system
 
 
 def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:

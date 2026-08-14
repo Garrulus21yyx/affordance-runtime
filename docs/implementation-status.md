@@ -30,6 +30,17 @@ reducers now enter through one explicit post-observation
 re-resolve on every fresh observation. The recurrent Agent decision/tool schema
 is action/control-only. Fresh live benchmark revalidation remains open.
 
+The current grounded policy no longer has a mandatory task-state updater or a
+separate model-authored working-memory envelope. `AgentContext` is the only
+internal context owner. A single YAML-backed binder projects its original task,
+fresh Unified World, progress, bounded action/effect history, pending state,
+budgets and control feedback once, alongside current public tools. The catalog
+owns only tool schemas and opaque Runtime bindings. Grounded adapters receive
+the typed context directly; legacy serialized context is produced only for
+legacy adapters that declare they require it. Focused tests, the full
+`2474 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
+received a fresh live benchmark run.
+
 The target path now has:
 
 | Capability | Status |
@@ -109,7 +120,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED` |
+| P5-M4.6 evidence-directed short-loop remediation | `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / LIVE_NOT_RUN / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -716,14 +727,15 @@ integrated fill/select local liveness guard; it is not a planner. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN`
-after the failed atomic-memory diagnostic admitted a bounded cognition split;
+`SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / LIVE_NOT_RUN`;
+the atomic-memory and updater diagnostics remain only negative evidence;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.
 
-At `eb19c0d`, grounded action selection performs two cognition calls inside one
+The following `eb19c0d` topology is historical and superseded by the current
+single-`AgentContext` path. At `eb19c0d`, grounded action selection performed two cognition calls inside one
 `AgentPolicy` turn. The task-state updater first receives the original task,
 fresh Unified World, explicit Runtime-observed transition after the previous
 decision, and prior advisory task state. It emits a complete bounded state with

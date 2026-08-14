@@ -51,7 +51,7 @@ if TYPE_CHECKING:
         LocalObjectiveUnsupportedReason,
     )
     from affordance_runtime.agent.loop import AgentLoop
-    from affordance_runtime.agent.policy import AgentPolicyTurn, LocalObjectiveProposalRequirement
+    from affordance_runtime.agent.policy import LocalObjectiveProposalRequirement
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
     from affordance_runtime.agent.runtime import (
         TargetRuntime,
@@ -72,11 +72,6 @@ if TYPE_CHECKING:
         UserInputResumeOutcome,
         UserInputResumeRejected,
         UserInputResumeRejectionCode,
-    )
-    from affordance_runtime.agent.working_memory import (
-        AgentWorkingMemory,
-        WorkingMemoryItem,
-        WorkingMemoryItemStatus,
     )
     from affordance_runtime.task.contracts import TaskGoal
 
@@ -99,17 +94,12 @@ _EXPORTS = {
         "affordance_runtime.agent.decision_capability",
         "ALL_DECISION_CAPABILITIES",
     ),
-    "AgentWorkingMemory": (
-        "affordance_runtime.agent.working_memory",
-        "AgentWorkingMemory",
-    ),
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
     "AgentEpisodeRunner": ("affordance_runtime.agent.episode_runner", "AgentEpisodeRunner"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
-    "AgentPolicyTurn": ("affordance_runtime.agent.policy", "AgentPolicyTurn"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "TargetRuntime": ("affordance_runtime.agent.runtime", "TargetRuntime"),
     "TargetRuntimeStartOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeStartOutcome"),
@@ -174,14 +164,6 @@ _EXPORTS = {
     ),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
-    "WorkingMemoryItem": (
-        "affordance_runtime.agent.working_memory",
-        "WorkingMemoryItem",
-    ),
-    "WorkingMemoryItemStatus": (
-        "affordance_runtime.agent.working_memory",
-        "WorkingMemoryItemStatus",
-    ),
     "UserInputRequest": ("affordance_runtime.agent.user_input", "UserInputRequest"),
     "UserInputResumed": ("affordance_runtime.agent.user_input", "UserInputResumed"),
     "UserInputResumeOutcome": ("affordance_runtime.agent.user_input", "UserInputResumeOutcome"),

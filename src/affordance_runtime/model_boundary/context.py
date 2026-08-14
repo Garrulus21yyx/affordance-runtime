@@ -94,34 +94,6 @@ class AgentProgressView:
 
 
 @dataclass(frozen=True)
-class AgentWorkingMemoryItemView:
-    description: str
-    status: str
-
-
-@dataclass(frozen=True)
-class AgentWorkingMemoryView:
-    """Non-authoritative projection of the policy's run-scoped task belief."""
-
-    items: tuple[AgentWorkingMemoryItemView, ...] = ()
-    revision: int = 0
-    goal: str = ""
-    derived_facts: tuple[str, ...] = ()
-    next_step: str = ""
-    ready_to_finalize: bool = False
-    blockers: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if self.revision < 0:
-            raise ValueError("working-memory revision cannot be negative")
-        object.__setattr__(self, "items", tuple(self.items))
-        object.__setattr__(self, "derived_facts", tuple(self.derived_facts))
-        object.__setattr__(self, "blockers", tuple(self.blockers))
-        if any(not isinstance(item, AgentWorkingMemoryItemView) for item in self.items):
-            raise TypeError("working-memory view requires typed items")
-
-
-@dataclass(frozen=True)
 class AgentPendingView:
     waiting_user_summary: str = ""
     waiting_confirmation_summary: str = ""
@@ -199,7 +171,6 @@ class AgentContext:
     task: AgentTaskView
     intent: IntentContextView
     progress: AgentProgressView
-    working_memory: AgentWorkingMemoryView
     world: ModelWorldView
     actions: AgentActionPageView
     history: BoundedSection[AgentTurnView]

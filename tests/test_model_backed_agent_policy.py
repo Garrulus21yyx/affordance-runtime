@@ -9,11 +9,7 @@ from affordance_runtime.agent import (
     AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
-    AgentPolicyTurn,
-    AgentWorkingMemory,
     SelectAction,
-    WorkingMemoryItem,
-    WorkingMemoryItemStatus,
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
@@ -139,21 +135,28 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
     asyncio.run(scenario())
 
 
-def test_model_backed_policy_preserves_atomic_action_memory_envelope() -> None:
+def test_canonical_context_port_does_not_build_the_legacy_serialized_projection() -> None:
+    @dataclass
+    class CanonicalContextPort:
+        requires_serialized_context: bool = False
+        request: object | None = None
+
+        async def generate(self, request):
+            self.request = request
+            return ResolvedModelDecision(
+                Abort(request.context_id, "fixture stop", "policy"),
+                ModelMetadata(),
+            )
+
     async def scenario() -> None:
         context = await _context()
-        decision = SelectAction(context.context_id, context.actions.options[0].action_id)
-        memory = AgentWorkingMemory(
-            (WorkingMemoryItem("Continue the current task", WorkingMemoryItemStatus.IN_PROGRESS),)
-        )
-        port = ScriptedPort(ResolvedModelDecision(decision, ModelMetadata(), memory))
+        port = CanonicalContextPort()
 
         outcome = await ModelBackedAgentPolicy(port).decide(context)
 
-        assert isinstance(outcome, AgentPolicyTurn)
-        assert outcome.decision is decision
-        assert outcome.working_memory is memory
-        assert port.calls == 1
+        assert isinstance(outcome, Abort)
+        assert port.request.serialized_context == ""
+        assert port.request.agent_context is context
 
     asyncio.run(scenario())
 

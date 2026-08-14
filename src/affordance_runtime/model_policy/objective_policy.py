@@ -63,7 +63,12 @@ class ModelBackedLocalObjectiveProposer:
         object.__setattr__(self, "last_provider_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         try:
-            request = _build_request(context)
+            request = _build_request(
+                context,
+                include_serialized_context=bool(
+                    getattr(self.port, "requires_serialized_context", True)
+                ),
+            )
             outcome = await asyncio.wait_for(
                 self.port.generate(request),
                 timeout=self.call_timeout_s,
@@ -85,16 +90,20 @@ class ModelBackedLocalObjectiveProposer:
         return outcome.outcome
 
 
-def _build_request(context: AgentContext) -> ModelDecisionRequest:
+def _build_request(
+    context: AgentContext,
+    *,
+    include_serialized_context: bool = True,
+) -> ModelDecisionRequest:
     suffix = hashlib.sha256(context.context_id.encode()).hexdigest()[:24]
     return ModelDecisionRequest(
         request_id=f"objective-request:{suffix}",
-        serialized_context=serialize_agent_context(context),
+        serialized_context=(serialize_agent_context(context) if include_serialized_context else ""),
         schema_version=OBJECTIVE_SCHEMA_VERSION,
         instructions=_OBJECTIVE_INSTRUCTIONS,
         decision_schema=local_objective_response_schema(),
         image_inputs=context.image_inputs,
-        policy_context=context,
+        agent_context=context,
     )
 
 

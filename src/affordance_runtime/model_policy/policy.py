@@ -11,7 +11,7 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     normalize_decision_capabilities,
 )
-from affordance_runtime.agent.policy import AgentPolicyOutcome, AgentPolicyTurn, PolicyFailure
+from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model_policy.contracts import (
@@ -61,7 +61,12 @@ class ModelBackedAgentPolicy:
         object.__setattr__(self, "last_provider_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         try:
-            request = _build_request(context)
+            request = _build_request(
+                context,
+                include_serialized_context=bool(
+                    getattr(self.port, "requires_serialized_context", True)
+                ),
+            )
         except Exception:
             return _policy_failure(ModelFailure(ModelFailureKind.INTERNAL_ERROR, "request construction failed", False))
         try:
@@ -87,24 +92,26 @@ class ModelBackedAgentPolicy:
             object.__setattr__(self, "last_metadata", outcome.metadata)
             if outcome.decision.context_id != context.context_id:
                 return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
-            if outcome.working_memory is not None:
-                return AgentPolicyTurn(outcome.decision, outcome.working_memory)
             return outcome.decision
         return _policy_failure(
             ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
         )
 
 
-def _build_request(context: AgentContext) -> ModelDecisionRequest:
+def _build_request(
+    context: AgentContext,
+    *,
+    include_serialized_context: bool = True,
+) -> ModelDecisionRequest:
     suffix = hashlib.sha256(context.context_id.encode()).hexdigest()[:24]
     return ModelDecisionRequest(
         request_id=f"model-request:{suffix}",
-        serialized_context=serialize_agent_context(context),
+        serialized_context=(serialize_agent_context(context) if include_serialized_context else ""),
         schema_version=SCHEMA_VERSION,
         instructions=MODEL_POLICY_INSTRUCTIONS,
         decision_schema=decision_response_schema(),
         image_inputs=context.image_inputs,
-        policy_context=context,
+        agent_context=context,
     )
 
 

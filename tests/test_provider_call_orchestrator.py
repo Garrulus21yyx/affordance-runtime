@@ -174,7 +174,7 @@ def test_fallback_rejects_a_different_schema_or_capability_profile() -> None:
         ProviderCallOrchestrator((first, second))
 
 
-def test_real_model_port_retries_policy_attempt_then_runs_state_and_action_calls() -> None:
+def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_stage() -> None:
     requests: list[dict[str, object]] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -184,36 +184,6 @@ def test_real_model_port_retries_policy_attempt_then_runs_state_and_action_calls
             if len(requests) == 1:
                 payload = json.dumps({"error": {"status": "capacity"}}).encode()
                 self.send_response(503)
-            elif len(requests) == 2:
-                payload = json.dumps(
-                    {
-                        "id": "response:task-state",
-                        "choices": [
-                            {
-                                "message": {
-                                    "content": json.dumps(
-                                        {
-                                            "goal": "Enter the requested credentials and submit",
-                                            "items": [
-                                                {"description": "Enter username", "status": "pending"},
-                                            ],
-                                            "derived_facts": [],
-                                            "next_step": "Enter username",
-                                            "ready_to_finalize": False,
-                                            "blockers": ["Username has not been entered"],
-                                        }
-                                    )
-                                }
-                            }
-                        ],
-                        "usage": {
-                            "prompt_tokens": 10,
-                            "completion_tokens": 5,
-                            "total_tokens": 15,
-                        },
-                    }
-                ).encode()
-                self.send_response(200)
             else:
                 payload = json.dumps(
                     {
@@ -278,9 +248,7 @@ def test_real_model_port_retries_policy_attempt_then_runs_state_and_action_calls
         thread.join(timeout=2)
 
     assert isinstance(outcome, ResolvedModelDecision)
-    assert outcome.working_memory is not None
-    assert outcome.working_memory.next_step == "Enter username"
-    assert len(requests) == 3
+    assert len(requests) == 2
     assert [item.origin for item in orchestrator.last_attempts] == [
         ProviderAttemptOrigin.NETWORK,
         ProviderAttemptOrigin.NETWORK,

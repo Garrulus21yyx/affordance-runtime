@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.agent.decisions import RequestObservation, SelectAction
-from affordance_runtime.agent.policy import AgentPolicyTurn, PolicyFailure
+from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
@@ -239,24 +239,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_argument_repaired_operation_match"] = bool(getattr(adapter, "last_repaired_operation_match", False))
         event["model_image_input_count"] = image_input_count
         event["policy_model_call_count"] = int(getattr(adapter, "last_model_call_count", 0))
-        event["task_state_schema_repair_count"] = int(
-            getattr(adapter, "last_task_state_schema_repair_count", 0)
-        )
-    policy_turn = outcome if isinstance(outcome, AgentPolicyTurn) else None
-    decision = policy_turn.decision if policy_turn is not None else outcome
-    if policy_turn is not None:
-        memory = policy_turn.working_memory
-        event["working_memory"] = {
-            "goal": memory.goal,
-            "items": tuple(
-                {"description": item.description, "status": item.status.value}
-                for item in memory.items
-            ),
-            "derived_facts": memory.derived_facts,
-            "next_step": memory.next_step,
-            "ready_to_finalize": memory.ready_to_finalize,
-            "blockers": memory.blockers,
-        }
+    decision = outcome
     if isinstance(decision, (SelectAction, RequestObservation)):
         event["outcome"] = type(decision).__name__
         event["decision"] = _decision_trace(decision)

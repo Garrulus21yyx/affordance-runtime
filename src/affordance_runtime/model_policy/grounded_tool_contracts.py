@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_policy.tool_contracts import ToolSpec
 
 GROUNDED_TOOLS_PROTOCOL = "grounded_tools.v2"
@@ -32,34 +30,13 @@ class GroundedToolResolutionCode(StrEnum):
 
 
 @dataclass(frozen=True)
-class ToolPolicyView:
-    task_brief: Mapping[str, object]
-    grounding_index: tuple[Mapping[str, object], ...]
-    current_world: Mapping[str, object]
-    world_transition: Mapping[str, object]
-    agent_task_state: Mapping[str, object]
-    tools: tuple[ToolSpec, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "task_brief", freeze_json(self.task_brief))
-        object.__setattr__(
-            self,
-            "grounding_index",
-            tuple(freeze_json(item) for item in self.grounding_index),
-        )
-        object.__setattr__(self, "current_world", freeze_json(self.current_world))
-        object.__setattr__(self, "world_transition", freeze_json(self.world_transition))
-        object.__setattr__(self, "agent_task_state", freeze_json(self.agent_task_state))
-        object.__setattr__(self, "tools", tuple(self.tools))
-
-
-@dataclass(frozen=True)
 class GroundedToolCatalog:
+    """Current public tools and their opaque Runtime bindings; never a context owner."""
+
     catalog_id: str
     context_id: str
     specs: tuple[ToolSpec, ...]
     bindings: tuple[object, ...]
-    view: ToolPolicyView
     serialized_bytes: int
 
     def __post_init__(self) -> None:

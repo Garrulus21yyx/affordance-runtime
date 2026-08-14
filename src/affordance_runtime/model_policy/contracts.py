@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.agent.local_objective_proposal import LocalObjectiveResolvedOutcome
-from affordance_runtime.agent.working_memory import AgentWorkingMemory
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.context import AgentImageInput
 
@@ -82,7 +81,7 @@ class ModelDecisionRequest:
     instructions: str
     decision_schema: Mapping[str, object]
     image_inputs: tuple[AgentImageInput, ...] = ()
-    policy_context: "AgentContext | None" = field(default=None, repr=False, compare=False)
+    agent_context: "AgentContext | None" = field(default=None, repr=False, compare=False)
     context_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -92,13 +91,17 @@ class ModelDecisionRequest:
             raise ValueError("model decision schema version is invalid")
         if not self.instructions.strip() or len(self.instructions.encode()) > _MAX_INSTRUCTIONS:
             raise ValueError("model policy instructions exceed their bound")
-        if not self.serialized_context.strip() or len(self.serialized_context.encode()) > _MAX_CONTEXT_BYTES:
+        if len(self.serialized_context.encode()) > _MAX_CONTEXT_BYTES:
             raise ValueError("serialized AgentContext exceeds the model request bound")
-        try:
-            public_context = json.loads(self.serialized_context)
-            context_id = public_context["context_id"]
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise ValueError("model decision request requires one public context identity") from exc
+        context_id: object = None
+        if self.serialized_context.strip():
+            try:
+                public_context = json.loads(self.serialized_context)
+                context_id = public_context["context_id"]
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise ValueError("model decision request requires one public context identity") from exc
+        elif self.agent_context is not None:
+            context_id = self.agent_context.context_id
         if not isinstance(context_id, str) or _SAFE_METADATA.fullmatch(context_id) is None:
             raise ValueError("model decision request context identity is invalid")
         object.__setattr__(self, "context_id", context_id)
@@ -106,13 +109,13 @@ class ModelDecisionRequest:
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(not isinstance(item, AgentImageInput) for item in self.image_inputs):
             raise TypeError("model request image inputs must be bounded and typed")
-        if self.policy_context is not None:
+        if self.agent_context is not None:
             from affordance_runtime.model_boundary.context import AgentContext
 
-            if not isinstance(self.policy_context, AgentContext):
-                raise TypeError("model decision request policy context must be typed")
-            if self.policy_context.context_id != self.context_id:
-                raise ValueError("private policy context does not match its public projection")
+            if not isinstance(self.agent_context, AgentContext):
+                raise TypeError("model decision request AgentContext must be typed")
+            if self.agent_context.context_id != self.context_id:
+                raise ValueError("AgentContext does not match its public projection")
 
 
 @dataclass(frozen=True)
@@ -121,13 +124,10 @@ class ResolvedModelDecision:
 
     decision: AgentDecision
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
-    working_memory: AgentWorkingMemory | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("resolved model outcome requires one typed AgentDecision")
-        if self.working_memory is not None and not isinstance(self.working_memory, AgentWorkingMemory):
-            raise TypeError("resolved model working memory must be typed")
 
 
 @dataclass(frozen=True)

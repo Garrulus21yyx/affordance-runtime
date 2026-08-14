@@ -28,8 +28,8 @@ from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveUnsupportedReason,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.context import AgentContext, AgentGroundingEntityView
-from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentTurnView
+from affordance_runtime.model_boundary.context import AgentContext
+from affordance_runtime.model_boundary.contracts import AgentActionOptionView
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
@@ -38,7 +38,6 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
-    ToolPolicyView,
 )
 from affordance_runtime.model_policy.objective_spec import (
     LocalObjectiveSpecPayload,
@@ -217,36 +216,21 @@ def compile_grounded_tool_catalog(
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
-    view = ToolPolicyView(
-        _task_brief(context),
-        tuple(_grounding_entity(item) for item in context.grounding.entities),
-        _current_state(context, ref_by_target),
-        _previous_result(context, ref_by_target),
-        _agent_task_state(context),
-        tuple(specs),
+    public_tools = tuple(
+        {
+            "name": item.name,
+            "description": item.description,
+            "input_schema": to_json_compatible(item.input_schema),
+        }
+        for item in specs
     )
-    public = {
-        "task_brief": view.task_brief,
-        "grounding_index": view.grounding_index,
-        "current_world": view.current_world,
-        "world_transition": view.world_transition,
-        "agent_task_state": view.agent_task_state,
-        "tools": tuple(
-            {
-                "name": item.name,
-                "description": item.description,
-                "input_schema": to_json_compatible(item.input_schema),
-            }
-            for item in specs
-        ),
-    }
-    encoded = json.dumps(to_json_compatible(public), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = json.dumps(public_tools, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     encoded_bytes = len(encoded.encode())
     if len(specs) > MAX_GROUNDED_TOOL_COUNT or encoded_bytes > MAX_GROUNDED_WORKSPACE_BYTES:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     digest = hashlib.sha256(f"{context.context_id}\0{encoded}".encode()).hexdigest()[:32]
     return GroundedToolCatalog(
-        f"grounded-catalog:{digest}", context.context_id, tuple(specs), tuple(bindings), view, encoded_bytes
+        f"grounded-catalog:{digest}", context.context_id, tuple(specs), tuple(bindings), encoded_bytes
     )
 
 
@@ -426,85 +410,8 @@ def _local_objective_schema() -> dict[str, object]:
 def _tool_description(verb: str) -> str:
     return (
         f"{verb} one entity authorized by the current Runtime action page. "
-        "Pass exactly one required target E-ref from grounding_index."
+        "Pass exactly one required target E-ref from world.entities."
     )
-
-
-def _task_brief(context: AgentContext):
-    return {
-        "instruction": context.task.instruction,
-        "constraints": list(context.task.constraints.items),
-        "public_inputs": to_json_compatible(context.task.public_inputs),
-    }
-
-
-def _grounding_entity(item: AgentGroundingEntityView):
-    return {
-        "ref": item.ref,
-        "role": item.role,
-        "label": item.label,
-        "state": to_json_compatible(item.state),
-        "relations": list(item.relation_hints),
-        "verbs": list(item.verbs),
-        "marked": item.marked,
-    }
-
-
-def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
-    value = {
-        "task_status": str(context.progress.validated_task_status),
-        "verified_public_facts": [
-            {
-                "subject": ref_by_target.get(item.subject_id, "task"),
-                "field": item.predicate,
-                "value": to_json_compatible(item.value),
-            }
-            for item in context.progress.verified_public_facts
-        ],
-        "remaining_turns": context.budgets.remaining_turns,
-        "decision_mode": context.decision_mode.value,
-        "interaction_history": [_turn_result(item, ref_by_target) for item in context.history.items[:-1]],
-    }
-    return value
-
-
-def _previous_result(context: AgentContext, ref_by_target: Mapping[str, str]):
-    if not context.history.items:
-        return {}
-    return _turn_result(context.history.items[-1], ref_by_target)
-
-
-def _agent_task_state(context: AgentContext) -> dict[str, object]:
-    memory = context.working_memory
-    return {
-        "authority": "advisory_agent_belief",
-        "revision": memory.revision,
-        "goal": memory.goal,
-        "items": [
-            {"description": item.description, "status": item.status}
-            for item in memory.items
-        ],
-        "derived_facts": list(memory.derived_facts),
-        "next_step": memory.next_step,
-        "ready_to_finalize": memory.ready_to_finalize,
-        "blockers": list(memory.blockers),
-    }
-
-
-def _turn_result(item: AgentTurnView, ref_by_target: Mapping[str, str]) -> dict[str, object]:
-    result = {
-        "decision": item.decision_kind,
-        "verb": _verb(item.semantic_action) if item.semantic_action else "",
-        "target": ref_by_target.get(item.target_id, ""),
-        "parameters": to_json_compatible(item.public_parameters),
-        "dispatch": item.dispatch_status,
-        "effect": item.action_evaluation_status,
-        "task": item.task_evaluation_status,
-        "reason": item.reason,
-    }
-    if item.semantic_summary and not item.semantic_action:
-        result["decision_details"] = to_json_compatible(item.semantic_summary)
-    return result
 
 
 def _observation_tool_description(context: AgentContext, capability) -> str:

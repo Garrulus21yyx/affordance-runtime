@@ -15,18 +15,8 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
-from affordance_runtime.agent.working_memory import (
-    MAX_WORKING_MEMORY_BLOCKERS,
-    MAX_WORKING_MEMORY_DERIVED_FACTS,
-    MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
-    MAX_WORKING_MEMORY_GOAL_CHARS,
-    MAX_WORKING_MEMORY_ITEMS,
-    MAX_WORKING_MEMORY_NEXT_STEP_CHARS,
-    AgentWorkingMemory,
-    WorkingMemoryItem,
-    WorkingMemoryItemStatus,
-)
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -101,70 +91,6 @@ class _GroundedCommandPayloadBase(BaseModel):
         return {"value": self.value} if self.value is not None and "value" in admitted else {}
 
 
-class GroundedWorkingMemoryItemPayload(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-    description: str
-    status: Literal["pending", "in_progress", "completed"]
-
-    @field_validator("description")
-    @classmethod
-    def _description(cls, value: str) -> str:
-        if not value.strip() or len(value) > MAX_WORKING_MEMORY_DESCRIPTION_CHARS:
-            raise ValueError("working-memory description is invalid")
-        return value
-
-
-class GroundedWorkingMemoryPayload(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-    items: list[GroundedWorkingMemoryItemPayload]
-
-    @field_validator("items")
-    @classmethod
-    def _items(
-        cls,
-        value: list[GroundedWorkingMemoryItemPayload],
-    ) -> list[GroundedWorkingMemoryItemPayload]:
-        if len(value) > MAX_WORKING_MEMORY_ITEMS:
-            raise ValueError("working memory exceeds its item bound")
-        return value
-
-
-class GroundedTaskStatePayload(GroundedWorkingMemoryPayload):
-    """Complete advisory task state produced before action selection."""
-
-    goal: str
-    derived_facts: list[str]
-    next_step: str
-    ready_to_finalize: bool
-    blockers: list[str]
-
-    @field_validator("goal")
-    @classmethod
-    def _goal(cls, value: str) -> str:
-        if not value.strip() or len(value) > MAX_WORKING_MEMORY_GOAL_CHARS:
-            raise ValueError("task-state goal is invalid")
-        return value
-
-    @field_validator("next_step")
-    @classmethod
-    def _next_step(cls, value: str) -> str:
-        if len(value) > MAX_WORKING_MEMORY_NEXT_STEP_CHARS:
-            raise ValueError("task-state next step is invalid")
-        return value
-
-    @field_validator("derived_facts")
-    @classmethod
-    def _derived_facts(cls, value: list[str]) -> list[str]:
-        return _bounded_task_state_statements(value, MAX_WORKING_MEMORY_DERIVED_FACTS)
-
-    @field_validator("blockers")
-    @classmethod
-    def _blockers(cls, value: list[str]) -> list[str]:
-        return _bounded_task_state_statements(value, MAX_WORKING_MEMORY_BLOCKERS)
-
-
 class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     """Compact action-selection command; retained as the public compatibility name."""
 
@@ -192,15 +118,6 @@ class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
     """Compact objective-proposal command with no action-selection fields."""
 
 
-def _bounded_task_state_statements(value: list[str], limit: int) -> list[str]:
-    if len(value) > limit or any(
-        not item.strip() or len(item) > MAX_WORKING_MEMORY_DESCRIPTION_CHARS
-        for item in value
-    ):
-        raise ValueError("task-state statements are invalid")
-    return value
-
-
 def _admitted_properties(spec: ToolSpec | None, default: set[str]) -> set[str]:
     if spec is None:
         return set(default)
@@ -216,8 +133,6 @@ class _GroundedAdapterBase:
     context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
     last_model_call_count: int = field(default=0, init=False, compare=False)
-    last_task_state_schema_repair_count: int = field(default=0, init=False, compare=False)
-    last_task_state_call_record: object | None = field(default=None, init=False, compare=False, repr=False)
     last_argument_repair_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
@@ -250,6 +165,10 @@ class _GroundedAdapterBase:
         return GROUNDED_TOOLS_PROTOCOL
 
     @property
+    def requires_serialized_context(self) -> bool:
+        return False
+
+    @property
     def provider_id(self) -> str:
         return self.port.provider
 
@@ -268,8 +187,6 @@ class _GroundedAdapterBase:
     def _reset_diagnostics(self) -> None:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_model_call_count", 0)
-        object.__setattr__(self, "last_task_state_schema_repair_count", 0)
-        object.__setattr__(self, "last_task_state_call_record", None)
         object.__setattr__(self, "last_argument_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
@@ -282,9 +199,9 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
 
     def _compile_catalog(self, request: ModelDecisionRequest, expected_schema: str, catalog_builder):
-        if request.schema_version != expected_schema or request.policy_context is None:
+        if request.schema_version != expected_schema or request.agent_context is None:
             raise ValueError("grounded tool request lacks canonical context")
-        catalog = catalog_builder(request.policy_context)
+        catalog = catalog_builder(request.agent_context)
         object.__setattr__(self, "last_catalog_count", len(catalog.specs))
         object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
         object.__setattr__(
@@ -306,7 +223,7 @@ class _GroundedAdapterBase:
         calls = await self._call(
             messages,
             catalog.specs,
-            _labeled_entity_operation_aliases(catalog),
+            _labeled_entity_operation_aliases(catalog, request.agent_context),
             payload_base,
         )
         if not calls:
@@ -352,27 +269,7 @@ class _GroundedAdapterBase:
             self.perception_profile,
             include_record=True,
             prompt_version=self.context_binder.prompts.version,
-            prior_record=self.last_task_state_call_record,
         )
-
-    async def _update_task_state(self, catalog, request: ModelDecisionRequest) -> AgentWorkingMemory:
-        messages = self.context_binder.task_state_messages(
-            catalog.view,
-            request,
-            supports_multimodal=self.port.supports_multimodal,
-            perception_profile=self.perception_profile,
-        )
-        try:
-            payload = await self._generate_structured(messages, GroundedTaskStatePayload)
-        except StructuredOutputError as exc:
-            object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
-            object.__setattr__(self, "last_task_state_schema_repair_count", 1)
-            payload = await self._generate_structured(
-                _task_state_repair_messages(messages, exc),
-                GroundedTaskStatePayload,
-            )
-        object.__setattr__(self, "last_task_state_call_record", self.port.last_call)
-        return _task_state_from_payload(payload)
 
     async def _generate_structured(self, messages, output_schema):
         object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
@@ -511,11 +408,13 @@ class GroundedActionAdapter(_GroundedAdapterBase):
         self._reset_diagnostics()
         try:
             catalog = self._compile_catalog(request, SCHEMA_VERSION, compile_grounded_action_catalog)
-            task_state = await self._update_task_state(catalog, request)
-            messages = self.context_binder.actor_messages(
-                catalog.view,
+            context = request.agent_context
+            if context is None:
+                raise ValueError("grounded action requires one canonical AgentContext")
+            messages = self.context_binder.action_messages(
+                context,
+                catalog.specs,
                 request,
-                task_state,
                 supports_multimodal=self.port.supports_multimodal,
                 perception_profile=self.perception_profile,
                 include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
@@ -540,7 +439,6 @@ class GroundedActionAdapter(_GroundedAdapterBase):
         return ResolvedModelDecision(
             resolution.decision,
             metadata,
-            task_state,
         )
 
 
@@ -568,8 +466,12 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
                 OBJECTIVE_SCHEMA_VERSION,
                 compile_grounded_objective_catalog,
             )
+            context = request.agent_context
+            if context is None:
+                raise ValueError("grounded objective requires one canonical AgentContext")
             messages = self.context_binder.objective_messages(
-                catalog.view,
+                context,
+                catalog.specs,
                 request,
                 supports_multimodal=self.port.supports_multimodal,
                 perception_profile=self.perception_profile,
@@ -632,10 +534,15 @@ def _command_payload_type(
     )
 
 
-def _labeled_entity_operation_aliases(catalog) -> tuple[tuple[str, str], ...]:
+def _labeled_entity_operation_aliases(
+    catalog,
+    context: AgentContext | None,
+) -> tuple[tuple[str, str], ...]:
     """Accept familiar verb names only when every selectable entity has a public label."""
 
-    labels = {str(item.get("ref", "")): str(item.get("label", "")).strip() for item in catalog.view.grounding_index}
+    if context is None:
+        raise ValueError("grounded aliases require one canonical AgentContext")
+    labels = {item.ref: item.label.strip() for item in context.grounding.entities}
     proposed: dict[str, list[str]] = {}
     for spec in catalog.specs:
         match = re.fullmatch(r"establish_(.+?)_entity_objective(?:_\d+)?", spec.name)
@@ -652,45 +559,6 @@ def _labeled_entity_operation_aliases(catalog) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _task_state_from_payload(payload: GroundedTaskStatePayload) -> AgentWorkingMemory:
-    return AgentWorkingMemory(
-        items=tuple(
-            WorkingMemoryItem(
-                item.description,
-                WorkingMemoryItemStatus(item.status),
-            )
-            for item in payload.items
-        ),
-        goal=payload.goal,
-        derived_facts=tuple(payload.derived_facts),
-        next_step=payload.next_step,
-        ready_to_finalize=payload.ready_to_finalize,
-        blockers=tuple(payload.blockers),
-    )
-
-
-def _task_state_repair_messages(messages, error: StructuredOutputError):
-    system = messages[0]
-    if not isinstance(system.content, str):
-        raise ValueError("task-state repair requires text system message")
-    return (
-        ModelMessage(
-            role="system",
-            content=(
-                system.content
-                + "\n\nRepair only the task-state response. Return exactly one object matching the supplied "
-                "task-state JSON schema. Do not select or describe a tool call. Public validation contract: "
-                + json.dumps(
-                    structured_output_repair_contract(error),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-            ),
-        ),
-        *messages[1:],
-    )
-
-
 def _format_repair_messages(messages, error: StructuredOutputError):
     system = messages[0]
     if not isinstance(system.content, str):
@@ -700,7 +568,7 @@ def _format_repair_messages(messages, error: StructuredOutputError):
             role="system",
             content=(
                 system.content + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
-                "current tool_menu and use only fields declared by that operation. Public validation contract: "
+                "current tools list and use only fields declared by that operation. Public validation contract: "
                 + json.dumps(
                     structured_output_repair_contract(error),
                     sort_keys=True,
@@ -750,7 +618,6 @@ def _metadata(
     *,
     include_record=True,
     prompt_version="",
-    prior_record=None,
 ):
     record = port.last_call if include_record else None
     return ModelMetadata(
@@ -760,10 +627,10 @@ def _metadata(
         endpoint_class=port.endpoint_class,
         prompt_version=prompt_version or (record.prompt_version if record is not None else ""),
         schema_version=GROUNDED_TOOLS_PROTOCOL,
-        latency_ms=sum(item.latency_ms for item in (prior_record, record) if item is not None),
-        prompt_tokens=sum(item.prompt_tokens for item in (prior_record, record) if item is not None),
-        completion_tokens=sum(item.completion_tokens for item in (prior_record, record) if item is not None),
-        total_tokens=sum(item.total_tokens for item in (prior_record, record) if item is not None),
+        latency_ms=record.latency_ms if record is not None else 0.0,
+        prompt_tokens=record.prompt_tokens if record is not None else 0,
+        completion_tokens=record.completion_tokens if record is not None else 0,
+        total_tokens=record.total_tokens if record is not None else 0,
         perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",
         grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,

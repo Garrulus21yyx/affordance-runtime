@@ -51,7 +51,7 @@ from affordance_runtime.agent.observation_control import (
     capture_admission_failure,
     capture_for_session,
 )
-from affordance_runtime.agent.policy import AgentPolicy, AgentPolicyTurn, PolicyFailure, TaskEvaluator
+from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
@@ -162,17 +162,9 @@ async def run_policy_turn(
             outcome.reason,
             policy_failure=outcome,
         )
-    decision: AgentDecision
-    if isinstance(outcome, AgentPolicyTurn):
-        policy_turn = outcome
-        decision = outcome.decision
-    else:
-        policy_turn = None
-        decision = outcome
+    decision: AgentDecision = outcome
     if not accept_current_decision(session, decision):
         return Continue("stale_decision")
-    if policy_turn is not None:
-        state.replace_working_memory(policy_turn.working_memory)
     scope = ControlTransitionScope(state, decision)
     routed: LoopDirective
     coverage = NegativeClaimCoverageGate().assess(

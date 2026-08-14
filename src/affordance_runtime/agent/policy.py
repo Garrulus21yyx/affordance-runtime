@@ -11,7 +11,6 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.agent.working_memory import AgentWorkingMemory
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
 from affordance_runtime.model_boundary.context import AgentContext
@@ -38,21 +37,7 @@ class PolicyFailure:
             raise ValueError("policy failure requires a bounded public reason")
 
 
-@dataclass(frozen=True)
-class AgentPolicyTurn:
-    """One action/control decision plus the task state that governed it."""
-
-    decision: AgentDecision
-    working_memory: AgentWorkingMemory
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.decision, AgentDecision):
-            raise TypeError("policy turn requires one typed AgentDecision")
-        if not isinstance(self.working_memory, AgentWorkingMemory):
-            raise TypeError("policy turn requires typed working memory")
-
-
-AgentPolicyOutcome: TypeAlias = AgentDecision | AgentPolicyTurn | PolicyFailure
+AgentPolicyOutcome: TypeAlias = AgentDecision | PolicyFailure
 
 
 class AgentPolicy(Protocol):

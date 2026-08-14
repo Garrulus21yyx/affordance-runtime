@@ -104,6 +104,11 @@ class ProviderCallOrchestrator(Generic[ResolvedT]):
         keys = tuple(getattr(port, "compatibility_key", "") for port in self.ports)
         if any(not key for key in keys) or len(set(keys)) != 1:
             raise ValueError("fallback providers must share one schema/capability profile")
+        context_modes = tuple(
+            bool(getattr(port, "requires_serialized_context", True)) for port in self.ports
+        )
+        if len(set(context_modes)) != 1:
+            raise ValueError("fallback providers must share one context input mode")
         declarations = tuple(getattr(port, "supported_decisions", None) for port in self.ports)
         if any(item is not None for item in declarations):
             if any(item is None for item in declarations):
@@ -128,6 +133,10 @@ class ProviderCallOrchestrator(Generic[ResolvedT]):
             getattr(self.primary_port, "supported_decisions", frozenset()),
             field_name="primary port supported_decisions",
         )
+
+    @property
+    def requires_serialized_context(self) -> bool:
+        return bool(getattr(self.primary_port, "requires_serialized_context", True))
 
     @property
     def primary_port(self) -> StructuredModelPort[ResolvedT]:

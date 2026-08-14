@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-08-13
+updated: 2026-08-14
 repository: affordance-runtime
 
 authority_precedence:
@@ -91,6 +91,9 @@ normative:
     lifecycle: current
 
 reference:
+  - role: single_agent_context_convergence_plan
+    path: docs/plans/2026-08-14-single-agent-context-convergence.md
+    lifecycle: current
   - role: retired_task_contract_architecture_pointer
     path: docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md
     lifecycle: immutable_record
