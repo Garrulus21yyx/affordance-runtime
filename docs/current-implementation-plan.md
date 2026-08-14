@@ -123,7 +123,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `TASK_STATE_CONTEXT_IMPLEMENTED / PUSHED_EB19C0D / LIVE_NOT_RUN / CRITIC_NOT_ADMITTED / GENERALIZATION_OPEN` | `eb19c0d` replaces the failed single-response atomic-memory topology with two model calls inside the same `AgentPolicy`: a task-state updater reconciles the previous advisory belief with the fresh Unified World and explicit previous-decision transition, then the actor receives that updated state and clean Runtime-issued tools. Memory is no longer an action parameter or decision capability. One binder owns the model context and a packaged YAML prompt bundle; the existing ActionSpace/admission/private-binding/execution/evaluation chain remains the sole Runtime path and only one environment action can occur. The historical default-4.1V run at `d524221` remains a valid 1/5 baseline for the superseded topology; no live result or task-quality claim exists for `eb19c0d`. See the [task-state context evidence](evidence/2026-08-14-task-state-context-eb19c0d.md), [atomic-memory diagnostic](evidence/2026-08-14-atomic-agent-memory-8f33d8a.md), [valid historical run](evidence/runs/p5-m4-6-e-atomic-memory-five-witness-d524221/report.json) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `TASK_STATE_CONTEXT_IMPLEMENTED / LIVE_SCHEMA_BLOCKED_AT_CDB4BC9 / STOPPED / CRITIC_NOT_ADMITTED / GENERALIZATION_OPEN` | `eb19c0d` replaces the failed single-response atomic-memory topology with two model calls inside the same `AgentPolicy`: a task-state updater reconciles the previous advisory belief with the fresh Unified World and explicit previous-decision transition, then the actor receives that updated state and clean Runtime-issued tools. Memory is no longer an action parameter or decision capability. The clean exact-head default-4.1V run at `cdb4bc9` completed 5/5 but reached only 1 success because 4 cases terminated in updater `structured_output_failure`. All 7 initial updater responses required repair; only 3 repairs succeeded, so cross-turn memory quality remains unassessed. No critic, task rule or alternate Runtime path is admitted. See the [task-state context evidence](evidence/2026-08-14-task-state-context-eb19c0d.md), [current raw run](evidence/runs/p5-m4-6-e-task-state-context-five-witness-cdb4bc9/report.json), [atomic-memory diagnostic](evidence/2026-08-14-atomic-agent-memory-8f33d8a.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -132,14 +132,16 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 ## Next admitted slice
 
 The two-call `task-state update -> memory-conditioned action` arm is implemented
-and pushed at `eb19c0d`. The next admitted work is validation, not another
-architecture layer: wait for exact-head remote CI, then run one frozen
-default-4.1V five-witness diagnostic with the same Unified World, provider and
-single Runtime execution chain. The run must record both cognition calls,
-task-state schema repair separately from action repair, the complete task state,
-and the selected action. If the semantic failures remain, stop after causal
-trace analysis rather than adding a critic, task rule, Runtime semantic guard,
-LocalObjective planner, or repeated favorable-score sampling.
+at `eb19c0d` and its first clean default-4.1V diagnostic is complete at
+`cdb4bc9`. Work is stopped at the model/protocol boundary: 7/7 initial updater
+responses violated the task-state schema and the single bounded repair recovered
+only 3/7, yielding 1 success and 4 typed structured-output failures. The three
+admitted states were semantically useful, but multi-turn persistence and
+finalization were not reached often enough to assess. No critic, task rule,
+Runtime semantic guard, LocalObjective planner or favorable-score rerun is
+admitted from this evidence. Any resumed slice must first make the existing
+updater contract observable and reliable without creating another cognition or
+execution path.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and

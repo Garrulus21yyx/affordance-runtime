@@ -744,7 +744,22 @@ ActionSpace/admission/private-binding/execution/evaluation chain. There is still
 one possible environment action and no second Runtime path, planner, classifier,
 critic, task-family branch or semantic Runtime guard.
 
-The clean default-4.1V five-witness run at `d524221` is evidence-valid at 1/5.
+The clean exact-head default-4.1V five-witness run at `cdb4bc9` completed 5/5
+with evidence valid but is schema-blocked at 1 success and 4
+`structured_output_failure` outcomes. Seven updater decisions were attempted;
+every initial task-state response violated its schema, the bounded repair
+recovered three, and four repairs failed again before the actor could run. The
+three recovered states correctly identified the requested grid coordinate,
+decomposed the no-delay pie interaction, and enumerated all five public blue
+entities. This exercises the intended updater-before-actor edge but does not
+assess multi-turn retention, aggregation or finalization. The repair prompt did
+receive bounded violation paths and codes; the public trace did not persist
+them, so the exact repeated field-level mismatch remains unobserved. Work is
+stopped without a prompt repair, critic, task branch or rerun. See the
+[diagnostic evidence](evidence/2026-08-14-task-state-context-eb19c0d.md) and
+[raw report](evidence/runs/p5-m4-6-e-task-state-context-five-witness-cdb4bc9/report.json).
+
+The earlier clean default-4.1V five-witness run at `d524221` is evidence-valid at 1/5.
 All 12 completed turns contain non-empty attached memory, closing the question
 of whether the mechanism is exercised. It does not provide stable task state:
 grid memory names `(1,-2)` while the action selects public `(2,-1)`; the failed

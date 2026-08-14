@@ -4,7 +4,7 @@ Date: 2026-08-14
 
 Implementation: `eb19c0d`
 
-Status: `IMPLEMENTED / PUSHED / LIVE_NOT_RUN / GENERALIZATION_OPEN`
+Status: `IMPLEMENTED / LIVE_SCHEMA_BLOCKED_AT_CDB4BC9 / STOPPED / GENERALIZATION_OPEN`
 
 ## Outcome
 
@@ -84,6 +84,51 @@ enter through SurfaceAdapters and the Unified World projection.
 - `git diff --check`: passed.
 
 These checks establish the contract and unchanged execution ownership. They do
-not establish task-quality improvement. The next evidence is one exact-head
-default-4.1V five-witness diagnostic after remote CI. If it fails, analyze the
-state/action traces and stop; do not add a critic or task-specific branch.
+not establish task-quality improvement.
+
+## Default-4.1V live diagnostic
+
+The frozen five-witness diagnostic ran from clean exact head
+`cdb4bc90a724ca73a48a5049fcfd66ba8af89580`, whose product implementation is
+`eb19c0d` plus documentation only. The run completed 5/5 with valid evidence:
+
+```text
+success: 1/5
+outcomes: 1 success, 4 structured_output_failure
+provider/model: zhipu / glm-4.1v-thinking-flashx
+perception: structure-first.v1
+protocol: grounded_tools.v2
+provider calls: 18
+```
+
+This result is blocked before a task-quality comparison. Across seven attempted
+task-state updates, every initial response violated `GroundedTaskStatePayload`.
+The bounded repair call recovered three updates and failed schema validation
+again on four. Those four failures stopped policy execution before the actor
+could choose another action:
+
+| Case | Observed boundary |
+|---|---|
+| grid coordinate | repaired task state and actor action agreed on public `E38` at `(1,-2)`; success |
+| pie/no-delay | first repaired state decomposed expand then select `0`; actor expanded; next updater failed after repair |
+| blue set | first repaired state identified exactly `E5,E10,E12,E15,E16`; actor selected `E5`; next updater failed after repair |
+| pie | initial updater failed after repair; actor was never called |
+| visual addition | initial updater failed after repair; actor was never called |
+
+The three admitted states are evidence that the new causal edge is exercised
+and can express useful task semantics. They are not evidence that cross-turn
+task state, aggregation or finalization is solved: the run did not reach those
+checks. The prior 1/5 atomic-memory score and this 1/5 score therefore do not
+measure the same failure boundary.
+
+The updater repair prompt did receive the bounded, value-free schema violation
+paths and codes. The benchmark trace persists only the repair count and final
+typed `schema_error`, not the first and repaired violation paths. Consequently,
+the immediate common cause is proven—systematic updater schema noncompliance—
+while the exact recurring field-level mismatch is not observable from this
+run. The visual-gate identity errors are downstream consequences of the policy
+failing before dispatch, not an independent DOM or binding failure.
+
+Per the stop instruction, no production or prompt repair and no rerun follows
+this analysis. Raw evidence is archived at
+[`runs/p5-m4-6-e-task-state-context-five-witness-cdb4bc9/`](runs/p5-m4-6-e-task-state-context-five-witness-cdb4bc9/).
