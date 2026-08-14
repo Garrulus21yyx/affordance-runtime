@@ -76,15 +76,10 @@ def _space() -> ActionSpace:
             ActionOption(
                 "action:opaque",
                 "world-internal",
-                "send",
+                "drag_to",
                 "message",
                 "external",
-                {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                    },
-                },
+                {"type": "object", "properties": {}, "additionalProperties": False},
                 "private-schema-digest",
                 ("binding:private",),
                 "send message",
@@ -121,7 +116,7 @@ def test_action_space_projection_excludes_runtime_route_identity() -> None:
     assert option.destinations.items[0].label == "Alice"
     assert option.destinations.total_count == 1
     assert not option.destinations.truncated
-    assert option.parameter_schema["properties"]["text"]["type"] == "string"
+    assert option.parameter_schema["properties"] == {}
     representation = repr(view)
     for private in (
         "eligible_binding_ids",
@@ -216,10 +211,10 @@ def test_material_public_reference_rejects_private_path_or_url() -> None:
     assert materials.total_count == 2 and materials.truncated
 
 
-def test_parameter_schema_projection_is_consistent_after_private_fields_are_removed() -> None:
+def test_parameter_schema_projection_rejects_private_fields_instead_of_repairing() -> None:
     schema = {
         "type": "object",
-        "description": "public " + "z" * 500,
+        "description": "public schema",
         "properties": {
             "text": {"type": "string", "description": "message"},
             "selector": {"type": "string"},
@@ -228,11 +223,8 @@ def test_parameter_schema_projection_is_consistent_after_private_fields_are_remo
         "additionalProperties": False,
     }
 
-    projected = project_parameter_schema_for_model(schema)
-
-    assert tuple(projected["properties"]) == ("text",)
-    assert projected["required"] == ["text"]
-    assert len(projected["description"]) <= 240
+    with pytest.raises(ValueError, match="runtime-private parameter"):
+        project_parameter_schema_for_model(schema)
 
 
 @pytest.mark.parametrize("contract", ("option", "binding"))
@@ -243,7 +235,7 @@ def test_internal_action_contract_rejects_private_parameter_names(contract: str)
         "required": ["selector"],
         "additionalProperties": False,
     }
-    with pytest.raises(ValueError, match="private parameter"):
+    with pytest.raises(ValueError, match="schema_contract_mismatch"):
         if contract == "option":
             ActionOption(
                 "action:private-schema",

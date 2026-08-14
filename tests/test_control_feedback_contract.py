@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from test_destination_contract import _option
 
@@ -16,6 +18,18 @@ from affordance_runtime.world import ActionSpace, ActionSpaceBuilder
 from affordance_runtime.world.admission_issue import AdmissionIssueCode
 
 DIGEST = "a" * 64
+
+
+def _value_option(schema, *, semantic_action: str = "set_value"):
+    return replace(
+        _option(),
+        semantic_action=semantic_action,
+        parameter_schema=schema,
+        schema_digest="schema:value",
+        destination_required=False,
+        eligible_destination_ids=(),
+        verification_contract_digest="",
+    )
 
 
 def _feedback(**changes) -> ControlFeedback:
@@ -108,9 +122,9 @@ def test_typed_action_admission_rejects_parameter_shapes_without_values(paramete
         "required": ["value"],
         "additionalProperties": False,
     }
-    option = _option(parameter_schema=schema, schema_digest="schema:bounded")
+    option = _value_option(schema)
 
-    result = ActionSpaceBuilder().try_admit(option, parameters, "person:alice")
+    result = ActionSpaceBuilder().try_admit(option, parameters)
 
     assert result.admitted is None
     assert result.issue is not None
@@ -131,12 +145,12 @@ def test_typed_action_admission_preserves_valid_values_and_raising_compatibility
         "required": ["value"],
         "additionalProperties": False,
     }
-    option = _option(parameter_schema=schema, schema_digest="schema:bounded")
+    option = _value_option(schema)
     builder = ActionSpaceBuilder()
 
-    assert builder.try_admit(option, {"value": 50}, "person:alice").admitted is not None
+    assert builder.try_admit(option, {"value": 50}).admitted is not None
     with pytest.raises(ValueError):
-        builder.admit(option, {"value": 101}, "person:alice")
+        builder.admit(option, {"value": 101})
 
 
 def test_action_space_owner_produces_typed_unknown_action_issue() -> None:
@@ -158,10 +172,10 @@ def test_typed_action_admission_enum_mismatch_is_one_public_issue() -> None:
         "required": ["value"],
         "additionalProperties": False,
     }
-    option = _option(parameter_schema=schema, schema_digest="schema:enum")
+    option = _value_option(schema, semantic_action="select_option")
 
     result = ActionSpaceBuilder().try_admit(
-        option, {"value": "not-offered"}, "person:alice",
+        option, {"value": "not-offered"},
     )
 
     assert result.issue is not None

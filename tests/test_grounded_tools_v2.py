@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, replace
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -55,6 +54,7 @@ from affordance_runtime.model_policy.grounded_tool_compiler import (
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GROUNDED_TOOL_CALL_ENVELOPE,
     GroundedActionResolution,
+    GroundedToolCatalog,
     GroundedToolPhase,
 )
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
@@ -63,11 +63,15 @@ from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedObjectiveCommandPayload,
     GroundedToolCommandPayload,
     _command_payload_type,
-    _normalize_catalog_call,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
 from affordance_runtime.model_policy.policy import _build_request as _action_request
+from affordance_runtime.model_policy.provider_call_normalizer import (
+    ProviderCallNormalizer,
+    ToolCallIssueCode,
+    ToolCallReconciliationStatus,
+)
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model_port import (
     ModelCallRecord,
@@ -88,7 +92,7 @@ from affordance_runtime.task import (
     TaskGoal,
 )
 from affordance_runtime.task.local_objective import establish_local_objective
-from affordance_runtime.world import ActionSpaceBuilder
+from affordance_runtime.world import INTERACTION_CAPABILITY_REGISTRY, ActionSpaceBuilder
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
@@ -214,6 +218,9 @@ def _bound_public_context(context) -> dict[str, object]:
 
 def _selector_context(*, operation: str, schema: dict[str, object]):
     context = _context()
+    verification_digest = INTERACTION_CAPABILITY_REGISTRY.require(
+        operation
+    ).definition_digest
     options = tuple(
         replace(
             option,
@@ -224,6 +231,7 @@ def _selector_context(*, operation: str, schema: dict[str, object]):
             target_role="button",
             target_semantics={"role": "button", "label": "Same", "state": {"ordinal": index}},
             target_state={"ordinal": index},
+            verification_contract_digest=verification_digest,
         )
         for index, option in enumerate(context.actions.options[:2], 1)
     )
@@ -648,7 +656,8 @@ def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing()
         submit_spec,
         SelectorMode.CONSTANT_TARGET,
         (),
-        (PrivateResolutionEntry({}, "action:submit", None),),
+        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
+        "sha256:equivalent",
     )
     selector = CompiledSelectorField(
         "grounding_ref",
@@ -661,18 +670,23 @@ def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing()
         SelectorMode.GROUNDING_FALLBACK,
         (selector,),
         (
-            PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue-1", None),
-            PrivateResolutionEntry({"grounding_ref": "E10"}, "action:blue-2", None),
+            PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue-1", None, "E5", {"grounding_ref": "E5"}),
+            PrivateResolutionEntry({"grounding_ref": "E10"}, "action:blue-2", None, "E10", {"grounding_ref": "E10"}),
         ),
+        "sha256:equivalent",
     )
-    catalog = SimpleNamespace(specs=(submit_spec, blue_spec), bindings=(submit_binding, blue_binding))
+    catalog = GroundedToolCatalog(
+        "grounded-catalog:test", "context:test",
+        (submit_spec, blue_spec), (submit_binding, blue_binding), 1,
+    )
 
-    normalized = _normalize_catalog_call(
-        catalog,
+    normalized = ProviderCallNormalizer().normalize(
         ToolCall("activate_submit", {"grounding_ref": "E10"}),
+        catalog,
     )
 
-    assert normalized == ToolCall("activate_blue", {"grounding_ref": "E10"})
+    assert normalized.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT
+    assert normalized.exact_call == ToolCall("activate_blue", {"grounding_ref": "E10"})
 
 
 def test_unique_constant_target_accepts_a_redundant_current_grounding_ref() -> None:
@@ -702,28 +716,33 @@ def test_unique_constant_target_accepts_a_redundant_current_grounding_ref() -> N
                 {"type": "string", "enum": ["E5"]},
             ),
         ),
-        (PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue", None, "E5"),),
+        (PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue", None, "E5", {"grounding_ref": "E5"}),),
+        "sha256:equivalent",
     )
     submit_binding = CompiledGroundedTool(
         "activate",
         submit_spec,
         SelectorMode.CONSTANT_TARGET,
         (),
-        (PrivateResolutionEntry({}, "action:submit", None, "E17"),),
+        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
+        "sha256:equivalent",
     )
-    catalog = SimpleNamespace(
-        specs=(selected_spec, submit_spec),
-        bindings=(selected_binding, submit_binding),
+    catalog = GroundedToolCatalog(
+        "grounded-catalog:test", "context:test",
+        (selected_spec, submit_spec), (selected_binding, submit_binding), 1,
     )
 
-    assert _normalize_catalog_call(
-        catalog,
+    accepted = ProviderCallNormalizer().normalize(
         ToolCall("activate_blue", {"grounding_ref": "E17"}),
-    ) == ToolCall("activate_submit", {})
-    assert _normalize_catalog_call(
         catalog,
+    )
+    assert accepted.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT
+    assert accepted.exact_call == ToolCall("activate_submit", {})
+    rejected = ProviderCallNormalizer().normalize(
         ToolCall("activate_blue", {"grounding_ref": "E99"}),
-    ) == ToolCall("activate_blue", {"grounding_ref": "E99"})
+        catalog,
+    )
+    assert rejected.issue_code is ToolCallIssueCode.INVALID_ARGUMENT
 
 
 def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -> None:
@@ -749,7 +768,8 @@ def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -
             ToolSpec(name, f"Activate {name}.", schema),
             SelectorMode.GROUNDING_FALLBACK,
             (selector,),
-            (PrivateResolutionEntry({"grounding_ref": "E5"}, f"action:{name}", None),),
+            (PrivateResolutionEntry({"grounding_ref": "E5"}, f"action:{name}", None, "E5", {"grounding_ref": "E5"}),),
+            "sha256:equivalent",
         )
         for name in ("activate_first", "activate_second")
     )
@@ -758,19 +778,30 @@ def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -
         selected_spec,
         SelectorMode.CONSTANT_TARGET,
         (),
-        (PrivateResolutionEntry({}, "action:submit", None),),
+        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
+        "sha256:equivalent",
     )
-    catalog = SimpleNamespace(
-        specs=(selected_spec, *(item.public_spec for item in alternatives)),
-        bindings=(selected_binding, *alternatives),
+    catalog = GroundedToolCatalog(
+        "grounded-catalog:test", "context:test",
+        (selected_spec, *(item.public_spec for item in alternatives)),
+        (selected_binding, *alternatives), 1,
     )
     original = ToolCall("activate_submit", {"grounding_ref": "E5"})
 
-    assert _normalize_catalog_call(catalog, original) == original
+    result = ProviderCallNormalizer().normalize(original, catalog)
+    assert result.status is ToolCallReconciliationStatus.REPAIR_REQUIRED
+    assert result.issue_code is ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT
+    assert tuple(item.tool_name for item in result.did_you_mean) == (
+        "activate_first",
+        "activate_second",
+    )
 
 
 def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
     context = _context()
+    verification_digest = INTERACTION_CAPABILITY_REGISTRY.require(
+        "activate"
+    ).definition_digest
     source_options = context.actions.options[:2]
     raw_options = tuple(
         replace(
@@ -788,8 +819,9 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
             target_role="",
             target_state={},
             target_marked=False,
-            destination_mode="",
-            grounding_context_id="",
+                destination_mode="",
+                grounding_context_id="",
+                verification_contract_digest=verification_digest,
         )
         for option in source_options
     )

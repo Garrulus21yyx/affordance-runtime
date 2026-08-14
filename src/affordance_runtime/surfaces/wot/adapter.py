@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from time import monotonic, time
 from typing import Any, Callable
@@ -11,10 +10,10 @@ from typing import Any, Callable
 from affordance_runtime.adapters.wot import ThingAffordanceModel, WotAdapter
 from affordance_runtime.adapters.wot_security import SecurityScheme
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_wot_action
-from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -23,6 +22,7 @@ from affordance_runtime.world.contracts import (
     StateFact,
     SurfaceObservation,
 )
+from affordance_runtime.world.interaction_capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.world.schema_validation import validate_value
 
 from .contracts import (
@@ -200,13 +200,12 @@ class WotSurfaceAdapter:
         routes: dict[str, tuple[WotAffordanceBinding, SecurityScheme]] = {}
         for affordance in model.affordances:
             target_id = f"wot:{model.thing_id}:{affordance.role}:{affordance.label}"
-            targets.append(SemanticTarget(target_id, affordance.role, affordance.label))
             try:
                 route = WotAffordanceBinding.from_affordance(observation_id, td_digest, model, affordance)
             except ValueError:
                 continue
             scheme = model.security_schemes.get(route.security_scheme_ref)
-            if scheme is None or affordance.action not in {"invoke", "write_property"}:
+            if scheme is None or affordance.action != "invoke":
                 continue
             supports = getattr(self.transport, "supports", None)
             if supports is not None and not supports(route):
@@ -215,6 +214,7 @@ class WotSurfaceAdapter:
                 binding = self._binding(affordance, route, target_id)
             except ValueError:
                 continue
+            targets.append(SemanticTarget(target_id, affordance.role, affordance.label))
             bindings.append(binding)
             routes[binding.binding_id] = (route, scheme)
         return tuple(targets), tuple(bindings), routes
@@ -222,12 +222,13 @@ class WotSurfaceAdapter:
     def _binding(self, affordance: Any, route: WotAffordanceBinding, target_id: str) -> ActionBinding:
         if self._task is None:
             raise RuntimeError("WoT surface adapter must be reset before binding")
-        metadata = action_metadata(self.surface, route.primitive_action, _semantic_input_schema(route.input_schema))
+        translator = WOT_INTERACTION_CAPABILITIES.resolve_primitive(route.primitive_action)
+        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(translator.semantic_action)
         authored = affordance.risk.value if bool(getattr(affordance, "risk_asserted", False)) else ""
         classification = classify_wot_action(
             self._task,
             affordance.role,
-            metadata.semantic_action,
+            translator.semantic_action,
             self.deployment_scope,
             authored_risk=authored,
         )
@@ -242,11 +243,11 @@ class WotSurfaceAdapter:
             route.source_affordance_id,
             self.surface,
             route.executor_id,
-            metadata.semantic_action,
-            metadata.primitive_action,
+            translator.semantic_action,
+            translator.primitive_action,
             classification.category.value,
             classification.semantic_effects,
-            dict(metadata.parameter_schema),
+            schema,
             route.private_payload(),
             classification.observation_barrier,
             route.expires_at_s,
@@ -305,24 +306,3 @@ def _coverage(declared_reads: int, successful_reads: int, failed_reads: int) -> 
     if successful_reads == 0:
         return CoverageState.FAILED
     return CoverageState.TRUNCATED
-
-
-def _semantic_input_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
-    allowed = {
-        "type",
-        "properties",
-        "required",
-        "additionalProperties",
-        "enum",
-        "minimum",
-        "maximum",
-        "description",
-    }
-    result = {key: value for key, value in schema.items() if key in allowed}
-    properties = result.get("properties")
-    if isinstance(properties, Mapping):
-        result["properties"] = {
-            str(key): _semantic_input_schema(value) if isinstance(value, Mapping) else value
-            for key, value in properties.items()
-        }
-    return result

@@ -17,6 +17,7 @@ from affordance_runtime.surfaces.visual.contracts import (
     VisualViewport,
     project_visual_semantic_state,
 )
+from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -40,7 +41,10 @@ from affordance_runtime.world import (
     SurfaceObservation,
 )
 from affordance_runtime.world.action_classification import classify_surface_action
-from affordance_runtime.world.action_vocabulary import action_metadata
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    InteractionCapabilityError,
+)
 
 MAX_BROWSERGYM_VISUAL_REGIONS = 16
 MIN_VISUAL_ACTION_CONFIDENCE = 0.5
@@ -315,10 +319,11 @@ def _binding_pair(
     ):
         return None
     try:
-        metadata = action_metadata("visual", region.primitive_action)
-    except ValueError:
+        translator = VISUAL_INTERACTION_CAPABILITIES.resolve_primitive(region.primitive_action)
+        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(translator.semantic_action)
+    except InteractionCapabilityError:
         return None
-    classification = classify_surface_action(task, region.role, metadata.semantic_action)
+    classification = classify_surface_action(task, region.role, translator.semantic_action)
     binding_id = f"binding:{frame.observation_id}:{region.region_id}:{region.primitive_action}"
     public = ActionBinding(
         binding_id,
@@ -330,11 +335,11 @@ def _binding_pair(
         region.region_id,
         "browsergym_visual",
         "browsergym",
-        metadata.semantic_action,
-        metadata.primitive_action,
+        translator.semantic_action,
+        translator.primitive_action,
         classification.category.value,
         classification.semantic_effects,
-        dict(metadata.parameter_schema),
+        schema,
         {},
         classification.observation_barrier,
         confidence=region.confidence,

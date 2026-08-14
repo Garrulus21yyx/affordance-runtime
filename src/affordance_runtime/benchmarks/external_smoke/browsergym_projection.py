@@ -16,6 +16,7 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity imp
     BrowserGymEntityIdentityMap,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+    BROWSERGYM_INTERACTION_CAPABILITIES,
     informational_browsergym_roles,
 )
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
@@ -45,6 +46,7 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldObservation,
 )
+from affordance_runtime.world.interaction_capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.world.regular_lattice import (
     SpatialNode,
     VisibleNumericLabel,
@@ -87,7 +89,10 @@ def project_browsergym_observation(
             if (
                 node.private_bbox is not None
                 and node.executable
-                and node.role_spec.semantic_action == "activate"
+                and any(
+                    offer.semantic_action == "activate"
+                    for offer in node.executable_offers
+                )
             )
         ),
         _visible_numeric_labels(raw),
@@ -198,7 +203,7 @@ def project_browsergym_observation(
             if len(facts) >= MAX_INVENTORY_FACTS:
                 break
             facts.append(StateFact(f"{observation_id}:{target_id}:{key}", target_id, key, value, observation_id))
-        public, runtime = _binding_pair(
+        binding_pairs = _binding_pairs(
             node,
             target_id,
             ordinal,
@@ -208,7 +213,7 @@ def project_browsergym_observation(
             episode_identity,
             execution_allowed=not _is_tab_panel_container(node, controls_by_node_id),
         )
-        if public is not None and runtime is not None:
+        for public, runtime in binding_pairs:
             bindings.append(public)
             private.append(runtime)
     if fact_total > len(facts):
@@ -380,7 +385,7 @@ def _numeric_bbox(value: object) -> tuple[float, float, float, float] | None:
     return x, y, width, height
 
 
-def _binding_pair(
+def _binding_pairs(
     node: CanonicalBrowserControl,
     target_id: str,
     ordinal: int,
@@ -391,57 +396,59 @@ def _binding_pair(
     *,
     execution_allowed: bool = True,
 ):
-    spec = node.role_spec
-    semantic, primitive = spec.semantic_action, spec.primitive
     if not node.executable or not execution_allowed:
-        return None, None
+        return ()
     options = node.private_options
-    if semantic == "select_option" and len(options) > MAX_SELECT_OPTIONS:
-        return None, None
-    binding_id = f"binding:{observation_id}:{ordinal}:{semantic}"
-    schema: dict[str, object] = {"type": "object", "properties": {}, "additionalProperties": False}
-    if semantic in {"type_text", "select_option"}:
-        value_schema: dict[str, object] = {"type": "string"}
-        if semantic == "select_option":
-            value_schema["enum"] = [label for label, _ in options]
-        parameter_name = "text" if semantic == "type_text" else "value"
-        schema = {
-            "type": "object",
-            "properties": {parameter_name: value_schema},
-            "required": [parameter_name],
-            "additionalProperties": False,
-        }
-    public = ActionBinding(
-        binding_id,
-        observation_id,
-        observation_id,
-        revision,
-        node.public_fingerprint,
-        target_id,
-        target_id,
-        "browsergym",
-        "browsergym",
-        semantic,
-        primitive,
-        "local_reversible",
-        ("external_ui_interaction",),
-        schema,
-        {},
-        observation_barrier=True,
-        risk=ActionRisk.LOW,
-    )
-    runtime = BrowserGymElementBinding(
-        binding_id,
-        observation_id,
-        revision,
-        page_identity,
-        episode_identity,
-        node.private_bid,
-        target_id,
-        primitive,
-        node,
-    )
-    return public, runtime
+    result = []
+    for offer_index, offer in enumerate(node.executable_offers):
+        translator = BROWSERGYM_INTERACTION_CAPABILITIES.resolve_primitive(
+            offer.primitive_action
+        )
+        semantic = translator.semantic_action
+        if semantic == "select_option" and len(options) > MAX_SELECT_OPTIONS:
+            continue
+        current_value_schema = (
+            {"type": "string", "enum": [label for label, _ in options]}
+            if semantic == "select_option"
+            else None
+        )
+        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+            semantic,
+            current_value_schema=current_value_schema,
+        )
+        binding_id = f"binding:{observation_id}:{ordinal}:{offer_index}:{semantic}"
+        public = ActionBinding(
+            binding_id,
+            observation_id,
+            observation_id,
+            revision,
+            node.public_fingerprint,
+            target_id,
+            target_id,
+            "browsergym",
+            "browsergym",
+            semantic,
+            translator.primitive_action,
+            "local_reversible",
+            ("external_ui_interaction",),
+            schema,
+            {},
+            observation_barrier=True,
+            risk=ActionRisk.LOW,
+        )
+        runtime = BrowserGymElementBinding(
+            binding_id,
+            observation_id,
+            revision,
+            page_identity,
+            episode_identity,
+            node.private_bid,
+            target_id,
+            translator.primitive_action,
+            node,
+        )
+        result.append((public, runtime))
+    return tuple(result)
 
 
 def _is_tab_panel_container(

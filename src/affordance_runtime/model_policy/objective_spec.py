@@ -111,8 +111,8 @@ class AggregateLocalObjectivePayload(BaseModel):
     constant: float = 1
     operator: Literal["count", "sum", "min", "max"]
     destination_predicate: NormalizedPredicatePayload
-    semantic_action: Id240 = "fill"
-    parameter_name: Item120 = "value"
+    semantic_action: Id240 = "type_text"
+    parameter_name: Item120 = "text"
     output_format: Literal["integer_string", "decimal_string", "number"] = "integer_string"
 
 

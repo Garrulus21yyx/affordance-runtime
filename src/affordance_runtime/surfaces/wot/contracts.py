@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Mapping
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.action_vocabulary import action_metadata
+from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 
 if TYPE_CHECKING:
     from affordance_runtime.adapters.wot import ThingAffordanceModel
@@ -106,7 +106,7 @@ class WotAffordanceBinding:
     ) -> WotAffordanceBinding:
         locator = affordance.locator
         state = affordance.state
-        metadata = action_metadata("wot", affordance.action, dict(state.get("input_schema") or {}))
+        translator = WOT_INTERACTION_CAPABILITIES.resolve_primitive(affordance.action)
         return cls(
             model.thing_id,
             td_digest,
@@ -123,8 +123,8 @@ class WotAffordanceBinding:
             str(locator.get("security_scheme_ref") or ""),
             float(locator.get("min_interval_ms") or 0),
             "wot",
-            metadata.primitive_action,
-            metadata.semantic_action,
+            translator.primitive_action,
+            translator.semantic_action,
             affordance.lease.expires_at_s,
         )
 
@@ -169,6 +169,7 @@ class WotAffordanceBinding:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
+        translator = WOT_INTERACTION_CAPABILITIES.resolve_primitive("read_property")
         return cls(
             thing_id,
             td_digest,
@@ -185,8 +186,8 @@ class WotAffordanceBinding:
             security_ref,
             float(source.get("min_interval_ms") or 0),
             "wot",
-            "read_property",
-            "read",
+            translator.primitive_action,
+            translator.semantic_action,
             0,
         )
 

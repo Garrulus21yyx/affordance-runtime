@@ -448,6 +448,7 @@ def _equivalent_option(
         and option.observation_barrier == previous.observation_barrier
         and option.destination_required == previous.destination_required
         and option.eligible_destination_ids == previous.eligible_destination_ids
+        and option.verification_contract_digest == previous.verification_contract_digest
         and _risk_rank(option.risk) <= _risk_rank(previous.risk)
     ), None)
 

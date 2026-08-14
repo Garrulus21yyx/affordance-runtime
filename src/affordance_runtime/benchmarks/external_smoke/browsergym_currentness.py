@@ -106,9 +106,13 @@ def _stale_reason(
         or captured.private_options != live.private_options
     ):
         return BrowserGymCurrentnessReason.OPTION_DOMAIN_CHANGED
-    if context.requested_primitive != captured.role_spec.primitive:
-        return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
-    if not primitive_is_compatible(live.role, context.requested_primitive):
+    if (
+        len(tuple(
+            offer for offer in captured.executable_offers
+            if offer.primitive_action == context.requested_primitive
+        )) != 1
+        or not primitive_is_compatible(live.role, context.requested_primitive)
+    ):
         return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
     if not live.executable:
         return BrowserGymCurrentnessReason.NOT_EXECUTABLE

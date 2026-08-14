@@ -7,6 +7,11 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world import CoverageState
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+    VerificationFamily,
+)
 from affordance_runtime.world.public_semantic_digest import target_semantics
 from affordance_runtime.world.source_profile import assurance_satisfies
 
@@ -16,12 +21,19 @@ class ProductionActionEvaluator:
 
     async def evaluate(self, task, before, request, result, after) -> ActionEvaluation:
         del task, result
-        semantic = request.intent.semantic_action
-        if semantic == "activate":
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(
+            request.intent.semantic_action
+        )
+        if VerificationFamily.NAVIGATION_CONTEXT in definition.verification_families:
             return _evaluate_activate(before, request, after)
-        parameter_name = "text" if semantic == "type_text" else "value"
+        if definition.parameter_contract not in {
+            ParameterContractKind.TEXT,
+            ParameterContractKind.OPTION_VALUE,
+        }:
+            return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
+        parameter_name = definition.parameter_names[0]
         requested = request.intent.parameters.get(parameter_name)
-        if semantic not in {"type_text", "select_option"} or not isinstance(requested, str):
+        if not isinstance(requested, str):
             return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
         current = _current_value_evidence(after, request.intent.target_id)
         if current is None:

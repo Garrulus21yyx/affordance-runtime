@@ -1,6 +1,6 @@
 # Interaction Capability Onboarding Design
 
-> **Lifecycle:** CURRENT REFERENCE — PROPOSED BOUNDED DESIGN
+> **Lifecycle:** CURRENT REFERENCE — RECONCILED BOUNDED DESIGN
 > **Updated:** 2026-08-14
 > **Scope:** interaction vocabulary, adapter support, current action exposure,
 > model-tool projection, execution translation, and action-effect verification
@@ -35,7 +35,10 @@ ContextBuilder                       one closed public action-candidate projecti
 GroundedToolCompiler                 shared skeleton + minimal semantic choice;
                                      disposable provider schema + private resolver
           v
-AgentDecision -> admission -> risk/confirmation -> refresh/re-admit if needed
+ProviderCallNormalizer              wire normalization + bounded equivalence proof;
+                                     otherwise typed model repair, never authorization
+          v
+exact resolver -> AgentDecision -> admission -> risk/confirmation -> refresh/re-admit if needed
           -> bind/currentness -> verification plan -> execute once
           v
 fresh WorldObservation -> comparable SemanticDelta
@@ -52,6 +55,15 @@ This is registry-like, but it is not a general plugin or tool registry:
 - a current `ActionBinding` states what can be bound in one observation;
 - `ActionSpace` alone states what is legal now;
 - model tools are disposable projections of that current authority.
+
+The word "registry" names three deliberately different lifetimes. They must
+not be collapsed into one mutable tool service:
+
+| Lifetime | Owner | Contents | Cannot do |
+|---|---|---|---|
+| code/version lifetime | `InteractionCapabilityRegistry` | closed semantic action definitions and schema families | declare backend support or current legality |
+| adapter-composition lifetime | validated `AdapterInteractionProfile` | backend support plus primitive translators | create a current target, binding, or tool |
+| observation/context lifetime | compiled grounded tool catalog | flat public `ToolSpec`s plus private exact rows for the current `ActionSpace` | persist capability, reconstruct world state, or authorize dispatch |
 
 No layer may infer an upstream authority from a downstream projection. In
 particular, registering `scroll` never makes scrolling legal, an adapter's
@@ -99,6 +111,13 @@ This distribution has four concrete consequences.
    rewriting.
 4. A broad before/after change can be mistaken for the requested effect even
    when it does not satisfy an action-specific verification obligation.
+5. Provider wire tolerance, selected-tool argument repair, and semantic
+   candidate choice are not yet represented by one closed reconciliation
+   contract. A model can mix a compiler-generated tool name with a selector
+   owned by another same-operation tool; the current implementation may repair
+   that useful near miss, but it cannot yet prove that every authority-bearing
+   field is equivalent or return a structured `did_you_mean` response when it
+   is not.
 
 The goal is not to add another framework. The goal is to make one bounded
 extension seam so same-shaped capabilities require local adapter work and
@@ -197,6 +216,29 @@ Consequently, normalized entity/capability tables may exist only as internal
 compiler data. They must not be transmitted to the Actor. The Actor must not
 be asked to join an entity table to an operation table before it can act.
 
+### 2.3 Why the current shape exists
+
+The current compiler and model boundary are the result of several falsifying
+tests, not arbitrary indirection. The evidence explains both the changes that
+must be preserved and the contradictions that the onboarding spine must close.
+
+| Evidence | What failed | Correction and retained lesson |
+|---|---|---|
+| [five-witness common-cause review](reviews/2026-08-13-five-witness-common-cause.md) | an unconditional objective phase and action-shaped objective envelope stopped 5/5 cases before GUI execution | one ordinary GUI turn uses one `AgentContext` and one action-selection model role; schema repair is not a planner |
+| [grounded-tool schema alignment](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md) | prose told the model to send `target`/`assurance` while the selected tool schema rejected those fields; the clean correction removed the three observed argument failures | provider prose, wire envelope, and emitted JSON schema must describe the same contract; error feedback must retain the owning field path and code |
+| [single-AgentContext convergence](evidence/2026-08-14-single-agent-context-convergence.md) | a second context-shaped view and mandatory updater introduced another schema gate and duplicate semantic owner | `AgentContext` and its one binder remain the sole model-context path; no memory/update sidecar is added for capability onboarding |
+| [grid semantic-selection evidence](evidence/2026-08-14-grid-semantic-selection-key-7101a84.md) | the dynamic menu admitted a semantic coordinate but a superseded base validator still required an E-ref; a later optimization removed facts from canonical context and broke thirteen consumers | the current compiled schema owns model-call membership, while deduplication/compaction stays in the disposable provider projection and never mutates canonical world facts |
+| [semantic-facet compaction](evidence/2026-08-14-semantic-facet-action-compaction-b6e0546.md) | repeated complete candidates made the model copy common structure and opaque refs | compiler-owned shared skeletons and minimal semantic differences are retained; the focused token reduction is useful evidence, not a general performance claim |
+| [Actor world convergence](actor-world-snapshot-design.md) | flattening and action/tool dedup removed the public state that explained current E-refs and withheld an already available aligned screenshot | one source-preserving `ActorWorldSnapshot` remains independent from flat callable tools; world facts are not removed merely because a tool refers to the same entity |
+| current `972fba8..df391b1` local increments | models use equivalent `name/op`, `arguments/args`, sometimes mix a same-operation shape-tool name with the uniquely identifying selector, or redundantly echo a singleton grounding ref | retain bounded transport and representation normalization, but make authority equivalence explicit and require model repair rather than silent semantic substitution when equivalence is not proven |
+
+The causal pattern is consistent: a useful projection was treated as a second
+authority, or two public descriptions of one interface diverged. The solution
+is not stricter one-to-one copying by the model and not broader Runtime
+guessing. It is one authoritative contract per concern, one-way projections,
+and a typed reconciliation boundary that can distinguish harmless
+representation variance from a different GUI decision.
+
 ## 3. Non-goals
 
 This design does not introduce:
@@ -231,7 +273,8 @@ shape is not.
 | public current action candidate | `AgentActionOptionView` built by `ContextBuilder` | grounded-tool compiler, provider messages | catalog rejoining world and action tables |
 | concrete row expansion, semantic factoring, and private lookup construction | `GroundedToolCompiler` | public ToolSpec, exact resolver | ContextBuilder/provider binder recomputing selectors or candidate products |
 | provider wire serialization | provider binder | model request | regrouping, new semantics, or private lookup data |
-| exact tool-choice lookup | grounded catalog resolver | typed `SelectAction` proposal | fuzzy search, argument repair to another candidate, or authorization |
+| provider-call reconciliation | `ProviderCallNormalizer` | exact resolver or bounded same-model repair | world/ActionSpace join, authority-changing silent substitution, admission |
+| exact tool-choice lookup | grounded catalog resolver | typed `SelectAction` proposal | normalization, fuzzy search, repair, world lookup, authorization |
 | current world state | `StateFact` in `WorldObservation` | target-state and model projections, evaluator | independently authored `SemanticTarget.state` |
 | current relations | typed `RelationFact` in `WorldObservation` | fusion, model projection, semantic diff | open relation dictionaries with identity-bearing values |
 | before/after semantic comparison | pure `SemanticDiffer` result | evaluator, bounded latest-transition projection, liveness | mutable or independently persisted delta authority |
@@ -246,13 +289,17 @@ Every projection is disposable and one-way:
 ```text
 Registry/Profile -> binding validation
 World + ActionSpace -> AgentActionOptionView -> tools/provider message
+raw provider call -> bounded normalization/repair -> exact current tool call
 World(before, after) -> SemanticDelta -> evaluator/transition view
 ControlTransition -> AgentContext.last_transition / recorder / benchmark facts
 ```
 
 The reverse arrows do not exist. Runtime never reconstructs a binding from a
 tool, state from a target-state view, relations from prose, or a transition
-from a digest.
+from a digest. `ProviderCallNormalizer` is deliberately downstream of the
+compiled catalog: it may reconcile two representations of the same current
+choice, but it cannot make a call legal, create a binding, or infer a candidate
+from the Actor world.
 
 ### 4.3 No repeated semantic rendering
 
@@ -286,9 +333,12 @@ uniquely distinguish the current candidates.
 The latest accepted decision appears only in `last_transition`; it does not
 also appear as the newest history entry. Current state appears only in the
 current world/progress/tool sections; the transition view reports changes, not
-another current snapshot. Actionable semantic facts represented by a compiled
-tool are omitted from the contextual world rendering for that same call, while
-the canonical `AgentContext.world` remains unchanged for all other consumers.
+another current snapshot. Actionable nodes and facts remain in the sole
+`ActorWorldSnapshot`; tool compilation never removes them. What is forbidden is
+a second contextual action-entity/group table that repeats those facts and asks
+the Actor to join it to the tools. Each flat tool may retain only the minimum
+self-contained target cue and candidate difference needed to make a valid
+semantic choice.
 
 ## 5. Static semantic action contract
 
@@ -435,6 +485,72 @@ fill/select_option         may remain private backend primitives
 Provider tool names may use short presentation labels, but their private
 binding always names the canonical semantic action and the model response
 resolves to the current canonical `ActionOption`.
+
+The migration is replacement, not registration beside the old maps:
+
+| Current duplicated expression | Final owner | Migration/deletion rule |
+|---|---|---|
+| `world/action_vocabulary.py` primitive-to-semantic map and verb-shaped schemas | registry definition + adapter profile + current binding schema | move semantic meaning/schema-family validation to the registry; move primitive mapping to the adapter profile; delete the shared map after every target adapter composes through the new owners |
+| `model_boundary/action_candidate_projection.py` `click/fill/select` compatibility canonicalizer | registry-validated canonical `ActionOption.semantic_action` | a temporary alias may exist only at an explicit migration ingress inside the same slice; delete it when target producers switch, and never let ContextBuilder rename an already canonical action |
+| BrowserGym `BrowserGymRoleSpec.semantic_action/primitive` singleton fields | `RoleCapabilityOffer[]` validated against profile/composer | replace one-role/one-action fields; do not retain a parallel lookup when multi-offer projection is active |
+| BrowserGym binding schema `if semantic == ...` branches | current offer/binding schema builder validated by the registry parameter family | current enum/min/max values remain observation-owned; generic tool projection copies them and never reconstructs by verb |
+| adapter execution `if primitive == ...` | adapter-local `PrimitiveTranslator` table | a finite local dispatcher may remain as implementation syntax, but the table/composer is the sole proof that a declared primitive is executable |
+| model tool catalog entries | current compiled catalog | never copied into the static registry; they expire with context/ActionSpace identity |
+
+The static registry therefore centralizes meaning, not every changing value.
+Current option enums, slider bounds, targets, destinations, risk, currentness,
+and private routes remain observation/binding data. Centralizing those in the
+registry would create stale global state and is explicitly forbidden.
+
+### 5.2.1 Atomic owner cutover and deletion rule
+
+An owner migration is incomplete until the displaced owner and every semantic
+compatibility path around it are deleted in the same coherent migration slice.
+The repository may use multiple reviewable commits on a working branch, but it
+must not attest, merge, or admit the new owner while any of these remain live:
+
+- old and new registries both answering the same semantic question;
+- dual writes to canonical and compatibility state;
+- read-new/fallback-old behavior when the owners disagree;
+- a second tool projection, resolver, schema builder, or evaluator branch for
+  the same supported action family;
+- adapter-local semantic aliases surviving the target producer cutover or
+  leaking beyond the temporary migration ingress;
+- tests or benchmark composition that can choose the superseded path.
+
+A temporary shadow is permitted only inside that same migration slice when it
+is read-only, authority-free, excluded from Actor requests and dispatch, emits
+comparison telemetry, and has an explicit deletion change in the slice. A
+shadow mismatch blocks cutover; it never selects the favorable result. Once
+equivalence is demonstrated, the shadow and old owner are deleted before the
+slice is marked implemented.
+
+Permanent provider tolerance is not a compatibility owner. Wire aliases such
+as `name/op` and `arguments/args`, and catalog reconciliation proven by the
+current `authority_equivalence_digest`, terminate at
+`ProviderCallNormalizer` and produce one canonical exact call. Likewise,
+backend primitive names such as BrowserGym `fill` may remain private translator
+values; they cannot re-enter the semantic vocabulary, model schema, admission,
+or evaluation path.
+
+Every migration change must include a deletion inventory:
+
+```text
+new sole owner
++ producers switched
++ consumers switched
++ old owner deleted
++ compatibility branches deleted
++ tests asserting old path is unreachable
+= migration complete
+```
+
+If deletion cannot occur in the same slice, the status remains
+`IMPLEMENTATION_PARTIAL / DUAL_PATH_NOT_ADMITTED`, dependent capability work is
+not added on top of it, and the exact blocker is recorded. Compatibility has no
+open-ended grace period. A separately frozen legacy product may retain its own
+isolated contract until product cutover, but the target chain cannot import,
+fallback to, or share that compatibility owner.
 
 ### 5.3 Current subject model
 
@@ -624,6 +740,22 @@ currentness fingerprint/expiry
 No action definition or adapter profile contains these observation-local
 values.
 
+Destination mode is conserved explicitly. During compatibility with the
+current `destination_required + eligible_destination_ids` fields, exactly two
+encodings are valid:
+
+```text
+required=true  + non-empty eligible destinations -> REQUIRED
+required=false + empty eligible destinations     -> FORBIDDEN
+```
+
+`required=true` with an empty domain is `DESTINATION_UNAVAILABLE`;
+`required=false` with a non-empty domain is an unsupported OPTIONAL contract,
+not FORBIDDEN. It is rejected before model projection until OPTIONAL receives
+an explicit no-destination row, verification meaning, and risk semantics. No
+projection may derive `FORBIDDEN` from the boolean alone and silently discard
+eligible destinations.
+
 Each binding also carries one observation-local `VerificationContract`. It does
 not assert that an effect happened; it contains sealed templates stating which
 concrete postcondition shapes this current offer can support:
@@ -798,7 +930,7 @@ channels, subject to existing budgets:
 ```text
 task + progress
 bounded last_transition + older verified history
-contextual current world facts not already represented by current tools
+one source-preserving ActorWorldSnapshot with current public facts
 current screenshot(s), optionally with call-local grounding marks
 flat public ToolSpec objects: name + description + input schema
 bounded Runtime control feedback
@@ -814,10 +946,11 @@ tables, and resolver entries are never transmitted.
 Screenshot marks may remain visible because they bind visual evidence to the
 current observation. Visibility does not make a mark callable: the Actor may
 return an E-ref only when that exact value occurs in an emitted
-`grounding_ref` schema. Actionable facts represented in tools are omitted only
-from the disposable Actor world rendering; canonical `AgentContext.world`
-remains complete for evaluators and other consumers. `OBJECTIVE_PROPOSAL`
-receives no action tools, so its contextual world is not pruned by this rule.
+`grounding_ref` schema. Actionable facts remain in the disposable Actor world
+rendering even when a tool contains the minimum overlapping cue needed to be
+self-contained. The compiler removes repeated candidate structure from the
+tool catalog; it does not prune observed world truth. There is no objective
+proposal model phase in target product or benchmark composition.
 
 ### 8.1 Closed candidates stay internal
 
@@ -1168,6 +1301,7 @@ class PrivateResolutionEntry:
     selector_values: Mapping[str, object]
     action_id: str
     destination_id: str | None
+    reconciliation_values: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -1177,6 +1311,7 @@ class CompiledGroundedTool:
     selector_mode: SelectorMode
     selector_fields: tuple[CompiledSelectorField, ...]
     private_resolutions: tuple[PrivateResolutionEntry, ...]
+    authority_equivalence_digest: str
 ```
 
 `public_spec` is the only model-facing member. Selector metadata is not emitted
@@ -1186,8 +1321,16 @@ resolution entries remain Runtime-private. `CompiledGroundedTool` is disposable
 and bound to the same context / ActionSpace identity as its source candidates;
 it is not a registry entry, ActionSpace copy, or durable tool installation.
 
-The resolver validates the provider call against the exact emitted schema,
-then performs only these transformations:
+`reconciliation_values` contains only complete call-local public identities
+that the compiler already possessed, such as a rendered grounding ref omitted
+from a singleton tool or the explicit selector tuple for one current row. It
+does not contain a new selector, world data, or authorization. The exact
+resolver continues to use `selector_values`; reconciliation metadata is read
+only by the bounded pre-resolver normalizer.
+
+After provider-call reconciliation has returned one exact call, the resolver
+validates it against that exact emitted schema and performs only these
+transformations:
 
 ```text
 tool name + semantic/atomic/grounding selector tuple
@@ -1197,9 +1340,8 @@ business fields                    -> parameters unchanged
 ```
 
 It returns the existing typed `SelectAction`. It never defaults a required
-destination to `""`, renames `text` to `value`, substitutes another candidate
-during argument repair, performs an E-ref/world join, or searches for a similar
-action.
+destination to `""`, renames `text` to `value`, normalizes or repairs the call,
+performs an E-ref/world join, or searches for a similar action.
 
 Admission then repeats authoritative membership, schema, and destination
 checks against the still-current internal `ActionSpace`. Tool validation and
@@ -1209,6 +1351,108 @@ Provider transports may serialize the same compiled catalog differently, but
 they cannot change canonical operation meaning, selector candidates, business
 parameter contracts, or private resolution. Raw normalized candidate tables
 remain compiler diagnostics only and are excluded from every Actor request.
+
+### 8.5 Provider-call normalization and model repair
+
+Models should not have to reproduce inconsequential transport distinctions
+perfectly. Conversely, Runtime must not silently turn a contradictory call
+into a different risk, effect, destination, verification obligation, or
+business operation. One pre-resolver `ProviderCallNormalizer` owns that
+boundary.
+
+It consumes only the raw call and the same immutable compiled catalog. It does
+not read `WorldObservation`, `ActorWorldSnapshot`, `ActionSpace`, a binding, or
+an executor. Its closed outcome algebra is:
+
+```python
+class ToolCallReconciliationStatus(StrEnum):
+    EXACT = "exact"
+    NORMALIZED_EQUIVALENT = "normalized_equivalent"
+    REPAIR_REQUIRED = "repair_required"
+    REJECTED = "rejected"
+
+
+class ToolCallIssueCode(StrEnum):
+    UNKNOWN_TOOL = "unknown_tool"
+    INVALID_ARGUMENT = "invalid_argument"
+    TOOL_ARGUMENT_OWNER_MISMATCH = "tool_argument_owner_mismatch"
+    AMBIGUOUS_TOOL_INTENT = "ambiguous_tool_intent"
+    NON_EQUIVALENT_TOOL_INTENT = "non_equivalent_tool_intent"
+    STALE_CATALOG = "stale_catalog"
+
+
+@dataclass(frozen=True)
+class ToolCallRepairHint:
+    tool_name: str
+    public_arguments: Mapping[str, object]
+    reason_code: ToolCallIssueCode
+
+
+@dataclass(frozen=True)
+class ToolCallReconciliationResult:
+    status: ToolCallReconciliationStatus
+    exact_call: ToolCall | None
+    issue_code: ToolCallIssueCode | None
+    field_paths: tuple[str, ...]
+    hints: tuple[ToolCallRepairHint, ...]
+```
+
+The normalizer applies four ordered rules.
+
+1. **Wire normalization** is silent: exact aliases such as `op -> name`,
+   `args -> arguments`, or an admitted flat envelope may be rewritten while
+   preserving every argument value.
+2. **Representation-equivalent catalog normalization** is silent only when an
+   explicit public selector or redundant current grounding value identifies
+   exactly one real compiled row and the source and destination tools have the
+   same `authority_equivalence_digest`. This covers a model mixing two
+   compiler-generated same-operation shape names, or echoing the current E-ref
+   of a singleton whose tool made that target a constant.
+3. **Semantic repair** never dispatches. When one non-equivalent alternative
+   is strongly indicated, the same bounded model-repair path receives
+   `TOOL_ARGUMENT_OWNER_MISMATCH` or `NON_EQUIVALENT_TOOL_INTENT`, the exact
+   public field paths, the selected tool's schema, and at most a small set of
+   `did_you_mean` calls. The model must emit a new call.
+4. **Unknown or ambiguous intent** fails closed. Unknown names receive
+   `UNKNOWN_TOOL` plus the bounded current tool names; ambiguous selectors
+   receive `AMBIGUOUS_TOOL_INTENT` plus only actual public alternatives. No
+   fuzzy candidate is executed.
+
+The authority-equivalence digest is compiler-owned canonical typed JSON over:
+
+```text
+context/catalog identity
+canonical semantic action
+business-parameter schema digest
+subject kind + destination mode
+effect category + semantic effects
+risk + consequence + reversibility + observation barrier
+verification-contract digest
+```
+
+Tool name, description wording, digest suffix length, selector presentation,
+and a redundant singleton grounding field are not authority-bearing. Target or
+destination identity may differ between rows inside an otherwise equivalent
+partition because the Actor's explicit public selector is precisely the
+semantic choice being reconciled. A target inferred only from fuzzy label
+similarity, prose, screenshot position, or an unenumerated E-ref is never
+equivalent.
+
+Business arguments remain byte-for-byte/typed-JSON equal during silent
+normalization. The normalizer cannot rename `text` to `value`, synthesize a
+missing destination, alter a selector value, cross catalog/context identity,
+or downgrade risk. High-risk confirmation remains downstream and is evaluated
+against the newly emitted exact call; reconciliation itself is not user
+confirmation.
+
+`REPAIR_REQUIRED` uses the existing single bounded response-repair budget. It
+is not a second planner or agent turn and it does not refresh the world. The
+repair prompt contains public schema/enum information and value-free actual
+type/shape diagnostics; credentials, private bindings, raw payloads, and
+canonical IDs remain absent. If repair changes a semantic selector, target,
+destination, or tool, it is treated as a newly emitted decision and must pass
+exact resolution, admission, risk, confirmation, and currentness from the
+beginning. Until then dispatch is zero.
 
 ## 9. Canonical state and relation model
 
@@ -1234,6 +1478,23 @@ Focus, selected/checked state, value, scroll position/extent, min/max/step,
 ordinal index, and current URL/page-context fields follow this rule. A state
 value that lacks current source identity or is conflicted remains unknown; a
 projection cannot settle it.
+
+The rule also governs model convenience indexes. `ActorWorldSnapshot` may
+inline fact-derived state beside a node, and a bounded `facet_collections`
+index may group repeated public values for model cognition, but both are
+disposable projections of the same fact index. A facet collection:
+
+- carries truthful complete/partial/unknown coverage;
+- excludes conflicted or unavailable predicates from definite partitions;
+- cannot create a target, relation, binding, action, verification fact, or
+  task-progress fact;
+- is never read by admission, resolver, evaluator, or execution; and
+- is rebuilt from the current snapshot rather than persisted across turns.
+
+Structure-only AX/document node state may remain source-preserving contextual
+evidence when no canonical semantic target exists. It is explicitly
+non-authoritative and cannot be promoted into a canonical target fact without
+the ordinary source-normalization and fusion path.
 
 ### 9.2 Typed relation facts
 
@@ -1578,6 +1839,10 @@ Failures are attributed at the boundary that owns them:
 | recognized action lacks a current subject/destination | `CURRENT_SUBJECT_UNAVAILABLE` / `DESTINATION_UNAVAILABLE` offer issue | none |
 | optional destination mode reaches the initial compiler | `UNSUPPORTED_DESTINATION_MODE` catalog error | none |
 | semantic candidates need E-ref fallback but refs are incomplete, ambiguous, stale, or unrendered | `GROUNDING_FALLBACK_UNAVAILABLE` catalog error | none |
+| model names no current tool | `UNKNOWN_TOOL` reconciliation issue and bounded current-name repair context | none |
+| tool exists but a public argument violates its exact schema | `INVALID_ARGUMENT` with public field path/code and bounded same-tool repair | none |
+| tool name and explicit selector belong to one authority-equivalent row | `NORMALIZED_EQUIVALENT` with telemetry, then exact resolution | none at reconciliation |
+| tool name and selector imply a non-equivalent or ambiguous choice | `TOOL_ARGUMENT_OWNER_MISMATCH` / `AMBIGUOUS_TOOL_INTENT`; bounded `did_you_mean`, model must re-emit | none |
 | model selects no current ActionSpace member | `ACTION_OUTSIDE_ACTION_SPACE` admission issue | none |
 | public parameters/destination violate current option | `INVALID_ACTION_PARAMETERS` admission issue | none |
 | binding is stale | existing `STALE_BINDING` | `NOT_SENT` |
@@ -1688,6 +1953,10 @@ Land the smallest coherent contract foundation with no new GUI behavior:
 - canonical `SemanticActionDefinition` vocabulary and sealed verification
   contract;
 - minimal `AdapterInteractionProfile` plus translator/composition validation;
+- one `ProviderCallNormalizer` contract that preserves existing harmless wire
+  tolerance, proves authority-equivalent catalog normalization, and returns
+  typed `did_you_mean` repair instead of silently changing non-equivalent
+  intent;
 - exact generic parameter/destination conservation from `ActionBinding` through
   `ActionOption`, public candidate, tool schema, resolver and admission;
 - flat semantic-tool compilation that hoists shared target structure, exposes
@@ -1701,14 +1970,20 @@ Land the smallest coherent contract foundation with no new GUI behavior:
 - current binding/ActionSpace remaining distinct from static support;
 - typed unavailable/invalid/stale boundaries and property tests.
 
+For each migrated concern, Wave A must switch all producers and consumers and
+delete the displaced map, compatibility canonicalizer, schema branch, and test
+fixture in the same coherent slice. Shadow comparison may exist only during
+the slice under Section 5.2.1 and is deleted before the concern is admitted.
+
 These contracts should be designed and reviewed together because they form one
 extension seam. Their internal implementation commits may be split in whatever
 order keeps the branch reviewable; the design does not prescribe a vocabulary-
 versus-tool-versus-profile micro-sequence.
 
 Exit: the new contracts can represent every existing activate/text/select/read
-binding and tool shape in compatibility/shadow mode, but do not yet change
-offered actions, dispatch or evaluator results.
+binding and tool shape, all migrated producer/consumer paths resolve through
+the new sole owners, and the displaced compatibility/shadow paths have been
+deleted. Offered actions, dispatch and evaluator results do not yet change.
 
 ### 14.3 Wave B — migrate existing actions and correct effect authority
 
@@ -1814,6 +2089,9 @@ record or pull-request description:
    set and explain why a replaceable adapter/provider cannot close it.
 7. Is exploration bounded, observable, interruptible and benchmarkable? Hidden
    adapter-side scrolling, OCR loops, or tiling loops are rejected.
+8. Which old owner, alias, branch, fixture and composition path does this slice
+   delete? If the answer is “later,” the slice remains partial and cannot admit
+   dependent capabilities.
 
 These are architecture and code-review gates. They do not require every
 surface to support the same capability and do not turn missing support into an
@@ -1861,8 +2139,15 @@ the whole onboarding chain.
   from every Actor request;
 - shape-tool names remain unique under generated digest-prefix collisions and
   every selector tuple inside one tool maps to exactly one option;
-- invalid semantic choice, E-ref fallback, or destination pair cannot be
-  repaired into another candidate;
+- exact valid calls are unchanged by reconciliation;
+- wire aliases preserve every argument value;
+- silent cross-tool normalization occurs only for one complete real row with
+  the same authority-equivalence digest and unchanged business arguments;
+- non-equivalent, ambiguous, unknown, stale, or unenumerated choices produce
+  zero dispatch and bounded typed repair/rejection rather than candidate
+  substitution;
+- a model-repaired semantic choice is resolved and admitted as a new exact
+  decision rather than mutating the earlier call in place;
 - a stale catalog/context/action produces zero bind/probe/execute calls;
 - the latest transition occurs once per provider request, and each candidate
   group's common semantics occur once in its compiled tool surface.
@@ -1930,15 +2215,18 @@ This design is ready for implementation only when repository review confirms:
    closed candidates by hoisting shared semantics, exposing only minimal
    semantic differences/business values, preserving actual destination pairs,
    and using E-ref only as an explicit grounding fallback;
-5. state and relation migrations have one canonical write path and a deletion
+5. provider-call tolerance has one owner and a closed distinction between
+   syntax normalization, proven authority-equivalent normalization,
+   model-required semantic repair, and deterministic rejection;
+6. state and relation migrations have one canonical write path and a deletion
    gate for compatibility fields;
-6. delta comparability and non-causality are explicit;
-7. effect confirmation requires an action-specific pre-dispatch obligation;
-8. unsupported, unavailable, invalid, stale, sent, uncertain, and unknown
+7. delta comparability and non-causality are explicit;
+8. effect confirmation requires an action-specific pre-dispatch obligation;
+9. unsupported, unavailable, invalid, stale, sent, uncertain, and unknown
    outcomes remain typed and temporally consistent;
-9. adding a second adapter for an existing semantic shape requires no
+10. adding a second adapter for an existing semantic shape requires no
    AgentLoop/catalog/parser/evaluator branch;
-10. the migration order respects the current Step 13/14 evidence gate and does
+11. the migration order respects the current Step 13/14 evidence gate and does
     not claim unimplemented behavior.
 
 Implementation is complete only when the corresponding code, properties,

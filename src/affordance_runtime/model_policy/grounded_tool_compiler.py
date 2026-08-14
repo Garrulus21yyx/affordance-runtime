@@ -7,7 +7,7 @@ import itertools
 import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
@@ -70,9 +70,11 @@ class PrivateResolutionEntry:
     action_id: str
     destination_id: str | None
     target_ref: str = ""
+    reconciliation_values: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "selector_values", freeze_json(self.selector_values))
+        object.__setattr__(self, "reconciliation_values", freeze_json(self.reconciliation_values))
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,7 @@ class CompiledGroundedTool:
     selector_mode: SelectorMode
     selector_fields: tuple[CompiledSelectorField, ...]
     private_resolutions: tuple[PrivateResolutionEntry, ...]
+    authority_equivalence_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,7 @@ class _CompiledDraft:
     fields: tuple[CompiledSelectorField, ...]
     resolutions: tuple[PrivateResolutionEntry, ...]
     digest: str
+    authority_digest: str
 
 
 class GroundedToolCompiler:
@@ -132,6 +136,7 @@ class GroundedToolCompiler:
                 draft.mode,
                 draft.fields,
                 draft.resolutions,
+                draft.authority_digest,
             )
             for name, draft in zip(names, drafts, strict=True)
         )
@@ -168,11 +173,13 @@ class GroundedToolCompiler:
             mode, selector_fields, selector_values = _semantic_selectors(records, facets)
         else:
             mode, selector_fields, selector_values = _grounding_selectors(rows, context_id)
-        for field in selector_fields:
-            if field.public_name in selector_properties:
+        for selector_field in selector_fields:
+            if selector_field.public_name in selector_properties:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-            selector_properties[field.public_name] = to_json_compatible(field.input_schema)
-            selector_required.append(field.public_name)
+            selector_properties[selector_field.public_name] = to_json_compatible(
+                selector_field.input_schema
+            )
+            selector_required.append(selector_field.public_name)
 
         option = rows[0].option
         business_properties, business_required = _business_schema(option.parameter_schema)
@@ -191,6 +198,14 @@ class GroundedToolCompiler:
                 row.option.action_id,
                 row.destination.destination_id if row.destination else None,
                 row.option.target_ref,
+                {
+                    **dict(values),
+                    **(
+                        {"grounding_ref": row.option.target_ref}
+                        if row.option.target_ref and row.destination is None
+                        else {}
+                    ),
+                },
             )
             for row, values in zip(rows, selector_values, strict=True)
         )
@@ -212,6 +227,23 @@ class GroundedToolCompiler:
             "consequence": option.consequence_class,
         }
         digest = hashlib.sha256(_token(digest_payload).encode()).hexdigest()
+        authority_payload = {
+            "context_id": context_id,
+            "canonical_action": option.operation,
+            "business_schema": option.parameter_schema,
+            "subject_kind": option.subject_kind,
+            "destination_mode": option.destination_mode,
+            "effect_category": option.effect_category,
+            "semantic_effects": option.semantic_effects,
+            "risk": str(option.risk),
+            "consequence": option.consequence_class,
+            "reversible": option.reversible,
+            "observation_barrier": option.observation_barrier,
+            "verification_contract_digest": option.verification_contract_digest,
+        }
+        authority_digest = "sha256:" + hashlib.sha256(
+            _token(authority_payload).encode()
+        ).hexdigest()
         return _CompiledDraft(
             option.operation,
             description,
@@ -220,6 +252,7 @@ class GroundedToolCompiler:
             selector_fields,
             resolutions,
             digest,
+            authority_digest,
         )
 
 
@@ -248,6 +281,7 @@ def _technical_key(option: AgentActionOptionView) -> tuple[str, ...]:
         option.operation,
         _token(option.parameter_schema),
         option.destination_mode,
+        option.subject_kind,
         option.target_role,
         option.effect_category,
         _token(option.semantic_effects),
@@ -255,6 +289,7 @@ def _technical_key(option: AgentActionOptionView) -> tuple[str, ...]:
         option.consequence_class,
         str(option.reversible),
         str(option.observation_barrier),
+        option.verification_contract_digest,
     )
 
 

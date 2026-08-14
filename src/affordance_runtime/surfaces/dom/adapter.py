@@ -15,10 +15,10 @@ from affordance_runtime.execution.contracts import (
     DispatchStatus,
 )
 from affordance_runtime.surfaces.dom.document import project_structured_document
+from affordance_runtime.surfaces.dom.interaction_profile import DOM_INTERACTION_CAPABILITIES
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_dom_action
-from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -26,6 +26,10 @@ from affordance_runtime.world.contracts import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+)
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    InteractionCapabilityError,
 )
 
 if TYPE_CHECKING:
@@ -213,13 +217,14 @@ def _binding(
     trusted_interaction_operations: frozenset[str],
 ) -> ActionBinding | None:
     try:
-        metadata = action_metadata("dom", affordance.action)
-    except ValueError:
+        translator = DOM_INTERACTION_CAPABILITIES.resolve_primitive(affordance.action)
+        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(translator.semantic_action)
+    except InteractionCapabilityError:
         return None
     classification = classify_dom_action(
         task,
         affordance,
-        metadata.semantic_action,
+        translator.semantic_action,
         trusted_interaction_operations=trusted_interaction_operations,
     )
     return ActionBinding(
@@ -232,11 +237,11 @@ def _binding(
         source_target_id=affordance.id,
         surface="dom",
         executor_id="dom",
-        semantic_action=metadata.semantic_action,
-        primitive_action=metadata.primitive_action,
+        semantic_action=translator.semantic_action,
+        primitive_action=translator.primitive_action,
         effect_category=classification.category.value,
         semantic_effects=classification.semantic_effects,
-        parameter_schema=dict(metadata.parameter_schema),
+        parameter_schema=schema,
         payload=dict(affordance.locator),
         observation_barrier=classification.observation_barrier,
         expires_at_s=affordance.lease.expires_at_s,

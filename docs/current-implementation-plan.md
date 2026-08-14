@@ -15,7 +15,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 
 ## Active slice — existing-action flat semantic tool compiler convergence
 
-Status: `IMPLEMENTED_LOCALLY / ACTOR_WORLD_CONVERGENCE_IMPLEMENTED / FULL_VERIFIED_2512_PASS_27_SKIP / LIVE_NOT_RUN`
+Status: `IMPLEMENTED_LOCALLY / ACTOR_WORLD_CONVERGENCE_IMPLEMENTED / FULL_VERIFIED_2528_PASS_27_SKIP / LIVE_NOT_RUN`
 
 This slice replaces the compatibility `ContextBuilder.selection_key` plus
 provider `actions.groups` chain with the single compiler boundary defined in
@@ -62,6 +62,44 @@ visual provider and creates no targets, facts, bindings or actions. Structured
 provider failures retain only bounded validation stage/code/path and repair
 outcome. No task collection engine, interaction ledger, Submit guard, second
 ActionSpace, or benchmark-specific semantic projection was introduced.
+
+## Completed coherent slice — Wave-A interaction owner spine
+
+Status: `IMPLEMENTED / EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`
+
+Wave A now routes existing `activate`, `type_text`, `select_option`, and `read`
+through one immutable `InteractionCapabilityRegistry`, adapter-local profiles,
+exact primitive translators, and a validating composer. The registry also
+defines `scroll`, `press_key`, `focus`, `drag_to`, `set_value`, and `hover`, but
+no producer creates current bindings or tools for those future capabilities.
+
+The target chain conserves exact business schemas and destination algebra from
+`ActionBinding` through `ActionOption`, model view, flat `ToolSpec`, exact
+resolution, and ActionSpace admission. `ProviderCallNormalizer` is the only
+catalog representation reconciler: provider wire aliases terminate in one
+canonical call; cross-tool normalization requires one current private row and
+an exact catalog/context-bound authority-equivalence digest. Ambiguous and
+non-equivalent calls return typed `did_you_mean` candidates and cannot reach
+dispatch. Exact resolution remains catalog-only and does not read the Actor
+world or re-authorize an action.
+
+The displaced shared vocabulary, click/fill/select candidate canonicalizer,
+BrowserGym singleton role mapping, embedded catalog normalizer, and fixtures
+that selected those paths are deleted. Backend `click`, `fill`, `type`,
+`select`, `point_activate`, `invoke`, `read_property`, and `write_property`
+remain private execution primitives only.
+
+State ownership is intentionally not declared complete. Construction rejects
+contradictory overlapping `SemanticTarget.state`/`StateFact` values, compiled
+tool targets and their facts are pinned rather than reverse-pruned, and Actor
+snapshots remain disposable projections. The listed DOM, Visual, WoT, HTTP,
+BrowserGym, fusion, and benchmark producers still author both representations;
+full facts-first producer cutover is
+`IMPLEMENTATION_PARTIAL / STATEFACT_DUAL_WRITE_NOT_ADMITTED`. No focus/scroll
+state or new action binding may build on that boundary.
+
+Evidence and the remaining producer/consumer inventory are recorded in
+[Wave-A consumer inventory](evidence/2026-08-14-interaction-capability-wave-a-consumer-inventory.md).
 
 ## Active target-default convergence queue
 
@@ -181,15 +219,18 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `IN_PROGRESS / TARGET ENTRY NON_DEFAULT` | explicit target CLI/client and readiness gate exist; reference capability remediation, held-out benchmark, root switch, and physical deletion remain open |
 
-## Next admitted slice
+## Deferred live evidence
 
 The existing-action flat semantic compiler and M4.6-F P0 are locally
 full-verified. Historical focused semantic-grid witnesses do not attest the
-current compiler snapshot or replace the gate. The next admitted evidence step
-is one fresh default-4.1V five-witness benchmark using the unchanged valid
-one-call grounded action path. If it fails, analyze and stop; do not add
-a critic, task rule, model-authored memory, parallel digest store, Runtime
-semantic guard, LocalObjective planner or favorable-score retry.
+current compiler snapshot or replace the gate. At the user's direction, the
+fresh default-4.1V five-witness benchmark is deferred while the shared Wave-A
+onboarding contracts are completed; it is not treated as passed or cancelled.
+No performance or generalization claim may be made from the local tests or
+historical runs. When resumed, the unchanged one-call grounded action path is
+used; a failure is analyzed rather than patched with a critic, task rule,
+model-authored memory, parallel digest store, Runtime semantic guard,
+LocalObjective planner or favorable-score retry.
 
 M4.5-A is complete on the non-default target path. It replaced the generic
 observe/cache handshake with typed logical reset, independent capture and
@@ -220,9 +261,13 @@ M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
-claimed. P5-E is `IN_PROGRESS / UNIFIED_LOCAL_OBJECTIVE_OWNER_IMPLEMENTED /
-LIVE_REVALIDATION_PENDING`: typed sequence/set/aggregate objectives share one
-post-observation lifecycle and the displaced frontier/hypothesis path is deleted.
+claimed. P5-E is `REOPENED / TARGET_COMPOSITION_DEWIRED /
+DORMANT_BRANCH_PENDING_DELETE`: the previously unified sequence/set/aggregate
+objective phase was removed from target product and benchmark composition at
+`f73128f` because it duplicated planning and could prevent ordinary action
+selection. The displaced frontier/hypothesis path is deleted; the residual
+objective proposer/transport/reducer source branch still awaits physical
+deletion.
 
 The current Phase-4 increment retains point grounders only as explicit
 benchmark/legacy-compatibility arms; the BrowserGym target loop neither

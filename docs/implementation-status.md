@@ -24,11 +24,14 @@ ActionSpace -> AgentContext -> AgentDecision` chain. The incorrectly imported
 `LLMIntentCompiler -> TaskSpec -> StrictTaskPlanner -> TaskPlan` start path,
 hidden policy preparer capability, semantic-control mode, AgentLoop TaskProgress,
 and execution-control projection were deleted. Canonical TaskSpec/TaskPlan remain
-owned by the separate Coordinator workflow runtime. Set/sequence/aggregate
-reducers now enter through one explicit post-observation
-`LocalObjectiveProposalPort`, share one state slot and one lifecycle owner, and
-re-resolve on every fresh observation. The recurrent Agent decision/tool schema
-is action/control-only. Fresh live benchmark revalidation remains open.
+owned by the separate Coordinator workflow runtime. A later
+set/sequence/aggregate experiment introduced one post-observation
+`LocalObjectiveProposalPort`, but `f73128f` removed it from target product and
+benchmark composition after the phase was found to duplicate planning and stop
+action selection before GUI use. Its source branch remains dormant pending
+physical deletion. The recurrent Agent decision/tool schema is
+action/control-only, and the ordinary target loop has one model reasoning
+phase. Fresh live benchmark revalidation remains open.
 
 The current grounded policy no longer has a mandatory task-state updater or a
 separate model-authored working-memory envelope. `AgentContext` is the only
@@ -38,7 +41,7 @@ budgets and control feedback once, alongside current public tools. The catalog
 owns only tool schemas and opaque Runtime bindings. Grounded adapters receive
 the typed context directly; legacy serialized context is produced only for
 legacy adapters that declare they require it. Focused tests, the full
-`2474 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
+`2528 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
 received a fresh live benchmark run.
 
 The current working tree implements the first shared interaction-onboarding
@@ -90,10 +93,52 @@ retain bounded redacted validation paths/codes and repair outcome in telemetry;
 raw provider payloads remain absent.
 
 Focused compiler/grounded-tool, BrowserGym world/vision, acquisition, lattice,
-legacy serialization and model-policy tests pass; full `2512 passed, 27 skipped`,
+legacy serialization and model-policy tests pass; full `2528 passed, 27 skipped`,
 Ruff, and mypy pass locally. No fresh live benchmark was run; the historical
 clean `b6e0546` grid witness remains prior evidence and does not attest this
 working tree or replace the pending five-case gate.
+
+Wave-A interaction ownership is implemented for the existing target actions.
+One immutable, code-versioned `InteractionCapabilityRegistry` owns canonical
+action names, subject kinds, parameter families, destination modes, and
+permitted verification families. DOM, Visual, WoT, and BrowserGym static
+support resolves through adapter-local profiles and exact primitive
+translators; profile support alone creates no binding or ActionSpace member.
+The registry defines six future semantic actions, but none is currently
+offered.
+
+Business schemas now pass unchanged from `ActionBinding` through
+`ActionOption`, `AgentActionOptionView`, flat `ToolSpec`, exact resolution and
+ActionSpace admission. Selector fields remain compiler-owned and private route
+identity remains outside model schemas. Required, forbidden, unavailable, and
+unsupported optional destination states fail closed without synthesizing an
+empty destination.
+
+`ProviderCallNormalizer` owns provider wire normalization and same-catalog
+representation reconciliation. `name/op` and `arguments/args` aliases are
+transport tolerance only. Cross-tool normalization requires one exact current
+row plus a catalog/context-bound authority-equivalence digest covering
+canonical action, business schema, subject/destination mode, effect, risk,
+consequence, reversibility, observation barrier, and verification contract.
+Unknown, invalid, owner-mismatched, ambiguous, non-equivalent, and stale calls
+are typed; ambiguous/non-equivalent outcomes contain bounded `did_you_mean`
+candidates and have no exact call, so dispatch remains zero. The post-normalizer
+resolver is exact and reads no world state.
+
+The old shared vocabulary module, candidate click/fill/select canonicalizer,
+BrowserGym singleton role fields, and embedded catalog normalizer are deleted.
+Private backend primitives and provider wire aliases remain because they own
+execution mechanics and transport representation, not semantic authority.
+
+Canonical state cutover remains
+`IMPLEMENTATION_PARTIAL / STATEFACT_DUAL_WRITE_NOT_ADMITTED`. Construction now
+rejects contradictory overlapping target-state/fact values, and current tool
+targets plus their facts remain pinned in Actor projection instead of being
+deleted to fit tools. DOM, Visual, WoT, HTTP JSON, BrowserGym, fusion, and
+benchmark-support producers still dual-write `SemanticTarget.state` and
+`StateFact`; no full facts-first claim is made and no new interaction state is
+admitted. See the
+[Wave-A consumer inventory](evidence/2026-08-14-interaction-capability-wave-a-consumer-inventory.md).
 
 P5-M4.6-F P0 is implemented locally and full-verified. `ControlTransition`
 captures the matching decision-start `before_task_evaluation` as a root fact;
@@ -118,6 +163,7 @@ The target path now has:
 | canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
+| Wave-A InteractionCapability owner spine | `IMPLEMENTED_EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`; old vocabulary/canonicalizer/normalizer owners deleted, future actions semantic-only |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
@@ -137,7 +183,7 @@ The target path now has:
 | P5-M0.1.1 one-shot context epoch | `CLOSED`; monotonic per-session policy generation, stale/page-cycle/replay zero-call |
 | ContextIdentity | `CLOSED`; task/observation/action-space/page/progress/pending/generation digest |
 | IntentContextView | `CLOSED_FOR_BOUNDED_CONTEXT_ONLY`; always `context_only`, never TaskGoal authority |
-| LocalObjective rolling execution | `INTEGRATED_NON_DEFAULT / IMPLEMENTED_NOT_LIVE_VERIFIED`; one post-observation semantic contract, legality and risk unchanged |
+| LocalObjective rolling execution | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE`; not a current target capability or extension point |
 | action paging | `CLOSED_FOR_DETERMINISTIC_CURSOR_PAGER`; traversable Runtime-issued cursor; only current-page IDs admitted |
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
@@ -767,14 +813,16 @@ are reused or outsourced behind typed ports. Runtime continues to own current
 epoch, ActionSpace/ref resolution, admission, dispatch truth/no-replay,
 risk/confirmation, evidence validation and task disposition.
 
-P5-E is `IN_PROGRESS / PHASE_BOUNDARY_CUTOVER_IMPLEMENTED /
-LIVE_REVALIDATION_PENDING`. Sequence, set and aggregate semantics enter through
-one explicit `LocalObjectiveProposalPort` after observation, share one state
-slot, and re-resolve from current evidence. `AgentDecision` and recurrent action
-tools contain no objective constructor; their schema module imports no
-predicate/scope/aggregate contracts. The old TaskFrontier, VerifiedTaskState,
-RequirementHypothesis and objective-operation package are deleted. Focused and
-full-suite verification do not yet constitute a fresh live benchmark closure.
+P5-E is `REOPENED / TARGET_COMPOSITION_DEWIRED /
+DORMANT_BRANCH_PENDING_DELETE`. Sequence, set and aggregate semantics previously
+entered through one explicit `LocalObjectiveProposalPort` after observation,
+but target product and benchmark composition no longer expose that phase.
+`AgentDecision` and recurrent action tools contain no objective constructor;
+their schema module imports no predicate/scope/aggregate contracts. The old
+TaskFrontier, VerifiedTaskState, RequirementHypothesis and objective-operation
+package are deleted. Residual objective proposal/transport/reducer code still
+requires physical deletion; focused and full-suite verification do not
+constitute fresh live benchmark closure.
 
 ## Control-transition and long-horizon gap status
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Mapping
 
 from pydantic import TypeAdapter, ValidationError
@@ -213,8 +213,27 @@ def compile_grounded_tool_catalog(
     if len(specs) > MAX_GROUNDED_TOOL_COUNT or encoded_bytes > MAX_GROUNDED_WORKSPACE_BYTES:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     digest = hashlib.sha256(f"{context.context_id}\0{encoded}".encode()).hexdigest()[:32]
+    catalog_id = f"grounded-catalog:{digest}"
+    catalog_bindings = tuple(
+        replace(
+            binding,
+            authority_equivalence_digest="sha256:" + hashlib.sha256(
+                json.dumps(
+                    (
+                        catalog_id,
+                        context.context_id,
+                        binding.authority_equivalence_digest,
+                    ),
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+        )
+        if isinstance(binding, CompiledGroundedTool)
+        else binding
+        for binding in bindings
+    )
     return GroundedToolCatalog(
-        f"grounded-catalog:{digest}", context.context_id, tuple(specs), tuple(bindings), encoded_bytes
+        catalog_id, context.context_id, tuple(specs), catalog_bindings, encoded_bytes
     )
 
 

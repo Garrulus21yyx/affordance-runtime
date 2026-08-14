@@ -115,9 +115,15 @@ def project_model_world(
     ordered_targets = tuple(by_id[target_id] for target_id in basis.target_ids)
     targets = tuple(_project_target(item, budget.max_relations_per_target) for item in ordered_targets)
     target_ids = {item.target_id for item in targets}
+    pinned_targets = set(pinned_target_ids)
     fact_counts: dict[str, int] = {}
     projected_facts: list[PublicFactView] = []
-    for fact in observation.facts:
+    ordered_facts = tuple(
+        fact for fact in observation.facts if fact.subject_id in pinned_targets
+    ) + tuple(
+        fact for fact in observation.facts if fact.subject_id not in pinned_targets
+    )
+    for fact in ordered_facts:
         if len(projected_facts) >= budget.max_facts:
             break
         if fact.subject_id not in target_ids:
@@ -212,8 +218,22 @@ def fit_model_world(
         if view.conflicts.items:
             view = replace(view, conflicts=_resize(view.conflicts, view.conflicts.items[:-1]))
             continue
-        if view.facts.items:
-            view = replace(view, facts=_resize(view.facts, view.facts.items[:-1]))
+        removable_fact = next(
+            (
+                item
+                for item in reversed(view.facts.items)
+                if item.subject_id not in pinned
+            ),
+            None,
+        )
+        if removable_fact is not None:
+            view = replace(
+                view,
+                facts=_resize(
+                    view.facts,
+                    tuple(item for item in view.facts.items if item != removable_fact),
+                ),
+            )
             continue
         removable = next(
             (item for item in reversed(view.targets.items) if allow_target_removal and item.target_id not in pinned),

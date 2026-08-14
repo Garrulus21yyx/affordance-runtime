@@ -55,6 +55,8 @@ from affordance_runtime.world.view import build_agent_world_view
 if TYPE_CHECKING:
     from affordance_runtime.agent.state import AgentLoopState
 
+_PINNED_ACTION_WORLD_RESERVE_BYTES = 4_096
+
 
 @dataclass(frozen=True)
 class ContextBuilder:
@@ -201,7 +203,14 @@ class ContextBuilder:
             relevance_role=relevance_role or None,
             labels=labels,
             cursor=cursor,
-            page_size=self.budget.max_action_options,
+            page_size=min(
+                self.budget.max_action_options,
+                max(
+                    1,
+                    self.budget.max_total_serialized_bytes
+                    // _PINNED_ACTION_WORLD_RESERVE_BYTES,
+                ),
+            ),
             max_destinations_per_option=self.budget.max_destinations_per_option,
             max_targets=self.budget.observation_pinned_capacity,
             allowed_action_ids=allowed_action_ids,

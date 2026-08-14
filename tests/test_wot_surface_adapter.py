@@ -1,10 +1,8 @@
 import asyncio
 from copy import deepcopy
-from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
@@ -257,7 +255,7 @@ def test_wot_effectful_transport_exception_is_sent_unknown_without_retry() -> No
     asyncio.run(scenario())
 
 
-def test_wot_malformed_parameters_are_rejected_before_transport() -> None:
+def test_future_wot_set_value_profile_support_does_not_create_a_current_action() -> None:
     async def scenario() -> None:
         td = shared_td()
         td["properties"]["expanded"]["readOnly"] = False
@@ -268,21 +266,9 @@ def test_wot_malformed_parameters_are_rejected_before_transport() -> None:
         acquisition = await world.reset(_task())
         assert acquisition.observation is not None
         observed = acquisition.observation
-        option = next(item for item in ActionSpaceBuilder().build(_task(), observed).options if item.semantic_action == "set_value")
-        valid = ActionSpaceBuilder().admit(option, {"value": True})
-        request = ActionBinder().bind(valid, observed, "context:test")
-        invalid_selection = replace(valid, parameters={"value": "not-a-boolean"})
-        invalid = BoundActionRequest(
-            request.request_id,
-            request.context_id,
-            request.world_observation_id,
-            ActionIntent("set_value", request.intent.target_id, {"value": "not-a-boolean"}),
-            invalid_selection,
-            request.binding,
-        )
-
-        result = (await world.execute(invalid)).result
-        assert result.error.value == "invalid_parameters"
+        options = ActionSpaceBuilder().build(_task(), observed).options
+        assert all(item.semantic_action != "set_value" for item in options)
+        assert all(item.semantic_action != "set_value" for item in observed.bindings)
         assert transport.action_endpoint_calls == 0
 
     asyncio.run(scenario())

@@ -65,6 +65,7 @@ def _equivalent_current(
         and binding.observation_barrier == selection.observation_barrier
         and binding.destination_required == selection.destination_required
         and binding.eligible_destination_ids == selection.eligible_destination_ids
+        and binding.verification_contract_digest == selection.verification_contract_digest
         and _binding_current(binding, observation)
     )
 

@@ -64,6 +64,8 @@ ActionSpace
 ActorWorldSnapshot + ToolSpec
   -> provider binder                           serialization only
   -> Actor
+  -> ProviderCallNormalizer                    bounded wire/equivalence reconciliation;
+                                                no world or snapshot read
   -> exact resolver                            private table only
   -> admission                                 still-current ActionSpace only
 ```
@@ -115,8 +117,10 @@ Required invariants:
    semantic value.
 6. Route data, backend selectors, canonical target IDs, bindings, and action IDs
    never enter the snapshot.
-7. Snapshot refs cannot authorize an action. Only exact ToolSpec parameters can
-   enter the private resolver.
+7. Snapshot refs cannot authorize an action. A ref can participate in bounded
+   call reconciliation only when the same value is already an emitted current
+   tool selector or compiler-retained singleton reconciliation value; the
+   reconciled exact call must still enter the private resolver and admission.
 8. A source reports inventory coverage, rendering coverage, freshness, and
    semantic interpretation separately. Inventory completeness never means task
    semantic sufficiency.
@@ -211,7 +215,10 @@ Properties and representative witnesses must establish:
 - current raw screenshots can be requested without a semantic visual provider;
 - screenshot attachment never creates bindings or legal actions;
 - stale snapshot refs remain zero-dispatch;
-- resolver and admission do not read the snapshot;
+- normalizer, resolver and admission do not read the snapshot;
+- silent cross-tool reconciliation requires one current row and an identical
+  authority-equivalence digest; ambiguous or non-equivalent cases produce a
+  bounded model repair with zero dispatch;
 - transition/history authority remains singular;
 - structured-output failures retain bounded violation paths;
 - existing singleton, semantic-grid, destination, and no-regression tests pass;

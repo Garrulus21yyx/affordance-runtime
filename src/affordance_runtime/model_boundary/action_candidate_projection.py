@@ -11,21 +11,10 @@ from affordance_runtime.model_boundary.contracts import (
     AgentActionPageView,
     AgentDestinationView,
 )
-
-_CANONICAL_COMPATIBILITY = {
-    "click": "activate",
-    "fill": "type_text",
-    "select": "select_option",
-}
-
-
-def canonical_action_operation(semantic_action: str) -> str:
-    """Return the bounded canonical operation used by Runtime and the Actor."""
-
-    operation = _CANONICAL_COMPATIBILITY.get(semantic_action, semantic_action)
-    if not operation or len(operation) > 80:
-        raise ValueError(f"unsupported current semantic action: {semantic_action}")
-    return operation
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    DestinationMode,
+)
 
 
 def close_action_candidates(
@@ -40,6 +29,7 @@ def close_action_candidates(
     refs_by_target = dict(grounding.target_refs)
     projected = []
     for option in actions.options:
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(option.semantic_action)
         entity = _grounded_entity(option.target_id, refs_by_target, entities_by_ref)
         state = _candidate_state(entity.state)
         destinations = tuple(
@@ -54,14 +44,14 @@ def close_action_candidates(
         projected.append(
             replace(
                 option,
-                operation=canonical_action_operation(option.semantic_action),
+                operation=definition.semantic_action,
                 target_ref=entity.ref,
                 target_semantics=_target_semantics(entity, entities_by_ref, state),
                 target_label=entity.label,
                 target_role=entity.role,
                 target_state=state,
                 target_marked=entity.marked,
-                destination_mode="required" if option.destination_required else "forbidden",
+                destination_mode=_destination_mode(option).value,
                 grounding_context_id=context_id,
                 destinations=BoundedSection(
                     destinations,
@@ -71,6 +61,14 @@ def close_action_candidates(
             )
         )
     return replace(actions, options=tuple(projected))
+
+
+def _destination_mode(option) -> DestinationMode:
+    if option.destination_required:
+        return DestinationMode.REQUIRED
+    if option.destinations.items:
+        return DestinationMode.OPTIONAL
+    return DestinationMode.FORBIDDEN
 
 
 def _grounded_entity(

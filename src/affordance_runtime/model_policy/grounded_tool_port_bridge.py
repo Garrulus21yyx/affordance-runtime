@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -48,6 +47,11 @@ from affordance_runtime.model_policy.model_port_bridge import (
     perception_uses_images,
 )
 from affordance_runtime.model_policy.objective_spec import OBJECTIVE_SCHEMA_VERSION
+from affordance_runtime.model_policy.provider_call_normalizer import (
+    ProviderCallNormalizer,
+    ToolCallIssueCode,
+    ToolCallReconciliationStatus,
+)
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
 from affordance_runtime.model_policy.strict_json import validate_json_tree
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec, ToolTransportKind
@@ -78,28 +82,7 @@ class _GroundedCommandPayloadBase(BaseModel):
     def _normalize_tool_call_envelope(cls, value: object) -> object:
         """Accept equivalent provider wire shapes without changing argument values."""
 
-        if not isinstance(value, Mapping):
-            return value
-        raw = dict(value)
-        name = raw.pop("name", None)
-        operation = raw.pop("op", None)
-        if name is None:
-            name = operation
-        elif operation is not None and operation != name:
-            return value
-        arguments = raw.pop("arguments", None)
-        args_alias = raw.pop("args", None)
-        if arguments is not None and args_alias is not None and arguments != args_alias:
-            return value
-        if arguments is None:
-            arguments = args_alias
-        if arguments is None:
-            arguments = raw
-        elif raw:
-            if not isinstance(arguments, Mapping) or set(arguments).intersection(raw):
-                return value
-            arguments = {**arguments, **raw}
-        return {"name": name, "arguments": arguments}
+        return ProviderCallNormalizer.normalize_wire_envelope(value)
 
     @field_validator("name")
     @classmethod
@@ -243,8 +226,17 @@ class _GroundedAdapterBase:
         if len(calls) != 1:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
         call = calls[0]
-        normalized = _normalize_catalog_call(catalog, call)
-        if normalized != call:
+        reconciliation = ProviderCallNormalizer().normalize(call, catalog)
+        if reconciliation.status in {
+            ToolCallReconciliationStatus.EXACT,
+            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
+        }:
+            assert reconciliation.exact_call is not None
+            normalized = reconciliation.exact_call
+            call = normalized
+        else:
+            normalized = call
+        if reconciliation.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT:
             normalization = (
                 "redundant_grounding_to_constant"
                 if normalized.arguments != call.arguments
@@ -253,7 +245,17 @@ class _GroundedAdapterBase:
             object.__setattr__(self, "last_routing_normalization", normalization)
             object.__setattr__(self, "last_routing_original_operation", call.name)
             object.__setattr__(self, "last_routing_normalized_operation", normalized.name)
-            call = normalized
+        elif (
+            reconciliation.status
+            not in {
+                ToolCallReconciliationStatus.EXACT,
+                ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
+            }
+            and reconciliation.issue_code is not ToolCallIssueCode.INVALID_ARGUMENT
+        ):
+            raise GroundedToolResolutionError(
+                _resolution_code_for_reconciliation(reconciliation.issue_code)
+            )
         try:
             decision = resolver(
                 catalog,
@@ -621,68 +623,20 @@ def _selector_names(binding: object) -> tuple[str, ...]:
     return tuple(item.public_name for item in binding.selector_fields)
 
 
-def _normalize_catalog_call(catalog: object, call: ToolCall) -> ToolCall:
-    """Reconcile redundant compiled routing with one explicit, uniquely owned selector."""
-
-    specs = tuple(getattr(catalog, "specs", ()))
-    bindings = tuple(getattr(catalog, "bindings", ()))
-    selected_index = next((index for index, spec in enumerate(specs) if spec.name == call.name), None)
-    if selected_index is None or selected_index >= len(bindings):
-        return call
-    selected_spec = specs[selected_index]
-    if validate_value_issue(call.arguments, selected_spec.input_schema, path="parameters") is None:
-        return call
-    selected_binding = bindings[selected_index]
-    if not isinstance(selected_binding, CompiledGroundedTool):
-        return call
-    constant = _constant_grounding_owner(specs, bindings, selected_binding, call)
-    if constant is not None:
-        return ToolCall(constant.name, {})
-    matches: list[ToolSpec] = []
-    for spec, binding in zip(specs, bindings, strict=True):
-        if (
-            spec.name == call.name
-            or not isinstance(binding, CompiledGroundedTool)
-            or binding.canonical_operation != selected_binding.canonical_operation
-            or not binding.selector_fields
-            or any(field.public_name not in call.arguments for field in binding.selector_fields)
-            or validate_value_issue(call.arguments, spec.input_schema, path="parameters") is not None
-        ):
-            continue
-        matches.append(spec)
-    if len(matches) != 1:
-        return call
-    return ToolCall(matches[0].name, call.arguments)
-
-
-def _constant_grounding_owner(
-    specs: tuple[ToolSpec, ...],
-    bindings: tuple[object, ...],
-    selected: CompiledGroundedTool,
-    call: ToolCall,
-) -> ToolSpec | None:
-    if set(call.arguments) != {"grounding_ref"} or not isinstance(
-        call.arguments.get("grounding_ref"), str
-    ):
-        return None
-    grounding_ref = call.arguments["grounding_ref"]
-    matches = []
-    for spec, binding in zip(specs, bindings, strict=True):
-        if (
-            not isinstance(binding, CompiledGroundedTool)
-            or binding.canonical_operation != selected.canonical_operation
-            or binding.selector_fields
-            or len(binding.private_resolutions) != 1
-        ):
-            continue
-        resolution = binding.private_resolutions[0]
-        if (
-            resolution.destination_id is None
-            and resolution.target_ref == grounding_ref
-            and validate_value_issue({}, spec.input_schema, path="parameters") is None
-        ):
-            matches.append(spec)
-    return matches[0] if len(matches) == 1 else None
+def _resolution_code_for_reconciliation(
+    code: ToolCallIssueCode | None,
+) -> GroundedToolResolutionCode:
+    if code is None:
+        return GroundedToolResolutionCode.CATALOG_INVALID
+    codes: dict[ToolCallIssueCode, GroundedToolResolutionCode] = {
+        ToolCallIssueCode.UNKNOWN_TOOL: GroundedToolResolutionCode.UNKNOWN_TOOL,
+        ToolCallIssueCode.INVALID_ARGUMENT: GroundedToolResolutionCode.INVALID_ARGUMENT,
+        ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH: GroundedToolResolutionCode.TOOL_ARGUMENT_OWNER_MISMATCH,
+        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT: GroundedToolResolutionCode.AMBIGUOUS_TOOL_INTENT,
+        ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT: GroundedToolResolutionCode.NON_EQUIVALENT_TOOL_INTENT,
+        ToolCallIssueCode.STALE_CATALOG: GroundedToolResolutionCode.STALE_CATALOG,
+    }
+    return codes.get(code, GroundedToolResolutionCode.CATALOG_INVALID)
 
 
 def _semantic_selector_violation(binding: object, field_paths: tuple[str, ...]) -> bool:

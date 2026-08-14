@@ -26,7 +26,7 @@ def _option(**changes) -> ActionOption:
     option = ActionOption(
         "action:send",
         "observation:1",
-        "send",
+        "drag_to",
         "message:quarterly",
         "external",
         SCHEMA,
@@ -57,30 +57,21 @@ def test_destination_admission_requires_one_current_offered_semantic_id() -> Non
         builder.admit(_option(), {}, "")
     with pytest.raises(ValueError, match="not offered"):
         builder.admit(_option(), {}, "person:mallory")
+    forbidden = replace(
+        _option(),
+        semantic_action="activate",
+        destination_required=False,
+        eligible_destination_ids=(),
+        verification_contract_digest="",
+    )
     with pytest.raises(ValueError, match="does not accept"):
-        builder.admit(
-            _option(destination_required=False, eligible_destination_ids=()),
-            {},
-            "person:alice",
-        )
+        builder.admit(forbidden, {}, "person:alice")
 
 
 def test_nested_runtime_private_parameter_is_rejected() -> None:
-    schema = {
-        "type": "object",
-        "properties": {
-            "message": {
-                "type": "object",
-                "properties": {"body": {"type": "string"}},
-                "additionalProperties": True,
-            }
-        },
-        "additionalProperties": False,
-    }
-    option = _option(parameter_schema=schema, schema_digest=schema_digest(schema))
-
+    option = _option()
     with pytest.raises(ValueError, match="runtime-private"):
-        ActionSpaceBuilder().admit(option, {"message": {"body": "ok", "href": "/private"}}, "person:alice")
+        ActionSpaceBuilder().admit(option, {"href": "/private"}, "person:alice")
 
 
 @pytest.mark.parametrize(
@@ -110,8 +101,8 @@ def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None
         "message:quarterly",
         "dom",
         "dom",
-        "send",
-        "click",
+        "drag_to",
+        "drag",
         "external",
         ("message_sent",),
         SCHEMA,
@@ -168,8 +159,8 @@ def test_destination_ids_fail_closed_in_direct_binding_and_option_construction(d
             "message:quarterly",
             "dom",
             "dom",
-            "send",
-            "click",
+            "drag_to",
+            "drag",
             "external",
             ("message_sent",),
             SCHEMA,
@@ -183,7 +174,7 @@ def test_direct_selection_and_request_revalidate_destination_membership() -> Non
     values = dict(
         action_id="action:send",
         observation_id="observation:1",
-        semantic_action="send",
+        semantic_action="drag_to",
         target_id="message:quarterly",
         effect_category="external",
         semantic_effects=("message_sent",),
@@ -210,8 +201,8 @@ def test_direct_selection_and_request_revalidate_destination_membership() -> Non
         "message:quarterly",
         "dom",
         "dom",
-        "send",
-        "click",
+        "drag_to",
+        "drag",
         "external",
         ("message_sent",),
         SCHEMA,
@@ -225,7 +216,7 @@ def test_direct_selection_and_request_revalidate_destination_membership() -> Non
             "request:1",
             "context:test",
             "observation:1",
-            ActionIntent("send", "message:quarterly", destination_id="person:bob"),
+            ActionIntent("drag_to", "message:quarterly", destination_id="person:bob"),
             selection,
             binding,
         )
@@ -242,8 +233,8 @@ def test_world_observation_requires_destination_targets_in_current_world() -> No
         "message:quarterly",
         "dom",
         "dom",
-        "send",
-        "click",
+        "drag_to",
+        "drag",
         "external",
         ("message_sent",),
         SCHEMA,

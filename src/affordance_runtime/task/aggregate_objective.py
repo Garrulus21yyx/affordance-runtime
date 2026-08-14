@@ -39,6 +39,10 @@ from affordance_runtime.task.set_objective import (
 )
 from affordance_runtime.task.set_objective_state import target_public_fields
 from affordance_runtime.world.contracts import ActionSpace, WorldObservation
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+)
 
 MAX_AGGREGATE_MEMBERS = 256
 
@@ -93,17 +97,30 @@ class AggregateObjective:
     value_extractor: ValueExtractor
     operator: AggregateOperator
     destination_selector: PredicateExpr
-    semantic_action: str = "fill"
-    parameter_name: str = "value"
+    semantic_action: str = "type_text"
+    parameter_name: str = "text"
     output_format: AggregateOutputFormat = AggregateOutputFormat.INTEGER_STRING
 
     def __post_init__(self) -> None:
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
         if (
             not self.objective_id.startswith("aggregate-objective:")
             or not self.semantic_action.strip()
             or not self.parameter_name.strip()
         ):
             raise ValueError("aggregate objective identity/action contract is invalid")
+        expected_parameter = (
+            definition.parameter_names[0]
+            if definition.parameter_contract
+            in {
+                ParameterContractKind.TEXT,
+                ParameterContractKind.OPTION_VALUE,
+                ParameterContractKind.NUMERIC_VALUE,
+            }
+            else None
+        )
+        if self.parameter_name != expected_parameter:
+            raise ValueError("aggregate objective parameter must match capability contract")
 
     @property
     def digest(self) -> str:

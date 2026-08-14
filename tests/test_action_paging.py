@@ -117,8 +117,10 @@ def test_page_weight_counts_only_model_visible_destination_slice() -> None:
     destinations = tuple(f"destination:{index:04}" for index in range(500))
     option = replace(
         _option(0),
+        semantic_action="drag_to",
         destination_required=True,
         eligible_destination_ids=destinations,
+        verification_contract_digest="",
     )
 
     page = ActionPager(max_projected_bytes=600).page(

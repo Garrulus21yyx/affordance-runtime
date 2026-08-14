@@ -9,7 +9,7 @@ def _selection() -> AdmittedActionSelection:
     return AdmittedActionSelection(
         "option:send",
         "observation:1",
-        "send",
+        "drag_to",
         "message:quarterly",
         "external",
         ("message_sent",),
@@ -60,7 +60,7 @@ def test_confirmation_summary_presents_semantics_and_redacts_secret_like_paramet
     )
     request = build_confirmation_request(intent, _assessment(selection), _world())
 
-    assert "send" in request.summary
+    assert "drag_to" in request.summary
     assert "Quarterly report (message:quarterly)" in request.summary
     assert "Alice (person:alice)" in request.summary
     assert "Quarterly report attached" in request.summary
@@ -75,7 +75,7 @@ def test_confirmation_summary_presents_semantics_and_redacts_secret_like_paramet
 def test_display_label_change_updates_summary_without_changing_subject() -> None:
     selection = _selection()
     assessment = _assessment(selection)
-    intent = ActionIntent("send", "message:quarterly", dict(selection.parameters), "person:alice")
+    intent = ActionIntent("drag_to", "message:quarterly", dict(selection.parameters), "person:alice")
 
     first = build_confirmation_request(intent, assessment, _world("Quarterly report"))
     updated = build_confirmation_request(intent, assessment, _world("Q3 report"))

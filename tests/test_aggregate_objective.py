@@ -76,18 +76,18 @@ def _space(world: WorldObservation) -> ActionSpace:
             ActionOption(
                 f"action:{world.observation_id}",
                 world.observation_id,
-                "fill",
+                "type_text",
                 "entity:answer",
                 "interaction",
                 {
                     "type": "object",
-                    "properties": {"value": {"type": "string"}},
-                    "required": ["value"],
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
                     "additionalProperties": False,
                 },
-                "schema:fill",
-                ("binding:fill",),
-                "fill answer",
+                "schema:type-text",
+                ("binding:type-text",),
+                "type answer value",
                 risk=ActionRisk.LOW,
             ),
         ),
@@ -99,7 +99,7 @@ def test_count_derives_private_destination_parameter_from_closed_scope() -> None
     state = establish_aggregate_objective_state(_objective(AggregateOperator.COUNT), world)
 
     assert state.disposition is AggregateDisposition.READY
-    assert state.action_parameters == {"value": "3"}
+    assert state.action_parameters == {"text": "3"}
     assert len(state.provenance_digest) == 64
     assert aggregate_allowed_action_ids(state, _space(world)) == {"action:observation:1"}
 
@@ -113,7 +113,7 @@ def test_sum_min_and_max_use_evidence_values_not_model_result() -> None:
             _objective(operator, extractor=extractor),
             world,
         )
-        results[operator] = state.action_parameters["value"]
+        results[operator] = state.action_parameters["text"]
 
     assert results == {
         AggregateOperator.SUM: "13",
@@ -133,7 +133,7 @@ def test_sum_of_empty_closed_member_set_is_zero() -> None:
     )
 
     assert state.disposition is AggregateDisposition.READY
-    assert state.action_parameters == {"value": "0"}
+    assert state.action_parameters == {"text": "0"}
 
 
 def test_unknown_value_and_partial_scope_fail_closed() -> None:
@@ -180,7 +180,7 @@ def test_visual_member_leaf_is_evidence_not_aggregate_authority() -> None:
     )
 
     assert classified.disposition is AggregateDisposition.READY
-    assert classified.action_parameters == {"value": "2"}
+    assert classified.action_parameters == {"text": "2"}
     assert all(item.confidence is None for item in classified.semantic_leaf_assessments)
 
 
@@ -215,7 +215,7 @@ def test_fresh_observation_rederives_before_action_and_effect_closes_after_actio
         effect_evidence_refs=("evidence:answer-updated",),
     )
 
-    assert changed.action_parameters == {"value": "3"}
+    assert changed.action_parameters == {"text": "3"}
     assert changed.provenance_digest != state.provenance_digest
     assert settled.disposition is AggregateDisposition.COMPLETE
     assert settled.effect_evidence_refs == ("evidence:answer-updated",)

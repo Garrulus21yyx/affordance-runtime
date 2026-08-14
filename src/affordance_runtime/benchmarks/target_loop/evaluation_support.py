@@ -58,7 +58,7 @@ def output_case_parts():
 def _output_world(identity: str, artifact) -> WorldObservation:
     target = SemanticTarget("report:1", "document", "report", {"ready": True})
     fact = StateFact(f"fact:{identity}:ready", target.target_id, "ready", True, identity)
-    binding = _binding(identity, target.target_id, "export", "report_exported")
+    binding = _binding(identity, target.target_id, "activate", "report_exported")
     artifacts = {"report": artifact} if artifact is not None else {}
     source = SurfaceObservation(
         identity, "dom", f"revision:{identity}", ObservationSourceProfile.dom(),

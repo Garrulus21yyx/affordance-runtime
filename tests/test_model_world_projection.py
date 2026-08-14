@@ -253,23 +253,21 @@ def test_action_options_share_the_total_context_byte_budget_truthfully() -> None
     )
     schema = {
         "type": "object",
-        "properties": {
-            f"field_{index}": {"type": "string", "description": "x" * 240}
-            for index in range(12)
-        },
+        "properties": {"text": {"type": "string", "description": "x" * 240}},
+        "required": ["text"],
         "additionalProperties": False,
     }
     options = tuple(
         ActionOption(
             f"action:{index}",
             observation.observation_id,
-            "activate",
+            "type_text",
             "target:0",
             "local_reversible",
             schema,
             "schema:large",
             (f"binding:{index}",),
-            "activate target",
+            "type target " + "x" * 3_000,
             ("changed",),
             ActionRisk.LOW,
         )
@@ -297,13 +295,13 @@ def test_context_budget_limits_actions_and_destinations_truthfully() -> None:
         ActionOption(
             f"action:{index}",
             observation.observation_id,
-            "send",
+                "drag_to",
             "target:0",
             "external",
             {"type": "object", "properties": {}, "additionalProperties": False},
             "schema:1",
             (f"binding:{index}",),
-            f"send {index}",
+                f"drag {index}",
             ("sent",),
             ActionRisk.LOW,
             True,
@@ -354,7 +352,7 @@ def test_malformed_schema_is_rejected_before_action_page_projection() -> None:
         ("binding:valid",),
         "valid",
     )
-    with pytest.raises(ValueError, match="unsupported schema type"):
+    with pytest.raises(ValueError, match="schema_contract_mismatch"):
         replace(valid, action_id="action:hidden", parameter_schema={"type": "array"})
 
 

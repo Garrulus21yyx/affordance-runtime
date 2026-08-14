@@ -37,6 +37,8 @@ def _selection(**changes) -> AdmittedActionSelection:
         True,
         {"mode": "normal"},
     )
+    if "semantic_action" in changes:
+        changes.setdefault("verification_contract_digest", "")
     return replace(selection, **changes)
 
 
@@ -67,7 +69,11 @@ def test_semantic_subject_changes_for_each_confirmed_semantic_field() -> None:
     baseline = semantic_subject_id(original, consequences=consequences)
 
     variants = (
-        replace(original, semantic_action="set_value"),
+        replace(
+            original,
+            semantic_action="set_value",
+            verification_contract_digest="",
+        ),
         replace(original, target_id="target:other"),
         replace(original, parameters={"mode": "other"}),
         replace(original, semantic_effects=("other_effect",)),

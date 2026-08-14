@@ -77,6 +77,7 @@ class BoundActionRequest:
             or self.binding.observation_barrier != self.selection.observation_barrier
             or self.binding.destination_required != self.selection.destination_required
             or self.binding.eligible_destination_ids != self.selection.eligible_destination_ids
+            or self.binding.verification_contract_digest != self.selection.verification_contract_digest
             or (
                 self.selection.destination_id
                 and self.selection.destination_id not in self.selection.eligible_destination_ids

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.contracts import (
     AgentActionOptionView,
@@ -16,7 +17,9 @@ from affordance_runtime.model_boundary.contracts import (
 from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.world.action_paging import InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
+from affordance_runtime.world.interaction_capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.world.relevance import ActionRelevance
+from affordance_runtime.world.schema_validation import validate_parameter_schema_contract
 from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
@@ -43,10 +46,6 @@ _PRIVATE_ROUTE_MARKERS = (
 _MAX_ITEMS = 12
 _MAX_DEPTH = 3
 _MAX_STRING = 240
-_SCHEMA_TYPES = frozenset({"object", "string", "number", "integer", "boolean"})
-_SCHEMA_KEYS = frozenset(
-    {"type", "properties", "required", "additionalProperties", "enum", "minimum", "maximum", "description"}
-)
 
 
 def project_task(task: TaskGoal) -> AgentTaskView:
@@ -136,6 +135,10 @@ def _project_action_options(
                 relevance[option.action_id].role if option.action_id in relevance else "other",
                 relevance[option.action_id].score if option.action_id in relevance else 0.0,
                 relevance[option.action_id].reason_codes if option.action_id in relevance else (),
+                subject_kind=INTERACTION_CAPABILITY_REGISTRY.require(
+                    option.semantic_action
+                ).subject_kinds[0].value,
+                verification_contract_digest=option.verification_contract_digest,
             )
             for action_id in visible_action_ids
             if (option := by_id.get(action_id)) is not None
@@ -188,72 +191,21 @@ def project_public_value(value: Any, depth: int = 0) -> Any:
 
 
 def project_parameter_schema_for_model(schema: Mapping[str, object]) -> dict[str, object]:
-    """Project the supported finite JSON-schema subset without broken references."""
+    """Conserve the validated business schema exactly at the model boundary."""
 
     try:
-        return _project_schema_node(schema, root=True)
+        validate_parameter_schema_contract(schema)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"parameter schema is unsupported or malformed: {exc}") from exc
-
-
-def _project_schema_node(schema: Mapping[str, object], *, root: bool = False) -> dict[str, object]:
-    if not isinstance(schema, Mapping) or set(schema) - _SCHEMA_KEYS:
-        raise ValueError("unsupported keys")
-    schema_type = schema.get("type")
-    if schema_type not in _SCHEMA_TYPES or (root and schema_type != "object"):
-        raise ValueError("unsupported type")
-    result: dict[str, object] = {"type": schema_type}
-    description = schema.get("description")
-    if description is not None:
-        if not isinstance(description, str):
-            raise TypeError("description must be a string")
-        result["description"] = _bounded_string(description, _MAX_STRING)
-    if schema_type == "object":
-        properties = schema.get("properties", {})
-        if not isinstance(properties, Mapping):
-            raise TypeError("properties must be an object")
-        projected_properties = {
-            str(name): _project_schema_node(value)
-            for name, value in list(properties.items())[:_MAX_ITEMS]
-            if isinstance(name, str) and not _model_private_key(name)
-        }
-        if len(projected_properties) != sum(
-            1
-            for name, value in list(properties.items())[:_MAX_ITEMS]
-            if isinstance(name, str) and not _model_private_key(name) and isinstance(value, Mapping)
-        ):
-            raise TypeError("property schemas must be objects")
-        result["properties"] = projected_properties
-        required = schema.get("required", ())
-        if not isinstance(required, Sequence) or isinstance(required, str | bytes):
-            raise TypeError("required must be a string array")
-        if any(not isinstance(item, str) for item in required):
-            raise TypeError("required must be a string array")
-        result["required"] = [item for item in required if item in projected_properties]
-        additional = schema.get("additionalProperties", False)
-        if not isinstance(additional, bool):
-            raise TypeError("additionalProperties must be boolean")
-        result["additionalProperties"] = additional
-    else:
-        if any(key in schema for key in ("properties", "required", "additionalProperties")):
-            raise ValueError("primitive schema contains object fields")
-        enum = schema.get("enum")
-        if enum is not None:
-            if not isinstance(enum, Sequence) or isinstance(enum, str | bytes) or len(enum) > _MAX_ITEMS:
-                raise TypeError("enum must be a bounded array")
-            if any(not isinstance(item, str | bool | int | float) for item in enum):
-                raise TypeError("enum values must be scalar")
-            result["enum"] = list(enum)
-        for key in ("minimum", "maximum"):
-            if key in schema:
-                value = schema[key]
-                if not isinstance(value, int | float) or isinstance(value, bool):
-                    raise TypeError(f"{key} must be numeric")
-                result[key] = value
-    return result
+    projected = to_json_compatible(schema)
+    if not isinstance(projected, dict):  # pragma: no cover - validator guarantees object root
+        raise TypeError("parameter schema root must remain an object")
+    return projected
 
 
 def _model_private_key(key: str) -> bool:
+    """Shared model-boundary privacy predicate for non-schema projections."""
+
     return _private_key(key) or _route_key(key)
 
 

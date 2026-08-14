@@ -9,7 +9,12 @@ from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.schema_validation import validate_parameter_schema_contract
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    DestinationMode,
+    InteractionCapabilityError,
+    InteractionCapabilityIssueCode,
+)
 from affordance_runtime.world.semantic_inventory import (
     SemanticInventoryStatus,
     SemanticInventorySummary,
@@ -186,6 +191,61 @@ class StateFact:
         object.__setattr__(self, "value", freeze_json(self.value))
 
 
+def derived_target_state(
+    target_id: str,
+    facts: tuple[StateFact, ...],
+    *,
+    conflicted_predicates: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Project the non-conflicted canonical facts for one target into its legacy state view."""
+
+    values: dict[str, Any] = {}
+    encoded: dict[str, str] = {}
+    for fact in facts:
+        if fact.subject_id != target_id or fact.predicate in conflicted_predicates:
+            continue
+        token = json.dumps(
+            to_json_compatible(fact.value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        prior = encoded.get(fact.predicate)
+        if prior is not None and prior != token:
+            raise ValueError("canonical state facts disagree without a typed conflict")
+        encoded[fact.predicate] = token
+        values.setdefault(fact.predicate, fact.value)
+    return freeze_json(values)
+
+
+def _validate_derived_target_states(
+    targets: tuple[SemanticTarget, ...],
+    facts: tuple[StateFact, ...],
+    *,
+    conflicts: tuple[ObservationConflict, ...] = (),
+    require_complete: bool,
+) -> None:
+    del require_complete
+    conflicts_by_target: dict[str, set[str]] = {}
+    for conflict in conflicts:
+        conflicts_by_target.setdefault(conflict.subject_id, set()).add(conflict.predicate)
+    for target in targets:
+        conflicted = frozenset(conflicts_by_target.get(target.target_id, ()))
+        projected = derived_target_state(
+            target.target_id,
+            facts,
+            conflicted_predicates=conflicted,
+        )
+        visible_state = {
+            key: value for key, value in target.state.items() if key not in conflicted
+        }
+        if any(
+            key in visible_state and visible_state[key] != value
+            for key, value in projected.items()
+        ):
+            raise ValueError("semantic target state contradicts canonical StateFact")
+
+
 @dataclass(frozen=True)
 class ObservationConflict:
     conflict_id: str
@@ -255,6 +315,7 @@ class ActionBinding:
     risk: ActionRisk = ActionRisk.LOW
     destination_required: bool = False
     eligible_destination_ids: tuple[str, ...] = ()
+    verification_contract_digest: str = ""
 
     def __post_init__(self) -> None:
         required = (
@@ -273,13 +334,37 @@ class ActionBinding:
         )
         if not all(value.strip() for value in required):
             raise ValueError("action binding requires world/source identity, fingerprint, and route")
-        validate_parameter_schema_contract(self.parameter_schema)
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        INTERACTION_CAPABILITY_REGISTRY.validate_parameter_schema(
+            self.semantic_action,
+            self.parameter_schema,
+        )
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "payload", freeze_json(self.payload))
         object.__setattr__(self, "eligible_destination_ids", canonical_destination_ids(self.eligible_destination_ids))
         if self.destination_required and not self.eligible_destination_ids:
             raise ValueError("destination-required binding must offer semantic destination IDs")
+        destination_mode = (
+            DestinationMode.REQUIRED
+            if self.destination_required
+            else DestinationMode.OPTIONAL
+            if self.eligible_destination_ids
+            else DestinationMode.FORBIDDEN
+        )
+        if destination_mode is not definition.destination_mode:
+            raise InteractionCapabilityError(
+                InteractionCapabilityIssueCode.DESTINATION_MODE_MISMATCH,
+                self.semantic_action,
+            )
+        if not self.verification_contract_digest:
+            object.__setattr__(
+                self,
+                "verification_contract_digest",
+                definition.definition_digest,
+            )
+        elif self.verification_contract_digest != definition.definition_digest:
+            raise ValueError("binding verification contract does not match capability definition")
 
     @property
     def observation_id(self) -> str:
@@ -323,6 +408,13 @@ class SurfaceObservation:
         object.__setattr__(self, "targets", tuple(self.targets))
         object.__setattr__(self, "facts", tuple(self.facts))
         object.__setattr__(self, "bindings", tuple(self.bindings))
+        if len({target.target_id for target in self.targets}) != len(self.targets):
+            raise ValueError("surface semantic target IDs must be unique")
+        _validate_derived_target_states(
+            self.targets,
+            self.facts,
+            require_complete=self.coverage is CoverageState.COMPLETE,
+        )
         object.__setattr__(self, "artifacts", freeze_json(self.artifacts))
         if not isinstance(self.semantic_inventory, SemanticInventorySummary):
             raise TypeError("surface semantic inventory must be typed")
@@ -413,6 +505,14 @@ class WorldObservation:
         object.__setattr__(self, "coverage", freeze_json(self.coverage))
         object.__setattr__(self, "conflicts", tuple(self.conflicts))
         object.__setattr__(self, "sources", tuple(self.sources))
+        _validate_derived_target_states(
+            self.targets,
+            self.facts,
+            conflicts=self.conflicts,
+            require_complete=all(
+                coverage is CoverageState.COMPLETE for coverage in self.coverage.values()
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -432,6 +532,7 @@ class ActionOption:
     eligible_destination_ids: tuple[str, ...] = ()
     batchable: bool = False
     observation_barrier: bool = True
+    verification_contract_digest: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -449,13 +550,37 @@ class ActionOption:
             or not self.eligible_binding_ids
         ):
             raise ValueError("action option requires current semantic identity")
-        validate_parameter_schema_contract(self.parameter_schema)
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        INTERACTION_CAPABILITY_REGISTRY.validate_parameter_schema(
+            self.semantic_action,
+            self.parameter_schema,
+        )
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "eligible_destination_ids", canonical_destination_ids(self.eligible_destination_ids))
         if self.destination_required and not self.eligible_destination_ids:
             raise ValueError("destination-required action must offer semantic destination IDs")
+        destination_mode = (
+            DestinationMode.REQUIRED
+            if self.destination_required
+            else DestinationMode.OPTIONAL
+            if self.eligible_destination_ids
+            else DestinationMode.FORBIDDEN
+        )
+        if destination_mode is not definition.destination_mode:
+            raise InteractionCapabilityError(
+                InteractionCapabilityIssueCode.DESTINATION_MODE_MISMATCH,
+                self.semantic_action,
+            )
+        if not self.verification_contract_digest:
+            object.__setattr__(
+                self,
+                "verification_contract_digest",
+                definition.definition_digest,
+            )
+        elif self.verification_contract_digest != definition.definition_digest:
+            raise ValueError("option verification contract does not match capability definition")
 
 
 @dataclass(frozen=True)
@@ -474,6 +599,7 @@ class AdmittedActionSelection:
     destination_id: str = ""
     destination_required: bool = False
     eligible_destination_ids: tuple[str, ...] = ()
+    verification_contract_digest: str = ""
 
     def __post_init__(self) -> None:
         required = (
@@ -495,6 +621,15 @@ class AdmittedActionSelection:
             self.destination_required,
             self.eligible_destination_ids,
         )
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        if not self.verification_contract_digest:
+            object.__setattr__(
+                self,
+                "verification_contract_digest",
+                definition.definition_digest,
+            )
+        elif self.verification_contract_digest != definition.definition_digest:
+            raise ValueError("selection verification contract does not match capability definition")
 
 
 @dataclass(frozen=True)
@@ -524,6 +659,7 @@ class ActionSpace:
                 option.destination_required,
                 option.eligible_destination_ids,
                 option.observation_barrier,
+                option.verification_contract_digest,
                 to_json_compatible(option.parameter_schema),
             )
             for option in self.options

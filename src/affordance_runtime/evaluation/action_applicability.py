@@ -10,6 +10,10 @@ from affordance_runtime.evaluation.contracts import ActionEvaluation, ActionEval
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    VerificationFamily,
+)
 from affordance_runtime.world.public_semantic_digest import target_semantics
 from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
@@ -29,8 +33,11 @@ def apply_action_evidence_profile(
     records = tuple(after_index.resolve_record(ref) for ref in evaluation.evidence_refs)
     if any(record is None or not evidence_source_is_current(record, after) for record in records):
         return _unknown(evaluation, "action evidence is not current")
+    definition = INTERACTION_CAPABILITY_REGISTRY.require(
+        request.intent.semantic_action
+    )
     if (
-        request.intent.semantic_action == "activate"
+        VerificationFamily.NAVIGATION_CONTEXT in definition.verification_families
         and evaluation.evidence.get("verification_profile") == "visual_diff_v1"
     ):
         return _apply_activate_visual_profile(evaluation, request, before, after, records)

@@ -13,6 +13,7 @@ from affordance_runtime.surfaces.visual.contracts import (
 )
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
 from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, integer_click_point
+from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -23,7 +24,6 @@ from affordance_runtime.visual_grounding import (
 )
 from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_surface_action
-from affordance_runtime.world.action_vocabulary import action_metadata
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -31,6 +31,10 @@ from affordance_runtime.world.contracts import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+)
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    InteractionCapabilityError,
 )
 
 if TYPE_CHECKING:
@@ -195,10 +199,11 @@ class VisualSurfaceAdapter:
         if region.primitive_action != "point_activate":
             return None
         try:
-            metadata = action_metadata(self.surface, region.primitive_action)
-        except ValueError:
+            translator = VISUAL_INTERACTION_CAPABILITIES.resolve_primitive(region.primitive_action)
+            schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(translator.semantic_action)
+        except InteractionCapabilityError:
             return None
-        classification = classify_surface_action(task, region.role, metadata.semantic_action)
+        classification = classify_surface_action(task, region.role, translator.semantic_action)
         binding_id = f"{region.source_observation_id}:{region.region_id}:{region.primitive_action}"
         return ActionBinding(
             binding_id,
@@ -210,11 +215,11 @@ class VisualSurfaceAdapter:
             region.region_id,
             self.surface,
             self.surface,
-            metadata.semantic_action,
-            metadata.primitive_action,
+            translator.semantic_action,
+            translator.primitive_action,
             classification.category.value,
             classification.semantic_effects,
-            dict(metadata.parameter_schema),
+            schema,
             region.private_payload(),
             classification.observation_barrier,
             confidence=region.confidence,

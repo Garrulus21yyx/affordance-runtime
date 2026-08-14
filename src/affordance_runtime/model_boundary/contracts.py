@@ -99,6 +99,8 @@ class AgentActionOptionView:
     target_marked: bool = False
     destination_mode: str = ""
     grounding_context_id: str = ""
+    subject_kind: str = "entity"
+    verification_contract_digest: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))

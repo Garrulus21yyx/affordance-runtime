@@ -20,6 +20,10 @@ from affordance_runtime.world.contracts import (
     CoverageState,
     WorldObservation,
 )
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+)
 from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 if TYPE_CHECKING:
@@ -222,9 +226,13 @@ def _postcondition_is_satisfied(
     selection: AdmittedActionSelection,
     observation: WorldObservation,
 ) -> bool:
-    if selection.semantic_action not in {"type_text", "select_option"}:
+    definition = INTERACTION_CAPABILITY_REGISTRY.require(selection.semantic_action)
+    if definition.parameter_contract not in {
+        ParameterContractKind.TEXT,
+        ParameterContractKind.OPTION_VALUE,
+    }:
         return False
-    parameter_name = "text" if selection.semantic_action == "type_text" else "value"
+    parameter_name = definition.parameter_names[0]
     requested = selection.parameters.get(parameter_name)
     if not isinstance(requested, str):
         return False

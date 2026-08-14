@@ -94,7 +94,12 @@ def test_read_only_task_admits_only_low_risk_effect_free_interaction_shape() -> 
     invalid = (
         replace(valid, binding_id="binding:interaction:effect", semantic_effects=("update",)),
         replace(valid, binding_id="binding:interaction:risk", risk=ActionRisk.HIGH),
-        replace(valid, binding_id="binding:interaction:read", semantic_action="read"),
+        replace(
+            valid,
+            binding_id="binding:interaction:read",
+            semantic_action="read",
+            verification_contract_digest="",
+        ),
     )
 
     options = _space(task, (valid, *invalid)).options

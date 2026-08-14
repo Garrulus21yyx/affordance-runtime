@@ -18,8 +18,6 @@ UserRequest
   -> AgentLoop
        observe -> WorldObservation
        -> internal ActionSpace(TaskGoal legality + current availability)
-       -> LocalObjectiveProposalPort (only when no objective is active)
-       -> Runtime admission -> one local_objective_state
        -> disposable AgentContext
        -> AgentPolicy.decide (current action/control only)
        -> one typed AgentDecision
@@ -51,14 +49,13 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 | observed world | `WorldEnvironment` | current environment | `WorldObservation`, including source-owned structural documents and media | task semantics, action authority |
 | BrowserGym structural representation | BrowserGym `SurfaceAdapter` | bounded current AX tree + rendering | semantic targets plus a separate bounded structure document with explicit target links | bindings for structure-only nodes, Actor formatting |
 | raw screenshot acquisition | BrowserGym environment | current captured viewport | independently selectable visual source containing media only | semantic interpretation, bindings, actions |
-| legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, LocalObjective |
+| legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, dormant LocalObjective code |
 | public action candidates | `ContextBuilder` | current action page + public grounded targets | referentially closed `AgentContext.actions` options | legality, private binding, durable identity, screen coordinates |
 | concrete action rows and flat tools | `GroundedToolCompiler` | complete closed action candidates | shared semantic skeleton, minimal exact public ToolSpec, private resolution table | world lookup, legality, provider grouping, fuzzy matching |
 | Actor epistemic projection | `ContextBuilder` + `ActorWorldSnapshot` | bounded current public source structure, semantic targets, facts, evidence, coverage and media | one disposable structure-preserving Actor world | legality, candidate derivation, binding, retained state |
 | provider action serialization | `GroundedPolicyContextBinder` + provider transport | ActorWorldSnapshot + already compiled public ToolSpecs | flat Actor request | world pruning, candidate grouping, selector choice, resolver data |
-| exact tool resolution | grounded catalog resolver | exact emitted schema + private compiler table | existing typed `SelectAction` | world lookup, argument repair to another row, admission |
-| rolling semantic proposal | `LocalObjectiveProposalPort` | TaskGoal + bounded post-observation context | authority-free LocalObjective proposal or typed failure | admission, retained state, action choice |
-| rolling relevance | one `LocalObjective` lifecycle | admitted proposal + current evidence | relevance/evidence/member state | whole-task planning, effect grants |
+| provider-call reconciliation | `ProviderCallNormalizer` | raw provider call + immutable compiled catalog | exact call, proven equivalent normalized call, or typed bounded repair/rejection | world/ActionSpace lookup, silent non-equivalent substitution, admission |
+| exact tool resolution | grounded catalog resolver | reconciled exact call + exact emitted schema + private compiler table | existing typed `SelectAction` | normalization, fuzzy search, repair, world lookup, admission |
 | model presentation | `ContextBuilder` | read-only current state + latest canonical `ControlTransition` | disposable `AgentContext` with one ActorWorldSnapshot and optional bounded `last_transition` | retained truth, identity authority, a second transition owner |
 | provider response validation telemetry | grounded provider adapter | typed redacted structured-output violations | bounded stage/code/path and repair outcome | raw provider payload, action repair, world truth |
 | choice | `AgentPolicy` | one AgentContext | typed context-bound action/control decision | objective construction, binding, executor route, completion truth |
@@ -75,15 +72,11 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
   meaning; the matching AskUser root is consumed once and every old
   task-relative context/action projection becomes stale.
 - At observation: Runtime may issue semantic entity IDs and private binding IDs.
-- When `LocalObjectiveProposalPort` proposes a LocalObjective, it supplies only
-  typed semantics; Runtime assigns objective, scope, and step identities after
-  validation. The proposal is never an Agent action tool.
 - In one AgentContext: the projection may issue call-local E-refs.
 - At selection: Runtime accepts only the current ActionSpace member.
 - Before execution: target and binding are revalidated against the current world.
-- After a fresh observation: old E-refs, ActionSpace IDs, action IDs, and bindings
-  are stale. A semantic LocalObjective may persist, but its entity resolution is
-  recomputed.
+- After a fresh observation: old E-refs, ActionSpace IDs, action IDs, and
+  bindings are stale.
 
 No intake or planner may invent an exact DOM/entity target. No E-ref or model
 point becomes durable identity.
@@ -114,6 +107,9 @@ WorldObservation + internal ActionSpace/current page
   -> GroundedPolicyContextBinder serializes ActorWorldSnapshot + flat ToolSpecs only
   -> model returns only the emitted semantic/grounding selector fields
        + declared business values
+  -> ProviderCallNormalizer preserves harmless wire variance and may reconcile
+       one uniquely identified row only under the same authority-equivalence digest;
+       otherwise it returns bounded field errors / did_you_mean and dispatches nothing
   -> resolver validates the exact emitted schema and queries the private table
   -> SelectAction with exact current action/destination identity
   -> Runtime admission against the still-current internal ActionSpace
@@ -130,9 +126,6 @@ destination tables, or resolver entries. Actionable and non-actionable nodes
 use the same source-preserving world representation. Tool semantics never cause
 a node or fact to disappear, because the world answers what exists and the
 tools independently answer what is callable.
-
-`OBJECTIVE_PROPOSAL` receives no action tools and reads the same Actor world. It
-cannot acquire action authority through the shared context binder.
 
 Target and destination choice use the bounded generic semantic-facet algebra.
 The compiler recursively intersects complete records, then chooses the smallest
@@ -160,13 +153,19 @@ stale, or unrendered refs fail as `GROUNDING_FALLBACK_UNAVAILABLE`. A visible
 mark not enumerated by the selected tool remains evidence and is not callable.
 
 Changing any emitted semantic or grounding selector changes the selected
-concrete row. A value outside the exact tool enum is therefore a semantic
+concrete row. A value outside every current exact enum is therefore a semantic
 selection failure, not a format repair. Native and compact transports fail
-closed on an invalid choice. If a valid selector was supplied but a business
-argument needs repair, the repair schema pins every selector field and the
-resolver verifies them again. Business properties and required fields are
-copied generically from the closed candidate schema without `fill`/`select`
-branches or `text`/`value` renaming.
+closed on an invalid choice. If the model mixes a compiler-generated
+same-operation tool name with an explicit selector that uniquely identifies a
+real row under the same authority-equivalence digest, the pre-resolver
+normalizer may reconcile that representation and records telemetry. If the
+alternative changes risk, effects, destination/parameter/verification contract
+or is ambiguous, Runtime returns a bounded `did_you_mean` repair and requires a
+new model call; it does not execute the inferred alternative. If a valid
+selector was supplied but a business argument needs repair, the repair schema
+pins every selector field and the resolver verifies them again. Business
+properties and required fields are copied generically from the closed candidate
+schema without `fill`/`select` branches or `text`/`value` renaming.
 
 This division is consistent with current GUI-agent research, but is an
 engineering inference rather than a claim that those systems use this exact
@@ -179,29 +178,23 @@ that separation without training a new grounding model: the general model
 selects a public semantic difference, and Runtime resolves the exact current
 entity and executor route.
 
-`LocalObjectiveProposalPort` is an explicit AgentLoop composition dependency,
-not a hidden `AgentPolicy` capability. Runtime validates its proposal against
-the exact post-observation context and installs it in the sole
-`local_objective_state` slot. The recurrent `AgentDecision` algebra contains no
-objective constructor.
+## Dormant LocalObjective branch
 
-## LocalObjective and evidence
+`LocalObjectiveProposalPort`, its objective model transport, and the
+`local_objective_state` reducer still exist in source as a dormant branch.
+Since `f73128f`, `compose_target_runtime()` and the target benchmark composition
+cannot configure that port: the ordinary target loop has one reasoning phase,
+`AgentPolicy.decide`. The residual branch is not a current capability,
+extension point, or alternate authority path and is pending physical deletion.
 
-Set, sequence, and aggregate execution reducers are local rolling-horizon
-variants, not TaskPlans. They share one `local_objective_state` lifecycle
-slot. Their selectors are re-evaluated against each fresh observation.
-
-DOM, derived geometry, and visual evidence use the same obligation lifecycle:
-
-```text
-LocalObjective evidence need
-  -> source-capability router
-  -> typed evidence result
-  -> objective reducer
-```
-
-The source changes assurance and provider metadata only. It does not change
-scope ownership, identity, action authority, binding, or completion rules.
+This distinction records why the code exists without putting it back into the
+normative chain. Earlier set/sequence/aggregate work attempted to make a
+model-authored LocalObjective a separate pre-action phase. Live evidence showed
+that the phase duplicated planning, exposed a large Runtime execution DSL to
+the model, and could stop action selection before the GUI was used. The useful
+general rule survives elsewhere: DOM, derived geometry, and visual evidence may
+use different typed providers, but source choice cannot change action legality,
+identity, binding, risk, or completion authority.
 
 ## Projection rule
 
@@ -244,18 +237,16 @@ instruction. Runtime-owned `control_feedback` remains the sole projection of
 next-decision constraints; it is not copied into the past-tense transition
 view.
 
-Provider protocol adapters parse a model response exactly once into the typed
-contract for that phase: either an authority-free `LocalObjective` proposal or
-an action/control `AgentDecision`. They do not serialize either typed value back
-to JSON for a second parser. The public context identity is validated against
-the private current context whenever a protocol needs private grounding data.
+Provider protocol adapters parse a model response exactly once into an
+action/control `AgentDecision`. They do not serialize that typed value back to
+JSON for a second parser. The public context identity is validated against the
+private current context whenever a protocol needs private grounding data.
 
 The retained execution chain is deliberately short:
 
 ```text
 TaskGoal boundary
   + current observation/action-space identity
-  + optional current LocalObjective identity
   + admitted action
   + one result
   + fresh evaluation
@@ -267,25 +258,19 @@ requires it.
 No durable ledger, event replay, or projection-derived state is part of this
 short-loop authority chain.
 
-## Closed phase boundaries
+## Closed model boundary
 
-The model-facing phases are disjoint:
+The current target model phase is singular:
 
 ```text
-OBJECTIVE_PROPOSAL
-  offered: one bounded LocalObjective proposal contract + non-effectful inspect/ask
-  forbidden: activate/type_text/select_option/read and current action IDs
-
 ACTION_SELECTION
   offered: current Runtime action/control tools
   forbidden: predicate/scope/quantifier/aggregate/objective constructors
 ```
 
-Changing predicate, scope, aggregate, or evidence-provider semantics therefore
-does not change the recurrent action schema. Changing action presentation does
-not change the LocalObjective contract. Both are disposable projections; only
-Runtime-admitted `local_objective_state` and current ActionSpace membership are
-authoritative.
+Changing evidence-provider semantics does not change the recurrent action
+schema. Current ActionSpace membership remains authoritative; the Actor world
+and tools are disposable projections.
 
 ## Removed wrong coupling
 
@@ -328,14 +313,13 @@ production branches.
   ingress/state.
 - `AgentDecision` and recurrent action-tool catalogs contain no LocalObjective
   constructor or predicate/scope/aggregate transport.
-- LocalObjective proposal and action selection are separate typed calls with
-  separate schemas and exactly one parse each.
+- Target product and benchmark composition expose no LocalObjective proposal
+  phase; the residual branch is deleted rather than restored as a second model
+  call.
 - No exact GUI target identity is required before `WorldObservation`.
 - One fresh observation invalidates all call-local and route identities.
 - Every dispatch is a current ActionSpace member and uses a current private
   binding.
-- LocalObjective changes relevance and obligations but never grants an effect.
-- Set/sequence/aggregate are variants of one local execution lifecycle.
 - DOM/derived/vision evidence differ by source, not by lifecycle authority.
 - AgentContext and grounded tools are disposable projections, never round-trip
   authority.

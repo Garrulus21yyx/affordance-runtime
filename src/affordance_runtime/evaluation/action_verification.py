@@ -12,6 +12,10 @@ from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.action_classification import EffectCategory
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.interaction_capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+)
 from affordance_runtime.world.source_profile import ObservationAssurance
 
 
@@ -96,9 +100,15 @@ def derive_action_verification_obligations(
 
 def _primitive_value_obligation(request: BoundActionRequest) -> RuntimeVerificationObligation | None:
     semantic = request.intent.semantic_action
-    parameter_name = "text" if semantic == "type_text" else "value"
+    definition = INTERACTION_CAPABILITY_REGISTRY.require(semantic)
+    if definition.parameter_contract not in {
+        ParameterContractKind.TEXT,
+        ParameterContractKind.OPTION_VALUE,
+    }:
+        return None
+    parameter_name = definition.parameter_names[0]
     value = request.intent.parameters.get(parameter_name)
-    if semantic not in {"type_text", "select_option"} or not isinstance(value, str):
+    if not isinstance(value, str):
         return None
     return RuntimeVerificationObligation(
         VerificationObligationKind.FACT_TRANSITION_TO,

@@ -12,6 +12,7 @@ from typing import TypeAlias
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
     BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
     BrowserGymRoleSpec,
+    RoleCapabilityOffer,
     browsergym_role_spec,
     diagnostic_browsergym_roles,
     is_inventory_target_browsergym_role,
@@ -45,7 +46,7 @@ class BrowserGymControlAvailability:
     readonly: bool | None
     editable: bool | None
 
-    def allows(self, spec: BrowserGymRoleSpec) -> bool:
+    def allows(self, offer: RoleCapabilityOffer) -> bool:
         conditions = {
             "attached": self.attached is True,
             "visible": self.visible is True,
@@ -53,7 +54,7 @@ class BrowserGymControlAvailability:
             "not_readonly": self.readonly is False,
             "editable": self.editable is True,
         }
-        return all(conditions.get(name, False) for name in spec.required_availability)
+        return all(conditions.get(name, False) for name in offer.availability_requirements)
 
     def as_tuple(self) -> tuple[tuple[str, bool | None], ...]:
         return (
@@ -89,17 +90,23 @@ class CanonicalBrowserControl:
         return spec
 
     @property
-    def executable(self) -> bool:
-        spec = self.role_spec
-        if not spec.executable or not self.availability.allows(spec):
-            return False
-        if spec.semantic_action == "select_option":
-            return bool(
+    def executable_offers(self) -> tuple[RoleCapabilityOffer, ...]:
+        result = []
+        for offer in self.role_spec.offers:
+            if not self.availability.allows(offer):
+                continue
+            if offer.semantic_action == "select_option" and not (
                 self.public_options
                 and len(self.public_options) == len(self.private_options)
                 and tuple(label for label, _value in self.private_options) == self.public_options
-            )
-        return True
+            ):
+                continue
+            result.append(offer)
+        return tuple(result)
+
+    @property
+    def executable(self) -> bool:
+        return bool(self.executable_offers)
 
 
 @dataclass(frozen=True)
@@ -562,7 +569,7 @@ def _canonical_control(
         public_payload,
         availability.as_tuple(),
         private_options,
-        spec.primitive,
+        tuple((offer.semantic_action, offer.primitive_action) for offer in spec.offers),
     )
     return CanonicalBrowserControl(
         record.bid,

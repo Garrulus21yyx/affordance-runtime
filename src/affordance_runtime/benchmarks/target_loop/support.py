@@ -160,7 +160,7 @@ def paging_world(identity: str, expanded: bool) -> WorldObservation:
         targets.append(target)
         bindings.append(ActionBinding(
             f"binding:{identity}:{index}", identity, identity, f"revision:{identity}", f"fingerprint:{identity}:{index}",
-            target.target_id, target.target_id, "dom", "dom", f"activate-{index:02d}", "click",
+            target.target_id, target.target_id, "dom", "dom", "activate", "click",
             "local_reversible", ("shared_state_enabled",),
             {"type": "object", "properties": {}, "additionalProperties": False}, {"route": index}, risk=ActionRisk.LOW,
         ))
@@ -262,7 +262,7 @@ def forbidden_environment() -> ForbiddenRouteEnvironment:
     forbidden = ActionBinding(
         "binding:forbidden", before.observation_id, before.observation_id,
         "revision:forbidden:before", "fingerprint:forbidden", allowed.target_id,
-        allowed.source_target_id, "dom", "dom", "activate-forbidden", "click",
+        allowed.source_target_id, "dom", "dom", "activate", "click",
         "external", ("forbidden_effect",), allowed.parameter_schema, {"route": "forbidden"},
         risk=ActionRisk.HIGH,
     )

@@ -46,7 +46,7 @@ _FORBIDDEN_PARAMETER_KEYS = frozenset(
         "y",
     }
 )
-_GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...]]
+_GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...], str]
 
 
 @dataclass(frozen=True)
@@ -83,11 +83,15 @@ class ActionSpaceBuilder:
                 binding.observation_barrier,
                 binding.destination_required,
                 binding.eligible_destination_ids,
+                binding.verification_contract_digest,
             )
             grouped.setdefault(group_key, []).append(binding)
         options = []
         for group_key, bindings in sorted(grouped.items()):
-            target_id, action, category, effects, schema_key, barrier, destination_required, destinations = group_key
+            (
+                target_id, action, category, effects, schema_key, barrier,
+                destination_required, destinations, verification_digest,
+            ) = group_key
             risk = max((binding.risk for binding in bindings), key=_risk_rank)
             parameter_schema_digest = schema_digest(bindings[0].parameter_schema)
             eligible_binding_ids = tuple(sorted(binding.binding_id for binding in bindings))
@@ -104,6 +108,7 @@ class ActionSpaceBuilder:
                         barrier,
                         destination_required,
                         destinations,
+                        verification_digest,
                     ],
                     separators=(",", ":"),
                 ).encode()
@@ -124,6 +129,7 @@ class ActionSpaceBuilder:
                     destination_required=bool(destination_required),
                     eligible_destination_ids=tuple(str(item) for item in destinations),
                     observation_barrier=barrier,
+                    verification_contract_digest=verification_digest,
                 )
             )
         return ActionSpace(observation.observation_id, tuple(options))
@@ -176,6 +182,7 @@ class ActionSpaceBuilder:
             destination_id,
             option.destination_required,
             option.eligible_destination_ids,
+            option.verification_contract_digest,
         ))
 
     def try_admit_selection(

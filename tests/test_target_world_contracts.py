@@ -10,6 +10,9 @@ from affordance_runtime.execution.contracts import (
     BoundActionRequest,
     DispatchStatus,
 )
+from affordance_runtime.surfaces.dom.interaction_profile import DOM_INTERACTION_CAPABILITIES
+from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
+from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ActionBinder,
@@ -22,7 +25,6 @@ from affordance_runtime.world import (
     build_agent_world_view,
 )
 from affordance_runtime.world.action_classification import classify_dom_action
-from affordance_runtime.world.action_vocabulary import action_metadata
 
 
 def _world() -> WorldObservation:
@@ -104,9 +106,9 @@ def test_action_and_result_contracts_do_not_mix_binding_or_completion() -> None:
 
 
 def test_surface_primitives_share_canonical_semantic_vocabulary() -> None:
-    assert action_metadata("dom", "click").semantic_action == "activate"
-    assert action_metadata("visual", "point_activate").semantic_action == "activate"
-    assert action_metadata("wot", "invoke").semantic_action == "activate"
+    assert DOM_INTERACTION_CAPABILITIES.resolve_primitive("click").semantic_action == "activate"
+    assert VISUAL_INTERACTION_CAPABILITIES.resolve_primitive("point_activate").semantic_action == "activate"
+    assert WOT_INTERACTION_CAPABILITIES.resolve_primitive("invoke").semantic_action == "activate"
 
 
 def test_task_forbidden_or_unallowed_effect_never_enters_action_space() -> None:
@@ -184,19 +186,24 @@ def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
     first = replace(
         _world().bindings[0],
         binding_id="string-route",
+        semantic_action="type_text",
+        primitive_action="fill",
+        verification_contract_digest="",
         parameter_schema={
             "type": "object",
-            "properties": {"value": {"type": "string"}},
-            "required": ["value"],
+            "properties": {"text": {"type": "string", "enum": ["one"]}},
+            "required": ["text"],
+            "additionalProperties": False,
         },
     )
     second = replace(
         first,
-        binding_id="number-route",
+        binding_id="other-string-route",
         parameter_schema={
             "type": "object",
-            "properties": {"value": {"type": "number"}},
-            "required": ["value"],
+            "properties": {"text": {"type": "string", "enum": ["two"]}},
+            "required": ["text"],
+            "additionalProperties": False,
         },
     )
     world = replace(_world(), bindings=(first, second))
@@ -207,8 +214,8 @@ def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
     assert len(options) == 2
     assert len({option.action_id for option in options}) == 2
     for option in options:
-        value = 1 if option.parameter_schema["properties"]["value"]["type"] == "number" else "one"
-        request = ActionBinder().bind(builder.admit(option, {"value": value}), world, "context:test")
+        value = option.parameter_schema["properties"]["text"]["enum"][0]
+        request = ActionBinder().bind(builder.admit(option, {"text": value}), world, "context:test")
         assert request.binding.binding_id == option.eligible_binding_ids[0]
 
 
@@ -217,7 +224,7 @@ def test_unsupported_schema_type_fails_closed() -> None:
         TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW),
         _world(),
     ).options[0]
-    with pytest.raises(ValueError, match="unsupported schema type"):
+    with pytest.raises(ValueError, match="schema_contract_mismatch"):
         replace(
             option,
             parameter_schema={"type": "object", "properties": {"items": {"type": "array"}}},

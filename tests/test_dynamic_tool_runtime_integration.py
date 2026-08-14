@@ -21,7 +21,13 @@ def _value_world(observation_id, enabled):
         "required": ["value"],
         "additionalProperties": False,
     }
-    binding = replace(world.bindings[0], parameter_schema=schema)
+    binding = replace(
+        world.bindings[0],
+        semantic_action="select_option",
+        primitive_action="select",
+        parameter_schema=schema,
+        verification_contract_digest="",
+    )
     source = replace(world.sources[0], bindings=(binding,))
     return replace(world, bindings=(binding,), sources=(source,))
 
