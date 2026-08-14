@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
@@ -68,15 +67,11 @@ from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 
-class _GroundedArgumentsBase(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-
 class _GroundedCommandPayloadBase(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
     name: str
-    arguments: _GroundedArgumentsBase = Field(default_factory=_GroundedArgumentsBase)
+    arguments: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -115,7 +110,7 @@ class _GroundedCommandPayloadBase(BaseModel):
 
     def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
         del spec
-        result = self.arguments.model_dump(exclude_none=True)
+        result = dict(self.arguments)
         validate_json_tree(result)
         return result
 
@@ -601,70 +596,18 @@ def _command_payload_type(
     aliases: tuple[tuple[str, str], ...] = (),
     payload_base: type[_GroundedCommandPayloadBase] = GroundedToolCommandPayload,
 ) -> type[_GroundedCommandPayloadBase]:
+    """Constrain the wire envelope, leaving exact arguments to the selected ToolSpec."""
+
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
-    digest_material = (
-        GROUNDED_TOOL_CALL_ENVELOPE,
-        *tuple(
-            json.dumps(to_json_compatible(spec.input_schema), sort_keys=True, separators=(",", ":")) for spec in specs
-        ),
-    )
-    digest = hashlib.sha256("\0".join((*names, *digest_material)).encode()).hexdigest()[:12]
     allowed_operation = Literal.__getitem__(names)
-    argument_models: list[type[_GroundedArgumentsBase]] = []
-    for index, spec in enumerate(specs):
-        raw = spec.input_schema.get("properties", {})
-        if not isinstance(raw, Mapping):
-            raise ValueError("grounded tool properties are invalid")
-        required = spec.input_schema.get("required", ())
-        if not isinstance(required, tuple | list):
-            raise ValueError("grounded tool required properties are invalid")
-        argument_fields: dict[str, Any] = {}
-        for name, schema in raw.items():
-            if not isinstance(name, str) or not isinstance(schema, Mapping):
-                raise ValueError("grounded tool property schema is invalid")
-            annotation = _payload_annotation((schema,))
-            argument_fields[name] = (annotation, ...) if name in required else (annotation | None, None)
-        argument_models.append(
-            create_model(
-                f"GroundedArguments_{digest}_{index}",
-                __base__=_GroundedArgumentsBase,
-                **argument_fields,
-            )
-        )
-    arguments_annotation: Any
-    if len(argument_models) == 1:
-        arguments_annotation = argument_models[0]
-    else:
-        arguments_annotation = argument_models[0]
-        for model in argument_models[1:]:
-            arguments_annotation |= model
     return create_model(
-        f"GroundedToolCommand_{digest}",
+        f"{payload_base.__name__}Envelope",
         __base__=payload_base,
         name=(allowed_operation, ...),
-        arguments=(arguments_annotation, ...),
+        arguments=(dict[str, object], ...),
     )
-
-
-def _payload_annotation(schemas: tuple[Mapping[str, object], ...]) -> Any:
-    enum_values: list[object] = []
-    for schema in schemas:
-        raw_enum = schema.get("enum", ())
-        if not isinstance(raw_enum, tuple | list):
-            raise ValueError("grounded tool enum is invalid")
-        enum_values.extend(raw_enum)
-    enums = tuple(dict.fromkeys(enum_values))
-    if enums:
-        return Literal.__getitem__(enums)
-    types = {str(schema.get("type")) for schema in schemas}
-    return {
-        frozenset({"string"}): str,
-        frozenset({"integer"}): int,
-        frozenset({"number"}): float,
-        frozenset({"boolean"}): bool,
-    }.get(frozenset(types), object)
 
 
 def _selector_names(binding: object) -> tuple[str, ...]:

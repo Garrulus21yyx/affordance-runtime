@@ -252,6 +252,11 @@ def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_
 
     assert isinstance(outcome, ResolvedModelDecision)
     assert len(requests) == 2
+    wire_schema = requests[0]["response_format"]["json_schema"]["schema"]
+    assert wire_schema["properties"]["arguments"]["additionalProperties"] is True
+    assert "$defs" not in wire_schema
+    assert "anyOf" not in json.dumps(wire_schema)
+    assert "$ref" not in json.dumps(wire_schema)
     assert [item.origin for item in orchestrator.last_attempts] == [
         ProviderAttemptOrigin.NETWORK,
         ProviderAttemptOrigin.NETWORK,

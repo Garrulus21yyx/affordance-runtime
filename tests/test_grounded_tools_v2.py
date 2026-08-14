@@ -89,6 +89,7 @@ from affordance_runtime.task import (
 )
 from affordance_runtime.task.local_objective import establish_local_objective
 from affordance_runtime.world import ActionSpaceBuilder
+from affordance_runtime.world.schema_validation import validate_value_issue
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
@@ -502,7 +503,7 @@ def test_single_operation_compact_schema_constrains_the_operation_name() -> None
         payload_type.model_validate({"name": "observe_visual", "op": "different"})
 
 
-def test_compact_action_schema_is_generated_from_nested_tool_arguments() -> None:
+def test_compact_action_schema_has_one_stable_envelope_without_catalog_union() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
@@ -510,16 +511,17 @@ def test_compact_action_schema_is_generated_from_nested_tool_arguments() -> None
 
     schema = payload_type.model_json_schema()
     assert set(schema["properties"]) == {"name", "arguments"}
-    argument_variants = schema["properties"]["arguments"]["anyOf"]
-    assert argument_variants
-    assert any(
-        "text" in schema["$defs"][item["$ref"].rsplit("/", 1)[-1]]["properties"]
-        for item in argument_variants
-        if "$ref" in item
-    )
+    assert schema["properties"]["arguments"] == {
+        "additionalProperties": True,
+        "title": "Arguments",
+        "type": "object",
+    }
+    assert "$defs" not in schema
+    assert "anyOf" not in json.dumps(schema)
+    assert "$ref" not in json.dumps(schema)
 
 
-def test_compact_action_payload_accepts_semantic_selection_key_and_rejects_off_menu_value() -> None:
+def test_compact_action_payload_defers_exact_arguments_to_selected_tool_validator() -> None:
     semantic_key = "(1,-2)"
     spec = ToolSpec(
         "activate",
@@ -538,10 +540,15 @@ def test_compact_action_payload_accepts_semantic_selection_key_and_rejects_off_m
     )
     legacy_flat = payload_type.model_validate({"op": "activate", "semantic_grid_coordinate": semantic_key})
 
-    assert accepted.arguments.semantic_grid_coordinate == semantic_key
+    assert accepted.arguments["semantic_grid_coordinate"] == semantic_key
     assert legacy_flat.command_arguments() == {"semantic_grid_coordinate": semantic_key}
-    with pytest.raises(ValueError):
-        payload_type.model_validate({"name": "activate", "arguments": {"semantic_grid_coordinate": "E38"}})
+    invalid_for_tool = payload_type.model_validate(
+        {"name": "activate", "arguments": {"semantic_grid_coordinate": "E38"}}
+    )
+    assert invalid_for_tool.command_arguments() == {"semantic_grid_coordinate": "E38"}
+    assert validate_value_issue(
+        invalid_for_tool.command_arguments(), spec.input_schema, path="parameters"
+    ) is not None
 
 
 def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing() -> None:
