@@ -123,7 +123,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
-| P5-M4.6 evidence-directed remediation | `PAUSED_AFTER_DEFAULT_MODEL_1_OF_5 / AGENT_SEMANTICS_OPEN / TOOL_SCHEMA_CONTRADICTION_CLOSED / CONTROL_TRACE_IMPLEMENTED / DUPLICATE_PROJECTION_REMOVED / GENERALIZATION_OPEN` | `b2f3dac` closed the generic argument-envelope contradiction; `f28779f` persists typed observation decisions; `90c3997` removes duplicate native ToolSpecs and repeated entity summaries. Targeted tests, Ruff and Mypy pass. The clean default `glm-4.1v-thinking-flashx` full run at `90c3997` was evidence-valid but only 1/5: all 16 decisions were valid structural actions with zero image, visual source, argument violation or repair. Both pie tasks chose `+ -> Y`; the color task reactivated entities already exposed as selected and then submitted; addition filled and submitted an environment-rejected value. The remaining common cause is default-agent semantic choice, state tracking, aggregation and completion judgment, not DOM/vision fusion, schema, binding or execution. Per user direction implementation stops here; no task classifier, second planner, arithmetic/color/count rule or alternate execution path is admitted. See the [stopping analysis](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md), [d325 evidence](evidence/2026-08-14-structure-first-five-witness-d325360.md), [control-context evidence](evidence/2026-08-14-structure-first-control-context-ccea342.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
+| P5-M4.6 evidence-directed remediation | `ADVISORY_CHECKLIST_IMPLEMENTED_NOT_BENCHMARK_VALIDATED / AGENT_SEMANTICS_OPEN / CRITIC_DEFERRED / GENERALIZATION_OPEN` | The clean default `glm-4.1v-thinking-flashx` run at `90c3997` remained 1/5 after tool/schema/projection closure. `2758364` now tests the smallest GlassBrowser-like continuity hypothesis: one typed `update_checklist` control fully replaces bounded model-authored advisory task memory, consumes no environment step, owns no ActionSpace/binding/execution authority, and returns to the existing grounded action → Runtime chain on the next policy call. Structured and dynamic protocols do not falsely claim this capability; primary grounded composition requires it explicitly. No task classifier, second planner, candidate generator, critic, arithmetic/color/count rule or alternate execution path is present. Focused 98-test and affected-boundary 146-test suites, Ruff and `mypy src` pass. Fresh default-model five-case benchmark validation is next. See the [checklist slice](evidence/2026-08-14-advisory-agent-checklist-2758364.md), [stopping analysis](evidence/2026-08-14-grounded-tool-schema-alignment-97918e1.md) and [shared-cause review](reviews/2026-08-13-five-witness-common-cause.md). |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
 | P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
@@ -131,13 +131,13 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 
 ## Next admitted slice
 
-No implementation slice is active. Work is paused after the failed clean
-default-4.1V cohort at the user's direction. If resumed, first choose and bound
-a general agent-level approach for semantic deliberation and completion
-checking, then compare it on fresh held-out tasks. Runtime must continue to own
-only deterministic capability, legality, binding, execution, currentness and
-authoritative outcome facts. Do not resume by adding task-specific rules,
-reinstating the dormant LocalObjective planner, or repeatedly rerunning the
+The only active slice is clean benchmark falsification of the advisory
+checklist at `2758364`. Run the same frozen five cases with default 4.1V once,
+inspect checklist use and action continuity, and stop for causal analysis if it
+still fails. Runtime must continue to own only deterministic capability,
+legality, binding, execution, currentness and authoritative outcome facts. Do
+not add task-specific rules, reinstate the dormant LocalObjective planner, add
+a critic before checklist/actor contradiction is observed, or repeatedly rerun the
 same five witnesses until a favorable stochastic sample appears.
 
 M4.5-A is complete on the non-default target path. It replaced the generic

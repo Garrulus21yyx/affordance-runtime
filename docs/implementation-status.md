@@ -109,7 +109,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC` |
+| P5-M4.6 evidence-directed short-loop remediation | `IN_PROGRESS / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED / M4.6-E ADVISORY_CHECKLIST_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |
@@ -716,8 +716,19 @@ integrated fill/select local liveness guard; it is not a planner. M4.6 is
 M4.6-B is `COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE`, M4.6-C is
 `COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE`, M4.6-D is
 `REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`, and M4.6-E is
-`DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC`;
+`ADVISORY_CHECKLIST_IMPLEMENTED_NOT_BENCHMARK_VALIDATED` after its earlier
+vision-convergence gate and default-model 1/5 diagnostic;
 M4.7 multi-seed remains blocked by its
 targeted gates. M4.5-B independently remains reopened until reducer properties,
 held-out review, the full verification gate and a clean reviewed-commit
 attestation pass; the executed diagnostic does not close it.
+
+At `275836498b64fd33b7c89b1327a2f5b38ed84678`, the grounded policy adds one
+bounded model-authored advisory checklist. `UpdateWorkingMemory` is a typed
+full replacement stored in the run-scoped AgentLoop state and projected into
+the next disposable context. It produces no environment step or control
+transition, owns no ActionSpace/action ID/private binding, and cannot filter,
+authorize, dispatch or complete a task. Grounded-tools declares this capability
+explicitly; structured-package and dynamic-tools do not. This is an
+implemented-not-benchmark-validated cognition-continuity experiment, not
+general long-horizon closure. No independent planner or critic is configured.
