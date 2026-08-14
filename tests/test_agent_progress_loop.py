@@ -39,14 +39,14 @@ def _world(observation_id: str, value: str) -> WorldObservation:
         target.target_id,
         "dom",
         "dom",
-        "fill",
+        "type_text",
         "fill",
         "local_reversible",
         ("value_changed",),
         {
             "type": "object",
-            "properties": {"value": {"type": "string"}},
-            "required": ["value"],
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
             "additionalProperties": False,
         },
         {"private_route": "not-model-facing"},
@@ -90,8 +90,8 @@ class RepeatedFillPolicy:
         self.calls += 1
         self.context_ids.append(context.context_id)
         self.contexts.append(context)
-        option = next(item for item in context.actions.options if item.semantic_action == "fill")
-        return SelectAction(context.context_id, option.action_id, {"value": "desired"})
+        option = next(item for item in context.actions.options if item.semantic_action == "type_text")
+        return SelectAction(context.context_id, option.action_id, {"text": "desired"})
 
 
 class IncompleteTaskEvaluator:

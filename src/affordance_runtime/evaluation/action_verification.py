@@ -96,8 +96,9 @@ def derive_action_verification_obligations(
 
 def _primitive_value_obligation(request: BoundActionRequest) -> RuntimeVerificationObligation | None:
     semantic = request.intent.semantic_action
-    value = request.intent.parameters.get("value")
-    if semantic not in {"fill", "select"} or not isinstance(value, str):
+    parameter_name = "text" if semantic == "type_text" else "value"
+    value = request.intent.parameters.get(parameter_name)
+    if semantic not in {"type_text", "select_option"} or not isinstance(value, str):
         return None
     return RuntimeVerificationObligation(
         VerificationObligationKind.FACT_TRANSITION_TO,

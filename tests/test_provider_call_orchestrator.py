@@ -21,6 +21,7 @@ from affordance_runtime.model_policy.contracts import (
     ModelMetadata,
     ResolvedModelDecision,
 )
+from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_action_catalog
 from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedActionAdapter
 from affordance_runtime.model_policy.policy import _build_request
 from affordance_runtime.model_policy.provider_orchestrator import (
@@ -176,6 +177,9 @@ def test_fallback_rejects_a_different_schema_or_capability_profile() -> None:
 
 def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_stage() -> None:
     requests: list[dict[str, object]] = []
+    context = _context()
+    catalog = compile_grounded_action_catalog(context)
+    username_tool = next(item for item in catalog.specs if '"Username"' in item.description)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - stdlib callback
@@ -193,8 +197,7 @@ def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_
                                 "message": {
                                     "content": json.dumps(
                                         {
-                                            "op": "fill",
-                                            "target": "Username",
+                                            "op": username_tool.name,
                                             "text": "donovan",
                                         }
                                     )
@@ -241,7 +244,7 @@ def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_
         ProviderCallPolicy(2, (0.0,), 0.0, 1.0, 3.0),
     )
     try:
-        outcome = asyncio.run(orchestrator.generate(_build_request(_context())))
+        outcome = asyncio.run(orchestrator.generate(_build_request(context)))
     finally:
         server.shutdown()
         server.server_close()

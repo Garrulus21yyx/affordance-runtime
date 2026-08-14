@@ -26,6 +26,9 @@ class GroundedToolResolutionCode(StrEnum):
     INVALID_ARGUMENTS = "invalid_tool_arguments"
     STALE_CATALOG = "stale_tool_catalog"
     GROUNDING_GAP = "tool_grounding_gap"
+    DESTINATION_UNAVAILABLE = "destination_unavailable"
+    UNSUPPORTED_DESTINATION_MODE = "unsupported_destination_mode"
+    GROUNDING_FALLBACK_UNAVAILABLE = "grounding_fallback_unavailable"
     CATALOG_INVALID = "grounded_tool_catalog_invalid"
 
 

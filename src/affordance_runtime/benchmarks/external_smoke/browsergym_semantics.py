@@ -93,7 +93,7 @@ class CanonicalBrowserControl:
         spec = self.role_spec
         if not spec.executable or not self.availability.allows(spec):
             return False
-        if spec.semantic_action == "select":
+        if spec.semantic_action == "select_option":
             return bool(
                 self.public_options
                 and len(self.public_options) == len(self.private_options)

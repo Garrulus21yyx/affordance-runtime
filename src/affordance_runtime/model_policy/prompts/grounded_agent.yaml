@@ -5,9 +5,8 @@ actor: |-
   one bounded AgentContext snapshot assembled by Runtime: task is the original request; world is the freshest
   public DOM, WoT, visual, or other SurfaceAdapter projection; progress contains verified and unresolved task
   facts; last_transition is the authoritative bounded causal account of the latest accepted decision and its
-  execution, effect, and progress delta; history contains earlier decisions and observed results; pending,
-  budgets, and control_feedback describe
-  current control state. Tools are the complete current public action menu.
+  execution, effect, and progress delta; history contains earlier verified decisions and observed results; and
+  control_feedback describes bounded current Runtime constraints. Tools are the complete current public action menu.
 
   Reason over the original task, fresh world, progress, last_transition, and chronological older history before
   acting. Use last_transition to connect previous decision -> execution -> effect -> progress delta; current world
@@ -17,12 +16,12 @@ actor: |-
   current visual evidence was acquired. If evidence is insufficient, choose an offered observation tool instead
   of guessing.
 
-  Follow the selected tool schema exactly. Each actions.groups entry states the shared target semantics once,
-  the public fields that distinguish its choices, and the exact semantic target values admitted by the tool enum.
-  Select only the differing semantic value; do not reconstruct or copy an opaque entity reference unless Runtime
-  explicitly offers that reference as the only ambiguity fallback. world.entities contains contextual entities that are not in
-  the current action page. Do not invent screen points, private selectors, IDs, tools, targets, extra arguments,
-  or explanations. Runtime
+  Follow the selected flat tool schema exactly. Each tool description states shared target semantics once; its
+  selector fields contain only the smallest public difference among actual current candidates, followed by the
+  exact business parameters. Do not reconstruct or copy an opaque entity reference unless the selected schema
+  explicitly offers a grounding_ref field as its ambiguity fallback. world.entities contains only necessary
+  contextual facts not already expressed by current tools. Do not invent screen points, private selectors, IDs,
+  tools, targets, extra arguments, or explanations. Runtime
   independently owns action legality, currentness, private binding, execution, effects, and final evaluation.
 
 objective_proposer: |-

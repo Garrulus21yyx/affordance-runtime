@@ -36,8 +36,8 @@ def _fixture(*, fail_step=False, fail_probe=False):
 def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
     expected = (
         ("activate", {}, "click("),
-        ("fill", {"value": "hello"}, "fill("),
-        ("select", {"value": "B"}, "select_option("),
+        ("type_text", {"text": "hello"}, "fill("),
+        ("select_option", {"value": "B"}, "select_option("),
     )
     for semantic, parameters, prefix in expected:
         fake, environment, task, world = _fixture()
@@ -87,7 +87,7 @@ def test_capture_then_disabled_readonly_or_detached_is_zero_step_stale() -> None
                 if node.get("browsergym_id") != "2"
             ]
         fake.post = live
-        result = asyncio.run(environment.execute(request_for(world, task, "fill", {"value": "x"}))).result
+        result = asyncio.run(environment.execute(request_for(world, task, "type_text", {"text": "x"}))).result
         assert (result.dispatch_status, result.error) == (
             DispatchStatus.NOT_SENT, ActionError.STALE_BINDING,
         )

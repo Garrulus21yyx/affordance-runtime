@@ -24,7 +24,7 @@ from affordance_runtime.world import (
 )
 
 
-def _selection(value: str = "desired", *, action_id: str = "action:one", semantic_action: str = "fill"):
+def _selection(value: str = "desired", *, action_id: str = "action:one", semantic_action: str = "type_text"):
     return AdmittedActionSelection(
         action_id,
         "observation:one",
@@ -36,7 +36,7 @@ def _selection(value: str = "desired", *, action_id: str = "action:one", semanti
         ("binding:one",),
         "low",
         True,
-        {"value": value},
+        {"text": value} if semantic_action == "type_text" else {"value": value},
     )
 
 
@@ -109,7 +109,7 @@ def test_semantic_attempt_key_is_stable_and_private_value_free() -> None:
 
 
 def test_current_fill_and_select_are_suppressed_then_repeat_terminates() -> None:
-    for semantic_action in ("fill", "select"):
+    for semantic_action in ("type_text", "select_option"):
         controller = ProgressController()
         world = _world("observation:one", "desired")
         evaluation = _task_evaluation(world.observation_id)

@@ -1,103 +1,135 @@
-"""Close current actions over compact, public semantic target choices."""
+"""Close current actions over complete bounded public candidate semantics."""
 
 from __future__ import annotations
 
-import itertools
-import json
-from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import replace
 
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.context import AgentGroundingIndexView
-from affordance_runtime.model_boundary.contracts import AgentActionPageView
+from affordance_runtime.model_boundary.budgets import BoundedSection
+from affordance_runtime.model_boundary.context import AgentGroundingEntityView, AgentGroundingIndexView
+from affordance_runtime.model_boundary.contracts import (
+    AgentActionPageView,
+    AgentDestinationView,
+)
+
+_CANONICAL_COMPATIBILITY = {
+    "click": "activate",
+    "fill": "type_text",
+    "select": "select_option",
+}
 
 
-def public_action_operation(semantic_action: str) -> str:
-    """Return the only model-facing operation name for one semantic action."""
+def canonical_action_operation(semantic_action: str) -> str:
+    """Return the bounded canonical operation used by Runtime and the Actor."""
 
-    return {"activate": "click", "fill": "fill", "select": "select"}.get(
-        semantic_action,
-        semantic_action,
-    )
+    operation = _CANONICAL_COMPATIBILITY.get(semantic_action, semantic_action)
+    if not operation or len(operation) > 80:
+        raise ValueError(f"unsupported current semantic action: {semantic_action}")
+    return operation
 
 
 def close_action_candidates(
     actions: AgentActionPageView,
     grounding: AgentGroundingIndexView,
+    *,
+    context_id: str,
 ) -> AgentActionPageView:
-    """Bind options once, then expose only their smallest semantic discriminator."""
+    """Close each public candidate once without choosing its final selector."""
 
     entities_by_ref = {item.ref: item for item in grounding.entities}
     refs_by_target = dict(grounding.target_refs)
     projected = []
     for option in actions.options:
-        ref = refs_by_target.get(option.target_id)
-        entity = entities_by_ref.get(ref or "")
-        if entity is None:
-            raise ValueError("current action target is absent from grounding projection")
+        entity = _grounded_entity(option.target_id, refs_by_target, entities_by_ref)
         state = _candidate_state(entity.state)
-        semantics = _target_semantics(entity, entities_by_ref, state)
+        destinations = tuple(
+            _destination_candidate(
+                item.destination_id,
+                refs_by_target,
+                entities_by_ref,
+                context_id,
+            )
+            for item in option.destinations.items
+        )
         projected.append(
             replace(
                 option,
-                operation=public_action_operation(option.semantic_action),
+                operation=canonical_action_operation(option.semantic_action),
                 target_ref=entity.ref,
-                selection_key=entity.ref,
-                selection_fields=("ref",),
-                target_semantics=semantics,
+                target_semantics=_target_semantics(entity, entities_by_ref, state),
                 target_label=entity.label,
                 target_role=entity.role,
                 target_state=state,
                 target_marked=entity.marked,
+                destination_mode="required" if option.destination_required else "forbidden",
+                grounding_context_id=context_id,
+                destinations=BoundedSection(
+                    destinations,
+                    option.destinations.total_count,
+                    option.destinations.truncated,
+                ),
             )
         )
-    grouped: dict[tuple[str, str], list[int]] = defaultdict(list)
-    for index, option in enumerate(projected):
-        grouped[(option.operation, _schema_key(option.parameter_schema))].append(index)
-    for indices in grouped.values():
-        fields = _minimal_discriminator(tuple(projected[index] for index in indices))
-        keys = [_selection_key(projected[index], fields) for index in indices]
-        counts = Counter(keys)
-        for index, key in zip(indices, keys, strict=True):
-            option = projected[index]
-            if counts[key] > 1:
-                key = f"{key}@{option.target_ref}" if key else option.target_ref
-                effective_fields = (*fields, "ref")
-            else:
-                effective_fields = fields
-            projected[index] = replace(
-                option,
-                selection_key=key,
-                selection_fields=effective_fields,
-            )
-    options = tuple(projected)
-    return replace(actions, options=options)
+    return replace(actions, options=tuple(projected))
 
 
-def _candidate_state(state) -> dict[str, object]:
-    """Expose one semantic coordinate system, never screen or lattice-construction indices."""
+def _grounded_entity(
+    target_id: str,
+    refs_by_target: Mapping[str, str],
+    entities_by_ref: Mapping[str, AgentGroundingEntityView],
+) -> AgentGroundingEntityView:
+    ref = refs_by_target.get(target_id)
+    entity = entities_by_ref.get(ref or "")
+    if entity is None:
+        raise ValueError("current action candidate is absent from grounding projection")
+    return entity
+
+
+def _destination_candidate(
+    destination_id: str,
+    refs_by_target: Mapping[str, str],
+    entities_by_ref: Mapping[str, AgentGroundingEntityView],
+    context_id: str,
+) -> AgentDestinationView:
+    entity = _grounded_entity(destination_id, refs_by_target, entities_by_ref)
+    state = _candidate_state(entity.state)
+    return AgentDestinationView(
+        destination_id,
+        entity.label,
+        entity.ref,
+        _target_semantics(entity, entities_by_ref, state),
+        entity.marked,
+        context_id,
+    )
+
+
+def _candidate_state(state: Mapping[str, object]) -> dict[str, object]:
+    """Expose semantic coordinates, never lattice-construction coordinates."""
 
     result = dict(state)
     coordinate = result.pop("grid_coordinate", None)
     if isinstance(coordinate, Mapping):
         x = coordinate.get("x")
         y = coordinate.get("y")
-        if isinstance(x, int | float) and isinstance(y, int | float):
+        if isinstance(x, int | float) and not isinstance(x, bool) and isinstance(y, int | float) and not isinstance(y, bool):
             result["semantic_grid_coordinate"] = (x, y)
             result.pop("grid_membership", None)
             result.pop("grid_coordinate_confidence", None)
     return result
 
 
-def _target_semantics(entity, entities_by_ref, state: Mapping[str, object]) -> dict[str, object]:
+def _target_semantics(
+    entity: AgentGroundingEntityView,
+    entities_by_ref: Mapping[str, AgentGroundingEntityView],
+    state: Mapping[str, object],
+) -> dict[str, object]:
     semantics: dict[str, object] = {"role": entity.role}
     if entity.label.strip():
         semantics["label"] = entity.label.strip()
     choice_state = {
         key: value
         for key, value in state.items()
-        if key not in {"semantic_scope_label", "semantic_scope_role"} and _is_choice_value(value)
+        if key not in {"semantic_scope_label", "semantic_scope_role"} and _is_public_facet_value(value)
     }
     if choice_state:
         semantics["state"] = choice_state
@@ -110,8 +142,7 @@ def _target_semantics(entity, entities_by_ref, state: Mapping[str, object]) -> d
         within: dict[str, object] = {"role": parent.role}
         if parent.label.strip():
             within["label"] = parent.label.strip()
-        if within:
-            semantics["within"] = within
+        semantics["within"] = within
     scope_label = state.get("semantic_scope_label")
     if "within" not in semantics and isinstance(scope_label, str) and scope_label.strip():
         scope_role = state.get("semantic_scope_role")
@@ -123,101 +154,23 @@ def _target_semantics(entity, entities_by_ref, state: Mapping[str, object]) -> d
             ),
             "label": scope_label.strip(),
         }
+    relations = tuple(
+        sorted(
+            hint for hint in entity.relation_hints
+            if not hint.startswith(("parent:", "children:")) and len(hint) <= 160
+        )
+    )
+    if relations:
+        semantics["relations"] = relations
     return semantics
 
 
-def _schema_key(schema: Mapping[str, object]) -> str:
-    return json.dumps(
-        to_json_compatible(schema),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-
-
-def _minimal_discriminator(options) -> tuple[str, ...]:
-    if len(options) == 1:
-        fields = _ordered_paths(options[0].target_semantics)
-        return (fields[0],) if fields else ("ref",)
-    paths = tuple(dict.fromkeys(
-        path for option in options for path in _ordered_paths(option.target_semantics)
-    ))
-    varying = tuple(
-        path for path in paths
-        if len({_value_token(_path_value(option.target_semantics, path)) for option in options}) > 1
-    )
-    for size in range(1, min(3, len(varying)) + 1):
-        for fields in itertools.combinations(varying, size):
-            identities = {
-                tuple(_value_token(_path_value(option.target_semantics, field)) for field in fields)
-                for option in options
-            }
-            if len(identities) == len(options):
-                return tuple(fields)
-    return varying or ("ref",)
-
-
-def _ordered_paths(selector: Mapping[str, object]) -> tuple[str, ...]:
-    values: list[str] = []
-    state = selector.get("state")
-    if isinstance(state, Mapping) and "semantic_grid_coordinate" in state:
-        values.append("state.semantic_grid_coordinate")
-    for path in ("label", "within.label", "role", "within.role"):
-        if _path_value(selector, path) is not None:
-            values.append(path)
-    if isinstance(state, Mapping):
-        values.extend(
-            f"state.{key}" for key in sorted(state)
-            if key != "semantic_grid_coordinate" and _is_choice_value(state[key])
-        )
-    return tuple(values)
-
-
-def _path_value(selector: Mapping[str, object], path: str) -> object:
-    value: object = selector
-    for part in path.split("."):
-        if not isinstance(value, Mapping) or part not in value:
-            return None
-        value = value[part]
-    return value
-
-
-def _is_choice_value(value: object) -> bool:
+def _is_public_facet_value(value: object) -> bool:
     return (
-        isinstance(value, str) and len(value) <= 160
+        value is None
+        or isinstance(value, str) and len(value) <= 160
         or isinstance(value, int | float | bool)
-    ) or (
-        isinstance(value, tuple | list)
+        or isinstance(value, tuple | list)
         and len(value) <= 4
-        and all(isinstance(item, str | int | float | bool) for item in value)
+        and all(item is None or isinstance(item, str | int | float | bool) for item in value)
     )
-
-
-def _selection_key(option, fields: tuple[str, ...]) -> str:
-    if fields == ("ref",):
-        return option.target_ref
-    rendered = tuple(_render_value(_path_value(option.target_semantics, field)) for field in fields)
-    if len(rendered) == 1:
-        return rendered[0]
-    return " | ".join(f"{field}={value}" for field, value in zip(fields, rendered, strict=True))
-
-
-def _value_token(value: object) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def _render_value(value: object) -> str:
-    if isinstance(value, tuple | list):
-        return "(" + ",".join(_render_value(item) for item in value) + ")"
-    if isinstance(value, float | int) and not isinstance(value, bool):
-        return _number_token(value)
-    if isinstance(value, str):
-        return value
-    return _value_token(value)
-
-
-def _number_token(value: int | float) -> str:
-    if isinstance(value, int) or value.is_integer():
-        return str(int(value))
-    token = format(value, ".15g")
-    return "0" if token == "-0" else token

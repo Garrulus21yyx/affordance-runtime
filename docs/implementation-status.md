@@ -41,25 +41,36 @@ legacy adapters that declare they require it. Focused tests, the full
 `2474 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
 received a fresh live benchmark run.
 
-The current working tree implements a compact referentially closed
-action-candidate boundary. `ContextBuilder` decorates each current option once
-with a bounded public target selector. Per operation/schema group it hoists
-shared target semantics and computes the smallest public facet subset that
-uniquely distinguishes legal choices. The binder renders `actions.groups`; the
-catalog consumes the same `option.operation` and `option.selection_key` and
-maps the admitted semantic value to the existing opaque action binding.
-Objective proposal receives neither this group section nor its action menu.
-Verified grid coordinates and parent-scoped labels use the same bounded facet
-algebra. E-ref is only a fallback for candidates that remain publicly
-indistinguishable. Facts already owned by current candidates are
-omitted only from the grounded provider rendering; canonical
-`AgentContext.world` remains available to every other consumer. Provider JSON
-preserves task-first section order. Ruff, mypy and the full `2487 passed, 27
-skipped` suite pass. Clean snapshot `b6e0546` completed the single seed-7 grid
-witness in one provider call and one dispatch with zero repair, selecting the
-Runtime target at `(1,-2)`. This is focused current live evidence only; the
-complete five-case revalidation remains pending. See the
-[semantic-facet evidence](evidence/2026-08-14-semantic-facet-action-compaction-b6e0546.md).
+The current working tree implements the first shared interaction-onboarding
+skeleton slice for existing actions. `ContextBuilder` closes each current
+candidate once over canonical operation, complete bounded target semantics and
+grounding, exact business schema, destination mode and complete destination
+candidates, consequence projection, and its private current action lookup
+identity. It no longer computes a final selector.
+
+`GroundedToolCompiler` is the sole owner of concrete destination-row expansion,
+technical partitioning, recursive shared semantic skeletons, deterministic
+minimal facets, Cartesian versus sparse tuple handling, flat public `ToolSpec`
+construction, and the private exact-resolution table. Required destinations
+expand only admitted pairs; optional mode and empty required domains fail
+typed. Semantic fields are preferred; E-ref fallback requires complete,
+injective, same-context rendered grounding and fails typed on missing,
+duplicate, stale, or unrendered refs. Business schemas are copied generically
+without verb-specific branches or parameter renaming.
+
+The action provider envelope now contains task/progress, bounded transition and
+history, necessary non-tool current context, screenshot grounding, flat tools,
+and bounded Runtime feedback. It contains no candidate records,
+`actions.entities`, `actions.groups`, action IDs, private destination tables, or
+resolver entries. The provider binder does not regroup candidates. Resolution
+validates the exact emitted schema and queries only the private compiler table;
+ordinary still-current ActionSpace admission/currentness/binding/execution is
+unchanged. BrowserGym ActionSpace semantics are now `activate`, `type_text`, and
+`select_option`, while `click`, `fill`, and `select_option` remain adapter-private
+primitives. Focused compiler/grounded-tool tests, full `2509 passed, 27 skipped`,
+Ruff, and mypy pass locally. No fresh live benchmark was run; the historical
+clean `b6e0546` grid witness remains prior evidence and does not attest this
+working tree or replace the pending five-case gate.
 
 P5-M4.6-F P0 is implemented locally and full-verified. `ControlTransition`
 captures the matching decision-start `before_task_evaluation` as a root fact;
@@ -153,7 +164,7 @@ The target path now has:
 | P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.5-C same-profile MiniWoB-60 diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` |
-| P5-M4.6 evidence-directed short-loop remediation | `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED` |
+| P5-M4.6 evidence-directed short-loop remediation | `EXISTING_ACTION_FLAT_SEMANTIC_COMPILER_IMPLEMENTED_LOCALLY / FULL_VERIFIED_2509_PASS_27_SKIP / LIVE_NOT_RUN / M4.6-A-C COMPLETE_NON_DEFAULT / M4.6-D IMPLEMENTED_NOT_VERIFIED` |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` |
 | long-horizon TaskPlan execution | `NOT_STARTED / BLOCKED_BY_BREADTH_GATES` |
 | default product cutover | `NOT_STARTED` |

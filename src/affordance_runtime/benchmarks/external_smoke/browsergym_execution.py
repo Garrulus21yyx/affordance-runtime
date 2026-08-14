@@ -25,7 +25,7 @@ def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBin
     if primitive == "click":
         return f"click({bid})"
     if primitive == "fill":
-        value = request.intent.parameters.get("value")
+        value = request.intent.parameters.get("text")
         if not isinstance(value, str):
             raise ValueError("fill requires one string value")
         return f"fill({bid}, {json.dumps(value, ensure_ascii=False)})"

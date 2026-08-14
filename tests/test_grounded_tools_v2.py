@@ -48,8 +48,6 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedActionResolution,
     GroundedToolPhase,
-    GroundedToolResolutionCode,
-    GroundedToolResolutionError,
 )
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
@@ -134,7 +132,7 @@ class _ActionPort:
             latency_ms=1,
             response_id=f"response:{self.calls}",
         )
-        return output_schema.model_validate({"op": "click", "target": "Login"})
+        return output_schema.model_validate({"op": "activate"})
 
 
 def _context(*, local_objective=None):
@@ -204,6 +202,35 @@ def _bound_public_context(context) -> dict[str, object]:
     return json.loads(content)
 
 
+def _selector_context(*, operation: str, schema: dict[str, object]):
+    context = _context()
+    options = tuple(
+        replace(
+            option,
+            semantic_action=operation,
+            operation=operation,
+            parameter_schema=schema,
+            target_label="Same",
+            target_role="button",
+            target_semantics={"role": "button", "label": "Same", "state": {"ordinal": index}},
+            target_state={"ordinal": index},
+        )
+        for index, option in enumerate(context.actions.options[:2], 1)
+    )
+    return replace(
+        context,
+        actions=replace(
+            context.actions,
+            options=options,
+            total_count=2,
+            page_size=2,
+            truncated=False,
+            has_more=False,
+            next_cursor="",
+        ),
+    )
+
+
 def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
@@ -213,14 +240,10 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert not hasattr(catalog, "view")
     assert "bbox" not in public
     assert "entity:" not in public and "action:" not in public and "binding:" not in public
-    candidate_refs = {
-        choice
-        for item in _bound_public_context(context)["actions"]["groups"]
-        for choice in item["choices"]
-        if choice.startswith("E")
-    }
-    world_refs = {item["ref"] for item in _bound_public_context(context)["world"]["entities"]}
-    assert candidate_refs.isdisjoint(world_refs)
+    payload = _bound_public_context(context)
+    assert "actions" not in payload
+    assert not {"actions.entities", "actions.groups"}.intersection(public)
+    assert payload["world"]["entities"] == []
 
 
 def test_objective_context_does_not_expose_action_selection_candidates() -> None:
@@ -242,7 +265,7 @@ def test_objective_context_does_not_expose_action_selection_candidates() -> None
     assert {item["ref"] for item in public["world"]["entities"]} == {
         item.ref for item in context.grounding.entities
     }
-    assert not {"click", "fill", "select"}.intersection(
+    assert not {"activate", "type_text", "select_option", "read"}.intersection(
         item["op"] for item in public["tools"]
     )
 
@@ -268,23 +291,9 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert isinstance(user_content, str)
     public = json.loads(user_content)
     assert public["last_transition"] is None
-    assert set(public) == {
-        "actions",
-        "context_id",
-        "task",
-        "intent",
-        "last_transition",
-        "world",
-        "progress",
-        "history",
-        "pending",
-        "budgets",
-        "decision_mode",
-        "control_feedback",
-        "tools",
-    }
+    assert set(public) == {"task", "last_transition", "world", "progress", "history", "control_feedback", "tools"}
     assert public["task"]["instruction"] == context.task.instruction
-    assert all("marked_choices" not in item for item in public["actions"]["groups"])
+    assert "actions" not in public
     assert public["progress"]["validated_task_status"] == "incomplete"
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 0
@@ -314,7 +323,7 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
     assert isinstance(user_content[1], ModelImageURLPart)
     assert adapter.last_image_input_count == 1
     public = json.loads(user_content[0].text)
-    assert any(item.get("marked_choices") for item in public["actions"]["groups"])
+    assert "actions" not in public
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 1
     assert trace["selected_grounding"]["marked"] is True
@@ -407,8 +416,8 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
             self.tools = tuple(tools)
             return (
                 ToolCall(
-                    "click",
-                    {"target": "Login"},
+                    "activate",
+                    {},
                 ),
             )
 
@@ -426,25 +435,12 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {
-        "actions",
-        "context_id",
-        "task",
-        "intent",
-        "last_transition",
-        "world",
-        "progress",
-        "history",
-        "pending",
-        "budgets",
-        "decision_mode",
-        "control_feedback",
-    }
-    assert {item.name for item in port.tools} == {"fill", "click"}
+    assert set(public) == {"task", "last_transition", "world", "progress", "history", "control_feedback"}
+    assert {item.name.split("_")[0] for item in port.tools} == {"type", "activate"}
     assert all("E1(" not in item.description for item in port.tools)
-    assert all("semantic target choice" in item.description for item in port.tools)
+    assert all("shared public semantics" in item.description for item in port.tools)
     assert all("memory" not in item.input_schema["properties"] for item in port.tools)
-    assert tuple(public)[:5] == ("task", "intent", "world", "progress", "last_transition")
+    assert tuple(public)[:5] == ("task", "world", "progress", "last_transition", "history")
 
 
 def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
@@ -454,8 +450,8 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "click",
-            {"target": "Login"},
+            "activate",
+            {},
         ),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
@@ -488,38 +484,36 @@ def test_single_operation_compact_schema_constrains_the_operation_name() -> None
     assert operation_schema["const"] == "observe_visual"
 
 
-def test_compact_action_schema_constrains_target_to_current_candidate_selection_keys() -> None:
+def test_compact_action_schema_is_generated_from_flat_tool_properties() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
     payload_type = _command_payload_type(catalog.specs)
 
-    target_schema = payload_type.model_json_schema()["properties"]["target"]
-    assert set(target_schema["enum"]) == {
-        "",
-        *(option.selection_key for option in context.actions.options),
-    }
+    properties = payload_type.model_json_schema()["properties"]
+    assert "target" not in properties
+    assert properties["text"]["anyOf"][0]["type"] == "string"
 
 
 def test_compact_action_payload_accepts_semantic_selection_key_and_rejects_off_menu_value() -> None:
-    semantic_key = "semantic-grid-coordinate:x=1,y=-2"
+    semantic_key = "(1,-2)"
     spec = ToolSpec(
-        "click",
-        "Click a current candidate.",
+        "activate",
+        "Activate a current candidate.",
         {
             "type": "object",
-            "properties": {"target": {"type": "string", "enum": [semantic_key]}},
-            "required": ["target"],
+            "properties": {"semantic_grid_coordinate": {"type": "string", "enum": [semantic_key]}},
+            "required": ["semantic_grid_coordinate"],
             "additionalProperties": False,
         },
     )
     payload_type = _command_payload_type((spec,))
 
-    accepted = payload_type.model_validate({"op": "click", "target": semantic_key})
+    accepted = payload_type.model_validate({"op": "activate", "semantic_grid_coordinate": semantic_key})
 
-    assert accepted.target == semantic_key
+    assert accepted.semantic_grid_coordinate == semantic_key
     with pytest.raises(ValueError):
-        payload_type.model_validate({"op": "click", "target": "E38"})
+        payload_type.model_validate({"op": "activate", "semantic_grid_coordinate": "E38"})
 
 
 def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
@@ -529,15 +523,20 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
         replace(
             option,
             semantic_action="activate",
-            parameter_schema={},
+            parameter_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
             operation="",
             target_ref="",
-            selection_key="",
-            selection_fields=(),
             target_semantics={},
             target_role="",
             target_state={},
             target_marked=False,
+            destination_mode="",
+            grounding_context_id="",
         )
         for option in source_options
     )
@@ -565,31 +564,20 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
         has_more=False,
         next_cursor="",
     )
-    actions = close_action_candidates(raw_page, grounding)
+    actions = close_action_candidates(raw_page, grounding, context_id=context.context_id)
     context = replace(context, actions=actions)
 
-    assert tuple(option.selection_key for option in actions.options) == (
+    public = _bound_public_context(context)
+    assert "actions" not in public
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    tool = next(item for item in catalog.specs if item.name == "activate")
+    assert to_json_compatible(tool.input_schema["properties"]["within_label"]["enum"]) == [
         "MacBook Air",
         "MacBook Pro",
-    )
-    assert all(option.selection_fields == ("within.label",) for option in actions.options)
-    public = _bound_public_context(context)
-    group = public["actions"]["groups"][0]
-    assert group == {
-        "operation": "click",
-        "shared_target": {
-            "role": "button",
-            "label": "加入购物车",
-            "within": {"role": "product"},
-        },
-        "choose_by": ["within.label"],
-        "choices": ["MacBook Air", "MacBook Pro"],
-        "expected_effects": ["external_ui_interaction"],
-    }
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    ]
     outcome = resolve_grounded_tool_call(
         catalog,
-        ToolCall("click", {"target": "MacBook Pro"}),
+        ToolCall("activate", {"within_label": "MacBook Pro"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(outcome, GroundedActionResolution)
@@ -597,7 +585,7 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
     assert outcome.decision.action_id == actions.options[1].action_id
 
 
-def test_invalid_native_action_target_is_not_repaired_as_argument_format() -> None:
+def test_invalid_native_semantic_choice_is_not_repaired_as_argument_format() -> None:
     @dataclass
     class InvalidTargetPort:
         provider: str = "zhipu"
@@ -610,9 +598,12 @@ def test_invalid_native_action_target_is_not_repaired_as_argument_format() -> No
         async def generate_tool_calls(self, messages, tools, config, *, require_one):
             del messages, tools, config, require_one
             self.calls += 1
-            return (ToolCall("click", {"target": "E999"}),)
+            return (ToolCall("activate", {"ordinal": 99}),)
 
-    context = _context()
+    context = _selector_context(
+        operation="activate",
+        schema={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    )
     port = InvalidTargetPort()
     adapter = GroundedActionAdapter(
         port,
@@ -625,10 +616,10 @@ def test_invalid_native_action_target_is_not_repaired_as_argument_format() -> No
     assert isinstance(outcome, ModelFailure)
     assert port.calls == 1
     assert adapter.last_argument_repair_count == 0
-    assert adapter.last_argument_violation_paths == ("parameters.target",)
+    assert adapter.last_argument_violation_paths == ("parameters.ordinal",)
 
 
-def test_native_business_argument_repair_cannot_change_a_valid_target() -> None:
+def test_native_business_argument_repair_cannot_change_a_valid_semantic_choice() -> None:
     @dataclass
     class DriftingRepairPort:
         provider: str = "zhipu"
@@ -643,11 +634,19 @@ def test_native_business_argument_repair_cannot_change_a_valid_target() -> None:
             del messages, config, require_one
             self.calls += 1
             if self.calls == 1:
-                return (ToolCall("fill", {"target": "Password"}),)
+                return (ToolCall("type_text", {"ordinal": 2}),)
             self.repair_tools = tuple(tools)
-            return (ToolCall("fill", {"target": "Username", "text": "secret"}),)
+            return (ToolCall("type_text", {"ordinal": 1, "text": "secret"}),)
 
-    context = _context()
+    context = _selector_context(
+        operation="type_text",
+        schema={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+    )
     port = DriftingRepairPort()
     adapter = GroundedActionAdapter(
         port,
@@ -661,8 +660,8 @@ def test_native_business_argument_repair_cannot_change_a_valid_target() -> None:
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
     assert adapter.last_argument_violation_paths == ("parameters.text",)
-    target_schema = port.repair_tools[0].input_schema["properties"]["target"]
-    assert target_schema["enum"] == ("Password",)
+    selector_schema = port.repair_tools[0].input_schema["properties"]["ordinal"]
+    assert selector_schema["enum"] == (2,)
 
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
@@ -675,9 +674,9 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
             (
                 AgentTurnView(
                     "selectaction",
-                    "fill",
+                    "type_text",
                     target_ids[0],
-                    public_parameters={"value": "donovan"},
+                    public_parameters={"text": "donovan"},
                     dispatch_status="sent",
                     action_evaluation_status="effect_confirmed",
                     task_evaluation_status="incomplete",
@@ -685,9 +684,9 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
                 ),
                 AgentTurnView(
                     "selectaction",
-                    "fill",
+                    "type_text",
                     target_ids[1],
-                    public_parameters={"value": "UV"},
+                    public_parameters={"text": "UV"},
                     dispatch_status="sent",
                     action_evaluation_status="effect_confirmed",
                     task_evaluation_status="incomplete",
@@ -713,9 +712,9 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
     assert history["items"] == [
         {
             "decision": "selectaction",
-            "semantic_action": "fill",
+            "semantic_action": "type_text",
             "target": refs[0],
-            "parameters": {"value": "donovan"},
+            "parameters": {"text": "donovan"},
             "dispatch": "sent",
             "effect": "effect_confirmed",
             "task": "incomplete",
@@ -723,9 +722,9 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
         },
         {
             "decision": "selectaction",
-            "semantic_action": "fill",
+            "semantic_action": "type_text",
             "target": refs[1],
-            "parameters": {"value": "UV"},
+            "parameters": {"text": "UV"},
             "dispatch": "sent",
             "effect": "effect_confirmed",
             "task": "incomplete",
@@ -787,31 +786,29 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
 def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:
     context = _context(
         local_objective=SetObjective(
-            "set-objective:fill-password",
+            "set-objective:type-password",
             ScopeSpec("scope:viewport", "current-viewport", ScopeExtent.CURRENT_VIEWPORT),
             FactEquals("identity.label", "Password"),
             SetQuantifier.EXACTLY_ONE,
-            ActionTemplate("fill", parameters={"value": "UV"}),
+            ActionTemplate("type_text", parameters={"text": "UV"}),
         )
     )
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    assert {item.name for item in catalog.specs} == {"fill"}
-    fill = catalog.specs[0]
-    assert to_json_compatible(fill.input_schema) == {
+    assert {item.name for item in catalog.specs} == {"type_text"}
+    type_text = catalog.specs[0]
+    assert to_json_compatible(type_text.input_schema) == {
         "type": "object",
         "properties": {
-            "target": {"type": "string", "enum": ["Password"]},
             "text": {"type": "string"},
         },
-        "required": ["target", "text"],
+        "required": ["text"],
         "additionalProperties": False,
     }
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "fill",
+            "type_text",
             {
-                "target": "Password",
                 "text": "UV",
             },
         ),
@@ -820,30 +817,23 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
     assert isinstance(outcome, GroundedActionResolution)
     decision = outcome.decision
     assert isinstance(decision, SelectAction)
-    assert decision.parameters == {"value": "UV"}
+    assert decision.parameters == {"text": "UV"}
     assert decision.action_id.startswith("action:")
 
 
-def test_single_target_action_never_uses_implicit_runtime_target_inference() -> None:
+def test_single_target_action_is_a_private_constant() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    click = next(item for item in catalog.specs if item.name == "click")
+    activate = next(item for item in catalog.specs if item.name == "activate")
 
-    assert to_json_compatible(click.input_schema) == {
+    assert to_json_compatible(activate.input_schema) == {
         "type": "object",
-        "properties": {
-            "target": {"type": "string", "enum": ["Login"]},
-        },
-        "required": ["target"],
+        "properties": {},
+        "required": [],
         "additionalProperties": False,
     }
-    with pytest.raises(GroundedToolResolutionError) as caught:
-        resolve_grounded_tool_call(
-            catalog,
-            ToolCall("click", {}),
-            expected_context_id=context.context_id,
-        )
-    assert caught.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    outcome = resolve_grounded_tool_call(catalog, ToolCall("activate", {}), expected_context_id=context.context_id)
+    assert isinstance(outcome, GroundedActionResolution)
 
 
 def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -> None:
@@ -854,12 +844,7 @@ def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -
         "local_objective_needs_input",
         "local_objective_unsupported",
     ]
-    assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {
-        "op",
-        "target",
-        "text",
-        "value",
-    }
+    assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {"op"}
     assert "memory" not in GroundedToolCommandPayload.model_json_schema()["properties"]
     assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {"op", "value"}
     assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)

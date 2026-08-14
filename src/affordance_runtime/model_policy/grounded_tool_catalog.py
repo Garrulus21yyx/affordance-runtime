@@ -29,7 +29,10 @@ from affordance_runtime.agent.local_objective_proposal import (
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext
-from affordance_runtime.model_boundary.contracts import AgentActionOptionView
+from affordance_runtime.model_policy.grounded_tool_compiler import (
+    CompiledGroundedTool,
+    GroundedToolCompiler,
+)
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
@@ -45,12 +48,6 @@ from affordance_runtime.model_policy.objective_spec import (
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.schema_validation import validate_value
-
-
-@dataclass(frozen=True)
-class _VerbBinding:
-    actions: tuple[tuple[str, str], ...]
-    parameter_field: str = ""
 
 
 @dataclass(frozen=True)
@@ -91,19 +88,9 @@ def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
 ) -> GroundedToolCatalog:
-    grouped: dict[tuple[str, str], list[tuple[str, AgentActionOptionView]]] = {}
     objective_open = context.progress.local_objective_open
     if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL and objective_open:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    if phase is GroundedToolPhase.ACTION_SELECTION:
-        for option in context.actions.options:
-            if not option.target_ref or not option.selection_key or not option.operation:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-            grouped.setdefault(
-                (option.operation, _shape_key(option.operation, option.parameter_schema)),
-                [],
-            ).append((option.selection_key, option))
-
     specs: list[ToolSpec] = []
     bindings: list[object] = []
     if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL:
@@ -186,14 +173,13 @@ def compile_grounded_tool_catalog(
             )
             bindings.append(_ObserveBinding(capability.modality, capability.assurance))
 
-    verb_counts: dict[str, int] = {}
-    for (verb, _shape), values in grouped.items():
-        verb_counts[verb] = verb_counts.get(verb, 0) + 1
-        suffix = "" if verb_counts[verb] == 1 else f"_{verb_counts[verb]}"
-        refs = [ref for ref, _option in values]
-        schema, parameter_field = _verb_schema(verb, refs, values[0][1].parameter_schema)
-        specs.append(ToolSpec(f"{verb}{suffix}", _tool_description(verb), schema))
-        bindings.append(_VerbBinding(tuple((ref, option.action_id) for ref, option in values), parameter_field))
+    if phase is GroundedToolPhase.ACTION_SELECTION:
+        compiled = GroundedToolCompiler().compile(
+            context.actions.options,
+            context_id=context.context_id,
+        )
+        specs.extend(item.public_spec for item in compiled)
+        bindings.extend(compiled)
 
     if phase is GroundedToolPhase.ACTION_SELECTION and context.actions.has_more:
         specs.append(
@@ -319,15 +305,23 @@ def resolve_grounded_tool_call(
                 f"acquire fresh {binding.modality} grounding",
             ),
         )
-    if not isinstance(binding, _VerbBinding):
+    if not isinstance(binding, CompiledGroundedTool):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    ref = str(call.arguments.get("target") or "")
-    actions = dict(binding.actions)
-    if ref not in actions:
+    selector_names = tuple(item.public_name for item in binding.selector_fields)
+    selector_values = {name: call.arguments[name] for name in selector_names}
+    matches = tuple(
+        item for item in binding.private_resolutions
+        if dict(item.selector_values) == selector_values
+    )
+    if len(matches) != 1:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-    parameters = {"value": call.arguments[binding.parameter_field]} if binding.parameter_field else {}
+    match = matches[0]
+    parameters = {
+        name: value for name, value in call.arguments.items()
+        if name not in selector_names
+    }
     return GroundedActionResolution(
-        SelectAction(expected_context_id, actions[ref], parameters, ""),
+        SelectAction(expected_context_id, match.action_id, parameters, match.destination_id or ""),
     )
 
 
@@ -367,46 +361,12 @@ def resolve_grounded_objective_call(
     return outcome
 
 
-def _shape_key(verb: str, schema: Mapping[str, object]) -> str:
-    return verb + ":" + json.dumps(to_json_compatible(schema), sort_keys=True, separators=(",", ":"))
-
-
-def _verb_schema(verb: str, refs: list[str], parameter_schema: Mapping[str, object]):
-    properties: dict[str, object] = {
-        "target": {"type": "string", "enum": refs},
-    }
-    required: list[str] = ["target"]
-    parameter_field = ""
-    if verb == "fill":
-        properties["text"] = {"type": "string"}
-        required.append("text")
-        parameter_field = "text"
-    elif verb == "select":
-        raw_properties = parameter_schema.get("properties", {})
-        if not isinstance(raw_properties, Mapping):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        properties["value"] = to_json_compatible(dict(raw_properties).get("value", {"type": "string"}))
-        required.append("value")
-        parameter_field = "value"
-    elif parameter_schema.get("required"):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    return _object_schema(properties, required), parameter_field
-
-
 def _object_schema(properties: Mapping[str, object], required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
 
 
 def _local_objective_schema() -> dict[str, object]:
     return TypeAdapter(LocalObjectiveSpecPayload).json_schema()
-
-
-def _tool_description(verb: str) -> str:
-    return (
-        f"{verb} one entity authorized by the current Runtime action page. "
-        "Pass exactly one semantic target choice from the matching actions.groups entry. "
-        "Runtime resolves that choice to one current private action binding."
-    )
 
 
 def _observation_tool_description(context: AgentContext, capability) -> str:

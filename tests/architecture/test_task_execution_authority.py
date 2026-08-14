@@ -156,11 +156,12 @@ def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -
     catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
     binder = (RUNTIME / "model_policy" / "grounded_policy_context.py").read_text(encoding="utf-8")
 
-    assert "close_action_candidates(actions, grounding.index)" in builder
-    assert "option.selection_key" in catalog and "option.operation" in catalog
+    assert "close_action_candidates(actions, grounding.index, context_id=identity.context_id)" in builder
+    assert "GroundedToolCompiler().compile(" in catalog
     assert "context.grounding.target_refs" not in catalog
-    assert 'public["actions"] = _actions(context, include_images)' in binder
-    assert '"groups": tuple(' in binder and '"shared_target"' in binder
+    assert 'public["actions"]' not in binder
+    assert '"groups": tuple(' not in binder and '"shared_target"' not in binder
+    assert "selection_key" not in catalog and "_verb_schema" not in catalog
     assert '"screen_coordinate"' not in binder and '"x"' not in binder and '"y"' not in binder
 
 

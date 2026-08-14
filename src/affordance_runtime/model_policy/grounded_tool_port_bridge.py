@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -16,7 +15,6 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -38,6 +36,7 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
     resolve_grounded_action_call,
     resolve_grounded_objective_call,
 )
+from affordance_runtime.model_policy.grounded_tool_compiler import CompiledGroundedTool
 from affordance_runtime.model_policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
     GroundedActionResolution,
@@ -71,7 +70,6 @@ class _GroundedCommandPayloadBase(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
     op: str
-    value: object | None = None
 
     @field_validator("op")
     @classmethod
@@ -80,45 +78,28 @@ class _GroundedCommandPayloadBase(BaseModel):
             raise ValueError("grounded operation is invalid")
         return value
 
-    @field_validator("value")
-    @classmethod
-    def _value(cls, value: object | None) -> object | None:
-        validate_json_tree(value)
-        return value
-
     def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
-        admitted = _admitted_properties(spec, {"value"})
-        return {"value": self.value} if self.value is not None and "value" in admitted else {}
+        admitted = _admitted_properties(spec, set(type(self).model_fields) - {"op"})
+        values = self.model_dump(exclude={"op"}, exclude_none=True)
+        result = {name: value for name, value in values.items() if name in admitted}
+        validate_json_tree(result)
+        return result
 
 
 class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     """Compact action-selection command; retained as the public compatibility name."""
 
-    target: str = ""
-    text: str | None = None
-
-    @field_validator("target")
-    @classmethod
-    def _target(cls, value: str) -> str:
-        # The dynamically generated Literal is the exact current-candidate
-        # authority. This base validator only bounds the public call-local
-        # handle; it must not re-impose the superseded E-ref representation.
-        if len(value) > 240 or any(ord(character) < 32 for character in value):
-            raise ValueError("grounded target selection key is invalid")
-        return value
-
-    def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
-        result = super().command_arguments(spec)
-        admitted = _admitted_properties(spec, {"target", "text", "value"})
-        if self.target and "target" in admitted:
-            result["target"] = self.target
-        if self.text is not None and "text" in admitted:
-            result["text"] = self.text
-        return result
-
 
 class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
     """Compact objective-proposal command with no action-selection fields."""
+
+    value: object | None = None
+
+    @field_validator("value")
+    @classmethod
+    def _value(cls, value: object | None) -> object | None:
+        validate_json_tree(value)
+        return value
 
 
 def _admitted_properties(spec: ToolSpec | None, default: set[str]) -> set[str]:
@@ -226,7 +207,7 @@ class _GroundedAdapterBase:
         calls = await self._call(
             messages,
             catalog.specs,
-            _labeled_entity_operation_aliases(catalog, request.agent_context),
+            (),
             payload_base,
         )
         if not calls:
@@ -247,14 +228,15 @@ class _GroundedAdapterBase:
             spec = next((item for item in catalog.specs if item.name == call.name), None)
             if spec is None:
                 raise
+            binding = catalog.bindings[next(index for index, item in enumerate(catalog.specs) if item.name == call.name)]
             issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
             if issue is None:
                 raise
             object.__setattr__(self, "last_argument_violation_code", issue.code.value)
             object.__setattr__(self, "last_argument_violation_paths", issue.public_field_paths)
             object.__setattr__(self, "last_selected_operation", spec.name)
-            if _semantic_target_violation(spec, issue.public_field_paths):
-                # A different E-ref is a different GUI decision, not argument-format repair.
+            if _semantic_selector_violation(binding, issue.public_field_paths):
+                # A different semantic/grounding selector is a different GUI decision.
                 raise
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
             object.__setattr__(self, "last_argument_repair_count", 1)
@@ -264,6 +246,7 @@ class _GroundedAdapterBase:
                 issue,
                 payload_base,
                 call,
+                binding,
             )
             object.__setattr__(self, "last_repaired_operation_match", repaired.name == call.name)
             if repaired.name != call.name:
@@ -374,8 +357,9 @@ class _GroundedAdapterBase:
         issue,
         payload_base: type[_GroundedCommandPayloadBase],
         original_call: ToolCall,
+        binding: object,
     ) -> ToolCall:
-        repair_spec = _target_fixed_repair_spec(spec, original_call)
+        repair_spec = _selector_fixed_repair_spec(spec, original_call, binding)
         repair_messages = _argument_repair_messages(messages, repair_spec, issue)
         if self.transport_kind is not ToolTransportKind.COMPACT_JSON:
             generate = getattr(self.port, "generate_tool_calls", None)
@@ -397,7 +381,7 @@ class _GroundedAdapterBase:
             payload_type = _command_payload_type((repair_spec,), payload_base=payload_base)
             payload = await self._generate_structured(repair_messages, payload_type)
             repaired = ToolCall(payload.op, payload.command_arguments(repair_spec))
-        if _target_changed(original_call, repaired, repair_spec):
+        if _selector_changed(original_call, repaired, binding):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return repaired
 
@@ -543,16 +527,24 @@ def _command_payload_type(
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
-    target_refs = tuple(dict.fromkeys(
-        str(ref)
+    digest_material = tuple(
+        json.dumps(to_json_compatible(spec.input_schema), sort_keys=True, separators=(",", ":"))
         for spec in specs
-        for ref in _schema_target_refs(spec.input_schema)
-    ))
-    digest = hashlib.sha256("\0".join((*names, *target_refs)).encode()).hexdigest()[:12]
+    )
+    digest = hashlib.sha256("\0".join((*names, *digest_material)).encode()).hexdigest()[:12]
     allowed_operation = Literal.__getitem__(names)
     fields: dict[str, Any] = {"op": (allowed_operation, ...)}
-    if issubclass(payload_base, GroundedToolCommandPayload) and target_refs:
-        fields["target"] = (Literal.__getitem__(("", *target_refs)), "")
+    properties: dict[str, list[Mapping[str, object]]] = {}
+    for spec in specs:
+        raw = spec.input_schema.get("properties", {})
+        if not isinstance(raw, Mapping):
+            raise ValueError("grounded tool properties are invalid")
+        for name, schema in raw.items():
+            if not isinstance(name, str) or not isinstance(schema, Mapping):
+                raise ValueError("grounded tool property schema is invalid")
+            properties.setdefault(name, []).append(schema)
+    for name, schemas in properties.items():
+        fields[name] = (_payload_annotation(tuple(schemas)) | None, None)
     return create_model(
         f"GroundedToolCommand_{digest}",
         __base__=payload_base,
@@ -560,17 +552,47 @@ def _command_payload_type(
     )
 
 
-def _semantic_target_violation(spec: ToolSpec, field_paths: tuple[str, ...]) -> bool:
-    return bool(_schema_target_refs(spec.input_schema)) and any(
-        path == "parameters.target" or path.startswith("parameters.target.")
+def _payload_annotation(schemas: tuple[Mapping[str, object], ...]) -> Any:
+    enum_values: list[object] = []
+    for schema in schemas:
+        raw_enum = schema.get("enum", ())
+        if not isinstance(raw_enum, tuple | list):
+            raise ValueError("grounded tool enum is invalid")
+        enum_values.extend(raw_enum)
+    enums = tuple(dict.fromkeys(enum_values))
+    if enums:
+        return Literal.__getitem__(enums)
+    types = {str(schema.get("type")) for schema in schemas}
+    return {
+        frozenset({"string"}): str,
+        frozenset({"integer"}): int,
+        frozenset({"number"}): float,
+        frozenset({"boolean"}): bool,
+    }.get(frozenset(types), object)
+
+
+def _selector_names(binding: object) -> tuple[str, ...]:
+    if not isinstance(binding, CompiledGroundedTool):
+        return ()
+    return tuple(item.public_name for item in binding.selector_fields)
+
+
+def _semantic_selector_violation(binding: object, field_paths: tuple[str, ...]) -> bool:
+    names = _selector_names(binding)
+    return any(
+        path == f"parameters.{name}" or path.startswith(f"parameters.{name}.")
         for path in field_paths
+        for name in names
     )
 
 
-def _target_fixed_repair_spec(spec: ToolSpec, original_call: ToolCall) -> ToolSpec:
-    refs = _schema_target_refs(spec.input_schema)
-    original_target = original_call.arguments.get("target")
-    if not refs or not isinstance(original_target, str) or original_target not in refs:
+def _selector_fixed_repair_spec(
+    spec: ToolSpec,
+    original_call: ToolCall,
+    binding: object,
+) -> ToolSpec:
+    names = _selector_names(binding)
+    if not names or any(name not in original_call.arguments for name in names):
         return spec
     schema = to_json_compatible(spec.input_schema)
     if not isinstance(schema, dict):
@@ -578,53 +600,16 @@ def _target_fixed_repair_spec(spec: ToolSpec, original_call: ToolCall) -> ToolSp
     properties = schema.get("properties")
     if not isinstance(properties, dict):
         raise ValueError("grounded tool properties are invalid")
-    target_schema = properties.get("target")
-    if not isinstance(target_schema, dict):
-        raise ValueError("grounded target schema is invalid")
-    target_schema["enum"] = [original_target]
+    for name in names:
+        selector_schema = properties.get(name)
+        if not isinstance(selector_schema, dict):
+            raise ValueError("grounded selector schema is invalid")
+        selector_schema["enum"] = [to_json_compatible(original_call.arguments[name])]
     return ToolSpec(spec.name, spec.description, schema)
 
 
-def _target_changed(original: ToolCall, repaired: ToolCall, spec: ToolSpec) -> bool:
-    return bool(_schema_target_refs(spec.input_schema)) and (
-        repaired.arguments.get("target") != original.arguments.get("target")
-    )
-
-
-def _schema_target_refs(schema: Mapping[str, object]) -> tuple[object, ...]:
-    properties = schema.get("properties", {})
-    target = properties.get("target") if isinstance(properties, Mapping) else None
-    refs = target.get("enum", ()) if isinstance(target, Mapping) else ()
-    return tuple(refs) if isinstance(refs, list | tuple) else ()
-
-
-def _labeled_entity_operation_aliases(
-    catalog,
-    context: AgentContext | None,
-) -> tuple[tuple[str, str], ...]:
-    """Accept familiar verb names only when every selectable entity has a public label."""
-
-    if context is None:
-        raise ValueError("grounded aliases require one canonical AgentContext")
-    labels = {
-        item.selection_key: item.target_label.strip()
-        for item in context.actions.options
-        if item.selection_key
-    }
-    proposed: dict[str, list[str]] = {}
-    for spec in catalog.specs:
-        match = re.fullmatch(r"establish_(.+?)_entity_objective(?:_\d+)?", spec.name)
-        if match is None:
-            continue
-        target = spec.input_schema.get("properties", {}).get("target")
-        refs = tuple(target.get("enum", ())) if isinstance(target, Mapping) else ()
-        if refs and all(labels.get(str(ref), "") for ref in refs):
-            proposed.setdefault(match.group(1), []).append(spec.name)
-    return tuple(
-        (verb, names[0])
-        for verb, names in sorted(proposed.items())
-        if len(names) == 1 and verb not in {item.name for item in catalog.specs}
-    )
+def _selector_changed(original: ToolCall, repaired: ToolCall, binding: object) -> bool:
+    return any(repaired.arguments.get(name) != original.arguments.get(name) for name in _selector_names(binding))
 
 
 def _format_repair_messages(messages, error: StructuredOutputError):

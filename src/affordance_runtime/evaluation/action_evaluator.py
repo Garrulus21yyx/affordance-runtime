@@ -19,8 +19,9 @@ class ProductionActionEvaluator:
         semantic = request.intent.semantic_action
         if semantic == "activate":
             return _evaluate_activate(before, request, after)
-        requested = request.intent.parameters.get("value")
-        if semantic not in {"fill", "select"} or not isinstance(requested, str):
+        parameter_name = "text" if semantic == "type_text" else "value"
+        requested = request.intent.parameters.get(parameter_name)
+        if semantic not in {"type_text", "select_option"} or not isinstance(requested, str):
             return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
         current = _current_value_evidence(after, request.intent.target_id)
         if current is None:

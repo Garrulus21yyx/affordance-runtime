@@ -51,6 +51,9 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 | observed world | `WorldEnvironment` | current environment | `WorldObservation` | task semantics |
 | legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, LocalObjective |
 | public action candidates | `ContextBuilder` | current action page + public grounded targets | referentially closed `AgentContext.actions` options | legality, private binding, durable identity, screen coordinates |
+| concrete action rows and flat tools | `GroundedToolCompiler` | complete closed action candidates | shared semantic skeleton, minimal exact public ToolSpec, private resolution table | world lookup, legality, provider grouping, fuzzy matching |
+| provider action serialization | `GroundedPolicyContextBinder` + provider transport | already compiled public ToolSpecs | flat Actor request | candidate grouping, selector choice, resolver data |
+| exact tool resolution | grounded catalog resolver | exact emitted schema + private compiler table | existing typed `SelectAction` | world lookup, argument repair to another row, admission |
 | rolling semantic proposal | `LocalObjectiveProposalPort` | TaskGoal + bounded post-observation context | authority-free LocalObjective proposal or typed failure | admission, retained state, action choice |
 | rolling relevance | one `LocalObjective` lifecycle | admitted proposal + current evidence | relevance/evidence/member state | whole-task planning, effect grants |
 | model presentation | `ContextBuilder` | read-only current state + latest canonical `ControlTransition` | disposable `AgentContext`, including an optional bounded `last_transition` projection | retained truth, identity authority, a second transition owner |
@@ -83,59 +86,81 @@ point becomes durable identity.
 
 ## Current action-candidate chain
 
-The model must not join a task requirement, an entity list and a separate bare
-target enum. One current model-boundary projection closes every offered action
-over the public semantics needed to distinguish its target:
+The model does not join a task requirement, entity table, action group, or bare
+target enum. The implemented existing-action path has one compiler projection:
 
 ```text
 WorldObservation + internal ActionSpace/current page
   -> ModelWorldView + one call-local grounding index
   -> ContextBuilder.close_action_candidates
   -> AgentContext.actions option
-       operation + complete public target selector + private-binding lookup key
-  -> GroundedPolicyContextBinder actions.groups
-       shared target semantics once + minimal differing semantic choices
-  -> GroundedToolCatalog schema + opaque action binding
-  -> model returns only operation + semantic choice + declared business value
+       canonical operation
+       + complete bounded target semantics/grounding
+       + exact business schema
+       + destination mode and complete destination candidates
+       + public consequence projection
+       + private current action lookup identity
+  -> GroundedToolCompiler
+       concrete destination rows
+       -> technical partitions
+       -> recursive shared skeleton
+       -> deterministic minimal semantic selector or explicit E-ref fallback
+       -> flat ToolSpec + private exact-resolution table
+  -> GroundedPolicyContextBinder serializes flat ToolSpecs only
+  -> model returns only the emitted semantic/grounding selector fields
+       + declared business values
+  -> resolver validates the exact emitted schema and queries the private table
+  -> SelectAction with exact current action/destination identity
   -> Runtime admission against the still-current internal ActionSpace
 ```
 
 `AgentContext.actions` is a disposable view, not another ActionSpace. The
-catalog consumes `option.operation` and `option.selection_key` from that view; it
-must not rebuild them by joining `target_id` through
-`context.grounding.target_refs`. In the provider message, actionable entity
-semantics occur under compact `actions.groups` and are excluded from
-`world.entities`; the latter contains contextual, currently non-actionable
-entities only. Each group hoists fields common to every legal candidate and
-exposes the smallest bounded public facet set that uniquely distinguishes the
-candidates. The tool enum repeats only those semantic choices as a validation
-constraint; it is not a second semantic projection.
+compiler consumes only those closed candidates; it does not join `target_id` or
+`destination_id` through `AgentContext.world` or the grounding index. The
+provider binder receives already compiled `ToolSpec` objects and neither groups
+nor reinterprets candidates. The Actor request contains no `actions.entities`,
+`actions.groups`, action IDs, canonical target IDs, backend selectors, private
+destination tables, or resolver entries. Actionable world facts represented by
+tools are omitted from only this disposable rendering; necessary contextual
+world facts remain.
 
-This candidate section exists only in `ACTION_SELECTION`. The
-`OBJECTIVE_PROPOSAL` binder does not publish `actions.groups` and does not
-remove those entities from its contextual world. Objective proposal therefore
-cannot acquire click/fill/select authority through the shared context binder.
+`OBJECTIVE_PROPOSAL` receives no action tools and does not apply the
+action-tool-owned world pruning. It cannot acquire action authority through the
+shared context binder.
 
-Target choice follows one bounded facet algebra: `role`, `label`, scalar or
-short scalar-list public state, and one public parent scope as `within.role /
-within.label`. This is not a model-authored selector DSL. Runtime removes fields
-common to a group and finds a deterministic minimal distinguishing subset. For
-two identically labelled "加入购物车" buttons scoped by different products, the
-model sees the button semantics once and chooses only `MacBook Air` or
-`MacBook Pro`. A verified domain grid coordinate is the same generic state
-facet and becomes a choice such as `(1,-2)`. Screen points, bounding boxes, DOM
-selectors, action IDs and binding IDs are never action arguments. Construction
-metadata such as row/column indices and confidence is omitted. Only candidates
-that remain publicly indistinguishable after the supported facets receive an
-explicit call-local E-ref fallback.
+Target and destination choice use the bounded generic semantic-facet algebra.
+The compiler recursively intersects complete records, then chooses the smallest
+injective facet set by deterministic path count, encoding size, and canonical
+path priority. Singleton tools have no target selector. One varying path emits
+one enum; a complete multi-path Cartesian set emits independent fields; a
+sparse set emits one atomic semantic choice containing only real tuples. Thus
+two identically labelled "加入购物车" buttons scoped by different products emit
+only `within_label`, and a verified grid emits
+`semantic_grid_coordinate="(1,-2)"` without exposing its E-ref.
 
-Changing a semantic choice changes the selected GUI entity. Therefore a target outside
-the current tool enum is a semantic-selection failure, not a format-only
-argument repair. Compact structured output constrains `target` to current
-group choices. Native-tool output fails closed on an invalid choice and cannot
-invoke argument repair to substitute another target. If a valid target was
-selected but another business argument needs repair, the repair schema pins
-that exact choice and Runtime verifies it again after repair.
+Required destinations mechanically expand to real `(option, destination)`
+rows before factoring. One-source/one-destination constants disappear;
+source/destination fields are independent only for a complete admitted
+Cartesian product; sparse pairs are atomic. The initial optional-destination
+algebra fails typed as `UNSUPPORTED_DESTINATION_MODE`, and an empty required
+domain fails as `DESTINATION_UNAVAILABLE` with zero dispatch.
+
+E-ref is used only when no supported public facet can identify every row. The
+fallback requires a complete injective same-context mapping whose non-constant
+endpoints are rendered in current grounding. Target-only fallback uses
+`grounding_ref`; complete endpoint products may use qualified source and
+destination refs; sparse pairs use atomic `grounding_pair`. Missing, duplicate,
+stale, or unrendered refs fail as `GROUNDING_FALLBACK_UNAVAILABLE`. A visible
+mark not enumerated by the selected tool remains evidence and is not callable.
+
+Changing any emitted semantic or grounding selector changes the selected
+concrete row. A value outside the exact tool enum is therefore a semantic
+selection failure, not a format repair. Native and compact transports fail
+closed on an invalid choice. If a valid selector was supplied but a business
+argument needs repair, the repair schema pins every selector field and the
+resolver verifies them again. Business properties and required fields are
+copied generically from the closed candidate schema without `fill`/`select`
+branches or `text`/`value` renaming.
 
 This division is consistent with current GUI-agent research, but is an
 engineering inference rather than a claim that those systems use this exact
@@ -243,7 +268,7 @@ The model-facing phases are disjoint:
 ```text
 OBJECTIVE_PROPOSAL
   offered: one bounded LocalObjective proposal contract + non-effectful inspect/ask
-  forbidden: click/fill/select/submit and current action IDs
+  forbidden: activate/type_text/select_option/read and current action IDs
 
 ACTION_SELECTION
   offered: current Runtime action/control tools

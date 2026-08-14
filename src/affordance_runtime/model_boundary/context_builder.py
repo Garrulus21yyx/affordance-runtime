@@ -133,7 +133,7 @@ class ContextBuilder:
             world,
             actions,
         )
-        actions = close_action_candidates(actions, grounding.index)
+        actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         last_transition = project_latest_transition(
             state.recent_control_transitions,
             grounding.index,

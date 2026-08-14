@@ -10,6 +10,12 @@ from affordance_runtime.model_policy.factory import (
     local_objective_proposer_from_environment,
     model_policy_from_environment,
 )
+from affordance_runtime.model_policy.grounded_tool_compiler import (
+    CompiledGroundedTool,
+    ConcreteActionCandidateRow,
+    GroundedToolCompiler,
+    SelectorMode,
+)
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
@@ -46,6 +52,10 @@ __all__ = [
     "model_policy_from_environment",
     "local_objective_proposer_from_environment",
     "GROUNDED_TOOLS_PROTOCOL",
+    "GroundedToolCompiler",
+    "ConcreteActionCandidateRow",
+    "CompiledGroundedTool",
+    "SelectorMode",
     "GroundedActionAdapter",
     "GroundedObjectiveAdapter",
     "GroundedToolDecisionAdapter",

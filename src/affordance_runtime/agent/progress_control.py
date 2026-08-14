@@ -222,9 +222,10 @@ def _postcondition_is_satisfied(
     selection: AdmittedActionSelection,
     observation: WorldObservation,
 ) -> bool:
-    if selection.semantic_action not in {"fill", "select"}:
+    if selection.semantic_action not in {"type_text", "select_option"}:
         return False
-    requested = selection.parameters.get("value")
+    parameter_name = "text" if selection.semantic_action == "type_text" else "value"
+    requested = selection.parameters.get(parameter_name)
     if not isinstance(requested, str):
         return False
     target = next((item for item in observation.targets if item.target_id == selection.target_id), None)

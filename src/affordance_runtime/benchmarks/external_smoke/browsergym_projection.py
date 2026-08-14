@@ -354,18 +354,19 @@ def _binding_pair(
     if not node.executable or not execution_allowed:
         return None, None
     options = node.private_options
-    if semantic == "select" and len(options) > MAX_SELECT_OPTIONS:
+    if semantic == "select_option" and len(options) > MAX_SELECT_OPTIONS:
         return None, None
     binding_id = f"binding:{observation_id}:{ordinal}:{semantic}"
     schema: dict[str, object] = {"type": "object", "properties": {}, "additionalProperties": False}
-    if semantic in {"fill", "select"}:
+    if semantic in {"type_text", "select_option"}:
         value_schema: dict[str, object] = {"type": "string"}
-        if semantic == "select":
+        if semantic == "select_option":
             value_schema["enum"] = [label for label, _ in options]
+        parameter_name = "text" if semantic == "type_text" else "value"
         schema = {
             "type": "object",
-            "properties": {"value": value_schema},
-            "required": ["value"],
+            "properties": {parameter_name: value_schema},
+            "required": [parameter_name],
             "additionalProperties": False,
         }
     public = ActionBinding(

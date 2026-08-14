@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass, replace
 
 from affordance_runtime.adapters.som import BoundingBox, VisualMark, annotate_screenshot
-from affordance_runtime.model_boundary.action_candidate_projection import public_action_operation
+from affordance_runtime.model_boundary.action_candidate_projection import canonical_action_operation
 from affordance_runtime.model_boundary.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
@@ -76,7 +76,7 @@ class GroundingProjection:
         marked_targets = offered.intersection(target_refs).intersection(selected_regions)
         verbs: dict[str, list[str]] = {}
         for option in actions.options:
-            verbs.setdefault(option.target_id, []).append(public_action_operation(option.semantic_action))
+            verbs.setdefault(option.target_id, []).append(canonical_action_operation(option.semantic_action))
         entities = []
         for target in ordered_targets:
             hints: list[str] = []

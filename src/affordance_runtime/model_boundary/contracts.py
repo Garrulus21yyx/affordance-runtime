@@ -57,6 +57,19 @@ class AgentTaskView:
 class AgentDestinationView:
     destination_id: str
     label: str
+    grounding_ref: str = ""
+    semantics: Mapping[str, object] = field(default_factory=dict)
+    grounding_rendered: bool = False
+    grounding_context_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "semantics", freeze_json(self.semantics))
+        if self.grounding_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.grounding_ref) is None:
+            raise ValueError("destination grounding ref is invalid")
+        if any((self.grounding_ref, self.semantics, self.grounding_context_id)) and not all(
+            (self.grounding_ref, self.semantics, self.grounding_context_id)
+        ):
+            raise ValueError("destination candidate projection is incomplete")
 
 
 @dataclass(frozen=True)
@@ -80,42 +93,47 @@ class AgentActionOptionView:
     relevance_reason_codes: tuple[str, ...] = ()
     operation: str = ""
     target_ref: str = ""
-    selection_key: str = ""
-    selection_fields: tuple[str, ...] = ()
     target_semantics: Mapping[str, object] = field(default_factory=dict)
     target_role: str = ""
     target_state: Mapping[str, object] = field(default_factory=dict)
     target_marked: bool = False
+    destination_mode: str = ""
+    grounding_context_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "relevance_reason_codes", tuple(self.relevance_reason_codes))
-        object.__setattr__(self, "selection_fields", tuple(self.selection_fields))
         object.__setattr__(self, "target_semantics", freeze_json(self.target_semantics))
         object.__setattr__(self, "target_state", freeze_json(self.target_state))
         closed = bool(
             self.operation
             and self.target_ref
-            and self.selection_key
-            and self.selection_fields
             and self.target_semantics
             and self.target_role
+            and self.destination_mode
+            and self.grounding_context_id
         )
         if any(
             (
                 self.operation,
                 self.target_ref,
-                self.selection_key,
-                self.selection_fields,
                 self.target_semantics,
                 self.target_role,
                 self.target_state,
+                self.destination_mode,
+                self.grounding_context_id,
             )
         ) and not closed:
             raise ValueError("action candidate target projection is incomplete")
         if self.target_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.target_ref) is None:
             raise ValueError("action candidate target ref is invalid")
+        if self.destination_mode and self.destination_mode not in {"forbidden", "required", "optional"}:
+            raise ValueError("action candidate destination mode is invalid")
+        if self.destination_mode == "required" and not self.destination_required:
+            raise ValueError("required destination mode must conserve the ActionOption contract")
+        if self.destination_mode == "forbidden" and self.destination_required:
+            raise ValueError("forbidden destination mode cannot require a destination")
 
 
 @dataclass(frozen=True)

@@ -150,8 +150,6 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
         option for option in context.actions.options if option.target_id == target.target_id
     )
     assert candidate.target_ref == dict(context.grounding.target_refs)[target.target_id]
-    assert candidate.selection_key == "(1,-2)"
-    assert candidate.selection_fields == ("state.semantic_grid_coordinate",)
     assert candidate.target_state["semantic_grid_coordinate"] == (1, -2)
     assert "grid_coordinate" not in candidate.target_state
     assert "grid_membership" not in candidate.target_state
@@ -164,7 +162,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     public = GroundedPolicyContextBinder._public_context(
         context,
         False,
-        include_action_candidates=True,
+        action_selection=True,
     )
     assert not {
         fact["field"]
@@ -174,9 +172,9 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
 
     action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    click = next(spec for spec in action_catalog.specs if spec.name == "click")
-    target_values = click.input_schema["properties"]["target"]["enum"]
-    assert candidate.selection_key in target_values
+    activate = next(spec for spec in action_catalog.specs if spec.name == "activate")
+    target_values = activate.input_schema["properties"]["semantic_grid_coordinate"]["enum"]
+    assert "(1,-2)" in target_values
     assert candidate.target_ref not in target_values
 
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)

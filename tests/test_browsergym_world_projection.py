@@ -68,7 +68,7 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     public = repr(projected.world)
     assert "private-" not in public
     assert "selector" not in public and "bid" not in public
-    select = next(item for item in projected.world.bindings if item.semantic_action == "select")
+    select = next(item for item in projected.world.bindings if item.semantic_action == "select_option")
     assert select.parameter_schema["properties"]["value"]["enum"] == ("A", "B")
     select_target = next(item for item in projected.world.targets if item.role == "combobox")
     assert select_target.state["option_domain"] == ("A", "B")
