@@ -1,0 +1,2006 @@
+# Interaction Capability Onboarding Design
+
+> **Lifecycle:** CURRENT REFERENCE — PROPOSED BOUNDED DESIGN
+> **Updated:** 2026-08-14
+> **Scope:** interaction vocabulary, adapter support, current action exposure,
+> model-tool projection, execution translation, and action-effect verification
+> **Authority:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
+> and [architecture evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+> remain authoritative
+> **Implementation truth:** [Implementation Status](implementation-status.md)
+
+## 1. Decision
+
+New GUI interactions enter the target Runtime through one capability-onboarding
+chain:
+
+```text
+SemanticActionDefinition             static meaning and public shape
+          +
+AdapterInteractionProfile            backend support declaration
+          +
+adapter PrimitiveTranslator table    backend implementation
+          |
+          v
+CapabilityComposer                    validated static support; grants no current action
+          v
+SurfaceObservation.ActionBinding     current private route for one semantic subject
+          v
+WorldFusion                          canonical target and destination identity
+          v
+ActionSpaceBuilder                   task-legal, current ActionOption authority
+          v
+ContextBuilder                       one closed public action-candidate projection
+          v
+GroundedToolCompiler                 shared skeleton + minimal semantic choice;
+                                     disposable provider schema + private resolver
+          v
+AgentDecision -> admission -> risk/confirmation -> refresh/re-admit if needed
+          -> bind/currentness -> verification plan -> execute once
+          v
+fresh WorldObservation -> comparable SemanticDelta
+          v
+ActionVerificationPlan + ActionEvaluator -> ActionEvaluation
+          v
+TaskEvaluator -> exactly one root ControlTransition
+```
+
+This is registry-like, but it is not a general plugin or tool registry:
+
+- the semantic registry defines what an action name means;
+- an adapter profile declares what a backend can implement in principle;
+- a current `ActionBinding` states what can be bound in one observation;
+- `ActionSpace` alone states what is legal now;
+- model tools are disposable projections of that current authority.
+
+No layer may infer an upstream authority from a downstream projection. In
+particular, registering `scroll` never makes scrolling legal, an adapter's
+support declaration never creates an `ActionOption`, and a model tool never
+becomes an execution route.
+
+The initial contract must support the existing actions plus the next breadth
+families without changing the AgentLoop:
+
+```text
+activate, type_text, select_option, read,
+scroll, press_key, focus, drag_to, set_value, hover
+```
+
+Only `activate`, text entry, selection, read, and already implemented private
+routes are current implementation truth. The remaining names are target
+vocabulary; their adapter slices stay unimplemented until their phase gates
+pass.
+
+## 2. Problem being solved
+
+The current short-loop authority chain is already clear after `ActionSpace` is
+built. The missing chain is how a new interaction family reaches it.
+
+Today that onboarding logic is distributed across:
+
+- primitive-to-semantic maps;
+- role profiles with one action per role;
+- per-adapter binding construction;
+- grounded-tool verb-specific schema construction;
+- tool-call resolution;
+- execution translators;
+- evaluator action-name branches.
+
+This distribution has four concrete consequences.
+
+1. A new parameterized action such as `scroll` must be taught independently to
+   the action vocabulary, role/profile logic, tool compiler, resolver,
+   translator, and evaluator.
+2. The public parameter schema is carried by `ActionBinding` and `ActionOption`
+   but reconstructed by verb in the grounded-tool catalog, so the model may see
+   a second, non-equivalent action contract.
+3. `SemanticTarget.state` and `StateFact` can independently represent the same
+   state, while open relation dictionaries require key-specific identity
+   rewriting.
+4. A broad before/after change can be mistaken for the requested effect even
+   when it does not satisfy an action-specific verification obligation.
+
+The goal is not to add another framework. The goal is to make one bounded
+extension seam so same-shaped capabilities require local adapter work and
+tests, not core-loop restructuring.
+
+### 2.1 Build-versus-integrate boundary
+
+This repository owns the control plane and canonical fact plane. It does not
+reimplement mature surface mechanics.
+
+| Layer | Repository-owned responsibility | Reused or replaceable implementation |
+|---|---|---|
+| Runtime authority kernel | ActionSpace, admission, currentness, risk/confirmation, dispatch truth, effect/task evaluation | none; these are project authority |
+| canonical semantic layer | action vocabulary, capability contracts, identity acceptance, StateFact/RelationFact, provenance, SemanticDelta | generic libraries may help implementation but do not own semantics |
+| thin surface adapters | semantic-to-primitive translation, source-state normalization, typed receipt conversion | BrowserGym, Playwright, browser/desktop accessibility APIs, OS/device automation, ADB/HDC |
+| external capability providers | typed ports, result validation, observation binding, confidence/provenance gates | OCR, OmniParser, ShowUI, GUI-Actor, GLM or other visual/grounding providers |
+| optional strategies | explicit budget/state/stop contract | scroll coverage, viewport tiling, OCR escalation, visual escalation |
+
+The decision rule for every capability is:
+
+1. If it decides legality, identity/currentness, risk, dispatch truth, effect, or
+   completion, Runtime owns it.
+2. If it reads or manipulates a surface, use an existing backend primitive and
+   write only a thin adapter/translator.
+3. If it performs uncertain visual or semantic inference, expose a replaceable
+   typed provider port. Provider results are proposals/evidence, never binding
+   or execution authority.
+4. If it decides how to explore, keep it as an explicit bounded optional
+   strategy. It must use ordinary canonical actions and may not mutate the
+   environment behind AgentLoop.
+
+Consequently, the project must not build a browser layout engine, mouse/keyboard
+injection engine, mobile driver, OCR engine, screenshot engine, or another
+agent planner/loop merely to add an interaction. New low-level machinery is
+admitted only after a repository-visible backend/provider gap is demonstrated.
+
+Native semantics are preferred in this order:
+
+```text
+backend/DOM/AX/device native state or primitive
+-> thin source-specific normalization/translation
+-> bounded generic deterministic inference when native semantics are absent
+-> replaceable model/CV provider only for open visual/semantic uncertainty
+```
+
+Fallback provenance and confidence are retained. Derived or model-proposed
+evidence cannot silently replace conflicting native evidence.
+
+### 2.2 SOTA alignment and inference boundary
+
+As of 2026-08-14, the following production interfaces and research result
+provide compatible evidence for two narrow observations, not one universal
+JSON representation. Vendor documentation was accessed on that date; provider
+tool versions remain the authority for their exact action sets.
+
+- [OpenAI Computer Use](https://developers.openai.com/api/docs/guides/tools-computer-use)
+  presents a small, flat action vocabulary such as click, type, keypress,
+  scroll, and drag over screenshots; the application harness performs the
+  actual execution and returns a fresh screenshot.
+- [Anthropic Computer Use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)
+  follows the same fixed-tool/harness pattern and keeps mouse, keyboard,
+  screenshot, and coordinate mechanics outside model reasoning.
+- [BrowserGym](https://browsergym.readthedocs.io/latest/core/action_space.html)
+  exposes direct primitives such as `click(bid)`, `fill(bid, text)`,
+  `press(bid, key)`, and `drag_and_drop(from_bid, to_bid)` rather than asking
+  the policy to reconstruct an adapter command from a capability graph.
+- [GUI-Actor](https://arxiv.org/abs/2506.03143) is research evidence that
+  semantic action intent and spatial localization benefit from separate
+  grounding machinery; it is not evidence for this repository's exact
+  semantic-facet schema.
+
+These sources support two bounded observations: production harnesses favor a
+small direct action language, and grounding can remain separate from semantic
+action choice. This design combines those observations with the stronger
+Runtime authority already present here:
+
+```text
+model                         Runtime / provider boundary
+-----                         ---------------------------
+canonical operation          current legal ActionSpace
+minimal semantic choice  ->  exact candidate resolution
+declared business values     private binding/currentness
+                              backend or model-backed grounding
+```
+
+The project-specific inference is bounded: compile the current legal
+`ActionSpace` into flat tools whose descriptions contain one shared semantic
+target skeleton and whose parameters contain only the minimal meaningful
+difference among actual candidates. This is not claimed as a published SOTA
+schema. It is the smallest extension that preserves current Runtime legality,
+avoids coordinate/E-ref reasoning when public semantics already distinguish a
+target, and still permits screenshot-native or specialist grounding when they
+do not.
+
+Consequently, normalized entity/capability tables may exist only as internal
+compiler data. They must not be transmitted to the Actor. The Actor must not
+be asked to join an entity table to an operation table before it can act.
+
+## 3. Non-goals
+
+This design does not introduce:
+
+- runtime-loaded plugins or arbitrary third-party action registration;
+- a second `ActionSpace`, action ledger, event store, or replay system;
+- a model-authored selector, coordinate, backend route, or parameter schema;
+- task-name, benchmark-case, page-copy, or known-selector branches;
+- an ontology intended to enumerate every future GUI interaction;
+- automatic retry, alternate-route execution after `SENT`/`SENT_UNKNOWN`, or
+  Runtime-selected recovery actions;
+- mechanical causality claims for open-world visual change;
+- a durable `SemanticDelta` store or state reconstructed from deltas;
+- a requirement that every observed entity be executable.
+
+The supported algebra is finite and fail-closed. Extending that algebra is an
+explicit contract change; adding another adapter implementation of an existing
+shape is not.
+
+## 4. Authority and projection invariants
+
+### 4.1 Sole owners
+
+| Concern | Sole owner | Derived consumers | Forbidden duplicate |
+|---|---|---|---|
+| semantic action meaning and public shape | `InteractionCapabilityRegistry` | adapter validation, schema compiler, verifier routing | tool-name or adapter-local semantic vocabulary |
+| backend support declaration | `AdapterInteractionProfile` | capability composition, binding validation | core `if surface == ...` capability branches |
+| backend primitive implementation | adapter-local `PrimitiveTranslator` table | validated composed capability | semantic meaning or current legality |
+| usable composed backend support | `CapabilityComposer` validation result | observation/binding construction | profile claim treated as executable without a translator |
+| current private route | `ActionBinding` | fusion, ActionSpace, Binder | model tool, E-ref, `ActionOption` payload |
+| current legal membership | `ActionSpace` | ContextBuilder, admission | adapter profile or tool catalog treated as permission |
+| public current action candidate | `AgentActionOptionView` built by `ContextBuilder` | grounded-tool compiler, provider messages | catalog rejoining world and action tables |
+| concrete row expansion, semantic factoring, and private lookup construction | `GroundedToolCompiler` | public ToolSpec, exact resolver | ContextBuilder/provider binder recomputing selectors or candidate products |
+| provider wire serialization | provider binder | model request | regrouping, new semantics, or private lookup data |
+| exact tool-choice lookup | grounded catalog resolver | typed `SelectAction` proposal | fuzzy search, argument repair to another candidate, or authorization |
+| current world state | `StateFact` in `WorldObservation` | target-state and model projections, evaluator | independently authored `SemanticTarget.state` |
+| current relations | typed `RelationFact` in `WorldObservation` | fusion, model projection, semantic diff | open relation dictionaries with identity-bearing values |
+| before/after semantic comparison | pure `SemanticDiffer` result | evaluator, bounded latest-transition projection, liveness | mutable or independently persisted delta authority |
+| action-effect truth | validated `ActionEvaluation` | progress/control transition | receipt, screenshot change, model narration |
+| task truth | validated `TaskEvaluation` | AgentLoopState/control transition | action evaluator, planner, benchmark reward |
+| accepted-decision accounting | one root `ControlTransition` | bounded context/telemetry projections | separate transition digest state |
+
+### 4.2 One-way rule
+
+Every projection is disposable and one-way:
+
+```text
+Registry/Profile -> binding validation
+World + ActionSpace -> AgentActionOptionView -> tools/provider message
+World(before, after) -> SemanticDelta -> evaluator/transition view
+ControlTransition -> AgentContext.last_transition / recorder / benchmark facts
+```
+
+The reverse arrows do not exist. Runtime never reconstructs a binding from a
+tool, state from a target-state view, relations from prose, or a transition
+from a digest.
+
+### 4.3 No repeated semantic rendering
+
+Within each compiled candidate group, complete target records are never
+repeated. Its semantic content is factored as follows:
+
+- fields shared by every candidate in a tool group appear once as constants in
+  its `ToolSpec` description;
+- the smallest public facet set that distinguishes the actual candidates
+  appears once as bounded semantic selector parameters;
+- business parameters appear once in the tool input schema;
+- private action IDs, canonical target IDs, BIDs, backend/CSS selectors,
+  coordinates, and bindings never appear.
+
+There is no public `actions.entities -> actions.groups` join. A provider
+transport may internally normalize tools through such tables, but it must erase
+them before constructing the model request. The Actor receives direct callable
+tools only. It does not copy a complete target record, choose an E-ref when
+semantic facets are sufficient, or map a chosen semantic value back to a
+screenshot mark.
+
+Different canonical operation tools may repeat the minimum target cue required
+to make each call self-contained, such as `Search textbox`; they may not repeat
+complete target records or require the Actor to copy them. Tool schemas may
+repeat selector values as mechanical enum constraints across provider-owned
+schema/message channels, but they must not repeat execution data.
+Observation-local E-refs remain screenshot/world grounding evidence and an
+explicit last-resort selector only when no supported public semantic facet can
+uniquely distinguish the current candidates.
+
+The latest accepted decision appears only in `last_transition`; it does not
+also appear as the newest history entry. Current state appears only in the
+current world/progress/tool sections; the transition view reports changes, not
+another current snapshot. Actionable semantic facts represented by a compiled
+tool are omitted from the contextual world rendering for that same call, while
+the canonical `AgentContext.world` remains unchanged for all other consumers.
+
+## 5. Static semantic action contract
+
+### 5.1 Types
+
+The registry is a small immutable composition dependency. It replaces the
+primitive map as the semantic source of truth.
+
+```python
+class InteractionSubjectKind(StrEnum):
+    ENTITY = "entity"
+    VIEWPORT = "viewport"
+    FOCUSED_CONTEXT = "focused_context"
+
+
+class DestinationMode(StrEnum):
+    FORBIDDEN = "forbidden"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
+class ParameterContractKind(StrEnum):
+    EMPTY = "empty"
+    TEXT = "text"
+    OPTION_VALUE = "option_value"
+    SCROLL = "scroll"
+    KEY = "key"
+    NUMERIC_VALUE = "numeric_value"
+
+
+class VerificationFamily(StrEnum):
+    TARGET_STATE = "target_state"
+    NAVIGATION_CONTEXT = "navigation_context"
+    FOCUS_STATE = "focus_state"
+    SCROLL_STATE = "scroll_state"
+    RELATION_CHANGE = "relation_change"
+    VALUE_STATE = "value_state"
+    SEMANTIC = "semantic"
+
+
+@dataclass(frozen=True)
+class SemanticActionDefinition:
+    semantic_action: str
+    subject_kinds: tuple[InteractionSubjectKind, ...]
+    parameter_contract: ParameterContractKind
+    destination_mode: DestinationMode
+    verification_families: tuple[VerificationFamily, ...]
+
+
+class InteractionCapabilityRegistry(Protocol):
+    registry_id: str
+
+    def resolve(self, semantic_action: str) -> SemanticActionDefinition | None: ...
+    def require(self, semantic_action: str) -> SemanticActionDefinition: ...
+    def validate_binding(
+        self,
+        binding: ActionBinding,
+        subject: SemanticTarget,
+        destinations: tuple[SemanticTarget, ...],
+    ) -> None: ...
+```
+
+`require()` fails with a typed `UNSUPPORTED_SEMANTIC_ACTION`; it never falls
+back to a similar verb. Unknown semantic actions cannot enter a world binding,
+ActionSpace, model tool, or executor.
+
+The registry is code-owned and versioned with the Runtime. Tests may construct a
+small registry fixture, but adapters and benchmark manifests may not register
+new production semantics at runtime.
+
+The initial registry is closed as follows:
+
+| Semantic action | Subjects | Parameters | Destination | Permitted verification families |
+|---|---|---|---|---|
+| `activate` | entity | empty | forbidden | target state, navigation context, semantic |
+| `type_text` | entity | text | forbidden | value state |
+| `select_option` | entity | option value | forbidden | value state, relation change |
+| `read` | entity | empty | forbidden | target state, semantic |
+| `scroll` | viewport | scroll | forbidden | scroll state |
+| `press_key` | entity or focused context | key | forbidden | value, focus, navigation, semantic |
+| `focus` | entity | empty | forbidden | focus state |
+| `drag_to` | entity | empty | required | relation change, target state, semantic |
+| `set_value` | entity | numeric value | forbidden | value state |
+| `hover` | entity | empty | forbidden | target state, semantic |
+
+“Permitted” is a verifier-routing bound, not proof that an observed change
+satisfies an obligation. An exact obligation still has to be derived before
+dispatch and closed by current evidence.
+
+The initial operational meanings are also bounded:
+
+- `read` invokes one read-only surface operation and incorporates its scoped
+  result into the post-operation observation. It does not claim a world
+  mutation; missing scoped evidence remains unknown.
+- `focus` requests exact focus for one current entity and is mechanically
+  confirmed only by a current `focused=true` fact for that entity.
+- `hover` moves the private pointer over one current entity without activation.
+  It is confirmed only by a declared target-state or semantic obligation; a
+  successful pointer command alone is not effect truth.
+- the initial `press_key` domain is exactly `Enter`, `Escape`, `Tab`,
+  `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Backspace`, `Delete`, and
+  `Space`. Printable text uses `type_text`; modifiers/chords are deferred.
+- `scroll.extent=small` means one adapter-defined bounded increment smaller
+  than a viewport, while `page` means one adapter-defined increment no larger
+  than a viewport. Both must be monotonic in the requested direction; public
+  pixels are neither accepted nor promised.
+
+### 5.2 Public parameter profiles
+
+`ActionBinding.parameter_schema` originates the concrete current offer schema.
+After task/currentness grouping, `ActionOption.parameter_schema` is the
+authoritative current admission schema; model views and tools conserve it
+exactly as disposable projections. The registry stores only the schema family
+that validates these schemas. This permits current domains such as a select's
+option enum or a slider's min/max without duplicating those values statically.
+
+Initial public shapes are:
+
+| Contract | Required public fields | Runtime-private fields |
+|---|---|---|
+| `EMPTY` | none | all route details |
+| `TEXT` | `text: string` | keyboard backend, selector, clipboard mechanics |
+| `OPTION_VALUE` | `value: string`, optionally current enum | native option value/handle |
+| `SCROLL` | `direction: up\|down\|left\|right`, `extent: small\|page` | pixel delta, viewport geometry |
+| `KEY` | one bounded named `key` enum for the admitted context | scan code, backend command |
+| `NUMERIC_VALUE` | `value: number` with current min/max when known | drag point, step implementation |
+
+The existing finite public JSON-schema validator remains the syntax gate.
+Each parameter-contract validator adds semantic requirements. Reserved
+selector/transport names (`choice`, `grounding_ref`, `source_grounding_ref`,
+`destination_grounding_ref`, `grounding_pair`, `target`, `source`, and
+`destination`) and private execution names remain forbidden inside business
+parameters. A selector name derived from one semantic facet path is compiler-
+owned and collision-checked; adapters cannot introduce it as a business field.
+
+Action vocabulary is canonical:
+
+```text
+fill/select                old BrowserGym-local words; migrate out
+type_text/select_option    canonical semantic actions
+fill/select_option         may remain private backend primitives
+```
+
+Provider tool names may use short presentation labels, but their private
+binding always names the canonical semantic action and the model response
+resolves to the current canonical `ActionOption`.
+
+### 5.3 Current subject model
+
+All semantic actions retain a non-empty `target_id`. Targetless actions are not
+introduced.
+
+This is an internal authority invariant, not a requirement that every model
+tool contain a `target` parameter. When a compiled tool group has exactly one
+current target, that target is a private tool constant and the Actor supplies
+no selector. When several targets differ by verified public semantics, the
+Actor supplies only those semantic differences. An observation-local E-ref is
+accepted only by the explicit grounding fallback described in Section 8.
+
+- element actions target the canonical element entity;
+- viewport scroll targets a current synthetic semantic entity with role
+  `viewport`;
+- focus-aware keypress targets a current synthetic entity with role
+  `focused_context`, related to the exact focused entity when known;
+- drag targets the source entity and selects a separate current destination;
+- global keyboard or viewport actions are offered only when the adapter can
+  identify and revalidate their current semantic context.
+
+Synthetic semantic subjects are ordinary observation-bound targets. They do
+not expose a window handle, page object, coordinate, or backend session ID.
+
+`press_key` always has a semantic subject. An entity-subject binding means the
+backend can target that exact current entity; a focused-context binding means
+the current observation identifies the exact focused entity. The first
+BrowserGym breadth slice may implement only the offers supported by its pinned
+backend, but it cannot fall back to an implicit global keypress.
+
+## 6. Adapter interaction profile
+
+### 6.1 Contract
+
+Observation capability and interaction capability remain separate.
+
+```python
+@dataclass(frozen=True)
+class AdapterCapabilitySupport:
+    semantic_action: str
+    primitive_actions: tuple[str, ...]
+    subject_kinds: tuple[InteractionSubjectKind, ...]
+
+
+@dataclass(frozen=True)
+class AdapterInteractionProfile:
+    profile_id: str
+    surface: str
+    executor_id: str
+    capabilities: tuple[AdapterCapabilitySupport, ...]
+
+
+class SurfaceAdapter(Protocol):
+    surface: str
+
+    @property
+    def interaction_profile(self) -> AdapterInteractionProfile: ...
+
+    # existing reset/observe/is_current/execute methods remain
+```
+
+The profile states only that the backend and its translator can implement a
+semantic family. It does not contain current target IDs, schemas, destination
+domains, risk, task effects, or binding payloads.
+
+Currentness and dispatch reporting are not optional booleans on individual
+capabilities. Every executable adapter profile must satisfy the shared
+`SurfaceAdapter` contract: exact binding/currentness validation and trinary
+`NOT_SENT/SENT/SENT_UNKNOWN` reporting. A backend that cannot satisfy those
+guarantees does not advertise an executable capability.
+
+At Runtime composition, `CapabilityComposer` validates:
+
+1. every supported semantic action exists in the registry;
+2. every named primitive has exactly one adapter translator;
+3. subject kinds are a subset of the semantic definition;
+4. the environment has a valid post-action observation route;
+5. duplicate profile entries are identical or rejected;
+6. unsupported/unknown combinations fail closed before a run.
+
+Its immutable result is the only usable static backend-support view:
+
+```python
+@dataclass(frozen=True)
+class ComposedAdapterCapability:
+    semantic_definition: SemanticActionDefinition
+    support: AdapterCapabilitySupport
+    translators: Mapping[str, PrimitiveTranslator]
+
+
+@dataclass(frozen=True)
+class ComposedInteractionCapabilities:
+    registry_id: str
+    adapter_profile_id: str
+    capabilities: tuple[ComposedAdapterCapability, ...]
+```
+
+Binding construction consumes this composed result, never a bare profile claim
+or translator map. The profile owns declaration, the translator owns backend
+implementation, and `CapabilityComposer` owns proof that they match. None owns
+current legality.
+
+`WorldEnvironment.interaction_capabilities` may expose the validated aggregate
+for negotiation and diagnostics. It is never consulted as current action
+membership; only observed bindings feed `ActionSpaceBuilder`.
+
+### 6.2 Role to capability offers
+
+A surface role profile produces zero to many current binding offers:
+
+```python
+@dataclass(frozen=True)
+class RoleCapabilityOffer:
+    semantic_action: str
+    primitive_action: str
+    availability_requirements: tuple[str, ...]
+    currentness_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BrowserGymRoleSpec:
+    role: str
+    observable: bool
+    offers: tuple[RoleCapabilityOffer, ...]
+```
+
+Examples:
+
+```text
+textbox  -> type_text/fill + focus/click + press_key/press
+button   -> activate/click + focus/click + hover/hover
+slider   -> set_value/... + press_key/press
+item     -> activate/click + drag_to/drag_and_drop + hover/hover
+```
+
+An offer is still conditional. Disabled, hidden, stale, read-only, unfocused,
+or otherwise ineligible entities produce no executable binding for that
+action. Observable entities remain in the world even when they have no offer.
+
+### 6.3 Adapter translator boundary
+
+Primitive translation is adapter-local and selected from the validated
+profile, for example:
+
+```python
+PrimitiveTranslator = Callable[[BoundActionRequest, PrivateBinding], BackendCommand]
+
+browsergym_translators = {
+    "click": translate_click,
+    "fill": translate_fill,
+    "select_option": translate_select_option,
+    "scroll": translate_scroll,
+    "press": translate_press,
+    "drag_and_drop": translate_drag,
+}
+```
+
+Adding an existing semantic shape to another surface requires only that
+surface's offer/binding builder, primitive translator, and conformance tests.
+It must not modify the AgentLoop, grounded-tool compiler, response parser,
+admission, Binder, or generic evaluator routing.
+
+If a profile claims a primitive but translation is absent, composition fails.
+If an invariant escapes composition, execution returns
+`NOT_SENT + UNSUPPORTED_ACTION`; it cannot silently drop parameters, switch
+primitives, or execute a fallback.
+
+## 7. Current binding and ActionSpace chain
+
+### 7.1 Binding construction
+
+An adapter may emit an `ActionBinding` only after registry validation. Its
+existing fields remain the current private authority:
+
+```text
+world/source observation identity
+target/source-target identity
+semantic action + primitive action
+concrete public parameter schema
+effect/risk/barrier classification
+eligible current destination IDs
+private payload and executor route
+currentness fingerprint/expiry
+```
+
+No action definition or adapter profile contains these observation-local
+values.
+
+Each binding also carries one observation-local `VerificationContract`. It does
+not assert that an effect happened; it contains sealed templates stating which
+concrete postcondition shapes this current offer can support:
+
+```python
+class StatePredicate(StrEnum):
+    VALUE = "value"
+    FOCUSED = "focused"
+    CHECKED = "checked"
+    SELECTED = "selected"
+    EXPANDED = "expanded"
+    SCROLL_X = "scroll_x"
+    SCROLL_Y = "scroll_y"
+    NAVIGATION_CONTEXT = "navigation_context"
+
+
+@dataclass(frozen=True)
+class ParameterExpected:
+    parameter_name: str
+
+
+@dataclass(frozen=True)
+class ConstantExpected:
+    value: object  # None is a valid explicit expected value
+
+
+@dataclass(frozen=True)
+class ToggleBeforeExpected:
+    predicate: StatePredicate
+
+
+ExpectedValueTemplate = ParameterExpected | ConstantExpected | ToggleBeforeExpected
+
+
+@dataclass(frozen=True)
+class FactTransitionTemplate:
+    predicate: StatePredicate
+    expected: ExpectedValueTemplate
+    required_assurance: ObservationAssurance
+
+
+@dataclass(frozen=True)
+class RelationTransitionTemplate:
+    change: Literal["added", "removed"]
+    relation_kind: RelationKind
+    object_from: Literal["destination"]
+    required_assurance: ObservationAssurance
+
+
+@dataclass(frozen=True)
+class FocusTransitionTemplate:
+    required_assurance: ObservationAssurance
+
+
+@dataclass(frozen=True)
+class ScrollTransitionTemplate:
+    direction_parameter: Literal["direction"]
+    required_assurance: ObservationAssurance
+
+
+@dataclass(frozen=True)
+class NavigationTransitionTemplate:
+    required_assurance: ObservationAssurance
+
+
+class SemanticObligationKind(StrEnum):
+    TARGET_RESPONSE = "target_response"
+    HOVER_STATE = "hover_state"
+    READ_RESULT = "read_result"
+
+
+@dataclass(frozen=True)
+class SemanticFallbackTemplate:
+    kind: SemanticObligationKind
+
+
+VerificationContractTemplate = (
+    FactTransitionTemplate
+    | RelationTransitionTemplate
+    | FocusTransitionTemplate
+    | ScrollTransitionTemplate
+    | NavigationTransitionTemplate
+    | SemanticFallbackTemplate
+)
+
+
+class VerificationSatisfaction(StrEnum):
+    ANY_OF = "any_of"
+
+
+@dataclass(frozen=True)
+class VerificationContract:
+    templates: tuple[VerificationContractTemplate, ...]
+    satisfaction: VerificationSatisfaction = VerificationSatisfaction.ANY_OF
+    contract_digest: str = field(init=False)
+```
+
+Examples are `value := parameters.text`, `focused := true`,
+`member_of := destination`, and `navigation_context changed`. The registry
+maps each sealed template class to one permitted verification family and
+validates the whole template: referenced parameter existence and scalar type,
+destination mode, state/relation vocabulary, assurance enum, and expected-value
+type. `VerificationContract` requires one to eight unique templates and the
+initial algebra permits only explicit `ANY_OF` satisfaction. Its digest is
+SHA-256 over canonical typed JSON containing the union discriminator, every
+field in stable template order, and the satisfaction mode. No adapter-authored
+predicate, relation name, parameter path, rubric string, or assurance string
+survives validation.
+
+Bindings may be grouped into one `ActionOption` only when their public schema,
+destination contract, effect classification, and verification contract are
+equivalent. The option conserves the contract/digest for pre-dispatch plan
+derivation; `AdmittedActionSelection` conserves the same immutable contract and
+digest, and `BoundActionRequest` checks equality with the selected binding.
+This is lifecycle conservation, not a second writer. Model tools do not expose
+the contract as an execution argument.
+
+World fusion rewrites source-local target and destination IDs into canonical
+world IDs. It preserves binding provenance and does not merge non-equivalent
+parameter schemas, effect classifications, or destination domains.
+
+### 7.2 ActionSpace authority
+
+`ActionSpaceBuilder` remains the only owner of legal current actions. Before
+grouping bindings, it validates each binding against the registry, adapter
+profile, current target class, and destination mode. It then applies existing
+currentness, conflict, task-effect, risk, and schema-equivalence rules.
+
+The build result has one authority and optional typed diagnostics:
+
+```python
+@dataclass(frozen=True)
+class ActionSpaceBuildResult:
+    action_space: ActionSpace
+    issues: tuple[ActionOfferIssue, ...] = ()
+```
+
+An `ActionOfferIssue` identifies its owning stage, source, semantic action,
+optional canonical subject/destination, and typed code. Observation-local
+issues such as disabled or destination-unavailable originate beside the
+surface binding offers and are identity-rewritten by fusion. Builder-owned
+issues describe only bindings that the builder itself excluded. The builder
+must not reconstruct missing role offers from target labels or roles.
+
+`issues` can therefore explain why recognized offers were excluded, for example
+`CAPABILITY_UNSUPPORTED`, `CURRENT_SUBJECT_UNAVAILABLE`,
+`SCHEMA_CONTRACT_MISMATCH`, or `DESTINATION_UNAVAILABLE`. It cannot add an
+option, be admitted, or be projected as a callable tool. Normal policy context
+does not receive an exhaustive missing-capability list; bounded typed control
+feedback may report a relevant issue after Runtime attribution.
+
+The following remain distinct:
+
+```text
+registry contains scroll
+!= adapter supports scroll
+!= current observation has a scroll binding
+!= task allows the binding's effects
+!= ActionSpace offers scroll now
+!= model selected scroll
+!= scroll was dispatched
+!= scrolling had the intended effect
+```
+
+## 8. Flat semantic tool compilation
+
+### 8.0 Normative Actor-visible envelope
+
+For `ACTION_SELECTION`, the Actor receives exactly these model-visible
+channels, subject to existing budgets:
+
+```text
+task + progress
+bounded last_transition + older verified history
+contextual current world facts not already represented by current tools
+current screenshot(s), optionally with call-local grounding marks
+flat public ToolSpec objects: name + description + input schema
+bounded Runtime control feedback
+```
+
+Shared target semantics, selector meaning, business parameters, and bounded
+risk/effect/consequence cues live inside each public `ToolSpec` description and
+input schema. There is no second action presentation metadata channel. Complete
+candidate records, `actions.entities`, `actions.groups`, action IDs, canonical
+target IDs, BIDs, backend/CSS selectors, coordinates, bindings, destination
+tables, and resolver entries are never transmitted.
+
+Screenshot marks may remain visible because they bind visual evidence to the
+current observation. Visibility does not make a mark callable: the Actor may
+return an E-ref only when that exact value occurs in an emitted
+`grounding_ref` schema. Actionable facts represented in tools are omitted only
+from the disposable Actor world rendering; canonical `AgentContext.world`
+remains complete for evaluators and other consumers. `OBJECTIVE_PROPOSAL`
+receives no action tools, so its contextual world is not pruned by this rule.
+
+### 8.1 Closed candidates stay internal
+
+`ContextBuilder` closes every current `ActionOption` exactly once. The
+resulting `AgentActionOptionView` carries everything required to compile a
+tool without another world join:
+
+```text
+canonical operation
+private current action lookup key
+complete bounded public target semantics
+observation-local target grounding ref
+exact public business-parameter schema + digest
+destination mode + complete eligible destination semantics/grounding refs
+public risk/effect/consequence summary
+verification-contract digest
+```
+
+The existing label-only `AgentDestinationView` is insufficient for this
+contract. Migration extends or replaces it with one closed destination
+candidate carrying the private destination lookup ID, complete bounded public
+destination semantics, and its observation-local grounding ref. The compiler
+must not rejoin a destination ID through `AgentContext.world` to obtain those
+fields.
+
+This is internal compiler input, not the final prompt format. The catalog may
+not look up `target_id` through a second entity table, reclassify the action
+vocabulary, or infer target semantics from a screenshot mark. Full candidates
+remain available for exact private resolution but are never copied into a
+provider response or requested back from the Actor.
+
+The grounding ref and semantic selector have different jobs:
+
+```text
+grounding ref       binds pixels/DOM/AX evidence to this observation
+semantic selector   expresses the meaningful difference the Actor must choose
+private action key  restores the exact current Runtime candidate
+```
+
+They must not be overloaded into one public identity. A semantic selector is
+preferred whenever verified public facets uniquely distinguish the candidates.
+An E-ref is a call-local grounding fallback, not the default action handle.
+
+This assigns one projection responsibility to each boundary:
+
+```text
+ContextBuilder          closes complete public semantics for each legal candidate
+GroundedToolCompiler    factors a candidate set into constants + minimal choices
+provider binder         serializes public ToolSpec objects without regrouping
+resolver                applies the compiler's private exact lookup table
+```
+
+The current `selection_key` / `selection_fields` compatibility path may be used
+to migrate existing behavior, but it cannot remain an independently computed
+model contract. Once the compiler owns semantic factoring, `ContextBuilder`
+must not precompute a competing final selector and the provider binder must not
+reconstruct groups from candidate records.
+
+### 8.2 Mechanical grouping and semantic factoring
+
+Factoring operates on exact concrete selection rows, not directly on a
+destination-bearing option aggregate:
+
+```python
+@dataclass(frozen=True)
+class ConcreteActionCandidateRow:
+    option: AgentActionOptionView
+    destination: AgentDestinationCandidateView | None
+```
+
+Row expansion is closed:
+
+- `FORBIDDEN`: exactly one `(option, None)` row;
+- `REQUIRED`: one `(option, destination)` row for every admitted current
+  destination; an empty domain produces no tool and a typed
+  `DESTINATION_UNAVAILABLE` issue;
+- `OPTIONAL`: unsupported in the initial algebra and fails catalog construction
+  with `UNSUPPORTED_DESTINATION_MODE` until an explicit no-destination row and
+  its verification/risk meaning are designed.
+
+The compiler removes source and destination constants before generating
+selectors. One source/one destination therefore emits neither selector; one
+source/many destinations emits only a destination difference; many sources/one
+destination emits only a source difference. This row set is also the sole input
+to Cartesian-product checks and private resolution-table construction.
+
+The compiler first partitions candidates by exact non-negotiable contract
+shape:
+
+```text
+canonical operation
+business-parameter-schema digest
+subject kind and destination mode
+effect/risk/consequence contract
+verification-contract digest
+```
+
+Within that technical partition it forms stable target-skeleton groups by the
+bounded public fields `(target.role, target.label)`, treating an absent label
+as an explicit value. This is mechanical domain logic: no task noun, page copy,
+site name, benchmark ID, selector, or hand-authored role branch participates.
+Additional fields common to every member, such as `within.role`, are then
+hoisted into the group's constant target skeleton.
+
+For each group the compiler:
+
+1. computes the recursive intersection of every complete public target record;
+2. removes those common fields from candidate selection;
+3. enumerates varying paths from the bounded public facet algebra;
+4. finds the smallest deterministic facet-path set that uniquely identifies
+   every actual candidate;
+5. emits only those values as semantic selector parameters;
+6. retains a private table from the selector tuple to the exact action and
+   destination identities.
+
+The public facet algebra remains bounded to role, label, short scalar/list
+state, one verified public scope, and typed public relations admitted by the
+world projection. The compiler cannot invent a domain parameter such as
+`product`. For the generic path `target.within.label`, it may mechanically emit
+the collision-checked parameter `within_label`, with the original semantic path
+retained in that input field's description and the private resolver.
+
+A facet is eligible for selection only when it is present in the closed public
+candidate, bound to the current observation, non-conflicted, identity-rewritten
+where applicable, and admitted by the bounded scalar/list/relation projection.
+Unknown, conflicted, truncated, private, model-proposed-but-unaccepted, or
+unbounded values may be displayed as uncertainty when otherwise useful, but
+cannot distinguish an executable candidate.
+
+The canonical public target record is immutable typed JSON over `role`,
+optional `label`, bounded `state`, optional `within`, and bounded typed
+relations. `within` is a disposable projection of one accepted public scope
+relation; it is not a second relation owner. Mapping keys use canonical path
+order. Absent and explicit null are different. Ordered lists preserve order;
+only vocabulary-declared set-valued collections are canonical-sorted. Typed
+relations are ordered by their canonical relation tuple. Recursive intersection
+keeps a field only when its canonical typed JSON value is equal in every row.
+
+“Smallest” is reproducible: compare candidate facet sets first by path count,
+then by total canonical encoded size, then by the canonical path-priority tuple
+`state.semantic_grid_coordinate`, `label`, `within.label`, `role`, `within.role`,
+sorted state paths, and sorted relation paths. The first set whose value tuples
+are injective over the concrete rows wins. Minimality is scoped to one stable
+target-skeleton group, not claimed across technically or semantically separate
+tool groups.
+
+For paths `p1..pn`, Cartesian completeness means that the set of observed
+canonical value tuples is exactly `domain(p1) × ... × domain(pn)`, where each
+domain is the distinct current value set for that path. Any missing tuple makes
+the set non-Cartesian.
+
+Selector construction follows these rules:
+
+- one candidate: emit no target selector;
+- one distinguishing path: emit one enum over that path's actual values;
+- several paths whose observed candidate set is the complete Cartesian
+  product: emit the independent path parameters;
+- several paths with a sparse/non-Cartesian candidate set: emit one atomic
+  `choice` enum containing only deterministic, meaningful labels for actual
+  tuples;
+- no supported public facet set distinguishes the candidates: emit the
+  target-only, endpoint-qualified, or atomic-pair grounding selector defined
+  below as the last resort.
+
+The atomic label is canonical compact JSON over qualified semantic paths and
+values, for example
+`{"within.label":"MacBook Air","state.size":"large"}`. Canonical JSON
+escaping prevents delimiter collisions. It never uses action ID, target ID,
+BID, backend selector, coordinate, list position, or task-specific aliases. If
+two actual tuples still render identically, the compiler does not append an
+E-ref to pretend the choice is semantic; it switches the whole selector to the
+explicit grounding fallback or fails catalog construction typed.
+
+`GROUNDING_FALLBACK` is valid only when every concrete row has one non-empty,
+current E-ref for every non-constant source/destination endpoint from the same
+grounding index, and every emitted ref is rendered in at least one Actor-visible
+current-observation channel (marked screenshot or bounded world grounding
+text). Constants are omitted. For a complete Cartesian row set the compiler
+may expose independent `source_grounding_ref` and
+`destination_grounding_ref` enums. For a sparse row set it exposes one atomic
+`grounding_pair` enum whose values are canonical JSON such as
+`{"source":"E12","destination":"E20"}`. A target-only fallback uses
+`grounding_ref`.
+
+The mapping from the complete emitted grounding tuple to a concrete row must
+be complete and injective. Missing, duplicate, stale, cross-context, or
+unrenderable endpoint refs fail catalog construction with
+`GROUNDING_FALLBACK_UNAVAILABLE` and produce zero dispatch. A visible mark that
+is absent from the relevant emitted grounding enum/tuple is evidence only and
+is rejected as a tool argument.
+
+Destination-bearing actions apply the same algorithm to the actual admitted
+source/destination pairs. Independent `source` and `destination` selectors are
+permitted only when the admitted pair set is their complete Cartesian product.
+Otherwise one atomic semantic `choice` represents an actual pair. The compiler
+therefore cannot create an invalid source × destination combination.
+
+### 8.3 Direct model-facing tools
+
+The provider sees flat callable tools, not the normalized candidate graph.
+Shared semantic structure appears once in the `ToolSpec` description; only
+candidate differences and business values are arguments.
+
+For two equal controls under different products, the input candidates may be:
+
+```text
+activate button "加入购物车" within product "MacBook Air"  -> A17 / E31
+activate button "加入购物车" within product "MacBook Pro"  -> A18 / E47
+```
+
+The provider tool is:
+
+```json
+{
+  "name": "activate",
+  "description": "Activate the button '加入购物车' within a product.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "within_label": {
+        "type": "string",
+        "description": "target.within.label",
+        "enum": ["MacBook Air", "MacBook Pro"]
+      }
+    },
+    "required": ["within_label"],
+    "additionalProperties": false
+  }
+}
+```
+
+The Actor returns only:
+
+```json
+{"within_label": "MacBook Pro"}
+```
+
+Runtime privately resolves that value to `A18`, its canonical target, current
+grounding evidence, and exact binding. The Actor never copies the button record
+or emits `E47`.
+
+The same generic rule handles a verified grid:
+
+```json
+{
+  "name": "activate",
+  "description": "Activate a cell in the current semantic grid.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "semantic_grid_coordinate": {
+        "type": "string",
+        "enum": ["(-1,1)", "(0,1)", "(1,1)", "(1,-2)"]
+      }
+    },
+    "required": ["semantic_grid_coordinate"],
+    "additionalProperties": false
+  }
+}
+```
+
+The selected coordinate maps privately to the exact current E-ref/action. The
+model is not required to derive `(1,-2) -> E38` from a separate candidate list.
+
+When only one Search textbox supports text entry, its identity is a tool
+constant and the tool contains only the business value:
+
+```json
+{
+  "name": "type_text",
+  "description": "Replace the value of the textbox 'Search'.",
+  "input_schema": {
+    "type": "object",
+    "properties": {"text": {"type": "string"}},
+    "required": ["text"],
+    "additionalProperties": false
+  }
+}
+```
+
+If the same target supports `type_text`, `focus`, and `press_key`, the compiler
+emits direct tools for those canonical operations. It does not publish a
+capability graph that the Actor must traverse. A semantically redundant action
+is not emitted merely because the backend has a primitive: for example,
+`press_key` on an entity may already include exact focus-before-key semantics,
+while a separate `focus` offer exists only when changing focus itself is a
+legal useful effect.
+
+Canonical operation names are retained whenever all current candidates for
+that operation fit one bounded schema without admitting a false candidate
+combination. When one operation requires several incompatible public schemas
+or independently described target-skeleton groups, provider-call-local names
+use a deterministic digest suffix while each description carries the group's
+shared semantic skeleton. Semantic page text is not inserted into tool names
+because provider naming alphabets and length limits differ.
+
+Digest material is canonical typed JSON over the canonical operation, common
+target skeleton, selector shape, exact business schema, destination mode/pair
+shape, effect/risk/consequence contract, and verification-contract digest. The
+compiler begins with eight SHA-256 hexadecimal characters and lengthens every
+colliding prefix deterministically until unique; different full digests that
+still produce one name fail catalog construction. The suffix is transport
+identity, not Actor-selected target identity.
+
+Candidate/action pagination also bounds provider tool count. The compiler does
+not merge semantically or technically incompatible groups merely to meet a
+provider limit; it exposes the existing typed next-page control instead. A
+provider transport may safely pack logical groups into one canonical-operation
+tool only when its schema preserves exactly the same actual choices and private
+resolution relation.
+
+### 8.4 Generic schema compilation and resolution
+
+After semantic factoring, tool compilation is shape-generic:
+
+1. add the derived semantic selector fields, if any;
+2. add an atomic pair/tuple `choice` when independent fields would admit an
+   invalid Cartesian product;
+3. add target-only, endpoint-qualified, or atomic-pair grounding selectors only
+   for the explicit semantic-indistinguishability fallback;
+4. copy business parameter properties and the required set exactly, without
+   renaming or verb-specific branches;
+5. reject selector/business-name collisions and schemas outside the finite
+   public subset;
+6. retain one private resolver entry for every actual admitted candidate or
+   source/destination pair.
+
+The compiler output keeps public presentation and private resolution adjacent
+without conflating them:
+
+```python
+class SelectorMode(StrEnum):
+    CONSTANT_TARGET = "constant_target"
+    SEMANTIC_FIELDS = "semantic_fields"
+    ATOMIC_SEMANTIC_CHOICE = "atomic_semantic_choice"
+    GROUNDING_FALLBACK = "grounding_fallback"
+
+
+@dataclass(frozen=True)
+class CompiledSelectorField:
+    public_name: str
+    semantic_paths: tuple[str, ...]
+    input_schema: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class PrivateResolutionEntry:
+    selector_values: Mapping[str, object]
+    action_id: str
+    destination_id: str | None
+
+
+@dataclass(frozen=True)
+class CompiledGroundedTool:
+    canonical_operation: str
+    public_spec: ToolSpec
+    selector_mode: SelectorMode
+    selector_fields: tuple[CompiledSelectorField, ...]
+    private_resolutions: tuple[PrivateResolutionEntry, ...]
+```
+
+`public_spec` is the only model-facing member. Selector metadata is not emitted
+as a second structure, although its bounded path description may be compiled
+into `public_spec`. Action IDs, destination IDs, grounding bindings, and
+resolution entries remain Runtime-private. `CompiledGroundedTool` is disposable
+and bound to the same context / ActionSpace identity as its source candidates;
+it is not a registry entry, ActionSpace copy, or durable tool installation.
+
+The resolver validates the provider call against the exact emitted schema,
+then performs only these transformations:
+
+```text
+tool name + semantic/atomic/grounding selector tuple
+                                    -> exact current ActionOption.action_id
+optional destination/pair selector -> exact current semantic destination_id
+business fields                    -> parameters unchanged
+```
+
+It returns the existing typed `SelectAction`. It never defaults a required
+destination to `""`, renames `text` to `value`, substitutes another candidate
+during argument repair, performs an E-ref/world join, or searches for a similar
+action.
+
+Admission then repeats authoritative membership, schema, and destination
+checks against the still-current internal `ActionSpace`. Tool validation and
+private resolution are early format/identity gates, not authorization.
+
+Provider transports may serialize the same compiled catalog differently, but
+they cannot change canonical operation meaning, selector candidates, business
+parameter contracts, or private resolution. Raw normalized candidate tables
+remain compiler diagnostics only and are excluded from every Actor request.
+
+## 9. Canonical state and relation model
+
+### 9.1 StateFact is the state truth
+
+`WorldObservation.facts` becomes the sole writable canonical state. During
+migration, `SemanticTarget.state` may remain as a compatibility field only if
+it is produced by one deterministic function:
+
+```python
+project_target_state(
+    target_id: str,
+    facts: tuple[StateFact, ...],
+    conflicts: tuple[ObservationConflict, ...],
+) -> Mapping[str, object]
+```
+
+Construction validates exact equality between that projection and
+`SemanticTarget.state`. Adapters and fusion may not write both independently.
+After all consumers use the fact index, the compatibility field is deleted.
+
+Focus, selected/checked state, value, scroll position/extent, min/max/step,
+ordinal index, and current URL/page-context fields follow this rule. A state
+value that lacks current source identity or is conflicted remains unknown; a
+projection cannot settle it.
+
+### 9.2 Typed relation facts
+
+Identity-bearing relations move from `SemanticTarget.relations: dict` to a
+typed edge collection:
+
+```python
+class RelationKind(StrEnum):
+    CHILD_OF = "child_of"
+    LABELLED_BY = "labelled_by"
+    MEMBER_OF = "member_of"
+    ROW_OF = "row_of"
+    CELL_OF = "cell_of"
+    HEADER_FOR = "header_for"
+    PRECEDES = "precedes"
+
+
+class RelationProvenance(StrEnum):
+    NATIVE = "native"
+    DERIVED = "derived"
+
+
+@dataclass(frozen=True)
+class RelationEvidence:
+    source_id: str
+    provenance: RelationProvenance
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class RelationFact:
+    relation_id: str
+    subject_id: str
+    kind: RelationKind
+    object_id: str
+    evidence: tuple[RelationEvidence, ...]
+```
+
+`SurfaceObservation.relations` and `WorldObservation.relations` are the sole
+typed edge collections. A surface relation starts with exactly one evidence
+record. Fusion computes canonical edge identity from `(subject, kind, object)`,
+deduplicates that edge, and conserves all distinct source evidence records.
+Contradictory exclusive edges produce typed conflicts rather than winner-only
+deduplication.
+
+Only one canonical direction is stored for each relation; inverse views are
+derived. Scalar attributes such as `ordinal_index` remain state facts rather
+than becoming pseudo-relations.
+
+Because every identity endpoint is typed, fusion rewrites `subject_id` and
+`object_id` generically. It no longer needs key lists such as `parent_id`,
+`label_for_id`, and `child_ids`. Unknown relation kinds fail contract
+validation instead of surviving as partially rewritten dictionaries.
+
+Native and derived edges remain distinguishable. Fusion may deduplicate the
+same canonical edge while preserving its source records; a derived relation
+cannot overwrite a conflicting native relation. Confidence ranks evidence
+only and never grants action authority.
+
+Relation meaning and conflict rules are owned by one immutable
+`RelationVocabulary`, not by fusion branches:
+
+| Kind | Objects per subject | Subjects per object | Additional invariant |
+|---|---:|---:|---|
+| `CHILD_OF` | at most one | many | acyclic |
+| `LABELLED_BY` | many | many | none |
+| `MEMBER_OF` | many | many | none |
+| `ROW_OF` | at most one | many | acyclic |
+| `CELL_OF` | at most one | many | acyclic |
+| `HEADER_FOR` | many | many | none |
+| `PRECEDES` | many | many | acyclic, irreflexive |
+
+Two current authoritative native assertions that exceed an at-most-one rule or
+create a prohibited cycle produce typed relation conflicts. Derived evidence
+cannot resolve that conflict. Unknown relation kinds fail closed before
+fusion. Extending relation vocabulary requires adding its cardinality,
+cycle/inverse behavior, fusion properties, and delta properties together.
+
+### 9.3 Cross-observation identity continuity
+
+Adapters own source-local identity evidence; they do not directly declare
+cross-observation canonical identity. They may emit a typed proposal:
+
+```python
+class ContinuityBasis(StrEnum):
+    BACKEND_STABLE_ID = "backend_stable_id"
+    EXPLICIT_PROVIDER_CORRESPONDENCE = "explicit_provider_correspondence"
+
+
+@dataclass(frozen=True)
+class SourceEntityContinuityProposal:
+    before_source_observation_id: str
+    after_source_observation_id: str
+    before_source_target_id: str
+    after_source_target_id: str
+    basis: ContinuityBasis
+    basis_digest: str
+
+
+@dataclass(frozen=True)
+class AcceptedEntityContinuity:
+    before_observation_id: str
+    after_observation_id: str
+    before_canonical_target_id: str
+    after_canonical_target_id: str
+    source_proposals: tuple[SourceEntityContinuityProposal, ...]
+```
+
+`WorldIdentityResolver` is the sole owner that accepts canonical continuity.
+It validates exact before/after lineage, source-profile compatibility, basis
+digest format, endpoint existence, one-to-one mapping, role compatibility, and
+absence of current identity conflicts. Backend-stable evidence must come from
+the same adapter identity domain; provider correspondence must be an explicit
+typed provider result, never a label/ordinal/coordinate heuristic.
+
+Rejected, missing, one-to-many, many-to-one, cross-domain, or conflicting
+proposals produce typed unknown continuity. `SemanticDiffer` consumes only the
+accepted map. Fusion owns canonical identity within one observation;
+`WorldIdentityResolver` owns continuity between two observations. Neither
+adapter proposals nor model E-refs are identity authority.
+
+## 10. SemanticDelta without a second state owner
+
+### 10.1 Contract
+
+`SemanticDiffer` is a pure Runtime-owned comparison over two immutable worlds:
+
+```python
+class DeltaComparability(StrEnum):
+    COMPARABLE = "comparable"
+    PARTIAL = "partial"
+    NOT_COMPARABLE = "not_comparable"
+
+
+@dataclass(frozen=True)
+class SemanticDelta:
+    before_observation_id: str
+    after_observation_id: str
+    comparability: DeltaComparability
+    compared_source_scopes: tuple[str, ...]
+    appeared_entity_ids: tuple[str, ...]
+    disappeared_entity_ids: tuple[str, ...]
+    changed_facts: tuple[FactChange, ...]
+    added_relations: tuple[RelationFact, ...]
+    removed_relations: tuple[RelationFact, ...]
+    unknown_scopes: tuple[DeltaScopeIssue, ...]
+```
+
+The differ applies these laws:
+
+- source/acquisition coverage must be comparable before absence becomes
+  disappearance or removal;
+- stable canonical entity identity is required across observations;
+- conflicts and partial/truncated coverage produce typed unknown scopes;
+- fact changes retain before and current after evidence refs;
+- relation changes compare typed canonical edges;
+- screenshot digest changes are artifact changes, not entity/fact changes;
+- the value states only temporal difference, never causal attribution.
+
+Comparable source scope is an exact tuple of surface, source-profile contract,
+page/incarnation epoch, and declared inventory/coverage domain. Entity IDs are
+comparable only when `WorldIdentityResolver` accepts their typed continuity.
+An epoch change without accepted cross-epoch continuity makes entity absence
+unknown rather than disappearance.
+
+An optional `ActionSpaceDelta` compares stable semantic option keys rather than
+observation-scoped action IDs. Its base key is exactly:
+
+```text
+(semantic_action, canonical_target_id, effect_category, semantic_effects,
+ parameter_schema_digest, verification_contract_digest,
+ destination_mode, sorted_canonical_destination_ids, risk, barrier)
+```
+
+It reports availability change for context and liveness; the after
+`ActionSpace` remains the sole current selection authority. If target or
+destination identity is not comparable, the option enters an unknown scope
+rather than an added/removed set.
+
+### 10.2 Lifetime
+
+The delta is computed once after fresh acquisition and before action
+evaluation. If retained, it is an immutable child of the same root
+`ControlTransition`. It is not independently updated, indexed as a ledger, or
+used to reconstruct either observation.
+
+The bounded model projection may include only verified, comparable changes
+needed for the latest transition. Older history keeps verified semantic
+anchors, not raw deltas or old screenshots indefinitely.
+
+## 11. Action-specific effect verification
+
+### 11.1 Verification is planned before dispatch
+
+After action admission and construction of the final current
+`BoundActionRequest`, but before dispatch, Runtime derives one immutable
+`ActionVerificationPlan` from:
+
+```text
+admitted ActionOption + current target/facts/relations
++ selected parameters/destination + semantic action definition
+```
+
+The plan is bound to request ID and before observation ID. It cannot authorize
+execution and is not sent to the adapter.
+
+```python
+@dataclass(frozen=True)
+class ActionVerificationPlan:
+    request_id: str
+    before_observation_id: str
+    obligations: tuple[RuntimeVerificationObligation, ...]
+    semantic_fallback_allowed: bool
+```
+
+The plan builder instantiates only the option's validated
+`VerificationContract`. It does not
+choose a postcondition from an action name, role, label, or benchmark task.
+When no concrete mechanical template applies, it can produce only an explicit
+semantic fallback obligation permitted by the registry.
+
+Task success criteria, requested outputs, and incidental task progress never
+become action-effect obligations. `CRITERION_PROGRESS` and task-derived
+`ARTIFACT_CREATED` are removed from this action-evaluation path and remain
+exclusively under `TaskEvaluator`. A future action-specific artifact effect
+requires a new sealed registry-permitted template bound to the current action;
+it cannot be inferred from an output request.
+
+The current obligation algebra is extended, not replaced. Concrete families
+include:
+
+```text
+FACT_TRANSITION_TO(subject, predicate, expected)
+RELATION_ADDED/REMOVED(subject, kind, object)
+FOCUS_TRANSITION_TO(entity)
+SCROLL_STATE_CHANGED(viewport, direction)
+NAVIGATION_CONTEXT_CHANGED(context)
+```
+
+An unscoped `STRUCTURAL_WORLD_CHANGE` is not sufficient proof of an action
+effect. It may remain an observation signal that triggers semantic validation,
+but it cannot produce `EFFECT_CONFIRMED` by itself.
+
+### 11.2 Evaluator input
+
+The action evaluator receives one closed input only when post-action acquisition
+succeeded:
+
+```python
+@dataclass(frozen=True)
+class ActionEvaluationInput:
+    request: BoundActionRequest
+    result: ActionResult
+    before: WorldObservation
+    after: WorldObservation
+    delta: SemanticDelta
+    verification: ActionVerificationPlan
+```
+
+Preparation is typed:
+
+```python
+ActionEvaluationPreparation = (
+    ActionEvaluationReady(input=ActionEvaluationInput(...))
+    | ActionEvaluationUnavailable(execution_outcome, reason_code)
+)
+```
+
+`CAPABILITY_UNAVAILABLE` or `FAILED` post-action acquisition therefore creates
+no fabricated after observation, delta, evidence index, `ActionEvaluation`, or
+`TaskEvaluation`. The root `ControlTransition` retains the original dispatch
+truth and typed acquisition failure, and control treats the effect as
+unresolved without replay. `ActionEvaluation.UNKNOWN` is used only when a
+fresh after observation exists but cannot settle the obligation.
+
+Mechanical evaluation considers only comparable delta entries and evidence
+that satisfy a declared obligation. Examples:
+
+- `type_text` confirms the target value transitioned to the admitted text;
+- `select_option` confirms the target value/selection transitioned to the
+  admitted option;
+- `scroll` confirms scroll state changed in the admitted direction, or remains
+  `UNKNOWN` when the adapter cannot expose a mechanically checkable state;
+- `press_key` confirms only a key-specific state/navigation obligation, not
+  any page change;
+- `drag_to` confirms the declared relation/state change involving the source
+  and admitted destination;
+- `set_value` confirms the target value transitioned to the admitted number;
+- `activate` confirms a target-state or navigation-context obligation;
+  unrelated world or task-progress change does not qualify.
+
+Screenshot or layout change is weak evidence that may justify a model-backed
+semantic verifier. The semantic verifier must bind its proposal to the current
+request, before/after observations, applicable obligation, and current public
+evidence. Runtime validation still owns the accepted `ActionEvaluation`.
+
+`ActionResult` remains transport truth only. `SENT_UNKNOWN` is never retried,
+and a fresh observation failure cannot rewrite dispatch truth.
+
+### 11.3 Exact temporal order
+
+The effectful path has one order:
+
+```text
+current context/action selection
+-> membership and public-parameter admission
+-> risk classification and semantic confirmation
+-> if confirmation/delay requires refresh:
+     fresh observation -> rebuild ActionSpace -> compare the complete confirmed
+     option digest
+     -> if identical: re-admit the exact subject/parameters/destination
+     -> if changed: repeat risk/barrier classification and obtain any newly
+        required confirmation, or return a new policy turn
+-> bind one exact current option/route
+-> final non-mutating currentness probe
+-> construct BoundActionRequest against that authoritative before observation
+-> instantiate ActionVerificationPlan from its conserved template
+-> dispatch once
+-> ExecutionOutcome(result + typed post-action acquisition)
+-> if acquired: SemanticDelta -> ActionEvaluation -> TaskEvaluation
+-> close exactly one root ControlTransition
+```
+
+Nothing that can refresh, substitute, or mutate the before world occurs between
+final currentness, plan instantiation, and dispatch. If final currentness or
+plan instantiation fails, the call is `NOT_SENT`; Runtime reobserves or returns
+control and never silently rebinds after the verification plan is frozen.
+
+The complete confirmed-option digest covers semantic action, canonical target,
+public parameter values, canonical destination, effect category/effects, risk,
+consequence/reversibility, barrier, parameter-schema digest, and verification-
+contract digest. Matching only target and parameters is insufficient.
+
+## 12. Failure and unavailability algebra
+
+Failures are attributed at the boundary that owns them:
+
+| Boundary | Typed outcome | Dispatch |
+|---|---|---:|
+| unknown semantic action in registry | `UNSUPPORTED_SEMANTIC_ACTION` composition/contract error | none |
+| adapter does not support a known action | `CAPABILITY_UNSUPPORTED` capability resolution | none |
+| recognized action lacks a current subject/destination | `CURRENT_SUBJECT_UNAVAILABLE` / `DESTINATION_UNAVAILABLE` offer issue | none |
+| optional destination mode reaches the initial compiler | `UNSUPPORTED_DESTINATION_MODE` catalog error | none |
+| semantic candidates need E-ref fallback but refs are incomplete, ambiguous, stale, or unrendered | `GROUNDING_FALLBACK_UNAVAILABLE` catalog error | none |
+| model selects no current ActionSpace member | `ACTION_OUTSIDE_ACTION_SPACE` admission issue | none |
+| public parameters/destination violate current option | `INVALID_ACTION_PARAMETERS` admission issue | none |
+| binding is stale | existing `STALE_BINDING` | `NOT_SENT` |
+| currentness cannot be checked | existing `CURRENTNESS_UNAVAILABLE` | `NOT_SENT` |
+| claimed primitive has no translator | composition failure; escaped invariant maps to `UNSUPPORTED_ACTION` | `NOT_SENT` |
+| backend call fails before send | typed adapter error | `NOT_SENT` |
+| backend accepted/completed call | existing result | `SENT` |
+| send may have happened but receipt is uncertain | existing result | `SENT_UNKNOWN` |
+| post-action acquisition is unavailable/failed | typed `ExecutionOutcome`; evaluation unavailable | unchanged |
+| acquired fresh evidence cannot settle obligation | `ActionEvaluation.UNKNOWN` | unchanged |
+
+Capability-unavailable is not overloaded onto `ActionResult` when no execution
+request exists. Conversely, an executor cannot use capability diagnostics to
+pretend a dispatched call was not sent.
+
+## 13. Capability examples through the same chain
+
+### 13.1 Viewport scroll
+
+```text
+registry: scroll(VIEWPORT, SCROLL, no destination, SCROLL_STATE)
+adapter profile: BrowserGym scroll primitive supported
+observation: viewport target + scroll facts + current scroll binding
+ActionSpace: task-legal scroll option
+tool: scroll(direction, extent) when one viewport is current; otherwise add
+      only the minimal semantic container selector
+translator: public direction/extent -> private backend deltas
+verification: comparable viewport scroll/content-window obligation
+```
+
+No pixel delta or viewport geometry crosses the model boundary.
+
+### 13.2 Focus-aware keypress
+
+```text
+registry: press_key(FOCUSED_CONTEXT, KEY, no destination, typed families)
+observation: focused_context target related to exact focused entity
+binding: exists only for admitted named keys and current focus
+tool: press_key(key); focused target is a private constant
+translator: named key -> backend press command
+verification: focus/value/navigation action obligation or UNKNOWN
+```
+
+A stale or unknown focus context creates no binding. The model cannot send a
+keypress to an implicit global target.
+
+At a scroll boundary, a current `can_scroll_<direction>=false` fact prevents
+that directional binding. If the binding was valid before dispatch but complete
+post-state proves no directional movement, evaluation is
+`NO_EFFECT_CONFIRMED`; incomplete/non-comparable post-state is `UNKNOWN`.
+
+### 13.3 Drag and drop
+
+```text
+registry: drag_to(ENTITY, EMPTY, destination REQUIRED, RELATION_CHANGE)
+observation: source entity + eligible canonical destinations
+binding: private source/destination handles + complete public semantics
+tool: drag_to(source semantic selector, destination semantic selector) only
+      for a complete admitted Cartesian product; otherwise one atomic pair choice
+resolver: semantic selector/pair round-trips to the exact admitted option
+verification: source/destination relation or target-state obligation
+```
+
+Destination identity follows the same currentness and grounding rules as the
+source. Coordinates remain private.
+
+### 13.4 Slider or spinbutton value set
+
+```text
+registry: set_value(ENTITY, NUMERIC_VALUE, no destination, VALUE_STATE)
+observation: value/min/max/step StateFacts + current binding schema
+tool: set_value(value) for one target; otherwise minimal semantic target choice
+translator: adapter chooses native set, key sequence, or drag privately
+verification: exact value transition with current structural evidence
+```
+
+Different private techniques remain equivalent only when they implement the
+same current semantic contract and verification obligation.
+
+## 14. Migration plan
+
+The numbered work items motivating this design are a coverage checklist, not a
+mandatory implementation DAG. The architectural requirement is to settle the
+shared owners and extension seam before adding backend-specific behavior.
+
+### 14.1 Gap coverage matrix
+
+| Required gap | Covered by this design | Resulting shared owner |
+|---|---|---|
+| activate false-positive | action-specific sealed verification contract and evaluator input | validated `ActionEvaluation` |
+| canonical action vocabulary | finite semantic definitions and schema families | `InteractionCapabilityRegistry` |
+| generic grounded parameters and destination | semantic-facet compiler, generic business schema, non-Cartesian-safe destination factoring, exact private resolver | `ContextBuilder` candidate closure + `GroundedToolCompiler`/resolver |
+| minimal capability descriptor | profile + translator + composition validation | `AdapterInteractionProfile` / `CapabilityComposer` |
+| StateFact single truth | strict fact-derived target-state migration | `WorldObservation.facts` |
+| one role to multiple actions | `RoleCapabilityOffer` tuple | current adapter binding offers |
+| scroll and focus-aware press | viewport/focused subjects, bounded schemas, translators and obligations | ordinary ActionSpace/execution/evaluation chain |
+| typed relations and semantic delta | typed edge vocabulary, continuity acceptance and comparable diff | `WorldObservation.relations` / pure `SemanticDiffer` |
+| drag/slider/OCR/tiling/CLI breadth | adapter, provider, strategy and product-entrypoint boundaries | existing owner for each layer; no new kernel |
+
+Coverage in this table means the target interface and authority boundary are
+defined. It does not mean every implementation is complete or that one row must
+be committed before the next row's code can be drafted.
+
+### 14.2 Wave A — land the shared onboarding spine
+
+Land the smallest coherent contract foundation with no new GUI behavior:
+
+- canonical `SemanticActionDefinition` vocabulary and sealed verification
+  contract;
+- minimal `AdapterInteractionProfile` plus translator/composition validation;
+- exact generic parameter/destination conservation from `ActionBinding` through
+  `ActionOption`, public candidate, tool schema, resolver and admission;
+- flat semantic-tool compilation that hoists shared target structure, exposes
+  only minimal public differences, and uses E-ref solely as an explicit
+  indistinguishability fallback;
+- migrate the current ContextBuilder `selection_key`/provider `actions.groups`
+  compatibility path into that single compiler and delete the parallel
+  regrouping path after shadow equivalence passes; shadow tables are telemetry-
+  only and are never included in an Actor request;
+- `StateFact` as the sole state write path with strict target-state derivation;
+- current binding/ActionSpace remaining distinct from static support;
+- typed unavailable/invalid/stale boundaries and property tests.
+
+These contracts should be designed and reviewed together because they form one
+extension seam. Their internal implementation commits may be split in whatever
+order keeps the branch reviewable; the design does not prescribe a vocabulary-
+versus-tool-versus-profile micro-sequence.
+
+Exit: the new contracts can represent every existing activate/text/select/read
+binding and tool shape in compatibility/shadow mode, but do not yet change
+offered actions, dispatch or evaluator results.
+
+### 14.3 Wave B — migrate existing actions and correct effect authority
+
+Make existing behavior the first consumer of the spine before adding a new
+capability:
+
+- normalize public semantic names while retaining backend primitive names;
+- emit sealed verification contracts for existing value, checked, selected,
+  expanded and navigation-context effects;
+- conserve their contract/schema digests through binding, ActionSpace,
+  projection, resolver, admission and bound request;
+- run compatibility/shadow assertions before switching authority;
+- replace activate evaluation that accepts unrelated structural, layout or
+  screenshot change with exact contract obligations;
+- return `UNKNOWN` when no current contract/evidence can settle the effect, and
+  retain regressions for unrelated changes;
+- delete action-name postcondition guessing only after all current producers
+  supply the shared contract.
+
+Exit: existing actions traverse the new spine, current supported activation
+families do not lose their ordinary control flow, and arbitrary temporal change
+can no longer confirm effect truth.
+
+### 14.4 Wave C — Step 14 vertical capability slice
+
+Use BrowserGym scroll and keypress as the first proof that the spine works:
+
+- change a role from one action to multiple current `RoleCapabilityOffer`s;
+- normalize native scroll/active-element/AX state into current viewport,
+  entity/focused-context `StateFact`s;
+- reuse existing BrowserGym/session/Playwright primitives through thin
+  translators;
+- offer bounded `scroll`/`press_key` only when the current subject and backend
+  support are valid;
+- preserve ordinary admission, risk, currentness, dispatch receipt,
+  post-action acquisition and action-specific verification;
+- run targeted properties, adapter integrations and the selected capability
+  cohort before broader gestures.
+
+Exit: scroll and keypress add no BrowserGym branch to the Runtime kernel and do
+not require a second action/tool/evaluator pipeline.
+
+### 14.5 Wave D — Step 15 relational and changing-world slice
+
+Implement the already-designed relation/delta interfaces when Step 15 needs
+them:
+
+- introduce `RelationFact`, `RelationVocabulary`, cardinality/cycle rules and
+  Runtime-owned cross-observation continuity acceptance;
+- normalize native DOM/AX/device table, row, cell, header, list, label,
+  parent/child and ordering semantics first;
+- use bounded deterministic geometry/parentage/regular-layout inference only
+  when native semantics are absent, retaining `DERIVED` provenance/confidence;
+- compute comparable `SemanticDelta` over canonical entities/facts/relations;
+- share that one delta with verification, liveness, dynamic-target lifecycle
+  and bounded latest-transition projection.
+
+Exit: no consumer owns a private before/after differ, and the project still
+does not rebuild HTML layout or ask a screenshot model for native structure by
+default.
+
+### 14.6 Wave E — evidence-driven breadth and cutover
+
+Implement `drag_to`, `set_value`, hover, OCR/tiling, and bounded traversal as
+separate adapter/provider/strategy slices over the same contracts:
+
+- drag/hover/value actions reuse BrowserGym, Playwright, AX/UIA, OS pointer or
+  device primitives through thin translators;
+- slider/spinbutton prefer native value setters or bounded key primitives over
+  visual coordinate drag;
+- OCR and visual-only grounding use replaceable typed provider ports;
+- screenshot tiling reuses capture backends while Runtime owns tile epoch,
+  offset, overlap, budget and fusion admissibility;
+- automatic scroll coverage is an explicit bounded strategy that proposes
+  ordinary canonical scroll actions; adapters may not scroll invisibly;
+- default CLI cutover remains a product-entrypoint migration, not an
+  interaction capability.
+
+A genuinely new semantic shape extends the finite registry and its properties.
+A new primitive implementation of an existing shape changes only its adapter
+profile and translator. New physical execution or perception machinery is
+written only after existing backends/providers are shown insufficient.
+
+### 14.7 Capability implementation review gate
+
+Every capability change must answer these questions in its implementation
+record or pull-request description:
+
+1. Which existing backend primitives and source-state APIs were inspected?
+2. Why is this change a Runtime contract, thin adapter, provider port, or
+   optional strategy rather than another category?
+3. Does any adapter mutate the environment during observation, normalization,
+   tiling, OCR, or coverage traversal? If yes, the change is rejected until the
+   mutation becomes an ordinary admitted action.
+4. Can any backend/provider output create canonical identity, current binding,
+   ActionSpace membership, dispatch truth, effect truth, or task completion
+   without Runtime validation? If yes, the change is rejected.
+5. Does an existing semantic shape require changes to AgentLoop, grounded-tool
+   parsing, admission, or generic evaluator routing? If yes, either the shared
+   contract is still incomplete or the change is not actually the same shape.
+6. Is new low-level mechanics being added? If yes, the record must contain a
+   concrete unsupported-capability witness for the existing backend/provider
+   set and explain why a replaceable adapter/provider cannot close it.
+7. Is exploration bounded, observable, interruptible and benchmarkable? Hidden
+   adapter-side scrolling, OCR loops, or tiling loops are rejected.
+
+These are architecture and code-review gates. They do not require every
+surface to support the same capability and do not turn missing support into an
+exception; unsupported remains typed and fail-closed.
+
+## 15. Verification strategy
+
+Example tests remain useful witnesses, but closure depends on properties across
+the whole onboarding chain.
+
+### 15.1 Registry and composition properties
+
+- every profile action resolves to exactly one semantic definition;
+- every profile primitive resolves to exactly one translator;
+- unknown action, primitive, subject kind, or schema family fails closed;
+- adapter support never creates current ActionSpace membership;
+- the same semantic definition validates equivalent DOM, Visual, WoT, Device,
+  or BrowserGym bindings without surface branches in core code.
+
+### 15.2 Projection and round-trip properties
+
+- each current `ActionOption` has at most one closed public candidate;
+- catalog compilation consumes only the candidate view;
+- catalog construction is deterministic for the same context;
+- forbidden/required destination modes expand to the exact declared concrete
+  rows, while initial optional destination mode fails typed and emits no tool;
+- business parameter schema and required fields are conserved exactly;
+- no private field appears in a schema, provider message, or resolver result;
+- every group constant equals the recursive intersection of its complete
+  candidate semantics;
+- every non-singleton semantic selector is the smallest supported facet set
+  under the canonical tie-break and uniquely distinguishes the group's actual
+  concrete rows;
+- a singleton candidate emits no target selector, and a semantically unique
+  candidate set never asks the Actor to choose an E-ref;
+- every emitted semantic or grounding-fallback selector resolves to exactly
+  one current admitted action/destination identity;
+- every grounding fallback has a complete injective same-context rendered
+  endpoint-ref tuple mapping; sparse source/destination pairs are atomic and
+  missing/duplicate/stale/unrendered refs fail with zero dispatch;
+- independent selector fields are emitted only for a complete actual Cartesian
+  product; sparse target/destination or multi-facet sets admit only real atomic
+  choices;
+- complete candidate records and normalized entity/group tables are absent
+  from every Actor request;
+- shape-tool names remain unique under generated digest-prefix collisions and
+  every selector tuple inside one tool maps to exactly one option;
+- invalid semantic choice, E-ref fallback, or destination pair cannot be
+  repaired into another candidate;
+- a stale catalog/context/action produces zero bind/probe/execute calls;
+- the latest transition occurs once per provider request, and each candidate
+  group's common semantics occur once in its compiled tool surface.
+
+### 15.3 State, relation, and delta properties
+
+- target-state compatibility projection equals the fact-index projection;
+- two independent writers cannot construct a valid observation;
+- every relation endpoint exists in the same canonical world or is rejected;
+- fusion rewrites every typed endpoint and preserves provenance;
+- relation cardinality/cycle conflicts are deterministic and cannot be settled
+  by derived evidence;
+- relation order or source order does not change the fused canonical graph;
+- only `WorldIdentityResolver`-accepted one-to-one continuity makes entities
+  comparable across observations;
+- incomplete/non-comparable coverage never produces disappearance/removal;
+- delta is deterministic, antisymmetric where scopes are comparable, and empty
+  for semantically equal worlds despite new observation IDs;
+- no current world or ActionSpace is reconstructed from a delta.
+
+### 15.4 Execution and evaluation properties
+
+- one admitted action produces at most one effectful dispatch;
+- `SENT`/`SENT_UNKNOWN` never execute an alternate route;
+- required destination and public parameters survive selection through bound
+  request without mutation;
+- every admitted verification contract is a sealed, registry-permitted
+  template whose parameter/destination references match the exact option;
+- a refreshed option with a changed confirmation digest cannot reuse earlier
+  risk/barrier confirmation;
+- `EFFECT_CONFIRMED` evidence satisfies at least one pre-dispatch obligation;
+- unrelated entity, fact, relation, layout, or screenshot change cannot confirm
+  an action effect;
+- no-effect requires complete comparable evidence for every mechanically
+  checkable obligation;
+- unknown evidence remains `UNKNOWN`, not failure, success, or replay;
+- action and task evaluation remain independent.
+
+### 15.5 Integration and benchmark evidence
+
+Each capability slice runs:
+
+1. contract/property tests;
+2. one adapter integration witness for success;
+3. unavailable, invalid-parameter, stale, `NOT_SENT`, `SENT_UNKNOWN`, and
+   post-observation-failure witnesses where applicable;
+4. a small previously supported no-regression cohort;
+5. its targeted live benchmark cohort;
+6. later, the frozen breadth benchmark with capability coverage and aggregate
+   success reported separately.
+
+No production branch may inspect benchmark case IDs, expected answers, reward,
+or known page text.
+
+## 16. Falsifiable exit criteria
+
+This design is ready for implementation only when repository review confirms:
+
+1. every owner in the sole-owner table maps to one intended module and no
+   competing owner is introduced;
+2. `ActionSpace` remains the only current legal-action authority;
+3. the registry/profile/binding distinction is preserved in interfaces and
+   names;
+4. flat model tools can be generated and resolved generically from complete
+   closed candidates by hoisting shared semantics, exposing only minimal
+   semantic differences/business values, preserving actual destination pairs,
+   and using E-ref only as an explicit grounding fallback;
+5. state and relation migrations have one canonical write path and a deletion
+   gate for compatibility fields;
+6. delta comparability and non-causality are explicit;
+7. effect confirmation requires an action-specific pre-dispatch obligation;
+8. unsupported, unavailable, invalid, stale, sent, uncertain, and unknown
+   outcomes remain typed and temporally consistent;
+9. adding a second adapter for an existing semantic shape requires no
+   AgentLoop/catalog/parser/evaluator branch;
+10. the migration order respects the current Step 13/14 evidence gate and does
+    not claim unimplemented behavior.
+
+Implementation is complete only when the corresponding code, properties,
+adapter integrations, docs/status, and fresh benchmark evidence agree. The
+design document itself is not implementation or closure evidence.
+
+## 17. Rejected alternatives
+
+### Register provider tools directly
+
+Rejected because provider tools would become a second action vocabulary and
+could outlive current ActionSpace legality. Tools must be compiled from current
+authority.
+
+### Let each adapter name its own semantic actions
+
+Rejected because `fill`, `type`, `write`, and `press` would leak backend
+differences into policy, evaluator, memory, and benchmark semantics.
+
+### Put all capability behavior in one generic action payload
+
+Rejected because `parameters: any` destroys schema validation, risk clarity,
+verification routing, and model decision quality.
+
+### Expose the normalized entity/capability graph to the Actor
+
+Rejected as an action-selection surface because it makes the Actor join entity
+records to operation groups before acting. Such a graph may remain internal
+compiler diagnostics, but it is excluded from every Actor request; the provider
+receives direct flat tools.
+
+### Make E-ref the default target selector
+
+Rejected because it forces the Actor to map task semantics to an observation-
+local mark even when the Runtime already has a unique verified semantic facet.
+E-ref remains screenshot grounding evidence and the explicit fallback for
+semantically indistinguishable visual candidates.
+
+### Generate domain-specific parameter or tool names from page text
+
+Rejected because fields such as `product` or Unicode page labels in tool names
+would create task/site vocabulary and provider portability problems. Selector
+fields are derived mechanically from bounded semantic paths; provider-local
+tool variants use canonical operations plus deterministic transport suffixes.
+
+### Make the adapter profile the ActionSpace
+
+Rejected because static backend support does not include current target,
+destination, task effects, risk, conflict, schema domain, or currentness.
+
+### Persist SemanticDelta as a world ledger
+
+Rejected because observations and current AgentLoopState already own truth.
+A durable delta store would introduce reconstruction and consistency burdens
+without evidence that the short GUI loop needs event sourcing.
+
+### Accept any before/after change as activation success
+
+Rejected because temporal correlation is not action-specific effect evidence.
+Broad change may trigger semantic inspection but cannot settle the effect.
+
+### Add BrowserGym branches for scroll, press, and drag
+
+Rejected because it repeats the same missing shared contracts for every
+interaction family and prevents cross-surface capability conformance.

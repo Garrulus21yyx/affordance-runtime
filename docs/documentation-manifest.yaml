@@ -129,6 +129,9 @@ reference:
   - role: architecture_entrypoint
     path: docs/architecture.md
     lifecycle: current
+  - role: interaction_capability_onboarding_proposed_design
+    path: docs/interaction-capability-onboarding-design.md
+    lifecycle: current
   - role: world_interaction_capability_migration_record
     path: docs/migrations/world-interaction-capabilities.md
     lifecycle: current
