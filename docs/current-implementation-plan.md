@@ -63,11 +63,13 @@ provider failures retain only bounded validation stage/code/path and repair
 outcome. No task collection engine, interaction ledger, Submit guard, second
 ActionSpace, or benchmark-specific semantic projection was introduced.
 
-## Completed coherent slice — Wave-A interaction owner spine
+## Implemented partial slice — Wave-A interaction owner spine only
 
-Status: `IMPLEMENTED / EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`
+Status: `IMPLEMENTED_EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL /
+OBSERVED_WORLD_GRAPH_A.1_OPEN / LIVE_NOT_RUN`
 
-Wave A now routes existing `activate`, `type_text`, `select_option`, and `read`
+The implemented interaction-owner portion routes existing `activate`,
+`type_text`, `select_option`, and `read`
 through one immutable `InteractionCapabilityRegistry`, adapter-local profiles,
 exact primitive translators, and a validating composer. The registry also
 defines `scroll`, `press_key`, `focus`, `drag_to`, `set_value`, and `hover`, but
@@ -100,6 +102,63 @@ state or new action binding may build on that boundary.
 
 Evidence and the remaining producer/consumer inventory are recorded in
 [Wave-A consumer inventory](evidence/2026-08-14-interaction-capability-wave-a-consumer-inventory.md).
+
+### Open convergence slice — multi-source observed-world graph
+
+Status:
+`SOURCE_ENVELOPE_RETAINED / SINGLE_SOURCE_STRUCTURE_WORKS / MULTISOURCE_CORRESPONDENCE_AND_DEDUP_OPEN`
+
+The existing architecture is retained: adapters produce immutable
+`SurfaceObservation`s, `WorldFusion` owns within-observation canonical
+alignment, `WorldObservation` owns accepted current truth, and
+`ActorWorldSnapshot` is the sole bounded model view. This is not authorization
+for a graph database, a second world model, or new DOM/AX/OCR/automation
+engines.
+
+The next architecture closure slice must:
+
+1. migrate fusion maps, coverage and source manifests from `surface` keys to
+   unique source-observation-instance keys so multiple lenses from one adapter
+   cannot overwrite each other;
+2. materialize the fusion-accepted source-to-canonical map once as
+   `WorldObservation.entity_source_links` and use it for target, fact, binding,
+   destination, media-region and structure semantic links;
+3. give every source target a typed accepted-equivalence, unmatched-allocation,
+   rejected-allocation or conflicted-allocation result with basis/evidence and
+   retain non-equivalent targets independently; migrate the current trusted
+   `EntityCorrespondence` into a validated proposal contract;
+4. add the fusion-owned predicate/source-profile policy so accepted values and
+   conflicts are invariant to source input order and disputed values do not
+   leak through legacy target state;
+5. fix `_structure_documents()` so a corresponded source-local structure node
+   retains its canonical E-ref/state/facts instead of degrading to an N-ref;
+6. migrate the Actor document/lens shape and add a closed primary/novel lens
+   policy, rendering one entity node with aggregated source refs per canonical
+   entity without concatenating full per-source trees;
+7. preserve native source forests and aligned media inside Runtime with
+   truthful coverage/truncation, capture-group variants and explicit coordinate
+   spaces/transforms;
+8. keep `ActionSpace` and flat `ToolSpec`s separate from observation-graph
+   authority.
+
+The slice also deletes downstream reconstruction of explicit correspondence
+and collision fallback, makes the current fusion-result provenance sidecar
+derived or removes it, and restores the invariant that every identity inside a
+`SurfaceObservation` is source-local while top-level `WorldObservation`
+identities are canonical.
+
+BrowserGym/Playwright remain the browser extraction, alignment-metadata,
+screenshot and execution dependencies. Later desktop/mobile adapters must wrap
+established platform accessibility/automation libraries. Visual-only coverage
+uses replaceable OmniParser-compatible/OCR providers; the repository owns only
+typed validation, provenance, fusion and bounded projection.
+
+Typed fact/relation evidence coalescing remains part of the Step 15 slice. A.1
+closes identity and entity-node duplication only; it does not claim one
+canonical claim row and does not add projection-only fact deduplication. The
+immediate correspondence fix does not wait for that larger migration, but it
+must use the same target graph contract and must not introduce a compatibility
+map in the Actor renderer.
 
 ## Active target-default convergence queue
 

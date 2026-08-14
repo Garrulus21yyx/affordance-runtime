@@ -216,6 +216,63 @@ Consequently, normalized entity/capability tables may exist only as internal
 compiler data. They must not be transmitted to the Actor. The Actor must not
 be asked to join an entity table to an operation table before it can act.
 
+#### 2.2.1 Multi-source observation alignment
+
+The comparison target for observation design is not a vendor JSON shape. It is
+the set of properties that survive across mature web, desktop, and visual GUI
+systems:
+
+- [BrowserGym](https://arxiv.org/abs/2412.05467) retains minimally altered DOM
+  and AX objects, stable observation-local element IDs, bounding boxes and the
+  raw screenshot. Its exact pixel alignment makes structure and media
+  complementary observations; the agent implementation, not the environment,
+  chooses the bounded textual representation.
+- [Mind2Web](https://arxiv.org/abs/2306.06070) does not send a real page's raw
+  HTML wholesale. It ranks candidate elements and retains their parent/child
+  neighbourhood when constructing the LLM snippet. The useful unit is thus an
+  element plus enough structure to explain it, not a flat element row.
+- [UFO](https://aclanthology.org/2025.naacl-long.26/) combines native UIA
+  control metadata with clean and annotated screenshots, and explicitly
+  re-annotates a smaller control set when the full list clutters the view.
+  Native control inspection remains the reliable action substrate; visual
+  information supplies complementary rendering and fallback coverage.
+- [OSWorld](https://arxiv.org/abs/2404.07972) exposes screenshot, filtered
+  accessibility tree, their combination, and SoM as different observation
+  modes. Its reported model-dependent results show that more aligned channels
+  are not monotonically better: very large trees and dense marks can add
+  inference burden or visual noise.
+- [OmniParser](https://arxiv.org/abs/2408.00203) demonstrates the complementary
+  case: when native structure is missing, OCR, interactable-region detection
+  and local icon semantics can turn a screenshot into structured, grounded
+  assertions. Those outputs are useful evidence, but they are model-derived
+  observations rather than native control authority.
+
+The project inference from these primary sources is deliberately narrower than
+claiming a published universal fusion schema:
+
+```text
+retain source observations with lineage inside Runtime
+        + align source-local entities/regions to canonical current entities
+        + coalesce identical claims while retaining every evidence source
+        + preserve disagreements as typed alternatives/conflicts
+        + retain each source's structural lens without inventing one fake tree
+        -> render one bounded, non-repeating Actor world
+```
+
+This is a **multi-source observed-world information graph**, not a graph
+database, durable knowledge graph, event store, or replacement for existing
+adapters and fusion. BrowserGym/Playwright, DOM/AX, UIA/device APIs, WoT, HTTP
+and replaceable OCR/vision providers continue to collect their native data.
+`WorldFusion` remains the only within-observation alignment and acceptance
+boundary. The change is to make its conserved information and its Actor
+projection explicit, not to rebuild collection or perception machinery.
+
+The model must not receive a concatenation of full DOM + full AX + OCR list +
+SoM list + tool target records. The Runtime keeps that evidence; the Actor sees
+one canonical entity once, one useful structural context, one attached image
+per distinct capture, and only novel, conflicting, uncertain, or otherwise
+unmatched contributions from complementary sources.
+
 ### 2.3 Why the current shape exists
 
 The current compiler and model boundary are the result of several falsifying
@@ -229,7 +286,7 @@ must be preserved and the contradictions that the onboarding spine must close.
 | [single-AgentContext convergence](evidence/2026-08-14-single-agent-context-convergence.md) | a second context-shaped view and mandatory updater introduced another schema gate and duplicate semantic owner | `AgentContext` and its one binder remain the sole model-context path; no memory/update sidecar is added for capability onboarding |
 | [grid semantic-selection evidence](evidence/2026-08-14-grid-semantic-selection-key-7101a84.md) | the dynamic menu admitted a semantic coordinate but a superseded base validator still required an E-ref; a later optimization removed facts from canonical context and broke thirteen consumers | the current compiled schema owns model-call membership, while deduplication/compaction stays in the disposable provider projection and never mutates canonical world facts |
 | [semantic-facet compaction](evidence/2026-08-14-semantic-facet-action-compaction-b6e0546.md) | repeated complete candidates made the model copy common structure and opaque refs | compiler-owned shared skeletons and minimal semantic differences are retained; the focused token reduction is useful evidence, not a general performance claim |
-| [Actor world convergence](actor-world-snapshot-design.md) | flattening and action/tool dedup removed the public state that explained current E-refs and withheld an already available aligned screenshot | one source-preserving `ActorWorldSnapshot` remains independent from flat callable tools; world facts are not removed merely because a tool refers to the same entity |
+| [Actor world convergence](actor-world-snapshot-design.md) | flattening and action/tool dedup removed the public state that explained current E-refs and withheld an already available aligned screenshot | one canonical, source-lineage-preserving `ActorWorldSnapshot` remains independent from flat callable tools; world facts are not removed merely because a tool refers to the same entity |
 | current `972fba8..df391b1` local increments | models use equivalent `name/op`, `arguments/args`, sometimes mix a same-operation shape-tool name with the uniquely identifying selector, or redundantly echo a singleton grounding ref | retain bounded transport and representation normalization, but make authority equivalence explicit and require model repair rather than silent semantic substitution when equivalence is not proven |
 
 The causal pattern is consistent: a useful projection was treated as a second
@@ -275,6 +332,12 @@ shape is not.
 | provider wire serialization | provider binder | model request | regrouping, new semantics, or private lookup data |
 | provider-call reconciliation | `ProviderCallNormalizer` | exact resolver or bounded same-model repair | world/ActionSpace join, authority-changing silent substitution, admission |
 | exact tool-choice lookup | grounded catalog resolver | typed `SelectAction` proposal | normalization, fuzzy search, repair, world lookup, authorization |
+| source-local observation and structure | each `SurfaceObservation` produced by its thin adapter/provider | fusion input, diagnostics, bounded source lens | re-extracting DOM/AX/UIA/OCR inside fusion or ContextBuilder |
+| within-observation canonical entity alignment | `WorldFusion` acceptance materialized as `WorldObservation.entity_source_links` | canonical facts, relations, media links, Actor projection | result sidecar or binder-local correspondence reconstruction |
+| predicate/source-profile acceptance | immutable `ObservationPredicateRegistry` consumed by `WorldFusion` | accepted facts/target projection/conflicts | first-source wins or surface-name branches |
+| accepted current observed-world graph | `WorldObservation` | evaluator, ContextBuilder, semantic differ | a second fused graph, graph database, or Actor-owned world state |
+| Actor epistemic rendering | `ActorWorldSnapshot` built from the current `WorldObservation` | provider serialization only | concatenated full per-source dumps or tool-owned entity copies |
+| primary/complementary source-lens rendering | `StructuralLensSelectionPolicy` in the Actor-world projector | bounded snapshot documents | provider-specific tree choice or prose novelty heuristic |
 | current world state | `StateFact` in `WorldObservation` | target-state and model projections, evaluator | independently authored `SemanticTarget.state` |
 | current relations | typed `RelationFact` in `WorldObservation` | fusion, model projection, semantic diff | open relation dictionaries with identity-bearing values |
 | before/after semantic comparison | pure `SemanticDiffer` result | evaluator, bounded latest-transition projection, liveness | mutable or independently persisted delta authority |
@@ -288,7 +351,9 @@ Every projection is disposable and one-way:
 
 ```text
 Registry/Profile -> binding validation
-World + ActionSpace -> AgentActionOptionView -> tools/provider message
+SurfaceObservation(s) -> WorldFusion -> WorldObservation
+WorldObservation -> ActorWorldSnapshot -> provider world message
+World + ActionSpace -> AgentActionOptionView -> tools/provider tool message
 raw provider call -> bounded normalization/repair -> exact current tool call
 World(before, after) -> SemanticDelta -> evaluator/transition view
 ControlTransition -> AgentContext.last_transition / recorder / benchmark facts
@@ -300,6 +365,12 @@ from a digest. `ProviderCallNormalizer` is deliberately downstream of the
 compiled catalog: it may reconcile two representations of the same current
 choice, but it cannot make a call legal, create a binding, or infer a candidate
 from the Actor world.
+
+Source retention does not create reverse authority either. A source-local
+structure node, OCR region, SoM mark, DOM ID, AX node ID, UIA runtime ID, or
+provider caption cannot authorize an action. `WorldFusion` may accept its
+identity/evidence into the current canonical graph; `ActionBinding` and
+`ActionSpace` remain the only route and legality owners.
 
 ### 4.3 No repeated semantic rendering
 
@@ -930,7 +1001,7 @@ channels, subject to existing budgets:
 ```text
 task + progress
 bounded last_transition + older verified history
-one source-preserving ActorWorldSnapshot with current public facts
+one canonical, source-lineage-preserving ActorWorldSnapshot with current public facts
 current screenshot(s), optionally with call-local grounding marks
 flat public ToolSpec objects: name + description + input schema
 bounded Runtime control feedback
@@ -1456,6 +1527,384 @@ beginning. Until then dispatch is zero.
 
 ## 9. Canonical state and relation model
 
+### 9.0 Multi-source observed-world information graph
+
+`WorldObservation` is the sole current observed-world owner. “Graph” describes
+its typed organization and identity links; it does not introduce another
+storage system. The existing chain remains:
+
+```text
+BrowserGym / Playwright / DOM / AX / UIA / device API / WoT / HTTP
+                  optional OCR / OmniParser-compatible provider
+                                  |
+                         thin SurfaceAdapter
+                                  |
+                immutable source-local SurfaceObservation(s)
+                                  |
+                    existing WorldFusion boundary
+                                  |
+              one canonical current WorldObservation graph
+                         /                    \
+          ActorWorldSnapshot             ActionSpace
+       bounded epistemic view       independent legal actions
+```
+
+#### 9.0.1 Conserved layers
+
+The graph retains five different kinds of information without confusing their
+authority:
+
+| Layer | Runtime representation | What is conserved | Model exposure |
+|---|---|---|---|
+| source envelope | `SurfaceObservation` | source profile, revision, acquisition root, coverage, raw artifacts/media refs | one compact source manifest |
+| source structure lens | `ObservationStructureNode` forest or native typed relations | native parent/child order and source-local context | one bounded primary lens plus novel complementary context |
+| canonical semantics | `SemanticTarget`, canonical `StateFact`, typed `RelationFact` | one current entity identity and accepted public claims | each canonical entity at most once |
+| alignment/evidence | fusion-accepted `EntitySourceLink`, fact/relation evidence and canonical media links | source-local entity/region to canonical entity lineage | aggregated `source_refs`/evidence summaries; conflicts when material |
+| current action authority | `ActionBinding` and `ActionSpace` | private route, legality, schema, currentness | separate minimal `ToolSpec`; never graph edges granting permission |
+
+DOM, AX, UIA, visual parsing and WoT can describe different structures over
+the same current entities. They are retained as **source lenses**, not forced
+into one fictitious universal tree. The canonical graph contains accepted
+typed relations such as `CHILD_OF`, `LABELLED_BY`, `MEMBER_OF`, `ROW_OF`,
+`CELL_OF`, `HEADER_FOR` and `PRECEDES`; the original source forest remains
+available for lineage and bounded contextual rendering.
+
+No source modality is globally authoritative for every predicate. Authority is
+predicate- and source-profile-specific. For example, a native AX/UIA checked
+state can outrank a visual classifier for `checked`, while the screenshot can
+be the only source for rendered colour or canvas content. This policy is a
+closed table owned by fusion vocabulary/assurance contracts, not a series of
+surface-name branches.
+
+`ObservationPredicateRegistry` is that sole immutable policy owner for target
+role/label and public state predicates:
+
+```python
+class ConflictDisposition(StrEnum):
+    CONSENSUS_ONLY = "consensus_only"
+    PREFER_DECLARED_ASSURANCE = "prefer_declared_assurance"
+    MULTI_VALUE_UNION = "multi_value_union"
+
+
+@dataclass(frozen=True)
+class PredicateFusionDefinition:
+    predicate: str
+    value_schema: JsonSchema
+    admissible_source_profiles: tuple[str, ...]
+    admissible_provenance: tuple[Literal["native", "derived", "model"], ...]
+    assurance_order: tuple[str, ...]
+    conflict_disposition: ConflictDisposition
+```
+
+The default for a known scalar predicate is `CONSENSUS_ONLY`; disagreement
+makes the canonical value unknown/conflicted. A predicate may prefer declared
+assurance only when its registry definition explicitly supplies that ordering.
+Stable source order is used solely to serialize equal evidence and never to
+settle a value. `MULTI_VALUE_UNION` is legal only for predicates whose schema
+and vocabulary define set semantics. Unknown predicates or source profiles fail
+typed at normalization rather than being resolved by first-source wins.
+
+`WorldFusion` applies this registry symmetrically to the complete claim set.
+It may retain a selected value plus contrary evidence only when the definition
+permits `PREFER_DECLARED_ASSURANCE`; otherwise no disputed value appears as an
+ordinary `SemanticTarget.state` or accepted `StateFact`. Conflict alternatives
+and their evidence remain available to evaluation and the bounded Actor view.
+
+Identity domains are closed. Everything inside a `SurfaceObservation` uses
+source-local IDs, including targets, facts, bindings, structure semantic links
+and media grounding regions. Everything at the canonical level of
+`WorldObservation` uses canonical IDs. The only bridge is an immutable link set
+produced by `WorldFusion`:
+
+```python
+@dataclass(frozen=True)
+class SourceEntityEndpoint:
+    source_observation_id: str
+    source_target_id: str
+
+
+@dataclass(frozen=True)
+class EntityAlignmentProposal:
+    proposal_id: str
+    source: SourceEntityEndpoint
+    candidate: SourceEntityEndpoint
+    basis: Literal["explicit_provider_correspondence"]
+    evidence_refs: tuple[str, ...]
+    confidence: float
+
+
+class EntityAlignmentDisposition(StrEnum):
+    EQUIVALENCE_ACCEPTED = "equivalence_accepted"
+    UNMATCHED_ALLOCATED = "unmatched_allocated"
+    PROPOSAL_REJECTED_ALLOCATED = "proposal_rejected_allocated"
+    CONFLICTED_ALLOCATED = "conflicted_allocated"
+
+
+class EntityAlignmentBasis(StrEnum):
+    SOURCE_IDENTITY_ALLOCATED = "source_identity_allocated"
+    EXPLICIT_PROVIDER_CORRESPONDENCE = "explicit_provider_correspondence"
+
+
+@dataclass(frozen=True)
+class EntitySourceLink:
+    source_observation_id: str
+    source_target_id: str
+    canonical_target_id: str
+    acquisition_root_id: str
+    disposition: EntityAlignmentDisposition
+    basis: EntityAlignmentBasis
+    evidence_refs: tuple[str, ...]
+    confidence: float
+    reason_code: str
+```
+
+Proposals name two source-local endpoints because a canonical endpoint does not
+exist until fusion accepts equivalence. A `SurfaceObservation` may carry a
+bounded tuple of proposals; the same source endpoint may have several candidate
+proposals, but duplicate endpoint pairs/proposal IDs are invalid. Candidate
+endpoints must exist in the selected source set. This replaces the current
+input shape that lets an adapter write a value named `canonical_target_id`
+before canonical acceptance.
+
+Fusion validates all proposals before forming equivalence components. A valid
+component may contain at most one endpoint from each source observation and
+must satisfy acquisition-root, role/profile and evidence requirements. One
+valid component yields `EQUIVALENCE_ACCEPTED` links for its endpoints. No
+proposal yields independent `UNMATCHED_ALLOCATED`; an invalid-only proposal set
+yields `PROPOSAL_REJECTED_ALLOCATED`; multiple individually valid candidates
+that cannot form one legal component yield `CONFLICTED_ALLOCATED`. Rejected or
+conflicted endpoints are isolated rather than partially merged. Canonical IDs
+are allocated from the sorted complete endpoint component, so proposal/source
+input order cannot change them.
+
+There is exactly one link for every retained source target. The
+`(source_observation_id, source_target_id)` endpoint is unique and resolves to
+exactly one current canonical entity. Within one source observation, at most
+one local target may link to a given canonical entity; multiple different
+source observations may contribute to the same canonical entity. This
+collection covers accepted explicit provider correspondences, ordinary
+unmatched identity allocation, rejected/conflicting proposal isolation, and
+collision-renamed IDs; consumers never recompute any of those cases.
+Adapter-supplied `EntityCorrespondence` values are fusion proposals, not the
+accepted map.
+
+Every proposal receives one typed disposition. `EQUIVALENCE_ACCEPTED` requires
+both endpoints to exist, compatible source profiles and roles, the same
+non-empty acquisition root, explicit evidence refs, a supported basis, valid
+confidence and the scoped one-to-one rule above. Missing proposals become
+`UNMATCHED_ALLOCATED`. Invalid proposals become
+`PROPOSAL_REJECTED_ALLOCATED`; mutually incompatible valid proposals become
+`CONFLICTED_ALLOCATED`. All three non-equivalence outcomes retain the source
+target as a distinct canonical entity and carry the rejection/conflict reason;
+they never drop it or guess an equivalence. Unknown bases fail typed before
+fusion.
+
+`WorldObservation.entity_source_links` is the accepted current mapping and the
+sole input for source membership, structure projection and media alignment.
+The current `WorldFusionResult.entity_provenance` sidecar must either move into
+that field or become a pure derived view of it; it cannot remain a parallel
+authority. Likewise, `WorldObservation.sources` must not be partly rewritten:
+its source-local media regions remain local, while a canonical media-grounding
+view is derived once from `entity_source_links` for Actor/evaluator consumers.
+
+`surface` is a capability/adapter class, not a source-instance key. Fusion maps,
+coverage, source manifests and stable ordering are keyed by
+`source_observation_id`; surface, modality and profile are attributes. A world
+may contain multiple DOM/AX/visual lenses from the same surface and acquisition
+root without overwriting maps or coverage. Duplicate source observation IDs
+fail construction. World identity and projection order are computed from the
+sorted complete source-instance tuples, never from input order or a
+`dict[surface, ...]`.
+
+Accordingly, the current `WorldObservation.coverage: dict[surface, ...]`
+migrates to a typed source-instance manifest containing
+`source_observation_id`, surface, modality, profile, acquisition root and
+coverage. Adapter-class summaries, when useful, are derived aggregations and
+cannot replace per-instance coverage.
+
+#### 9.0.2 Fusion algebra
+
+Within one acquisition epoch, fusion follows these deterministic rules:
+
+1. A source-local target, structure semantic link, relation endpoint, fact
+   subject, binding endpoint and media region is rewritten through the same
+   accepted `WorldObservation.entity_source_links` mapping. Fusion computes it
+   once; no downstream consumer rebuilds explicit/collision fallback logic.
+2. Equal claims about the same canonical subject/predicate/value are coalesced
+   into one canonical fact or relation. All distinct source/evidence refs are
+   retained on that one claim; duplicate facts are not emitted as separate
+   Actor content.
+3. Materially different claims remain typed alternatives in one conflict. They
+   are not winner-overwritten, concatenated into prose, or duplicated as two
+   apparent entities. Only the declared predicate authority policy may settle
+   a conflict; otherwise the canonical value is unknown/conflicted.
+4. A derived/model assertion cannot overwrite conflicting native evidence.
+   Confidence ranks evidence within the same admissible authority class; it
+   never creates identity, an action, or permission.
+5. A visual-only entity remains explicit until a trusted correspondence is
+   accepted. Matching by label, ordinal, coordinate overlap, or nearest node is
+   evidence for a replaceable alignment provider, not deterministic identity
+   authority.
+6. Media is deduplicated by current acquisition lineage and content digest.
+   Its regions point to canonical entities after correspondence rewrite. A
+   screenshot, clean screenshot and SoM overlay are alternative renderings of
+   one capture, not three independent worlds.
+7. Adding a source is monotonic for retained assertions and evidence: it may
+   add evidence, alternatives, conflicts or previously unseen entities, but it
+   cannot silently erase a higher-authority accepted claim.
+
+Media alignment uses upstream capture metadata instead of pixel heuristics.
+`ObservationMedia` gains a stable current `capture_group_id`, `variant`
+(`raw`, `annotated`, or `crop`), dimensions and `coordinate_space_id`;
+grounding regions name that same coordinate space. BrowserGym bbox/screenshot
+identity populates these fields directly. An annotated SoM image inherits the
+base capture group and coordinate space. Sources with different acquisition
+roots or coordinate spaces are not overlaid or treated as aligned unless an
+explicit typed transform provider supplies a current transform. The Actor
+provider mode selects one primary full-frame variant; identical content hashes
+coalesce, while other variants remain Runtime evidence or are obtained by
+explicit widening.
+
+The target canonical fact shape is one accepted value with aggregated lineage,
+not one repeated row per agreeing source:
+
+```python
+@dataclass(frozen=True)
+class FactEvidence:
+    source_observation_id: str
+    source_subject_id: str
+    evidence_ref: str
+    provenance: Literal["native", "derived", "model"]
+    confidence: float
+
+
+@dataclass(frozen=True)
+class StateFact:
+    fact_id: str
+    subject_id: str
+    predicate: str
+    value: JsonValue
+    evidence: tuple[FactEvidence, ...]
+```
+
+A `SurfaceObservation` fact starts with source-local identity and one evidence
+record. `WorldFusion` rewrites it and produces the canonical coalesced fact.
+This replaces the current single `source_id` plus repeated agreeing fact rows;
+it does not create a second fact owner. `RelationFact.evidence` follows the
+same algebra.
+
+#### 9.0.3 Bounded Actor graph view
+
+Runtime conservation and model exposure are intentionally different. The
+Actor receives a deterministic, bounded rendering with these rules:
+
+- emit one node per retained canonical entity, even when DOM, AX, UIA, OCR and
+  visual sources all observed it;
+- inline its accepted role, label, state, facts, non-tree relations and
+  aggregated `source_refs` once;
+- select one primary structural occurrence mechanically from declared native
+  structure assurance and stable source ordering; retain its ancestors,
+  ordered children and the smallest neighbourhood needed to explain retained
+  candidates;
+- render complementary source structure only when it contributes a novel
+  relation/context node, a conflict, uncertainty, or an unmatched entity;
+  otherwise keep its lineage only in `source_refs`;
+- attach each distinct screenshot once. SoM labels, when used by the selected
+  provider mode, reuse the same current E-refs and replace rather than
+  accompany a redundant second annotated element list;
+- suppress OCR/icon captions that exactly repeat an accepted native label.
+  Preserve them when they add visual-only content or disagree, with model/
+  derived provenance visible;
+- render facet collections only when an index is smaller than repeating the
+  same field on many nodes. Collections contain refs, never copied entities,
+  and do not remove inline facts required to understand an individual node;
+- keep tools separate. A flat tool repeats only the minimum cue/difference
+  needed for semantic choice and never becomes the entity description;
+- render `last_transition` as a delta only. It does not repeat the current
+  snapshot or the newest history row.
+
+`StructuralLensSelectionPolicy`, owned by the Actor-world projector, closes
+“primary” and “novel” without task/site branches. Each lens declares typed
+structure provenance (`native`, `derived`, or `model`), assurance, source
+coverage and its source-instance key. Primary selection uses, in order:
+
+1. registry-declared structural provenance/assurance precedence;
+2. complete before partial coverage;
+3. greater retained ancestor closure for the already pinned canonical nodes;
+4. the stable `source_observation_id` tie-break.
+
+The tie-break affects rendering only and never canonical fact acceptance. A
+complementary contribution is novel exactly when it contains: a canonical
+typed edge absent from the primary lens; a typed conflict/uncertainty; an
+unmatched canonical entity; or the ancestor closure required to explain such
+an item. Equal canonical nodes, equal edges, repeated labels and alternate
+source-only context are not novel. Source-only context from a non-primary lens
+is available through explicit bounded lens widening, unless it is required as
+the ancestor of an unmatched emitted entity. This prevents ungrounded DOM/AX
+containers with similar prose from being guessed equal or dumped twice.
+
+The policy input is the canonical graph plus immutable source lenses. It does
+not read ToolSpecs, private bindings, benchmark IDs or expected task output,
+and provider binders cannot override its selection.
+
+Bounding is graph-aware rather than flat top-N truncation. Current legal action
+targets and destinations are pinned together with their explanatory ancestors;
+then current focus/viewport context, conflicts and relevant neighbours are
+retained; remaining context is paged in stable source order. Every document
+reports retained/total counts, coverage and truncation. Paging or an explicit
+observation widening request retrieves omitted context; missing context is not
+invented by the Actor.
+
+This projection is disposable. It cannot be read by fusion, admission,
+currentness, execution, evaluation or continuity. Different provider adapters
+may serialize the same snapshot to text/image message formats, but may not
+re-filter entities, recompute correspondences, repeat full source dumps, or
+construct an alternative world graph.
+
+#### 9.0.4 Reuse boundary
+
+The implementation preference is direct open-source reuse behind existing
+ports:
+
+| Need | Reuse first | Repository-owned code |
+|---|---|---|
+| browser DOM/AX, iframe linkage, bbox, screenshot and primitives | pinned BrowserGym + Playwright | thin BrowserGym adapter/profile/translator |
+| desktop native control tree and interaction | pywinauto/UIA or the platform accessibility API when that surface is admitted | thin desktop adapter and canonical normalization |
+| mobile native hierarchy and device actions | the selected platform driver/API (for example ADB plus an established accessibility driver) | thin mobile adapter; no device automation framework |
+| OCR, icon/control detection and visual region captions | replaceable established provider such as OmniParser-compatible output and a maintained OCR library | provider port, result validation, provenance and fusion only |
+| graph traversal/ordering | ordinary immutable Python collections; an established graph library only if measured algorithms require it | bounded domain algebra and projection rules |
+
+No new DOM parser, AX merger, layout engine, OCR engine, SoM renderer, screen
+detector, mouse/keyboard driver, graph database, or generic ETL framework is
+in scope without a demonstrated gap in the reused implementation. Copying an
+upstream algorithm into this repository is less preferred than pinning and
+wrapping the maintained library. Version constraints and adapter conformance
+tests isolate upstream changes.
+
+#### 9.0.5 Current implementation gap
+
+The repository already retains `WorldObservation.sources`, BrowserGym
+`ObservationStructureNode`s, aligned media, correspondences and a non-flat
+`ActorWorldSnapshot`; these are reused. The immediate defect is narrower:
+`_source_memberships()` applies source correspondence before looking up a
+canonical entity, while `_structure_documents()` currently looks up
+`ObservationStructureNode.semantic_target_id` as though it were already
+canonical. With multiple aligned sources, the hierarchy can therefore survive
+while its semantic node loses the canonical E-ref/state/facts and falls back to
+an N-ref. Both functions are reconstructing only part of fusion identity
+because the accepted `_canonical_maps()` result is not retained in
+`WorldObservation`; explicit correspondences and collision-renamed identities
+can therefore diverge again downstream. Fused source media is additionally
+rewritten to canonical IDs while the source targets/structure remain local,
+creating a mixed-domain source envelope.
+
+The first implementation slice must materialize the accepted map once as
+`WorldObservation.entity_source_links`, keep every `SurfaceObservation`
+consistently source-local, and make all source membership/structure/media
+consumers use those links. It must delete downstream correspondence
+reconstruction rather than introduce a second map in `ActorWorldSnapshot`.
+Later typed fact/relation coalescing completes the graph algebra in Step 15.
+
 ### 9.1 StateFact is the state truth
 
 `WorldObservation.facts` becomes the sole writable canonical state. During
@@ -1939,6 +2388,7 @@ shared owners and extension seam before adding backend-specific behavior.
 | StateFact single truth | strict fact-derived target-state migration | `WorldObservation.facts` |
 | one role to multiple actions | `RoleCapabilityOffer` tuple | current adapter binding offers |
 | scroll and focus-aware press | viewport/focused subjects, bounded schemas, translators and obligations | ordinary ActionSpace/execution/evaluation chain |
+| multi-source observed-world graph | source-local lenses, one correspondence rewrite, evidence coalescing, conflict preservation and one bounded Actor node per canonical entity | existing `SurfaceObservation` / `WorldFusion` / `WorldObservation` / `ActorWorldSnapshot` chain |
 | typed relations and semantic delta | typed edge vocabulary, continuity acceptance and comparable diff | `WorldObservation.relations` / pure `SemanticDiffer` |
 | drag/slider/OCR/tiling/CLI breadth | adapter, provider, strategy and product-entrypoint boundaries | existing owner for each layer; no new kernel |
 
@@ -1984,6 +2434,50 @@ Exit: the new contracts can represent every existing activate/text/select/read
 binding and tool shape, all migrated producer/consumer paths resolve through
 the new sole owners, and the displaced compatibility/shadow paths have been
 deleted. Offered actions, dispatch and evaluator results do not yet change.
+
+### 14.2.1 Wave A.1 — close the observed-world graph owner spine
+
+This is a separate open architecture slice, not a retroactive claim that the
+implemented interaction-registry slice already met multi-source exit criteria:
+
+- key every fusion map, coverage record and source manifest by source instance,
+  not adapter/surface name;
+- materialize the one fusion-accepted source-to-canonical identity map as
+  `WorldObservation.entity_source_links`, including typed disposition, basis,
+  evidence and rejection/conflict reason for every retained source target;
+- replace the current trusted `EntityCorrespondence` input with a typed
+  proposal carrying basis/evidence/confidence; validate acquisition lineage,
+  endpoint existence, role/profile compatibility and scoped one-to-one rules;
+- apply it to targets, facts, bindings, destinations, media regions and
+  structure semantic links, then delete downstream correspondence
+  reconstruction and fusion-result-sidecar authority;
+- keep all identities within `SurfaceObservation` source-local and all
+  top-level `WorldObservation` identities canonical;
+- preserve upstream capture-group/coordinate-space identity so raw screenshot,
+  SoM variant and grounding regions align without pixel matching or duplicate
+  full-frame attachment;
+- introduce the immutable predicate/source-profile fusion policy and remove
+  first-source-wins behavior;
+- migrate the Actor document/lens representation from per-source repeated trees
+  to one canonical node plus source refs and mechanically novel complementary
+  context;
+- preserve source-local structure/media in Runtime with truthful per-instance
+  coverage, while emitting each canonical entity once in the bounded snapshot.
+
+Exit: source permutation does not change the canonical graph, conflicts or
+Actor payload; same-surface multiple source instances do not overwrite maps or
+coverage; a corresponded structure node retains the canonical E-ref/state/facts
+of its entity; agreeing sources produce one Actor entity node with aggregated
+source refs;
+and rejected/conflicted alignment proposals retain independent entities with a
+typed reason. No binder/provider reconstructs identity or lens selection.
+
+A.1 does not claim canonical fact/relation evidence coalescing. Until Step 15,
+the one entity node may still contain the existing repeated agreeing fact rows;
+it must not invent a projection-only canonical claim to hide that migration.
+Step 15 replaces those rows with one canonical fact/relation claim carrying
+aggregated evidence and activates the corresponding no-duplicate-claim exit
+properties.
 
 ### 14.3 Wave B — migrate existing actions and correct effect authority
 
@@ -2033,6 +2527,9 @@ them:
 
 - introduce `RelationFact`, `RelationVocabulary`, cardinality/cycle rules and
   Runtime-owned cross-observation continuity acceptance;
+- replace repeated agreeing per-source fact/relation rows with one canonical
+  claim carrying all source evidence, while retaining typed conflicting
+  alternatives;
 - normalize native DOM/AX/device table, row, cell, header, list, label,
   parent/child and ordering semantics first;
 - use bounded deterministic geometry/parentage/regular-layout inference only
@@ -2154,6 +2651,40 @@ the whole onboarding chain.
 
 ### 15.3 State, relation, and delta properties
 
+- every source-local identity-bearing reference is rewritten by the same
+  accepted correspondence map or is explicitly retained as unmatched;
+- every retained source target has exactly one `EntitySourceLink`; source
+  order, explicit correspondence and canonical-ID collision cases produce the
+  same links for every consumer;
+- `SurfaceObservation` identities remain source-local and
+  `WorldObservation` top-level identities remain canonical; mixed-domain source
+  envelopes are rejected;
+- every retained canonical entity has at most one Actor node/E-ref even when
+  observed by multiple sources;
+- after Step 15, agreeing source claims render once with the complete set of
+  evidence refs and no projection-only dedup path;
+  conflicting claims render once as bounded alternatives and never as
+  duplicated entities;
+- primary structure rendering retains ancestor closure and child order;
+  complementary lenses add only novel context/conflict/unmatched content;
+- media captured from the same acquisition root and content renders once, and
+  every emitted mark/region resolves to its current Actor entity or remains
+  explicitly ungrounded;
+- media/region overlay requires the same declared coordinate space or an
+  accepted explicit transform; raw/annotated variants share one capture group
+  and the selected provider mode attaches only its primary full-frame variant;
+- adding an agreeing source cannot remove accepted evidence or increase the
+  number of Actor entity copies;
+- permuting source instances leaves entity links, accepted role/label/state,
+  conflicts, primary lens and serialized Actor payload semantically equal;
+- same-surface source instances retain distinct coverage/lenses and never
+  overwrite one another;
+- non-primary context satisfies the closed novelty rule or is omitted with
+  truthful lens-widening availability;
+- projection bounds are deterministic and report truthful retained/total,
+  coverage and truncation values;
+- provider serialization cannot independently filter, fuse, align or regroup
+  the Actor graph;
 - target-state compatibility projection equals the fact-index projection;
 - two independent writers cannot construct a valid observation;
 - every relation endpoint exists in the same canonical world or is rejected;

@@ -62,7 +62,7 @@ duplicate, stale, or unrendered refs. Business schemas are copied generically
 without verb-specific branches or parameter renaming.
 
 The action provider envelope now contains task/progress, bounded transition and
-history, one source-preserving `ActorWorldSnapshot`, screenshot grounding, flat tools,
+history, one source-lineage-preserving `ActorWorldSnapshot`, screenshot grounding, flat tools,
 and bounded Runtime feedback. It contains no candidate records,
 `actions.entities`, `actions.groups`, action IDs, private destination tables, or
 resolver entries. The provider binder does not regroup candidates. Resolution
@@ -72,12 +72,14 @@ unchanged. BrowserGym ActionSpace semantics are now `activate`, `type_text`, and
 `select_option`, while `click`, `fill`, and `select_option` remain adapter-private
 primitives.
 
-The Actor environment representation is now closed independently from tools.
+The Actor environment representation is now separated from tools; its
+single-source BrowserGym structure path is implemented.
 BrowserGym retains a bounded public AX structural document in each structural
 `SurfaceObservation`, including structure-only containers that have no binding
-and cannot enter `ActionSpace`. `ContextBuilder` projects that document, current
-semantic targets, inline public state/fact evidence, source coverage, conflicts,
-artifacts and aligned media exactly once into `ActorWorldSnapshot`. Semantic
+and cannot enter `ActionSpace`. On the implemented single-source path,
+`ContextBuilder` projects that document, current semantic targets, inline
+public state/fact evidence, source coverage, conflicts, artifacts and aligned
+media exactly once into `ActorWorldSnapshot`. Semantic
 targets use current E-refs; context-only nodes use non-callable N-refs. The
 grounded binder serializes this snapshot and compiled ToolSpecs without
 candidate/world deduplication, actionable-node removal, fact removal, or relation
@@ -91,6 +93,47 @@ authority. The structure-first transport attaches media only after the fresh
 world contains the selected visual source. Grounded provider schema failures
 retain bounded redacted validation paths/codes and repair outcome in telemetry;
 raw provider payloads remain absent.
+
+Multi-source observed-world convergence remains open. `WorldObservation`
+already retains source envelopes, BrowserGym retains source-local AX structure,
+and `ActorWorldSnapshot` is non-flat; those owners are not being replaced.
+However, `_source_memberships()` applies source correspondence while
+`_structure_documents()` still resolves a structure node's source-local
+`semantic_target_id` directly against canonical visible IDs. A corresponded
+multi-source node can therefore lose its canonical E-ref/state/facts. The
+accepted `_canonical_maps()` output is not retained on `WorldObservation`, so
+downstream helpers can reconstruct only part of it; fused source media is also
+canonicalized while the rest of its source envelope remains local. The current
+`EntityCorrespondence` is trusted input rather than a proposal with a typed
+accept/reject/conflict decision. The current
+fusion maps and coverage are keyed by `surface`, so multiple source instances
+from one adapter are not yet a closed case. Target/state merging still retains
+the first input claim while recording a conflict, and therefore does not meet
+the designed source-permutation/predicate-authority invariant. The current
+per-source document renderer does not yet prove one Actor entity node or the
+closed primary/novel-lens policy under agreeing DOM/AX/visual sources. Accurate
+status is
+`SOURCE_ENVELOPE_RETAINED / SINGLE_SOURCE_STRUCTURE_IMPLEMENTED /
+MULTISOURCE_CORRESPONDENCE_AND_DEDUP_OPEN`.
+
+The accepted design keeps the existing
+`SurfaceObservation -> WorldFusion -> WorldObservation -> ActorWorldSnapshot`
+chain and requires one correspondence rewrite, evidence-preserving canonical
+coalescing, a typed predicate/source-profile policy, typed alignment outcomes,
+source-instance keys, source-local structural lenses, and one bounded
+Actor node per canonical entity. The accepted map will be materialized once as
+`WorldObservation.entity_source_links`; downstream reconstruction and the
+parallel fusion-result provenance authority will be removed. BrowserGym/
+Playwright and future established
+platform accessibility/OCR providers remain the source engines; no parallel
+fusion pipeline, parser, detector, graph store or automation framework is
+authorized. Current `2528 passed, 27 skipped` evidence does not cover these new
+multi-source properties.
+
+A.1 closes canonical identity and Actor entity-node duplication. It does not
+claim that agreeing `StateFact`/future `RelationFact` rows are coalesced; that
+canonical claim/evidence migration remains Step 15 and may not be simulated by
+a temporary Actor-only dedup path.
 
 Focused compiler/grounded-tool, BrowserGym world/vision, acquisition, lattice,
 legacy serialization and model-policy tests pass; full `2528 passed, 27 skipped`,
