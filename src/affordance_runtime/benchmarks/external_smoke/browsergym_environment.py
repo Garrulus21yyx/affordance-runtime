@@ -57,6 +57,7 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_visual_disambiguati
 from affordance_runtime.benchmarks.external_smoke.browsergym_visual_projection import (
     VisualCorrespondenceStatus,
     browsergym_visual_frame,
+    project_browsergym_screenshot_source,
     project_browsergym_visual_source,
 )
 from affordance_runtime.benchmarks.external_smoke.environment import (
@@ -201,14 +202,9 @@ class BrowserGymMiniWobEnvironment:
         if independent:
             group = f"browsergym:{self.task_run_id}"
             offers = (ObservationOffer("browsergym", "structural", "structural", "medium", group),)
-            if any((
-                self.visual_region_proposer,
-                self.visual_candidate_disambiguator,
-                self.visual_predicate_classifier,
-            )):
-                offers += (ObservationOffer(
-                    "browsergym_visual", "visual", "weak", "high", group,
-                ),)
+            offers += (ObservationOffer(
+                "browsergym_visual", "visual", "weak", "medium", group,
+            ),)
         return ObservationCapabilities(independent, True, offers)
 
     @classmethod
@@ -491,12 +487,7 @@ class BrowserGymMiniWobEnvironment:
         self.structural_source_acquired_count += 1
         visual_selection = selected.get("browsergym_visual")
         candidate_binding_filter: set[str] | None = None
-        visual_capable = any((
-            self.visual_region_proposer,
-            self.visual_candidate_disambiguator,
-            self.visual_predicate_classifier,
-        ))
-        if visual_capable and visual_selection is None:
+        if visual_selection is None:
             results.append(SourceAcquisitionResult(
                 "browsergym_visual",
                 SourceRequirement.UNSELECTED,
@@ -507,7 +498,15 @@ class BrowserGymMiniWobEnvironment:
             try:
                 assert self._task is not None and self.last_visual_escalation is not None
                 visual_observation_id = f"{observation_id}:visual"
-                if (
+                visual_private_bindings: tuple[BrowserGymVisualBinding, ...]
+                if self.last_visual_escalation.mode is VisionEscalationMode.CAPTURE_SCREENSHOT:
+                    visual_source = project_browsergym_screenshot_source(
+                        raw,
+                        observation_id=visual_observation_id,
+                        acquisition_root_id=observation_id,
+                    )
+                    visual_private_bindings = ()
+                elif (
                     self.last_visual_escalation.mode
                     is VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
                 ):
@@ -536,7 +535,7 @@ class BrowserGymMiniWobEnvironment:
                         for binding in private_bindings
                         if binding.binding_id in candidate_binding_filter
                     ]
-                    visual_private_bindings: tuple[BrowserGymVisualBinding, ...] = ()
+                    visual_private_bindings = ()
                 else:
                     if self.visual_region_proposer is not None:
                         self.visual_proposer_calls += 1
@@ -644,11 +643,7 @@ class BrowserGymMiniWobEnvironment:
         )
         decision = decide_visual_escalation(
             evidence_needs,
-            visual_available=any((
-                self.visual_region_proposer,
-                self.visual_candidate_disambiguator,
-                self.visual_predicate_classifier,
-            )),
+            visual_available=True,
             candidate_verification_available=self.visual_candidate_disambiguator is not None,
             discovery_available=self.visual_region_proposer is not None,
             diagnosis_available=self.visual_region_proposer is not None,

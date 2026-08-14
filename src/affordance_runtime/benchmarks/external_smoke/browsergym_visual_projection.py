@@ -101,6 +101,36 @@ def browsergym_visual_frame(raw: dict[str, object], observation_id: str) -> Visu
     )
 
 
+def project_browsergym_screenshot_source(
+    raw: dict[str, object],
+    *,
+    observation_id: str,
+    acquisition_root_id: str,
+) -> SurfaceObservation:
+    """Publish the captured viewport as evidence without inventing semantics or actions."""
+
+    frame = browsergym_visual_frame(raw, observation_id)
+    return SurfaceObservation(
+        observation_id,
+        "browsergym_visual",
+        frame.source_revision,
+        ObservationSourceProfile.visual(),
+        coverage=CoverageState.COMPLETE,
+        artifacts={
+            "screenshot_semantic_state": {
+                "public_summary": "Current raw viewport screenshot; semantic interpretation remains open world.",
+            },
+        },
+        media=(ObservationMedia(
+            "visual-screenshot",
+            "screenshot",
+            "image/png",
+            frame.image_bytes,
+        ),),
+        acquisition_root_id=acquisition_root_id,
+    )
+
+
 def project_browsergym_visual_source(
     raw: dict[str, object],
     *,

@@ -91,6 +91,9 @@ normative:
     lifecycle: current
 
 reference:
+  - role: actor_world_snapshot_convergence_design
+    path: docs/actor-world-snapshot-design.md
+    lifecycle: current
   - role: single_agent_context_convergence_plan
     path: docs/plans/2026-08-14-single-agent-context-convergence.md
     lifecycle: current

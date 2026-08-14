@@ -499,7 +499,36 @@ def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None
             assert environment.last_visual_escalation.mode is VisionEscalationMode.UNAVAILABLE
             assert environment.visual_provider_failure_count == 0
             assert environment.visual_point_grounder_calls == 0
-            assert all(offer.source != "browsergym_visual" for offer in environment.observation_capabilities.offers)
+            assert any(offer.source == "browsergym_visual" for offer in environment.observation_capabilities.offers)
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_raw_screenshot_is_an_independent_visual_source_without_semantic_provider() -> None:
+    async def scenario() -> None:
+        raw = _raw_with_buttons(("okay", "Okay", (50, 20, 40, 30)))
+        environment, task = BrowserGymMiniWobEnvironment.open(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+        )
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_visual_request())
+
+            assert acquired.observation is not None
+            visual = next(
+                item for item in acquired.observation.sources if item.surface == "browsergym_visual"
+            )
+            assert environment.last_visual_escalation is not None
+            assert environment.last_visual_escalation.mode is VisionEscalationMode.CAPTURE_SCREENSHOT
+            assert visual.targets == ()
+            assert visual.facts == ()
+            assert visual.bindings == ()
+            assert len(visual.media) == 1
+            assert environment.visual_source_acquired_count == 1
         finally:
             await environment.close()
 

@@ -15,7 +15,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 
 ## Active slice — existing-action flat semantic tool compiler convergence
 
-Status: `IMPLEMENTED_LOCALLY / FULL_VERIFIED_2509_PASS_27_SKIP / LIVE_NOT_RUN`
+Status: `IMPLEMENTED_LOCALLY / ACTOR_WORLD_CONVERGENCE_IMPLEMENTED / FULL_VERIFIED_2512_PASS_27_SKIP / LIVE_NOT_RUN`
 
 This slice replaces the compatibility `ContextBuilder.selection_key` plus
 provider `actions.groups` chain with the single compiler boundary defined in
@@ -41,6 +41,27 @@ chain to converge, not as a second projection to preserve. Verification and
 Factual authority/status documentation now reflects this implemented slice.
 Fresh live evidence, the remaining static capability registry/profile spine,
 verification-contract migration, and new interaction families remain pending.
+
+The evidence review following the five-witness run reopened the Actor input
+side without reopening compiler authority. The converged representation now
+has one additional world-side owner chain:
+
+```text
+BrowserGym bounded AX structure + screenshot
+  -> SurfaceObservation structure/media (no new bindings)
+  -> ActorWorldSnapshot (sole grounded Actor world)
+  -> binder serialization beside independent flat ToolSpecs
+```
+
+BrowserGym retains structure-only AX nodes separately from semantic action
+targets, with explicit target links but no binding authority. The Actor snapshot
+preserves hierarchy, inline public state/evidence, source coverage and aligned
+media. The binder no longer removes actionable nodes or candidate-owned facts.
+Raw screenshot acquisition is independently selectable without a semantic
+visual provider and creates no targets, facts, bindings or actions. Structured
+provider failures retain only bounded validation stage/code/path and repair
+outcome. No task collection engine, interaction ledger, Submit guard, second
+ActionSpace, or benchmark-specific semantic projection was introduced.
 
 ## Active target-default convergence queue
 

@@ -23,6 +23,7 @@ from affordance_runtime.benchmarks.external_smoke.environment import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
+from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model_policy.serialization import serialize_agent_context
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
@@ -184,6 +185,54 @@ def test_structural_relations_use_only_current_public_target_ids() -> None:
     assert by_role["row"].relations["parent_id"] == by_role["table"].target_id
     assert by_role["row"].relations["child_ids"] == (by_role["cell"].target_id,)
     assert projected.world.bindings == ()
+
+
+def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None:
+    projected = _project(
+        raw_observation(
+            ax_node("panel", "group", "Products", child_ids=("row",)),
+            ax_node("row", "row", "MacBook Pro", parent_id="panel", child_ids=("add",)),
+            ax_node("add", "button", "Add to cart", parent_id="row"),
+        )
+    )
+    task = TaskGoal(
+        "task:hierarchy",
+        "Add MacBook Pro to cart.",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    context = ContextBuilder().build(
+        task,
+        __import__(
+            "affordance_runtime.agent.state",
+            fromlist=["AgentLoopState"],
+        ).AgentLoopState(projected.world, remaining_turns=2),
+        ActionSpaceBuilder().build(task, projected.world),
+        TaskEvaluation(
+            task.task_id,
+            projected.world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+
+    public = GroundedPolicyContextBinder._public_context(
+        context,
+        False,
+        action_selection=True,
+    )
+    roots = public["world"]["documents"][0]["roots"]
+    panel = next(item for item in roots if item["label"] == "Products")
+    row = panel["children"][0]
+    button = row["children"][0]
+    option = next(item for item in context.actions.options if item.target_label == "Add to cart")
+
+    assert row["label"] == "MacBook Pro"
+    assert button["label"] == "Add to cart"
+    assert button["ref"] == option.target_ref
+    encoded = json.dumps(public["world"])
+    assert "entity:" not in encoded
+    assert "observation:" not in encoded
 
 
 def test_browsergym_clickable_generic_uses_descendant_text_without_exposing_routes() -> None:

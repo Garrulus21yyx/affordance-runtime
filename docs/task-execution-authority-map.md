@@ -48,15 +48,19 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 | task boundary | `TaskGoal` | thin intake | allowed/forbidden effects, risk, success boundary | DOM ID, E-ref, coordinate, route |
 | task clarification | `TargetRuntime + AgentRunSession` | matching `UserInputRequest` + intake-admitted next revision | one-shot task revision and stale-projection invalidation | free-form patching, effect inference, physical reset |
 | supplemental context | `IntentContext` | bounded source excerpts | context-only hints | task/effect authority |
-| observed world | `WorldEnvironment` | current environment | `WorldObservation` | task semantics |
+| observed world | `WorldEnvironment` | current environment | `WorldObservation`, including source-owned structural documents and media | task semantics, action authority |
+| BrowserGym structural representation | BrowserGym `SurfaceAdapter` | bounded current AX tree + rendering | semantic targets plus a separate bounded structure document with explicit target links | bindings for structure-only nodes, Actor formatting |
+| raw screenshot acquisition | BrowserGym environment | current captured viewport | independently selectable visual source containing media only | semantic interpretation, bindings, actions |
 | legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, LocalObjective |
 | public action candidates | `ContextBuilder` | current action page + public grounded targets | referentially closed `AgentContext.actions` options | legality, private binding, durable identity, screen coordinates |
 | concrete action rows and flat tools | `GroundedToolCompiler` | complete closed action candidates | shared semantic skeleton, minimal exact public ToolSpec, private resolution table | world lookup, legality, provider grouping, fuzzy matching |
-| provider action serialization | `GroundedPolicyContextBinder` + provider transport | already compiled public ToolSpecs | flat Actor request | candidate grouping, selector choice, resolver data |
+| Actor epistemic projection | `ContextBuilder` + `ActorWorldSnapshot` | bounded current public source structure, semantic targets, facts, evidence, coverage and media | one disposable structure-preserving Actor world | legality, candidate derivation, binding, retained state |
+| provider action serialization | `GroundedPolicyContextBinder` + provider transport | ActorWorldSnapshot + already compiled public ToolSpecs | flat Actor request | world pruning, candidate grouping, selector choice, resolver data |
 | exact tool resolution | grounded catalog resolver | exact emitted schema + private compiler table | existing typed `SelectAction` | world lookup, argument repair to another row, admission |
 | rolling semantic proposal | `LocalObjectiveProposalPort` | TaskGoal + bounded post-observation context | authority-free LocalObjective proposal or typed failure | admission, retained state, action choice |
 | rolling relevance | one `LocalObjective` lifecycle | admitted proposal + current evidence | relevance/evidence/member state | whole-task planning, effect grants |
-| model presentation | `ContextBuilder` | read-only current state + latest canonical `ControlTransition` | disposable `AgentContext`, including an optional bounded `last_transition` projection | retained truth, identity authority, a second transition owner |
+| model presentation | `ContextBuilder` | read-only current state + latest canonical `ControlTransition` | disposable `AgentContext` with one ActorWorldSnapshot and optional bounded `last_transition` | retained truth, identity authority, a second transition owner |
+| provider response validation telemetry | grounded provider adapter | typed redacted structured-output violations | bounded stage/code/path and repair outcome | raw provider payload, action repair, world truth |
 | choice | `AgentPolicy` | one AgentContext | typed context-bound action/control decision | objective construction, binding, executor route, completion truth |
 | admission | AgentLoop decision/action admission | context identity + current ActionSpace | admitted selection or typed rejection | prompt compliance |
 | execution route | currentness/binder/risk chain | admitted selection + fresh world | `BoundActionRequest` | model coordinates/selector |
@@ -91,7 +95,8 @@ target enum. The implemented existing-action path has one compiler projection:
 
 ```text
 WorldObservation + internal ActionSpace/current page
-  -> ModelWorldView + one call-local grounding index
+  -> bounded internal ModelWorldView + one call-local grounding index
+  -> ActorWorldSnapshot from source structure + public world evidence
   -> ContextBuilder.close_action_candidates
   -> AgentContext.actions option
        canonical operation
@@ -106,7 +111,7 @@ WorldObservation + internal ActionSpace/current page
        -> recursive shared skeleton
        -> deterministic minimal semantic selector or explicit E-ref fallback
        -> flat ToolSpec + private exact-resolution table
-  -> GroundedPolicyContextBinder serializes flat ToolSpecs only
+  -> GroundedPolicyContextBinder serializes ActorWorldSnapshot + flat ToolSpecs only
   -> model returns only the emitted semantic/grounding selector fields
        + declared business values
   -> resolver validates the exact emitted schema and queries the private table
@@ -117,16 +122,17 @@ WorldObservation + internal ActionSpace/current page
 `AgentContext.actions` is a disposable view, not another ActionSpace. The
 compiler consumes only those closed candidates; it does not join `target_id` or
 `destination_id` through `AgentContext.world` or the grounding index. The
-provider binder receives already compiled `ToolSpec` objects and neither groups
-nor reinterprets candidates. The Actor request contains no `actions.entities`,
+provider binder receives an already closed `ActorWorldSnapshot` and already
+compiled `ToolSpec` objects; it neither prunes the world nor groups or
+reinterprets candidates. The Actor request contains no `actions.entities`,
 `actions.groups`, action IDs, canonical target IDs, backend selectors, private
-destination tables, or resolver entries. Actionable world facts represented by
-tools are omitted from only this disposable rendering; necessary contextual
-world facts remain.
+destination tables, or resolver entries. Actionable and non-actionable nodes
+use the same source-preserving world representation. Tool semantics never cause
+a node or fact to disappear, because the world answers what exists and the
+tools independently answer what is callable.
 
-`OBJECTIVE_PROPOSAL` receives no action tools and does not apply the
-action-tool-owned world pruning. It cannot acquire action authority through the
-shared context binder.
+`OBJECTIVE_PROPOSAL` receives no action tools and reads the same Actor world. It
+cannot acquire action authority through the shared context binder.
 
 Target and destination choice use the bounded generic semantic-facet algebra.
 The compiler recursively intersects complete records, then chooses the smallest

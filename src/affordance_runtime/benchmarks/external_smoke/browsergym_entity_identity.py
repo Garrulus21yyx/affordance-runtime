@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     CanonicalBrowserControl,
+    CanonicalBrowserStructureNode,
 )
 
 
@@ -25,7 +26,7 @@ class BrowserGymEntityIdentityMap:
 
     def entity_id(
         self,
-        control: CanonicalBrowserControl,
+        control: CanonicalBrowserControl | CanonicalBrowserStructureNode,
         *,
         page_identity: str,
         episode_identity: str,
@@ -47,4 +48,3 @@ class BrowserGymEntityIdentityMap:
         if previous != scope:
             raise RuntimeError("BrowserGym opaque entity identity collision")
         return entity_id
-

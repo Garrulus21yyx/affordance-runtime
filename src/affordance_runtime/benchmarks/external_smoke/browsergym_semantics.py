@@ -111,6 +111,7 @@ class BrowserGymInventoryAnalysis:
 @dataclass(frozen=True)
 class BrowserGymSemanticAnalysis:
     controls: tuple[CanonicalBrowserControl, ...]
+    structure: tuple[CanonicalBrowserStructureNode, ...]
     inventory: BrowserGymInventoryAnalysis
     diagnostic_role_distribution: tuple[tuple[str, int], ...]
 
@@ -124,6 +125,17 @@ class _AxRecord:
     role: str
     name: str
     state: tuple[tuple[str, SemanticScalar], ...]
+
+
+@dataclass(frozen=True)
+class CanonicalBrowserStructureNode:
+    private_bid: str
+    private_node_id: str
+    private_parent_id: str
+    private_child_ids: tuple[str, ...]
+    role: str
+    accessible_name: str
+    public_state: tuple[tuple[str, SemanticScalar], ...]
 
 
 def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
@@ -178,8 +190,25 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         record.bid not in suppressed_clickable_bids and is_inventory_target_browsergym_role(record.role)
         for record in records
     )
+    structure_by_node_id: dict[str, CanonicalBrowserStructureNode] = {}
+    for record in records:
+        if not record.node_id:
+            continue
+        structure_by_node_id.setdefault(
+            record.node_id,
+            CanonicalBrowserStructureNode(
+                record.bid,
+                record.node_id,
+                record.parent_id,
+                record.child_ids,
+                record.role or "unknown",
+                record.name,
+                record.state,
+            ),
+        )
     return BrowserGymSemanticAnalysis(
         tuple(controls),
+        tuple(structure_by_node_id.values()),
         BrowserGymInventoryAnalysis(
             BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
             recognized,

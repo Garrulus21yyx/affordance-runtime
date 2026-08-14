@@ -24,6 +24,9 @@ def serialize_agent_context(
     # Legacy structured-package serialization remains byte-for-byte independent
     # of that private resolver/index surface.
     payload.pop("grounding", None)
+    # ActorWorldSnapshot belongs to the grounded flat-tool protocol. The legacy
+    # structured-package protocol keeps its existing ModelWorldView contract.
+    payload.pop("actor_world", None)
     serialized = json.dumps(
         payload,
         ensure_ascii=False,

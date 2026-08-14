@@ -171,6 +171,7 @@ differently from Implementation Status, Implementation Status wins.
 
 - [Architecture entrypoint](architecture.md)
 - [Interaction capability onboarding proposed design](interaction-capability-onboarding-design.md)
+- [Actor world snapshot convergence design](actor-world-snapshot-design.md)
 - [Pricing extraction baseline scenario](scenarios/pricing-extraction.md)
 - [Reversible settings baseline scenario](scenarios/settings-update.md)
 - [Approval-gated export baseline scenario](scenarios/approval-gated-report-export.md)

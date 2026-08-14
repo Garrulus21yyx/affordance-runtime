@@ -15,6 +15,7 @@ from affordance_runtime.world.contracts import SurfaceObservation
 
 class VisionEscalationMode(StrEnum):
     SKIP = "skip"
+    CAPTURE_SCREENSHOT = "capture_screenshot"
     VERIFY_STRUCTURED_CANDIDATES = "verify_structured_candidates"
     DISCOVER_VISUAL_ENTITIES = "discover_visual_entities"
     DIAGNOSE_POSTCONDITION = "diagnose_postcondition"
@@ -25,6 +26,7 @@ class VisionEvidenceNeed(StrEnum):
     """The bounded kind of evidence missing from the structured control plane."""
 
     NONE = "none"
+    RAW_SCREENSHOT = "raw_screenshot"
     OPEN_WORLD_ENTITY_DISCOVERY = "open_world_entity_discovery"
     SINGLE_TARGET_DISAMBIGUATION = "single_target_disambiguation"
     POSTCONDITION_DIAGNOSIS = "postcondition_diagnosis"
@@ -39,6 +41,7 @@ class VisionEscalationDecision:
     @property
     def selects_visual(self) -> bool:
         return self.mode in {
+            VisionEscalationMode.CAPTURE_SCREENSHOT,
             VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES,
             VisionEscalationMode.DISCOVER_VISUAL_ENTITIES,
             VisionEscalationMode.DIAGNOSE_POSTCONDITION,
@@ -57,7 +60,7 @@ def derive_visual_evidence_needs(
     if terminal:
         return ()
     if explicitly_requested:
-        return (VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY,)
+        return (VisionEvidenceNeed.RAW_SCREENSHOT,)
     if postcondition_unresolved:
         return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
     if not structured.bindings:
@@ -84,6 +87,24 @@ def decide_visual_escalation(
             "structured_evidence_sufficient",
         )
     evidence_need = evidence_needs[0]
+    if evidence_need is VisionEvidenceNeed.RAW_SCREENSHOT:
+        if not visual_available:
+            return VisionEscalationDecision(
+                VisionEscalationMode.UNAVAILABLE,
+                "visual_capability_unavailable",
+                evidence_need,
+            )
+        if discovery_available:
+            return VisionEscalationDecision(
+                VisionEscalationMode.DISCOVER_VISUAL_ENTITIES,
+                "explicit_visual_semantic_discovery",
+                evidence_need,
+            )
+        return VisionEscalationDecision(
+            VisionEscalationMode.CAPTURE_SCREENSHOT,
+            "raw_screenshot_requested",
+            evidence_need,
+        )
     if evidence_need is VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY:
         requested_mode = VisionEscalationMode.DISCOVER_VISUAL_ENTITIES
         reason_code = "open_world_entity_discovery_required"

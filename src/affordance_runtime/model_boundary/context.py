@@ -17,6 +17,7 @@ from affordance_runtime.model_boundary.control_feedback_projection import AgentC
 from affordance_runtime.model_boundary.world_projection import ModelWorldView, PublicFactView
 
 if TYPE_CHECKING:
+    from affordance_runtime.model_boundary.actor_world_snapshot import ActorWorldSnapshot
     from affordance_runtime.model_boundary.transition_digest_projection import (
         AgentTransitionDigestView,
     )
@@ -187,6 +188,7 @@ class AgentContext:
     image_inputs: tuple[AgentImageInput, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
     last_transition: AgentTransitionDigestView | None = None
+    actor_world: ActorWorldSnapshot | None = None
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -203,3 +205,8 @@ class AgentContext:
 
             if not isinstance(self.last_transition, AgentTransitionDigestView):
                 raise TypeError("AgentContext last transition must be a typed projection")
+        if self.actor_world is not None:
+            from affordance_runtime.model_boundary.actor_world_snapshot import ActorWorldSnapshot
+
+            if not isinstance(self.actor_world, ActorWorldSnapshot):
+                raise TypeError("AgentContext actor world must be a typed snapshot")

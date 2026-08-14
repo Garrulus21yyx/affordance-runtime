@@ -210,6 +210,28 @@ class EntityCorrespondence:
 
 
 @dataclass(frozen=True)
+class ObservationStructureNode:
+    """One public, non-authoritative node in a source structural document."""
+
+    structure_id: str
+    role: str
+    label: str
+    state: dict[str, Any] = field(default_factory=dict)
+    parent_structure_id: str = ""
+    child_structure_ids: tuple[str, ...] = ()
+    semantic_target_id: str = ""
+    parent_outside_structure: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.structure_id.strip() or not self.role.strip():
+            raise ValueError("observation structure node requires public identity and role")
+        object.__setattr__(self, "state", freeze_json(self.state))
+        object.__setattr__(self, "child_structure_ids", tuple(self.child_structure_ids))
+        if len(set(self.child_structure_ids)) != len(self.child_structure_ids):
+            raise ValueError("observation structure children must be unique")
+
+
+@dataclass(frozen=True)
 class ActionBinding:
     binding_id: str
     world_observation_id: str
@@ -287,6 +309,8 @@ class SurfaceObservation:
     acquisition_root_id: str = ""
     correspondences: tuple[EntityCorrespondence, ...] = ()
     visual_only_target_ids: tuple[str, ...] = ()
+    structure: tuple[ObservationStructureNode, ...] = ()
+    structure_total_count: int = 0
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.surface.strip() or not self.revision.strip():
@@ -330,6 +354,26 @@ class SurfaceObservation:
             raise ValueError("a source target cannot be both corresponded and visual-only")
         if self.source_profile.modality.value != "visual" and self.visual_only_target_ids:
             raise ValueError("only a visual source may declare visual-only identities")
+        structure = tuple(self.structure)
+        if any(not isinstance(item, ObservationStructureNode) for item in structure):
+            raise TypeError("surface structure must be a typed tuple")
+        if len({item.structure_id for item in structure}) != len(structure):
+            raise ValueError("surface structure identities must be unique")
+        structure_ids = {item.structure_id for item in structure}
+        if any(
+            item.semantic_target_id and item.semantic_target_id not in local_ids
+            for item in structure
+        ):
+            raise ValueError("surface structure semantic link must reference a local target")
+        if any(
+            (item.parent_structure_id and item.parent_structure_id not in structure_ids)
+            or any(child not in structure_ids for child in item.child_structure_ids)
+            for item in structure
+        ):
+            raise ValueError("surface structure relations must be closed over retained nodes")
+        if self.structure_total_count < len(structure):
+            raise ValueError("surface structure total cannot be smaller than retained nodes")
+        object.__setattr__(self, "structure", structure)
         if self.entity_inventory.status is not EntityInventoryStatus.UNASSESSED:
             if self.entity_inventory.entity_count != len(self.targets):
                 raise ValueError("entity inventory must match retained surface targets")

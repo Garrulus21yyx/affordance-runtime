@@ -38,6 +38,7 @@ from affordance_runtime.world import (
     ObservationGroundingRegion,
     ObservationMedia,
     ObservationSourceProfile,
+    ObservationStructureNode,
     SemanticInventorySummary,
     SemanticTarget,
     StateFact,
@@ -54,6 +55,7 @@ MAX_INVENTORY_TARGETS = 512
 MAX_INVENTORY_FACTS = 4_096
 MAX_INVENTORY_OPTIONS_PER_TARGET = 512
 MAX_SELECT_OPTIONS = 16
+MAX_STRUCTURE_NODES = 512
 
 
 @dataclass(frozen=True)
@@ -118,6 +120,44 @@ def project_browsergym_observation(
         )
         for node in projected
     }
+    retained_structure = analysis.structure[:MAX_STRUCTURE_NODES]
+    structure_ids = {
+        structure_node.private_node_id: entity_identity.entity_id(
+            structure_node,
+            page_identity=page_identity,
+            episode_identity=episode_identity,
+        )
+        for structure_node in retained_structure
+    }
+    derived_structure_children: dict[str, list[str]] = {}
+    for structure_node in retained_structure:
+        if structure_node.private_parent_id in structure_ids:
+            derived_structure_children.setdefault(structure_node.private_parent_id, []).append(
+                structure_node.private_node_id
+            )
+    structure = tuple(
+        ObservationStructureNode(
+            structure_ids[structure_node.private_node_id],
+            structure_node.role,
+            structure_node.accessible_name,
+            dict(structure_node.public_state),
+            structure_ids.get(structure_node.private_parent_id, ""),
+            tuple(
+                structure_ids[child_id]
+                for child_id in dict.fromkeys((
+                    *structure_node.private_child_ids,
+                    *derived_structure_children.get(structure_node.private_node_id, ()),
+                ))
+                if child_id in structure_ids
+            ),
+            target_ids.get(structure_node.private_node_id, ""),
+            bool(
+                structure_node.private_parent_id
+                and structure_node.private_parent_id not in structure_ids
+            ),
+        )
+        for structure_node in retained_structure
+    )
     controls_by_node_id = {node.private_node_id: node for node in projected}
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
@@ -244,6 +284,8 @@ def project_browsergym_observation(
         screenshot_media,
         entity_inventory,
         acquisition_root_id=observation_id,
+        structure=structure,
+        structure_total_count=len(analysis.structure),
     )
     world = WorldObservation(
         observation_id,

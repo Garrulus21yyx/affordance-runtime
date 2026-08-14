@@ -13,6 +13,7 @@ from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, T
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
 from affordance_runtime.model_boundary.action_candidate_projection import close_action_candidates
+from affordance_runtime.model_boundary.actor_world_snapshot import project_actor_world_snapshot
 from affordance_runtime.model_boundary.budgets import (
     DEFAULT_MAX_TOTAL_WAIT_MS,
     BoundedSection,
@@ -165,7 +166,15 @@ class ContextBuilder:
             grounding.index,
             last_transition,
         )
-        return _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
+        context = _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
+        actor_world = project_actor_world_snapshot(
+            state.current_observation,
+            context.world,
+            grounding.index,
+            grounding.images,
+            max_structure_nodes=self.budget.max_targets * 2,
+        )
+        return replace(context, actor_world=actor_world)
 
     def page(
         self,

@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model_boundary.actor_world_snapshot import actor_world_for_delivery
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.context import AgentContext
 from affordance_runtime.model_boundary.contracts import AgentTurnView
@@ -98,21 +99,12 @@ class GroundedPolicyContextBinder:
     ) -> dict[str, object]:
         refs = dict(context.grounding.target_refs)
         evidence_refs = _evidence_refs(context)
-        actionable_refs = (
-            frozenset(option.target_ref for option in context.actions.options if option.target_ref)
-            if action_selection
-            else frozenset()
-        )
-        represented_fact_fields = _candidate_fact_fields(context)
+        if context.actor_world is None:
+            raise ValueError("grounded policy requires an ActorWorldSnapshot")
         public: dict[str, object] = {
             "task": _task(context),
-            "world": _world(
-                context,
-                refs,
-                evidence_refs,
-                include_images,
-                excluded_entity_refs=actionable_refs,
-                represented_fact_fields=represented_fact_fields,
+            "world": to_json_compatible(
+                actor_world_for_delivery(context.actor_world, include_images=include_images)
             ),
             "progress": _progress(context, refs, evidence_refs),
             "last_transition": to_json_compatible(context.last_transition),
@@ -201,77 +193,6 @@ def _task(context: AgentContext) -> dict[str, object]:
             },
         ),
     }
-
-
-def _world(
-    context: AgentContext,
-    refs: Mapping[str, str],
-    evidence_refs: Mapping[str, str],
-    include_images: bool,
-    *,
-    excluded_entity_refs: frozenset[str] = frozenset(),
-    represented_fact_fields: Mapping[str, frozenset[str]] | None = None,
-) -> dict[str, object]:
-    world = context.world
-    return {
-        "entities": tuple(
-            {
-                "ref": item.ref,
-                "role": item.role,
-                "label": item.label,
-                "state": to_json_compatible(item.state),
-                "relations": item.relation_hints,
-                "verbs": item.verbs,
-                "marked": item.marked if include_images else False,
-            }
-            for item in context.grounding.entities
-            if item.ref not in excluded_entity_refs
-        ),
-        "facts": _section(
-            _without_candidate_owned_facts(world.facts, represented_fact_fields or {}),
-            lambda item: {
-                "evidence_ref": evidence_refs[item.fact_ref],
-                "subject": _subject(item.subject_id, refs),
-                "field": item.predicate,
-                "value": project_public_value(item.value),
-            },
-        ),
-        "conflicts": _section(
-            world.conflicts,
-            lambda item: {
-                "subject": _subject(item.subject_id, refs),
-                "field": item.predicate,
-                "summary": item.summary,
-            },
-        ),
-        "artifacts": _section(world.artifact_summaries, to_json_compatible),
-        "sources": to_json_compatible(world.sources),
-        "observation_capabilities": to_json_compatible(world.observation_capabilities),
-        "traversal": to_json_compatible(world.traversal),
-    }
-
-
-def _candidate_fact_fields(context: AgentContext) -> dict[str, frozenset[str]]:
-    represented: dict[str, frozenset[str]] = {}
-    for option in context.actions.options:
-        fields = set(option.target_state)
-        if "semantic_grid_coordinate" in fields:
-            fields.remove("semantic_grid_coordinate")
-            fields.update(("grid_coordinate", "grid_membership", "grid_coordinate_confidence"))
-        represented[option.target_id] = frozenset(fields)
-    return represented
-
-
-def _without_candidate_owned_facts(
-    facts: BoundedSection[Any],
-    represented: Mapping[str, frozenset[str]],
-) -> BoundedSection[Any]:
-    items = tuple(
-        item
-        for item in facts.items
-        if item.predicate not in represented.get(item.subject_id, frozenset())
-    )
-    return BoundedSection(items, facts.total_count, facts.total_count > len(items))
 
 
 def _progress(

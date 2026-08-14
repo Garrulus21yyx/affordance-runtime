@@ -243,7 +243,13 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     payload = _bound_public_context(context)
     assert "actions" not in payload
     assert not {"actions.entities", "actions.groups"}.intersection(public)
-    assert payload["world"]["entities"] == []
+    nodes = [
+        node
+        for document in payload["world"]["documents"]
+        for node in document["roots"]
+    ]
+    assert {item["ref"] for item in nodes} == {"E1", "E2", "E3"}
+    assert {item["label"] for item in nodes} == {"Username", "Password", "Login"}
 
 
 def test_objective_context_does_not_expose_action_selection_candidates() -> None:
@@ -262,7 +268,12 @@ def test_objective_context_does_not_expose_action_selection_candidates() -> None
     public = json.loads(content)
 
     assert "actions" not in public
-    assert {item["ref"] for item in public["world"]["entities"]} == {
+    nodes = [
+        node
+        for document in public["world"]["documents"]
+        for node in document["roots"]
+    ]
+    assert {item["ref"] for item in nodes} == {
         item.ref for item in context.grounding.entities
     }
     assert not {"activate", "type_text", "select_option", "read"}.intersection(
@@ -965,11 +976,62 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
     assert not isinstance(outcome, ModelFailure)
     assert port.calls == 2
     assert adapter.last_schema_repair_count == 1
+    assert adapter.last_structured_output_violations == (
+        StructuredOutputViolation("target", "string_type"),
+    )
+    assert adapter.last_structured_output_repair_attempted is True
+    assert adapter.last_structured_output_repair_failed is False
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
     assert '"field_path":"target"' in repair_system
     assert "Return exactly one flat JSON object" in repair_system
     assert "private action response" not in repair_system
+
+
+def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repair() -> None:
+    class FailingRepairPort(_ActionPort):
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
+            self.calls += 1
+            raise StructuredOutputError(
+                "private provider response",
+                violations=(
+                    StructuredOutputViolation(
+                        "decision.action.tool_name",
+                        "missing_required_field",
+                    ),
+                ),
+            )
+
+    context = _context()
+    adapter = GroundedActionAdapter(
+        FailingRepairPort(),
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert isinstance(outcome, ModelFailure)
+    assert outcome.kind.value == "schema_error"
+    assert outcome.attempt_origin.value == "network"
+    assert adapter.last_model_call_count == 2
+    assert adapter.last_structured_output_repair_attempted is True
+    assert adapter.last_structured_output_repair_failed is True
+    trace = _policy_trace_event(1, context, outcome, adapter)
+    assert trace["structured_output_validation_stage"] == "provider_response_to_grounded_command"
+    assert trace["structured_output_violations"] == (
+        {
+            "field_path": "decision.action.tool_name",
+            "code": "missing_required_field",
+        },
+        {
+            "field_path": "decision.action.tool_name",
+            "code": "missing_required_field",
+        },
+    )
+    assert trace["structured_output_repair_attempted"] is True
+    assert trace["structured_output_repair_failed"] is True
 
 
 def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:

@@ -60,6 +60,7 @@ from affordance_runtime.model_port import (
     ProviderModelError,
     StructuredModelError,
     StructuredOutputError,
+    StructuredOutputViolation,
     structured_output_repair_contract,
 )
 from affordance_runtime.model_tool_transport import tool_transport_for_model
@@ -126,6 +127,11 @@ class _GroundedAdapterBase:
     last_argument_violation_paths: tuple[str, ...] = field(default=(), init=False, compare=False)
     last_selected_operation: str = field(default="", init=False, compare=False)
     last_repaired_operation_match: bool = field(default=False, init=False, compare=False)
+    last_structured_output_violations: tuple[StructuredOutputViolation, ...] = field(
+        default=(), init=False, compare=False
+    )
+    last_structured_output_repair_attempted: bool = field(default=False, init=False, compare=False)
+    last_structured_output_repair_failed: bool = field(default=False, init=False, compare=False)
     last_attempt_origin: ProviderAttemptOrigin = field(
         default=ProviderAttemptOrigin.UNKNOWN,
         init=False,
@@ -180,6 +186,9 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_argument_violation_paths", ())
         object.__setattr__(self, "last_selected_operation", "")
         object.__setattr__(self, "last_repaired_operation_match", False)
+        object.__setattr__(self, "last_structured_output_violations", ())
+        object.__setattr__(self, "last_structured_output_repair_attempted", False)
+        object.__setattr__(self, "last_structured_output_repair_failed", False)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
 
     def _compile_catalog(self, request: ModelDecisionRequest, expected_schema: str, catalog_builder):
@@ -297,7 +306,11 @@ class _GroundedAdapterBase:
                 ),
             )
         if isinstance(exc, StructuredOutputError):
-            return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded cognition violated its structured schema")
+            return _failure(
+                ModelFailureKind.SCHEMA_ERROR,
+                "grounded cognition violated its structured schema",
+                attempt_origin=ProviderAttemptOrigin.NETWORK,
+            )
         if isinstance(exc, StructuredModelError):
             return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded cognition response was invalid")
         if isinstance(exc, (TypeError, ValueError, json.JSONDecodeError)):
@@ -318,10 +331,15 @@ class _GroundedAdapterBase:
                 payload = await self._generate_structured(messages, payload_type)
             except StructuredOutputError as exc:
                 object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
-                payload = await self._generate_structured(
-                    _format_repair_messages(messages, exc),
-                    payload_type,
-                )
+                self._record_structured_output(exc, repair_attempted=True)
+                try:
+                    payload = await self._generate_structured(
+                        _format_repair_messages(messages, exc),
+                        payload_type,
+                    )
+                except StructuredOutputError as repair_exc:
+                    self._record_structured_output(repair_exc, repair_failed=True)
+                    raise
             alias_map = dict(aliases)
             operation_name = alias_map.get(payload.op, payload.op)
             spec = next((item for item in specs if item.name == operation_name), None)
@@ -343,12 +361,37 @@ class _GroundedAdapterBase:
         except StructuredOutputError as exc:
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
             object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
-            return await generate(
-                _format_repair_messages(messages, exc),
-                specs,
-                self.config,
-                require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
-            )
+            self._record_structured_output(exc, repair_attempted=True)
+            try:
+                return await generate(
+                    _format_repair_messages(messages, exc),
+                    specs,
+                    self.config,
+                    require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
+                )
+            except StructuredOutputError as repair_exc:
+                self._record_structured_output(repair_exc, repair_failed=True)
+                raise
+
+    def _record_structured_output(
+        self,
+        error: StructuredOutputError,
+        *,
+        repair_attempted: bool = False,
+        repair_failed: bool = False,
+    ) -> None:
+        combined = (*self.last_structured_output_violations, *error.violations)
+        object.__setattr__(self, "last_structured_output_violations", combined[:8])
+        object.__setattr__(
+            self,
+            "last_structured_output_repair_attempted",
+            self.last_structured_output_repair_attempted or repair_attempted or repair_failed,
+        )
+        object.__setattr__(
+            self,
+            "last_structured_output_repair_failed",
+            self.last_structured_output_repair_failed or repair_failed,
+        )
 
     async def _repair_selected_operation(
         self,

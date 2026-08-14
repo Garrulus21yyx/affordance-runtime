@@ -164,11 +164,22 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
         False,
         action_selection=True,
     )
-    assert not {
-        fact["field"]
-        for fact in public["world"]["facts"]["items"]
-        if fact["subject"] == candidate.target_ref
-    }.intersection({"grid_coordinate", "grid_membership", "grid_coordinate_confidence"})
+    pending = [
+        node
+        for document in public["world"]["documents"]
+        for node in document["roots"]
+    ]
+    actor_node = None
+    while pending:
+        item = pending.pop()
+        if item["ref"] == candidate.target_ref:
+            actor_node = item
+            break
+        pending.extend(item["children"])
+    assert actor_node is not None
+    assert set(actor_node["state"]).issuperset(
+        {"grid_coordinate", "grid_membership", "grid_coordinate_confidence"}
+    )
     from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
 
     action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)

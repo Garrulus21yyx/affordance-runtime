@@ -59,7 +59,7 @@ duplicate, stale, or unrendered refs. Business schemas are copied generically
 without verb-specific branches or parameter renaming.
 
 The action provider envelope now contains task/progress, bounded transition and
-history, necessary non-tool current context, screenshot grounding, flat tools,
+history, one source-preserving `ActorWorldSnapshot`, screenshot grounding, flat tools,
 and bounded Runtime feedback. It contains no candidate records,
 `actions.entities`, `actions.groups`, action IDs, private destination tables, or
 resolver entries. The provider binder does not regroup candidates. Resolution
@@ -67,7 +67,30 @@ validates the exact emitted schema and queries only the private compiler table;
 ordinary still-current ActionSpace admission/currentness/binding/execution is
 unchanged. BrowserGym ActionSpace semantics are now `activate`, `type_text`, and
 `select_option`, while `click`, `fill`, and `select_option` remain adapter-private
-primitives. Focused compiler/grounded-tool tests, full `2509 passed, 27 skipped`,
+primitives.
+
+The Actor environment representation is now closed independently from tools.
+BrowserGym retains a bounded public AX structural document in each structural
+`SurfaceObservation`, including structure-only containers that have no binding
+and cannot enter `ActionSpace`. `ContextBuilder` projects that document, current
+semantic targets, inline public state/fact evidence, source coverage, conflicts,
+artifacts and aligned media exactly once into `ActorWorldSnapshot`. Semantic
+targets use current E-refs; context-only nodes use non-callable N-refs. The
+grounded binder serializes this snapshot and compiled ToolSpecs without
+candidate/world deduplication, actionable-node removal, fact removal, or relation
+regrouping. The internal `ModelWorldView` remains a bounded construction input
+and is not a second grounded Actor payload.
+
+BrowserGym raw screenshots are now an independently offered visual observation
+source even without region, disambiguation or classification providers. Raw
+capture contributes media only and cannot create targets, bindings or action
+authority. The structure-first transport attaches media only after the fresh
+world contains the selected visual source. Grounded provider schema failures
+retain bounded redacted validation paths/codes and repair outcome in telemetry;
+raw provider payloads remain absent.
+
+Focused compiler/grounded-tool, BrowserGym world/vision, acquisition, lattice,
+legacy serialization and model-policy tests pass; full `2512 passed, 27 skipped`,
 Ruff, and mypy pass locally. No fresh live benchmark was run; the historical
 clean `b6e0546` grid witness remains prior evidence and does not attest this
 working tree or replace the pending five-case gate.
