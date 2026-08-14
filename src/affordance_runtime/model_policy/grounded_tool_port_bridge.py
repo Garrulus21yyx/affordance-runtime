@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, create_model, field_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
@@ -38,6 +38,7 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
 )
 from affordance_runtime.model_policy.grounded_tool_compiler import CompiledGroundedTool
 from affordance_runtime.model_policy.grounded_tool_contracts import (
+    GROUNDED_TOOL_CALL_ENVELOPE,
     GROUNDED_TOOLS_PROTOCOL,
     GroundedActionResolution,
     GroundedToolResolutionCode,
@@ -67,12 +68,45 @@ from affordance_runtime.model_tool_transport import tool_transport_for_model
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 
+class _GroundedArgumentsBase(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+
 class _GroundedCommandPayloadBase(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
-    op: str
+    name: str
+    arguments: _GroundedArgumentsBase = Field(default_factory=_GroundedArgumentsBase)
 
-    @field_validator("op")
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_tool_call_envelope(cls, value: object) -> object:
+        """Accept equivalent provider wire shapes without changing argument values."""
+
+        if not isinstance(value, Mapping):
+            return value
+        raw = dict(value)
+        name = raw.pop("name", None)
+        operation = raw.pop("op", None)
+        if name is None:
+            name = operation
+        elif operation is not None and operation != name:
+            return value
+        arguments = raw.pop("arguments", None)
+        args_alias = raw.pop("args", None)
+        if arguments is not None and args_alias is not None and arguments != args_alias:
+            return value
+        if arguments is None:
+            arguments = args_alias
+        if arguments is None:
+            arguments = raw
+        elif raw:
+            if not isinstance(arguments, Mapping) or set(arguments).intersection(raw):
+                return value
+            arguments = {**arguments, **raw}
+        return {"name": name, "arguments": arguments}
+
+    @field_validator("name")
     @classmethod
     def _operation(cls, value: str) -> str:
         if not value or len(value) > 64:
@@ -80,9 +114,8 @@ class _GroundedCommandPayloadBase(BaseModel):
         return value
 
     def command_arguments(self, spec: ToolSpec | None = None) -> dict[str, object]:
-        admitted = _admitted_properties(spec, set(type(self).model_fields) - {"op"})
-        values = self.model_dump(exclude={"op"}, exclude_none=True)
-        result = {name: value for name, value in values.items() if name in admitted}
+        del spec
+        result = self.arguments.model_dump(exclude_none=True)
         validate_json_tree(result)
         return result
 
@@ -93,21 +126,6 @@ class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
 
 class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
     """Compact objective-proposal command with no action-selection fields."""
-
-    value: object | None = None
-
-    @field_validator("value")
-    @classmethod
-    def _value(cls, value: object | None) -> object | None:
-        validate_json_tree(value)
-        return value
-
-
-def _admitted_properties(spec: ToolSpec | None, default: set[str]) -> set[str]:
-    if spec is None:
-        return set(default)
-    properties = spec.input_schema.get("properties")
-    return set(properties) if isinstance(properties, Mapping) else set()
 
 
 @dataclass(frozen=True)
@@ -127,6 +145,9 @@ class _GroundedAdapterBase:
     last_argument_violation_paths: tuple[str, ...] = field(default=(), init=False, compare=False)
     last_selected_operation: str = field(default="", init=False, compare=False)
     last_repaired_operation_match: bool = field(default=False, init=False, compare=False)
+    last_routing_normalization: str = field(default="", init=False, compare=False)
+    last_routing_original_operation: str = field(default="", init=False, compare=False)
+    last_routing_normalized_operation: str = field(default="", init=False, compare=False)
     last_structured_output_violations: tuple[StructuredOutputViolation, ...] = field(
         default=(), init=False, compare=False
     )
@@ -186,6 +207,9 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_argument_violation_paths", ())
         object.__setattr__(self, "last_selected_operation", "")
         object.__setattr__(self, "last_repaired_operation_match", False)
+        object.__setattr__(self, "last_routing_normalization", "")
+        object.__setattr__(self, "last_routing_original_operation", "")
+        object.__setattr__(self, "last_routing_normalized_operation", "")
         object.__setattr__(self, "last_structured_output_violations", ())
         object.__setattr__(self, "last_structured_output_repair_attempted", False)
         object.__setattr__(self, "last_structured_output_repair_failed", False)
@@ -224,6 +248,12 @@ class _GroundedAdapterBase:
         if len(calls) != 1:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
         call = calls[0]
+        normalized = _normalize_catalog_call(catalog, call)
+        if normalized.name != call.name:
+            object.__setattr__(self, "last_routing_normalization", "unique_same_operation_argument_owner")
+            object.__setattr__(self, "last_routing_original_operation", call.name)
+            object.__setattr__(self, "last_routing_normalized_operation", normalized.name)
+            call = normalized
         try:
             decision = resolver(
                 catalog,
@@ -237,7 +267,9 @@ class _GroundedAdapterBase:
             spec = next((item for item in catalog.specs if item.name == call.name), None)
             if spec is None:
                 raise
-            binding = catalog.bindings[next(index for index, item in enumerate(catalog.specs) if item.name == call.name)]
+            binding = catalog.bindings[
+                next(index for index, item in enumerate(catalog.specs) if item.name == call.name)
+            ]
             issue = validate_value_issue(call.arguments, spec.input_schema, path="parameters")
             if issue is None:
                 raise
@@ -341,11 +373,11 @@ class _GroundedAdapterBase:
                     self._record_structured_output(repair_exc, repair_failed=True)
                     raise
             alias_map = dict(aliases)
-            operation_name = alias_map.get(payload.op, payload.op)
+            operation_name = alias_map.get(payload.name, payload.name)
             spec = next((item for item in specs if item.name == operation_name), None)
             if spec is None and len(specs) == 1:
                 spec = specs[0]
-            operation = spec.name if spec is not None else payload.op
+            operation = spec.name if spec is not None else payload.name
             return (ToolCall(operation, payload.command_arguments(spec)),)
         generate = getattr(self.port, "generate_tool_calls", None)
         if generate is None:
@@ -423,7 +455,7 @@ class _GroundedAdapterBase:
         else:
             payload_type = _command_payload_type((repair_spec,), payload_base=payload_base)
             payload = await self._generate_structured(repair_messages, payload_type)
-            repaired = ToolCall(payload.op, payload.command_arguments(repair_spec))
+            repaired = ToolCall(payload.name, payload.command_arguments(repair_spec))
         if _selector_changed(original_call, repaired, binding):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return repaired
@@ -443,6 +475,7 @@ class GroundedActionAdapter(_GroundedAdapterBase):
                 "action_selection",
                 self.perception_profile.value,
                 self.transport_kind.value,
+                GROUNDED_TOOL_CALL_ENVELOPE,
             )
         )
 
@@ -497,6 +530,7 @@ class GroundedObjectiveAdapter(_GroundedAdapterBase):
                 "objective_proposal",
                 self.perception_profile.value,
                 self.transport_kind.value,
+                GROUNDED_TOOL_CALL_ENVELOPE,
             )
         )
 
@@ -570,28 +604,47 @@ def _command_payload_type(
     names = (*tuple(item.name for item in specs), *(item[0] for item in aliases))
     if not names or len(names) != len(set(names)):
         raise ValueError("grounded operation menu is invalid")
-    digest_material = tuple(
-        json.dumps(to_json_compatible(spec.input_schema), sort_keys=True, separators=(",", ":"))
-        for spec in specs
+    digest_material = (
+        GROUNDED_TOOL_CALL_ENVELOPE,
+        *tuple(
+            json.dumps(to_json_compatible(spec.input_schema), sort_keys=True, separators=(",", ":")) for spec in specs
+        ),
     )
     digest = hashlib.sha256("\0".join((*names, *digest_material)).encode()).hexdigest()[:12]
     allowed_operation = Literal.__getitem__(names)
-    fields: dict[str, Any] = {"op": (allowed_operation, ...)}
-    properties: dict[str, list[Mapping[str, object]]] = {}
-    for spec in specs:
+    argument_models: list[type[_GroundedArgumentsBase]] = []
+    for index, spec in enumerate(specs):
         raw = spec.input_schema.get("properties", {})
         if not isinstance(raw, Mapping):
             raise ValueError("grounded tool properties are invalid")
+        required = spec.input_schema.get("required", ())
+        if not isinstance(required, tuple | list):
+            raise ValueError("grounded tool required properties are invalid")
+        argument_fields: dict[str, Any] = {}
         for name, schema in raw.items():
             if not isinstance(name, str) or not isinstance(schema, Mapping):
                 raise ValueError("grounded tool property schema is invalid")
-            properties.setdefault(name, []).append(schema)
-    for name, schemas in properties.items():
-        fields[name] = (_payload_annotation(tuple(schemas)) | None, None)
+            annotation = _payload_annotation((schema,))
+            argument_fields[name] = (annotation, ...) if name in required else (annotation | None, None)
+        argument_models.append(
+            create_model(
+                f"GroundedArguments_{digest}_{index}",
+                __base__=_GroundedArgumentsBase,
+                **argument_fields,
+            )
+        )
+    arguments_annotation: Any
+    if len(argument_models) == 1:
+        arguments_annotation = argument_models[0]
+    else:
+        arguments_annotation = argument_models[0]
+        for model in argument_models[1:]:
+            arguments_annotation |= model
     return create_model(
         f"GroundedToolCommand_{digest}",
         __base__=payload_base,
-        **fields,
+        name=(allowed_operation, ...),
+        arguments=(arguments_annotation, ...),
     )
 
 
@@ -620,12 +673,41 @@ def _selector_names(binding: object) -> tuple[str, ...]:
     return tuple(item.public_name for item in binding.selector_fields)
 
 
+def _normalize_catalog_call(catalog: object, call: ToolCall) -> ToolCall:
+    """Reconcile redundant compiled routing with one explicit, uniquely owned selector."""
+
+    specs = tuple(getattr(catalog, "specs", ()))
+    bindings = tuple(getattr(catalog, "bindings", ()))
+    selected_index = next((index for index, spec in enumerate(specs) if spec.name == call.name), None)
+    if selected_index is None or selected_index >= len(bindings):
+        return call
+    selected_spec = specs[selected_index]
+    if validate_value_issue(call.arguments, selected_spec.input_schema, path="parameters") is None:
+        return call
+    selected_binding = bindings[selected_index]
+    if not isinstance(selected_binding, CompiledGroundedTool):
+        return call
+    matches: list[ToolSpec] = []
+    for spec, binding in zip(specs, bindings, strict=True):
+        if (
+            spec.name == call.name
+            or not isinstance(binding, CompiledGroundedTool)
+            or binding.canonical_operation != selected_binding.canonical_operation
+            or not binding.selector_fields
+            or any(field.public_name not in call.arguments for field in binding.selector_fields)
+            or validate_value_issue(call.arguments, spec.input_schema, path="parameters") is not None
+        ):
+            continue
+        matches.append(spec)
+    if len(matches) != 1:
+        return call
+    return ToolCall(matches[0].name, call.arguments)
+
+
 def _semantic_selector_violation(binding: object, field_paths: tuple[str, ...]) -> bool:
     names = _selector_names(binding)
     return any(
-        path == f"parameters.{name}" or path.startswith(f"parameters.{name}.")
-        for path in field_paths
-        for name in names
+        path == f"parameters.{name}" or path.startswith(f"parameters.{name}.") for path in field_paths for name in names
     )
 
 
@@ -663,8 +745,9 @@ def _format_repair_messages(messages, error: StructuredOutputError):
         ModelMessage(
             role="system",
             content=(
-                system.content + "\n\nReturn exactly one flat JSON object. Copy one op exactly from the "
-                "current tools list and use only fields declared by that operation. Public validation contract: "
+                system.content + "\n\nReturn exactly one JSON tool call with fields name and arguments. Copy one "
+                "name exactly from the current tools list, and make arguments conform exactly to that tool's "
+                "input_schema. Public validation contract: "
                 + json.dumps(
                     structured_output_repair_contract(error),
                     sort_keys=True,
@@ -698,8 +781,8 @@ def _argument_repair_messages(messages, spec, issue):
         ModelMessage(
             role="system",
             content=(
-                system.content + "\n\nThe selected operation is fixed. Repair only its arguments, return one flat "
-                "command, and obey this public contract: "
+                system.content + "\n\nThe selected operation is fixed. Repair only its arguments, return one "
+                "standard JSON tool call with fields name and arguments, and obey this public contract: "
                 + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             ),
         ),

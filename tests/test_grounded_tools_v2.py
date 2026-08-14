@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -45,7 +46,14 @@ from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
+from affordance_runtime.model_policy.grounded_tool_compiler import (
+    CompiledGroundedTool,
+    CompiledSelectorField,
+    PrivateResolutionEntry,
+    SelectorMode,
+)
 from affordance_runtime.model_policy.grounded_tool_contracts import (
+    GROUNDED_TOOL_CALL_ENVELOPE,
     GroundedActionResolution,
     GroundedToolPhase,
 )
@@ -55,6 +63,7 @@ from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedObjectiveCommandPayload,
     GroundedToolCommandPayload,
     _command_payload_type,
+    _normalize_catalog_call,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
@@ -106,7 +115,7 @@ class _ObjectivePort:
             latency_ms=1,
             response_id="response:objective",
         )
-        return output_schema.model_validate({"op": "local_objective_not_required"})
+        return output_schema.model_validate({"name": "local_objective_not_required", "arguments": {}})
 
 
 @dataclass
@@ -132,7 +141,7 @@ class _ActionPort:
             latency_ms=1,
             response_id=f"response:{self.calls}",
         )
-        return output_schema.model_validate({"op": "activate"})
+        return output_schema.model_validate({"name": "activate", "arguments": {}})
 
 
 def _context(*, local_objective=None):
@@ -243,11 +252,7 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     payload = _bound_public_context(context)
     assert "actions" not in payload
     assert not {"actions.entities", "actions.groups"}.intersection(public)
-    nodes = [
-        node
-        for document in payload["world"]["documents"]
-        for node in document["roots"]
-    ]
+    nodes = [node for document in payload["world"]["documents"] for node in document["roots"]]
     assert {item["ref"] for item in nodes} == {"E1", "E2", "E3"}
     assert {item["label"] for item in nodes} == {"Username", "Password", "Login"}
 
@@ -268,17 +273,10 @@ def test_objective_context_does_not_expose_action_selection_candidates() -> None
     public = json.loads(content)
 
     assert "actions" not in public
-    nodes = [
-        node
-        for document in public["world"]["documents"]
-        for node in document["roots"]
-    ]
-    assert {item["ref"] for item in nodes} == {
-        item.ref for item in context.grounding.entities
-    }
-    assert not {"activate", "type_text", "select_option", "read"}.intersection(
-        item["op"] for item in public["tools"]
-    )
+    assert all(set(item) == {"name", "description", "input_schema"} for item in public["tools"])
+    nodes = [node for document in public["world"]["documents"] for node in document["roots"]]
+    assert {item["ref"] for item in nodes} == {item.ref for item in context.grounding.entities}
+    assert not {"activate", "type_text", "select_option", "read"}.intersection(item["name"] for item in public["tools"])
 
 
 def test_structure_first_grounded_action_starts_from_public_structure_without_image() -> None:
@@ -295,6 +293,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert not isinstance(outcome, ModelFailure)
     assert outcome.metadata.perception_profile == "structure-first.v1"
     assert adapter.compatibility_key.split(":")[2] == "structure-first.v1"
+    assert adapter.compatibility_key.endswith(f":{GROUNDED_TOOL_CALL_ENVELOPE}")
     assert adapter.last_image_input_count == 0
     assert port.calls == 1
     assert adapter.last_model_call_count == 1
@@ -491,19 +490,33 @@ def test_single_operation_compact_schema_constrains_the_operation_name() -> None
         )
     )
 
-    operation_schema = payload_type.model_json_schema()["properties"]["op"]
+    operation_schema = payload_type.model_json_schema()["properties"]["name"]
     assert operation_schema["const"] == "observe_visual"
 
+    accepted = payload_type.model_validate({"name": "observe_visual", "arguments": {}})
+    assert accepted.command_arguments() == {}
+    assert payload_type.model_validate({"name": "observe_visual"}).command_arguments() == {}
+    assert payload_type.model_validate({"op": "observe_visual"}).name == "observe_visual"
+    assert payload_type.model_validate({"op": "observe_visual", "arguments": {}}).name == "observe_visual"
+    with pytest.raises(ValueError):
+        payload_type.model_validate({"name": "observe_visual", "op": "different"})
 
-def test_compact_action_schema_is_generated_from_flat_tool_properties() -> None:
+
+def test_compact_action_schema_is_generated_from_nested_tool_arguments() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
     payload_type = _command_payload_type(catalog.specs)
 
-    properties = payload_type.model_json_schema()["properties"]
-    assert "target" not in properties
-    assert properties["text"]["anyOf"][0]["type"] == "string"
+    schema = payload_type.model_json_schema()
+    assert set(schema["properties"]) == {"name", "arguments"}
+    argument_variants = schema["properties"]["arguments"]["anyOf"]
+    assert argument_variants
+    assert any(
+        "text" in schema["$defs"][item["$ref"].rsplit("/", 1)[-1]]["properties"]
+        for item in argument_variants
+        if "$ref" in item
+    )
 
 
 def test_compact_action_payload_accepts_semantic_selection_key_and_rejects_off_menu_value() -> None:
@@ -520,11 +533,103 @@ def test_compact_action_payload_accepts_semantic_selection_key_and_rejects_off_m
     )
     payload_type = _command_payload_type((spec,))
 
-    accepted = payload_type.model_validate({"op": "activate", "semantic_grid_coordinate": semantic_key})
+    accepted = payload_type.model_validate(
+        {"name": "activate", "arguments": {"semantic_grid_coordinate": semantic_key}}
+    )
+    legacy_flat = payload_type.model_validate({"op": "activate", "semantic_grid_coordinate": semantic_key})
 
-    assert accepted.semantic_grid_coordinate == semantic_key
+    assert accepted.arguments.semantic_grid_coordinate == semantic_key
+    assert legacy_flat.command_arguments() == {"semantic_grid_coordinate": semantic_key}
     with pytest.raises(ValueError):
-        payload_type.model_validate({"op": "activate", "semantic_grid_coordinate": "E38"})
+        payload_type.model_validate({"name": "activate", "arguments": {"semantic_grid_coordinate": "E38"}})
+
+
+def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing() -> None:
+    submit_spec = ToolSpec(
+        "activate_submit",
+        "Activate Submit.",
+        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    )
+    blue_schema = {
+        "type": "object",
+        "properties": {"grounding_ref": {"type": "string", "enum": ["E5", "E10"]}},
+        "required": ["grounding_ref"],
+        "additionalProperties": False,
+    }
+    blue_spec = ToolSpec("activate_blue", "Activate a blue target.", blue_schema)
+    submit_binding = CompiledGroundedTool(
+        "activate",
+        submit_spec,
+        SelectorMode.CONSTANT_TARGET,
+        (),
+        (PrivateResolutionEntry({}, "action:submit", None),),
+    )
+    selector = CompiledSelectorField(
+        "grounding_ref",
+        ("target.grounding_ref",),
+        blue_schema["properties"]["grounding_ref"],
+    )
+    blue_binding = CompiledGroundedTool(
+        "activate",
+        blue_spec,
+        SelectorMode.GROUNDING_FALLBACK,
+        (selector,),
+        (
+            PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue-1", None),
+            PrivateResolutionEntry({"grounding_ref": "E10"}, "action:blue-2", None),
+        ),
+    )
+    catalog = SimpleNamespace(specs=(submit_spec, blue_spec), bindings=(submit_binding, blue_binding))
+
+    normalized = _normalize_catalog_call(
+        catalog,
+        ToolCall("activate_submit", {"grounding_ref": "E10"}),
+    )
+
+    assert normalized == ToolCall("activate_blue", {"grounding_ref": "E10"})
+
+
+def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"grounding_ref": {"type": "string", "enum": ["E5"]}},
+        "required": ["grounding_ref"],
+        "additionalProperties": False,
+    }
+    selected_spec = ToolSpec(
+        "activate_submit",
+        "Activate Submit.",
+        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    )
+    selector = CompiledSelectorField(
+        "grounding_ref",
+        ("target.grounding_ref",),
+        schema["properties"]["grounding_ref"],
+    )
+    alternatives = tuple(
+        CompiledGroundedTool(
+            "activate",
+            ToolSpec(name, f"Activate {name}.", schema),
+            SelectorMode.GROUNDING_FALLBACK,
+            (selector,),
+            (PrivateResolutionEntry({"grounding_ref": "E5"}, f"action:{name}", None),),
+        )
+        for name in ("activate_first", "activate_second")
+    )
+    selected_binding = CompiledGroundedTool(
+        "activate",
+        selected_spec,
+        SelectorMode.CONSTANT_TARGET,
+        (),
+        (PrivateResolutionEntry({}, "action:submit", None),),
+    )
+    catalog = SimpleNamespace(
+        specs=(selected_spec, *(item.public_spec for item in alternatives)),
+        bindings=(selected_binding, *alternatives),
+    )
+    original = ToolCall("activate_submit", {"grounding_ref": "E5"})
+
+    assert _normalize_catalog_call(catalog, original) == original
 
 
 def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
@@ -855,9 +960,12 @@ def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -
         "local_objective_needs_input",
         "local_objective_unsupported",
     ]
-    assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {"op"}
+    assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {"name", "arguments"}
     assert "memory" not in GroundedToolCommandPayload.model_json_schema()["properties"]
-    assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {"op", "value"}
+    assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {
+        "name",
+        "arguments",
+    }
     assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)
 
 
@@ -912,7 +1020,10 @@ def test_grounded_objective_adapter_returns_only_objective_envelopes() -> None:
     assert isinstance(outcome, ResolvedLocalObjectiveOutcome)
     assert isinstance(outcome.outcome, LocalObjectiveNotRequired)
     assert port.last_output_schema is not None
-    assert set(port.last_output_schema.model_json_schema()["properties"]) == {"op", "value"}
+    assert set(port.last_output_schema.model_json_schema()["properties"]) == {
+        "name",
+        "arguments",
+    }
 
 
 def test_grounded_schema_retry_returns_the_safe_field_violation_to_the_model() -> None:
@@ -976,15 +1087,13 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
     assert not isinstance(outcome, ModelFailure)
     assert port.calls == 2
     assert adapter.last_schema_repair_count == 1
-    assert adapter.last_structured_output_violations == (
-        StructuredOutputViolation("target", "string_type"),
-    )
+    assert adapter.last_structured_output_violations == (StructuredOutputViolation("target", "string_type"),)
     assert adapter.last_structured_output_repair_attempted is True
     assert adapter.last_structured_output_repair_failed is False
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
     assert '"field_path":"target"' in repair_system
-    assert "Return exactly one flat JSON object" in repair_system
+    assert "JSON tool call with fields name and arguments" in repair_system
     assert "private action response" not in repair_system
 
 

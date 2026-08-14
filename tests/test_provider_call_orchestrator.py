@@ -196,10 +196,10 @@ def test_real_model_port_retries_the_same_action_call_without_a_second_semantic_
                             {
                                 "message": {
                                     "content": json.dumps(
-                                        {
-                                            "op": username_tool.name,
-                                            "text": "donovan",
-                                        }
+                                            {
+                                                "name": username_tool.name,
+                                                "arguments": {"text": "donovan"},
+                                            }
                                     )
                                 }
                             }

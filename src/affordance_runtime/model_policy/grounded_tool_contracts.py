@@ -9,6 +9,7 @@ from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.model_policy.tool_contracts import ToolSpec
 
 GROUNDED_TOOLS_PROTOCOL = "grounded_tools.v2"
+GROUNDED_TOOL_CALL_ENVELOPE = "name-arguments.v1"
 MAX_GROUNDED_TOOL_COUNT = 40
 MAX_GROUNDED_WORKSPACE_BYTES = 64 * 1024
 

@@ -291,9 +291,9 @@ def _control_feedback(context: AgentContext, refs: Mapping[str, str]) -> object:
 def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
     return tuple(
         {
-            "op": item.name,
+            "name": item.name,
             "description": item.description,
-            "arguments": to_json_compatible(item.input_schema),
+            "input_schema": to_json_compatible(item.input_schema),
         }
         for item in tools
     )

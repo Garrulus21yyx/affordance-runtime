@@ -237,6 +237,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_argument_violation_paths"] = tuple(getattr(adapter, "last_argument_violation_paths", ()))
         event["tool_argument_selected_operation"] = str(getattr(adapter, "last_selected_operation", ""))
         event["tool_argument_repaired_operation_match"] = bool(getattr(adapter, "last_repaired_operation_match", False))
+        event["tool_routing_normalization"] = str(getattr(adapter, "last_routing_normalization", ""))
+        event["tool_routing_original_operation"] = str(getattr(adapter, "last_routing_original_operation", ""))
+        event["tool_routing_normalized_operation"] = str(getattr(adapter, "last_routing_normalized_operation", ""))
         event["model_image_input_count"] = image_input_count
         event["policy_model_call_count"] = int(getattr(adapter, "last_model_call_count", 0))
         event["structured_output_validation_stage"] = "provider_response_to_grounded_command"
@@ -247,9 +250,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["structured_output_repair_attempted"] = bool(
             getattr(adapter, "last_structured_output_repair_attempted", False)
         )
-        event["structured_output_repair_failed"] = bool(
-            getattr(adapter, "last_structured_output_repair_failed", False)
-        )
+        event["structured_output_repair_failed"] = bool(getattr(adapter, "last_structured_output_repair_failed", False))
     decision = outcome
     if isinstance(decision, (SelectAction, RequestObservation)):
         event["outcome"] = type(decision).__name__
