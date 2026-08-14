@@ -2,7 +2,7 @@
 
 Date: 2026-08-14
 
-Status: `IMPLEMENTED / LOCALLY_VERIFIED / LIVE_NOT_RUN`
+Status: `IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN`
 
 ## Goal
 
@@ -56,7 +56,7 @@ reason to add another repair or cognition stage.
 | Remove duplicate context-shaped contracts where safe; preserve objective adapter separation | complete | catalog is tools + opaque bindings; working-memory envelope deleted |
 | Replace updater-shape tests with one-owner/one-projection/one-main-call properties | complete | focused suite and architecture redlines |
 | Run proportional verification and package check | complete | focused 30/30; full 2474 passed, 27 skipped; Ruff and mypy pass; clean wheel contains v2 YAML and no deleted memory module |
-| Update implementation status, commit and push | pending | pending |
+| Update implementation status, commit and push | complete | implementation commit `e7f9f46` pushed |
 
 ## Non-goals
 
