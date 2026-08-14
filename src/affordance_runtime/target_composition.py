@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from affordance_runtime.agent.composition import compose_target_runtime
-from affordance_runtime.agent.decision_capability import TOOL_ACTION_DECISION_CAPABILITIES
+from affordance_runtime.agent.decision_capability import (
+    GROUNDED_ACTION_DECISION_CAPABILITIES,
+    TOOL_ACTION_DECISION_CAPABILITIES,
+)
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.model_policy import model_policy_from_environment
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
@@ -30,5 +33,9 @@ def compose_target_client_from_environment(
         policy,
         ProductionActionEvaluator(),
         ProductionTaskEvaluator(),
-        required_decisions=TOOL_ACTION_DECISION_CAPABILITIES,
+        required_decisions=(
+            GROUNDED_ACTION_DECISION_CAPABILITIES
+            if selected_protocol == GROUNDED_TOOLS_PROTOCOL
+            else TOOL_ACTION_DECISION_CAPABILITIES
+        ),
     ))

@@ -19,6 +19,7 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    UpdateWorkingMemory,
 )
 from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveNeedsInput,
@@ -27,6 +28,12 @@ from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveResolvedOutcome,
     LocalObjectiveUnsupported,
     LocalObjectiveUnsupportedReason,
+)
+from affordance_runtime.agent.working_memory import (
+    MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
+    MAX_WORKING_MEMORY_ITEMS,
+    WorkingMemoryItem,
+    WorkingMemoryItemStatus,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext, AgentGroundingEntityView
@@ -66,6 +73,11 @@ class _NextActionsBinding:
 class _ObserveBinding:
     modality: str
     assurance: str
+
+
+@dataclass(frozen=True)
+class _WorkingMemoryBinding:
+    pass
 
 
 @dataclass(frozen=True)
@@ -208,6 +220,15 @@ def compile_grounded_tool_catalog(
             context.actions.active_relevance_filter,
             context.actions.next_cursor,
         ))
+    if phase is GroundedToolPhase.ACTION_SELECTION:
+        specs.append(ToolSpec(
+            "update_checklist",
+            "Replace the agent's advisory task checklist when progress cannot be safely reconstructed from "
+            "the latest tool result alone. This changes no environment state, grants no action authority, "
+            "and must be followed by a current environment tool unless the checklist genuinely needs revision.",
+            _working_memory_schema(),
+        ))
+        bindings.append(_WorkingMemoryBinding())
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -324,6 +345,27 @@ def resolve_grounded_tool_call(
             binding.assurance,
             f"acquire fresh {binding.modality} grounding",
         )
+    if isinstance(binding, _WorkingMemoryBinding):
+        try:
+            value = call.arguments["value"]
+            if not isinstance(value, Mapping):
+                raise TypeError
+            raw_items = value["items"]
+            if not isinstance(raw_items, tuple):
+                raise TypeError
+            items = tuple(
+                WorkingMemoryItem(
+                    str(item["description"]),
+                    WorkingMemoryItemStatus(str(item["status"])),
+                )
+                for item in raw_items
+                if isinstance(item, Mapping)
+            )
+            if len(items) != len(raw_items):
+                raise TypeError
+            return UpdateWorkingMemory(expected_context_id, items)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
     if not isinstance(binding, _VerbBinding):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     ref = str(call.arguments.get("target") or "")
@@ -410,6 +452,38 @@ def _local_objective_schema() -> dict[str, object]:
     return TypeAdapter(LocalObjectiveSpecPayload).json_schema()
 
 
+def _working_memory_schema() -> dict[str, object]:
+    item = _object_schema(
+        {
+            "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_WORKING_MEMORY_DESCRIPTION_CHARS,
+            },
+            "status": {
+                "type": "string",
+                "enum": [status.value for status in WorkingMemoryItemStatus],
+            },
+        },
+        ("description", "status"),
+    )
+    return _object_schema(
+        {
+            "value": _object_schema(
+                {
+                    "items": {
+                        "type": "array",
+                        "items": item,
+                        "maxItems": MAX_WORKING_MEMORY_ITEMS,
+                    },
+                },
+                ("items",),
+            )
+        },
+        ("value",),
+    )
+
+
 def _tool_description(verb: str) -> str:
     return (
         f"{verb} one entity authorized by the current Runtime action page. "
@@ -447,6 +521,17 @@ def _current_state(context: AgentContext, ref_by_target: Mapping[str, str]):
         } for item in context.progress.verified_public_facts],
         "remaining_turns": context.budgets.remaining_turns,
         "decision_mode": context.decision_mode.value,
+        "agent_working_memory": {
+            "authority": "advisory",
+            "revision": context.working_memory.revision,
+            "items": [
+                {
+                    "description": item.description,
+                    "status": item.status,
+                }
+                for item in context.working_memory.items
+            ],
+        },
         "interaction_history": [
             _turn_result(item, ref_by_target)
             for item in context.history.items[:-1]

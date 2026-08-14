@@ -8,6 +8,8 @@ import pytest
 
 from affordance_runtime.agent import (
     ALL_DECISION_CAPABILITIES,
+    GROUNDED_ACTION_DECISION_CAPABILITIES,
+    STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
     TOOL_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
     TargetRuntime,
@@ -69,11 +71,11 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     grounded = GroundedActionAdapter(_Transport(), _config())
 
     assert structured.interaction_protocol == STRUCTURED_PACKAGE_PROTOCOL
-    assert structured.supported_decisions == ALL_DECISION_CAPABILITIES
+    assert structured.supported_decisions == STRUCTURED_PACKAGE_DECISION_CAPABILITIES
     assert dynamic.interaction_protocol == DYNAMIC_TOOLS_PROTOCOL
     assert dynamic.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
-    assert grounded.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
+    assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
     assert GroundedToolDecisionAdapter is GroundedActionAdapter
 
 
@@ -150,11 +152,11 @@ def test_required_decisions_reject_stringly_declared_capabilities() -> None:
 def test_current_benchmark_primary_protocol_is_grounded_tools() -> None:
     assert PRIMARY_BENCHMARK_ACTION_PROTOCOL == GROUNDED_TOOLS_PROTOCOL
     assert PRIMARY_BENCHMARK_PERCEPTION_PROFILE is DecisionPerceptionProfile.STRUCTURE_FIRST
-    assert PRIMARY_BENCHMARK_REQUIRED_DECISIONS == TOOL_ACTION_DECISION_CAPABILITIES
+    assert PRIMARY_BENCHMARK_REQUIRED_DECISIONS == GROUNDED_ACTION_DECISION_CAPABILITIES
     composition = BenchmarkComposition(
-        _DeclaredPolicy(TOOL_ACTION_DECISION_CAPABILITIES),
+        _DeclaredPolicy(GROUNDED_ACTION_DECISION_CAPABILITIES),
         _Evaluator(),
         _Evaluator(),
         required_decisions=PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
     )
-    assert composition.required_decisions == TOOL_ACTION_DECISION_CAPABILITIES
+    assert composition.required_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES

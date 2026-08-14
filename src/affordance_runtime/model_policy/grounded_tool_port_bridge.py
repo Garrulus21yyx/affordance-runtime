@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, create_model, field_validator
 
 from affordance_runtime.agent.decision_capability import (
-    TOOL_ACTION_DECISION_CAPABILITIES,
+    GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -77,6 +77,10 @@ Before choosing, reason internally in this order:
 4. Choose the single next action that advances one unmet requirement without undoing completed work.
 Tasks may require multiple turns. Before any action that may finalize or commit the task, verify that every
 observable prerequisite in the instruction is already satisfied.
+When a task has multiple requirements whose progress cannot be recovered reliably from the latest tool result,
+use update_checklist once to externalize the current plan and completion state. It is advisory memory, not an
+environment action. On the following turn, inspect the fresh world and choose an environment tool; update the
+checklist again only when the plan or completion state has actually changed.
 Follow the chosen tool's input schema exactly. For an entity action, copy its required public E* target exactly
 from the current tool menu and grounding_index. Do not add target, assurance, or other arguments when the selected
 tool schema does not declare them. When recovery
@@ -412,7 +416,7 @@ class _GroundedAdapterBase:
 class GroundedActionAdapter(_GroundedAdapterBase):
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
-        return TOOL_ACTION_DECISION_CAPABILITIES
+        return GROUNDED_ACTION_DECISION_CAPABILITIES
 
     @property
     def compatibility_key(self) -> str:

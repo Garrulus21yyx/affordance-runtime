@@ -6,7 +6,11 @@ import json
 import math
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import RequestObservation, SelectAction
+from affordance_runtime.agent.decisions import (
+    RequestObservation,
+    SelectAction,
+    UpdateWorkingMemory,
+)
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -248,7 +252,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             getattr(adapter, "last_repaired_operation_match", False)
         )
         event["model_image_input_count"] = image_input_count
-    if isinstance(outcome, (SelectAction, RequestObservation)):
+    if isinstance(outcome, (SelectAction, RequestObservation, UpdateWorkingMemory)):
         event["outcome"] = type(outcome).__name__
         event["decision"] = _decision_trace(outcome)
         if isinstance(outcome, SelectAction):
@@ -333,6 +337,11 @@ def _selected_grounding_trace(context, decision, *, image_attached: bool):
 
 def _decision_trace(decision):
     value: dict[str, object] = {"kind": type(decision).__name__, "context_id": decision.context_id}
+    if isinstance(decision, UpdateWorkingMemory):
+        value["checklist"] = tuple(
+            {"description": item.description, "status": item.status.value}
+            for item in decision.items
+        )
     for name in (
         "action_id",
         "destination_id",

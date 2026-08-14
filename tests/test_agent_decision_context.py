@@ -12,8 +12,10 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    UpdateWorkingMemory,
     Wait,
 )
+from affordance_runtime.agent.working_memory import WorkingMemoryItem, WorkingMemoryItemStatus
 from affordance_runtime.task import IntentContext, IntentExcerpt, IntentSourceKind, LoopBudget
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world.binder import BindingError
@@ -21,7 +23,16 @@ from affordance_runtime.world.binder import BindingError
 
 @pytest.mark.parametrize(
     "decision_type",
-    (SelectAction, RequestObservation, RequestActionPage, AskUser, ProposeDone, Wait, Abort),
+    (
+        SelectAction,
+        RequestObservation,
+        RequestActionPage,
+        UpdateWorkingMemory,
+        AskUser,
+        ProposeDone,
+        Wait,
+        Abort,
+    ),
 )
 def test_all_agent_decisions_require_context_id(decision_type) -> None:
     assert fields(decision_type)[0].name == "context_id"
@@ -33,6 +44,10 @@ def test_all_agent_decisions_require_context_id(decision_type) -> None:
         lambda: SelectAction("", "action:1"),
         lambda: RequestObservation("", "target:1", "structural", "structural", "refresh"),
         lambda: RequestActionPage("", "query"),
+        lambda: UpdateWorkingMemory(
+            "",
+            (WorkingMemoryItem("continue", WorkingMemoryItemStatus.PENDING),),
+        ),
         lambda: AskUser("", "question", ()),
         lambda: ProposeDone("", (), (), "done", ()),
         lambda: Wait("", "wait", 1),

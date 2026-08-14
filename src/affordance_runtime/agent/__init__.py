@@ -26,6 +26,8 @@ if TYPE_CHECKING:
     )
     from affordance_runtime.agent.decision_capability import (
         ALL_DECISION_CAPABILITIES,
+        GROUNDED_ACTION_DECISION_CAPABILITIES,
+        STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
         TOOL_ACTION_DECISION_CAPABILITIES,
         DecisionCapability,
         UnsupportedComposition,
@@ -38,6 +40,7 @@ if TYPE_CHECKING:
         RequestActionPage,
         RequestObservation,
         SelectAction,
+        UpdateWorkingMemory,
         Wait,
     )
     from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
@@ -71,6 +74,11 @@ if TYPE_CHECKING:
         UserInputResumeRejected,
         UserInputResumeRejectionCode,
     )
+    from affordance_runtime.agent.working_memory import (
+        AgentWorkingMemory,
+        WorkingMemoryItem,
+        WorkingMemoryItemStatus,
+    )
     from affordance_runtime.task.contracts import TaskGoal
 
 _EXPORTS = {
@@ -92,6 +100,10 @@ _EXPORTS = {
         "affordance_runtime.agent.decision_capability",
         "ALL_DECISION_CAPABILITIES",
     ),
+    "AgentWorkingMemory": (
+        "affordance_runtime.agent.working_memory",
+        "AgentWorkingMemory",
+    ),
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
     "AgentEpisodeRunner": ("affordance_runtime.agent.episode_runner", "AgentEpisodeRunner"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
@@ -110,6 +122,10 @@ _EXPORTS = {
     "DecisionCapability": (
         "affordance_runtime.agent.decision_capability",
         "DecisionCapability",
+    ),
+    "GROUNDED_ACTION_DECISION_CAPABILITIES": (
+        "affordance_runtime.agent.decision_capability",
+        "GROUNDED_ACTION_DECISION_CAPABILITIES",
     ),
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
@@ -147,13 +163,29 @@ _EXPORTS = {
     "RequestObservation": ("affordance_runtime.agent.decisions", "RequestObservation"),
     "RuntimeFailure": ("affordance_runtime.agent.runtime_failure", "RuntimeFailure"),
     "SelectAction": ("affordance_runtime.agent.decisions", "SelectAction"),
+    "STRUCTURED_PACKAGE_DECISION_CAPABILITIES": (
+        "affordance_runtime.agent.decision_capability",
+        "STRUCTURED_PACKAGE_DECISION_CAPABILITIES",
+    ),
     "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
     "TOOL_ACTION_DECISION_CAPABILITIES": (
         "affordance_runtime.agent.decision_capability",
         "TOOL_ACTION_DECISION_CAPABILITIES",
     ),
     "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
+    "UpdateWorkingMemory": (
+        "affordance_runtime.agent.decisions",
+        "UpdateWorkingMemory",
+    ),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
+    "WorkingMemoryItem": (
+        "affordance_runtime.agent.working_memory",
+        "WorkingMemoryItem",
+    ),
+    "WorkingMemoryItemStatus": (
+        "affordance_runtime.agent.working_memory",
+        "WorkingMemoryItemStatus",
+    ),
     "UserInputRequest": ("affordance_runtime.agent.user_input", "UserInputRequest"),
     "UserInputResumed": ("affordance_runtime.agent.user_input", "UserInputResumed"),
     "UserInputResumeOutcome": ("affordance_runtime.agent.user_input", "UserInputResumeOutcome"),

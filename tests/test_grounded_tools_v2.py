@@ -8,7 +8,12 @@ import numpy as np
 import pytest
 from browsergym_adapter_support import ax_node, raw_observation
 
-from affordance_runtime.agent import RequestObservation, SelectAction
+from affordance_runtime.agent import (
+    RequestObservation,
+    SelectAction,
+    UpdateWorkingMemory,
+    WorkingMemoryItemStatus,
+)
 from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveNeedsInput,
     LocalObjectiveNotRequired,
@@ -360,9 +365,43 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
         "current_state",
         "previous_tool_result",
     }
-    assert {item.name for item in port.tools} == {"fill", "click"}
-    assert all("E1(" not in item.description for item in port.tools)
-    assert all("target E-ref from grounding_index" in item.description for item in port.tools)
+    assert {item.name for item in port.tools} == {"fill", "click", "update_checklist"}
+    action_tools = tuple(item for item in port.tools if item.name != "update_checklist")
+    assert all("E1(" not in item.description for item in action_tools)
+    assert all("target E-ref from grounding_index" in item.description for item in action_tools)
+
+
+def test_grounded_checklist_is_a_typed_advisory_control_not_an_action_binding() -> None:
+    context = _context()
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+
+    outcome = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "update_checklist",
+            {
+                "value": {
+                    "items": [
+                        {
+                            "description": "Complete every remaining public requirement",
+                            "status": "in_progress",
+                        }
+                    ]
+                }
+            },
+        ),
+        expected_context_id=context.context_id,
+        expected_catalog_id=catalog.catalog_id,
+    )
+
+    assert isinstance(outcome, UpdateWorkingMemory)
+    assert outcome.items[0].status is WorkingMemoryItemStatus.IN_PROGRESS
+    assert outcome.context_id == context.context_id
+    assert catalog.view.current_state["agent_working_memory"] == {
+        "authority": "advisory",
+        "revision": 0,
+        "items": [],
+    }
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
@@ -504,7 +543,7 @@ def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> 
         )
     )
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    assert {item.name for item in catalog.specs} == {"fill"}
+    assert {item.name for item in catalog.specs} == {"fill", "update_checklist"}
     fill = catalog.specs[0]
     assert to_json_compatible(fill.input_schema) == {
         "type": "object",

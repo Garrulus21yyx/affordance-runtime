@@ -8,7 +8,10 @@ import pytest
 from target_agent_loop_support import FirstOfferedActionPolicy
 
 from affordance_runtime import cli
-from affordance_runtime.agent import TOOL_ACTION_DECISION_CAPABILITIES, compose_target_runtime
+from affordance_runtime.agent import (
+    GROUNDED_ACTION_DECISION_CAPABILITIES,
+    compose_target_runtime,
+)
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
@@ -89,7 +92,7 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
     captured = {}
 
     class Policy:
-        supported_decisions = TOOL_ACTION_DECISION_CAPABILITIES
+        supported_decisions = GROUNDED_ACTION_DECISION_CAPABILITIES
 
         async def decide(self, context):
             del context
@@ -115,7 +118,7 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
         "call_timeout_s": 7,
         "interaction_protocol": GROUNDED_TOOLS_PROTOCOL,
     }
-    assert client.runtime.required_decisions == TOOL_ACTION_DECISION_CAPABILITIES
+    assert client.runtime.required_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
 
 
 def test_target_run_root_cli_routes_without_changing_legacy_run(monkeypatch, tmp_path: Path) -> None:

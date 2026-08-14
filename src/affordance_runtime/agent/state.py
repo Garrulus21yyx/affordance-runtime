@@ -10,6 +10,7 @@ from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
 from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.agent.user_input import UserInputContinuation, UserInputRequest
+from affordance_runtime.agent.working_memory import AgentWorkingMemory, WorkingMemoryItem
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
@@ -81,10 +82,23 @@ class AgentLoopState:
     control_issue_consumption_total_count: int = 0
     observation_cursor: str = ""
     visual_evidence_attempt_keys: tuple[str, ...] = ()
+    working_memory: AgentWorkingMemory = field(default_factory=AgentWorkingMemory)
+    working_memory_revision: int = 0
 
     @property
     def recent_turns(self) -> tuple[Turn, ...]:
         return tuple(item.as_turn() for item in self.recent_control_transitions)
+
+    def replace_working_memory(self, items: tuple[WorkingMemoryItem, ...]) -> bool:
+        """Install one full advisory replacement; never alter action authority."""
+
+        replacement = AgentWorkingMemory(items)
+        if replacement == self.working_memory:
+            return False
+        self.working_memory = replacement
+        self.working_memory_revision += 1
+        self.progress_revision += 1
+        return True
 
     def _append_control_transition(self, transition: ControlTransition) -> None:
         from affordance_runtime.agent.control_reducer import (

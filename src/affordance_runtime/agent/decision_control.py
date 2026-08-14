@@ -33,6 +33,7 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    UpdateWorkingMemory,
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
@@ -102,6 +103,7 @@ _DECISION_TYPES = (
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    UpdateWorkingMemory,
     Wait,
 )
 
@@ -165,6 +167,11 @@ async def run_policy_turn(
     decision = outcome
     if not accept_current_decision(session, decision):
         return Continue("stale_decision")
+    if isinstance(decision, UpdateWorkingMemory):
+        changed = state.replace_working_memory(decision.items)
+        return Continue(
+            "agent_working_memory_updated" if changed else "agent_working_memory_unchanged"
+        )
     scope = ControlTransitionScope(state, decision)
     routed: LoopDirective
     coverage = NegativeClaimCoverageGate().assess(

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.agent.decision_capability import (
-    ALL_DECISION_CAPABILITIES,
+    STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
     DecisionCapability,
 )
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
@@ -81,7 +81,7 @@ class ModelPortDecisionAdapter:
 
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
-        return ALL_DECISION_CAPABILITIES
+        return STRUCTURED_PACKAGE_DECISION_CAPABILITIES
 
     @property
     def grounding_profile_version(self) -> str:
