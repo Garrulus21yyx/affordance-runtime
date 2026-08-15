@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("pydantic_ai")
 
+from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.policy import AgentDecisionPorts
@@ -20,10 +23,15 @@ from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.provider_call_normalizer import (
+    ToolCallReconciliationResult,
+    ToolCallReconciliationStatus,
+)
 from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
     zhipu_pydantic_ai_policy_from_environment,
 )
+from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
 from tests.support.agent.core_loop_support import (
     SharedActionEvaluator,
     SharedTaskEvaluator,
@@ -214,6 +222,36 @@ def test_pydantic_ai_returns_invalid_arguments_for_one_bounded_repair() -> None:
     asyncio.run(scenario())
 
 
+def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) -> None:
+    normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
+    monkeypatch.setattr(
+        pydantic_bridge.ProviderCallNormalizer,
+        "normalize",
+        lambda *_args: ToolCallReconciliationResult(
+            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
+            exact_call=normalized,
+        ),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        pydantic_bridge,
+        "resolve_grounded_action_call",
+        lambda _catalog, call, **_kwargs: captured.setdefault("resolution", SimpleNamespace(decision=call)),
+    )
+    output = DeferredToolRequests(
+        calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")]
+    )
+
+    decision = pydantic_bridge._resolve_deferred(
+        output,
+        SimpleNamespace(catalog_id="grounded-catalog:test"),
+        "context:test",
+    )
+
+    assert decision == normalized
+    assert captured["resolution"].decision == normalized
+
+
 def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> None:
     base = {
         "LLM_ACTIVE_PROFILE": "zhipu",
@@ -229,6 +267,7 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
     assert policy.port.provider_id == "zhipu"
     assert policy.port.model_id == "glm-4.7-flash"
     assert policy.port.supports_multimodal is False
+    assert type(policy.port.model).__name__ == "ZaiModel"
 
     with pytest.raises(ValueError, match="LLM_MODEL_ADAPTER=compact-json"):
         zhipu_pydantic_ai_policy_from_environment(

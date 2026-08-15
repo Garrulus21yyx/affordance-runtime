@@ -42,6 +42,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.provider_call_normalizer import (
+    ProviderCallNormalizer,
+    ToolCallReconciliationStatus,
+)
 from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
 
 
@@ -236,8 +240,8 @@ def zhipu_pydantic_ai_policy_from_environment(
         raise ValueError("PydanticAI policy timeout must be in (1, 300]")
     try:
         from openai import AsyncOpenAI
-        from pydantic_ai.models.openai import OpenAIChatModel
-        from pydantic_ai.providers.openai import OpenAIProvider
+        from pydantic_ai.models.zai import ZaiModel
+        from pydantic_ai.providers.zai import ZaiProvider
     except ImportError as exc:
         raise RuntimeError("install the pydantic-ai project extra") from exc
 
@@ -261,7 +265,7 @@ def zhipu_pydantic_ai_policy_from_environment(
         timeout=call_timeout_s - 1,
         max_retries=0,
     )
-    model = OpenAIChatModel(model_id, provider=OpenAIProvider(openai_client=client))
+    model = ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
     port = PydanticAIGroundedDecisionPort(
         model=model,
         provider_id="zhipu",
@@ -281,9 +285,19 @@ def _resolve_deferred(output, catalog, context_id: str):
     call = output.calls[0]
     try:
         arguments = call.args_as_dict(raise_if_invalid=True)
+        reconciliation = ProviderCallNormalizer().normalize(
+            ToolCall(call.tool_name, arguments, call.tool_call_id),
+            catalog,
+        )
+        if reconciliation.status not in {
+            ToolCallReconciliationStatus.EXACT,
+            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
+        }:
+            return None
+        assert reconciliation.exact_call is not None
         return resolve_grounded_action_call(
             catalog,
-            ToolCall(call.tool_name, arguments, call.tool_call_id),
+            reconciliation.exact_call,
             expected_context_id=context_id,
             expected_catalog_id=catalog.catalog_id,
         ).decision
@@ -330,7 +344,35 @@ def _repair_message(output, catalog, deferred_type) -> str:
                 separators=(",", ":"),
                 ensure_ascii=False,
             )
-            return f"Invalid arguments for {spec.name}. Re-emit exactly one call using this schema: {schema}"
+            guidance = ""
+            try:
+                reconciliation = ProviderCallNormalizer().normalize(
+                    ToolCall(
+                        call.tool_name,
+                        call.args_as_dict(raise_if_invalid=True),
+                        call.tool_call_id,
+                    ),
+                    catalog,
+                )
+                if reconciliation.did_you_mean:
+                    candidates = [
+                        {
+                            "tool": candidate.tool_name,
+                            "arguments": to_json_compatible(candidate.public_arguments),
+                        }
+                        for candidate in reconciliation.did_you_mean[:3]
+                    ]
+                    guidance = (
+                        " Candidate corrections: "
+                        + json.dumps(candidates, separators=(",", ":"), ensure_ascii=False)
+                        + "."
+                    )
+            except (ValueError, TypeError):
+                pass
+            return (
+                f"Invalid arguments for {spec.name}. Re-emit exactly one call using this schema: "
+                f"{schema}.{guidance}"
+            )
     names = ", ".join(spec.name for spec in catalog.specs)
     return f"Emit exactly one current tool call. Available tools: {names}"
 
