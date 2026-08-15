@@ -177,7 +177,12 @@ def test_all_benchmark_modules_use_product_target_composition_owner() -> None:
             if not isinstance(node, ast.Call):
                 continue
             name = node.func.id if isinstance(node.func, ast.Name) else ""
-            if name in {"AgentLoop", "AgentEpisodeRunner", "TargetRuntime"}:
+            if name in {
+                "AgentLoop",
+                "AgentEpisodeRunner",
+                "AgentRunSession",
+                "TargetRuntime",
+            }:
                 violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:{name}")
     assert violations == []
 

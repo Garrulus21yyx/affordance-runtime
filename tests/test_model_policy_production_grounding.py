@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.grounding import (

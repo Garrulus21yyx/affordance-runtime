@@ -6,13 +6,13 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.contracts import (
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.contracts import (
     AgentMaterialBindingView,
     AgentSuccessCriterionView,
     AgentTaskView,
 )
-from affordance_runtime.model.context.projection import (
+from affordance_runtime.agent.context.projection import (
     _bounded_string,
     _model_private_key,
     project_public_value,

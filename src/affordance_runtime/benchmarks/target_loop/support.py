@@ -9,6 +9,7 @@ from affordance_runtime.actions import (
     ActionRisk,
 )
 from affordance_runtime.agent import Abort, RequestActionPage, SelectAction
+from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -19,7 +20,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.model.context import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_to_decision
 from affordance_runtime.task import RiskProfile, TaskGoal

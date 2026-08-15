@@ -2,8 +2,8 @@
 
 from typing import Protocol, TypeVar
 
+from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.agent.decision_capability import DecisionCapability
-from affordance_runtime.model.context.failures import ModelFailure
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ResolvedModelDecision,

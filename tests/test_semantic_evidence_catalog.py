@@ -1,15 +1,15 @@
 from dataclasses import asdict, replace
 
+from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.agent.context.evaluator_views import (
+    ModelCriterionEvidenceWindow,
+    build_semantic_judge_request,
+)
 from affordance_runtime.evaluation import CriterionEvaluation, CriterionEvaluationStatus
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_applicability import EvidenceApplicability, assess_semantic_evidence
 from affordance_runtime.evaluation.semantic_readiness import SemanticReadiness, assess_semantic_readiness
-from affordance_runtime.model.context.budgets import BoundedSection, ContextProjectionBudget
-from affordance_runtime.model.context.evaluator_views import (
-    ModelCriterionEvidenceWindow,
-    build_semantic_judge_request,
-)
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     CoverageState,

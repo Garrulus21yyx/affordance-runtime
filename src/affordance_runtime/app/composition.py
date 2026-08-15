@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     TOOL_ACTION_DECISION_CAPABILITIES,
@@ -20,7 +21,6 @@ from affordance_runtime.agent.policy import (
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
-from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.model.policy import model_policy_from_environment
 from affordance_runtime.model.policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.risk.policy import RiskPolicy

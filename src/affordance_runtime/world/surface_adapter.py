@@ -1,4 +1,4 @@
-"""Symmetric port owned by each concrete surface adapter."""
+"""Consumer-owned port implemented by concrete surface adapters."""
 
 from typing import Protocol
 

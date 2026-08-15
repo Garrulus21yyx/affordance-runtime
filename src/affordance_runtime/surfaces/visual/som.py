@@ -10,7 +10,7 @@ from typing import Any
 
 from affordance_runtime.actions.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface
 from affordance_runtime.immutable import FrozenSequence
-from affordance_runtime.model.context.visual_annotation import (
+from affordance_runtime.world.visual_annotation import (
     BoundingBox,
     VisualMark,
     annotate_screenshot,

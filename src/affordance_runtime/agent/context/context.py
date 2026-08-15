@@ -10,15 +10,15 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
+from affordance_runtime.agent.context.control_feedback_projection import AgentControlFeedbackView
+from affordance_runtime.agent.context.world_projection import ModelWorldView, PublicFactView
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
-from affordance_runtime.model.context.control_feedback_projection import AgentControlFeedbackView
-from affordance_runtime.model.context.world_projection import ModelWorldView, PublicFactView
 
 if TYPE_CHECKING:
-    from affordance_runtime.model.context.actor_world_snapshot import ActorWorldSnapshot
-    from affordance_runtime.model.context.transition_digest_projection import (
+    from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.agent.context.transition_digest_projection import (
         AgentTransitionDigestView,
     )
 
@@ -198,14 +198,14 @@ class AgentContext:
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")
         if self.last_transition is not None:
-            from affordance_runtime.model.context.transition_digest_projection import (
+            from affordance_runtime.agent.context.transition_digest_projection import (
                 AgentTransitionDigestView,
             )
 
             if not isinstance(self.last_transition, AgentTransitionDigestView):
                 raise TypeError("AgentContext last transition must be a typed projection")
         if self.actor_world is not None:
-            from affordance_runtime.model.context.actor_world_snapshot import ActorWorldSnapshot
+            from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
 
             if not isinstance(self.actor_world, ActorWorldSnapshot):
                 raise TypeError("AgentContext actor world must be a typed snapshot")

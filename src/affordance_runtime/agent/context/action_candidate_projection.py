@@ -9,9 +9,9 @@ from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     DestinationMode,
 )
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.context import AgentGroundingEntityView, AgentGroundingIndexView
-from affordance_runtime.model.context.contracts import (
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
+from affordance_runtime.agent.context.contracts import (
     AgentActionPageView,
     AgentDestinationView,
 )

@@ -48,6 +48,29 @@ def test_live_source_cannot_import_a_deleted_runtime_owner() -> None:
     assert violations == []
 
 
+def test_active_tests_and_scripts_cannot_import_a_deleted_runtime_owner() -> None:
+    deleted = _deleted_modules()
+    violations: list[str] = []
+    for root in (ROOT / "tests", ROOT / "scripts"):
+        for path in sorted(root.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported = tuple(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    imported = (node.module or "",)
+                else:
+                    continue
+                for name in imported:
+                    if any(
+                        name == module or name.startswith(module + ".")
+                        for module in deleted
+                    ):
+                        violations.append(f"{path.relative_to(ROOT)} imports {name}")
+
+    assert violations == []
+
+
 def test_legacy_runtime_public_symbols_are_not_reintroduced_at_package_root() -> None:
     root_facade = (SOURCE / "affordance_runtime" / "__init__.py").read_text(encoding="utf-8")
     for symbol in (

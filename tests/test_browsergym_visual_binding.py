@@ -10,9 +10,9 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent import RequestObservation
+from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model.context import ContextBuilder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,

@@ -8,13 +8,13 @@ from dataclasses import dataclass, replace
 from typing import Mapping
 
 from affordance_runtime.actions.schema_validation import validate_value
+from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.context import AgentContext
 from affordance_runtime.model.policy.grounded_tool_compiler import (
     CompiledGroundedTool,
     GroundedToolCompiler,

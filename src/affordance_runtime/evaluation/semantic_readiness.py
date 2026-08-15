@@ -2,8 +2,8 @@
 
 from enum import StrEnum
 
+from affordance_runtime.agent.context.evaluator_views import SemanticJudgeRequest
 from affordance_runtime.evaluation.criterion_contracts import NormalizedCriterionSpec
-from affordance_runtime.model.context.evaluator_views import SemanticJudgeRequest
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 from affordance_runtime.world.source_profile import assurance_satisfies
 

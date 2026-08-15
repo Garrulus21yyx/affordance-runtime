@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.agent import AgentFailureCode
+from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.runtime_failure import (
     SUPPORTED_RUNTIME_FAILURE_PAIRS,
@@ -18,7 +19,6 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     TerminalReasonCode,
 )
 from affordance_runtime.evaluation import TaskOutcomeKind
-from affordance_runtime.model.context.failures import ModelFailureKind
 
 
 @dataclass(frozen=True)

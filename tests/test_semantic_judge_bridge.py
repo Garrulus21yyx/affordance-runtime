@@ -4,11 +4,11 @@ from dataclasses import dataclass, field
 import pytest
 from test_production_task_evaluator import _semantic_task, _world
 
+from affordance_runtime.agent.context import ModelFailure
+from affordance_runtime.agent.context.evaluator_views import build_semantic_judge_request
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
-from affordance_runtime.model.context import ModelFailure
-from affordance_runtime.model.context.evaluator_views import build_semantic_judge_request
 from affordance_runtime.model.evaluator.bridge import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model.policy.strict_json import StrictJsonError

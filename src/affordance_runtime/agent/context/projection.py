@@ -10,18 +10,18 @@ from affordance_runtime.actions.paging import InternalActionPage
 from affordance_runtime.actions.relevance import ActionRelevance
 from affordance_runtime.actions.schema_validation import validate_parameter_schema_contract
 from affordance_runtime.actions.space_contracts import ActionSpace
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.contracts import (
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.contracts import (
     AgentActionOptionView,
     AgentActionSpaceView,
     AgentDestinationView,
 )
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.context.contracts import AgentTaskView, AgentTurnView
     from affordance_runtime.agent.control_transition import Turn
-    from affordance_runtime.model.context.contracts import AgentTaskView, AgentTurnView
     from affordance_runtime.task.contracts import TaskGoal
 
 _SECRET_MARKERS = ("password", "secret", "token", "credential", "authorization", "api_key", "apikey")
@@ -48,7 +48,7 @@ _MAX_STRING = 240
 def project_task(task: TaskGoal) -> AgentTaskView:
     """Compatibility import edge; canonical owner is task_projection."""
 
-    from affordance_runtime.model.context.task_projection import project_task as project
+    from affordance_runtime.agent.context.task_projection import project_task as project
 
     return project(task)
 
@@ -143,7 +143,7 @@ def _project_action_options(
 
 
 def project_turns(turns: tuple[Turn, ...]) -> tuple[AgentTurnView, ...]:
-    from affordance_runtime.model.context.control_transition_projection import (
+    from affordance_runtime.agent.context.control_transition_projection import (
         project_turns as project,
     )
 

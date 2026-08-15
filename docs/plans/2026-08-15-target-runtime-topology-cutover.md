@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_READY /
+Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE /
 WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
 
 ## Goal
@@ -106,7 +106,8 @@ src/affordance_runtime/
 ├── actions/
 │   ├── capabilities, ActionSpace, admission, binding, verification contracts
 ├── model/
-│   ├── tools/                 # compiler, normalizer, exact resolver
+│   ├── policy/                # compiler, normalizer, exact resolver
+│   ├── evaluator/             # model-backed evaluator adapter
 │   └── providers/             # provider transport/serialization
 ├── execution/
 ├── evaluation/
@@ -133,14 +134,14 @@ runner. `world/`, `agent/`, `evaluation/`, `execution/`, `task/`, `risk/`,
 
 ## Import direction
 
-Architecture tests enforce this direction:
+Architecture tests enforce these owner directions:
 
 ```text
-app -> agent -> world/actions/execution/evaluation/task
+app runtime -> agent -> world/actions/execution/evaluation/task
 app composition -> model providers + surfaces
 agent/context -> public world/actions/evaluation/task contracts
 surfaces -> public world/actions/execution contracts
-model/tools -> agent public context/policy ports + public action projections
+model/policy -> agent public context/policy ports + public action projections
 model/providers -> provider transport contracts only
 benchmarks -> app public API + admitted surface APIs
 ```
@@ -149,7 +150,10 @@ benchmarks -> app public API + admitted surface APIs
 ports belong to `agent/`; they define what the loop asks for. `model/` is an
 outbound adapter that compiles and transports those public requests. The loop
 therefore never imports a provider, tool compiler or provider serialization
-type, and the model layer never owns Runtime state.
+type, and the model layer never owns Runtime state. The `SurfaceAdapter` port is
+consumer-owned by `world`; concrete surfaces implement it and `world` never
+imports a surface package. DOM snapshot-specific assertion projection stays in
+the DOM surface while generic assertion arbitration stays in `world`.
 
 Forbidden dependencies:
 
@@ -340,13 +344,22 @@ The package root retains only `__init__.py`, `__main__.py`, `immutable.py` and
 
 ### T5 — topology closure
 
-Status: `READY`
+Status: `COMPLETE`
 
 Run the complete verification below, perform a fresh-context reader/architecture
 review and update implementation status. World-graph A.1 may begin when the
 minimum topology gate is satisfied; full historical benchmark-report cleanup
 may continue separately only if it is isolated and imports no legacy product
 runtime.
+
+The fresh-context review removed three residual topology violations: a
+benchmark replay directly constructing `AgentRunSession`, the unconsumed
+`agent/types.py` compatibility re-export, and reversed `agent -> model/context`
+plus `world -> surfaces` package edges. Replay now obtains its session through
+the product composition/start boundary; context projections live under
+`agent/context`; the surface port is world-owned; and DOM snapshot projection
+is surface-owned. Closure evidence is
+[T5 topology closure](../evidence/2026-08-15-target-runtime-topology-t5-closure.md).
 
 ## Test migration plan
 

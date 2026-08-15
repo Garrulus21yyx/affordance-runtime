@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.evaluation_control import (
     validated_action_evaluation,
     validated_task_evaluation,
@@ -15,7 +16,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
 
 
 def test_public_evaluation_statuses_require_enum_instances() -> None:

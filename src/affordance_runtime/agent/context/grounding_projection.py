@@ -6,18 +6,18 @@ import hashlib
 from dataclasses import dataclass, replace
 
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
-from affordance_runtime.model.context.context import (
+from affordance_runtime.agent.context.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
     AgentImageInput,
 )
-from affordance_runtime.model.context.visual_annotation import (
+from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref
+from affordance_runtime.world.visual_annotation import (
     BoundingBox,
     VisualMark,
     annotate_screenshot,
 )
-from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
 
 @dataclass(frozen=True)

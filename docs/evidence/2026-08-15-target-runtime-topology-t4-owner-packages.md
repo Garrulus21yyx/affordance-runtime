@@ -11,9 +11,9 @@ T4 moved only surviving implementations whose owner was already established:
 - product lifecycle façade, composition and product CLI: `app/`;
 - capability registry, ActionSpace, admission, binding, routing and action
   policy contracts: `actions/`;
-- Actor/model context, policy/tool compilation, evaluator bridge and provider
-  transport: `model/context`, `model/policy`, `model/evaluator` and
-  `model/providers`;
+- Actor context and world/action projections: `agent/context`; policy/tool
+  compilation, evaluator bridge and provider transport: `model/policy`,
+  `model/evaluator` and `model/providers`;
 - browser session/thread ownership and visual grounding/geometry helpers:
   `surfaces/dom` and `surfaces/visual`;
 - execution context, task material/action-family contracts, world observation
@@ -48,8 +48,11 @@ benchmark isolation and the `app/runtime.py -> agent/loop.py` dependency.
 This cutover changes physical ownership and imports only. It does not add
 `scroll`, `press_key`, `focus`, `drag_to` or `hover` bindings; close StateFact
 dual writes; repair the open activate effect-authority gap; implement observed
-world graph A.1; or provide fresh live benchmark evidence. T5 remains the
-fresh-context topology closure review.
+world graph A.1; or provide fresh live benchmark evidence.
+
+T5 subsequently corrected the provisional T4 `model/context` placement to the
+plan's final `agent/context` owner and moved the SurfaceAdapter port to `world`.
+Those corrections are recorded in the T5 closure evidence.
 
 ## Verification
 

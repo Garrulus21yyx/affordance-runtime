@@ -21,7 +21,7 @@ from affordance_runtime.actions.capabilities import (
     PrimitiveTranslator,
     VerificationContract,
 )
-from affordance_runtime.model.context.projection import project_action_space
+from affordance_runtime.agent.context.projection import project_action_space
 from affordance_runtime.model.policy.grounded_tool_catalog import resolve_grounded_tool_call
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (

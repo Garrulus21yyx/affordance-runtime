@@ -17,11 +17,11 @@ from affordance_runtime.actions import (
     RouteSelector,
 )
 from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentActionPageView
+from affordance_runtime.agent.context.grounding_projection import GroundingProjection
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.model.context.budgets import BoundedSection, ContextProjectionBudget
-from affordance_runtime.model.context.contracts import AgentActionOptionView, AgentActionPageView
-from affordance_runtime.model.context.grounding_projection import GroundingProjection
-from affordance_runtime.model.context.world_projection import project_model_world
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (

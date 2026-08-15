@@ -13,9 +13,9 @@ from affordance_runtime.agent import (
     AgentLoopStatus,
     SelectAction,
 )
+from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.model.context import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,

@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from affordance_runtime.actions.space_contracts import ActionRisk
+from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.budgets import BoundedSection
 from affordance_runtime.task.contracts import RiskProfile
 
 

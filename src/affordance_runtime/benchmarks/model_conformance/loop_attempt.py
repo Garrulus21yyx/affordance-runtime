@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 
 from affordance_runtime.agent import Abort, AgentLoopStatus, SelectAction
+from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
@@ -14,7 +15,6 @@ from affordance_runtime.benchmarks.target_loop.real_adapter_support import real_
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.failures import ModelFailure
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.contracts import ResolvedModelDecision
 from affordance_runtime.model.policy.grounding import DecisionGroundingVariant

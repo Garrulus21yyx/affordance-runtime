@@ -1,8 +1,8 @@
 import json
 
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelConformanceStage
 from affordance_runtime.benchmarks.model_conformance.stages import attribute_decision_payload
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
 
 
 def _payload(**changes):

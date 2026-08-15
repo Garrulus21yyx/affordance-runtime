@@ -9,15 +9,15 @@ from enum import StrEnum
 from time import monotonic
 from typing import Generic, TypeVar
 
-from affordance_runtime.agent.decision_capability import (
-    DecisionCapability,
-    normalize_decision_capabilities,
-)
-from affordance_runtime.model.context.failures import (
+from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
     ProviderAttemptOrigin,
     ProviderFailureCode,
+)
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    normalize_decision_capabilities,
 )
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,

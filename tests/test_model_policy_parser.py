@@ -11,7 +11,7 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
-from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy.parser import parse_agent_decision
 
 

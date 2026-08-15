@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy.spec import (
     AgentDecisionPayload,
     payload_to_decision,

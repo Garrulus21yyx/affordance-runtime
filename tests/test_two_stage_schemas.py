@@ -1,6 +1,7 @@
 import asyncio
 import json
 
+from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.benchmarks.model_conformance.critical_cases import build_cross_action_destination_case
 from affordance_runtime.benchmarks.model_conformance.decision_matrix import build_seven_decision_cases
 from affordance_runtime.benchmarks.model_conformance.runtime_decision_matrix import replay_runtime_decision
@@ -12,7 +13,6 @@ from affordance_runtime.benchmarks.model_conformance.two_stage.payload_schema im
 )
 from affordance_runtime.benchmarks.model_conformance.two_stage.route_schema import build_route_schema
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.failures import ModelFailure
 from affordance_runtime.model.policy.parser import parse_agent_decision
 
 

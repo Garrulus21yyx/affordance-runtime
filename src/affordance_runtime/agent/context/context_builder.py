@@ -10,19 +10,16 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import ActionPager, InternalActionPage
 from affordance_runtime.actions.space_contracts import ActionSpace
-from affordance_runtime.agent.progress_projection import project_progress_events
-from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.acquisition_projection import project_acquisition_offers
-from affordance_runtime.model.context.action_candidate_projection import close_action_candidates
-from affordance_runtime.model.context.actor_world_snapshot import project_actor_world_snapshot
-from affordance_runtime.model.context.budgets import (
+from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
+from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
+from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
+from affordance_runtime.agent.context.budgets import (
     DEFAULT_MAX_TOTAL_WAIT_MS,
     BoundedSection,
     ContextProjectionBudget,
     serialized_size,
 )
-from affordance_runtime.model.context.context import (
+from affordance_runtime.agent.context.context import (
     AgentBudgetView,
     AgentContext,
     AgentPendingView,
@@ -32,16 +29,19 @@ from affordance_runtime.model.context.context import (
     IntentContextView,
     IntentExcerptView,
 )
-from affordance_runtime.model.context.contracts import AgentActionPageView
-from affordance_runtime.model.context.control_feedback_projection import project_control_feedback
-from affordance_runtime.model.context.control_transition_projection import (
+from affordance_runtime.agent.context.contracts import AgentActionPageView
+from affordance_runtime.agent.context.control_feedback_projection import project_control_feedback
+from affordance_runtime.agent.context.control_transition_projection import (
     project_control_transitions,
 )
-from affordance_runtime.model.context.grounding_projection import GroundingProjection
-from affordance_runtime.model.context.projection import project_action_page
-from affordance_runtime.model.context.task_projection import project_task
-from affordance_runtime.model.context.transition_digest_projection import project_latest_transition
-from affordance_runtime.model.context.world_projection import fit_model_world, project_model_world
+from affordance_runtime.agent.context.grounding_projection import GroundingProjection
+from affordance_runtime.agent.context.projection import project_action_page
+from affordance_runtime.agent.context.task_projection import project_task
+from affordance_runtime.agent.context.transition_digest_projection import project_latest_transition
+from affordance_runtime.agent.context.world_projection import fit_model_world, project_model_world
+from affordance_runtime.agent.progress_projection import project_progress_events
+from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import ObservationCapabilities

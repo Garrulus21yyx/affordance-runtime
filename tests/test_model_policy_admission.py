@@ -6,6 +6,7 @@ from affordance_runtime.actions import (
     ActionRisk,
 )
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent.context import ContextBuilder, ContextProjectionBudget
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -13,7 +14,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.model.context import ContextBuilder, ContextProjectionBudget
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (

@@ -16,7 +16,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.evaluation import CriterionEvaluationStatus
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.execution import ActionResult, BoundActionRequest, DispatchStatus
-from affordance_runtime.surfaces.base import SurfaceAdapter
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
@@ -28,6 +27,7 @@ from affordance_runtime.surfaces.wot.transport import HttpWotTransport
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from affordance_runtime.world.surface_adapter import SurfaceAdapter
 
 _DOM_HTML = """
 <!doctype html><html><body><main>

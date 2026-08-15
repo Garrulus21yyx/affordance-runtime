@@ -29,7 +29,7 @@ def test_workflow_task_plan_owner_is_physically_absent() -> None:
 
 
 def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
-    projection = (RUNTIME / "model" / "context" / "projection.py").read_text(encoding="utf-8")
+    projection = (RUNTIME / "agent" / "context" / "projection.py").read_text(encoding="utf-8")
     assert "task_plan_contracts" not in projection
     assert "project_plan" not in projection
     for relative in ("agent/loop.py", "agent/state.py"):
@@ -165,7 +165,7 @@ def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
 
 
 def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -> None:
-    builder = (RUNTIME / "model" / "context" / "context_builder.py").read_text(encoding="utf-8")
+    builder = (RUNTIME / "agent" / "context" / "context_builder.py").read_text(encoding="utf-8")
     catalog = (RUNTIME / "model" / "policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
     binder = (RUNTIME / "model" / "policy" / "grounded_policy_context.py").read_text(encoding="utf-8")
 
@@ -181,9 +181,9 @@ def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -
 def test_latest_transition_has_one_root_owned_projection_chain() -> None:
     transition = (RUNTIME / "agent" / "control_transition.py").read_text(encoding="utf-8")
     reducer = (RUNTIME / "agent" / "control_reducer.py").read_text(encoding="utf-8")
-    builder = (RUNTIME / "model" / "context" / "context_builder.py").read_text(encoding="utf-8")
+    builder = (RUNTIME / "agent" / "context" / "context_builder.py").read_text(encoding="utf-8")
     projection = (
-        RUNTIME / "model" / "context" / "transition_digest_projection.py"
+        RUNTIME / "agent" / "context" / "transition_digest_projection.py"
     ).read_text(encoding="utf-8")
 
     assert "class ControlTransition:" in transition

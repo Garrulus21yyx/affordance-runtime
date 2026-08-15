@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     normalize_decision_capabilities,
@@ -31,7 +32,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
     TaskOutcomeKind,
 )
-from affordance_runtime.model.context.failures import ModelFailureKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.contracts import CoverageState

@@ -12,12 +12,12 @@ from typing import Any
 
 import yaml
 
+from affordance_runtime.agent.context.actor_world_snapshot import actor_world_for_delivery
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.actor_world_snapshot import actor_world_for_delivery
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.context import AgentContext
-from affordance_runtime.model.context.contracts import AgentTurnView
-from affordance_runtime.model.context.projection import project_public_value
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_tool_contracts import MAX_GROUNDED_WORKSPACE_BYTES
 from affordance_runtime.model.policy.model_port_bridge import (

@@ -7,12 +7,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.context.context import AgentImageInput
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.context import AgentImageInput
 
 if TYPE_CHECKING:
-    from affordance_runtime.model.context.context import AgentContext
+    from affordance_runtime.agent.context.context import AgentContext
 
 _MAX_CONTEXT_BYTES = 64 * 1024
 _MAX_INSTRUCTIONS = 8 * 1024
@@ -108,7 +108,7 @@ class ModelDecisionRequest:
         if len(self.image_inputs) > 2 or any(not isinstance(item, AgentImageInput) for item in self.image_inputs):
             raise TypeError("model request image inputs must be bounded and typed")
         if self.agent_context is not None:
-            from affordance_runtime.model.context.context import AgentContext
+            from affordance_runtime.agent.context.context import AgentContext
 
             if not isinstance(self.agent_context, AgentContext):
                 raise TypeError("model decision request AgentContext must be typed")

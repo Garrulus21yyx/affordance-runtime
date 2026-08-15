@@ -10,9 +10,9 @@ from enum import Enum
 
 from pydantic import ValidationError
 
+from affordance_runtime.agent.context.evaluator_views import SemanticJudgeRequest
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.evaluation.semantic_contracts import SemanticJudgeOutcome
-from affordance_runtime.model.context.evaluator_views import SemanticJudgeRequest
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model.evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model.providers.port import (
     FallbackModelPort,

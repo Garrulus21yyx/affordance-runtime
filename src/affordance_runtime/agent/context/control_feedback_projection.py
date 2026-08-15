@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.control_feedback import ControlFeedback
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.projection import project_public_value
 
 
 @dataclass(frozen=True)

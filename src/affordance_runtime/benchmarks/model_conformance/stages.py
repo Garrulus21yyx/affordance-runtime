@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from affordance_runtime.actions.schema_validation import reject_private_parameter_values
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy.spec import (
     AbortPayload,
     AgentDecisionPayload,

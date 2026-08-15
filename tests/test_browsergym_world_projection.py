@@ -4,8 +4,8 @@ import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.serialization import serialize_agent_context
 from affordance_runtime.surfaces.browsergym import projection as projection_module

@@ -16,10 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
         (
             "affordance_runtime.benchmarks.external_smoke.verifier_policy",
             "affordance_runtime.agent",
-            "affordance_runtime.model.context",
+            "affordance_runtime.agent.context",
         ),
         (
-            "affordance_runtime.model.context",
+            "affordance_runtime.agent.context",
             "affordance_runtime.agent",
             "affordance_runtime.surfaces.browsergym.environment",
         ),
@@ -37,7 +37,7 @@ def test_public_packages_import_in_any_supported_order_in_clean_process(
         [*(f"import {module}" for module in imports), *(
             f"package = __import__({name!r}, fromlist=['*']); "
             "[getattr(package, exported) for exported in package.__all__]"
-            for name in ("affordance_runtime.agent", "affordance_runtime.model.context")
+            for name in ("affordance_runtime.agent", "affordance_runtime.agent.context")
         )]
     )
     environment = dict(os.environ)

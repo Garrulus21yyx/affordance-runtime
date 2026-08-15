@@ -15,15 +15,15 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
-from affordance_runtime.agent.state import Turn
-from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
-from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
-from affordance_runtime.model.context import (
+from affordance_runtime.agent.context import (
     project_action_space,
     project_parameter_schema_for_model,
     project_task,
     project_turns,
 )
+from affordance_runtime.agent.state import Turn
+from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
+from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AgentTargetView,

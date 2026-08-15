@@ -1218,9 +1218,11 @@ class BrowserSession:
         if not assertions:
             return snapshot
         # Imported lazily to keep the snapshot type boundary acyclic.
-        from affordance_runtime.world.source_assertions import SourceAssertionOrchestrator
+        from affordance_runtime.surfaces.dom.source_assertions import (
+            reconcile_browser_snapshot,
+        )
 
-        return SourceAssertionOrchestrator().reconcile_snapshot(
+        return reconcile_browser_snapshot(
             snapshot,
             assertions,
             available_sources=frozenset(item.source for item in source_observations),

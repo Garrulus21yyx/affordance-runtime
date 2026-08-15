@@ -13,6 +13,11 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptOperation,
     AttemptReceipt,
 )
+from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.context import AgentGroundingIndexView
+from affordance_runtime.agent.context.transition_digest_projection import (
+    project_latest_transition,
+)
 from affordance_runtime.agent.control_reducer import (
     ApplyContinuation,
     ApplyUserInputContinuation,
@@ -42,11 +47,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
-from affordance_runtime.model.context import ContextBuilder
-from affordance_runtime.model.context.context import AgentGroundingIndexView
-from affordance_runtime.model.context.transition_digest_projection import (
-    project_latest_transition,
-)
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
 from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile

@@ -8,7 +8,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter

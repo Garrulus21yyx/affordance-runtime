@@ -1,7 +1,7 @@
 import pytest
 
-from affordance_runtime.model.context.budgets import ContextProjectionBudget
-from affordance_runtime.model.context.context_builder import project_intent_context
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.context_builder import project_intent_context
 from affordance_runtime.task import IntentContext, IntentExcerpt, IntentSourceKind
 
 

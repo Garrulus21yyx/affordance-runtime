@@ -165,6 +165,7 @@ src/affordance_runtime/verification_report_adapter.py
 src/affordance_runtime/visual_contracts.py
 src/affordance_runtime/agent/local_objective_evidence.py
 src/affordance_runtime/agent/local_objective_proposal.py
+src/affordance_runtime/agent/types.py
 src/affordance_runtime/model_policy/objective_policy.py
 src/affordance_runtime/model_policy/objective_spec.py
 src/affordance_runtime/task/aggregate_objective.py

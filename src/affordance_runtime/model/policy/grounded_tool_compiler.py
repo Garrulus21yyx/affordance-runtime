@@ -10,8 +10,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.model.context.contracts import AgentActionOptionView, AgentDestinationView
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,

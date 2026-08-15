@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from affordance_runtime.actions import (
     ActionPager,
@@ -23,16 +23,10 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
-from affordance_runtime.agent.accounting import RunAccounting
-from affordance_runtime.agent.attempt_receipt import (
-    AttemptDisposition,
-    AttemptOperation,
-    AttemptReceipt,
-)
+from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
-from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.support import (
     CurrentFactActionEvaluator,
@@ -42,8 +36,6 @@ from affordance_runtime.benchmarks.target_loop.support import (
     shared_task,
     shared_world,
 )
-from affordance_runtime.model.context import ContextBuilder
-from affordance_runtime.model.context.context import AgentContext
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     StateFact,
@@ -52,9 +44,6 @@ from affordance_runtime.world import (
 from affordance_runtime.world.contracts import WorldObservation
 
 from .decision_matrix import DECISION_VARIANTS
-
-if TYPE_CHECKING:
-    from affordance_runtime.agent.loop import AgentLoop
 
 
 @dataclass(frozen=True)
@@ -290,21 +279,14 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
     fresh = _evidence_world("replay:fresh", ())
     environment = StaticEnvironment((before, fresh))
     task = shared_task()
-    acquisition = await environment.reset(task)
-    if acquisition.observation is None:
-        raise RuntimeError("runtime replay initial acquisition failed")
-    state = AgentLoopState(acquisition.observation, remaining_turns=3)
     evaluator, waiter = _CountingTaskEvaluator(), _Waiter()
-    accounting = RunAccounting()
-    accounting.record(AttemptReceipt(
-        accounting.next_attempt_id(), AttemptOperation.RESET, "reset",
-        acquisition.origin, acquisition.origin, AttemptDisposition.RETURNED,
-        acquisition.reason_code, 1, 0, 0, 0, acquisition_status=acquisition.status,
-    ))
-    session = AgentRunSession(
-        cast("AgentLoop", SimpleNamespace()), task, environment, state,
-        accounting=accounting,
+    runtime = compose_target_runtime(
+        _ReplayPolicy(decision),
+        CurrentFactActionEvaluator(),
+        evaluator,
+        wait_controller=waiter,
     )
+    session = await runtime.start_task(environment, task)
     options = value.get("actions", {}).get("options", ())
     visible = tuple(str(item.get("action_id") or "") for item in options)
     destinations = {

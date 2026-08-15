@@ -1,12 +1,12 @@
 import pytest
 
-from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.execution import ActionError, ActionIntent, ActionResult, DispatchStatus
-from affordance_runtime.model.context.evaluator_views import (
+from affordance_runtime.agent.context.evaluator_views import (
     build_model_action_evaluation_view,
     build_model_task_evaluation_view,
 )
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.execution import ActionError, ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import CoverageState, SemanticTarget, StateFact, WorldObservation
 

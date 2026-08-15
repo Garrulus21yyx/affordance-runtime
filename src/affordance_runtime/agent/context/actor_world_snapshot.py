@@ -8,14 +8,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
 if TYPE_CHECKING:
-    from affordance_runtime.model.context.context import AgentGroundingIndexView, AgentImageInput
+    from affordance_runtime.agent.context.context import AgentGroundingIndexView, AgentImageInput
 
 
 _MAX_FACET_COLLECTIONS = 24

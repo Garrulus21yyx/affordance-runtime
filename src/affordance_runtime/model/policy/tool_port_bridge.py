@@ -10,17 +10,17 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from affordance_runtime.actions.schema_validation import reject_private_parameter_values, validate_value_issue
-from affordance_runtime.agent.decision_capability import (
-    TOOL_ACTION_DECISION_CAPABILITIES,
-    DecisionCapability,
-)
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.failures import (
+from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
+from affordance_runtime.agent.decision_capability import (
+    TOOL_ACTION_DECISION_CAPABILITIES,
+    DecisionCapability,
+)
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,

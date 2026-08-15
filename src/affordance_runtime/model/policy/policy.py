@@ -7,13 +7,13 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
-from affordance_runtime.model.context.context import AgentContext
-from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,

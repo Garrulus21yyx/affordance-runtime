@@ -19,8 +19,8 @@ from affordance_runtime.agent import (
     RequestActionPage,
     SelectAction,
 )
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
-from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (

@@ -17,16 +17,16 @@ from affordance_runtime.agent import (
     RequestObservation,
     SelectAction,
 )
+from affordance_runtime.agent.context import ContextBuilder, ModelFailure
+from affordance_runtime.agent.context.acquisition_projection import ObservationCapabilityView
+from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
+from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context import ContextBuilder, ModelFailure
-from affordance_runtime.model.context.acquisition_projection import ObservationCapabilityView
-from affordance_runtime.model.context.action_candidate_projection import close_action_candidates
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.context import AgentGroundingEntityView, AgentGroundingIndexView
-from affordance_runtime.model.context.contracts import AgentTurnView
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,

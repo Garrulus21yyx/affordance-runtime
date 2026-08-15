@@ -1,1 +1,1 @@
-"""Model context, tool-policy, evaluator, and provider adapter boundaries."""
+"""Model policy, evaluator, and provider adapter boundaries."""

@@ -16,7 +16,6 @@ from affordance_runtime.actions.grounding import (
     SourceAssertion,
     UnifiedAffordance,
 )
-from affordance_runtime.surfaces.dom.browser_session import BrowserSnapshot
 
 _DOM_STATE_PROPERTIES = frozenset(
     {"checked", "enabled", "focused", "selected", "value", "visible"}
@@ -303,31 +302,6 @@ class SourceAssertionOrchestrator:
                 )
             )
         return tuple(reconciled), arbitration
-
-    def reconcile_snapshot(
-        self,
-        snapshot: BrowserSnapshot,
-        assertions: Iterable[SourceAssertion],
-        *,
-        available_sources: frozenset[GroundingSource] = frozenset(),
-        observation_budget: int = 1,
-    ) -> BrowserSnapshot:
-        claims = tuple(assertions)
-        targets, arbitration = self.reconcile(
-            snapshot.unified_affordances,
-            claims,
-            snapshot.observation,
-            available_sources=available_sources,
-            observation_budget=observation_budget,
-        )
-        return replace(
-            snapshot,
-            unified_affordances=targets,
-            source_assertions=claims,
-            assertion_decisions=arbitration.decisions,
-            active_perception_requests=arbitration.active_perception_requests,
-        )
-
 
 def _normalized_value(assertion: SourceAssertion) -> tuple[str, str, str]:
     value_type = assertion.value_type.casefold().strip()

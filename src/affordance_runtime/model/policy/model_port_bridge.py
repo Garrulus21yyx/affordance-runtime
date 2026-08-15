@@ -8,17 +8,17 @@ import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from affordance_runtime.agent.decision_capability import (
-    STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
-    DecisionCapability,
-)
-from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
-from affordance_runtime.model.context.failures import (
+from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
+from affordance_runtime.agent.decision_capability import (
+    STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
+    DecisionCapability,
+)
+from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model.policy.grounding import (
     DecisionGroundingVariant,

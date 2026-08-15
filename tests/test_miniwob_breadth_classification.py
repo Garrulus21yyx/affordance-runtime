@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from affordance_runtime.agent import AgentFailureCode
+from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.runtime_failure import (
     FailureKind,
     FailureStage,
@@ -17,7 +18,6 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricMeasurement,
     TerminalReasonCode,
 )
-from affordance_runtime.model.context.failures import ModelFailureKind
 
 
 def _result(**changes) -> BenchmarkCaseResult:

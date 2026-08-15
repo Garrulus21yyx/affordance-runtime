@@ -29,9 +29,9 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.actions.paging import InternalActionPage
     from affordance_runtime.actions.space_contracts import ActionSpace
+    from affordance_runtime.agent.context.context import AgentContext
     from affordance_runtime.agent.control_transition import ControlContinuationScope
     from affordance_runtime.agent.loop import AgentLoop
-    from affordance_runtime.model.context.context import AgentContext
 
 
 @dataclass

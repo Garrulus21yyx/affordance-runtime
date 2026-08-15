@@ -20,6 +20,7 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptReceipt,
     safe_exception_class,
 )
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.control_outcome import (
     Continue,
     LoopDirective,
@@ -57,7 +58,6 @@ from affordance_runtime.confirmation.contracts import ConfirmationDecision, Conf
 from affordance_runtime.confirmation.summary import build_confirmation_request
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionIntent
-from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.risk.validation import validate_risk_assessment

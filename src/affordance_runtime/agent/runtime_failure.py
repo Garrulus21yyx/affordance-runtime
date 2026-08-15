@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.model.context.failures import ModelFailureKind
 
 _CODE = re.compile(r"[a-z][a-z0-9_.:-]{0,95}")
 _EXCEPTION = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")

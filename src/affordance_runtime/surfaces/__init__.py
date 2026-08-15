@@ -1,6 +1,5 @@
 """Surface-local observation and execution adapters."""
 
-from affordance_runtime.surfaces.base import SurfaceAdapter
 from affordance_runtime.surfaces.http_json import (
     HttpJsonAuthority,
     HttpJsonFactProjection,
@@ -20,6 +19,5 @@ __all__ = [
     "HttpJsonSourceRegistration",
     "HttpJsonSurfaceAdapter",
     "HttpJsonTransportPort",
-    "SurfaceAdapter",
     "UrllibHttpJsonTransport",
 ]

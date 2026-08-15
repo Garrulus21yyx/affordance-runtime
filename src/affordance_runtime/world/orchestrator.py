@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
-from affordance_runtime.surfaces.base import SurfaceAdapter
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
@@ -25,6 +24,7 @@ from affordance_runtime.world.acquisition import (
 from affordance_runtime.world.contracts import SurfaceObservation
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
+from affordance_runtime.world.surface_adapter import SurfaceAdapter
 
 
 @dataclass

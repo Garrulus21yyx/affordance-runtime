@@ -16,6 +16,7 @@ from affordance_runtime.actions.grounding import (
 from affordance_runtime.actions.unified_grounding import UnifiedRoutePlanner
 from affordance_runtime.surfaces.dom.browser_session import BrowserSnapshot
 from affordance_runtime.surfaces.dom.document_model import DomAdapter
+from affordance_runtime.surfaces.dom.source_assertions import reconcile_browser_snapshot
 from affordance_runtime.world.source_assertions import (
     SourceAssertionArbiter,
     SourceAssertionOrchestrator,
@@ -300,7 +301,7 @@ def test_orchestrator_attaches_arbitration_to_one_coherent_snapshot() -> None:
         _assertion("dom-false", property_key="checked", value=False, source=GroundingSource.DOM),
     )
 
-    reconciled = SourceAssertionOrchestrator().reconcile_snapshot(
+    reconciled = reconcile_browser_snapshot(
         snapshot,
         assertions,
         available_sources=frozenset({GroundingSource.DOM, GroundingSource.ACCESSIBILITY}),

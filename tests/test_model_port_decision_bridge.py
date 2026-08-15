@@ -10,10 +10,10 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.context import AgentImageInput
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.model.context import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.model.context.context import AgentImageInput
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.model_port_bridge import (

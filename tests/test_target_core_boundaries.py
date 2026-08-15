@@ -11,7 +11,7 @@ TARGET_CORE = (
     PACKAGE / "evaluation",
     PACKAGE / "risk",
     PACKAGE / "confirmation",
-    PACKAGE / "model" / "context",
+    PACKAGE / "agent" / "context",
     PACKAGE / "model" / "policy",
     PACKAGE / "model" / "evaluator",
 )
@@ -91,7 +91,7 @@ def test_policy_and_evaluators_do_not_import_concrete_execution_owners() -> None
 
 
 def test_model_boundary_has_no_concrete_surface_execution_or_fixture_dependencies() -> None:
-    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model" / "context")))
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "agent" / "context")))
 
     assert not any(name.startswith("affordance_runtime.surfaces") for name in imports)
     assert not any(name.startswith("affordance_runtime.executors") for name in imports)
@@ -157,7 +157,7 @@ def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:
 
 def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writes() -> None:
     owner = PACKAGE / "agent" / "control_transition.py"
-    projection = PACKAGE / "model" / "context" / "control_transition_projection.py"
+    projection = PACKAGE / "agent" / "context" / "control_transition_projection.py"
     owner_imports = _imports(owner)
     projection_imports = _imports(projection)
 
@@ -165,7 +165,7 @@ def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writ
         name.startswith(
             (
                 "affordance_runtime.benchmarks",
-                "affordance_runtime.model.context",
+                "affordance_runtime.agent.context",
                 "affordance_runtime.surfaces",
             )
         )
@@ -202,10 +202,10 @@ def test_turn_is_only_a_compatibility_projection_not_a_production_fact_writer() 
 def test_benchmark_case_projection_is_narrow_and_separate_from_model_projection() -> None:
     benchmark = PACKAGE / "benchmarks" / "target_loop" / "case_projection.py"
     runner = PACKAGE / "benchmarks" / "target_loop" / "runner.py"
-    model = PACKAGE / "model" / "context" / "control_transition_projection.py"
+    model = PACKAGE / "agent" / "context" / "control_transition_projection.py"
 
     assert not any(
-        name.startswith("affordance_runtime.model.context")
+        name.startswith("affordance_runtime.agent.context")
         for name in _imports(benchmark)
     )
     assert not any(

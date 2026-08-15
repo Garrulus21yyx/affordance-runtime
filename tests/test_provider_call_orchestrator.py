@@ -10,7 +10,7 @@ import pytest
 from test_grounded_tools_v2 import _context
 
 from affordance_runtime.agent import Abort
-from affordance_runtime.model.context.failures import (
+from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
     ProviderAttemptOrigin,

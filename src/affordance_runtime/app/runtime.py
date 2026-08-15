@@ -7,6 +7,7 @@ from typing import TypeAlias
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     UnsupportedComposition,
@@ -19,7 +20,6 @@ from affordance_runtime.agent.result import AgentResult
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.user_input import UserInputResumeOutcome
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
-from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (

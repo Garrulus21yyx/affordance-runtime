@@ -6,18 +6,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.acquisition_projection import ObservationCapabilityView
-from affordance_runtime.model.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
-from affordance_runtime.model.context.observation_paging import (
+from affordance_runtime.agent.context.acquisition_projection import ObservationCapabilityView
+from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.agent.context.observation_paging import (
     ObservationPager,
     ObservationTraversalStatus,
     ObservationTraversalView,
 )
-from affordance_runtime.model.context.source_projection import (
+from affordance_runtime.agent.context.source_projection import (
     ObservationSourceSummary,
     project_observation_source,
 )
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 

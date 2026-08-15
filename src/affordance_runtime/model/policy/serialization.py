@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context.budgets import ContextProjectionBudget
-from affordance_runtime.model.context.context import AgentContext
 
 
 def serialize_agent_context(

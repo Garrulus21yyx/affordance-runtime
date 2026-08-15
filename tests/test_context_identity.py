@@ -4,7 +4,7 @@ from affordance_runtime.actions import (
     ActionOption,
     ActionSpace,
 )
-from affordance_runtime.model.context.context import ContextIdentity
+from affordance_runtime.agent.context.context import ContextIdentity
 
 
 def test_context_identity_is_deterministic_and_revision_sensitive() -> None:

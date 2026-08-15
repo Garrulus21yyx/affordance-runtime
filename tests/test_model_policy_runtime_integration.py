@@ -26,7 +26,7 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.model.context import ContextBuilder, ContextProjectionBudget
+from affordance_runtime.agent.context import ContextBuilder, ContextProjectionBudget
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (

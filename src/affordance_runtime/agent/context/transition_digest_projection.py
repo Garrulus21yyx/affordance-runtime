@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from affordance_runtime.agent.control_transition import ControlTransition
-from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.context.budgets import BoundedSection
-from affordance_runtime.model.context.context import AgentGroundingIndexView
-from affordance_runtime.model.context.control_transition_projection import (
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.context import AgentGroundingIndexView
+from affordance_runtime.agent.context.control_transition_projection import (
     project_decision_summary,
 )
+from affordance_runtime.agent.control_transition import ControlTransition
+from affordance_runtime.immutable import freeze_json
 
 TRANSITION_DIGEST_SCHEMA_VERSION = "agent-transition@v1"
 _MAX_REASON = 240

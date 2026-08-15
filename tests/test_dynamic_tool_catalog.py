@@ -10,9 +10,9 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent import RequestActionPage, RequestObservation, SelectAction
+from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.context import ContextBuilder
 from affordance_runtime.model.policy.serialization import serialize_agent_context
 from affordance_runtime.model.policy.tool_catalog import compile_tool_catalog, resolve_tool_call
 from affordance_runtime.model.policy.tool_contracts import (

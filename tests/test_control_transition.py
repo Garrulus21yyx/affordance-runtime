@@ -22,6 +22,10 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptOperation,
     AttemptReceipt,
 )
+from affordance_runtime.agent.context.control_transition_projection import (
+    project_control_transitions,
+)
+from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.control_transition import (
     AdmissionStatus,
     ControlTransitionScope,
@@ -31,10 +35,6 @@ from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.model.context.control_transition_projection import (
-    project_control_transitions,
-)
-from affordance_runtime.model.context.failures import ModelFailureKind
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     AcquisitionOrigin,

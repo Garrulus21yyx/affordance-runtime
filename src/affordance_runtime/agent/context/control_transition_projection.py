@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.control_transition import ControlTransition, Turn
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -14,8 +16,6 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     Wait,
 )
-from affordance_runtime.model.context.contracts import AgentTurnView
-from affordance_runtime.model.context.projection import project_public_value
 
 _MAX_STRING = 240
 

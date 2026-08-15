@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from affordance_runtime.model.context.budgets import DEFAULT_MAX_TOTAL_WAIT_MS
+from affordance_runtime.agent.context.budgets import DEFAULT_MAX_TOTAL_WAIT_MS
 
 MAX_TOTAL_WAIT_MS = DEFAULT_MAX_TOTAL_WAIT_MS
 
