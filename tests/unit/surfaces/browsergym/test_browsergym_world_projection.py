@@ -206,7 +206,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
         context,
         False,
     )
-    roots = public["world"]["documents"][0]["roots"]
+    roots = public["observation"]["documents"][0]["roots"]
     panel = next(item for item in roots if item["label"] == "Products")
     row = panel["children"][0]
     button = row["children"][0]
@@ -215,7 +215,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
     assert row["label"] == "MacBook Pro"
     assert button["label"] == "Add to cart"
     assert button["ref"] == option.target_ref
-    encoded = json.dumps(public["world"])
+    encoded = json.dumps(public["observation"])
     assert "entity:" not in encoded
     assert "observation:" not in encoded
 

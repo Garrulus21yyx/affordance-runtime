@@ -15,18 +15,19 @@ TaskGoal
   -> choose observation sources
   -> acquire DOM / AX / visual / WoT evidence
   -> fuse one current WorldObservation
-  -> build AgentContext and semantic ActionSpace
-  -> model chooses a semantic decision
+  -> compile the current semantic ToolCatalog
+  -> project task, current observation, verified progress, and recent steps
+  -> model chooses exactly one offered tool
   -> Runtime validates, binds, and executes
   -> acquire a fresh post-action observation
   -> evaluate the action and task
   -> continue or finish
 ```
 
-The model sees public semantics such as roles, labels, state, relations, and call-local entity references. The target
-context also carries recent semantic actions and their verified outcomes. The Runtime keeps backend routes, selectors,
-coordinates, handles, credentials, and all remaining-budget counters private; it terminates the loop and filters the
-currently available tools.
+The model sees one current public world, verified task progress, and up to eight mechanically paired recent
+action/result summaries. Tool schemas are compiled for the current turn. Runtime keeps backend routes, selectors,
+coordinates, handles, credentials, and all budget counters private; it validates, executes, refreshes observation,
+evaluates outcomes, and terminates the loop.
 
 ## What belongs in the project
 
@@ -85,8 +86,9 @@ Provider configuration is read from environment variables; secrets never enter t
 
 ## Current simplification boundary
 
-The R2 checkpoint remains available in Git history. This branch introduces the replacement target: one `RunState`,
-one `StepResult` per policy outcome, and a readable core loop. Existing world, adapter, action, evaluation, and model
-boundaries are reused. The default CLI still uses the legacy loop until its decision paths are migrated one at a time;
-the simplified path is currently explicit through `TargetRuntime.run_core_task`. Legacy control modules are migration
-sources, not extension points.
+The R2 checkpoint remains available in Git history. This branch keeps the existing world, adapter, semantic-action,
+tool, execution, and evaluation boundaries and replaces the control core with one `RunState`, one `StepResult` per
+turn, one stable GUI-agent prompt, and one compact model projection. Tool-call identity, the thin model workspace, the
+supported decision paths, and the target benchmark harness are migrated. The default CLI still uses the frozen legacy
+loop until paired live evidence satisfies the fixed cutover plan in [Architecture](docs/architecture.md). Legacy control
+modules are migration sources, not extension points.

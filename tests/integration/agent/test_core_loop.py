@@ -1,8 +1,16 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from affordance_runtime.actions import ActionBinding, ActionRisk
-from affordance_runtime.agent import Abort, RequestActionPage, RunStatus, SelectAction
+from affordance_runtime.agent import (
+    Abort,
+    AskUser,
+    ProposeDone,
+    RequestActionPage,
+    RunStatus,
+    SelectAction,
+    Wait,
+)
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
@@ -87,12 +95,43 @@ def _task() -> TaskGoal:
 @dataclass
 class CorePolicy:
     choice: str
+    turns: int = 0
 
     async def decide(self, context):
+        self.turns += 1
         if self.choice == "first_action":
-            return SelectAction(context.context_id, context.actions.options[0].action_id)
+            return SelectAction(
+                context.context_id,
+                context.actions.options[0].action_id,
+                tool_call_id="provider-call:test",
+            )
         if self.choice == "action_page":
-            return RequestActionPage(context.context_id, query="toggle")
+            if self.turns == 1:
+                return RequestActionPage(context.context_id, query="toggle")
+            assert context.actions.active_query == "toggle"
+            return Abort(context.context_id, "page observed", AbortCategory.USER_REQUEST)
+        if self.choice == "wait":
+            if self.turns == 1:
+                return Wait(context.context_id, "allow interface to settle", 5)
+            return Abort(context.context_id, "wait observed", AbortCategory.USER_REQUEST)
+        if self.choice == "premature_done":
+            if self.turns == 1:
+                return ProposeDone(context.context_id, (), (), "done", ())
+            assert len(context.history.items) == 1
+            assert context.history.items[0].semantic_action == "propose_done"
+            assert context.history.items[0].reason == "completion_not_verified"
+            return Abort(context.context_id, "feedback observed", AbortCategory.USER_REQUEST)
+        if self.choice == "ask_user":
+            if self.turns == 1:
+                return AskUser(context.context_id, "Which value?", ("value",))
+            assert context.task.public_inputs["value"] == "provided"
+            assert context.history.items[-1].reason == "user_input_received"
+            return Abort(context.context_id, "input observed", AbortCategory.USER_REQUEST)
+        if self.choice == "confirm_once":
+            if self.turns == 1:
+                return SelectAction(context.context_id, context.actions.options[0].action_id)
+            assert context.history.items[-1].reason == "confirmation_declined"
+            return Abort(context.context_id, "decline observed", AbortCategory.USER_REQUEST)
         raise AssertionError("policy should not be called")
 
 
@@ -136,11 +175,12 @@ class CoreActionEvaluator:
         )
 
 
-def _runtime(choice: str) -> TargetRuntime:
+def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
     return TargetRuntime(
         AgentDecisionPorts(CorePolicy(choice)),
         CoreActionEvaluator(),
         CoreTaskEvaluator(),
+        **({"wait_controller": wait_controller} if wait_controller is not None else {}),
     )
 
 
@@ -165,6 +205,9 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
         assert state.observation_count == 2
         assert state.execution_count == 1
         assert state.last_step is not None
+        assert state.last_step.decision.tool_call_id == "provider-call:test"
+        assert state.last_step.execution is not None
+        assert state.last_step.execution.request.tool_call_id == "provider-call:test"
         assert state.last_step.action_evaluation is not None
         assert state.last_step.action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
         assert environment.execute_calls == 1
@@ -172,15 +215,121 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
     asyncio.run(scenario())
 
 
-def test_unmigrated_decision_path_stops_explicitly() -> None:
+def test_action_page_is_installed_for_the_next_turn() -> None:
     async def scenario() -> None:
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
         state = await _runtime("action_page").run_core_task(environment, _task())
 
-        assert state.status is RunStatus.BLOCKED
+        assert state.status is RunStatus.CANCELLED
         assert state.last_step is not None
-        assert state.last_step.feedback == "decision_path_not_migrated"
+        assert state.last_step.feedback == "agent_aborted:user_request"
         assert state.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_wait_uses_runtime_boundary_then_refreshes_observation() -> None:
+    @dataclass
+    class RecordingWaitController:
+        waits: list[int]
+
+        async def wait(self, max_wait_ms: int) -> None:
+            self.waits.append(max_wait_ms)
+
+    async def scenario() -> None:
+        waiter = RecordingWaitController([])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            independent_observations=(_world("after-wait", False),),
+        )
+        state = await _runtime("wait", wait_controller=waiter).run_core_task(
+            environment,
+            _task(),
+        )
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.current_world.observation_id == "after-wait"
+        assert state.observation_count == 2
+        assert state.waited_ms == 5
+        assert waiter.waits == [5]
+
+    asyncio.run(scenario())
+
+
+def test_unverified_done_proposal_returns_to_the_model_loop() -> None:
+    async def scenario() -> None:
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        state = await _runtime("premature_done").run_core_task(environment, _task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.step_count == 2
+        assert state.execution_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_user_input_resumes_with_one_consecutive_task_revision() -> None:
+    async def scenario() -> None:
+        runtime = _runtime("ask_user")
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        task = _task()
+        paused = await runtime.run_core_task(environment, task)
+
+        assert paused.status is RunStatus.WAITING_USER
+        revised = replace(task, inputs={"value": "provided"}, revision=2)
+        resumed = await runtime.resume_core_user(environment, revised, paused)
+
+        assert resumed.status is RunStatus.CANCELLED
+        assert resumed.task_revision == 2
+        assert resumed.step_count == 2
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_approval_executes_the_exact_pending_semantics() -> None:
+    async def scenario() -> None:
+        runtime = _runtime("confirm_once")
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+        task = replace(_task(), risk_profile=RiskProfile.MEDIUM)
+        paused = await runtime.run_core_task(environment, task)
+
+        assert paused.status is RunStatus.WAITING_CONFIRMATION
+        resumed = await runtime.resume_core_confirmation(
+            environment,
+            task,
+            paused,
+            approved=True,
+        )
+
+        assert resumed.status is RunStatus.DONE
+        assert resumed.execution_count == 1
+        assert resumed.step_count == 1
+        assert environment.execute_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_decline_returns_to_the_model_without_execution() -> None:
+    async def scenario() -> None:
+        runtime = _runtime("confirm_once")
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        task = replace(_task(), risk_profile=RiskProfile.MEDIUM)
+        paused = await runtime.run_core_task(environment, task)
+        resumed = await runtime.resume_core_confirmation(
+            environment,
+            task,
+            paused,
+            approved=False,
+        )
+
+        assert resumed.status is RunStatus.CANCELLED
+        assert resumed.execution_count == 0
+        assert resumed.step_count == 2
+        assert environment.execute_calls == 0
 
     asyncio.run(scenario())
 
@@ -232,7 +381,7 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
 
         assert state.status is RunStatus.CANCELLED
         assert policy.turns == 2
-        assert len(state.recent_actions) == 1
+        assert len(state.recent_steps) == 1
         assert environment.execute_calls == 1
 
     asyncio.run(scenario())

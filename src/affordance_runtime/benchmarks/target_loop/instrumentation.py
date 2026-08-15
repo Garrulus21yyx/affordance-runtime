@@ -65,6 +65,7 @@ class BenchmarkInstrumentation:
     environment_reset_acquisitions: int = 0
     environment_capture_calls: int = 0
     environment_post_acquisitions: int = 0
+    currentness_probe_count: int = 0
     policy_trace: list[dict[str, object]] = field(default_factory=list)
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
 
@@ -563,6 +564,10 @@ class CountingEnvironment:
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
             state._unknown_attempts.add(identity)
         return outcome
+
+    def is_current(self, request):
+        self.instrumentation.currentness_probe_count += 1
+        return self.wrapped.is_current(request)
 
 
 def instrument_policy(policy, instrumentation: BenchmarkInstrumentation):

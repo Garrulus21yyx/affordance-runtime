@@ -31,25 +31,56 @@ def project_control_transitions(
     return tuple(_project_transition(item) for item in transitions[-12:])
 
 
-def project_select_action_step(result: StepResult) -> AgentTurnView:
-    """Project one simplified-core action result without exposing its binding."""
+def project_step_result(result: StepResult) -> AgentTurnView:
+    """Project one simplified-core result without exposing Runtime identities."""
 
-    if not isinstance(result.decision, SelectAction) or result.execution is None:
-        raise ValueError("select-action history requires one executed action")
-    intent = result.execution.request.intent
-    action = result.action_evaluation
+    decision = result.decision
+    if not isinstance(
+        decision,
+        (SelectAction, RequestObservation, RequestActionPage, AskUser, ProposeDone, Wait, Abort),
+    ):
+        raise TypeError("policy failures do not enter model step history")
+    if isinstance(decision, SelectAction) and result.execution is not None:
+        intent = result.execution.request.intent
+        action = result.action_evaluation
+        return AgentTurnView(
+            "selectaction",
+            intent.semantic_action,
+            intent.target_id,
+            intent.destination_id,
+            project_public_value(intent.parameters),
+            str(result.execution.result.dispatch_status),
+            str(action.status) if action is not None else "",
+            str(result.task_evaluation.status),
+            action.reason if action is not None else result.feedback,
+            {"feedback_code": result.feedback},
+        )
+    target_id = ""
+    if isinstance(decision, RequestObservation | RequestActionPage):
+        target_id = decision.subject_id if isinstance(decision, RequestObservation) else decision.target_id
+    summary = dict(project_decision_summary(decision))
+    summary["feedback_code"] = result.feedback
     return AgentTurnView(
-        "selectaction",
-        intent.semantic_action,
-        intent.target_id,
-        intent.destination_id,
-        project_public_value(intent.parameters),
-        str(result.execution.result.dispatch_status),
-        str(action.status) if action is not None else "",
-        str(result.task_evaluation.status),
-        action.reason if action is not None else result.feedback,
-        {"feedback_code": result.feedback},
+        type(decision).__name__.lower(),
+        _control_tool_name(decision),
+        target_id,
+        task_evaluation_status=str(result.task_evaluation.status),
+        reason=result.feedback,
+        semantic_summary=summary,
     )
+
+
+def _control_tool_name(decision: AgentDecision) -> str:
+    names = {
+        RequestObservation: "request_observation",
+        RequestActionPage: "request_action_page",
+        AskUser: "ask_user",
+        ProposeDone: "propose_done",
+        Wait: "wait",
+        Abort: "abort",
+        SelectAction: "select_action",
+    }
+    return names[type(decision)]
 
 
 def _project_transition(transition: ControlTransition) -> AgentTurnView:

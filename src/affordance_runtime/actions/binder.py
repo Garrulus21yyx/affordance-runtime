@@ -31,6 +31,7 @@ class ActionBinder:
         *,
         selected_binding: ActionBinding | None = None,
         excluded_binding_ids: frozenset[str] = frozenset(),
+        tool_call_id: str = "",
     ) -> BoundActionRequest:
         if not context_id.strip():
             raise BindingError("binding requires the accepted context identity")
@@ -59,6 +60,7 @@ class ActionBinder:
             intent,
             selection,
             binding,
+            tool_call_id=tool_call_id,
         )
 
     def bind_for_execution(
@@ -70,6 +72,7 @@ class ActionBinder:
         *,
         selected_binding: ActionBinding | None = None,
         excluded_binding_ids: frozenset[str] = frozenset(),
+        tool_call_id: str = "",
     ) -> BoundActionRequest:
         """Close the executable request, including its post-action evidence contract."""
 
@@ -84,6 +87,7 @@ class ActionBinder:
             context_id,
             selected_binding=selected_binding,
             excluded_binding_ids=excluded_binding_ids,
+            tool_call_id=tool_call_id,
         )
         needs = observation_needs_for_verification(
             request.request_id,

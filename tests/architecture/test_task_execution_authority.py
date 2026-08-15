@@ -198,13 +198,11 @@ def test_latest_transition_has_one_root_owned_projection_chain() -> None:
     assert "ModelPort" not in projection and "provider" not in projection
 
 
-def test_normative_architecture_links_the_authority_map() -> None:
-    assert "task-execution-authority-map.md" in (ROOT / "docs" / "architecture.md").read_text(
-        encoding="utf-8"
-    )
-    assert "Task Execution Authority Map" in (
-        ROOT / "docs" / "architecture-governance-track.md"
-    ).read_text(encoding="utf-8")
-    authoritative = (ROOT / "docs" / "task-execution-authority-map.md").read_text(encoding="utf-8")
-    assert "TaskGoal boundary" in authoritative
-    assert "No exact GUI target identity is required before `WorldObservation`" in authoritative
+def test_normative_architecture_contains_the_single_authority_map() -> None:
+    architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+
+    assert "## Authority" in architecture
+    assert "What is the current unified world? | WorldFusion / WorldObservation" in architecture
+    assert "What semantic action should be attempted? | Model policy" in architecture
+    assert "Is the task complete? | TaskEvaluator" in architecture
+    assert not (ROOT / "docs" / "task-execution-authority-map.md").exists()

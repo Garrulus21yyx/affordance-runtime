@@ -158,7 +158,7 @@ class ProviderCallNormalizer:
                 and selected_binding.authority_equivalence_digest
                 == candidate.binding.authority_equivalence_digest
             )
-            exact_call = ToolCall(candidate.spec.name, candidate.arguments)
+            exact_call = ToolCall(candidate.spec.name, candidate.arguments, call.call_id)
             if equivalent and _business_arguments_unchanged(
                 call,
                 exact_call,

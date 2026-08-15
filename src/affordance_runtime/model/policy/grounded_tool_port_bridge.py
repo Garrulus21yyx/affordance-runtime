@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
@@ -230,7 +231,7 @@ class _GroundedAdapterBase:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
         if len(calls) != 1:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
-        original_call = calls[0]
+        original_call = _with_call_id(calls[0], request.request_id, "initial")
         call = original_call
         normalizer = ProviderCallNormalizer()
         reconciliation = normalizer.normalize(call, catalog)
@@ -262,6 +263,7 @@ class _GroundedAdapterBase:
                 original_call,
                 reconciliation,
             )
+            repaired = _with_call_id(repaired, request.request_id, "tool-intent-repair")
             repaired_reconciliation = normalizer.normalize(repaired, catalog)
             if repaired_reconciliation.status not in {
                 ToolCallReconciliationStatus.EXACT,
@@ -325,6 +327,7 @@ class _GroundedAdapterBase:
                 call,
                 binding,
             )
+            repaired = _with_call_id(repaired, request.request_id, "argument-repair")
             object.__setattr__(self, "last_repaired_operation_match", repaired.name == call.name)
             if repaired.name != call.name:
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
@@ -588,6 +591,13 @@ class GroundedActionAdapter(_GroundedAdapterBase):
             resolution.decision,
             metadata,
         )
+
+
+def _with_call_id(call: ToolCall, request_id: str, phase: str) -> ToolCall:
+    if call.call_id:
+        return call
+    digest = hashlib.sha256(f"{request_id}:{phase}".encode()).hexdigest()[:24]
+    return replace(call, call_id=f"call:{digest}")
 
 
 def _command_payload_type(

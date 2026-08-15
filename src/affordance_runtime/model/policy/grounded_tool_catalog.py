@@ -178,7 +178,7 @@ def resolve_grounded_tool_call(
         decision = RequestActionPage(
             expected_context_id, binding.query, binding.target_id, binding.relevance_role, binding.cursor
         )
-        return GroundedActionResolution(decision)
+        return GroundedActionResolution(replace(decision, tool_call_id=call.call_id))
     if isinstance(binding, _EvidenceBinding):
         purpose = str(call.arguments["purpose"])
         subject_ref = str(call.arguments["subject"])
@@ -195,7 +195,7 @@ def resolve_grounded_tool_call(
             raise GroundedToolResolutionError(
                 GroundedToolResolutionCode.INVALID_ARGUMENTS
             ) from exc
-        return GroundedActionResolution(evidence_decision)
+        return GroundedActionResolution(replace(evidence_decision, tool_call_id=call.call_id))
     if not isinstance(binding, CompiledGroundedTool):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     selector_names = tuple(item.public_name for item in binding.selector_fields)
@@ -212,7 +212,13 @@ def resolve_grounded_tool_call(
         if name not in selector_names
     }
     return GroundedActionResolution(
-        SelectAction(expected_context_id, match.action_id, parameters, match.destination_id or ""),
+        SelectAction(
+            expected_context_id,
+            match.action_id,
+            parameters,
+            match.destination_id or "",
+            call.call_id,
+        ),
     )
 
 

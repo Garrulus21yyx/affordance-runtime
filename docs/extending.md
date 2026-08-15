@@ -49,16 +49,36 @@ the capability registry and its owning adapters, not `CoreAgentLoop`.
 
 ## Add a model provider
 
-Implement the existing provider-neutral `ModelPort` and serialize the public `AgentContext` into provider messages and
-tool schemas. Normalize provider errors and timeouts at the provider boundary. The provider may propose semantic
-decisions; it cannot select private observation routes or execution bindings.
+Implement the existing provider-neutral `ModelPort` and serialize the public context into provider messages and tool
+schemas. Preserve provider `call_id` values through the typed call/result boundary. Use strict tool schemas when the
+provider supports them, then retain Runtime validation as the provider-independent authority. Normalize provider
+errors and timeouts at the provider boundary. The provider may choose one current semantic tool; it cannot select
+private observation routes or execution bindings.
 
 The composition chain is `model/providers/port.py: ModelPort` → a structured adapter under `model/policy/` →
 `ModelBackedAgentPolicy` → `AgentDecisionPorts` in `app/composition.py`. Capability declarations belong to the policy
 adapter; `TargetRuntime` validates required decisions at composition time.
 
-Required tests cover schema generation, response parsing, unsupported decisions, timeout/error normalization, and
-secret-free logging.
+Do not create a provider-specific system prompt. Every provider receives the one stable prompt in Architecture; only
+wire encoding, image representation, strict-schema support, and tool-call transport vary. Native-tool providers receive
+the current catalog through their tools field. Compact-JSON providers may receive the same catalog in context, but it
+must not be duplicated for native providers.
+
+Required tests cover schema generation, `call_id` preservation, response parsing, unsupported tools, timeout/error
+normalization, bounded repair, and secret-free logging.
+
+## Change the model prompt or context
+
+The stable prompt defines role, authority, decision policy, progress, and the Runtime boundary. Tool-specific parameter
+rules belong to `ToolSpec`; current facts belong to context; repair instructions belong to the matching tool result.
+Do not copy these into the system prompt.
+
+The public context has one task, one current observation, one verified progress view, and at most eight nested
+action/result `StepView` records. A context change must remove or replace an existing field rather than add another
+projection of the same fact. Budget counters, backend data, old worlds, benchmark data, and telemetry are forbidden.
+
+Required tests snapshot the complete public shape, prove that current observation overrides history, verify mechanical
+action/result pairing and truncation, and reject private-field leakage.
 
 ## Add an evaluator
 

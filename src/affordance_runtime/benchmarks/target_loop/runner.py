@@ -8,11 +8,9 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 
-from affordance_runtime.agent import (
-    AgentLoopStatus,
-    AgentRunSession,
-    AgentSessionStartError,
-)
+from affordance_runtime.agent.core_loop import CoreLoopStartError
+from affordance_runtime.agent.run_state import RunState, RunStatus
+from affordance_runtime.agent.session_snapshot import snapshot_core_episode
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -33,7 +31,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
-from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 
 
 async def run_suite(
@@ -98,7 +95,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
     result = None
     partial = None
     snapshot = None
-    session_holder: dict[str, AgentRunSession] = {}
+    state_holder: dict[str, RunState] = {}
     failure = ""
     started = time.perf_counter()
     try:
@@ -140,15 +137,15 @@ async def _run_case(case) -> BenchmarkCaseResult:
             )
             raise _CaseStageError("AgentLoop construction", exc) from exc
         result = await _run_with_watchdog(
-            _run_episode(case, runtime, counted_environment, task, instrumentation, session_holder),
+            _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder),
             case.timeout_s,
         )
     except _HarnessWatchdogTimeout as exc:
         failure = "case timeout"
         instrumentation.record_watchdog("case_timeout", exc)
-        session = session_holder.get("session")
-        if session is not None:
-            partial = session.snapshot_partial_episode()
+        state = state_holder.get("state")
+        if state is not None:
+            partial = snapshot_core_episode(state)
     except _CaseStageError as exc:
         failure = f"{exc.stage} failed: {type(exc.cause).__name__}"
     except Exception as exc:
@@ -158,11 +155,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
             "runtime_exception",
             exc,
         )
-        session = session_holder.get("session")
-        if session is not None and session.last_result is not None:
-            # The session latches canonical typed failure truth before preserving
-            # the component exception behavior. Keep that authority for v7 facts.
-            result = session.last_result
+        result = state_holder.get("state")
     finally:
         if environment is not None:
             try:
@@ -170,9 +163,9 @@ async def _run_case(case) -> BenchmarkCaseResult:
             except Exception as exc:
                 instrumentation.record_cleanup_failure("cleanup_exception", exc)
                 failure = _append_failure(failure, "cleanup failed")
-    session = session_holder.get("session")
-    if session is not None:
-        snapshot = session.snapshot_partial_episode()
+    state = state_holder.get("state")
+    if state is not None:
+        snapshot = snapshot_core_episode(state)
     elapsed = (time.perf_counter() - started) * 1000
     finalize_policy_trace(instrumentation, result)
     return project_case_result(
@@ -196,28 +189,25 @@ def _build_runtime(composition, instrumentation):
     )
 
 
-async def _run_episode(case, runtime, environment, task, instrumentation, session_holder):
+async def _run_episode(case, runtime, environment, task, instrumentation, state_holder):
     try:
-        session = await runtime.start_task(environment, task)
-    except AgentSessionStartError as exc:
+        state = await runtime.initialize_core_task(environment, task)
+    except CoreLoopStartError as exc:
         instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, exc.reason_code, exc)
         raise
     except Exception as exc:
         instrumentation.record_failure(CaseFailureOrigin.SESSION_START, "session_start_exception", exc)
         raise
-    session_holder["session"] = session
-    result = await session.run_until_pause()
-    if case.auto_confirm and result.status == AgentLoopStatus.WAITING_CONFIRMATION:
-        request = result.confirmation_request
-        if request is None:
-            raise RuntimeError("confirmation status omitted its typed request")
-        decision = ConfirmationDecision(
-            request.confirmation_id,
-            request.subject_id,
-            ConfirmationDecisionKind.CONFIRM,
-        )
+    state_holder["state"] = state
+    result = await runtime.continue_core_task(environment, task, state)
+    if case.auto_confirm and result.status is RunStatus.WAITING_CONFIRMATION:
         instrumentation.confirmations_submitted += 1
-        result = await session.resolve_confirmation(decision)
+        result = await runtime.resume_core_confirmation(
+            environment,
+            task,
+            result,
+            approved=True,
+        )
     return result
 
 

@@ -152,7 +152,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     )
     pending = [
         node
-        for document in public["world"]["documents"]
+        for document in public["observation"]["documents"]
         for node in document["roots"]
     ]
     actor_node = None

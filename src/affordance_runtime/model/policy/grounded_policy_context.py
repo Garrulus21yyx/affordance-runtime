@@ -83,13 +83,11 @@ class GroundedPolicyContextBinder:
             raise ValueError("grounded policy requires an ActorWorldSnapshot")
         public: dict[str, object] = {
             "task": _task(context),
-            "world": to_json_compatible(
+            "observation": to_json_compatible(
                 actor_world_for_delivery(context.actor_world, include_images=include_images)
             ),
             "progress": _progress(context, refs, evidence_refs),
-            "last_transition": to_json_compatible(context.last_transition),
-            "history": _section(context.history, lambda item: _turn(item, refs)),
-            "control_feedback": _control_feedback(context, refs),
+            "recent_steps": _recent_steps(context.history.items, refs),
         }
         return public
 
@@ -165,9 +163,25 @@ def _progress(
     evidence_refs: Mapping[str, str],
 ) -> dict[str, object]:
     progress = context.progress
+    unresolved_criteria = tuple(progress.unresolved_criteria.items)
+    unresolved_outputs = tuple(progress.unresolved_outputs.items)
+    satisfied_criteria = tuple(
+        item.criterion_id
+        for item in context.task.success_criteria.items
+        if item.criterion_id not in unresolved_criteria
+    )
+    confirmed_outputs = tuple(
+        item
+        for item in context.task.requested_output_ids.items
+        if item not in unresolved_outputs
+    )
     return {
-        "validated_task_status": progress.validated_task_status,
-        "verified_public_facts": tuple(
+        "status": progress.validated_task_status,
+        "satisfied_criteria": satisfied_criteria,
+        "unresolved_criteria": unresolved_criteria,
+        "confirmed_outputs": confirmed_outputs,
+        "unresolved_outputs": unresolved_outputs,
+        "evidence": tuple(
             {
                 "evidence_ref": evidence_refs[item.fact_ref],
                 "subject": _subject(item.subject_id, refs),
@@ -176,81 +190,49 @@ def _progress(
             }
             for item in progress.verified_public_facts
         ),
-        "unresolved_criteria": _section(progress.unresolved_criteria),
-        "unresolved_outputs": _section(progress.unresolved_outputs),
-        "events": _section(
-            progress.events,
-            lambda item: {
-                "event_type": item.event_type,
-                "semantic_action": item.semantic_action,
-                "target": _subject(item.target_id, refs, unknown=""),
-                "effect_status": item.effect_status,
-                "task_status": item.task_status,
-                "strategy_transition_required": item.strategy_transition_required,
-            },
-        ),
         "truncated": progress.truncated,
     }
 
 
-def _turn(item: AgentTurnView, refs: Mapping[str, str]) -> dict[str, object]:
-    result = {
-        "decision": item.decision_kind,
-        "semantic_action": item.semantic_action,
+def _recent_steps(
+    items: tuple[AgentTurnView, ...],
+    refs: Mapping[str, str],
+) -> tuple[dict[str, object], ...]:
+    visible = items[-8:]
+    return tuple(
+        _turn(item, refs, detailed=index == len(visible) - 1)
+        for index, item in enumerate(visible)
+    )
+
+
+def _turn(
+    item: AgentTurnView,
+    refs: Mapping[str, str],
+    *,
+    detailed: bool,
+) -> dict[str, object]:
+    action: dict[str, object] = {
+        "kind": item.decision_kind,
+        "tool": item.semantic_action,
         "target": _subject(item.target_id, refs, unknown=""),
-        "parameters": project_public_value(item.public_parameters),
-        "dispatch": item.dispatch_status,
-        "effect": item.action_evaluation_status,
-        "task": item.task_evaluation_status,
-        "reason": item.reason,
     }
-    if item.destination_id:
-        result["destination"] = _subject(item.destination_id, refs, unknown="")
-    if item.semantic_summary:
-        result["decision_details"] = _replace_target_refs(
-            project_public_value(item.semantic_summary), refs
-        )
-    return result
-
-
-def _control_feedback(context: AgentContext, refs: Mapping[str, str]) -> object:
-    feedback = context.control_feedback
-    if feedback is None:
-        return None
-    result: dict[str, object] = {
-        "kind": feedback.kind,
-        "code": feedback.code,
-        "source": feedback.source,
-        "next_decision_disposition": feedback.next_decision_disposition,
-        "strategy_transition_required": feedback.strategy_transition_required,
-        "public_subject": _subject(feedback.public_subject_id or "", refs, unknown=""),
-        "public_field_paths": feedback.public_field_paths,
+    if detailed:
+        action["arguments"] = project_public_value(item.public_parameters)
+        if item.destination_id:
+            action["destination"] = _subject(item.destination_id, refs, unknown="")
+        if item.semantic_summary:
+            action["details"] = _replace_target_refs(
+                project_public_value(item.semantic_summary), refs
+            )
+    return {
+        "action": action,
+        "result": {
+            "dispatch": item.dispatch_status,
+            "effect": item.action_evaluation_status,
+            "task": item.task_evaluation_status,
+            "reason": item.reason,
+        },
     }
-    if feedback.related_decision is not None:
-        result["related_decision"] = {
-            "kind": feedback.related_decision.kind,
-            "target": _subject(feedback.related_decision.target_id, refs, unknown=""),
-            "parameters": project_public_value(feedback.related_decision.parameters),
-        }
-    if feedback.violation is not None:
-        result["violation"] = {
-            "contract_owner": feedback.violation.contract_owner,
-            "code": feedback.violation.code,
-            "field_paths": feedback.violation.field_paths,
-            "expected": project_public_value(feedback.violation.expected),
-            "actual": project_public_value(feedback.violation.actual),
-        }
-    if feedback.semantic_effect is not None:
-        result["semantic_effect"] = to_json_compatible(feedback.semantic_effect)
-    if feedback.recovery is not None:
-        result["recovery"] = {
-            "must_change_fields": feedback.recovery.must_change_fields,
-            "repeat_previous_decision_allowed": feedback.recovery.repeat_previous_decision_allowed,
-            "retry_allowed": feedback.recovery.retry_allowed,
-            "rollback_available": feedback.recovery.rollback_available,
-            "strategy_change_required": feedback.recovery.strategy_change_required,
-        }
-    return result
 
 
 def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:

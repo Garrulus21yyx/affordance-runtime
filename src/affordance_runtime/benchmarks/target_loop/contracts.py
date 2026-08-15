@@ -364,6 +364,7 @@ class BenchmarkRunIdentity:
     platform: str
     manifest_schema_version: str = "target-loop-manifest.v1"
     harness_schema_version: str = "target-loop-harness.v6"
+    runtime: str = "core"
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:

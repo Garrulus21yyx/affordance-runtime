@@ -139,6 +139,7 @@ class TargetRuntime:
             binder=self.binder,
             risk_policy=self.risk_policy,
             context_builder=self.context_builder,
+            wait_controller=self.wait_controller,
         )
 
     async def run_core_task(
@@ -150,6 +151,58 @@ class TargetRuntime:
         """Run the migration scaffold; it stops at every unclosed boundary."""
 
         return await self.build_core_loop().run(environment, task, intent_context)
+
+    async def initialize_core_task(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+    ) -> RunState:
+        return await self.build_core_loop().initialize(environment, task)
+
+    async def continue_core_task(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+        intent_context: IntentContext | None = None,
+    ) -> RunState:
+        return await self.build_core_loop().continue_run(
+            environment,
+            task,
+            state,
+            intent_context,
+        )
+
+    async def resume_core_user(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+        intent_context: IntentContext | None = None,
+    ) -> RunState:
+        return await self.build_core_loop().resume_user(
+            environment,
+            task,
+            state,
+            intent_context,
+        )
+
+    async def resume_core_confirmation(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+        *,
+        approved: bool,
+        intent_context: IntentContext | None = None,
+    ) -> RunState:
+        return await self.build_core_loop().resume_confirmation(
+            environment,
+            task,
+            state,
+            approved=approved,
+            intent_context=intent_context,
+        )
 
     async def start_task(
         self,

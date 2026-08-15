@@ -397,13 +397,19 @@ class OpenAICompatibleModelPort:
             calls = []
             for raw in raw_calls:
                 function = raw.get("function") if isinstance(raw, dict) else None
-                if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+                call_id = raw.get("id") if isinstance(raw, dict) else None
+                if (
+                    not isinstance(function, dict)
+                    or not isinstance(function.get("name"), str)
+                    or not isinstance(call_id, str)
+                    or not call_id
+                ):
                     raise TypeError("tool call function is malformed")
                 raw_arguments = function.get("arguments", "")
                 arguments = strict_json_loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
                 if not isinstance(arguments, Mapping):
                     raise TypeError("tool call arguments must be an object")
-                calls.append(ToolCall(function["name"], arguments))
+                calls.append(ToolCall(function["name"], arguments, call_id))
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             violations = _schema_failure_violations(exc)
             self._capture_tool(

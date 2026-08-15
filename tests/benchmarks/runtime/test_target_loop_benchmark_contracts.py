@@ -10,6 +10,7 @@ def test_manifest_digest_and_run_identity_are_stable_and_secret_free() -> None:
     identity = BenchmarkRunIdentity.create("suite", manifest_digest(manifest), "deterministic", 7)
     assert identity.git_sha
     assert identity.suite_id == "suite"
+    assert identity.runtime == "core"
     assert "endpoint_url" not in identity.__dict__
 
 

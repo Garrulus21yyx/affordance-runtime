@@ -394,12 +394,12 @@ def test_history_bound_keeps_newest_semantic_turns() -> None:
     )
 
     assert tuple(item.semantic_summary["reason"] for item in context.history.items) == (
-        "oldest",
         "middle",
+        "newest",
     )
     assert context.last_transition is not None
     assert context.last_transition.previous_decision.details["reason"] == "newest"
-    assert context.history.total_count == 2 and not context.history.truncated
+    assert context.history.total_count == 3 and context.history.truncated
 
 
 def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
@@ -437,7 +437,7 @@ def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
     )
 
     assert context.history.truncated
-    assert context.history.items[-1].semantic_summary["reason"] == reasons[-2]
+    assert context.history.items[-1].semantic_summary["reason"] == reasons[-1]
     assert context.last_transition is not None
     assert context.last_transition.previous_decision.details["reason"] == reasons[-1][:239] + "…"
 

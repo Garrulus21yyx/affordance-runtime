@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.world.contracts import CoverageState
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.run_state import RunState
     from affordance_runtime.agent.session import AgentRunSession
 
 
@@ -98,6 +100,47 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
     )
 
 
+def snapshot_core_episode(state: RunState) -> PartialEpisodeSnapshot:
+    """Project benchmark-safe facts from the thin loop without adding state to it."""
+
+    latest = state.last_step
+    task_evaluation = state.current_task_evaluation
+    task_outcome = task_evaluation.outcome
+    return PartialEpisodeSnapshot(
+        state.observation_count,
+        state.execution_count,
+        0,
+        state.step_count,
+        str(task_evaluation.status),
+        str(latest.action_evaluation.status)
+        if latest is not None and latest.action_evaluation is not None
+        else "",
+        "",
+        0,
+        0,
+        "",
+        0,
+        type(latest.decision).__name__
+        if latest is not None and not isinstance(latest.decision, PolicyFailure)
+        else "",
+        0,
+        len(state.current_world.targets),
+        _coverage_summary({
+            item.source_observation_id: item.coverage
+            for item in state.current_world.source_manifest
+        }),
+        _core_pending_kind(state),
+        (),
+        str(state.status),
+        latest.feedback if latest is not None else "",
+        "",
+        "",
+        "",
+        str(task_outcome.kind) if task_outcome is not None else "",
+        task_outcome.code if task_outcome is not None else "",
+    )
+
+
 def _pending_kind(session: AgentRunSession) -> str:
     state = session.state
     if state.pending_unknown_request is not None:
@@ -105,6 +148,16 @@ def _pending_kind(session: AgentRunSession) -> str:
     if state.pending_user_question:
         return "user_question"
     if state.pending_confirmation is not None:
+        return "confirmation"
+    return ""
+
+
+def _core_pending_kind(state: RunState) -> str:
+    from affordance_runtime.agent.run_state import RunStatus
+
+    if state.status is RunStatus.WAITING_USER:
+        return "user_question"
+    if state.status is RunStatus.WAITING_CONFIRMATION:
         return "confirmation"
     return ""
 

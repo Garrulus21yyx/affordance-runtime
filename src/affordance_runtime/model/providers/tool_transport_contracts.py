@@ -12,6 +12,7 @@ from affordance_runtime.model.policy.strict_json import validate_json_tree
 
 NATIVE_TOOL_CALLS_TRANSPORT = "native_tool_calls.v1"
 _TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
 
 
 class ToolTransportKind(StrEnum):
@@ -39,9 +40,12 @@ class ToolSpec:
 class ToolCall:
     name: str
     arguments: Mapping[str, object]
+    call_id: str = ""
 
     def __post_init__(self) -> None:
         if _TOOL_NAME.fullmatch(self.name) is None:
             raise ValueError("tool call name is invalid")
+        if self.call_id and _CALL_ID.fullmatch(self.call_id) is None:
+            raise ValueError("tool call identity is invalid")
         validate_json_tree(self.arguments)
         object.__setattr__(self, "arguments", freeze_json(self.arguments))

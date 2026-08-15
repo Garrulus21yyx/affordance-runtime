@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.case_evidence_codec import (
     decode_public_case_evidence,
@@ -46,7 +47,11 @@ def project_case_result(
     metric_collisions = canonical_metric_collisions(instrumentation.custom_metrics)
     metadata = _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot)
     sent_unknown = (
-        result.sent_unknown_count if result is not None else metadata.sent_unknown_count if metadata is not None else 0
+        getattr(result, "sent_unknown_count", 0)
+        if result is not None
+        else metadata.sent_unknown_count
+        if metadata is not None
+        else 0
     )
     values = _metric_values(result, instrumentation, sent_unknown, metadata)
     measurements = {name: MetricMeasurement(value, value is not None) for name, value in values.items()}
@@ -70,7 +75,12 @@ def project_case_result(
         else ""
     )
     exception_class = _safe_exception_class(instrumentation.exception_class)
-    policy_code = str(result.policy_failure.kind) if result is not None and result.policy_failure is not None else ""
+    policy_failure = getattr(result, "policy_failure", None) if result is not None else None
+    if policy_failure is None and result is not None:
+        last_step = getattr(result, "last_step", None)
+        candidate = getattr(last_step, "decision", None)
+        policy_failure = candidate if isinstance(candidate, PolicyFailure) else None
+    policy_code = str(policy_failure.kind) if policy_failure is not None else ""
     cleanup_code = (
         _safe_code(instrumentation.cleanup_failure_code, "cleanup_exception")
         if instrumentation.cleanup_failures
@@ -161,8 +171,9 @@ def _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot):
 
 
 def _agent_failure_code(result) -> str:
-    if result is not None and result.failure_code is not None:
-        return str(result.failure_code)
+    failure_code = getattr(result, "failure_code", None) if result is not None else None
+    if failure_code is not None:
+        return str(failure_code)
     return ""
 
 
@@ -176,12 +187,16 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
     values = {
         "observations": result.observation_count if result else snapshot.observation_count if snapshot else 0,
         "executions": result.execution_count if result else snapshot.execution_count if snapshot else 0,
-        "currentness_probes": result.currentness_probe_count
+        "currentness_probes": state.currentness_probe_count
         if result
         else snapshot.currentness_probe_count
         if snapshot
         else 0,
-        "turns": result.control_transition_total_count if result else snapshot.completed_turn_count if snapshot else 0,
+        "turns": getattr(result, "control_transition_total_count", getattr(result, "step_count", 0))
+        if result
+        else snapshot.completed_turn_count
+        if snapshot
+        else 0,
         "policy_calls": state.policy_calls,
         "policy_schema_repair_count": state.policy_schema_repair_count,
         "tool_argument_repair_count": state.tool_argument_repair_count,
@@ -231,13 +246,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         ),
     }
     values.update(_control_feedback_metrics(result, snapshot))
-    kind_counts = dict(
-        result.control_transition_kind_counts
-        if result is not None
-        else snapshot.decision_kind_counts
-        if snapshot is not None
-        else ()
-    )
+    kind_counts = _decision_kind_counts(result, state, snapshot)
     values.update(
         {
             "ask_user_count": kind_counts.get("AskUser", 0),
@@ -247,6 +256,20 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
     )
     values.update({name: value for name, value in state.custom_metrics.items() if name not in values})
     return values
+
+
+def _decision_kind_counts(result, instrumentation, snapshot) -> dict[str, int]:
+    explicit = tuple(getattr(result, "control_transition_kind_counts", ())) if result is not None else ()
+    if explicit:
+        return dict(explicit)
+    if instrumentation.policy_trace:
+        counts: dict[str, int] = {}
+        for event in instrumentation.policy_trace:
+            name = str(event.get("outcome") or "")
+            if name and name not in {"exception", "policy_failure"}:
+                counts[name] = counts.get(name, 0) + 1
+        return counts
+    return dict(snapshot.decision_kind_counts) if snapshot is not None else {}
 
 
 def _control_feedback_metrics(result, snapshot) -> dict[str, int]:

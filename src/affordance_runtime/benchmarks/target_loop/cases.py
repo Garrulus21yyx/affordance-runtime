@@ -127,7 +127,7 @@ def _stale_case(seed: int) -> BenchmarkCase:
         "stale-zero-call", "internal-safety", "stale binding never reaches effectful dispatch",
         shared_task, lambda _metrics: stale_environment(),
         lambda _metrics: BenchmarkComposition(SelectThenAbortPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
-        (AgentLoopStatus.FAILED,), 10.0, seed,
+        (AgentLoopStatus.BLOCKED,), 10.0, seed,
         ("stale_opportunities", "stale_zero_call_violations", "effectful_dispatches"),
         _expect(stale_opportunities=1, stale_zero_call_violations=0, effectful_dispatches=0),
     )

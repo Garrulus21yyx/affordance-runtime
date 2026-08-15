@@ -163,9 +163,9 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        earlier_transition_total = max(0, state.control_transition_total_count - 1)
+        history_total = state.control_transition_total_count
         history_items = project_control_transitions(
-            state.recent_control_transitions[:-1]
+            state.recent_control_transitions
         )[-self.budget.max_history_turns :]
         identity = _context_identity(state, action_space, page, context_generation)
         truncation = {
@@ -175,7 +175,7 @@ class ContextBuilder:
             "conflicts": world.conflicts.truncated,
             "artifacts": world.artifact_summaries.truncated,
             "actions": actions.truncated,
-            "history": earlier_transition_total > len(history_items),
+            "history": history_total > len(history_items),
         }
         grounding = self.grounding_projection.project(
             state.current_observation,
@@ -198,7 +198,7 @@ class ContextBuilder:
             actions,
             BoundedSection(
                 history_items,
-                earlier_transition_total,
+                history_total,
                 truncation["history"],
             ),
             _pending_view(state),

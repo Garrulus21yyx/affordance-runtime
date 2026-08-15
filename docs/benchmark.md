@@ -27,6 +27,9 @@ Every live run records, per case:
 Reports must not contain prompts, model responses, selectors, coordinates, credentials, hidden state, oracle values,
 expected answers, or benchmark reward payloads exposed to the model.
 
+Every core-loop run must additionally record the prompt version, context schema version, tool-catalog schema version,
+and engine choice as metadata. These values support reproducibility but cannot alter product behavior.
+
 ## Current evidence
 
 The retained R2-era MiniWoB-60 runs are negative baselines, not performance claims:
@@ -83,15 +86,19 @@ runner cleanup moves manifests and artifacts out of the documentation tree.
 
 ## Current executable gate
 
-The simplified core is not yet connected to the live MiniWoB runner, so this branch makes no new performance claim.
-Its current executable gate is:
+The target benchmark harness now exclusively runs `CoreAgentLoop`; it does not retain a second legacy-engine path.
+Every serialized run identity records `runtime=core`. This establishes runtime provenance but makes no new live
+MiniWoB performance claim until the paired cohorts below have run. The current executable gate is:
 
 ```bash
 pytest -q tests/unit tests/integration tests/conformance
 ```
 
-Before the first paired live run, step four must add an explicit `core` versus `legacy` engine selection to benchmark
-composition and persist that choice in every report. Do not infer the engine from a branch name. The run must use the
-frozen JSON manifest above, write raw per-case JSON under an artifact directory, then aggregate only after all case
-records exist. The paired tolerance and A/B observation profiles must be recorded alongside that run rather than
-embedded in product code.
+The first paired live run must use the frozen JSON manifest above, write raw per-case JSON under an artifact directory,
+then aggregate only after all case records exist. The paired tolerance and A/B observation profiles must be recorded
+alongside that run rather than embedded in product code.
+
+Prompt or context changes are admitted only as predeclared cohort variants. A prompt must remain stable within a run;
+benchmark case names, expected actions, labels, selectors, or answers may never be injected into it. Diagnose failures
+by shared categories such as observation insufficiency, grounding, invalid tool use, action effect, progress, or
+completion—not by adding per-case prompt instructions.

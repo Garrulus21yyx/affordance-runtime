@@ -52,7 +52,7 @@ def test_typed_terminal_reason_advances_harness_contract() -> None:
     )
 
 
-def test_suite_report_projects_agent_result_message_without_retaining_detail() -> None:
+def test_suite_report_projects_immediate_admission_block_without_legacy_repetition() -> None:
     class OutsideActionSpacePolicy:
         async def decide(self, context):
             return SelectAction(context.context_id, "private-action-id")
@@ -74,6 +74,6 @@ def test_suite_report_projects_agent_result_message_without_retaining_detail() -
         manifest.schema_version, manifest.suite_id, manifest.profile_id, manifest.seed, (case,),
     )))
 
-    assert suite.cases[0].terminal_reason_code == TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION
-    assert suite.cases[0].agent_failure_code == "no_progress_control_repetition"
+    assert suite.cases[0].terminal_reason_code == TerminalReasonCode.BLOCKED_OTHER
+    assert suite.cases[0].agent_failure_code == ""
     assert "private-action-id" not in str(suite.cases[0])

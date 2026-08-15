@@ -67,8 +67,10 @@ def test_openai_compatible_native_tool_transport_requires_one_nonparallel_call()
     assert len(calls) == 1
     assert calls[0].name == "act_01"
     assert dict(calls[0].arguments) == {}
+    assert calls[0].call_id == "provider-call:1"
     assert requests[0]["tool_choice"] == "any"
     assert requests[0]["parallel_tool_calls"] is False
     assert requests[0]["tools"][0]["function"]["name"] == "act_01"
+    assert "strict" not in requests[0]["tools"][0]["function"]
     assert port.last_call is not None
     assert port.last_call.schema_name == "native_tool_calls.v1"

@@ -31,4 +31,5 @@ def test_serialized_report_omits_environment_policy_and_private_sentinels(tmp_pa
 
     serialized = "\n".join(path.read_text(encoding="utf-8") for path in tmp_path.rglob("*.json"))
     assert result.acceptance.accepted
+    assert '"runtime": "core"' in serialized
     assert all(sentinel not in serialized for sentinel in sentinels)

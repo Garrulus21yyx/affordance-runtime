@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias
@@ -21,6 +22,7 @@ _AGENT_EVIDENCE_PURPOSES = frozenset({
 })
 MAX_RESULT_SUMMARY_CHARS = 1_024
 _MAX_COLLECTION = 32
+_TOOL_CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
 
 
 class AbortCategory(StrEnum):
@@ -35,6 +37,11 @@ class AbortCategory(StrEnum):
 def _require_context(context_id: str) -> None:
     if not context_id.strip():
         raise ValueError("decision requires context identity")
+
+
+def _require_tool_call_id(tool_call_id: str) -> None:
+    if tool_call_id and _TOOL_CALL_ID.fullmatch(tool_call_id) is None:
+        raise ValueError("decision tool call identity is invalid")
 
 
 def _require_bounded(value: str, limit: int, field_name: str) -> None:
@@ -53,11 +60,13 @@ class SelectAction:
     action_id: str
     parameters: dict[str, Any] = field(default_factory=dict)
     destination_id: str = ""
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         if not self.action_id.strip():
             raise ValueError("selection requires an offered action id")
+        _require_tool_call_id(self.tool_call_id)
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
 
 
@@ -69,9 +78,11 @@ class RequestObservation:
     evidence_property: str
     reason: str
     cursor: str = ""
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
         _require_bounded(self.subject_id, 240, "observation subject")
         if len(self.evidence_property) > 120:
             raise ValueError("observation evidence property exceeds its bound")
@@ -95,9 +106,11 @@ class RequestActionPage:
     target_id: str = ""
     relevance_role: str = ""
     cursor: str = ""
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
         if len(self.query) > 120 or len(self.target_id) > 240 or len(self.cursor) > 512:
             raise ValueError("action page request exceeds bounded fields")
         if self.relevance_role:
@@ -109,9 +122,11 @@ class AskUser:
     context_id: str
     question: str
     requested_fields: tuple[str, ...] = ()
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
         _require_bounded(self.question, 1_000, "user question")
         object.__setattr__(self, "requested_fields", tuple(self.requested_fields))
         _require_collection(self.requested_fields, "requested fields", item_limit=120)
@@ -124,9 +139,11 @@ class ProposeDone:
     evidence_refs: tuple[str, ...]
     result_summary: str
     unresolved_items: tuple[str, ...]
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
         _require_bounded(self.result_summary, MAX_RESULT_SUMMARY_CHARS, "completion result summary")
         object.__setattr__(self, "claimed_criteria", tuple(self.claimed_criteria))
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
@@ -141,9 +158,11 @@ class Wait:
     context_id: str
     reason: str
     max_wait_ms: int
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
         if not self.reason.strip() or len(self.reason) > _MAX_REASON or not 0 < self.max_wait_ms <= 60_000:
             raise ValueError("wait requires a bounded duration and reason")
 
@@ -153,9 +172,11 @@ class Abort:
     context_id: str
     reason: str
     category: str
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
         _require_bounded(self.reason, _MAX_REASON, "abort reason")
         try:
             AbortCategory(self.category)

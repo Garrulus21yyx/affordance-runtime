@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -58,6 +59,7 @@ class BoundActionRequest:
     binding: ActionBinding
     timeout_ms: int = 5_000
     verification_needs: tuple[ObservationNeed, ...] = ()
+    tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -66,6 +68,8 @@ class BoundActionRequest:
             or self.world_observation_id != self.binding.world_observation_id
         ):
             raise ValueError("bound request must identify its binding observation")
+        if self.tool_call_id and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}", self.tool_call_id) is None:
+            raise ValueError("bound request tool call identity is invalid")
         if (
             self.selection.observation_id != self.world_observation_id
             or self.selection.action_id.strip() == ""

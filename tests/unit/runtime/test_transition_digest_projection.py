@@ -73,7 +73,10 @@ def test_context_projects_exact_action_root_once() -> None:
     )
     assert isinstance(messages[1].content, str)
     public = json.loads(messages[1].content)
-    assert public["last_transition"]["transition_id"] == transition.transition_id
+    assert "last_transition" not in public
+    assert len(public["recent_steps"]) == 1
+    assert public["recent_steps"][0]["action"]["tool"] == "activate"
+    assert public["recent_steps"][0]["result"]["effect"] == "effect_confirmed"
 
 
 def test_user_input_continuation_replaces_same_exact_root_once() -> None:
