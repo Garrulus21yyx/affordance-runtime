@@ -1,8 +1,10 @@
 import asyncio
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
@@ -255,11 +257,25 @@ def test_wot_effectful_transport_exception_is_sent_unknown_without_retry() -> No
     asyncio.run(scenario())
 
 
-def test_future_wot_set_value_profile_support_does_not_create_a_current_action() -> None:
+@pytest.mark.parametrize(
+    ("value_schema", "valid_value", "invalid_value"),
+    (
+        ({"type": "boolean"}, True, "not-a-boolean"),
+        ({"type": "string", "enum": ["eco", "boost"]}, "boost", "invalid"),
+        ({"type": "number", "minimum": 0, "maximum": 10}, 4.5, 11),
+    ),
+)
+def test_wot_write_property_uses_native_value_schema_and_rejects_invalid_before_transport(
+    value_schema,
+    valid_value,
+    invalid_value,
+) -> None:
     async def scenario() -> None:
         td = shared_td()
-        td["properties"]["expanded"]["readOnly"] = False
-        td["properties"]["expanded"]["forms"][0]["op"] = ["readproperty", "writeproperty"]
+        prop = td["properties"]["expanded"]
+        prop.update(value_schema)
+        prop["readOnly"] = False
+        prop["forms"][0]["op"] = ["readproperty", "writeproperty"]
         transport = FakeWotTransport(td)
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         world = UnifiedWorldEnvironment((adapter,))
@@ -267,9 +283,30 @@ def test_future_wot_set_value_profile_support_does_not_create_a_current_action()
         assert acquisition.observation is not None
         observed = acquisition.observation
         options = ActionSpaceBuilder().build(_task(), observed).options
-        assert all(item.semantic_action != "set_value" for item in options)
-        assert all(item.semantic_action != "set_value" for item in observed.bindings)
+        option = next(item for item in options if item.semantic_action == "set_value")
+        assert option.parameter_schema["properties"]["value"] == value_schema
+        valid = ActionSpaceBuilder().admit(option, {"value": valid_value})
+        request = ActionBinder().bind(valid, observed, "context:test:set-value")
+        invalid_selection = replace(valid, parameters={"value": invalid_value})
+        invalid_request = BoundActionRequest(
+            request.request_id,
+            request.context_id,
+            request.world_observation_id,
+            ActionIntent("set_value", request.intent.target_id, {"value": invalid_value}),
+            invalid_selection,
+            request.binding,
+        )
+
+        result = (await world.execute(invalid_request)).result
+
+        assert result.error.value == "invalid_parameters"
         assert transport.action_endpoint_calls == 0
+        assert request.binding.primitive_action == "write_property"
+
+        accepted = (await world.execute(request)).result
+
+        assert accepted.transport_success
+        assert transport.action_endpoint_calls == 1
 
     asyncio.run(scenario())
 

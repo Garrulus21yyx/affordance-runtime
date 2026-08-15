@@ -193,6 +193,7 @@ class ProviderCallNormalizer:
                 ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
                 field_paths=selected_issue.public_field_paths,
                 argument_code=selected_issue.code.value,
+                did_you_mean=_owner_mismatch_candidates(call, catalog),
             )
         return _invalid_arguments(selected_issue)
 
@@ -257,6 +258,28 @@ def _business_arguments_unchanged(
         name: value for name, value in exact.arguments.items() if name not in selectors
     }
     return all(raw.arguments.get(name) == value for name, value in exact_business.items())
+
+
+def _owner_mismatch_candidates(
+    call: ToolCall,
+    catalog: GroundedToolCatalog,
+) -> tuple[DidYouMeanCandidate, ...]:
+    candidates = []
+    for spec in catalog.specs:
+        properties = set(_schema_properties(spec))
+        owned = {
+            name: value for name, value in call.arguments.items() if name in properties
+        }
+        if not owned:
+            continue
+        candidates.append(
+            DidYouMeanCandidate(
+                spec.name,
+                owned,
+                ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
+            )
+        )
+    return tuple(candidates[:8])
 
 
 def _selector_names(binding: CompiledGroundedTool) -> tuple[str, ...]:

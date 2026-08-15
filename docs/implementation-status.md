@@ -41,7 +41,7 @@ budgets and control feedback once, alongside current public tools. The catalog
 owns only tool schemas and opaque Runtime bindings. Grounded adapters receive
 the typed context directly; legacy serialized context is produced only for
 legacy adapters that declare they require it. Focused tests, the full
-`2528 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
+`2534 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
 received a fresh live benchmark run.
 
 The current working tree implements the first shared interaction-onboarding
@@ -127,7 +127,7 @@ parallel fusion-result provenance authority will be removed. BrowserGym/
 Playwright and future established
 platform accessibility/OCR providers remain the source engines; no parallel
 fusion pipeline, parser, detector, graph store or automation framework is
-authorized. Current `2528 passed, 27 skipped` evidence does not cover these new
+authorized. Current `2534 passed, 27 skipped` evidence does not cover these new
 multi-source properties.
 
 A.1 closes canonical identity and Actor entity-node duplication. It does not
@@ -136,19 +136,23 @@ canonical claim/evidence migration remains Step 15 and may not be simulated by
 a temporary Actor-only dedup path.
 
 Focused compiler/grounded-tool, BrowserGym world/vision, acquisition, lattice,
-legacy serialization and model-policy tests pass; full `2528 passed, 27 skipped`,
+legacy serialization and model-policy tests pass; full `2534 passed, 27 skipped`,
 Ruff, and mypy pass locally. No fresh live benchmark was run; the historical
 clean `b6e0546` grid witness remains prior evidence and does not attest this
 working tree or replace the pending five-case gate.
 
-Wave-A interaction ownership is implemented for the existing target actions.
+Wave-A interaction ownership and its closure repair are implemented for the
+existing target actions.
 One immutable, code-versioned `InteractionCapabilityRegistry` owns canonical
 action names, subject kinds, parameter families, destination modes, and
 permitted verification families. DOM, Visual, WoT, and BrowserGym static
 support resolves through adapter-local profiles and exact primitive
 translators; profile support alone creates no binding or ActionSpace member.
-The registry defines six future semantic actions, but none is currently
-offered.
+The registry defines six additional semantic actions. `set_value` is not a new
+future binding: the pre-existing generic WoT `write_property` route is restored
+and derives its `value` contract from the current native boolean/string/number
+property schema. `scroll`, `press_key`, `focus`, `drag_to`, and `hover` remain
+semantic-only and are not currently offered.
 
 Business schemas now pass unchanged from `ActionBinding` through
 `ActionOption`, `AgentActionOptionView`, flat `ToolSpec`, exact resolution and
@@ -164,9 +168,19 @@ row plus a catalog/context-bound authority-equivalence digest covering
 canonical action, business schema, subject/destination mode, effect, risk,
 consequence, reversibility, observation barrier, and verification contract.
 Unknown, invalid, owner-mismatched, ambiguous, non-equivalent, and stale calls
-are typed; ambiguous/non-equivalent outcomes contain bounded `did_you_mean`
-candidates and have no exact call, so dispatch remains zero. The post-normalizer
-resolver is exact and reads no world state.
+are typed. The four tool-intent failures with `did_you_mean` enter one bounded
+same-model re-emission; its complete call is normalized again and must resolve
+exactly. No second tool-intent repair or subsequent argument repair is allowed,
+so dispatch remains zero until the repaired call passes exact resolution.
+The post-normalizer resolver is exact and reads no world state. Normalization
+telemetry retains distinct raw and normalized operation names.
+
+`VerificationContract` is now a sealed action-specific value over its registry-
+permitted family, parameter-schema digest, semantic effects and observation
+barrier. Its digest is mechanically conserved from binding through option and
+selection and participates in catalog authority equivalence, route selection
+and currentness. This closes the Wave-A foundation; migrating every evaluator
+obligation to richer concrete postconditions remains a later bounded slice.
 
 The old shared vocabulary module, candidate click/fill/select canonicalizer,
 BrowserGym singleton role fields, and embedded catalog normalizer are deleted.
@@ -175,9 +189,10 @@ execution mechanics and transport representation, not semantic authority.
 
 Canonical state cutover remains
 `IMPLEMENTATION_PARTIAL / STATEFACT_DUAL_WRITE_NOT_ADMITTED`. Construction now
-rejects contradictory overlapping target-state/fact values, and current tool
-targets plus their facts remain pinned in Actor projection instead of being
-deleted to fit tools. DOM, Visual, WoT, HTTP JSON, BrowserGym, fusion, and
+rejects contradictory overlapping target-state/fact values. Tool compilation
+does not reverse-delete referenced Actor nodes/facts, but `max_facts` and
+per-target projection budgets may still truncate them with truthful metadata.
+DOM, Visual, WoT, HTTP JSON, BrowserGym, fusion, and
 benchmark-support producers still dual-write `SemanticTarget.state` and
 `StateFact`; no full facts-first claim is made and no new interaction state is
 admitted. See the
@@ -206,7 +221,7 @@ The target path now has:
 | canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
-| Wave-A InteractionCapability owner spine | `IMPLEMENTED_EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`; old vocabulary/canonicalizer/normalizer owners deleted, future actions semantic-only |
+| Wave-A InteractionCapability owner spine | `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE / WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED / VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`; old vocabulary/canonicalizer/embedded-normalizer owners deleted; five not-yet-produced actions remain semantic-only |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |

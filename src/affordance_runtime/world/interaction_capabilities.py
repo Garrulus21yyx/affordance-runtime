@@ -30,7 +30,7 @@ class ParameterContractKind(StrEnum):
     OPTION_VALUE = "option_value"
     SCROLL = "scroll"
     KEY = "key"
-    NUMERIC_VALUE = "numeric_value"
+    NATIVE_VALUE = "native_value"
 
 
 class VerificationFamily(StrEnum):
@@ -41,6 +41,9 @@ class VerificationFamily(StrEnum):
     RELATION_CHANGE = "relation_change"
     VALUE_STATE = "value_state"
     SEMANTIC = "semantic"
+
+
+VERIFICATION_CONTRACT_VERSION = "verification-contract.v1"
 
 
 class InteractionCapabilityIssueCode(StrEnum):
@@ -97,8 +100,63 @@ class SemanticActionDefinition:
             ParameterContractKind.OPTION_VALUE: ("value",),
             ParameterContractKind.SCROLL: ("direction", "extent"),
             ParameterContractKind.KEY: ("key",),
-            ParameterContractKind.NUMERIC_VALUE: ("value",),
+            ParameterContractKind.NATIVE_VALUE: ("value",),
         }[self.parameter_contract]
+
+
+@dataclass(frozen=True)
+class VerificationContract:
+    """Sealed action-specific verification identity conserved through dispatch."""
+
+    semantic_action: str
+    family: VerificationFamily
+    parameter_schema_digest: str
+    semantic_effects: tuple[str, ...]
+    observation_barrier: bool
+    contract_version: str = VERIFICATION_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        if self.contract_version != VERIFICATION_CONTRACT_VERSION:
+            raise ValueError("verification contract version is unsupported")
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        if self.family not in definition.verification_families:
+            raise ValueError("verification family is not permitted for semantic action")
+        if not self.parameter_schema_digest.strip():
+            raise ValueError("verification contract requires parameter schema identity")
+        object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+
+    @property
+    def digest(self) -> str:
+        payload = (
+            self.contract_version,
+            self.semantic_action,
+            self.family.value,
+            self.parameter_schema_digest,
+            self.semantic_effects,
+            self.observation_barrier,
+        )
+        return "sha256:" + hashlib.sha256(
+            json.dumps(payload, separators=(",", ":")).encode()
+        ).hexdigest()
+
+
+def verification_contract_for_action(
+    semantic_action: str,
+    parameter_schema_digest: str,
+    semantic_effects: tuple[str, ...],
+    observation_barrier: bool,
+    *,
+    family: VerificationFamily | None = None,
+) -> VerificationContract:
+    definition = INTERACTION_CAPABILITY_REGISTRY.require(semantic_action)
+    selected_family = family or definition.verification_families[0]
+    return VerificationContract(
+        semantic_action,
+        selected_family,
+        parameter_schema_digest,
+        tuple(semantic_effects),
+        observation_barrier,
+    )
 
 
 @dataclass(frozen=True)
@@ -158,7 +216,17 @@ class InteractionCapabilityRegistry:
             schema = _object_schema({"text": {"type": "string"}}, ("text",))
         elif definition.parameter_contract is ParameterContractKind.OPTION_VALUE:
             schema = _object_schema({"value": {"type": "string", **value_schema}}, ("value",))
-        elif definition.parameter_contract is ParameterContractKind.NUMERIC_VALUE:
+        elif definition.parameter_contract is ParameterContractKind.NATIVE_VALUE:
+            value_schema = {
+                key: value
+                for key, value in value_schema.items()
+                if key in {"type", "enum", "minimum", "maximum"}
+            }
+            if not value_schema:
+                raise InteractionCapabilityError(
+                    InteractionCapabilityIssueCode.SCHEMA_CONTRACT_MISMATCH,
+                    semantic_action,
+                )
             schema = _object_schema({"value": value_schema}, ("value",))
         elif definition.parameter_contract is ParameterContractKind.SCROLL:
             schema = _object_schema(
@@ -359,9 +427,9 @@ def _validate_parameter_family(
     elif family is ParameterContractKind.OPTION_VALUE:
         expected_names = ("value",)
         _require_type(properties, "value", {"string"})
-    elif family is ParameterContractKind.NUMERIC_VALUE:
+    elif family is ParameterContractKind.NATIVE_VALUE:
         expected_names = ("value",)
-        _require_type(properties, "value", {"integer", "number"})
+        _require_type(properties, "value", {"boolean", "integer", "number", "string"})
     elif family is ParameterContractKind.SCROLL:
         expected_names = ("direction", "extent")
         _require_type(properties, "direction", {"string"})
@@ -431,7 +499,7 @@ INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
             (VerificationFamily.RELATION_CHANGE, VerificationFamily.TARGET_STATE, VerificationFamily.SEMANTIC),
         ),
         SemanticActionDefinition(
-            "set_value", (InteractionSubjectKind.ENTITY,), ParameterContractKind.NUMERIC_VALUE,
+            "set_value", (InteractionSubjectKind.ENTITY,), ParameterContractKind.NATIVE_VALUE,
             DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,),
         ),
         SemanticActionDefinition(

@@ -15,7 +15,7 @@ Visual-only and WoT local-simulation short loops without changing the default pr
 
 ## Active slice — existing-action flat semantic tool compiler convergence
 
-Status: `IMPLEMENTED_LOCALLY / ACTOR_WORLD_CONVERGENCE_IMPLEMENTED / FULL_VERIFIED_2528_PASS_27_SKIP / LIVE_NOT_RUN`
+Status: `IMPLEMENTED_LOCALLY / ACTOR_WORLD_CONVERGENCE_IMPLEMENTED / FULL_VERIFIED_2534_PASS_27_SKIP / LIVE_NOT_RUN`
 
 This slice replaces the compatibility `ContextBuilder.selection_key` plus
 provider `actions.groups` chain with the single compiler boundary defined in
@@ -63,17 +63,20 @@ provider failures retain only bounded validation stage/code/path and repair
 outcome. No task collection engine, interaction ledger, Submit guard, second
 ActionSpace, or benchmark-specific semantic projection was introduced.
 
-## Implemented partial slice — Wave-A interaction owner spine only
+## Implemented closure slice — Wave-A interaction owner spine
 
-Status: `IMPLEMENTED_EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL /
+Status: `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE /
+WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
+VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
 OBSERVED_WORLD_GRAPH_A.1_OPEN / LIVE_NOT_RUN`
 
 The implemented interaction-owner portion routes existing `activate`,
 `type_text`, `select_option`, and `read`
 through one immutable `InteractionCapabilityRegistry`, adapter-local profiles,
 exact primitive translators, and a validating composer. The registry also
-defines `scroll`, `press_key`, `focus`, `drag_to`, `set_value`, and `hover`, but
-no producer creates current bindings or tools for those future capabilities.
+defines six additional semantics. `set_value` retains its pre-existing WoT
+`write_property` producer; `scroll`, `press_key`, `focus`, `drag_to`, and
+`hover` have no current production binding or tool.
 
 The target chain conserves exact business schemas and destination algebra from
 `ActionBinding` through `ActionOption`, model view, flat `ToolSpec`, exact
@@ -81,9 +84,21 @@ resolution, and ActionSpace admission. `ProviderCallNormalizer` is the only
 catalog representation reconciler: provider wire aliases terminate in one
 canonical call; cross-tool normalization requires one current private row and
 an exact catalog/context-bound authority-equivalence digest. Ambiguous and
-non-equivalent calls return typed `did_you_mean` candidates and cannot reach
-dispatch. Exact resolution remains catalog-only and does not read the Actor
-world or re-authorize an action.
+non-equivalent calls return typed `did_you_mean` candidates and enter at most
+one same-model re-emission. The complete re-emitted call is normalized again
+and must resolve exactly; a second intent or argument repair is not chained and
+dispatch remains zero until success. Exact resolution remains catalog-only and
+does not read the Actor world or re-authorize an action. Routing telemetry
+retains the raw operation before recording the normalized operation.
+
+WoT `write_property` mechanically wraps the current TD property JSON Schema as
+one public `value` parameter, conserving boolean/string/number type, enum and
+min/max constraints. Unsupported native schemas fail closed; no property name
+or TD-specific branch was introduced. A sealed action-specific
+`VerificationContract` now binds permitted family, parameter-schema digest,
+semantic effects and observation barrier; its digest is conserved through
+binding, option, selection, catalog equivalence, route and currentness. Full
+evaluator-obligation specialization is deliberately outside this foundation.
 
 The displaced shared vocabulary, click/fill/select candidate canonicalizer,
 BrowserGym singleton role mapping, embedded catalog normalizer, and fixtures
@@ -92,8 +107,10 @@ that selected those paths are deleted. Backend `click`, `fill`, `type`,
 remain private execution primitives only.
 
 State ownership is intentionally not declared complete. Construction rejects
-contradictory overlapping `SemanticTarget.state`/`StateFact` values, compiled
-tool targets and their facts are pinned rather than reverse-pruned, and Actor
+contradictory overlapping `SemanticTarget.state`/`StateFact` values. Tool
+compilation does not reverse-delete referenced nodes or facts; ordinary
+`max_facts` and per-target projection budgets still apply with truthful
+truncation metadata. Actor
 snapshots remain disposable projections. The listed DOM, Visual, WoT, HTTP,
 BrowserGym, fusion, and benchmark producers still author both representations;
 full facts-first producer cutover is

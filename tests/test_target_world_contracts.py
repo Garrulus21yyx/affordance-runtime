@@ -164,6 +164,7 @@ def test_selected_option_only_binds_its_exact_allowed_group() -> None:
         binding_id="forbidden",
         semantic_effects=("message_sent",),
         confidence=0.99,
+        verification_contract_digest="",
     )
     world = replace(_world(), bindings=(allowed, forbidden))
     task = TaskGoal(
@@ -199,6 +200,7 @@ def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
     second = replace(
         first,
         binding_id="other-string-route",
+        verification_contract_digest="",
         parameter_schema={
             "type": "object",
             "properties": {"text": {"type": "string", "enum": ["two"]}},
@@ -280,11 +282,19 @@ def test_bound_request_rejects_mismatched_selection_invariants(mutation: str) ->
     elif mutation == "parameters":
         intent = replace(intent, parameters={"unexpected": True})
     elif mutation == "schema_digest":
-        selection = replace(selection, schema_digest="sha256:wrong")
+        selection = replace(
+            selection,
+            schema_digest="sha256:wrong",
+            verification_contract_digest="",
+        )
     elif mutation == "higher_risk":
         binding = replace(binding, risk=ActionRisk.MEDIUM)
     elif mutation == "observation_barrier":
-        binding = replace(binding, observation_barrier=False)
+        binding = replace(
+            binding,
+            observation_barrier=False,
+            verification_contract_digest="",
+        )
 
     with pytest.raises(ValueError, match="bound request"):
         BoundActionRequest("request-1", "context:test", world.observation_id, intent, selection, binding)

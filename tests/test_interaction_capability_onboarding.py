@@ -54,6 +54,7 @@ from affordance_runtime.world.interaction_capabilities import (
     InteractionCapabilityIssueCode,
     InteractionSubjectKind,
     PrimitiveTranslator,
+    VerificationContract,
 )
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -269,6 +270,13 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     assert admitted is not None
     assert admitted.parameters == arguments
     assert admitted.schema_digest == option.schema_digest
+    assert isinstance(binding.verification_contract, VerificationContract)
+    assert binding.verification_contract_digest == option.verification_contract_digest
+    assert option.verification_contract_digest == admitted.verification_contract_digest
+    assert admitted.verification_contract.digest == admitted.verification_contract_digest
+    assert binding.verification_contract_digest != (
+        INTERACTION_CAPABILITY_REGISTRY.require("type_text").definition_digest
+    )
     assert "selector" not in repr(compiled.public_spec.input_schema)
     assert "binding:1" not in repr(compiled.public_spec.input_schema)
 

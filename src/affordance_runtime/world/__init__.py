@@ -60,7 +60,9 @@ from affordance_runtime.world.interaction_capabilities import (
     ParameterContractKind,
     PrimitiveTranslator,
     SemanticActionDefinition,
+    VerificationContract,
     VerificationFamily,
+    verification_contract_for_action,
 )
 from affordance_runtime.world.observation_orchestrator import (
     ObservationOrchestrator,
@@ -162,6 +164,7 @@ __all__ = [
     "ParameterContractKind",
     "PrimitiveTranslator",
     "SemanticActionDefinition",
+    "VerificationContract",
     "VerificationFamily",
     "RouteSelectionCode",
     "RouteSelectionResult",
@@ -182,4 +185,5 @@ __all__ = [
     "VerificationStrength",
     "build_agent_world_view",
     "assurance_satisfies",
+    "verification_contract_for_action",
 ]

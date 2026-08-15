@@ -1,13 +1,19 @@
 # Interaction Capability Onboarding Design
 
 > **Lifecycle:** CURRENT REFERENCE — RECONCILED BOUNDED DESIGN
-> **Updated:** 2026-08-14
+> **Updated:** 2026-08-15
 > **Scope:** interaction vocabulary, adapter support, current action exposure,
 > model-tool projection, execution translation, and action-effect verification
 > **Authority:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 > and [architecture evolution plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 > remain authoritative
 > **Implementation truth:** [Implementation Status](implementation-status.md)
+
+The Wave-A closure foundation now includes restored generic WoT native-value
+property writes, one bounded same-model tool-intent re-emission, corrected
+normalization telemetry, and a sealed action-specific verification-contract
+digest chain. StateFact producer cutover and observed-world graph A.1 remain
+separate open slices; no scroll/press/focus/drag/hover binding is admitted.
 
 ## 1. Decision
 

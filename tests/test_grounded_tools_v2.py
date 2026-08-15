@@ -58,6 +58,7 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolPhase,
 )
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
+    _TOOL_INTENT_REPAIR_CODES,
     GroundedActionAdapter,
     GroundedObjectiveAdapter,
     GroundedObjectiveCommandPayload,
@@ -77,10 +78,12 @@ from affordance_runtime.model_port import (
     ModelCallRecord,
     ModelConfig,
     ModelImageURLPart,
+    ModelMessage,
     ModelTextPart,
     StructuredOutputError,
     StructuredOutputViolation,
 )
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import (
     ActionTemplate,
     FactEquals,
@@ -92,7 +95,7 @@ from affordance_runtime.task import (
     TaskGoal,
 )
 from affordance_runtime.task.local_objective import establish_local_objective
-from affordance_runtime.world import INTERACTION_CAPABILITY_REGISTRY, ActionSpaceBuilder
+from affordance_runtime.world import ActionSpaceBuilder, verification_contract_for_action
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
@@ -218,9 +221,13 @@ def _bound_public_context(context) -> dict[str, object]:
 
 def _selector_context(*, operation: str, schema: dict[str, object]):
     context = _context()
-    verification_digest = INTERACTION_CAPABILITY_REGISTRY.require(
-        operation
-    ).definition_digest
+    source = context.actions.options[0]
+    verification_digest = verification_contract_for_action(
+        operation,
+        schema_digest(schema),
+        source.semantic_effects,
+        source.observation_barrier,
+    ).digest
     options = tuple(
         replace(
             option,
@@ -541,6 +548,89 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     assert tuple(public)[:5] == ("task", "world", "progress", "last_transition", "history")
 
 
+def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
+    @dataclass
+    class ToolIntentRepairPort:
+        provider: str = "zhipu"
+        model: str = "glm-4.6v"
+        endpoint_class: str = "fixture"
+        supports_multimodal: bool = False
+        last_call: ModelCallRecord | None = None
+        calls: int = 0
+        repair_messages: tuple = ()
+
+        async def generate_tool_calls(self, messages, tools, config, *, require_one):
+            del tools, config, require_one
+            self.calls += 1
+            if self.calls == 1:
+                return (ToolCall("click", {}),)
+            self.repair_messages = tuple(messages)
+            return (ToolCall("activate", {}),)
+
+    context = _context()
+    port = ToolIntentRepairPort()
+    adapter = GroundedActionAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert not isinstance(outcome, ModelFailure)
+    assert port.calls == 2
+    assert adapter.last_model_call_count == 2
+    assert adapter.last_tool_intent_repair_count == 1
+    assert adapter.last_argument_repair_count == 0
+    assert adapter.last_routing_normalization == "bounded_model_reemission"
+    assert adapter.last_routing_original_operation == "click"
+    assert adapter.last_routing_normalized_operation == "activate"
+    repair_system = port.repair_messages[0].content
+    assert isinstance(repair_system, str)
+    assert '"issue_code":"unknown_tool"' in repair_system
+    assert '"emit_one_complete_call":true' in repair_system
+
+
+def test_all_typed_did_you_mean_intent_failures_share_the_bounded_reemission_path() -> None:
+    assert _TOOL_INTENT_REPAIR_CODES == {
+        ToolCallIssueCode.UNKNOWN_TOOL,
+        ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
+        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT,
+        ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT,
+    }
+
+
+def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> None:
+    @dataclass
+    class FailedToolIntentRepairPort:
+        provider: str = "zhipu"
+        model: str = "glm-4.6v"
+        endpoint_class: str = "fixture"
+        supports_multimodal: bool = False
+        last_call: ModelCallRecord | None = None
+        calls: int = 0
+
+        async def generate_tool_calls(self, messages, tools, config, *, require_one):
+            del messages, tools, config, require_one
+            self.calls += 1
+            return (ToolCall("click", {}),)
+
+    context = _context()
+    port = FailedToolIntentRepairPort()
+    adapter = GroundedActionAdapter(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert isinstance(outcome, ModelFailure)
+    assert port.calls == 2
+    assert adapter.last_tool_intent_repair_count == 1
+    assert adapter.last_argument_repair_count == 0
+
+
 def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
@@ -689,6 +779,89 @@ def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing()
     assert normalized.exact_call == ToolCall("activate_blue", {"grounding_ref": "E10"})
 
 
+def test_routing_normalization_telemetry_retains_original_and_normalized_operations() -> None:
+    request = _action_request(_context())
+    submit_spec = ToolSpec(
+        "activate_submit",
+        "Activate Submit.",
+        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    )
+    blue_schema = {
+        "type": "object",
+        "properties": {"grounding_ref": {"type": "string", "enum": ["E10"]}},
+        "required": ["grounding_ref"],
+        "additionalProperties": False,
+    }
+    blue_spec = ToolSpec("activate_blue", "Activate blue.", blue_schema)
+    submit_binding = CompiledGroundedTool(
+        "activate",
+        submit_spec,
+        SelectorMode.CONSTANT_TARGET,
+        (),
+        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
+        "sha256:equivalent",
+    )
+    blue_binding = CompiledGroundedTool(
+        "activate",
+        blue_spec,
+        SelectorMode.GROUNDING_FALLBACK,
+        (
+            CompiledSelectorField(
+                "grounding_ref",
+                ("target.grounding_ref",),
+                blue_schema["properties"]["grounding_ref"],
+            ),
+        ),
+        (
+            PrivateResolutionEntry(
+                {"grounding_ref": "E10"},
+                "action:blue",
+                None,
+                "E10",
+                {"grounding_ref": "E10"},
+            ),
+        ),
+        "sha256:equivalent",
+    )
+    catalog = GroundedToolCatalog(
+        "grounded-catalog:test",
+        request.context_id,
+        (submit_spec, blue_spec),
+        (submit_binding, blue_binding),
+        1,
+    )
+
+    @dataclass
+    class TelemetryPort:
+        provider: str = "zhipu"
+        model: str = "glm-4.6v"
+        endpoint_class: str = "fixture"
+        supports_multimodal: bool = False
+        last_call: ModelCallRecord | None = None
+
+        async def generate_tool_calls(self, messages, tools, config, *, require_one):
+            del messages, tools, config, require_one
+            return (ToolCall("activate_submit", {"grounding_ref": "E10"}),)
+
+    adapter = GroundedActionAdapter(
+        TelemetryPort(),
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+    )
+    resolved, _metadata = asyncio.run(
+        adapter._resolve_catalog(
+            request,
+            catalog,
+            (ModelMessage(role="system", content="Select one current tool."),),
+            lambda _catalog, call, **_kwargs: call,
+            GroundedToolCommandPayload,
+        )
+    )
+
+    assert resolved == ToolCall("activate_blue", {"grounding_ref": "E10"})
+    assert adapter.last_routing_original_operation == "activate_submit"
+    assert adapter.last_routing_normalized_operation == "activate_blue"
+
+
 def test_unique_constant_target_accepts_a_redundant_current_grounding_ref() -> None:
     selected_spec = ToolSpec(
         "activate_blue",
@@ -799,20 +972,24 @@ def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -
 
 def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
     context = _context()
-    verification_digest = INTERACTION_CAPABILITY_REGISTRY.require(
-        "activate"
-    ).definition_digest
     source_options = context.actions.options[:2]
+    empty_schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    }
+    verification_digest = verification_contract_for_action(
+        "activate",
+        schema_digest(empty_schema),
+        source_options[0].semantic_effects,
+        source_options[0].observation_barrier,
+    ).digest
     raw_options = tuple(
         replace(
             option,
             semantic_action="activate",
-            parameter_schema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": False,
-            },
+            parameter_schema=empty_schema,
             operation="",
             target_ref="",
             target_semantics={},

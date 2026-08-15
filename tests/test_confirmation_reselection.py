@@ -47,6 +47,7 @@ def _changed_candidates_world() -> WorldObservation:
         binding_id="binding:fresh:first",
         target_fingerprint="fingerprint:fresh:first",
         semantic_effects=("effect_a",),
+        verification_contract_digest="",
     )
     second = replace(
         base.bindings[0],
@@ -54,6 +55,7 @@ def _changed_candidates_world() -> WorldObservation:
         target_fingerprint="fingerprint:fresh:second",
         semantic_effects=("effect_b",),
         payload={"selector": "#second"},
+        verification_contract_digest="",
     )
     return replace(base, bindings=(first, second))
 

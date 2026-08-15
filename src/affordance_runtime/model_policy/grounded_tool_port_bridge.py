@@ -50,6 +50,7 @@ from affordance_runtime.model_policy.objective_spec import OBJECTIVE_SCHEMA_VERS
 from affordance_runtime.model_policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallIssueCode,
+    ToolCallReconciliationResult,
     ToolCallReconciliationStatus,
 )
 from affordance_runtime.model_policy.spec import SCHEMA_VERSION
@@ -106,6 +107,16 @@ class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
     """Compact objective-proposal command with no action-selection fields."""
 
 
+_TOOL_INTENT_REPAIR_CODES = frozenset(
+    {
+        ToolCallIssueCode.UNKNOWN_TOOL,
+        ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
+        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT,
+        ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT,
+    }
+)
+
+
 @dataclass(frozen=True)
 class _GroundedAdapterBase:
     port: ModelPort
@@ -115,6 +126,7 @@ class _GroundedAdapterBase:
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
     last_model_call_count: int = field(default=0, init=False, compare=False)
     last_argument_repair_count: int = field(default=0, init=False, compare=False)
+    last_tool_intent_repair_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
@@ -177,6 +189,7 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_schema_repair_count", 0)
         object.__setattr__(self, "last_model_call_count", 0)
         object.__setattr__(self, "last_argument_repair_count", 0)
+        object.__setattr__(self, "last_tool_intent_repair_count", 0)
         object.__setattr__(self, "last_resolution_code", None)
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
@@ -225,8 +238,10 @@ class _GroundedAdapterBase:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
         if len(calls) != 1:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
-        call = calls[0]
-        reconciliation = ProviderCallNormalizer().normalize(call, catalog)
+        original_call = calls[0]
+        call = original_call
+        normalizer = ProviderCallNormalizer()
+        reconciliation = normalizer.normalize(call, catalog)
         if reconciliation.status in {
             ToolCallReconciliationStatus.EXACT,
             ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
@@ -239,12 +254,35 @@ class _GroundedAdapterBase:
         if reconciliation.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT:
             normalization = (
                 "redundant_grounding_to_constant"
-                if normalized.arguments != call.arguments
+                if normalized.arguments != original_call.arguments
                 else "unique_same_operation_argument_owner"
             )
             object.__setattr__(self, "last_routing_normalization", normalization)
-            object.__setattr__(self, "last_routing_original_operation", call.name)
+            object.__setattr__(self, "last_routing_original_operation", original_call.name)
             object.__setattr__(self, "last_routing_normalized_operation", normalized.name)
+        elif reconciliation.issue_code in _TOOL_INTENT_REPAIR_CODES:
+            object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
+            object.__setattr__(self, "last_tool_intent_repair_count", 1)
+            repaired = await self._repair_tool_intent(
+                messages,
+                catalog.specs,
+                payload_base,
+                original_call,
+                reconciliation,
+            )
+            repaired_reconciliation = normalizer.normalize(repaired, catalog)
+            if repaired_reconciliation.status not in {
+                ToolCallReconciliationStatus.EXACT,
+                ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
+            }:
+                raise GroundedToolResolutionError(
+                    _resolution_code_for_reconciliation(repaired_reconciliation.issue_code)
+                )
+            assert repaired_reconciliation.exact_call is not None
+            call = repaired_reconciliation.exact_call
+            object.__setattr__(self, "last_routing_normalization", "bounded_model_reemission")
+            object.__setattr__(self, "last_routing_original_operation", original_call.name)
+            object.__setattr__(self, "last_routing_normalized_operation", call.name)
         elif (
             reconciliation.status
             not in {
@@ -264,7 +302,11 @@ class _GroundedAdapterBase:
                 expected_catalog_id=catalog.catalog_id,
             )
         except GroundedToolResolutionError as exc:
-            if exc.code is not GroundedToolResolutionCode.INVALID_ARGUMENTS or self.last_argument_repair_count:
+            if (
+                exc.code is not GroundedToolResolutionCode.INVALID_ARGUMENTS
+                or self.last_argument_repair_count
+                or self.last_tool_intent_repair_count
+            ):
                 raise
             spec = next((item for item in catalog.specs if item.name == call.name), None)
             if spec is None:
@@ -461,6 +503,40 @@ class _GroundedAdapterBase:
         if _selector_changed(original_call, repaired, binding):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return repaired
+
+    async def _repair_tool_intent(
+        self,
+        messages,
+        specs: tuple[ToolSpec, ...],
+        payload_base: type[_GroundedCommandPayloadBase],
+        original_call: ToolCall,
+        reconciliation: ToolCallReconciliationResult,
+    ) -> ToolCall:
+        repair_messages = _tool_intent_repair_messages(
+            messages,
+            specs,
+            original_call,
+            reconciliation,
+        )
+        if self.transport_kind is ToolTransportKind.COMPACT_JSON:
+            payload_type = _command_payload_type(specs, payload_base=payload_base)
+            payload = await self._generate_structured(repair_messages, payload_type)
+            return ToolCall(payload.name, payload.command_arguments())
+        generate = getattr(self.port, "generate_tool_calls", None)
+        if generate is None:
+            raise ValueError("model port does not implement admitted native tool calls")
+        object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
+        calls = await generate(
+            repair_messages,
+            specs,
+            self.config,
+            require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
+        )
+        if not calls:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
+        if len(calls) != 1:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
+        return calls[0]
 
 
 @dataclass(frozen=True)
@@ -718,6 +794,70 @@ def _argument_repair_messages(messages, spec, issue):
             content=(
                 system.content + "\n\nThe selected operation is fixed. Repair only its arguments, return one "
                 "standard JSON tool call with fields name and arguments, and obey this public contract: "
+                + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            ),
+        ),
+        *messages[1:],
+    )
+
+
+def _tool_intent_repair_messages(
+    messages,
+    specs: tuple[ToolSpec, ...],
+    original_call: ToolCall,
+    reconciliation: ToolCallReconciliationResult,
+):
+    system = messages[0]
+    if not isinstance(system.content, str):
+        raise ValueError("grounded tool-intent repair requires a text system message")
+    specs_by_name = {spec.name: spec for spec in specs}
+    candidates = []
+    for candidate in reconciliation.did_you_mean[:8]:
+        spec = specs_by_name.get(candidate.tool_name)
+        if spec is None:
+            continue
+        candidates.append(
+            {
+                "name": spec.name,
+                "suggested_arguments": to_json_compatible(candidate.public_arguments),
+                "input_schema": to_json_compatible(spec.input_schema),
+            }
+        )
+    if not candidates:
+        candidates = [
+            {
+                "name": spec.name,
+                "suggested_arguments": {},
+                "input_schema": to_json_compatible(spec.input_schema),
+            }
+            for spec in specs[:8]
+        ]
+    contract = {
+        "repair_kind": "current_catalog_tool_intent",
+        "issue_code": (
+            reconciliation.issue_code.value
+            if reconciliation.issue_code is not None
+            else "catalog_invalid"
+        ),
+        "original_operation": original_call.name,
+        "field_paths": list(reconciliation.field_paths),
+        "argument_code": reconciliation.argument_code,
+        "did_you_mean": candidates,
+        "recovery": {
+            "emit_one_complete_call": True,
+            "copy_current_tool_name_exactly": True,
+            "arguments_must_match_selected_input_schema": True,
+            "runtime_will_not_rename_or_invent_business_arguments": True,
+        },
+    }
+    return (
+        ModelMessage(
+            role="system",
+            content=(
+                system.content
+                + "\n\nThe previous tool intent did not identify one exact current catalog row. "
+                "Re-emit one complete standard JSON tool call with fields name and arguments. "
+                "Use only the current tools and this bounded public repair contract: "
                 + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             ),
         ),

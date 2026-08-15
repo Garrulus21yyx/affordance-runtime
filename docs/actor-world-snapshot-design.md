@@ -341,7 +341,7 @@ Properties and representative witnesses must establish:
 Local implementation evidence at 2026-08-14: focused grounded-tool,
 BrowserGym-world, vision-acquisition, observation-lifecycle, lattice, legacy
 serialization, and model-policy tests pass. The later Wave-A full suite passes
-with `2528 passed, 27 skipped`; Ruff and `mypy src` pass. That evidence covers
+with `2534 passed, 27 skipped`; Ruff and `mypy src` pass. That evidence covers
 the current single-source rendering and does not prove the new multi-source
 correspondence/dedup properties above. Per user direction, no live provider or
 benchmark run was performed.

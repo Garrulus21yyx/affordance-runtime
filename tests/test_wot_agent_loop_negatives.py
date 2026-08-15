@@ -170,6 +170,7 @@ def test_wot_effect_legality_and_exact_binding_prevent_route_escape() -> None:
             binding_id=allowed.binding_id + ":forbidden",
             semantic_effects=("forbidden_effect",),
             confidence=1.0,
+            verification_contract_digest="",
         )
         observed = replace(observed, bindings=(forbidden, allowed))
         constrained = replace(

@@ -37,7 +37,12 @@ def _selection(**changes) -> AdmittedActionSelection:
         True,
         {"mode": "normal"},
     )
-    if "semantic_action" in changes:
+    if {
+        "semantic_action",
+        "semantic_effects",
+        "schema_digest",
+        "observation_barrier",
+    }.intersection(changes):
         changes.setdefault("verification_contract_digest", "")
     return replace(selection, **changes)
 
@@ -76,7 +81,11 @@ def test_semantic_subject_changes_for_each_confirmed_semantic_field() -> None:
         ),
         replace(original, target_id="target:other"),
         replace(original, parameters={"mode": "other"}),
-        replace(original, semantic_effects=("other_effect",)),
+        replace(
+            original,
+            semantic_effects=("other_effect",),
+            verification_contract_digest="",
+        ),
         replace(original, risk=ActionRisk.HIGH),
     )
     assert all(semantic_subject_id(item, consequences=consequences) != baseline for item in variants)
@@ -181,5 +190,9 @@ def test_read_only_risk_policy_allows_only_effect_free_low_risk_interaction() ->
     assert policy.assess(task, interaction).decision == RiskDecisionKind.ALLOW
     assert policy.assess(
         task,
-        replace(interaction, semantic_effects=("update",)),
+        replace(
+            interaction,
+            semantic_effects=("update",),
+            verification_contract_digest="",
+        ),
     ).decision == RiskDecisionKind.BLOCK

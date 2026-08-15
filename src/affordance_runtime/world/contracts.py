@@ -9,11 +9,14 @@ from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.world.interaction_capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     DestinationMode,
     InteractionCapabilityError,
     InteractionCapabilityIssueCode,
+    VerificationContract,
+    verification_contract_for_action,
 )
 from affordance_runtime.world.semantic_inventory import (
     SemanticInventoryStatus,
@@ -357,14 +360,15 @@ class ActionBinding:
                 InteractionCapabilityIssueCode.DESTINATION_MODE_MISMATCH,
                 self.semantic_action,
             )
+        contract = self.verification_contract
         if not self.verification_contract_digest:
             object.__setattr__(
                 self,
                 "verification_contract_digest",
-                definition.definition_digest,
+                contract.digest,
             )
-        elif self.verification_contract_digest != definition.definition_digest:
-            raise ValueError("binding verification contract does not match capability definition")
+        elif self.verification_contract_digest != contract.digest:
+            raise ValueError("binding verification contract does not match sealed contract")
 
     @property
     def observation_id(self) -> str:
@@ -375,6 +379,15 @@ class ActionBinding:
     @property
     def supported_actions(self) -> tuple[str, ...]:
         return (self.semantic_action,)
+
+    @property
+    def verification_contract(self) -> VerificationContract:
+        return verification_contract_for_action(
+            self.semantic_action,
+            schema_digest(self.parameter_schema),
+            self.semantic_effects,
+            self.observation_barrier,
+        )
 
 
 @dataclass(frozen=True)
@@ -573,14 +586,24 @@ class ActionOption:
                 InteractionCapabilityIssueCode.DESTINATION_MODE_MISMATCH,
                 self.semantic_action,
             )
+        contract = self.verification_contract
         if not self.verification_contract_digest:
             object.__setattr__(
                 self,
                 "verification_contract_digest",
-                definition.definition_digest,
+                contract.digest,
             )
-        elif self.verification_contract_digest != definition.definition_digest:
-            raise ValueError("option verification contract does not match capability definition")
+        elif self.verification_contract_digest != contract.digest:
+            raise ValueError("option verification contract does not match sealed contract")
+
+    @property
+    def verification_contract(self) -> VerificationContract:
+        return verification_contract_for_action(
+            self.semantic_action,
+            self.schema_digest,
+            self.semantic_effects,
+            self.observation_barrier,
+        )
 
 
 @dataclass(frozen=True)
@@ -621,15 +644,25 @@ class AdmittedActionSelection:
             self.destination_required,
             self.eligible_destination_ids,
         )
-        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        contract = self.verification_contract
         if not self.verification_contract_digest:
             object.__setattr__(
                 self,
                 "verification_contract_digest",
-                definition.definition_digest,
+                contract.digest,
             )
-        elif self.verification_contract_digest != definition.definition_digest:
-            raise ValueError("selection verification contract does not match capability definition")
+        elif self.verification_contract_digest != contract.digest:
+            raise ValueError("selection verification contract does not match sealed contract")
+
+    @property
+    def verification_contract(self) -> VerificationContract:
+        return verification_contract_for_action(
+            self.semantic_action,
+            self.schema_digest,
+            self.semantic_effects,
+            self.observation_barrier,
+        )
 
 
 @dataclass(frozen=True)

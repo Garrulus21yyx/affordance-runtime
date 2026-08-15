@@ -2,7 +2,12 @@
 
 Date: 2026-08-14
 
-Status: `IMPLEMENTED_EXISTING_ACTION_SINGLE_PATH / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`
+Closure audit: 2026-08-15
+
+Status: `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE /
+WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
+VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
+LIVE_NOT_RUN`
 
 ## Post-implementation outcome
 
@@ -19,11 +24,22 @@ unreachable by architecture/property tests:
   reconstruction.
 
 No shadow, read-old fallback, dual semantic map, or alternate composition
-fixture remains. The only non-complete concern is the explicitly listed
-StateFact producer cutover. Evaluator parameter lookup and permitted-family
-routing now consume registry definitions; sealed per-binding postcondition
-contracts remain a later verification-contract slice and do not admit a new
+fixture remains. The explicitly listed StateFact producer cutover remains
+non-complete. Evaluator parameter lookup and permitted-family routing consume
+registry definitions. A sealed action-specific `VerificationContract` now owns
+the selected permitted family, parameter-schema digest, semantic effects and
+observation barrier; its digest is conserved through binding, option,
+selection, catalog equivalence, route and currentness. Richer concrete
+evaluator obligations remain outside this foundation and do not admit a new
 action family.
+
+The closure audit restored the pre-existing WoT `write_property -> set_value`
+route. Its public `value` schema is mechanically derived from the current TD
+property schema for boolean, string and numeric values, conserving enum and
+min/max constraints; unsupported native value shapes fail closed. The six
+semantics beyond the original four are therefore not all future-only:
+`set_value` has this existing WoT producer, while `scroll`, `press_key`,
+`focus`, `drag_to`, and `hover` remain unproduced.
 
 This record covers the target `WorldObservation -> ActionSpace -> AgentContext
 -> grounded catalog -> exact resolver -> admission` chain and every production
@@ -97,7 +113,9 @@ The replacement is `BrowserGymRoleSpec.offers`, with zero-to-many
 `RoleCapabilityOffer`s. Observation and inventory roles remain independent of
 offers. Binding production selects the current eligible offer and resolves it
 through the immutable BrowserGym composed capabilities. Wave A creates no new
-offer for scroll, press, focus, drag, value setting, or hover.
+BrowserGym offer for scroll, press, focus, drag, value setting, or hover. The
+restored value-setting producer is WoT-only and follows its existing property
+route.
 
 ## Schema conservation and destination path
 
@@ -167,7 +185,11 @@ must carry a catalog/context-bound authority-equivalence digest covering
 canonical action, business schema, subject/destination mode, effect,
 risk/consequence/reversibility/barrier, and verification contract digest.
 Unknown, invalid, owner-mismatched, ambiguous, non-equivalent, and stale calls
-must remain typed and zero-dispatch. The resolver remains unchanged in
+remain typed and zero-dispatch until resolution. Unknown, owner-mismatched,
+ambiguous and non-equivalent results feed their bounded `did_you_mean`
+contract into at most one same-model complete-call re-emission. That call is
+normalized again and must resolve exactly; no second intent repair or chained
+argument repair is admitted. The resolver remains unchanged in
 responsibility: exact schema and private-table lookup only, with no world read,
 repair, fuzzy search, or authorization.
 
@@ -192,13 +214,14 @@ The current branches are:
   classification branches, not postcondition proof.
 
 Wave A makes verification families and parameter names registry-owned and
-records the exact definition digest in binding, option, candidate, catalog,
-selection, route, and currentness equivalence. The listed evaluator/progress
+records a sealed action-specific verification-contract digest in binding,
+option, candidate, catalog, selection, route, and currentness equivalence. The
+listed evaluator/progress
 branches now route through registry parameter families/permitted verification
-families instead of spelling `fill/select/activate` schema ownership. Sealed
-per-binding postcondition values remain a later coherent verification-contract
-cutover; until then, this boundary cannot be used to admit new interaction
-families.
+families instead of spelling `fill/select/activate` schema ownership. Richer
+per-binding concrete postcondition obligations remain a later coherent
+evaluator cutover; until then, this foundation cannot be used to admit new
+interaction families.
 
 ## Canonical state writers and projections
 

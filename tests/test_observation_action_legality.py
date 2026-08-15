@@ -70,7 +70,12 @@ def test_observation_action_must_be_low_risk_read_with_no_business_effect() -> N
     )
     valid = _binding("read", EffectCategory.OBSERVATION, (), ActionRisk.LOW)
     invalid = (
-        replace(valid, binding_id="binding:effect", semantic_effects=("shared_state_enabled",)),
+        replace(
+            valid,
+            binding_id="binding:effect",
+            semantic_effects=("shared_state_enabled",),
+            verification_contract_digest="",
+        ),
         replace(valid, binding_id="binding:risk", risk=ActionRisk.HIGH),
         replace(valid, binding_id="binding:category", effect_category=EffectCategory.EXTERNAL),
     )
@@ -92,7 +97,12 @@ def test_read_only_task_admits_only_low_risk_effect_free_interaction_shape() -> 
     task = TaskGoal("inspect", "Reveal and inspect details")
     valid = _binding("activate", EffectCategory.INTERACTION, (), ActionRisk.LOW)
     invalid = (
-        replace(valid, binding_id="binding:interaction:effect", semantic_effects=("update",)),
+        replace(
+            valid,
+            binding_id="binding:interaction:effect",
+            semantic_effects=("update",),
+            verification_contract_digest="",
+        ),
         replace(valid, binding_id="binding:interaction:risk", risk=ActionRisk.HIGH),
         replace(
             valid,

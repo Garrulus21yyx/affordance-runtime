@@ -115,7 +115,7 @@ class AggregateObjective:
             in {
                 ParameterContractKind.TEXT,
                 ParameterContractKind.OPTION_VALUE,
-                ParameterContractKind.NUMERIC_VALUE,
+                ParameterContractKind.NATIVE_VALUE,
             }
             else None
         )

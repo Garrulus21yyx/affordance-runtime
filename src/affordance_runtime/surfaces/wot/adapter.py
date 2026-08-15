@@ -88,12 +88,15 @@ class WotSurfaceAdapter:
         self._td_digest = td_digest
         self._routes = routes
         coverage = _coverage(len(model.state_sources), len(property_targets), len(read_errors))
+        targets_by_id = {target.target_id: target for target in action_targets}
+        targets_by_id.update({target.target_id: target for target in property_targets})
+        targets_by_id.update({target.target_id: target for target in event_targets})
         return SurfaceObservation(
             observation_id,
             self.surface,
             td_digest,
             ObservationSourceProfile.wot(),
-            property_targets + action_targets + event_targets,
+            tuple(targets_by_id.values()),
             facts,
             candidate_bindings,
             coverage,
@@ -205,7 +208,7 @@ class WotSurfaceAdapter:
             except ValueError:
                 continue
             scheme = model.security_schemes.get(route.security_scheme_ref)
-            if scheme is None or affordance.action != "invoke":
+            if scheme is None or affordance.action not in {"invoke", "write_property"}:
                 continue
             supports = getattr(self.transport, "supports", None)
             if supports is not None and not supports(route):
@@ -223,7 +226,12 @@ class WotSurfaceAdapter:
         if self._task is None:
             raise RuntimeError("WoT surface adapter must be reset before binding")
         translator = WOT_INTERACTION_CAPABILITIES.resolve_primitive(route.primitive_action)
-        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(translator.semantic_action)
+        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+            translator.semantic_action,
+            current_value_schema=(
+                route.input_schema if translator.semantic_action == "set_value" else None
+            ),
+        )
         authored = affordance.risk.value if bool(getattr(affordance, "risk_asserted", False)) else ""
         classification = classify_wot_action(
             self._task,
