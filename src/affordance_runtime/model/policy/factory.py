@@ -33,6 +33,19 @@ def model_policy_from_environment(
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("model policy profile forbids provider fallback")
+    model_adapter = env.get("LLM_MODEL_ADAPTER", "legacy").strip().casefold()
+    if model_adapter == "pydantic-ai":
+        from affordance_runtime.model.policy.pydantic_ai_bridge import (
+            zhipu_pydantic_ai_policy_from_environment,
+        )
+
+        return zhipu_pydantic_ai_policy_from_environment(
+            env,
+            call_timeout_s=call_timeout_s,
+            perception_profile=perception_profile,
+        )
+    if model_adapter != "legacy":
+        raise ValueError(f"unsupported LLM_MODEL_ADAPTER: {model_adapter}")
     port = model_port_from_environment(environment)
     if isinstance(port, FallbackModelPort):
         raise ValueError("model policy profile forbids provider fallback")

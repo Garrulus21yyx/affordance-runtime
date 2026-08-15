@@ -71,7 +71,7 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert structured.supported_decisions == STRUCTURED_PACKAGE_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
-    assert grounded.supported_decisions == ALL_DECISION_CAPABILITIES
+    assert DecisionCapability.PROPOSE_DONE not in grounded.supported_decisions
 
 
 def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
@@ -85,7 +85,7 @@ def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
 def test_model_policy_preserves_adapter_capabilities() -> None:
     adapter = GroundedActionAdapter(_Transport(), _config())
 
-    assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == ALL_DECISION_CAPABILITIES
+    assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
 
 
 def test_runtime_accepts_exactly_subsets_of_declared_capabilities() -> None:

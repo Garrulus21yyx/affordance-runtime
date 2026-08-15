@@ -29,6 +29,14 @@ action/result summaries. Tool schemas are compiled for the current turn. Runtime
 coordinates, handles, credentials, and all budget counters private; it validates, executes, refreshes observation,
 evaluates outcomes, and terminates the loop.
 
+When required task information is unavailable, the model may pause with `ask_user`. That decision contains a concrete
+question that the caller can show verbatim plus the input fields expected from the reply. Runtime preserves and resumes
+that request; confirmations for risky actions use the separate Runtime-owned confirmation path.
+
+Ordinary GUI-effect tasks end as soon as `TaskEvaluator` verifies completion. If a task explicitly requests a textual
+result, the PydanticAI path permits one native final response only after the requested outputs are verified; the model
+does not call a separate completion tool.
+
 ## What belongs in the project
 
 - source adapters with one shared observation contract;
@@ -51,7 +59,7 @@ src/affordance_runtime/
   actions/     semantic action space, admission, grounding, private binding
   agent/       compact context, policy boundary, run state, and core loop
   evaluation/  action-effect and task-completion evaluation
-  model/       provider-neutral model ports and provider adapters
+  model/       PydanticAI provider/tool bridge, current tool catalog, and model context
   benchmarks/  benchmark integration; never product semantics
 ```
 
@@ -63,7 +71,7 @@ Extension rules are in [Extending](docs/extending.md).
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e '.[dev,browsergym,visual]'
+.venv/bin/pip install -e '.[dev,browsergym,visual,pydantic-ai]'
 ```
 
 Run the focused test suite:
@@ -83,6 +91,9 @@ affordance-runtime run \
 
 `task-boundary.json` supplies stable success criteria, allowed effects, requested outputs, and budgets.
 Provider configuration is read from environment variables; secrets never enter the public world or benchmark reports.
+During the measured cutover, set `LLM_MODEL_ADAPTER=pydantic-ai` for the selected PydanticAI path. The current verified
+adapter supports the Zhipu OpenAI-compatible profile; other profiles stay on the migration path until they have a live
+tool-call witness.
 
 ## Current simplification boundary
 
@@ -90,4 +101,5 @@ The R2 checkpoint remains available in Git history. The current branch keeps the
 semantic-action, tool, execution, and evaluation boundaries and uses one `CoreAgentLoop`, one `RunState`, one
 `StepResult` per turn, one stable GUI-agent prompt, and one compact model projection. The public Runtime, CLI, and
 target benchmark harness all use this core. The former control reducer, transition, feedback, session, and legacy-loop
-modules have been removed; paired live benchmark evidence is the next gate, not another control architecture.
+modules have been removed. PydanticAI is now the selected model/provider and native tool-call layer; a measured adapter
+cutover and deletion of the superseded custom model transport precede the paired live benchmark gate.

@@ -7,8 +7,8 @@ multi-source observation: acquire cheap structured evidence first, add visual or
 and expose one current semantic world to the model.
 
 The simplification keeps the proven world, adapter, semantic-action, tool, execution, and evaluation boundaries. It
-replaces the duplicated legacy control system with one thin loop, one mutable `RunState`, one `StepResult` per turn,
-and one model-context projection.
+uses PydanticAI for model/provider adaptation and tool-call transport, while retaining one project-owned thin GUI
+loop, one mutable `RunState`, one `StepResult` per turn, and one model-context projection.
 
 ## One loop
 
@@ -48,16 +48,24 @@ effect class, destination semantics, and verification family. It contains reusab
 ### PerTurnToolCatalog
 
 The per-turn catalog compiles currently executable semantic actions and the closed control set
-`request_evidence`, `next_actions`, `propose_done`, `ask_user`, `wait`, and `abort` into public `ToolSpec` values.
+`request_evidence`, `next_actions`, `ask_user`, `wait`, and `abort` into public `ToolSpec` values. `propose_done` is not
+published by the grounded product catalog and is not part of the target control algebra.
 Each tool has one name, description, and strict input schema plus an opaque Runtime binding. The semantic registry
 defines what an action means; the catalog defines what is callable now. They must not be collapsed into a backend
 plugin registry.
 
-### ModelPort
+### Model and tool protocol
 
-`ModelPort` receives the stable system prompt, one public context snapshot, current tool schemas, and an optional
-current image. It returns one typed `ToolCall(call_id, name, arguments)`. Provider-specific encodings stay at this
-boundary. Strict provider schemas are used when available, with Runtime validation as the final authority.
+PydanticAI owns provider clients, provider messages, native tool-call parsing, call IDs, and basic schema repair. The
+current `PerTurnToolCatalog` is exposed as a PydanticAI `ExternalToolset`, so a model proposes one deferred semantic
+tool call but never executes Python or GUI code inside the framework. Runtime resolves that call against the opaque
+current binding and remains the final validation authority.
+
+The temporary `PydanticAIGroundedDecisionPort` reuses the existing policy seam during migration. It is not a second
+permanent model abstraction. After the default path and benchmark runner use PydanticAI, the old custom HTTP provider,
+structured-response bridge, provider orchestrator, and duplicate tool normalizer are deleted. A narrowly scoped
+compact-JSON compatibility adapter may remain only for a benchmark model that demonstrably cannot emit native tool
+calls.
 
 ### CoreAgentLoop
 
@@ -120,17 +128,18 @@ shared failure.
 The model never receives remaining budgets, backend routes, selectors, coordinates, private bindings, acquisition
 attempts, reducers, old screenshots, old worlds, full traces, benchmark rewards, oracle values, or hidden state.
 
-A native-tool provider receives tools through its `tools` field rather than a duplicate menu in the context. A
-compact-JSON provider may receive the same current catalog in the public context because it has no native tool field.
+A native-tool provider receives tools through PydanticAI rather than a duplicate menu in the context. A retained
+compact-JSON compatibility model may receive the same current catalog in the public context because it has no native
+tool field.
 
-## Stable model prompt
+## Current model prompt
 
 The product has one stable system prompt. Schema details belong to `ToolSpec`; current facts belong to the context;
 validation errors belong to the matching tool result. The prompt must not document Python types or Runtime internals.
 
 ```text
 You are a general GUI agent operating a real interface. Complete the user's task by interpreting the current
-interface and choosing exactly one currently offered tool call per turn.
+interface and choosing exactly one currently offered tool call on an action turn.
 
 Authority and trust:
 - task is the only source of the user's objective, constraints, permitted effects, and success criteria.
@@ -150,18 +159,34 @@ Decision policy:
 Progress and completion:
 - Treat progress as verified task state, not as a plan you must follow.
 - Preserve satisfied criteria and choose actions for unresolved criteria.
-- Use propose_done only when current observation and verified progress support all required criteria and outputs.
-- Use ask_user only when required information or authorization cannot be obtained from the interface.
+- Runtime ends ordinary GUI-effect tasks automatically after verified completion; never emit a completion tool.
+- When Runtime presents a completed task with confirmed requested outputs and no tools, return one concise
+  user-facing final response grounded only in those outputs and current evidence.
+- Use ask_user only when required task information cannot be obtained from the interface. Its `question` is a concrete,
+  self-contained user-facing message written by the model and displayed verbatim; `requested_fields` names the task
+  inputs expected in the reply. Do not use ask_user instead of a Runtime safety confirmation.
 - Use abort only when the task cannot continue safely or with the offered capabilities.
 
 Runtime contract:
 - Runtime owns validation, private binding, execution, fresh observation, action-effect evaluation, task-completion
   evaluation, safety gates, and execution limits.
-- Return exactly one offered tool call. Do not return prose, hidden reasoning, or an implicit action.
+- On an action turn, return exactly one offered tool call without prose or hidden reasoning. On a final-response turn,
+  return only the user-facing answer and no tool call.
 ```
 
-Control decisions such as `request_observation`, `ask_user`, `propose_done`, and `abort` use the same current tool-call
-protocol. There is no parallel legacy `AgentDecision` response schema in the final model boundary.
+Control decisions such as `request_observation`, `ask_user`, and `abort` use the same current tool-call protocol. There
+is no parallel legacy `AgentDecision` response schema in the final model boundary.
+
+`ask_user` is a typed pause with content, not a bare status transition. The model owns the exact question because it
+owns task interpretation. Runtime validates its bounded schema, preserves the question in the paired `StepResult`,
+returns `waiting_user`, and exposes the text unchanged to the caller. A reply resumes the same run through one
+consecutive `TaskGoal` revision containing the supplied inputs. Runtime-owned risk confirmation remains a separate
+`waiting_confirmation` path with an exact pending action; it is never synthesized through `ask_user`.
+
+Ordinary GUI-effect tasks terminate directly when `TaskEvaluator` confirms completion; they do not require another
+model turn. Tasks that explicitly request a textual answer use the model's native final output after their requested
+outputs have been verified. `propose_done` is no longer model-visible; its legacy typed branch remains only until the
+old structured model path is deleted.
 
 ## Validation and repair
 
@@ -202,7 +227,8 @@ cross-process idempotency, and distributed recovery are outside the supported sc
 
 ## Migration status
 
-The control-core migration is complete. The remaining work is empirical benchmark validation:
+The control-core migration is complete. Model/provider plumbing is now being reduced before empirical benchmark
+validation:
 
 | Phase | Status | Exit condition |
 |---|---|---|
@@ -212,7 +238,10 @@ The control-core migration is complete. The remaining work is empirical benchmar
 | 4. Migrate observation, action paging, wait, ask/resume, done, confirmation, abort, and error paths | done | supported decisions have typed core-loop integration tests; confirmation continuations preserve one model-step count |
 | 5. Connect benchmark runners to the core loop | done | target benchmark exclusively executes `CoreAgentLoop`; reports persist `runtime=core` and raw per-case evidence |
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
-| 7. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
+| 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
+| 8. Cut the product and benchmark model path over to PydanticAI | in progress | the selected adapter is available through `LLM_MODEL_ADAPTER=pydantic-ai`; native final output replaces `propose_done`, and the same supported cohort passes before it becomes the default |
+| 9. Delete the superseded custom model transport cluster | pending | no production caller imports the old HTTP ports, structured bridge, provider orchestrator, or duplicate normalization path |
+| 10. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
 
 Any follow-up fixes must preserve this boundary and be justified by a shared invariant or benchmark evidence.
 
@@ -227,6 +256,8 @@ and summaries that existed only to support the old ledger-shaped context are no 
 - Keep only README, Architecture, Benchmark, and Extending as maintained project documentation.
 - Do not introduce event sourcing, ledgers, transition graphs, workflow engines, generalized plugin platforms,
   predictive world models, or per-step state-summary model calls.
+- Do not wrap PydanticAI in another general provider framework; keep only the narrow mapping between its deferred
+  calls and the existing semantic tool catalog.
 - Do not expose backend-specific tools or add benchmark-specific product branches.
 - Add a type only when it owns one non-duplicated invariant required by the loop.
 - Prefer an existing owner over a wrapper, projection, compatibility facade, or second authority.

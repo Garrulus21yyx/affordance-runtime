@@ -50,23 +50,23 @@ the capability registry and its owning adapters, not `CoreAgentLoop`.
 
 ## Add a model provider
 
-Implement the existing provider-neutral `ModelPort` and serialize the public context into provider messages and tool
-schemas. Preserve provider `call_id` values through the typed call/result boundary. Use strict tool schemas when the
-provider supports them, then retain Runtime validation as the provider-independent authority. Normalize provider
-errors and timeouts at the provider boundary. The provider may choose one current semantic tool; it cannot select
-private observation routes or execution bindings.
+Prefer a PydanticAI `Model` and `Provider`. OpenAI-compatible services should configure `OpenAIChatModel` with an
+`OpenAIProvider`; do not add another project-owned HTTP client, response envelope, retry orchestrator, or general model
+port. The current semantic catalog is supplied as an `ExternalToolset`, and its deferred call is returned to Runtime
+with the provider `call_id` intact. Runtime then performs currentness, binding, risk, execution, and final validation.
 
-The composition chain is `model/providers/port.py: ModelPort` → a structured adapter under `model/policy/` →
-`ModelBackedAgentPolicy` → `AgentDecisionPorts` in `app/composition.py`. Capability declarations belong to the policy
-adapter; `TargetRuntime` validates required decisions at composition time.
+Only add a narrow compatibility adapter when a required model has live evidence that it cannot emit native tool
+calls. That adapter may translate one compact JSON decision into the same current semantic call, but it must not
+become another provider framework or duplicate the Runtime loop. `LLM_MODEL_ADAPTER=pydantic-ai` selects the new path;
+the legacy value exists only during migration.
 
 Do not create a provider-specific system prompt. Every provider receives the one stable prompt in Architecture; only
 wire encoding, image representation, strict-schema support, and tool-call transport vary. Native-tool providers receive
 the current catalog through their tools field. Compact-JSON providers may receive the same catalog in context, but it
 must not be duplicated for native providers.
 
-Required tests cover schema generation, `call_id` preservation, response parsing, unsupported tools, timeout/error
-normalization, bounded repair, and secret-free logging.
+Required tests cover dynamic schema generation, `call_id` preservation, unsupported tools, timeout/error
+normalization, bounded repair, secret-free logging, and one real provider witness through `CoreAgentLoop`.
 
 ## Change the model prompt or context
 

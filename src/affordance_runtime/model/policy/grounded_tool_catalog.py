@@ -13,7 +13,6 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
-    ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -54,8 +53,6 @@ class _EvidenceBinding:
 @dataclass(frozen=True)
 class _ControlBinding:
     kind: str
-    claimed_criteria: tuple[str, ...] = ()
-    evidence_refs: tuple[str, ...] = ()
 
 
 def compile_grounded_tool_catalog(
@@ -117,25 +114,11 @@ def compile_grounded_tool_catalog(
                 context.actions.next_cursor,
             )
         )
-    satisfied = tuple(
-        item.criterion_id
-        for item in context.task.success_criteria.items
-        if item.criterion_id not in context.progress.unresolved_criteria.items
-    )
-    evidence_refs = tuple(item.fact_ref for item in context.progress.verified_public_facts)
     specs.extend(
         (
             ToolSpec(
-                "propose_done",
-                "Propose completion from current observation and verified progress; Runtime revalidates.",
-                _object_schema(
-                    {"result_summary": {"type": "string", "minLength": 1, "maxLength": 1024}},
-                    ("result_summary",),
-                ),
-            ),
-            ToolSpec(
                 "ask_user",
-                "Pause for information or authorization unavailable from the interface.",
+                "Pause for task information unavailable from the interface. Never use this for action authorization or risk confirmation.",
                 _object_schema(
                     {
                         "question": {"type": "string", "minLength": 1, "maxLength": 1000},
@@ -177,7 +160,6 @@ def compile_grounded_tool_catalog(
     )
     bindings.extend(
         (
-            _ControlBinding("propose_done", satisfied, evidence_refs),
             _ControlBinding("ask_user"),
             _ControlBinding("wait"),
             _ControlBinding("abort"),
@@ -272,16 +254,7 @@ def resolve_grounded_tool_call(
         return GroundedActionResolution(replace(evidence_decision, tool_call_id=call.call_id))
     if isinstance(binding, _ControlBinding):
         control_decision: AgentDecision
-        if binding.kind == "propose_done":
-            control_decision = ProposeDone(
-                expected_context_id,
-                binding.claimed_criteria,
-                binding.evidence_refs,
-                str(call.arguments["result_summary"]),
-                (),
-                call.call_id,
-            )
-        elif binding.kind == "ask_user":
+        if binding.kind == "ask_user":
             requested_fields = call.arguments.get("requested_fields", ())
             if not isinstance(requested_fields, list | tuple):
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)

@@ -13,6 +13,7 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
+    FinalResponse,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -33,6 +34,7 @@ __all__ = [
     "DecisionCapability",
     "FailureKind",
     "FailureStage",
+    "FinalResponse",
     "GROUNDED_ACTION_DECISION_CAPABILITIES",
     "ProposeDone",
     "RequestActionPage",

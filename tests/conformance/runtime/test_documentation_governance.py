@@ -36,4 +36,4 @@ def test_core_docs_state_the_simplified_contract() -> None:
 
     assert all(term in architecture for term in ("RunState", "StepResult", "WorldObservation"))
     assert "task success" in benchmark.casefold()
-    assert all(term in extending for term in ("SurfaceAdapter", "ActionBinding", "ModelPort"))
+    assert all(term in extending for term in ("SurfaceAdapter", "ActionBinding", "PydanticAI"))

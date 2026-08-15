@@ -56,6 +56,10 @@ class ModelBackedAgentPolicy:
             field_name="decision model port supported_decisions",
         )
 
+    @property
+    def supports_final_response(self) -> bool:
+        return bool(getattr(self.port, "supports_final_response", False))
+
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
         object.__setattr__(self, "last_metadata", None)
         object.__setattr__(self, "last_provider_attempts", ())

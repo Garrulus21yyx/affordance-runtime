@@ -8,7 +8,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from affordance_runtime.agent.decisions import AskUser
+from affordance_runtime.agent.decisions import AskUser, FinalResponse
 from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app.composition import compose_target_runtime_from_environment
 from affordance_runtime.app.runtime import TargetRuntime, TargetRuntimeRunOutcome
@@ -166,10 +166,12 @@ def target_run_payload(outcome: TargetRuntimeRunOutcome) -> dict[str, object]:
             "reason_code",
             "",
         ),
-        "message": decision.question if isinstance(decision, AskUser) else getattr(
-            outcome.intake,
-            "question",
-            "",
+        "message": (
+            decision.question
+            if isinstance(decision, AskUser)
+            else decision.content
+            if isinstance(decision, FinalResponse)
+            else getattr(outcome.intake, "question", "")
         ),
         "observation_count": state.observation_count if state is not None else 0,
         "execution_count": state.execution_count if state is not None else 0,

@@ -10,6 +10,7 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
+    FinalResponse,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -27,7 +28,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
     decision = result.decision
     if not isinstance(
         decision,
-        (SelectAction, RequestObservation, RequestActionPage, AskUser, ProposeDone, Wait, Abort),
+        (SelectAction, RequestObservation, RequestActionPage, AskUser, FinalResponse, ProposeDone, Wait, Abort),
     ):
         raise TypeError("policy failures do not enter model step history")
     if isinstance(decision, SelectAction) and result.execution is not None:
@@ -77,6 +78,8 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         }
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}
+    if isinstance(decision, FinalResponse):
+        return {"content": _bounded(decision.content)}
     if isinstance(decision, ProposeDone):
         return {
             "claimed_criteria": decision.claimed_criteria,
@@ -95,6 +98,7 @@ def _control_tool_name(decision: AgentDecision) -> str:
         RequestObservation: "request_observation",
         RequestActionPage: "request_action_page",
         AskUser: "ask_user",
+        FinalResponse: "final_response",
         ProposeDone: "propose_done",
         Wait: "wait",
         Abort: "abort",

@@ -28,7 +28,9 @@ Reports must not contain prompts, model responses, selectors, coordinates, crede
 expected answers, or benchmark reward payloads exposed to the model.
 
 Every core-loop run must additionally record the prompt version, context schema version, tool-catalog schema version,
-and engine choice as metadata. These values support reproducibility but cannot alter product behavior.
+Runtime engine, and model-adapter choice as metadata. These values support reproducibility but cannot alter product
+behavior. During cutover, `legacy` and `pydantic-ai` are compared with the same provider, model, prompt, context,
+catalog, cohort, seed, and step budget; provider changes are not attributed to the adapter.
 
 ## Current evidence
 

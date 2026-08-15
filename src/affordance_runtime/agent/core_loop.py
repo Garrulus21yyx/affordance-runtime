@@ -14,6 +14,7 @@ from affordance_runtime.agent.decisions import (
     AbortCategory,
     AgentDecision,
     AskUser,
+    FinalResponse,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -101,7 +102,7 @@ class CoreAgentLoop:
             initial,
             evaluation,
             task.loop_budget.max_turns,
-            status=_status_for_evaluation(evaluation),
+            status=self._status_for_task(task, evaluation),
             task_revision=task.revision,
         )
         return state
@@ -156,7 +157,7 @@ class CoreAgentLoop:
         resumed = replace(
             pending,
             task_evaluation=evaluation,
-            status_after=_status_for_evaluation(evaluation),
+            status_after=self._status_for_task(task, evaluation),
             feedback="user_input_received",
         )
         state.current_task_evaluation = evaluation
@@ -273,7 +274,10 @@ class CoreAgentLoop:
                 RunStatus.FAILED,
                 feedback=f"policy_failure:{decision.kind}",
             )
-        if not isinstance(decision, (SelectAction, RequestObservation, RequestActionPage, AskUser, ProposeDone, Wait, Abort)):
+        if not isinstance(
+            decision,
+            (SelectAction, RequestObservation, RequestActionPage, AskUser, FinalResponse, ProposeDone, Wait, Abort),
+        ):
             raise TypeError("agent policy returned an unsupported decision")
         if decision.context_id != context.context_id:
             return _same_world_step(state, decision, RunStatus.FAILED, "decision_context_is_stale")
@@ -293,8 +297,18 @@ class CoreAgentLoop:
             return self._action_page(task, state, action_space, decision)
         if isinstance(decision, Wait):
             return await self._wait(environment, task, state, decision)
+        if isinstance(decision, FinalResponse):
+            ready = bool(task.requested_outputs) and (
+                state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
+            )
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.DONE if ready else RunStatus.RUNNING,
+                "final_response" if ready else "final_response_not_ready",
+            )
         if isinstance(decision, ProposeDone):
-            status = _status_for_evaluation(state.current_task_evaluation)
+            status = self._status_for_task(task, state.current_task_evaluation)
             if status is RunStatus.RUNNING:
                 status = RunStatus.RUNNING
             feedback = "task_complete" if status is RunStatus.DONE else "completion_not_verified"
@@ -361,7 +375,7 @@ class CoreAgentLoop:
             state.current_world,
             after,
             task_evaluation,
-            _status_for_evaluation(task_evaluation),
+            self._status_for_task(task, task_evaluation),
             feedback="wait_completed",
             waited_ms=decision.max_wait_ms,
         )
@@ -409,7 +423,7 @@ class CoreAgentLoop:
             state.current_world,
             after,
             task_evaluation,
-            _status_for_evaluation(task_evaluation),
+            self._status_for_task(task, task_evaluation),
             feedback="observation_acquired",
         )
 
@@ -527,7 +541,7 @@ class CoreAgentLoop:
             state.current_world,
             after,
             task_evaluation,
-            _status_for_evaluation(task_evaluation),
+            self._status_for_task(task, task_evaluation),
             execution,
             action_evaluation,
             feedback=f"action_evaluated:{action_evaluation.status}",
@@ -546,9 +560,18 @@ class CoreAgentLoop:
             state.current_world,
             after,
             task_evaluation,
-            _status_for_evaluation(task_evaluation),
+            self._status_for_task(task, task_evaluation),
             feedback="binding_refreshed",
         )
+
+    def _status_for_task(self, task: TaskGoal, evaluation: TaskEvaluation) -> RunStatus:
+        if (
+            evaluation.status is TaskEvaluationStatus.COMPLETE
+            and task.requested_outputs
+            and bool(getattr(self.decision_ports.action_policy, "supports_final_response", False))
+        ):
+            return RunStatus.RUNNING
+        return _status_for_evaluation(evaluation)
 
 
 def _same_world_step(

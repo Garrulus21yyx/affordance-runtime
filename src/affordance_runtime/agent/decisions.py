@@ -21,6 +21,7 @@ _AGENT_EVIDENCE_PURPOSES = frozenset({
     ObservationPurpose.CRITERION_VERIFICATION,
 })
 MAX_RESULT_SUMMARY_CHARS = 1_024
+MAX_FINAL_RESPONSE_CHARS = 8_000
 _MAX_COLLECTION = 32
 _TOOL_CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
 
@@ -133,6 +134,18 @@ class AskUser:
 
 
 @dataclass(frozen=True)
+class FinalResponse:
+    """Native user-facing result emitted only after Runtime-verified completion."""
+
+    context_id: str
+    content: str
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        _require_bounded(self.content, MAX_FINAL_RESPONSE_CHARS, "final response")
+
+
+@dataclass(frozen=True)
 class ProposeDone:
     context_id: str
     claimed_criteria: tuple[str, ...]
@@ -184,4 +197,6 @@ class Abort:
             raise ValueError("abort category is unsupported") from exc
 
 
-AgentDecision: TypeAlias = SelectAction | RequestObservation | RequestActionPage | AskUser | ProposeDone | Wait | Abort
+AgentDecision: TypeAlias = (
+    SelectAction | RequestObservation | RequestActionPage | AskUser | FinalResponse | ProposeDone | Wait | Abort
+)

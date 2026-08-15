@@ -15,7 +15,6 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    ProposeDone,
     RequestObservation,
     SelectAction,
     Wait,
@@ -479,7 +478,6 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     assert {item.name.split("_")[0] for item in port.tools} == {
         "type",
         "activate",
-        "propose",
         "ask",
         "wait",
         "abort",
@@ -488,7 +486,7 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     assert all(
         "shared public semantics" in item.description
         for item in port.tools
-        if item.name not in {"propose_done", "ask_user", "wait", "abort"}
+        if item.name not in {"ask_user", "wait", "abort"}
     )
     assert all("memory" not in item.input_schema["properties"] for item in port.tools)
     assert tuple(public) == ("task", "observation", "progress", "recent_steps")
@@ -606,13 +604,12 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
 @pytest.mark.parametrize(
     ("name", "arguments", "decision_type"),
     (
-        ("propose_done", {"result_summary": "task appears complete"}, ProposeDone),
         ("ask_user", {"question": "Which account?", "requested_fields": ["account"]}, AskUser),
         ("wait", {"reason": "page is loading", "max_wait_ms": 250}, Wait),
         ("abort", {"reason": "capability unavailable", "category": "unsupported"}, Abort),
     ),
 )
-def test_grounded_catalog_exposes_the_complete_core_control_algebra(name, arguments, decision_type) -> None:
+def test_grounded_catalog_exposes_the_current_core_control_algebra(name, arguments, decision_type) -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
@@ -624,6 +621,12 @@ def test_grounded_catalog_exposes_the_complete_core_control_algebra(name, argume
 
     assert isinstance(outcome.decision, decision_type)
     assert outcome.decision.tool_call_id == "provider-call:control"
+
+
+def test_grounded_catalog_does_not_expose_propose_done() -> None:
+    catalog = compile_grounded_tool_catalog(_context(), GroundedToolPhase.ACTION_SELECTION)
+
+    assert "propose_done" not in {item.name for item in catalog.specs}
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
