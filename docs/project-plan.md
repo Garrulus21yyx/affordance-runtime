@@ -33,9 +33,8 @@ The stable target vocabulary is:
 ```text
 semantically strong TaskGoal + risk-proportionate MaterialBindings
 optional EvaluationSpec / strict source lineage
-optional observation-grounded LocalObjective
-WorldObservation + Internal ActionSpace
-ObservationCapabilities + ObservationAcquisition + ExecutionOutcome
+closed ObservationAcquisition + WorldObservation + Internal ActionSpace
+ObservationCapabilities + exact ExecutionOutcome + EvaluationOutcome
 disposable AgentContext + opaque ContextIdentity
 bounded IntentContext + progress/world/history/pending/budget views
 AgentActionPageView + typed AgentDecision
@@ -43,7 +42,7 @@ SemanticTarget + ActionBinding
 ActionSpace + ActionIntent
 BoundActionRequest + ActionResult
 ActionEvaluation + TaskEvaluation
-AgentLoopState + bounded ControlTransition
+AgentLoopState + bounded ControlTransition composed from exact phase aggregates
 validated ActionEvaluation + TaskEvaluation
 HumanConfirmation + optional TurnRecorder telemetry
 bounded ActionBatch + evaluated memory/Skill sidecars
@@ -75,15 +74,16 @@ core contracts for every GUI task.
 | P5-M3.2–M4 | Exact-head gates and pinned BrowserGym/MiniWoB adapter/profile | complete for declared profiles; no generalization/default-cutover claim |
 | P5-M4.2–M4.4 | Local fill/select containment, historical MiniWoB-60 breadth and typed attribution/capability evidence | valid clean `b3b64a2` negative run at 6/60; short-loop gaps remain |
 | post-M4.4 separately authorized rerun-v3 | Re-execute the frozen profile with expanded typed evidence | valid clean `83dc4fa` negative run at 4/60; separate from M4.3 |
-| P5-M4.5-A | Typed observation acquisition lifecycle and real active-capture closure | complete, non-default |
+| P5-M4.5-A | Typed observation acquisition origin/status and real active capture | implemented declared scope; full aggregate closure reopened by R0 |
 | P5-M4.5-B | Bounded control/failure contract | integrated non-default; reopened convergence review; implemented, not verified |
 | P5-M4.5-C | Same-profile MiniWoB-60 diagnostic | complete diagnostic; valid clean `4924ce6` evidence at 8/60; formal exit, performance and generalization not claimed |
 | P5-M4.6 | Evidence-directed short-loop remediation | IN_PROGRESS; M4.6-A-C COMPLETE_NON_DEFAULT; M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED; M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC, followed after remediation and a passing live gate by scroll/keypress, relational/dynamic observation, verified multi-step working state, unassessed-case review and a frozen MiniWoB-60 rerun |
+| R0–R3 | Full-chain authority aggregate convergence | R0 audit/contract/inventory complete; R1 implementation ready; R2–R3 not implemented; A.2 and capability/StateFact expansion remain open until one acquisition root and exact phase composition are verified |
 | P5-M4.7 | Supported-subset multi-seed | not started; blocked by M4.6 targeted/full-run gates |
-| P5-E | observation-grounded sequence/set/aggregate LocalObjective lifecycle | IN_PROGRESS / UNIFIED_OWNER_IMPLEMENTED / LIVE_REVALIDATION_PENDING; old frontier/hypothesis path deleted |
+| P5-E | long-horizon planning/working state | prior LocalObjective/frontier implementation deleted with legacy Runtime; future evidence-driven design follows benchmark need after R0–R3 |
 | P5-F | Strictly bounded no-observation-barrier ActionBatch | isolated helper prototype exists; AgentLoop integration not started |
 | P5-G | Currentness-checked memory/Skill with offline promotion | BindingCache prototype exists; target integration not started |
-| P5-H | Surface breadth, default cutover, telemetry downgrade and old-core deletion | not started |
+| P5-H | Surface breadth and product hardening | target default cutover/old-core deletion complete; breadth and benchmark evidence remain |
 
 The detailed order and exit/deletion gates live only in the evolution plan.
 Current status tokens are M4.5-B `INTEGRATED_NON_DEFAULT /
@@ -121,15 +121,16 @@ semantic confirmation identity with current rebinding, model/binding separation,
 separation, capability-aware fresh post-action acquisition, unknown no-retry, required-output
 integrity, and benchmark neutrality.
 AgentContext remains a one-way disposable projection; every decision binds the
-current context ID, LocalObjective changes relevance only, and source assurance
-never grants execution authority.
+current context ID, and source assurance never grants execution authority.
 Each policy call receives a new one-shot generation even when its public
 projection is otherwise identical. Runtime-issued paging cursors bind filters,
 objective identity and exact membership; they are not durable state.
-Expected unsupported/failed acquisition is typed. Dispatch truth is independent
-of acquisition failure. One accepted policy decision has exactly one bounded
-root ControlTransition, while AgentLoopState remains the current-state authority.
-LocalObjective reducers accept only current typed evidence; TaskEvaluation remains the sole task-completion authority.
+Expected unsupported/failed/partially fulfilled acquisition is typed and keeps
+its exact request, plan, provider/need and fusion lineage. Dispatch truth is
+independent of acquisition failure. One accepted policy decision has exactly
+one bounded root ControlTransition composed from exact phase outcomes, while
+AgentLoopState remains current-state authority. TaskEvaluation remains the sole
+task-completion authority.
 
 ## 6. Non-goals
 
@@ -145,11 +146,12 @@ LocalObjective reducers accept only current typed evidence; TaskEvaluation remai
 
 ## 7. Program completion
 
-The program reaches this target when the default product path uses the unified
-world contracts and short AgentLoop, the DOM/AX/Visual/SVG/WoT positive matrix
-succeeds with only adapter variation, the local correctness invariants remain
-verified, a long-horizon task and bounded Batch/Skill gates pass, and the old StateKernel/delta/committer/recovery-transaction chain no
-longer appears in the default import or call path.
+The old StateKernel/delta/committer/recovery-transaction product chain is
+already deleted. The program reaches its next target when the current short
+AgentLoop has one aggregate-conserving acquisition/execution/evaluation/
+transition spine, the DOM/AX/Visual/SVG/WoT matrix varies only by adapter, and
+held-out plus benchmark evidence demonstrates robust short- and long-horizon
+behavior before optional Batch/Skill expansion.
 
 ## 8. Exact model-profile conformance
 
@@ -242,7 +244,7 @@ closing B. M4.6 repairs those gaps in independently
 measurable slices; its targeted gates and a new immutable full run precede the
 M4.7 supported-subset multi-seed gate, whose immutable manifest, exact seed set,
 numeric provider-availability/capacity floor, success floor and maximum seed
-variance are frozen before execution. P5-E now converges the
-observation-grounded LocalObjective lifecycle. A future long-horizon planner,
-if admitted by benchmark evidence, must be a separate proposal and cannot
-revive dormant AgentLoop frontier state.
+variance are frozen before execution. The former P5-E LocalObjective/frontier
+implementation is deleted. A future long-horizon planner, if admitted by
+benchmark evidence after R0–R3, must be a new bounded hypothesis proposal and
+cannot revive dormant AgentLoop frontier state.

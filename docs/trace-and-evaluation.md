@@ -109,19 +109,24 @@ INCOMPLETE rather than an immediate WAITING_USER.
 ## 5. ControlTransition versus TurnRecorder
 
 `ControlTransition` is mandatory lightweight run accounting for an accepted
-policy decision. It retains privacy-safe typed control facts: before/after
-observation identity, decision, admission, execution/acquisition, validated
-evaluations, progress, optional control-feedback envelope, pending state,
-resulting status and Runtime-owned reason
-code. One accepted policy decision has exactly one root transition. The recent
-window is bounded while AgentLoopState retains an exact total count.
+policy decision. It composes privacy-safe exact phase aggregates: decision,
+typed admission, observation acquisition or execution outcome, correlated
+evaluation outcome, progress/control result and resulting status. One accepted
+policy decision has exactly one root transition. The recent window is bounded
+while AgentLoopState retains an exact total count.
 
-This is “lossless” only across control facts: private binding payloads, raw
+This is “lossless” only across declared control facts: private binding payloads, raw
 provider responses, full observation bodies and credentials remain excluded.
 An actionless branch may keep the same before/after observation ID and explicitly
 record that no acquisition/execution occurred. A continuation may reference a
 root transition through a typed source without fabricating a second policy
 decision.
+
+`AdmissionSummary`, `ExecutionSummary`, `AcquisitionSummary` and compatibility
+`Turn` are not valid target authorities. A bounded model/telemetry summary is a
+one-way view; the root cannot be reconstructed from it. The migration and
+deletion contract is
+[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md).
 
 The bounded record retains ordered privacy-safe execution attempts, ordered
 acquisition attempts with expected and actual origin, strict probe totals and
@@ -154,10 +159,11 @@ success. Published claims bind revision and profile.
 
 ## 7. Current migration note
 
-Current TraceDag ordering and RuntimeCommitter coupling remain old-baseline
-implementation facts. The target uses direct serial AgentLoopState updates,
-bounded in-memory ControlTransition accounting, and a separate best-effort
-TurnRecorder. No transition replay sits between evaluation and state update.
+TraceDag and RuntimeCommitter product coupling are deleted. The target uses
+direct serial AgentLoopState updates, bounded in-memory ControlTransition
+accounting, and a separate best-effort TurnRecorder. R0–R3 are still required
+to replace the current summary-backed root with exact aggregate composition.
+No transition replay sits between evaluation and state update.
 P5-M3 entry closure floors no-effect assurance at structural, rejects orphan
 source evidence, requires current multi-source agreement, prunes already-met
 obligations, treats truncated semantic windows as inconclusive, contains

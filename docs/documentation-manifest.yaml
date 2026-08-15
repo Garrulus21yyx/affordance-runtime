@@ -17,6 +17,7 @@ authority_scope_rule: named_scope_owner_overrides_global_precedence_for_that_sco
 authority_precedence_rule: precedence_applies_only_when_no_more_specific_named_scope_owner_answers_the_question
 authority_scopes:
   target_semantics: docs/task-execution-authority-map.md
+  runtime_authority_aggregate_conservation: docs/runtime-authority-aggregate-convergence.md
   migration_order_and_exit_gates: docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md
   current_code_truth: docs/implementation-status.md
   current_execution_queue: docs/current-implementation-plan.md
@@ -61,6 +62,9 @@ normative:
     lifecycle: current
   - role: target_module_responsibility_containment
     path: docs/responsibility-containment-boundary.md
+    lifecycle: current
+  - role: runtime_authority_aggregate_conservation_contract
+    path: docs/runtime-authority-aggregate-convergence.md
     lifecycle: current
   - role: runtime_model_adapter_acquisition_benchmark_boundary
     path: docs/runtime-first-boundary.md
@@ -125,7 +129,8 @@ reference:
     lifecycle: current
   - role: dynamic_tools_v1_protocol_experiment_record
     path: docs/superpowers/plans/2026-08-12-dynamic-tools-v1-protocol-experiment.md
-    lifecycle: current
+    lifecycle: immutable_record
+    superseded_by: docs/plans/2026-08-15-adaptive-observation-policy-a2.md
   - role: zhipu_structured_hypothesis_convergence_execution_record
     path: docs/superpowers/plans/2026-08-12-zhipu-structured-hypothesis-convergence.md
     lifecycle: current
@@ -146,7 +151,8 @@ reference:
     lifecycle: current
   - role: world_interaction_capability_migration_record
     path: docs/migrations/world-interaction-capabilities.md
-    lifecycle: current
+    lifecycle: immutable_record
+    superseded_by: docs/interaction-capability-onboarding-design.md
   - role: legacy_approval_scenario
     path: docs/scenarios/approval-gated-report-export.md
     lifecycle: current

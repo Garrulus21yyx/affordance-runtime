@@ -10,8 +10,9 @@ thick, infrastructure-thin execution**. The loop is powerful because it sees,
 grounds, generates legal actions, validates, and replans well—not because it
 contains a large transaction kernel.
 
-The target project center is below. The locally implemented M4.6-F P0 projects
-the latest canonical root once as `last_transition`; live revalidation remains open:
+The target project center is below. M4.6-F P0 projects the latest root once as
+`last_transition`, but R0–R3 has reopened that root's aggregate conservation;
+live revalidation remains open:
 
 ```text
 TaskGoal
@@ -21,10 +22,11 @@ TaskGoal
 → Runtime validation / semantic confirmation
 → current BoundActionRequest
 → execute once
-→ ExecutionOutcome(ActionResult + typed post-action acquisition)
+→ ExecutionOutcome(exact request + ActionResult + post acquisition when dispatched)
 → fresh WorldObservation from execute or capability-admitted capture
 → validated ActionEvaluation / TaskEvaluation
-→ bounded ControlTransition + AgentLoopState update
+→ bounded ControlTransition composed from exact phase outcomes
+→ AgentLoopState update
 → next context projects that same root as optional last_transition
 → continue / ask / stop
 ```
@@ -41,6 +43,7 @@ The current target is defined only by:
 
 - [Target AgentLoop Authority Map](docs/task-execution-authority-map.md)
 - [AgentContext Recurrent E2E Agent Evolution Plan](docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+- [Runtime Authority Aggregate Convergence](docs/runtime-authority-aggregate-convergence.md)
 
 ```text
 ┌─────────────────────────────────────────────────────┐
@@ -71,13 +74,11 @@ or act across environments more effectively.
 
 ## Current implementation truth
 
-The installed `affordance-runtime run` command and root Python API now enter the
+The installed `affordance-runtime run` command and root Python API enter the
 target-only `TargetRuntime -> AgentLoop -> AgentRunSession` path with the product
 DOM world, grounded-tools model protocol, and product evaluators. Benchmark
-commands are isolated under `affordance-runtime-benchmark`. The older
-TaskSpec/TaskPlan/ActionContract/StateKernel/RuntimeCommitter modules remain
-internal pending owner-by-owner T3 deletion, but are no longer a public product
-entrypoint. The target path implements the
+commands are isolated under `affordance-runtime-benchmark`; the older
+transactional product loop is physically deleted. The target path implements the
 strong TaskGoal and world/action/evaluation contracts and integrated DOM,
 Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
 three-surface adapter-only shared-state matrix is proven with one deterministic
@@ -88,6 +89,16 @@ declared non-default profiles. General semantic entailment, semantic fusion,
 legacy physical deletion, and broad autonomous GUI competence remain open.
 Reusable BrowserGym mechanics now live under the product surface namespace;
 MiniWoB manifests and reward interpretation remain benchmark policy.
+
+Repeated adaptive-acquisition reopenings have now exposed one shared
+cross-boundary defect: phase-local contracts are narrowed into
+`FreshAcquisition`/summary DTOs before control and model consumers, while the
+generic and BrowserGym environments assemble duplicate acquisition lifecycles.
+A.2 closure is withdrawn. R0–R3 will establish one closed immutable aggregate
+per phase, one acquisition composition root, exact execution/evaluation/
+transition composition, and one-way views before StateFact or interaction
+capability expansion resumes. This is an in-process contract convergence, not
+an event ledger, graph database or new automation framework.
 
 The BrowserGym breadth evidence now contains three immutable, non-combinable
 exact runs: the historical clean `b3b64a2` run at 6/60, the clean `83dc4fa`
@@ -141,7 +152,7 @@ active queue.
 2. A stale observation or binding makes zero executor calls.
 3. High-risk actions require a confirmed semantic subject that covers the current action: action/target/destination/material parameters remain exact, while effects may only narrow, risk/consequences may not strengthen, and reversibility may not worsen. Exact subject equality remains the conservative implementation until dominance is complete; a fresh private binding alone does not change what the user confirmed.
 4. An execution receipt does not prove effect or task completion.
-5. Every action—or strictly admitted no-barrier local batch—gets a typed post-action acquisition; evaluation uses it or an explicitly supported independent capture.
+5. Every dispatched action—or strictly admitted no-barrier local batch—retains a typed post-action acquisition; `NOT_SENT` fabricates none, and evaluation uses the exact returned or explicitly linked fallback acquisition.
 6. An unknown effect is never blindly retried.
 7. Required artifacts must exist and match their expected content.
 8. Models cannot directly provide raw selectors, coordinates, backend payloads, endpoints, or file paths.

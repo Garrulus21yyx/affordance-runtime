@@ -1,12 +1,17 @@
 # Wave A.2 adaptive observation policy and bounded world lens
 
-Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
-REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
-PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
-GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED / LIVE_NOT_RUN`
+Status: `DESIGN_RETAINED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
+A.2_COMPONENTS_IMPLEMENTED / CLOSURE_WITHDRAWN /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW /
+CROSS_BOUNDARY_AGGREGATE_LOSS / DUPLICATE_ACQUISITION_COMPOSITION_ROOT /
+PROPERTY_EVIDENCE_INSUFFICIENT_FOR_CLOSURE / LIVE_NOT_RUN`
+
+The source-selection and bounded-lens decisions in this document remain the
+A.2 policy contract. Its implementation/closure record is superseded for
+acceptance by the
+[Runtime authority aggregate convergence contract](../runtime-authority-aggregate-convergence.md).
+No further local A.2 patch may restore closure without satisfying that full
+request→plan→activation→fusion→control chain.
 
 Scope: select which available observation sources are semantically activated
 for one acquisition, fuse only those source observations, and project one
@@ -452,3 +457,38 @@ passed, 27 skipped`; Ruff, mypy over 334 source files, and the focused gates
 pass. This is implementation/property evidence only. A fresh-context
 independent review is required before A.2 closure can be admitted, and no live
 benchmark was run.
+
+## 12. Full-chain reopening and superseding acceptance contract
+
+A further repository-wide review found that the repaired producer contracts
+still narrow before their control consumers:
+
+- `ObservationAcquisition` does not retain acquisition identity or original
+  request at its public root;
+- `FreshAcquisition` drops plan, source outcomes and per-need results;
+- `AcquisitionSummary` drops them again before `ControlTransition`;
+- `request_evidence` therefore judges a whole-world digest instead of the
+  requested need result;
+- BrowserGym and `UnifiedWorldEnvironment` remain two production selection/
+  activation/fusion/finalization roots;
+- post-selection BrowserGym exception/fusion paths can return a planless
+  failure;
+- modality/assurance capability projection overwrites purposes by offer order;
+- post-action source selection can reconstruct route ownership instead of
+  following exact binding/source lineage;
+- copied static environments construct planless acquisitions and let much of
+  AgentLoop testing bypass the production lifecycle.
+
+These are one causal class, not another list of independent local bugs: phase
+aggregates are replaced by lossy control DTOs and the same state machine has
+multiple composition roots. Consequently the preceding `1622 passed` result
+remains valid implementation regression evidence but cannot close A.2.
+
+The sole acceptance contract is now
+[Runtime authority aggregate convergence](../runtime-authority-aggregate-convergence.md).
+It preserves the A.2 selection policy, proactive semantic `request_evidence`
+admission and bounded primary/novel Actor lens, while requiring one acquisition
+coordinator, a closed immutable acquisition aggregate, exact per-need feedback,
+exact execution/evaluation/transition composition, contract-faithful fixtures
+and deletion of displaced summary/compatibility paths. A.2 may be described as
+closed only after R0–R3 and an independent fresh-context review pass.

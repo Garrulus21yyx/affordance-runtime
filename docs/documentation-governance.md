@@ -61,8 +61,9 @@ replace the whole architecture.
 - `ObservationCapabilities` declares operational independent-capture and
   post-action-observation support; it is separate from evidence modality and
   source assurance.
-- `ObservationAcquisition` reports acquired, capability-unavailable, or failed
-  observation acquisition as a typed outcome.
+- `ObservationAcquisition` is the closed request-correlated aggregate for one
+  acquisition: request, plan, provider activations/per-need outcomes, fusion
+  outcome and acquired/capability-unavailable/failed status remain reachable.
 - `AgentWorldView` is the compact model-facing projection.
 - `SemanticTarget` retains one identity across surface representations.
 - `ActionBinding` contains surface/backend-specific execution material.
@@ -70,15 +71,19 @@ replace the whole architecture.
 - `ActionIntent` is the user/model-facing semantic action.
 - `BoundActionRequest` is one ActionIntent bound to current observation and binding.
 - `ActionResult` reports execution/transport status; it does not prove effect.
-- `ExecutionOutcome` retains ActionResult together with the typed post-action
-  ObservationAcquisition; acquisition failure does not erase dispatch truth.
+- `ExecutionOutcome` retains the exact BoundActionRequest and ActionResult;
+  dispatched outcomes also retain the typed post-action
+  ObservationAcquisition. Acquisition failure does not erase dispatch truth,
+  and `NOT_SENT` does not fabricate an acquisition.
 - `ActionEvaluation` and `TaskEvaluation` are independent post-observation judgments.
 - `TaskPlan<Milestone>` is an optional replaceable hypothesis; `LocalObjective`
   is the nearby state selected from the current task frontier.
 - `VerifiedTaskState` is the P5-E run-scoped authority for the validated task
   frontier and accepts only validated evidence updates.
 - `AgentLoopState` is the authority for current run control state.
-- `ControlTransition` is one bounded typed record per accepted policy decision.
+- `ControlTransition` is one bounded typed record per accepted policy decision
+  and composes exact phase aggregates rather than independently writable
+  execution/acquisition summaries.
   It is run-scoped and in-memory, not a durable ledger, event-sourcing stream,
   replay source, or state-reconstruction authority.
 - `ProgressController` is the local `fill`/`select` liveness guard;

@@ -4,6 +4,8 @@
 > **Updated:** 2026-08-15
 > **Scope:** target GUI AgentLoop only
 > **Implementation truth:** [Implementation Status](implementation-status.md)
+> **Aggregate conservation:** [Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md)
+> **R0 constructors and consumers:** [Runtime authority R0 consumer inventory](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md)
 
 ## Decision
 
@@ -16,7 +18,9 @@ UserRequest
   -> Thin Intake
   -> TaskGoal + bounded IntentContext(context_only)
   -> AgentLoop
-       observe -> WorldObservation
+       observe -> ObservationAcquisition
+            request -> plan -> provider activations -> fusion outcome
+       -> WorldObservation
        -> internal ActionSpace(TaskGoal legality + current availability)
        -> disposable AgentContext
        -> AgentPolicy.decide (current action/control only)
@@ -26,10 +30,10 @@ UserRequest
        -> risk/confirmation
        -> currentness check
        -> private bind
-       -> execute once
-       -> fresh observation
-       -> ActionEvaluation + TaskEvaluation
-       -> exactly one root ControlTransition
+       -> execute once -> ExecutionOutcome
+            exact BoundActionRequest + ActionResult + typed post acquisition
+       -> EvaluationOutcome over the exact consumed fresh observation
+       -> exactly one root ControlTransition composed from exact outcomes
        -> serial AgentLoopState
        -> continue/reobserve/ask/wait/done/abort
        -> AskUser pause -> admitted next TaskGoal revision -> same session
@@ -46,7 +50,9 @@ not an ingress, compatibility layer, or hidden capability of `AgentLoop`.
 | task boundary | `TaskGoal` | thin intake | allowed/forbidden effects, risk, success boundary | DOM ID, E-ref, coordinate, route |
 | task clarification | `TargetRuntime + AgentRunSession` | matching `UserInputRequest` + intake-admitted next revision | one-shot task revision and stale-projection invalidation | free-form patching, effect inference, physical reset |
 | supplemental context | `IntentContext` | bounded source excerpts | context-only hints | task/effect authority |
-| observed world | `WorldEnvironment` | current environment | `WorldObservation`, including source-owned structural documents and media | task semantics, action authority |
+| source selection | `ObservationOrchestrator` | typed request/needs + current offers/budget | one immutable `ObservationSelectionPlan` | provider activation, fusion, adapter-local fallback |
+| acquisition lifecycle | one product `AcquisitionCoordinator` / `WorldEnvironment` | request + selected plan + correlated provider outcomes | one closed `ObservationAcquisition` retaining request, plan, activations and fusion outcome | lossy freshness/summary reconstruction, second BrowserGym lifecycle |
+| observed world | `WorldFusion` + `WorldObservation` | selected source observations in one acquisition | canonical current graph, including source-owned structural documents and media | task semantics, action authority, source selection |
 | BrowserGym structural representation | BrowserGym `SurfaceAdapter` | bounded current AX tree + rendering | semantic targets plus a separate bounded structure document with explicit target links | bindings for structure-only nodes, Actor formatting |
 | raw screenshot acquisition | BrowserGym environment | current captured viewport | independently selectable visual source containing media only | semantic interpretation, bindings, actions |
 | legal actions | `actions/ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `actions/ActionSpace` | observed-world contract owner, model, benchmark, deleted workflow/LocalObjective code |
@@ -61,8 +67,9 @@ not an ingress, compatibility layer, or hidden capability of `AgentLoop`.
 | choice | `AgentPolicy` | one AgentContext | typed context-bound action/control decision | objective construction, binding, executor route, completion truth |
 | admission | AgentLoop decision/action admission | context identity + current ActionSpace | admitted selection or typed rejection | prompt compliance |
 | execution route | currentness/binder/risk chain | admitted selection + fresh world | `BoundActionRequest` | model coordinates/selector |
-| physical effect | environment executor | bound request | one result + post-action acquisition | semantic completion |
-| effect/task truth | evaluators | result + fresh world + TaskGoal | action/task evaluations | executor receipt or model narration |
+| physical effect | environment executor + `ExecutionCoordinator` | exact bound request | `ExecutionOutcome` retaining request, result and post acquisition when dispatched | semantic completion, caller-side reassembly |
+| effect/task truth | evaluators | exact execution/acquisition lineage + fresh world + TaskGoal | correlated `EvaluationOutcome` | executor receipt or model narration |
+| accepted-decision closure | transition reducer | exact decision/admission/acquisition/execution/evaluation outcomes | one bounded `ControlTransition` | reconstruction from summaries, telemetry or model views |
 | benchmark | harness | manifest + public outcomes | measurements/evidence | production branches or task semantics |
 
 ## Identity timing
@@ -221,6 +228,14 @@ interpreted as a parallel transition authority. `AgentTransitionDigestView` is
 only the disposable model-facing projection; Runtime cannot reconstruct the
 root transition or current state from it.
 
+The root composes exact phase aggregates. It does not replace them with
+independently writable `AdmissionSummary`, `ExecutionSummary` or
+`AcquisitionSummary` values. A freshness check, fallback, continuation or
+bounded reroute wraps/links the exact original outcomes; it never creates a
+smaller control-authoritative DTO. Large observations/media may remain
+run-scoped immutable references, so aggregate closure does not require copying
+their bytes.
+
 The implemented P0 stores no internal digest. The root retains its matching
 decision-start `before_task_evaluation`; `ContextBuilder` compares it with the
 root's final TaskEvaluation and projects the latest root directly. The latest
@@ -301,6 +316,11 @@ Before modifying a schema or state contract:
 4. repair that owner/boundary once;
 5. delete displaced paths in the same migration;
 6. change a wire schema only when the canonical typed contract truly changed.
+7. prove that exact authoritative inputs/outcomes remain reachable through all
+   success, partial-success, failure, cancellation, projection and test-double
+   boundaries;
+8. delete any displaced summary/compatibility owner and its sole-purpose tests
+   in the same migration.
 
 Benchmark cases are witnesses for shared properties. They do not authorize task
 names, prose keyword routing, fixed candidate counts, or benchmark-specific
@@ -322,3 +342,9 @@ production branches.
 - DOM/derived/vision evidence differ by source, not by lifecycle authority.
 - AgentContext and grounded tools are disposable projections, never round-trip
   authority.
+- Each causal phase has one closed immutable aggregate; downstream control
+  composes it and never reconstructs authority from a `View`, `Digest`,
+  `Summary`, telemetry row or benchmark fact.
+- One product acquisition coordinator serves DOM/Visual/WoT/HTTP/BrowserGym;
+  a surface backend and a static fixture cannot implement another selection,
+  fusion or acquisition-finalization state machine.

@@ -6,21 +6,18 @@
 ## 1. Main loop
 
 ```text
-reset → initial ObservationAcquisition
+reset → initial closed ObservationAcquisition
 → evaluate current task state
-→ optionally plan/replace milestones
-→ select LocalObjective
 → build Internal ActionSpace and current page
 → project disposable AgentContext
 → policy returns typed AgentDecision with context_id
 → reject stale decision with zero execution
 → risk decision / human confirmation
 → bind current request
-→ execute one action or admitted batch once → ExecutionOutcome
-→ use returned post observation; capture independently only when needed/supported
-→ action evaluation
-→ task evaluation
-→ append exactly one bounded root ControlTransition for the accepted decision
+→ execute one action once → exact ExecutionOutcome
+→ use its post acquisition; capture independently only when needed/supported
+→ correlated action/task EvaluationOutcome
+→ append exactly one bounded root ControlTransition composed from exact outcomes
 → continue / reobserve / replan / ask / wait-confirmation / done / failed
 ```
 
@@ -48,8 +45,7 @@ target state.
 ## 2. Loop state
 
 The serial target state contains current observation ref, an exact transition
-total plus bounded recent ControlTransition suffix, optional TaskPlan and
-VerifiedTaskState/frontier, pending semantic confirmation, pending
+total plus bounded recent ControlTransition suffix, pending semantic confirmation, pending
 uncertain request, budget, and final result.
 Externally meaningful states are RUNNING, WAITING_USER,
 WAITING_CONFIRMATION, CANCELLED, DONE, BLOCKED, and FAILED.
@@ -68,6 +64,12 @@ RequestActionPage, AskUser, ProposeDone, Wait and Abort. Admission rejection,
 capability-unavailable, evaluation failure, pending/waiting and terminal
 consequences remain typed fields of that same decision record; they are not
 recovered later from exception text or several state owners.
+
+The root retains exact typed admission/acquisition/execution/evaluation
+aggregates. `AdmissionSummary`, `ExecutionSummary` and `AcquisitionSummary`
+cannot serve as canonical accounting replacements. Freshness, fallback and
+continuation values wrap or link the original aggregate rather than copying a
+smaller subset.
 
 A confirmation/user continuation that changes state may carry a typed
 continuation source referencing the root transition, but cannot masquerade as
@@ -239,9 +241,11 @@ restored or replayed.
 
 ## 7. Current migration note
 
-The current Coordinator/stage/delta/committer sequence remains baseline code.
-It is not the target sequencing contract and receives no new platform features
-during migration.
+The transactional Coordinator/stage/delta/committer product path is deleted.
+The active migration is R0–R3 full-chain aggregate convergence: remove lossy
+control DTOs and the duplicate BrowserGym acquisition composition root while
+retaining the current short AgentLoop. See
+[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md).
 
 Task evaluation has explicit control semantics at initial observation,
 pre-policy, confirmation reobservation, and post-action evaluation:
@@ -360,7 +364,9 @@ At the pre-M4.5-B baseline this branch had no Turn and was an accounting gap.
 The M4.5-B candidate records the accepted selection and its suppression/progress
 consequence as one ControlTransition while still fabricating no execution or
 observation; reducer properties must verify this invariant. The controller remains a fill/select local liveness guard; future
-TaskProgressAuditor and planner remain separate P5-E owners.
+The former P5-E TaskProgressAuditor/planner owners are deleted. Any future
+long-horizon owners are evidence-gated work after R0–R3 and remain separate
+from current AgentLoop control.
 
 M4.6-D makes this existing ActionEvaluation/ProgressEvent strategy-transition
 feedback explicit in the model-facing channel, but does not turn

@@ -9,11 +9,59 @@
 
 ## Current decision
 
-The transaction-platform queue remains stopped. P5-A/B1/C1 has established the
-target contracts, minimum Unified World Interface, and real DOM plus
-Visual-only and WoT local-simulation short loops without changing the default product path.
+The transaction-platform queue remains stopped. Repeated A.2 reopenings have
+triggered the full-chain convergence protocol. Capability expansion,
+StateFact/relation/SemanticDelta migration and new interaction bindings are
+blocked until the existing Runtime chain conserves exact phase aggregates from
+request through the accepted-decision transition. The active contract is
+[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md).
 
-## Active slice — existing-action flat semantic tool compiler convergence
+## Active slice — R1 single acquisition coordinator cutover
+
+Status: `R0_REVIEW_COMPLETE / CONTRACT_ALGEBRA_FROZEN /
+CONSUMER_INVENTORY_COMPLETE / ATOMIC_MIGRATION_MAP_READY /
+R1_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`
+
+R0 completed the architecture-first repository review and froze:
+
+1. one immutable aggregate for observation acquisition, execution, evaluation
+   and an accepted decision;
+2. one construction/state-transition owner per aggregate;
+3. exact request/result IDs, legal state transitions, partial-success,
+   failure, cancellation, fallback and bounded reroute semantics;
+4. every consumer, projector, benchmark and test double that currently copies,
+   narrows or reconstructs those facts;
+5. the deletion set for `FreshAcquisition`, acquisition/execution summaries,
+   compatibility `Turn`, BrowserGym's second acquisition lifecycle and direct
+   static-environment acquisition construction.
+
+The complete source-backed inventory and atomic file order are in
+[R0 consumer inventory](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md).
+R0 added no production types. R1 is now the only active implementation slice:
+it introduces the closed acquisition aggregate and sole coordinator, migrates
+generic and BrowserGym acquisition through it, then deletes the displaced
+lifecycle owners and planless static-fixture paths at the same cutover. R2 and
+R3 remain blocked behind that deletion gate.
+
+The implementation order is fixed by dependency, not by the earlier 0–7 issue
+list:
+
+```text
+R0 closed contracts + consumer/redline inventory
+-> R1 single acquisition coordinator + exact acquisition aggregate
+-> R2 exact execution/evaluation/ControlTransition composition
+-> R3 one-way model projections + contract-faithful test topology
+-> independent fresh-context implementation review
+-> resume StateFact/effect authority/interaction capability work
+-> benchmark evidence
+```
+
+No compatibility/shadow owner is retained after each atomic cutover. Green
+example tests are not closure evidence; primary proof is generated/property
+coverage of the closed algebra across every producer, consumer and exceptional
+path.
+
+## Implemented slice — existing-action flat semantic tool compiler convergence
 
 Status: `IMPLEMENTED_LOCALLY / ACTOR_WORLD_CONVERGENCE_IMPLEMENTED / FULL_VERIFIED_2534_PASS_27_SKIP / LIVE_NOT_RUN`
 
@@ -70,12 +118,9 @@ WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
 VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
 WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
-REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
-PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
-GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED /
+A.2_COMPONENTS_IMPLEMENTED / A.2_CLOSURE_WITHDRAWN /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW /
+CROSS_BOUNDARY_AGGREGATE_LOSS / DUPLICATE_ACQUISITION_COMPOSITION_ROOT /
 ACTIVATE_EFFECT_AUTHORITY_OPEN /
 NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`
 
@@ -135,12 +180,8 @@ Status:
 `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
 T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
-REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
-PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
-GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED / LIVE_NOT_RUN`
+A.2_COMPONENTS_IMPLEMENTED / A.2_CLOSURE_WITHDRAWN /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / LIVE_NOT_RUN`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
@@ -210,12 +251,8 @@ as `KEEP_MOVE`; isolation, not deletion, is the A.1 boundary.
 Status:
 `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
-REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
-PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
-GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED /
+A.2_COMPONENTS_IMPLEMENTED / A.2_CLOSURE_WITHDRAWN /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW /
 STATEFACT_CUTOVER_PARTIAL /
 ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
 LIVE_NOT_RUN`
@@ -300,15 +337,13 @@ decision/link structural conservation and disposition/reason coherence only.
 Architecture tests forbid any second production constructor or decision
 producer.
 
-## Implemented repair — adaptive observation policy A.2
+## Reopened convergence — adaptive observation policy A.2
 
-Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
-REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
-PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
-GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED / LIVE_NOT_RUN`
+Status: `DESIGN_RETAINED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
+A.2_COMPONENTS_IMPLEMENTED / CLOSURE_WITHDRAWN /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW /
+CROSS_BOUNDARY_AGGREGATE_LOSS / DUPLICATE_ACQUISITION_COMPOSITION_ROOT /
+PROPERTY_EVIDENCE_INSUFFICIENT_FOR_CLOSURE / LIVE_NOT_RUN`
 
 A.2 keeps the current `ObservationOrchestrator` as the sole source-selection
 owner. It separates physical multi-channel capture from semantic provider
@@ -332,10 +367,13 @@ and one semantic `request_evidence` ingress. The latest repair also makes task
 initialization and physical reset explicit, separates source acquisition from
 per-need fulfillment, enforces plan/result conservation in the public
 acquisition owner, reports BrowserGym multi-purpose results truthfully, and
-deletes the reachable dynamic product protocol. Closure remains pending an
-independent fresh-context review. The full contract, evidence and SOTA reuse
-boundary are in the
-[Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
+deletes the reachable dynamic product protocol. Those components remain valid,
+but the later full-chain review found lossy control DTOs, duplicate acquisition
+composition roots and test fixtures that bypass the lifecycle. A.2 closure is
+therefore withdrawn, not merely waiting for review. The policy record is
+[Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md);
+its sole superseding acceptance contract is
+[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md).
 
 ## Active target-default convergence queue
 
@@ -445,7 +483,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.3 historical MiniWoB-60 | `VALID_NEGATIVE_EVIDENCE` | clean `b3b64a2`, 6/60; immutable standalone run |
 | P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
-| P5-M4.5-A acquisition lifecycle | `COMPLETE_NON_DEFAULT` | typed reset/capture/post-action acquisition, origin/fallback/counting closure, Runtime admission and real BrowserGym active capture |
+| P5-M4.5-A acquisition lifecycle | `IMPLEMENTED_DECLARED_ORIGIN_STATUS_SCOPE / REOPENED_BY_R0_FULL_CHAIN_CONVERGENCE` | typed reset/capture/post-action status remains, but exact request/plan/need/fusion conservation and one composition root are open |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
 | P5-M4.6 evidence-directed remediation | `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN / GENERALIZATION_OPEN` | The mandatory updater diagnosed at `cdb4bc9` is removed rather than repaired. `AgentContext` is the sole internal task/world/progress/history/pending/budget context; one YAML-backed binder creates one provider input; the valid grounded action path makes one semantic call. Catalog owns only current tools and opaque bindings. Legacy serialization is generated only for legacy adapters, not on the grounded path. No critic, second planner, working-memory envelope, task rule or alternate Runtime path is admitted. Focused tests, full `2474 passed, 27 skipped`, Ruff and mypy are green. Historical updater and atomic-memory runs remain negative evidence. See the [active convergence plan](plans/2026-08-14-single-agent-context-convergence.md). |
@@ -656,13 +694,18 @@ M4.5 may repair with retry, fallback or model-specific Runtime behavior.
 
 ## P5-M4.5-A observation acquisition lifecycle — complete
 
+The historical origin/status scope remains complete; full-chain aggregate
+closure is reopened by R0 and supersedes this heading for current admission.
+
 Delivered only the target world lifecycle boundary:
 
 1. `reset(task) -> ObservationAcquisition` supplies initial world state.
 2. `capture(request) -> ObservationAcquisition` reports `ACQUIRED`, typed
    `CAPABILITY_UNAVAILABLE`, or typed `FAILED`.
-3. `execute(request) -> ExecutionOutcome` carries `ActionResult` plus a typed
-   post-action acquisition.
+3. `execute(request) -> ExecutionOutcome` currently carries `ActionResult` plus
+   a typed post-action acquisition, including a fabricated unavailable value
+   for `NOT_SENT`; R2 replaces this with exact request composition and no
+   post-acquisition value for zero dispatch.
 4. Operational `independent_capture` / `post_action_observation` capabilities
    remain distinct from evidence modality/assurance.
 5. Normal action evaluation consumes execute-returned observation directly;

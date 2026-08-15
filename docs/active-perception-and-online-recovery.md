@@ -100,18 +100,21 @@ Observation acquisition lifecycle and observation evidence are also distinct:
 The minimum target environment contract is:
 
 ```text
-reset(task)      → ObservationAcquisition(initial)
-capture(request) → ObservationAcquisition
-execute(request) → ExecutionOutcome(ActionResult, post_acquisition)
+reset(task)      → ObservationAcquisition(initial request closure)
+capture(request) → ObservationAcquisition(request, plan, activations, fusion)
+execute(request) → ExecutionOutcome(exact bound request, ActionResult, post acquisition?)
 ```
 
-`ObservationAcquisition` is `ACQUIRED`, `CAPABILITY_UNAVAILABLE`, or `FAILED`
-and identifies reset/independent/post-action origin. Successful reset must
-provide the initial acquired observation. `capture()` is a total typed request:
+`ObservationAcquisition` is `ACQUIRED`, `CAPABILITY_UNAVAILABLE`, or `FAILED`,
+identifies reset/independent/post-action origin, and retains the exact request,
+reached plan/provider/need/fusion outcomes and typed failure stage. Successful
+reset must provide the initial acquired observation. `capture()` is a total typed request:
 a backend without independent capture reports `CAPABILITY_UNAVAILABLE`; an
 available acquisition that fails reports `FAILED`. Expected capability limits
-must not escape as a bare RuntimeError. `ExecutionOutcome.post_acquisition`
-uses the same typed result, so `None` cannot conflate unsupported and failed.
+must not escape as a bare RuntimeError. `ExecutionOutcome.post_acquisition` is
+absent only for `NOT_SENT`; `SENT` and `SENT_UNKNOWN` retain the exact typed
+primary acquisition, so unsupported and failed remain distinct without
+fabricating a post acquisition for zero dispatch.
 
 The two aggregate capabilities are a minimum adapter-level statement. A
 multi-source backend may additionally scope offers by source, modality,
@@ -134,16 +137,16 @@ fused source or model input. A second targeted source is admitted only for a
 typed residual coverage, ambiguity, visual-property or verification need. The
 first A.2 budget is one normal source and at most one complementary source.
 
-The detailed owner, selection matrix, existing-code convergence and SOTA reuse
-boundary are defined by the
+The detailed policy, selection matrix and SOTA reuse boundary are defined by the
 [Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
-Its current status is `A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED /
-ACQUISITION_PORT_CONVERGED / GENERIC_STAGE2_CONNECTED /
-POST_ACTION_FALLBACK_NEEDS_CONSERVED / PROPERTY_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING / LIVE_NOT_RUN`. The selected plan is
-conserved through a typed provider request/result port and generic residual
-stage two. Agent-side open semantic gaps enter through one `request_evidence`
-tool; Runtime alone admits assurance, selects sources and owns acquisition.
+Its closure is withdrawn under
+[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md):
+implemented selection/provider components remain, but the aggregate is narrowed
+before control/model consumers and BrowserGym still owns a second lifecycle.
+Agent-side open semantic gaps continue to enter through the sole semantic
+`request_evidence` tool; Runtime alone admits assurance, selects sources and
+owns acquisition. The next context must expose the result of that exact need,
+not infer gain from an unrelated whole-world digest.
 
 One accepted semantic action selects one current route. A typed `NOT_SENT` may
 admit one bounded alternate only after fresh acquisition/fusion and semantic

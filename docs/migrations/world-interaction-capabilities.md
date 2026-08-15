@@ -1,5 +1,11 @@
 # World-interaction capability migration
 
+> **Lifecycle:** IMMUTABLE MIGRATION RECORD
+> **Superseded by:** [Interaction Capability Onboarding Design](../interaction-capability-onboarding-design.md)
+
+Paths and compatibility fixtures below describe the source migration baseline;
+they are not current owners or supported compatibility routes.
+
 Source baseline: `A-Modular-Action-System-Architecture`, branch
 `origin/feature/C-009-unify-runtime-architecture`, commit `c3d85f5`.
 

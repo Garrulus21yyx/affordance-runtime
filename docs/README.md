@@ -17,8 +17,9 @@ Exactly two documents define the target and its migration:
 The retired task-contract-centered filename is a historical pointer only and
 does not define current Runtime authority.
 
-Core target order follows. The M4.6-F P0 `last_transition` projection is locally
-implemented and full-verified; live revalidation remains open:
+Core target order follows. The M4.6-F P0 `last_transition` view shape is locally
+implemented, but the underlying root remains summary-backed and is reopened by
+R0–R3; live revalidation remains open:
 
 ```text
 TaskGoal
@@ -27,7 +28,7 @@ TaskGoal
 → typed AgentDecision
 → RiskPolicy / HumanConfirmation when needed
 → current BoundActionRequest
-→ execute once → ExecutionOutcome(ActionResult + typed post acquisition)
+→ execute once → ExecutionOutcome(exact request + ActionResult + post acquisition when dispatched)
 → fresh WorldObservation from execute or capability-admitted capture
 → ActionEvaluation + TaskEvaluation
 → bounded ControlTransition + AgentLoopState update
@@ -44,18 +45,20 @@ DOM, AX, Visual, SVG, WoT, API, Device, and CLI are symmetric surface adapters u
 one world interface. Internal transaction submission is not the product center.
 
 The multi-source world-graph A.1 repair is property-verified and has passed an
-independent fresh-context review; A.1 closure is admitted while StateFact
-cutover, activate-effect authority, new interaction actions, and live benchmark
-evidence remain open. The closure contract and evidence are in the
-[Wave A.1 plan](plans/2026-08-15-world-graph-a1.md). The adaptive observation
-policy A.2 implementation has been repaired locally and property-verified but
-is not closure-admitted; a fresh independent review is required. One
-`ObservationOrchestrator` owns selection, explicit adapter lifecycle precedes
-late activation, source capture is separate from per-need satisfaction, and
-the public acquisition value conserves the immutable plan. Agent semantic gaps
-use the sole `request_evidence` ingress through `grounded_tools.v2`; the retired
-dynamic product protocol is deleted. No live benchmark was run:
-[Wave A.2 convergence record](plans/2026-08-15-adaptive-observation-policy-a2.md).
+independent fresh-context review; A.1 closure remains admitted for its identity
+and fusion-decision scope. Repeated A.2 reopenings have withdrawn adaptive-
+acquisition closure and triggered a full-chain convergence review. Implemented
+selector, adapter-lifecycle, per-need and single-product-protocol components are
+retained, but exact request/plan/provider/need/fusion facts are still narrowed
+through control DTOs, BrowserGym and the generic environment still assemble
+duplicate acquisition lifecycles, and static fixtures bypass that chain.
+StateFact/effect/new-interaction work is blocked until R0–R3 establish one
+immutable aggregate per causal phase and one-way model projections. See the
+[full-chain authority contract](runtime-authority-aggregate-convergence.md),
+[R0 consumer inventory and migration map](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md),
+[A.1 plan](plans/2026-08-15-world-graph-a1.md), and
+[A.2 record](plans/2026-08-15-adaptive-observation-policy-a2.md). No live
+benchmark was run.
 
 ## 2. Current implementation truth and work
 
@@ -79,11 +82,10 @@ session continuity.
 See the [current implementation plan](current-implementation-plan.md) and
 [checklist slice](evidence/2026-08-14-advisory-agent-checklist-2758364.md).
 
-Current code still runs the older TaskSpec/ActionContract/StateKernel/
-RuntimeCommitter path by default. The non-default target path has the unified
-DOM/Visual/WoT matrix, semantic confirmation, disposable AgentContext, strict
-model-policy boundary, declared-minimum evaluators, internal harness and pinned
-BrowserGym adapter for their declared scopes.
+Current product code enters the target-only `TargetRuntime -> AgentLoop ->
+AgentRunSession` path; the older transactional product loop is physically
+deleted. The remaining convergence problem is inside that target path: exact
+phase aggregates and one-way projections are not yet conserved end to end.
 
 Three exact MiniWoB-60 runs are current immutable evidence and must not be
 combined: historical clean `b3b64a2` at 6/60, clean `83dc4fa` rerun-v3 at
@@ -165,10 +167,11 @@ Implementation Status is authoritative.
 |---|---|
 | architecture admission and one-default-path migration | [Architecture Governance Track](architecture-governance-track.md) |
 | documentation lifecycle and authority | [Documentation Governance](documentation-governance.md) |
+| phase aggregates, one composition root, and one-way projections | [Runtime Authority Aggregate Convergence](runtime-authority-aggregate-convergence.md) |
 | module ownership and dependency direction | [Responsibility Containment](responsibility-containment-boundary.md) |
 | Runtime/model/adapter/benchmark product boundary | [Runtime-First Boundary](runtime-first-boundary.md) |
 | benchmark neutrality | [Benchmark Governance Boundary](benchmark-governance-boundary.md) |
-| TaskGoal, optional milestones/LocalObjective, and AgentPolicy boundary | [Task Intake and Planner](task-intake-and-planner.md) |
+| TaskGoal and AgentPolicy boundary; deleted planning history | [Task Intake and Planner](task-intake-and-planner.md) |
 | world observation and bounded recovery | [Active Perception and Online Recovery](active-perception-and-online-recovery.md) |
 | short-loop sequencing | [Orchestration and Live Feedback](orchestration-and-feedback.md) |
 | result/effect/task evaluation and telemetry | [Trace and Evaluation](trace-and-evaluation.md) |

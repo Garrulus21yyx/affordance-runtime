@@ -52,10 +52,12 @@ evidence modality, source assurance, and verifier independence: recapturability
 does not imply strong evidence, and strong evidence does not imply that a
 backend can recapture it.
 
-The target world boundary returns a typed `ObservationAcquisition` from reset
-and capture, and a typed `ExecutionOutcome` containing the `ActionResult` plus
-the post-action acquisition outcome. Acquisition distinguishes acquired,
-capability-unavailable, and failed states. A backend without independent
+The target world boundary returns one closed `ObservationAcquisition` from
+reset/capture, retaining its request, plan, correlated provider/per-need
+outcomes, fusion result and typed failure stage. `ExecutionOutcome` composes
+the exact `BoundActionRequest`, `ActionResult` and, after a dispatched action,
+the exact post-action acquisition. Acquisition distinguishes acquired,
+capability-unavailable, failed and acquired-with-unresolved-need states. A backend without independent
 capture keeps the capture operation total by returning typed
 `CAPABILITY_UNAVAILABLE`; it must not surface an incidental cache miss as a raw
 RuntimeError. Reset must still establish the initial observation acquisition.
@@ -97,23 +99,29 @@ explicitly supported independent capture.
 `ControlTransition` is a bounded, run-scoped, decision-scoped typed record of
 what just happened. One accepted policy decision produces exactly one such
 record, including non-action decisions and typed acquisition/admission
-failures. It is not a durable ledger, event stream, replay source, or state
+failures. It composes exact phase aggregates; model/telemetry summaries never
+become its inputs. It is not a durable ledger, event stream, replay source, or state
 reconstruction authority. AgentContext and benchmark/timeout artifacts are
 disposable projections of the current authorities and bounded transition
 suffix.
 
-P5-E adds `VerifiedTaskState` as the run-scoped validated task-frontier
-authority. TaskPlan remains a replaceable hypothesis. The local
-ProgressController continues to contain exact `fill`/`select` repetition;
-TaskProgressAuditor separately evaluates criterion, milestone, and frontier
-progress from validated evidence.
+The bounded full-chain contract is
+[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md).
+Its current implementation is reopened: generic and BrowserGym acquisition
+still have duplicate composition roots, and `FreshAcquisition` plus transition
+summaries narrow exact outcomes before downstream control.
+
+The former P5-E VerifiedTaskState/TaskPlan/frontier owners are deleted. The
+local ProgressController continues to contain exact `fill`/`select` repetition;
+it is not a planner or general task-progress authority. Any future long-horizon
+working state is benchmark-driven work after R0–R3.
 
 M4.6-D adds a narrow ControlFeedbackPolicy with a frozen two-distinct-issue
 same-scope budget for zero-dispatch public admission repair and
 action-page/policy-observation no-gain; exact issue repetition stops immediately.
 It envelopes rather than re-owns source facts, separates request keys from
 request-echo-free results and an identity-free control epoch, stores only bounded
-issue/seen-result state in AgentLoopState, and projects once through `model_boundary/`.
+issue/seen-result state in AgentLoopState, and projects once through `agent/context/`.
 Risk/safety/task terminal, `SENT_UNKNOWN`, component/integrity failure and an
 adapter parameter mismatch after successful Runtime admission remain terminal
 or paused according to their owning contracts and are never model-repair replay.
@@ -131,9 +139,8 @@ External reward is never Runtime task completion.
 
 ## 7. Baseline and target
 
-Current production still uses TaskSpec/ActionContract/StateKernel/
-RuntimeCommitter machinery. That is implementation truth during migration, not
-the target product boundary. The target makes trace optional and keeps strict
-ingestion/evaluation as explicit profiles outside the ordinary GUI loop.
-P5-M0.1 AgentContext architecture is integrated on the non-default path; it does not change the
-default path or restore those legacy owners as target concepts.
+The transactional TaskSpec/ActionContract/StateKernel/RuntimeCommitter product
+loop is physically deleted. Current production uses the target
+`TargetRuntime -> AgentLoop -> AgentRunSession` path. R0–R3 converge its
+remaining aggregate/projection boundaries without restoring legacy owners or
+adding another framework.

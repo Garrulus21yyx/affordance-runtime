@@ -14,9 +14,10 @@ property writes, one bounded same-model tool-intent re-emission, corrected
 normalization telemetry, and a sealed action-specific verification-contract
 digest chain. Observed-world graph A.1 is repaired, property-verified, and
 admitted after independent fresh-context review. Adaptive observation policy
-A.2 selector and acquisition ownership are converged and property-verified;
-generic residual stage two and post-action fallback conserve selected needs.
-Independent fresh-context review remains pending and `LIVE_NOT_RUN` remains. StateFact producer cutover
+A.2 retains implemented selector/provider components, but closure is withdrawn
+by the [full-chain aggregate contract](runtime-authority-aggregate-convergence.md):
+exact acquisition/need facts are narrowed before control consumers and two
+acquisition composition roots remain. `LIVE_NOT_RUN` remains. StateFact producer cutover
 remains a separate open slice; no scroll/press/focus/drag/hover binding is
 admitted and no live benchmark was run.
 
@@ -24,6 +25,11 @@ admitted and no live benchmark was run.
 
 New GUI interactions enter the target Runtime through one capability-onboarding
 chain:
+
+This chain may resume only after R0–R3 establishes exact acquisition,
+execution, evaluation and transition composition. Capability-registry truth
+and current ActionSpace truth stay separate from that lifecycle, but new
+actions must not build on lossy observation/control projections.
 
 ```text
 SemanticActionDefinition             static meaning and public shape

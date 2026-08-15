@@ -7,13 +7,31 @@
 
 ## 2026-08-13 task-authority migration correction
 
-Retain the admitted `TaskSpec` and canonical `TaskPlan<StepSpec>` contracts while
-moving execution to AgentLoop. Do not import the old StateKernel/Coordinator
-execution core, and do not create another planner in AgentLoop, Catalog, model
-transport, projection, or benchmark code. The duplicate target
-`TaskPlan<Milestone>` and attempted `TaskProgram` have been deleted. The active
+The former instruction to retain `TaskSpec` and `TaskPlan<StepSpec>` is
+superseded by the completed T3 owner audit and deletion. The target AgentLoop
+has no workflow-plan ingress or dormant LocalObjective/planner phase. Do not
+restore those contracts in AgentLoop, Catalog, model transport, projection or
+benchmark code. Any future long-horizon planning is a new evidence-driven
+hypothesis layer after R0–R3, not a compatibility projection. The active
 migration is defined by the [Task Execution Authority Map](../../task-execution-authority-map.md).
 > **Active slice:** [Current Implementation Plan](../../current-implementation-plan.md)
+
+## 2026-08-15 full-chain authority convergence correction
+
+Repeated A.2 reopenings trigger the repository convergence protocol. Source
+selection improvements remain implemented components, but A.2 closure is
+withdrawn. The shared cause is cross-boundary aggregate loss: exact
+request/plan/provider/need/fusion facts are narrowed through
+`FreshAcquisition` and `AcquisitionSummary`, while generic, BrowserGym and
+static environments assemble competing acquisition lifecycles. The correction
+is defined by the
+[Runtime authority aggregate convergence contract](../../runtime-authority-aggregate-convergence.md).
+
+Before StateFact/relation/SemanticDelta migration or new interaction families,
+the target must converge every causal phase onto one immutable aggregate and
+make model/telemetry/benchmark values one-way projections only. This is not a
+new transaction platform: no event sourcing, ledger, replay, graph database or
+external workflow framework is introduced.
 
 文件路径为兼容现有治理检查而保留。本文是迁移顺序、退出门和删除门的唯一
 权威；旧 Task Contract/ledger/checkpoint-centered P5 队列已停止。
@@ -41,6 +59,7 @@ freeze target contracts
 → disposable AgentContext + context identity + paging
 → model-backed AgentPolicy + production evaluators + new-loop harness
 → observation acquisition lifecycle + lossless control-transition accounting
+→ full-chain aggregate conservation + single acquisition composition root
 → same-profile diagnostic + evidence-directed semantic/currentness remediation
 → new same-profile breadth run + supported-subset multi-seed gate
 → optional milestone planning and long-horizon loop
@@ -63,6 +82,10 @@ freeze target contracts
 10. one accepted policy decision → exactly one bounded root ControlTransition；它不 replay/reconstruct state。
 11. memory/skill/route hint 必须离线评测后发布，不在线自改。
 12. 每个实现切片必须保持新路径 non-default，直到 P5-H 明确完成默认切换。
+13. 每个因果阶段只有一个不可变闭合聚合；下游组合原对象，不得以
+    `View/Digest/Summary` 或 benchmark/test DTO 重建控制权威。
+14. 被替代 owner、compatibility constructor 和专属测试必须在同一迁移删除，
+    不保留 read-new/fallback-old、dual-write 或 shadow authority。
 
 ## 2. 基线资产与主要债务
 
@@ -140,6 +163,7 @@ P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENC
 P5-M4.5-C same-profile diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
 P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC
 P5-M4.6-F latest-transition P0: IMPLEMENTED_LOCALLY / FULL_VERIFIED_2485_PASS_27_SKIP / LIVE_UNVERIFIED
+R0 runtime authority aggregate convergence: R0_REVIEW_COMPLETE / CONTRACT_ALGEBRA_FROZEN / CONSUMER_INVENTORY_COMPLETE / ATOMIC_MIGRATION_MAP_READY / R1_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN
 M4.6-B residual contract implementation: `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`
 P5-M4.7 supported-subset multi-seed: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
@@ -152,7 +176,7 @@ P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
 | `M0.1a` | bounded `IntentContextView` and one-way `AgentContext` projection | raw intent is source-labelled/context-only; no private route or Runtime owner enters context |
 | `M0.1b` | opaque `ContextIdentity` over task/observation/action-space/page/progress/pending revisions | every typed decision binds current context; stale decision is zero-call |
 | `M0.1c` | bounded world/progress/pending/budget/history views with truthful totals/truncation | projection budgets include total serialized bytes; absence is distinguishable from truncation |
-| `M0.1d` | source assurance summary, LocalObjective relevance and action paging | assurance does not grant authorization; relevance cannot change legality; only current-page action IDs are selectable |
+| `M0.1d` | source assurance summary, action relevance and paging | assurance does not grant authorization; relevance cannot change legality; only current-page action IDs are selectable |
 | `M0.1e` | typed decision union and documentation/contract completeness | SelectAction/RequestObservation/RequestActionPage/AskUser/ProposeDone/Wait/Abort only; no ProposeRecovery platform |
 
 M0.1 is implemented on the non-default target path. The closed profile includes
@@ -279,6 +303,33 @@ evidence，避免同时改 perception lifecycle 和 accounting 后无法归因�
 只回答刚发生什么；AgentLoopState 仍是 authority，禁止 durable ledger、replay、global
 event taxonomy 或 state reconstruction。
 
+The typed origins/statuses, bounded root and later A.2 request/need/provider
+contracts remain migration inputs; they no longer constitute full-chain
+closure separately. R0–R3 must compose exact acquisition, execution and
+evaluation outcomes into the matching decision root and delete lossy summaries
+and the second acquisition lifecycle before any lossless/closure claim returns.
+
+### R0–R3 — Runtime authority aggregate convergence
+
+| Slice | Deliverable | Exit gate |
+|---|---|---|
+| `R0` | freeze closed aggregate/state algebras and repository-wide consumer inventory | one owner/aggregate per phase; projection types mechanically forbidden from authority APIs |
+| `R1` | one acquisition coordinator and exact request→plan→activation→fusion aggregate | generic and BrowserGym paths share the coordinator; every failure conserves its reached stage; static fixtures cannot bypass it |
+| `R2` | exact execution/evaluation/control-transition composition | bound request, dispatch truth, post acquisition, fallback and evaluations remain reachable; summary/reconstruction owners deleted |
+| `R3` | one-way context/tool/transition projection plus contract-faithful test topology | exact `request_evidence` need outcome reaches the next context; held-out/property/fresh-context gates pass |
+
+R0 is complete as an audit/contract slice, with its constructor/consumer
+inventory, legal algebra, redlines, file order and deletion gates in
+[the R0 evidence record](../../evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md).
+It made no production cutover. R1 is the active implementation boundary; R2
+and R3 remain pending.
+
+Implementation and closure are separate. R0–R3 completion requires generated
+state-machine properties across normal, partial, unavailable, failure,
+cancellation, reroute and fallback paths, followed by a fresh independent
+review. A live benchmark follows this architecture gate and remains the final
+generalization evidence.
+
 ### P5-M4.6 — Evidence-directed short-loop remediation
 
 M4.6 只消费 `4924ce6` 的 immutable facts 和同树源码归因；修复后不得回写旧 run。
@@ -297,13 +348,17 @@ M4.6 只消费 `4924ce6` 的 immutable facts 和同树源码归因；修复后�
 新 run ID 和 immutable directory。职责、authority、cohesion 和 change coupling 决定 owner，
 不得按 LOC 机械拆分或形成 projection/ContextBuilder/benchmark god file。
 
-### P5-E — Long-horizon planning
+### P5-E — Future long-horizon planning (prior implementation deleted)
+
+This phase has no current owner or implementation. It is reconsidered only
+after R0–R3 and benchmark evidence; the deleted
+TaskPlan/VerifiedTaskState/LocalObjective contracts are not migration inputs.
 
 | Slice | Deliverable | Exit gate |
 |---|---|---|
-| `E1` | AgentLoop plan progress over canonical TaskPlan/StepSpec contracts | active/completed/failed step state updates only from validated evidence; no parallel planner slots |
-| `E2` | MilestoneEvaluator/TaskProgressAuditor and frontier-derived LocalObjective | auditor cannot choose action or mark TaskEvaluation COMPLETE; local ProgressController remains separate |
-| `E3` | low-frequency TaskPlanner and fact-driven plan replacement | planner output is hypothesis; invalid plan is replaced from verified frontier, not patched through recovery history |
+| `E1` | bounded evidence-backed working-state contract | state changes only from validated evidence; no parallel task-truth owner |
+| `E2` | milestone/constraint evaluation separated from action choice | evaluator cannot choose an action or mark TaskEvaluation COMPLETE outside its contract |
+| `E3` | optional low-frequency planning hypothesis | planner output remains replaceable and cannot bind/execute or restore workflow Runtime owners |
 | `E4` | bounded context: recent 8–12 ControlTransition projections + milestone summary + evidence refs | no full transition/event/observation history in model context |
 | `E5` | ask_user and intermediate verification | complete one 20–50+ accepted-policy root-ControlTransition cross-page/application task without losing constraints |
 
@@ -350,28 +405,29 @@ outside this phase and the core Runtime.
    subject under the target dominance order; until dominance is implemented,
    exact subject equality is the conservative gate. Private binding may fresh-rebind only.
 5. result/receipt alone cannot confirm effect or task completion.
-6. each action/admitted batch gets a typed post-action acquisition; evaluator freshness comes
-   from that outcome or an explicitly supported independent capture.
+6. each dispatched action/admitted batch retains a typed post-action
+   acquisition; `NOT_SENT` fabricates none, and evaluator freshness comes from
+   that exact outcome or an explicitly linked supported independent capture.
 7. SENT_UNKNOWN never replays automatically.
 8. required output exists and content matches.
 9. adapter reports truthful coverage/currentness.
-10. TaskPlan is optional/replaceable hypothesis; evaluators own milestone/task
-    satisfaction, never the plan itself.
+10. any future plan is an optional replaceable hypothesis; evaluators own
+    milestone/task satisfaction, never the plan itself.
 11. Batch respects all barrier/risk/surface limits.
 12. recorder failure cannot alter behavior.
 13. benchmark metadata/reward cannot alter product decisions.
 14. memory/skill never bypasses the loop and is promoted only offline.
 15. AgentContext is one-way/disposable; all decisions bind current context ID.
-16. LocalObjective changes relevance only; source assurance never grants execution authority.
+16. action relevance changes ordering/paging only; source assurance never grants execution authority.
 17. ProposeDone is advisory; criterion-specific Runtime validation owns completion.
 18. acquisition capability and evidence assurance remain distinct; expected unavailable/failed is typed.
 19. one accepted policy decision produces exactly one bounded root ControlTransition;
     transition history never reconstructs AgentLoopState.
-20. VerifiedTaskState accepts only validated evidence promotion; local repetition containment
-    and task-frontier auditing remain separate.
+20. any future working state accepts only validated evidence promotion; local
+    repetition containment remains separate.
 
-Old hash/event/delta tests remain while their baseline path is default. When an old owner is deleted,
-owner-specific tests are deleted rather than translated into permanent target constraints.
+Deleted-owner tests are removed rather than translated into permanent target
+constraints. Historical evidence remains immutable and non-authoritative.
 
 ## 5. Stopped old queue
 
@@ -420,10 +476,11 @@ DONE_NON_DEFAULT: P5-M4.6-C semantic inventory truth — COMPLETE_NON_DEFAULT_FO
 COMPLETE_NON_DEFAULT: P5-M4.6-D bounded control feedback/repair/no-gain
 NOT_STARTED: P5-M4.6-E staged breadth
 BLOCKED: P5-M4.7 supported-subset multi-seed by M4.6 gates
-THEN: P5-E VerifiedTaskState, TaskProgressAuditor and milestone planning
+ACTIVE: R0–R3 full-chain authority aggregate convergence
+THEN: evidence-gated P5-E long-horizon working-state/planning design
 THEN: P5-F bounded ActionBatch
 THEN: P5-G evaluated memory/skill sidecars
-LAST: P5-H breadth, default cutover and old-core deletion
+LAST: P5-H remaining surface breadth and product hardening
 ```
 
 Semantic fusion 继续 deferred，且不是 M0.1/M1 前置。不得先做 Batch/Skill/大规模
