@@ -1,7 +1,11 @@
 """Observed-world contracts, acquisition, fusion, and public state views."""
 
 from affordance_runtime.world.acquisition import (
+    AcquisitionCancelled,
     AcquisitionOrigin,
+    AcquisitionReason,
+    AcquisitionReasonKind,
+    AcquisitionStage,
     AcquisitionStatus,
     ExecutionOutcome,
     ObservationAcquisition,
@@ -11,6 +15,7 @@ from affordance_runtime.world.acquisition import (
     ObservationOffer,
     ObservationRequestKind,
     ObservationSelectionPlan,
+    ProviderActivation,
     SelectedObservationRequest,
     SelectedObservationResult,
     SourceAcquisitionResult,
@@ -54,6 +59,10 @@ from affordance_runtime.world.observation_orchestrator import (
     ObservationOrchestrator,
     ObservationSelectionResult,
 )
+from affordance_runtime.world.orchestrator import (
+    ObservationAcquisitionCoordinator,
+    UnifiedWorldEnvironment,
+)
 from affordance_runtime.world.semantic_inventory import (
     MAX_SEMANTIC_INVENTORY_COUNT,
     SemanticInventoryStatus,
@@ -77,7 +86,11 @@ __all__ = [
     "MAX_SEMANTIC_INVENTORY_COUNT",
     "AcquisitionCost",
     "AcquisitionOrigin",
+    "AcquisitionReason",
+    "AcquisitionReasonKind",
+    "AcquisitionStage",
     "AcquisitionStatus",
+    "AcquisitionCancelled",
     "AgentTargetView",
     "AgentWorldView",
     "CanonicalObservationMedia",
@@ -95,6 +108,7 @@ __all__ = [
     "FusionStatus",
     "FreshnessRequirement",
     "ObservationAcquisition",
+    "ObservationAcquisitionCoordinator",
     "ObservationAssurance",
     "ObservationCapabilities",
     "ObservationConflict",
@@ -110,6 +124,7 @@ __all__ = [
     "ObservationRequestKind",
     "ObservationPurpose",
     "ObservationSelectionPlan",
+    "ProviderActivation",
     "ObservationSelectionResult",
     "ObservationSourceProfile",
     "ObservationStructureNode",
@@ -132,6 +147,7 @@ __all__ = [
     "WorldFusionResult",
     "WorldObservation",
     "WorldObservationRequest",
+    "UnifiedWorldEnvironment",
     "assurance_satisfies",
     "build_agent_world_view",
     "derive_visual_evidence_needs",

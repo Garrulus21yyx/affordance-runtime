@@ -56,6 +56,7 @@ StateFact/effect/new-interaction work is blocked until R0–R3 establish one
 immutable aggregate per causal phase and one-way model projections. See the
 [full-chain authority contract](runtime-authority-aggregate-convergence.md),
 [R0 consumer inventory and migration map](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md),
+[R1 acquisition convergence evidence](evidence/2026-08-15-runtime-authority-r1-closure.md),
 [A.1 plan](plans/2026-08-15-world-graph-a1.md), and
 [A.2 record](plans/2026-08-15-adaptive-observation-policy-a2.md). No live
 benchmark was run.

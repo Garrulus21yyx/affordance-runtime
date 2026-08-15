@@ -55,6 +55,7 @@ from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
+    AcquisitionStatus,
     ExecutionOutcome,
     ObservationRequestKind,
     WorldObservationRequest,
@@ -76,7 +77,8 @@ async def execute_cycle(
     if session.observation_count >= task.loop_budget.max_observations:
         scope.set_reason("observation_budget_exhausted")
         return Terminate(
-            AgentLoopStatus.FAILED, "observation_budget_exhausted",
+            AgentLoopStatus.FAILED,
+            "observation_budget_exhausted",
             "agent loop observation budget exhausted",
         )
     before = state.current_observation
@@ -85,14 +87,11 @@ async def execute_cycle(
     except BindingError:
         return await _binding_refresh(session, before.observation_id, scope)
     current = session.current_context_snapshot
-    if (
-        current is None
-        or request.context_id != current.context_id
-        or session.consumed_context_id != request.context_id
-    ):
+    if current is None or request.context_id != current.context_id or session.consumed_context_id != request.context_id:
         scope.set_reason("stale_bound_request")
         return Terminate(
-            AgentLoopStatus.BLOCKED, "stale_bound_request",
+            AgentLoopStatus.BLOCKED,
+            "stale_bound_request",
             "bound request context is not current",
         )
     verification_needs = observation_needs_for_verification(
@@ -101,7 +100,10 @@ async def execute_cycle(
     )
     request = replace(request, verification_needs=verification_needs)
     outcome = await _execute_boundary(
-        session, request, before.observation_id, scope,
+        session,
+        request,
+        before.observation_id,
+        scope,
     )
     result = outcome.result
     probe_error = False
@@ -118,7 +120,8 @@ async def execute_cycle(
     if probe_error:
         scope.set_reason("invalid_currentness_probe_count")
         return Terminate(
-            AgentLoopStatus.FAILED, "invalid_currentness_probe_count",
+            AgentLoopStatus.FAILED,
+            "invalid_currentness_probe_count",
             "adapter returned invalid currentness probe metadata",
             failure_stage=FailureStage.EXECUTION,
             failure_kind=FailureKind.INVALID_OUTPUT,
@@ -126,14 +129,21 @@ async def execute_cycle(
     if result.request_id != request.request_id or result.backend != request.binding.executor_id:
         scope.set_reason("action_result_lineage_mismatch")
         return Terminate(
-            AgentLoopStatus.FAILED, "action_result_lineage_mismatch",
+            AgentLoopStatus.FAILED,
+            "action_result_lineage_mismatch",
             "action result lineage mismatch",
             failure_stage=FailureStage.EXECUTION,
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     if result.dispatch_status is DispatchStatus.NOT_SENT:
         rerouted = await _reroute_not_sent(
-            session, selection, decision, request, result, binder, scope,
+            session,
+            selection,
+            decision,
+            request,
+            result,
+            binder,
+            scope,
         )
         if isinstance(rerouted, LoopDirective):
             return rerouted
@@ -144,7 +154,8 @@ async def execute_cycle(
         except ValueError:
             scope.set_reason("invalid_currentness_probe_count")
             return Terminate(
-                AgentLoopStatus.FAILED, "invalid_currentness_probe_count",
+                AgentLoopStatus.FAILED,
+                "invalid_currentness_probe_count",
                 "adapter returned invalid currentness probe metadata",
                 failure_stage=FailureStage.EXECUTION,
                 failure_kind=FailureKind.INVALID_OUTPUT,
@@ -152,7 +163,8 @@ async def execute_cycle(
         if result.request_id != request.request_id or result.backend != request.binding.executor_id:
             scope.set_reason("action_result_lineage_mismatch")
             return Terminate(
-                AgentLoopStatus.FAILED, "action_result_lineage_mismatch",
+                AgentLoopStatus.FAILED,
+                "action_result_lineage_mismatch",
                 "action result lineage mismatch",
                 failure_stage=FailureStage.EXECUTION,
                 failure_kind=FailureKind.INVALID_OUTPUT,
@@ -166,7 +178,8 @@ async def execute_cycle(
         if result.dispatch_status is DispatchStatus.NOT_SENT:
             scope.set_reason("route_exhausted")
             return Terminate(
-                AgentLoopStatus.FAILED, "route_exhausted",
+                AgentLoopStatus.FAILED,
+                "route_exhausted",
                 "all bounded equivalent routes were not dispatched",
                 failure_stage=FailureStage.EXECUTION,
                 failure_kind=FailureKind.CALL_FAILED,
@@ -186,7 +199,10 @@ async def execute_cycle(
             request.verification_needs,
         )
         fallback = await capture_for_session(
-            session, before.observation_id, fallback_request, scope,
+            session,
+            before.observation_id,
+            fallback_request,
+            scope,
         )
         acquired = post_action_fallback_result(primary, fallback)
     if acquired.observation is None:
@@ -194,15 +210,29 @@ async def execute_cycle(
     state.install_observation(acquired.observation)
     scope.record_after(acquired.observation.observation_id)
     return await _evaluate_after(
-        session, selection, decision, request, result, before, acquired.observation,
-        action_evaluator, task_evaluator,
+        session,
+        selection,
+        decision,
+        request,
+        result,
+        before,
+        acquired.observation,
+        action_evaluator,
+        task_evaluator,
         scope,
     )
 
 
 async def _evaluate_after(
-    session, selection, decision, request, result, before, after,
-    action_evaluator, task_evaluator,
+    session,
+    selection,
+    decision,
+    request,
+    result,
+    before,
+    after,
+    action_evaluator,
+    task_evaluator,
     scope,
 ) -> LoopDirective:
     task, state = session.task, session.state
@@ -210,7 +240,12 @@ async def _evaluate_after(
     prior_action_space = session.current_action_space
     try:
         action_evaluation = await validated_action_evaluation(
-            action_evaluator, task, before, request, result, after,
+            action_evaluator,
+            task,
+            before,
+            request,
+            result,
+            after,
         )
     except asyncio.CancelledError:
         raise
@@ -218,7 +253,9 @@ async def _evaluate_after(
         scope.record_evaluations()
         scope.set_reason("action_evaluation_invalid")
         return Terminate(
-            AgentLoopStatus.FAILED, "action_evaluation_invalid", str(exc),
+            AgentLoopStatus.FAILED,
+            "action_evaluation_invalid",
+            str(exc),
             failure_stage=FailureStage.EVALUATION,
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
@@ -240,7 +277,9 @@ async def _evaluate_after(
     except ValueError as exc:
         scope.set_reason("task_evaluation_invalid")
         return Terminate(
-            AgentLoopStatus.FAILED, "task_evaluation_invalid", str(exc),
+            AgentLoopStatus.FAILED,
+            "task_evaluation_invalid",
+            str(exc),
             failure_stage=FailureStage.EVALUATION,
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
@@ -256,7 +295,11 @@ async def _evaluate_after(
     scope.record_evaluations(task=task_evaluation)
     state.current_task_evaluation = task_evaluation
     progress_event = record_execution_progress(
-        session, selection, action_evaluation, after, task_evaluation,
+        session,
+        selection,
+        action_evaluation,
+        after,
+        task_evaluation,
     )
     scope.set_reason(f"action_{action_evaluation.status}")
     contextual_disposition = task_evaluation_disposition_for_world(
@@ -266,10 +309,14 @@ async def _evaluate_after(
         session.environment.observation_capabilities,
     )
     outcome = post_action_result(
-        task, state, request, result, action_evaluation, task_evaluation,
+        task,
+        state,
+        request,
+        result,
+        action_evaluation,
+        task_evaluation,
         unknown_recoverable=(
-            task_evaluation.status == TaskEvaluationStatus.UNKNOWN
-            and contextual_disposition.status is None
+            task_evaluation.status == TaskEvaluationStatus.UNKNOWN and contextual_disposition.status is None
         ),
     )
     if isinstance(outcome, Continue) and progress_event is not None and progress_event.strategy_transition_required:
@@ -307,8 +354,7 @@ async def _evaluate_after(
                 prior_action_space is None
                 or public_action_contract_digest(before, prior_action_space)
                 != public_action_contract_digest(after, action_space),
-                task_progress_fingerprint(prior_task_evaluation)
-                != task_progress_fingerprint(task_evaluation),
+                task_progress_fingerprint(prior_task_evaluation) != task_progress_fingerprint(task_evaluation),
             ),
             recovery=RecoveryConstraints(
                 repeat_previous_decision_allowed=False,
@@ -369,7 +415,8 @@ async def _reroute_not_sent(
     if result.error not in reroutable:
         scope.set_reason("action_not_dispatched")
         return Terminate(
-            AgentLoopStatus.FAILED, "action_not_dispatched",
+            AgentLoopStatus.FAILED,
+            "action_not_dispatched",
             "action was not dispatched",
             failure_stage=FailureStage.EXECUTION,
             failure_kind=FailureKind.CALL_FAILED,
@@ -388,7 +435,9 @@ async def _reroute_not_sent(
         )
         if acquired.observation is None:
             return Terminate(
-                AgentLoopStatus.FAILED, acquired.reason_code, acquired.reason_code,
+                AgentLoopStatus.FAILED,
+                acquired.reason_code,
+                acquired.reason_code,
                 failure_code=acquired.failure_code,
             )
         before = acquired.observation
@@ -399,18 +448,22 @@ async def _reroute_not_sent(
         if option is None:
             scope.set_reason("route_revalidation_failed")
             return Terminate(
-                AgentLoopStatus.FAILED, "route_revalidation_failed",
+                AgentLoopStatus.FAILED,
+                "route_revalidation_failed",
                 "fresh ActionSpace has no equivalent semantic action",
                 failure_stage=FailureStage.EXECUTION,
                 failure_kind=FailureKind.INVALID_OUTPUT,
             )
         admission = session.agent_loop.action_space_builder.try_admit(
-            option, dict(selection.parameters), selection.destination_id,
+            option,
+            dict(selection.parameters),
+            selection.destination_id,
         )
         if admission.admitted is None:
             scope.set_reason("route_readmission_rejected")
             return Terminate(
-                AgentLoopStatus.FAILED, "route_readmission_rejected",
+                AgentLoopStatus.FAILED,
+                "route_readmission_rejected",
                 "fresh equivalent action failed normal admission",
                 failure_stage=FailureStage.CONTROL,
                 failure_kind=FailureKind.REJECTED,
@@ -419,8 +472,7 @@ async def _reroute_not_sent(
     excluded_binding_ids = {request.binding.binding_id}
     if before.observation_id != before_id:
         different_surface = any(
-            binding.binding_id in current_selection.eligible_binding_ids
-            and binding.surface != request.binding.surface
+            binding.binding_id in current_selection.eligible_binding_ids and binding.surface != request.binding.surface
             for binding in before.bindings
         )
         excluded_binding_ids = {
@@ -438,13 +490,17 @@ async def _reroute_not_sent(
     except BindingError:
         scope.set_reason("no_equivalent_alternate_route")
         return Terminate(
-            AgentLoopStatus.FAILED, "no_equivalent_alternate_route",
+            AgentLoopStatus.FAILED,
+            "no_equivalent_alternate_route",
             "no current equivalent alternate route was available",
             failure_stage=FailureStage.EXECUTION,
             failure_kind=FailureKind.CALL_FAILED,
         )
     alternate_outcome = await _execute_boundary(
-        session, alternate_request, before.observation_id, scope,
+        session,
+        alternate_request,
+        before.observation_id,
+        scope,
     )
     return current_selection, alternate_request, alternate_outcome, before
 
@@ -453,19 +509,23 @@ def _equivalent_option(
     options: tuple[ActionOption, ...],
     previous: AdmittedActionSelection,
 ) -> ActionOption | None:
-    return next((
-        option for option in options
-        if option.semantic_action == previous.semantic_action
-        and option.target_id == previous.target_id
-        and option.effect_category == previous.effect_category
-        and option.semantic_effects == previous.semantic_effects
-        and option.schema_digest == previous.schema_digest
-        and option.observation_barrier == previous.observation_barrier
-        and option.destination_required == previous.destination_required
-        and option.eligible_destination_ids == previous.eligible_destination_ids
-        and option.verification_contract_digest == previous.verification_contract_digest
-        and _risk_rank(option.risk) <= _risk_rank(previous.risk)
-    ), None)
+    return next(
+        (
+            option
+            for option in options
+            if option.semantic_action == previous.semantic_action
+            and option.target_id == previous.target_id
+            and option.effect_category == previous.effect_category
+            and option.semantic_effects == previous.semantic_effects
+            and option.schema_digest == previous.schema_digest
+            and option.observation_barrier == previous.observation_barrier
+            and option.destination_required == previous.destination_required
+            and option.eligible_destination_ids == previous.eligible_destination_ids
+            and option.verification_contract_digest == previous.verification_contract_digest
+            and _risk_rank(option.risk) <= _risk_rank(previous.risk)
+        ),
+        None,
+    )
 
 
 def _risk_rank(risk: object) -> int:
@@ -485,15 +545,25 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         outcome = await session.environment.execute(request)
     except asyncio.CancelledError:
         _record_execute_exception(
-            session, scope, request, attempt_id,
-            AttemptDisposition.CANCELLED, "execute_cancelled", "CancelledError",
+            session,
+            scope,
+            request,
+            attempt_id,
+            AttemptDisposition.CANCELLED,
+            "execute_cancelled",
+            "CancelledError",
         )
         raise
     except Exception as exc:
         exception_class = safe_exception_class(exc)
         _record_execute_exception(
-            session, scope, request, attempt_id,
-            AttemptDisposition.THREW, "execute_exception", exception_class,
+            session,
+            scope,
+            request,
+            attempt_id,
+            AttemptDisposition.THREW,
+            "execute_exception",
+            exception_class,
         )
         session.pending_runtime_failure = RuntimeFailure(
             FailureStage.EXECUTION,
@@ -504,8 +574,13 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         raise
     if not isinstance(outcome, ExecutionOutcome) or not isinstance(outcome.result, ActionResult):
         _record_execute_exception(
-            session, scope, request, attempt_id,
-            AttemptDisposition.MALFORMED, "execute_malformed", "",
+            session,
+            scope,
+            request,
+            attempt_id,
+            AttemptDisposition.MALFORMED,
+            "execute_malformed",
+            "",
         )
         session.pending_runtime_failure = RuntimeFailure(
             FailureStage.EXECUTION,
@@ -514,10 +589,7 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         )
         raise TypeError("WorldEnvironment.execute returned a malformed contract")
     result = outcome.result
-    request_lineage_valid = (
-        result.request_id == request.request_id
-        and result.backend == request.binding.executor_id
-    )
+    request_lineage_valid = result.request_id == request.request_id and result.backend == request.binding.executor_id
     public_result = ActionResult(
         safe_boundary_identity(result.request_id, request.request_id, kind="request"),
         result.dispatch_status,
@@ -552,7 +624,11 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         request.request_id,
         public_result.request_id,
         request_lineage_valid,
-        acquisition_status=primary.status,
+        acquisition_status=(
+            AcquisitionStatus.FAILED
+            if primary.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE and primary.attempts
+            else primary.status
+        ),
     )
     session.accounting.record(receipt)
     scope.record_execution_receipt(receipt, request.request_id, request.intent, public_result)
@@ -560,7 +636,13 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
 
 
 def _record_execute_exception(
-    session, scope, request, attempt_id, disposition, reason_code, exception_class,
+    session,
+    scope,
+    request,
+    attempt_id,
+    disposition,
+    reason_code,
+    exception_class,
 ) -> None:
     receipt = AttemptReceipt(
         attempt_id,

@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     CriterionEvaluation,
     CriterionEvaluationStatus,
@@ -14,7 +15,6 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_task_evaluation
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedActionEvaluator, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def _evaluation(status=TaskEvaluationStatus.COMPLETE, **changes) -> TaskEvaluation:
@@ -104,9 +104,9 @@ def test_agent_loop_rejects_invalid_initial_complete_without_policy_or_execution
 
     async def scenario() -> None:
         policy = ScriptedPolicy([])
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), UntrustedTaskEvaluator())
-        ).run(StaticEnvironment([_world("after", True)]), _criterion_task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), UntrustedTaskEvaluator())).run(
+            ScriptedEnvironment(initial_observation=_world("after", True)), _criterion_task()
+        )
 
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 0
@@ -125,9 +125,15 @@ def test_agent_loop_rejects_invalid_initial_complete_without_policy_or_execution
     ),
 )
 def test_task_outcome_status_matrix_rejects_every_cross_kind(kind, status) -> None:
-    refs = ("fact:after:enabled",) if kind in {
-        TaskOutcomeKind.TERMINAL_SUCCESS, TaskOutcomeKind.TERMINAL_FAILURE,
-    } else ()
+    refs = (
+        ("fact:after:enabled",)
+        if kind
+        in {
+            TaskOutcomeKind.TERMINAL_SUCCESS,
+            TaskOutcomeKind.TERMINAL_FAILURE,
+        }
+        else ()
+    )
     with pytest.raises(ValueError, match="contradicts"):
         TaskEvaluation(
             "enable-shared",

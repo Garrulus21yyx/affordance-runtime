@@ -10,9 +10,6 @@ from hypothesis import strategies as st
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.surfaces.browsergym.projection import (
-    project_browsergym_observation,
-)
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
     BrowserGymSemanticError,
@@ -23,6 +20,9 @@ from affordance_runtime.surfaces.browsergym.semantics import (
 )
 from affordance_runtime.world import SemanticInventoryStatus
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
+from tests.support.surfaces.browsergym.projection_support import (
+    project_browsergym_observation,
+)
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-canonical-semantics-tests")
 

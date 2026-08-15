@@ -603,7 +603,9 @@ def instrument_task_evaluator(evaluator, instrumentation: BenchmarkInstrumentati
 
 
 def _executed_count(environment) -> int | None:
-    requests = getattr(environment, "executed_requests", None)
+    requests = getattr(environment, "dispatched_requests", None)
+    if requests is None:
+        requests = getattr(environment, "executed_requests", None)
     return len(requests) if isinstance(requests, list) else None
 
 

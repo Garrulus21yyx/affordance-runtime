@@ -16,10 +16,10 @@ from affordance_runtime.agent import (
 from affordance_runtime.app import (
     compose_target_runtime,
 )
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import ReadyTask, RiskProfile, TaskInputRequired
 from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.world import fused_world
 
 
@@ -77,7 +77,7 @@ def test_target_runtime_runs_natural_language_request_and_resumes_input() -> Non
     async def scenario() -> None:
         policy = AskForAccountPolicy()
         runtime = _runtime(policy)
-        outcome = await runtime.run_request(StaticEnvironment((_world(),)), _request())
+        outcome = await runtime.run_request(ScriptedEnvironment(initial_observation=_world()), _request())
 
         assert isinstance(outcome, TargetRuntimeRunOutcome)
         assert isinstance(outcome.intake, ReadyTask)
@@ -109,14 +109,16 @@ def test_target_runtime_preserves_nonready_intake_without_environment_access() -
             raise AssertionError("nonready runtime intake must not reset the environment")
 
     environment = Environment()
-    outcome = asyncio.run(_runtime().run_request(
-        environment,
-        NaturalLanguageTaskRequest(
-            "task:target-runtime-nonready",
-            "Modify the selected account",
-            TaskBoundary(risk_profile=RiskProfile.LOW),
-        ),
-    ))
+    outcome = asyncio.run(
+        _runtime().run_request(
+            environment,
+            NaturalLanguageTaskRequest(
+                "task:target-runtime-nonready",
+                "Modify the selected account",
+                TaskBoundary(risk_profile=RiskProfile.LOW),
+            ),
+        )
+    )
 
     assert isinstance(outcome.intake, TaskInputRequired)
     assert not outcome.started
@@ -132,7 +134,7 @@ def test_target_runtime_runs_one_pre_admitted_request_without_recompiling() -> N
         admitted = runtime.admit(_request(account="primary"))
         assert isinstance(admitted, ReadyTask)
 
-        outcome = await runtime.run_admitted(StaticEnvironment((_world(),)), admitted)
+        outcome = await runtime.run_admitted(ScriptedEnvironment(initial_observation=_world()), admitted)
 
         assert outcome.result is not None
         assert outcome.result.status is AgentLoopStatus.DONE

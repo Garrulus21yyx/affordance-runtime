@@ -6,6 +6,7 @@ import pytest
 
 from affordance_runtime.agent import Abort, AgentLoop, Wait
 from affordance_runtime.agent.control_transition import ControlTransitionScope
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
@@ -13,7 +14,6 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 class UnusedPolicy:
@@ -33,26 +33,22 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
     current: TaskEvaluationStatus,
 ) -> None:
     async def scenario() -> None:
-        session = await (
-            AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(StaticEnvironment([_world("current", False)]), _task())
+        session = await (AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(initial_observation=_world("current", False)), _task()
+        )
         decision = Wait("context:history", "history", 1)
         old = TaskEvaluation(
             _task().task_id,
             "current",
             historical,
             "historical",
-            completion_evidence_refs=("fact:historical",)
-            if historical is TaskEvaluationStatus.COMPLETE
-            else (),
+            completion_evidence_refs=("fact:historical",) if historical is TaskEvaluationStatus.COMPLETE else (),
         )
         scope = ControlTransitionScope(session.state, decision)
         scope.record_evaluations(task=old)
         scope.set_reason("history_recorded")
         scope.finalize(session.state, None)
-        session.state.current_task_evaluation = TaskEvaluation(
-            _task().task_id, "current", current, "current authority"
-        )
+        session.state.current_task_evaluation = TaskEvaluation(_task().task_id, "current", current, "current authority")
 
         snapshot = session.snapshot_partial_episode()
         assert snapshot.latest_task_status == str(current)
@@ -62,9 +58,9 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
 
 def test_snapshot_fails_closed_on_current_task_evaluation_lineage_mismatch() -> None:
     async def scenario() -> None:
-        session = await (
-            AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(StaticEnvironment([_world("current", False)]), _task())
+        session = await (AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(initial_observation=_world("current", False)), _task()
+        )
         session.state.current_task_evaluation = TaskEvaluation(
             _task().task_id,
             "stale-observation",
@@ -80,9 +76,9 @@ def test_snapshot_fails_closed_on_current_task_evaluation_lineage_mismatch() -> 
 
 def test_snapshot_projects_only_current_canonical_task_outcome() -> None:
     async def scenario() -> None:
-        session = await (
-            AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(StaticEnvironment([_world("current", False)]), _task())
+        session = await (AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(initial_observation=_world("current", False)), _task()
+        )
         session.state.current_task_evaluation = TaskEvaluation(
             _task().task_id,
             "current",

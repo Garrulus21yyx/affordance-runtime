@@ -30,9 +30,7 @@ def safe_boundary_identity(actual: str, expected: str, *, kind: str) -> str:
 
     if actual == expected and kind == "request":
         return expected
-    digest = hashlib.sha256(
-        f"{kind}\0{actual}".encode("utf-8", errors="surrogatepass")
-    ).hexdigest()
+    digest = hashlib.sha256(f"{kind}\0{actual}".encode("utf-8", errors="surrogatepass")).hexdigest()
     return f"{kind}_sha256_{digest}"
 
 
@@ -74,25 +72,15 @@ class AttemptReceipt:
             raise TypeError("attempt operation must be typed")
         if not isinstance(self.disposition, AttemptDisposition):
             raise TypeError("attempt disposition must be typed")
-        if self.expected_origin is not None and not isinstance(
-            self.expected_origin, AcquisitionOrigin
-        ):
+        if self.expected_origin is not None and not isinstance(self.expected_origin, AcquisitionOrigin):
             raise TypeError("expected acquisition origin must be typed")
-        if self.actual_origin is not None and not isinstance(
-            self.actual_origin, AcquisitionOrigin
-        ):
+        if self.actual_origin is not None and not isinstance(self.actual_origin, AcquisitionOrigin):
             raise TypeError("actual acquisition origin must be typed")
-        if self.dispatch_status is not None and not isinstance(
-            self.dispatch_status, DispatchStatus
-        ):
+        if self.dispatch_status is not None and not isinstance(self.dispatch_status, DispatchStatus):
             raise TypeError("attempt dispatch status must be typed")
-        if self.request_lineage_valid is not None and type(
-            self.request_lineage_valid
-        ) is not bool:
+        if self.request_lineage_valid is not None and type(self.request_lineage_valid) is not bool:
             raise TypeError("attempt request lineage must be boolean")
-        if self.acquisition_status is not None and not isinstance(
-            self.acquisition_status, AcquisitionStatus
-        ):
+        if self.acquisition_status is not None and not isinstance(self.acquisition_status, AcquisitionStatus):
             raise TypeError("attempt acquisition status must be typed")
         if _ATTEMPT_ID.fullmatch(self.attempt_id) is None:
             raise ValueError("attempt receipt identity is invalid")
@@ -141,25 +129,31 @@ class AttemptReceipt:
             ):
                 raise ValueError("reset attempt violates the physical operation matrix")
             if returned:
-                if (
-                    self.actual_origin is None
-                    or self.acquisition_status is None
-                ):
+                if self.actual_origin is None or self.acquisition_status is None:
                     raise ValueError("returned reset requires typed acquisition truth")
             elif self.actual_origin is not None or self.acquisition_status is not None:
                 raise ValueError("failed reset cannot fabricate acquisition truth")
             return
 
         if self.operation is AttemptOperation.CAPTURE:
+            preselection_unavailable = (
+                returned
+                and self.acquisition_attempts == 0
+                and self.actual_origin is None
+                and self.acquisition_status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+            )
             if (
                 self.expected_origin is not AcquisitionOrigin.INDEPENDENT_CAPTURE
                 or (
-                    self.acquisition_attempts,
-                    self.execution_attempts,
-                    self.effectful_dispatches,
-                    self.currentness_probe_count,
+                    not preselection_unavailable
+                    and (
+                        self.acquisition_attempts,
+                        self.execution_attempts,
+                        self.effectful_dispatches,
+                        self.currentness_probe_count,
+                    )
+                    != (1, 0, 0, 0)
                 )
-                != (1, 0, 0, 0)
                 or self.dispatch_status is not None
                 or self.expected_request_id
                 or self.actual_request_id
@@ -167,12 +161,9 @@ class AttemptReceipt:
             ):
                 raise ValueError("capture attempt violates the physical operation matrix")
             if returned:
-                if self.actual_origin is None or self.acquisition_status is None:
+                if not preselection_unavailable and (self.actual_origin is None or self.acquisition_status is None):
                     raise ValueError("returned capture requires typed acquisition truth")
-            elif (
-                self.actual_origin is not None
-                or self.acquisition_status is not AcquisitionStatus.FAILED
-            ):
+            elif self.actual_origin is not None or self.acquisition_status is not AcquisitionStatus.FAILED:
                 raise ValueError("failed capture requires explicit failed acquisition truth")
             return
 
@@ -194,9 +185,7 @@ class AttemptReceipt:
                 or self.acquisition_status is None
             ):
                 raise ValueError("returned execute violates the disposition matrix")
-            if self.request_lineage_valid and (
-                self.actual_request_id != self.expected_request_id
-            ):
+            if self.request_lineage_valid and (self.actual_request_id != self.expected_request_id):
                 raise ValueError("valid execute lineage requires matching request identity")
             expected_acquisition_attempts = {
                 AcquisitionStatus.ACQUIRED: 1,
@@ -207,9 +196,7 @@ class AttemptReceipt:
                 self.actual_origin is not AcquisitionOrigin.POST_ACTION
                 or self.acquisition_attempts != expected_acquisition_attempts
             ):
-                raise ValueError(
-                    "returned execute acquisition truth violates its status matrix"
-                )
+                raise ValueError("returned execute acquisition truth violates its status matrix")
         elif (
             self.acquisition_attempts,
             self.effectful_dispatches,

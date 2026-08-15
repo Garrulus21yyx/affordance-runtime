@@ -1,39 +1,8 @@
-"""Pure BrowserGym acquisition identity and typed outcome mechanics."""
+"""Pure BrowserGym physical lifecycle identity helpers."""
 
 from __future__ import annotations
 
 import hashlib
-
-from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
-from affordance_runtime.world import (
-    AcquisitionOrigin,
-    AcquisitionStatus,
-    ExecutionOutcome,
-    ObservationAcquisition,
-)
-
-
-def not_sent_outcome(
-    request: BoundActionRequest,
-    error: ActionError,
-    *,
-    probe_count: int = 1,
-) -> ExecutionOutcome:
-    result = ActionResult(
-        request.request_id, DispatchStatus.NOT_SENT, "browsergym", False, error,
-        {"currentness_probe_count": probe_count, "effectful_dispatch_count": 0},
-    )
-    post = ObservationAcquisition(
-        AcquisitionStatus.CAPABILITY_UNAVAILABLE,
-        AcquisitionOrigin.POST_ACTION,
-        None,
-        "action_not_dispatched",
-    )
-    return ExecutionOutcome(result, post)
-
-
-def failed_acquisition(origin: AcquisitionOrigin, code: str) -> ObservationAcquisition:
-    return ObservationAcquisition(AcquisitionStatus.FAILED, origin, None, code)
 
 
 def task_info(info: object) -> dict[str, object]:

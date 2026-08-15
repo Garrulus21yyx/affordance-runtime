@@ -15,9 +15,9 @@ from affordance_runtime.agent import (
     SelectAction,
 )
 from affordance_runtime.agent.control_feedback import ControlFeedbackKind
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def test_invalid_parameters_reach_next_normal_policy_context_once_then_correct() -> None:
@@ -33,13 +33,12 @@ def test_invalid_parameters_reach_next_normal_policy_context_once_then_correct()
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
-            [_world("before", False), _world("after", True)],
-            [_sent(DispatchStatus.SENT, True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=[_sent(DispatchStatus.SENT, True)],
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.DONE
         assert environment.execute_calls == 1
@@ -76,10 +75,8 @@ def test_same_issue_with_different_invalid_values_terminates_without_execution()
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([_world("before", False)])
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -101,10 +98,8 @@ def test_action_page_identity_churn_cannot_bypass_no_gain_repetition() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([_world("before", False)])
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -127,10 +122,8 @@ def test_casefold_equivalent_page_queries_are_bounded_as_one_no_gain_issue() -> 
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([_world("before", False)])
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -142,8 +135,7 @@ def test_casefold_equivalent_page_queries_are_bounded_as_one_no_gain_issue() -> 
         assert environment.execute_calls == 0
         assert environment.capture_calls == 0
         assert all(
-            not transition.execution_attempts
-            and not transition.acquisition_attempts
+            not transition.execution_attempts and not transition.acquisition_attempts
             for transition in result.control_transitions
         )
 
@@ -161,10 +153,8 @@ def test_distinct_requests_with_same_page_result_are_bounded() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([_world("before", False)])
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -204,15 +194,11 @@ def test_generated_request_view_churn_without_new_facts_is_bounded(
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=_world("before", False),
-            independent_observations=tuple(
-                _world(f"fresh-{index}", False) for index in range(5)
-            ),
+            independent_observations=tuple(_world(f"fresh-{index}", False) for index in range(5)),
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -244,15 +230,11 @@ def test_page_and_unchanged_policy_observation_cannot_reset_each_other() -> None
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=_world("before", False),
-            independent_observations=tuple(
-                _world(f"fresh-{index}", False) for index in range(6)
-            ),
+            independent_observations=tuple(_world(f"fresh-{index}", False) for index in range(6)),
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -282,16 +264,14 @@ def test_policy_observation_fresh_identity_without_semantic_gain_is_bounded() ->
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=_world("before", False),
             independent_observations=(
                 _world("fresh-one", False),
                 _world("fresh-two", False),
             ),
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -320,13 +300,11 @@ def test_policy_observation_task_terminal_precedes_no_gain_feedback() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=_world("before", False),
             independent_observations=(_world("terminal", True),),
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.DONE
         assert policy.calls == 1
@@ -350,10 +328,8 @@ def test_three_distinct_admission_page_issues_share_one_budget() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([_world("before", False)])
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
@@ -375,19 +351,12 @@ def test_adapter_invalid_parameters_after_admission_is_not_policy_repair() -> No
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
-            [_world("before", False)],
-            [ActionResult(
-                "*",
-                DispatchStatus.NOT_SENT,
-                "dom",
-                False,
-                ActionError.INVALID_PARAMETERS,
-            )],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("before", False),),
+            results=[ActionResult("*", DispatchStatus.NOT_SENT, "dom", False, ActionError.INVALID_PARAMETERS)],
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.FAILED
         assert result.reason_code == "action_not_dispatched"
@@ -412,13 +381,12 @@ def test_no_effect_feedback_carries_expected_observed_delta_and_mechanical_recov
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
-            [_world("before", False), _world("after", False)],
-            [_sent(DispatchStatus.SENT, True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", False),),
+            results=[_sent(DispatchStatus.SENT, True)],
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         feedback = policy.contexts[1].control_feedback
         assert feedback is not None
@@ -447,13 +415,12 @@ def test_exact_replay_after_confirmed_no_effect_is_zero_dispatch() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
-            [_world("before", False), _world("after", False)],
-            [_sent(DispatchStatus.SENT, True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", False),),
+            results=[_sent(DispatchStatus.SENT, True)],
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.FAILED
         assert result.reason_code == "no_progress_repetition"
@@ -476,13 +443,12 @@ def test_empty_no_gain_filter_restores_default_recovery_page_without_new_epoch()
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
-            [_world("before", False), _world("after", True)],
-            [_sent(DispatchStatus.SENT, True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=[_sent(DispatchStatus.SENT, True)],
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         recovery = policy.contexts[2]
         assert recovery.control_feedback is not None
@@ -530,15 +496,13 @@ def test_relevant_public_semantic_gain_resets_issue_budget() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=before,
             independent_observations=(renamed,),
             post_observations=(_world("after", True),),
             results=(_sent(DispatchStatus.SENT, True),),
         )
-        result = await (
-            AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
 
         assert result.status is AgentLoopStatus.DONE
         assert policy.calls == 4

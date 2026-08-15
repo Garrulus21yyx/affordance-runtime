@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
@@ -10,15 +10,22 @@ from affordance_runtime.agent import (
     AgentSessionStartError,
 )
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
-from affordance_runtime.agent.observation_control import capture_fresh
+from affordance_runtime.agent.observation_control import (
+    capture_fresh,
+    post_action_fallback_result,
+    validate_fresh_acquisition,
+)
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionOrigin,
+    AcquisitionReason,
+    AcquisitionReasonKind,
+    AcquisitionStage,
     AcquisitionStatus,
     ExecutionOutcome,
-    ObservationAcquisition,
     ObservationAssurance,
     ObservationCapabilities,
     ObservationModality,
@@ -29,7 +36,7 @@ from affordance_runtime.world import (
     WorldObservation,
     WorldObservationRequest,
 )
-from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.observation_acquisition import acquired_acquisition, failed_acquisition
 from tests.support.world import fused_world
 
 
@@ -42,31 +49,17 @@ def _task() -> TaskGoal:
 
 
 def test_acquisition_values_are_frozen_and_enforce_observation_invariant() -> None:
-    acquired = ObservationAcquisition(
-        AcquisitionStatus.ACQUIRED, AcquisitionOrigin.RESET, _world("one"), "reset_acquired",
-    )
+    acquired = acquired_acquisition(_world("one"), AcquisitionOrigin.RESET)
     with pytest.raises(FrozenInstanceError):
         acquired.reason_code = "changed"  # type: ignore[misc]
     with pytest.raises(ValueError):
-        ObservationAcquisition(
-            AcquisitionStatus.ACQUIRED, AcquisitionOrigin.RESET, None, "reset_failed",
-        )
+        replace(acquired, fusion_outcome=None)
     with pytest.raises(ValueError):
-        ObservationAcquisition(
-            AcquisitionStatus.FAILED, AcquisitionOrigin.RESET, _world("one"), "reset_failed",
-        )
-    with pytest.raises(ValueError, match="WorldObservation"):
-        ObservationAcquisition(
-            AcquisitionStatus.ACQUIRED, AcquisitionOrigin.RESET, object(), "reset_acquired",
-        )
+        replace(acquired, status=AcquisitionStatus.FAILED)
     with pytest.raises(TypeError, match="status"):
-        ObservationAcquisition(
-            "failed", AcquisitionOrigin.RESET, None, "reset_failed",  # type: ignore[arg-type]
-        )
+        replace(acquired, status="failed")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="origin"):
-        ObservationAcquisition(
-            AcquisitionStatus.FAILED, "reset", None, "reset_failed",  # type: ignore[arg-type]
-        )
+        replace(acquired, origin="reset")  # type: ignore[arg-type]
 
 
 def test_execution_result_and_outcome_algebras_reject_untyped_variants() -> None:
@@ -77,12 +70,7 @@ def test_execution_result_and_outcome_algebras_reject_untyped_variants() -> None
     with pytest.raises(TypeError, match="result"):
         ExecutionOutcome(  # type: ignore[arg-type]
             object(),
-            ObservationAcquisition(
-                AcquisitionStatus.FAILED,
-                AcquisitionOrigin.POST_ACTION,
-                None,
-                "post_capture_failed",
-            ),
+            failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_capture_failed"),
         )
 
 
@@ -92,21 +80,59 @@ def test_execution_result_and_outcome_algebras_reject_untyped_variants() -> None
 )
 def test_reason_code_is_bounded_stable_and_private_marker_free(reason: str) -> None:
     with pytest.raises(ValueError):
-        ObservationAcquisition(
-            AcquisitionStatus.FAILED, AcquisitionOrigin.INDEPENDENT_CAPTURE, None, reason,
+        AcquisitionReason(
+            AcquisitionReasonKind.SOURCE_FAILURE,
+            reason,
+            AcquisitionStage.SOURCE_ACQUISITION_FAILED,
         )
 
 
 def test_sent_unknown_and_failed_post_acquisition_preserve_both_truths() -> None:
     result = ActionResult(
-        "request:1", DispatchStatus.SENT_UNKNOWN, "static", False, ActionError.EXECUTION_FAILED,
+        "request:1",
+        DispatchStatus.SENT_UNKNOWN,
+        "static",
+        False,
+        ActionError.EXECUTION_FAILED,
     )
-    post = ObservationAcquisition(
-        AcquisitionStatus.FAILED, AcquisitionOrigin.POST_ACTION, None, "post_capture_failed",
-    )
+    post = failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_capture_failed")
     outcome = ExecutionOutcome(result, post)
     assert outcome.result.dispatch_status is DispatchStatus.SENT_UNKNOWN
     assert outcome.post_acquisition.status is AcquisitionStatus.FAILED
+
+
+def test_fallback_keeps_two_linked_exact_acquisitions() -> None:
+    primary = acquired_acquisition(
+        _world("same"),
+        AcquisitionOrigin.POST_ACTION,
+        kind=ObservationRequestKind.POST_ACTION_FALLBACK,
+        acquisition_id="acquisition:primary",
+    )
+    fallback = acquired_acquisition(
+        _world("fresh"),
+        AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        kind=ObservationRequestKind.POST_ACTION_FALLBACK,
+        acquisition_id="acquisition:fallback",
+    )
+    linked = post_action_fallback_result(
+        validate_fresh_acquisition(
+            primary,
+            "same",
+            expected_origin=AcquisitionOrigin.POST_ACTION,
+            post_action=True,
+        ),
+        validate_fresh_acquisition(
+            fallback,
+            "same",
+            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        ),
+    )
+
+    assert linked.acquisition is primary
+    assert linked.linked_fallback is not None
+    assert linked.linked_fallback.primary_acquisition_id == primary.acquisition_id
+    assert linked.linked_fallback.acquisition is fallback
+    assert linked.consumed_acquisition is fallback
 
 
 def test_offers_are_empty_when_independent_capture_is_false() -> None:
@@ -120,7 +146,7 @@ def test_offers_are_empty_when_independent_capture_is_false() -> None:
 
 def test_static_environment_uses_distinct_reset_capture_and_post_queues() -> None:
     initial, captured, after = _world("initial"), _world("captured"), _world("after")
-    environment = StaticEnvironment(
+    environment = ScriptedEnvironment(
         initial_observation=initial,
         independent_observations=(captured,),
         post_observations=(after,),
@@ -128,10 +154,13 @@ def test_static_environment_uses_distinct_reset_capture_and_post_queues() -> Non
 
     async def scenario() -> None:
         reset = await environment.reset(_task())
-        capture = await environment.capture(WorldObservationRequest(
-            ObservationRequestKind.WAIT_REFRESH, "wait refresh",
-        ))
-        assert reset.observation is initial and capture.observation is captured
+        capture = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.WAIT_REFRESH,
+                "wait refresh",
+            )
+        )
+        assert reset.observation == initial and capture.observation == captured
         assert environment.reset_calls == 1 and environment.capture_calls == 1
 
     asyncio.run(scenario())
@@ -145,7 +174,9 @@ class _NeverActionEvaluator:
 class _IncompleteTaskEvaluator:
     async def evaluate(self, task, observation):
         return TaskEvaluation(
-            task.task_id, observation.observation_id, TaskEvaluationStatus.INCOMPLETE,
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
             "incomplete",
         )
 
@@ -158,8 +189,8 @@ class _AbortPolicy:
 def test_agent_loop_start_is_the_only_logical_reset_owner() -> None:
     async def scenario() -> None:
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
-        runner_environment = StaticEnvironment(initial_observation=_world("runner"))
-        direct_environment = StaticEnvironment(initial_observation=_world("direct"))
+        runner_environment = ScriptedEnvironment(initial_observation=_world("runner"))
+        direct_environment = ScriptedEnvironment(initial_observation=_world("direct"))
         await (loop).run(runner_environment, _task())
         await loop.run(direct_environment, _task())
         assert runner_environment.reset_calls == 1
@@ -170,12 +201,10 @@ def test_agent_loop_start_is_the_only_logical_reset_owner() -> None:
 
 
 def test_non_acquired_initial_result_raises_typed_start_error() -> None:
-    class FailedReset(StaticEnvironment):
+    class FailedReset(ScriptedEnvironment):
         async def reset(self, task):
             await super().reset(task)
-            return ObservationAcquisition(
-                AcquisitionStatus.FAILED, AcquisitionOrigin.RESET, None, "initial_capture_failed",
-            )
+            return failed_acquisition(AcquisitionOrigin.RESET, "initial_capture_failed")
 
     async def scenario() -> None:
         environment = FailedReset(initial_observation=_world("unused"))
@@ -194,7 +223,7 @@ def test_non_acquired_initial_result_raises_typed_start_error() -> None:
 
 @pytest.mark.parametrize("failure", (RuntimeError("private reset detail"), asyncio.CancelledError()))
 def test_thrown_reset_failure_carries_privacy_safe_attempt_truth(failure) -> None:
-    class RaisingReset(StaticEnvironment):
+    class RaisingReset(ScriptedEnvironment):
         async def reset(self, task):
             self.reset_calls += 1
             raise failure
@@ -220,7 +249,7 @@ def test_immutable_foreign_reset_exception_is_normalized_without_losing_receipt(
         def __setattr__(self, name, value):
             raise AttributeError("immutable error")
 
-    class RaisingReset(StaticEnvironment):
+    class RaisingReset(ScriptedEnvironment):
         async def reset(self, task):
             self.reset_calls += 1
             raise ImmutableError("private reset detail")
@@ -238,7 +267,7 @@ def test_immutable_foreign_reset_exception_is_normalized_without_losing_receipt(
 
 
 def test_malformed_reset_return_is_one_failed_physical_attempt() -> None:
-    class MalformedReset(StaticEnvironment):
+    class MalformedReset(ScriptedEnvironment):
         async def reset(self, task):
             self.reset_calls += 1
             return object()
@@ -260,7 +289,7 @@ def test_malformed_reset_return_is_one_failed_physical_attempt() -> None:
 def test_foreign_reset_exception_name_cannot_break_physical_accounting() -> None:
     foreign_error = type("X" * 129, (Exception,), {})("private reset detail")
 
-    class RaisingReset(StaticEnvironment):
+    class RaisingReset(ScriptedEnvironment):
         async def reset(self, task):
             self.reset_calls += 1
             raise foreign_error
@@ -281,15 +310,14 @@ def test_foreign_reset_exception_name_cannot_break_physical_accounting() -> None
 
 @pytest.mark.parametrize("origin", (AcquisitionOrigin.RESET, AcquisitionOrigin.POST_ACTION))
 def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionOrigin) -> None:
-    class WrongOriginEnvironment(StaticEnvironment):
+    class WrongOriginEnvironment(ScriptedEnvironment):
         async def capture(self, request):
             self.capture_calls += 1
             self.capture_requests.append(request)
-            return ObservationAcquisition(
-                AcquisitionStatus.ACQUIRED,
-                origin,
+            return acquired_acquisition(
                 _world("wrong-origin"),
-                "static_capture_acquired",
+                origin,
+                kind=request.kind,
             )
 
     async def scenario() -> None:
@@ -319,7 +347,7 @@ def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionO
 )
 def test_internal_refresh_uses_aggregate_capability_without_offer(kind: ObservationRequestKind) -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=_world("initial"),
             independent_observations=(_world("after"),),
             observation_capabilities=ObservationCapabilities(True, True, ()),
@@ -336,45 +364,18 @@ def test_internal_refresh_uses_aggregate_capability_without_offer(kind: Observat
     asyncio.run(scenario())
 
 
-def test_policy_request_requires_explicit_offer_even_when_projection_is_misleading() -> None:
-    async def scenario() -> None:
-        environment = StaticEnvironment(
-            initial_observation=_world("initial"),
-            independent_observations=(_world("after"),),
-            observation_capabilities=ObservationCapabilities(True, True, ()),
-        )
-        await environment.reset(_task())
-        acquired = await capture_fresh(
-            environment,
-            "initial",
-            WorldObservationRequest(
-                ObservationRequestKind.POLICY_REQUEST,
-                "policy refresh",
-                (ObservationNeed(
-                    "test:policy-refresh",
-                    ObservationPurpose.CURRENTNESS_REFRESH,
-                    required_modality=ObservationModality.STRUCTURAL,
-                    required_assurance=ObservationAssurance.STRUCTURAL,
-                ),),
-            ),
-        )
-        assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
-        assert acquired.reason_code == "observation_capability_not_offered"
-        assert environment.capture_calls == 0
-
-    asyncio.run(scenario())
-
-
 def test_forged_model_offer_cannot_override_environment_capture_authority() -> None:
-    forged_projection = project_acquisition_offers(ObservationCapabilities(
-        True,
-        True,
-        (ObservationOffer("forged", "structural", "structural", "low"),),
-    ))
+    forged_projection = project_acquisition_offers(
+        ObservationCapabilities(
+            True,
+            True,
+            (ObservationOffer("forged", "structural", "structural", "low"),),
+        )
+    )
     assert forged_projection
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
+        environment = ScriptedEnvironment(
             initial_observation=_world("initial"),
             independent_observations=(_world("after"),),
             observation_capabilities=ObservationCapabilities(
@@ -390,12 +391,14 @@ def test_forged_model_offer_cannot_override_environment_capture_authority() -> N
             WorldObservationRequest(
                 ObservationRequestKind.POLICY_REQUEST,
                 "policy refresh",
-                (ObservationNeed(
-                    "test:forged-projection",
-                    ObservationPurpose.CURRENTNESS_REFRESH,
-                    required_modality=ObservationModality(forged_projection[0].modality),
-                    required_assurance=ObservationAssurance(forged_projection[0].assurance),
-                ),),
+                (
+                    ObservationNeed(
+                        "test:forged-projection",
+                        ObservationPurpose.CURRENTNESS_REFRESH,
+                        required_modality=ObservationModality(forged_projection[0].modality),
+                        required_assurance=ObservationAssurance(forged_projection[0].assurance),
+                    ),
+                ),
             ),
         )
         assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE

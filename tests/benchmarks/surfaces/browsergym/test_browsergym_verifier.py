@@ -42,29 +42,41 @@ from tests.support.surfaces.browsergym.browsergym_adapter_support import (
 
 def _open_fake_case(fake: FakeBrowserGym):
     surface, task = open_fake(fake)
-    return BrowserGymCaseEnvironment(surface.task_id, surface), task
+    return BrowserGymCaseEnvironment(surface.task_id, surface.surface, surface.world), task
 
 
 def test_official_verifier_status_mapping_is_strict() -> None:
     common = dict(task_run_id="run:1", observation_id="obs:1", source_observation_id="obs:1")
     success = verifier_snapshot(
-        **common, source=VerifierFactSource.POST_ACTION,
-        reward=1.0, terminated=True, truncated=False,
+        **common,
+        source=VerifierFactSource.POST_ACTION,
+        reward=1.0,
+        terminated=True,
+        truncated=False,
         task_info={"RAW_REWARD_GLOBAL": 1, "DONE_GLOBAL": True, "TASK_READY": True},
     )
     incomplete = verifier_snapshot(
-        **common, source=VerifierFactSource.POST_ACTION,
-        reward=0.0, terminated=False, truncated=False,
+        **common,
+        source=VerifierFactSource.POST_ACTION,
+        reward=0.0,
+        terminated=False,
+        truncated=False,
         task_info={"RAW_REWARD_GLOBAL": 0, "DONE_GLOBAL": False, "TASK_READY": True},
     )
     unavailable = verifier_snapshot(
-        **common, source=VerifierFactSource.POST_ACTION,
-        reward=1.0, terminated=False, truncated=False,
+        **common,
+        source=VerifierFactSource.POST_ACTION,
+        reward=1.0,
+        terminated=False,
+        truncated=False,
         task_info={"RAW_REWARD_GLOBAL": 1, "DONE_GLOBAL": False, "TASK_READY": True},
     )
     failure = verifier_snapshot(
-        **common, source=VerifierFactSource.POST_ACTION,
-        reward=0.0, terminated=True, truncated=False,
+        **common,
+        source=VerifierFactSource.POST_ACTION,
+        reward=0.0,
+        terminated=True,
+        truncated=False,
         task_info={"RAW_REWARD_GLOBAL": -1, "DONE_GLOBAL": True, "TASK_READY": True},
     )
     assert success.status is ExternalVerifierStatus.SUCCESS and success.evidence_refs[0].startswith("artifact:")
@@ -96,7 +108,13 @@ _ARBITRARY = st.one_of(
     ready=_ARBITRARY,
 )
 def test_verifier_classifier_is_total_for_arbitrary_python_shapes(
-    source, reward, raw_reward, terminated, truncated, done, ready,
+    source,
+    reward,
+    raw_reward,
+    terminated,
+    truncated,
+    done,
+    ready,
 ) -> None:
     result = classify_browsergym_verifier(
         source,
@@ -117,7 +135,9 @@ def test_verifier_classifier_is_total_for_arbitrary_python_shapes(
     sign=st.sampled_from((-1, 1)),
 )
 def test_arbitrarily_large_exact_ints_remain_inside_typed_algebra(
-    exponent, field, sign,
+    exponent,
+    field,
+    sign,
 ) -> None:
     values = dict(reward=0, raw_reward=0)
     values[field] = sign * 10**exponent
@@ -156,7 +176,12 @@ def test_terminal_failure_is_magnitude_invariant_within_nonpositive_sign(raw_rew
     ready=st.booleans(),
 )
 def test_reset_never_proves_terminal_outcome(
-    reward, raw_reward, terminated, truncated, done, ready,
+    reward,
+    raw_reward,
+    terminated,
+    truncated,
+    done,
+    ready,
 ) -> None:
     result = classify_browsergym_verifier(
         VerifierFactSource.RESET,
@@ -175,24 +200,44 @@ def test_reset_never_proves_terminal_outcome(
 
 def test_bool_nonfinite_truncated_and_probe_without_reward_fail_closed() -> None:
     common = dict(terminated=True, truncated=False, done=True, ready=True)
-    assert classify_browsergym_verifier(
-        VerifierFactSource.POST_ACTION, reward=True, raw_reward=1, **common,
-    ).reason is ExternalVerifierReason.INVALID_FACTS
-    assert classify_browsergym_verifier(
-        VerifierFactSource.POST_ACTION, reward=1.0, raw_reward=float("nan"), **common,
-    ).reason is ExternalVerifierReason.NON_FINITE_FACTS
-    assert classify_browsergym_verifier(
-        VerifierFactSource.POST_ACTION,
-        reward=0.0,
-        raw_reward=0.0,
-        terminated=True,
-        truncated=True,
-        done=True,
-        ready=True,
-    ).reason is ExternalVerifierReason.UNSUPPORTED_STATE
-    assert classify_browsergym_verifier(
-        VerifierFactSource.READ_ONLY_PROBE, done=True, ready=True,
-    ).reason is ExternalVerifierReason.MISSING_FACTS
+    assert (
+        classify_browsergym_verifier(
+            VerifierFactSource.POST_ACTION,
+            reward=True,
+            raw_reward=1,
+            **common,
+        ).reason
+        is ExternalVerifierReason.INVALID_FACTS
+    )
+    assert (
+        classify_browsergym_verifier(
+            VerifierFactSource.POST_ACTION,
+            reward=1.0,
+            raw_reward=float("nan"),
+            **common,
+        ).reason
+        is ExternalVerifierReason.NON_FINITE_FACTS
+    )
+    assert (
+        classify_browsergym_verifier(
+            VerifierFactSource.POST_ACTION,
+            reward=0.0,
+            raw_reward=0.0,
+            terminated=True,
+            truncated=True,
+            done=True,
+            ready=True,
+        ).reason
+        is ExternalVerifierReason.UNSUPPORTED_STATE
+    )
+    assert (
+        classify_browsergym_verifier(
+            VerifierFactSource.READ_ONLY_PROBE,
+            done=True,
+            ready=True,
+        ).reason
+        is ExternalVerifierReason.MISSING_FACTS
+    )
 
     class HostileInt(int):
         def __float__(self):
@@ -235,9 +280,13 @@ def test_unrelated_task_info_fields_and_mapping_order_do_not_change_assessment()
             "another": "ignored",
         },
     )
-    assert (first.status, first.reason) == (second.status, second.reason) == (
-        ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
-        ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE,
+    assert (
+        (first.status, first.reason)
+        == (second.status, second.reason)
+        == (
+            ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
+            ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE,
+        )
     )
 
 
@@ -264,8 +313,14 @@ def test_success_evidence_is_current_opaque_and_resolves() -> None:
     raw = raw_observation(ax_node("1", "button", "okay"))
     fake = FakeBrowserGym(raw, raw)
     fake.probes["1"] = {
-        "exists": True, "url": raw["url"], "episode": "0", "ready": True,
-        "done": False, "role": "button", "label": "okay", "state": {},
+        "exists": True,
+        "url": raw["url"],
+        "episode": "0",
+        "ready": True,
+        "done": False,
+        "role": "button",
+        "label": "okay",
+        "state": {},
     }
     environment, task = _open_fake_case(fake)
     before = start_environment(environment, task)
@@ -288,8 +343,14 @@ def test_independent_capture_does_not_relabel_old_success_verifier_evidence() ->
     raw = raw_observation(ax_node("1", "button", "okay"))
     fake = FakeBrowserGym(raw, raw)
     fake.probes["1"] = {
-        "exists": True, "url": raw["url"], "episode": "0", "ready": True,
-        "done": False, "role": "button", "label": "okay", "state": {},
+        "exists": True,
+        "url": raw["url"],
+        "episode": "0",
+        "ready": True,
+        "done": False,
+        "role": "button",
+        "label": "okay",
+        "state": {},
     }
     environment, task = _open_fake_case(fake)
     before = start_environment(environment, task)
@@ -299,9 +360,14 @@ def test_independent_capture_does_not_relabel_old_success_verifier_evidence() ->
 
     from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
 
-    refreshed = asyncio.run(environment.capture(WorldObservationRequest(
-        ObservationRequestKind.CURRENTNESS_REFRESH, "refresh current verifier",
-    )))
+    refreshed = asyncio.run(
+        environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "refresh current verifier",
+            )
+        )
+    )
     assert refreshed.observation is not None
     assert environment.current_result(environment.benchmark_task_id).status is ExternalVerifierStatus.INCOMPLETE
     asyncio.run(environment.close())
@@ -337,11 +403,13 @@ def test_negative_terminal_flows_once_without_synthetic_runtime_failure() -> Non
         assert task_evaluation is not None
         assert task_evaluation.status is TaskEvaluationStatus.BLOCKED
         assert task_evaluation.completion_evidence_refs == ()
-        assert WorldEvidenceIndex.from_observation(first.final_observation).resolve(
-            first.task_outcome.evidence_refs[0]
-        )
+        assert WorldEvidenceIndex.from_observation(first.final_observation).resolve(first.task_outcome.evidence_refs[0])
         projected = project_case_result(
-            "negative-terminal", first, BenchmarkInstrumentation(), 1.0, "",
+            "negative-terminal",
+            first,
+            BenchmarkInstrumentation(),
+            1.0,
+            "",
         )
         classified = classify_case(projected)
         assert classified.outcome is MiniWobTaskOutcome.TASK_FAILED

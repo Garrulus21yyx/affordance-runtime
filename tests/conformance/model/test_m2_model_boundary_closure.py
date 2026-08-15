@@ -12,13 +12,13 @@ from affordance_runtime.agent import Abort, AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
 from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model.policy.parser import parse_agent_decision
 from affordance_runtime.model.policy.spec import AgentDecisionPayload, decision_response_schema
 from affordance_runtime.model.providers.port import ModelConfig
 from tests.integration.agent.test_agent_loop import SharedTaskEvaluator, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 async def _context():
@@ -51,10 +51,10 @@ def test_huge_json_integer_is_zero_execution_and_zero_surface_probe() -> None:
             return ModelFailure(ModelFailureKind.INVALID_RESPONSE, "fixture invalid JSON number", False)
 
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("before", False)])
-        result = await (
-            AgentLoop(ModelBackedAgentPolicy(Port()), object(), SharedTaskEvaluator())
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
+        result = await (AgentLoop(ModelBackedAgentPolicy(Port()), object(), SharedTaskEvaluator())).run(
+            environment, _task()
+        )
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == result.currentness_probe_count == 0
         assert environment.executed_requests == []

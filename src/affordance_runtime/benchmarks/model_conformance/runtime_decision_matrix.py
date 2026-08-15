@@ -28,7 +28,7 @@ from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
 from affordance_runtime.app.composition import compose_target_runtime
-from affordance_runtime.benchmarks.support import StaticEnvironment
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.support import (
     CurrentFactActionEvaluator,
     SharedTaskEvaluator,
@@ -134,10 +134,10 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
     if paging:
         environment = paging_environment()
     elif variant in {"request_evidence", "wait"}:
-        environment = StaticEnvironment((
-            shared_world(f"{variant}:before", False, "dom"),
-            shared_world(f"{variant}:fresh", False, "dom"),
-        ))
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world(f"{variant}:before", False, "dom"),
+            independent_observations=(shared_world(f"{variant}:fresh", False, "dom"),),
+        )
     else:
         environment = shared_environment("dom")
     context_builder = ContextBuilder(pager=ActionPager(page_size=1)) if paging else ContextBuilder()
@@ -149,9 +149,10 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
         wait_controller=waiter,
     ).run_task(environment, shared_task())
     context_ids = tuple(item.context_id for item in policy.contexts)
-    page_changed = paging and len(policy.contexts) > 1 and (
-        policy.contexts[0].actions.options[0].action_id
-        != policy.contexts[1].actions.options[0].action_id
+    page_changed = (
+        paging
+        and len(policy.contexts) > 1
+        and (policy.contexts[0].actions.options[0].action_id != policy.contexts[1].actions.options[0].action_id)
     )
     return RuntimeDecisionOutcome(
         variant,
@@ -165,10 +166,9 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
         result.message if result.status == AgentLoopStatus.WAITING_USER else "",
         evaluator.calls,
         waiter.waited_ms,
-        variant == "wait" and len(policy.contexts) > 1 and (
-            policy.contexts[1].budgets.remaining_wait_ms
-            < policy.contexts[0].budgets.remaining_wait_ms
-        ),
+        variant == "wait"
+        and len(policy.contexts) > 1
+        and (policy.contexts[1].budgets.remaining_wait_ms < policy.contexts[0].budgets.remaining_wait_ms),
         result.policy_failure is not None,
     )
 
@@ -223,10 +223,7 @@ class _ReplayPage:
 
     @property
     def visible_destinations(self):
-        return tuple(
-            (action_id, self.destinations.get(action_id, ()))
-            for action_id in self.visible_action_ids
-        )
+        return tuple((action_id, self.destinations.get(action_id, ())) for action_id in self.visible_action_ids)
 
     @property
     def relevance(self):
@@ -250,7 +247,8 @@ class _ReplayPage:
     def selection_issue(self, action_id: str, destination_id: str = ""):
         if action_id not in self.visible_action_ids:
             return AdmissionIssue(
-                AdmissionIssueCode.ACTION_OUTSIDE_CURRENT_PAGE, ("actions",),
+                AdmissionIssueCode.ACTION_OUTSIDE_CURRENT_PAGE,
+                ("actions",),
             )
         if destination_id and destination_id not in self.visible_destination_ids(action_id):
             return AdmissionIssue(
@@ -277,7 +275,7 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
     value = json.loads(case.serialized_context)
     before = _evidence_world("replay:before", getattr(decision, "evidence_refs", ()))
     fresh = _evidence_world("replay:fresh", ())
-    environment = StaticEnvironment((before, fresh))
+    environment = ScriptedEnvironment(initial_observation=before, independent_observations=(fresh,))
     task = shared_task()
     evaluator, waiter = _CountingTaskEvaluator(), _Waiter()
     runtime = compose_target_runtime(
@@ -299,8 +297,12 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
     actions = value.get("actions", {})
     role = actions.get("active_relevance_filter") or None
     page = _ReplayPage(
-        "page:current", visible, destinations, str(actions.get("next_cursor") or ""),
-        str(actions.get("active_query") or ""), str(actions.get("active_target_filter") or ""),
+        "page:current",
+        visible,
+        destinations,
+        str(actions.get("next_cursor") or ""),
+        str(actions.get("active_query") or ""),
+        str(actions.get("active_target_filter") or ""),
         SimpleNamespace(value=role) if role else None,
     )
     session.current_action_page = page  # type: ignore[assignment]
@@ -309,7 +311,8 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
         for item in value.get("world", {}).get("observation_capabilities", ())
     )
     context = SimpleNamespace(
-        context_id=value["context_id"], world=SimpleNamespace(observation_capabilities=capabilities),
+        context_id=value["context_id"],
+        world=SimpleNamespace(observation_capabilities=capabilities),
     )
     executions = 0
 
@@ -321,17 +324,28 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
         return "dry-run-admitted"
 
     outcome = await run_policy_turn(
-        session, ActionSpace(before.observation_id, ()),
-        await evaluator.evaluate(task, before), _ReplayPolicy(decision),
-        cast(ContextBuilder, _ReplayContextBuilder(context)), evaluator, waiter, dry_run,
+        session,
+        ActionSpace(before.observation_id, ()),
+        await evaluator.evaluate(task, before),
+        _ReplayPolicy(decision),
+        cast(ContextBuilder, _ReplayContextBuilder(context)),
+        evaluator,
+        waiter,
+        dry_run,
         ActionSpaceBuilder(),
     )
     status = outcome.status.value if hasattr(outcome, "status") else "continued"
     policy_failure = bool(getattr(outcome, "policy_failure", None))
     page_changed = getattr(session.current_action_page, "page_id", "") != "page:current"
     replayed = ReplayedRuntimeOutcome(
-        False, status, executions, session.observation_count, page_changed,
-        evaluator.calls, waiter.waited_ms, policy_failure,
+        False,
+        status,
+        executions,
+        session.observation_count,
+        page_changed,
+        evaluator.calls,
+        waiter.waited_ms,
+        policy_failure,
     )
     return replace(replayed, success=_replay_matches(_variant_name(decision), replayed))
 
@@ -354,9 +368,13 @@ def _replay_matches(variant: str, outcome: ReplayedRuntimeOutcome) -> bool:
 
 def _variant_name(decision) -> str:
     return {
-        "SelectAction": "select_action", "RequestObservation": "request_evidence",
-        "RequestActionPage": "request_action_page", "AskUser": "ask_user",
-        "ProposeDone": "propose_done", "Wait": "wait", "Abort": "abort",
+        "SelectAction": "select_action",
+        "RequestObservation": "request_evidence",
+        "RequestActionPage": "request_action_page",
+        "AskUser": "ask_user",
+        "ProposeDone": "propose_done",
+        "Wait": "wait",
+        "Abort": "abort",
     }.get(type(decision).__name__, "")
 
 
@@ -373,13 +391,23 @@ def _evidence_world(identity: str, refs) -> WorldObservation:
     for ref in refs:
         if str(ref).startswith("artifact:"):
             _, source_id, key = str(ref).rsplit(":", 2)
-            artifact_sources.append(SurfaceObservation(
-                source_id, "dom", f"revision:{source_id}", base.sources[0].source_profile,
-                artifacts={key: {"public_summary": "current benchmark evidence"}},
-            ))
+            artifact_sources.append(
+                SurfaceObservation(
+                    source_id,
+                    "dom",
+                    f"revision:{source_id}",
+                    base.sources[0].source_profile,
+                    artifacts={key: {"public_summary": "current benchmark evidence"}},
+                )
+            )
     source = SurfaceObservation(
-        identity, "dom", f"revision:{identity}", base_source.source_profile,
-        base_source.targets, facts, base_source.bindings,
+        identity,
+        "dom",
+        f"revision:{identity}",
+        base_source.source_profile,
+        base_source.targets,
+        facts,
+        base_source.bindings,
     )
     result = WorldFusion().fuse((source, *artifact_sources))
     if result.observation is None:

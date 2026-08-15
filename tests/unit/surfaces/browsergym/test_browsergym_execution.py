@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from dataclasses import replace
 
 from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.surfaces.browsergym.currentness import (
@@ -39,10 +40,14 @@ def test_reset_offer_is_independent_from_optional_independent_capture_capability
     environment, task = open_fake(fake)
 
     initial = asyncio.run(environment.reset(task))
-    capture = asyncio.run(environment.capture(WorldObservationRequest(
-        ObservationRequestKind.CURRENTNESS_REFRESH,
-        "explicit refresh",
-    )))
+    capture = asyncio.run(
+        environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "explicit refresh",
+            )
+        )
+    )
 
     assert initial.status is AcquisitionStatus.ACQUIRED
     assert capture.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
@@ -83,7 +88,8 @@ def test_malformed_probe_is_currentness_unavailable_and_zero_step() -> None:
     fake.probe_override = {"raw": [], "task": "malformed"}
     result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
     assert (result.dispatch_status, result.error) == (
-        DispatchStatus.NOT_SENT, ActionError.CURRENTNESS_UNAVAILABLE,
+        DispatchStatus.NOT_SENT,
+        ActionError.CURRENTNESS_UNAVAILABLE,
     )
     assert environment.step_calls == 0
     assert environment.probe_calls == fake.currentness_probe_count == 1
@@ -100,13 +106,13 @@ def test_capture_then_disabled_readonly_or_detached_is_zero_step_stale() -> None
             live[PRIVATE_CONTROL_PROPERTIES_KEY]["2"]["readonly"] = True
         else:
             live["axtree_object"]["nodes"] = [
-                node for node in live["axtree_object"]["nodes"]
-                if node.get("browsergym_id") != "2"
+                node for node in live["axtree_object"]["nodes"] if node.get("browsergym_id") != "2"
             ]
         fake.post = live
         result = asyncio.run(environment.execute(request_for(world, task, "type_text", {"text": "x"}))).result
         assert (result.dispatch_status, result.error) == (
-            DispatchStatus.NOT_SENT, ActionError.STALE_BINDING,
+            DispatchStatus.NOT_SENT,
+            ActionError.STALE_BINDING,
         )
         assert environment.step_calls == 0
         assert environment.probe_calls == fake.currentness_probe_count == 1
@@ -118,7 +124,8 @@ def test_terminal_probe_is_zero_step_stale_and_not_relaxed() -> None:
     fake.probe_task["done"] = True
     result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
     assert (result.dispatch_status, result.error) == (
-        DispatchStatus.NOT_SENT, ActionError.STALE_BINDING,
+        DispatchStatus.NOT_SENT,
+        ActionError.STALE_BINDING,
     )
     assert environment.last_currentness_decision is not None
     assert environment.last_currentness_decision.reason is BrowserGymCurrentnessReason.TASK_DONE
@@ -160,13 +167,14 @@ def test_currentness_probe_has_no_capture_or_projection_side_effect() -> None:
 def test_binding_epoch_drift_is_zero_step() -> None:
     fake, environment, task, world = _fixture()
     request = request_for(world, task, "activate")
-    environment._current_observation_id = "different"  # noqa: SLF001 - epoch drift witness
+    request = replace(
+        request,
+        binding=replace(request.binding, source_revision="different"),
+    )
     result = asyncio.run(environment.execute(request)).result
     assert result.dispatch_status is DispatchStatus.NOT_SENT
     assert environment.last_currentness_decision is not None
-    assert environment.last_currentness_decision.reason is (
-        BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
-    )
+    assert environment.last_currentness_decision.reason is (BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED)
     assert environment.step_calls == 0
     assert environment.probe_calls == fake.currentness_probe_count == 1
     asyncio.run(environment.close())
@@ -174,7 +182,8 @@ def test_binding_epoch_drift_is_zero_step() -> None:
     fake, environment, task, world = _fixture(fail_probe=True)
     result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
     assert (result.dispatch_status, result.error) == (
-        DispatchStatus.NOT_SENT, ActionError.CURRENTNESS_UNAVAILABLE,
+        DispatchStatus.NOT_SENT,
+        ActionError.CURRENTNESS_UNAVAILABLE,
     )
     assert fake.actions == [] and environment.step_calls == 0 and environment.probe_calls == 1
     asyncio.run(environment.close())
@@ -206,10 +215,14 @@ def test_independent_capture_is_active_fresh_and_does_not_step() -> None:
     fake, environment, task, world = _fixture()
     before_binding = world.bindings[0].binding_id
     before_entities = tuple(item.target_id for item in world.targets)
-    acquisition = asyncio.run(environment.capture(WorldObservationRequest(
-        ObservationRequestKind.POLICY_REQUEST,
-        "refresh current browser world",
-    )))
+    acquisition = asyncio.run(
+        environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "refresh current browser world",
+            )
+        )
+    )
     after = acquisition.observation
     assert after is not None
     assert after.observation_id != world.observation_id
@@ -224,10 +237,14 @@ def test_independent_capture_is_active_fresh_and_does_not_step() -> None:
 def test_stable_entity_identity_does_not_extend_old_binding_authority() -> None:
     fake, environment, task, world = _fixture()
     old_request = request_for(world, task, "activate")
-    acquisition = asyncio.run(environment.capture(WorldObservationRequest(
-        ObservationRequestKind.CURRENTNESS_REFRESH,
-        "advance the observation epoch",
-    )))
+    acquisition = asyncio.run(
+        environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "advance the observation epoch",
+            )
+        )
+    )
     assert acquisition.observation is not None
     assert acquisition.observation.targets[0].target_id == world.targets[0].target_id
 

@@ -45,7 +45,6 @@ from affordance_runtime.agent.negative_claim_coverage import (
     NegativeClaimCoverageGate,
 )
 from affordance_runtime.agent.observation_control import (
-    capture_admission_failure,
     capture_for_session,
 )
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
@@ -61,7 +60,6 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluati
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world.acquisition import (
-    AcquisitionOrigin,
     ObservationRequestKind,
     WorldObservationRequest,
 )
@@ -332,17 +330,17 @@ async def _policy_observation(
     request = WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         decision.reason,
-        (ObservationNeed(
-            f"agent:{decision.purpose}:{decision.subject_id}",
-            ObservationPurpose(decision.purpose),
-            () if decision.subject_id == "current_world" else (decision.subject_id,),
-            _agent_evidence_modality(ObservationPurpose(decision.purpose)),
-            _agent_evidence_assurance(
-                session.task, ObservationPurpose(decision.purpose), decision.subject_id
+        (
+            ObservationNeed(
+                f"agent:{decision.purpose}:{decision.subject_id}",
+                ObservationPurpose(decision.purpose),
+                () if decision.subject_id == "current_world" else (decision.subject_id,),
+                _agent_evidence_modality(ObservationPurpose(decision.purpose)),
+                _agent_evidence_assurance(session.task, ObservationPurpose(decision.purpose), decision.subject_id),
+                FreshnessRequirement.FRESH_ACQUISITION,
+                decision.evidence_property,
             ),
-            FreshnessRequirement.FRESH_ACQUISITION,
-            decision.evidence_property,
-        ),),
+        ),
     )
     state = session.state
     request_digest = observation_request_digest(
@@ -494,22 +492,6 @@ async def _wait_refresh(
         ObservationRequestKind.WAIT_REFRESH,
         "fresh observation after wait",
     )
-    unavailable = capture_admission_failure(session.environment, request)
-    if unavailable is not None:
-        scope.record_acquisition(
-            unavailable.status,
-            unavailable.actual_origin,
-            unavailable.reason_code,
-            unavailable.attempts,
-            request.kind,
-            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
-        )
-        return Terminate(
-            AgentLoopStatus.BLOCKED,
-            unavailable.reason_code,
-            unavailable.reason_code,
-            failure_code=unavailable.failure_code,
-        )
     if session.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
         scope.record_decision_result("wait_budget_exceeded")
         scope.set_reason("wait_budget_exhausted")

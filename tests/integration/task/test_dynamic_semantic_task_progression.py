@@ -6,6 +6,7 @@ from affordance_runtime.actions import (
     ActionRisk,
 )
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -23,7 +24,6 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.agent.target_agent_loop_support import FirstOfferedActionPolicy
 
 
@@ -35,15 +35,31 @@ def _world(identity: str, *, report: bool) -> WorldObservation:
         targets.append(SemanticTarget("report:1", "content", "report"))
         facts.append(StateFact(f"fact:{identity}:report", "report:1", "content", "Clear conclusion", identity))
     binding = ActionBinding(
-        f"binding:{identity}", identity, identity, f"revision:{identity}", f"fingerprint:{identity}",
-        "generator:1", "generator:1", "static", "static", "activate", "click",
-        "local_reversible", ("report_created",),
-        {"type": "object", "properties": {}, "additionalProperties": False}, {"selector": "#private"},
+        f"binding:{identity}",
+        identity,
+        identity,
+        f"revision:{identity}",
+        f"fingerprint:{identity}",
+        "generator:1",
+        "generator:1",
+        "static",
+        "static",
+        "activate",
+        "click",
+        "local_reversible",
+        ("report_created",),
+        {"type": "object", "properties": {}, "additionalProperties": False},
+        {"selector": "#private"},
         risk=ActionRisk.LOW,
     )
     source = SurfaceObservation(
-        identity, "static", f"revision:{identity}", ObservationSourceProfile.dom(),
-        tuple(targets), tuple(facts), (binding,),
+        identity,
+        "static",
+        f"revision:{identity}",
+        ObservationSourceProfile.dom(),
+        tuple(targets),
+        tuple(facts),
+        (binding,),
     )
     fused = WorldFusion().fuse((source,))
     assert fused.observation is not None
@@ -52,12 +68,19 @@ def _world(identity: str, *, report: bool) -> WorldObservation:
 
 def _task() -> TaskGoal:
     return TaskGoal(
-        "dynamic-report", "Generate a clear report", allowed_effects=("report_created",),
-        success_criteria=({
-            "id": "quality", "adjudicator": "semantic", "kind": "semantic_rubric",
-            "rubric": "The report is clear and contains a conclusion.",
-            "evidence_scope_target_ids": ["report:1"],
-        },), risk_profile=RiskProfile.LOW,
+        "dynamic-report",
+        "Generate a clear report",
+        allowed_effects=("report_created",),
+        success_criteria=(
+            {
+                "id": "quality",
+                "adjudicator": "semantic",
+                "kind": "semantic_rubric",
+                "rubric": "The report is clear and contains a conclusion.",
+                "evidence_scope_target_ids": ["report:1"],
+            },
+        ),
+        risk_profile=RiskProfile.LOW,
     )
 
 
@@ -79,23 +102,25 @@ class InconclusiveActionEvaluator:
     async def evaluate(self, task, before, request, result, after):
         del task, result
         return ActionEvaluation(
-            request.request_id, before.observation_id, after.observation_id,
-            ActionEvaluationStatus.UNKNOWN, "no exact future state was required",
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
+            ActionEvaluationStatus.UNKNOWN,
+            "no exact future state was required",
         )
 
 
 def test_dynamic_semantic_target_creation_advances_from_incomplete_to_complete() -> None:
     judge = CatalogJudge()
     evaluator = ProductionTaskEvaluator(judge)
-    environment = StaticEnvironment(
-        [_world("before", report=False), _world("after", report=True)],
-        [ActionResult("*", DispatchStatus.SENT, "static", True)],
+    environment = ScriptedEnvironment(
+        initial_observation=_world("before", report=False),
+        post_observations=(_world("after", report=True),),
+        results=[ActionResult("*", DispatchStatus.SENT, "static", True)],
     )
 
     result = asyncio.run(
-        (AgentLoop(FirstOfferedActionPolicy(), InconclusiveActionEvaluator(), evaluator)).run(
-            environment, _task()
-        )
+        (AgentLoop(FirstOfferedActionPolicy(), InconclusiveActionEvaluator(), evaluator)).run(environment, _task())
     )
 
     assert result.status == AgentLoopStatus.DONE

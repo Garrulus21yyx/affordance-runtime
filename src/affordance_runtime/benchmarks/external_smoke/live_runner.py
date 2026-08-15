@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import (
-    InstrumentedBrowserGymEnvironment,
+    InstrumentedBrowserGymSurfaceAdapter,
 )
 from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalEnvironmentTaskEvaluator,
@@ -31,12 +31,26 @@ from affordance_runtime.evaluation import ProductionActionEvaluator
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 
 _REQUIRED = (
-    "observations", "executions", "turns", "currentness_probes",
-    "browsergym_step_calls", "browsergym_probe_calls", "policy_calls", "provider_attempts",
-    "prompt_tokens", "completion_tokens", "total_tokens", "model_latency_ms",
-    "official_success_count", "sent_unknown_count", "duplicate_unknown_attempts",
-    "forbidden_effect_attempts", "stale_zero_call_violations", "provider_retry_count",
-    "fallback_count", "cleanup_failures",
+    "observations",
+    "executions",
+    "turns",
+    "currentness_probes",
+    "browsergym_step_calls",
+    "browsergym_probe_calls",
+    "policy_calls",
+    "provider_attempts",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "model_latency_ms",
+    "official_success_count",
+    "sent_unknown_count",
+    "duplicate_unknown_attempts",
+    "forbidden_effect_attempts",
+    "stale_zero_call_violations",
+    "provider_retry_count",
+    "fallback_count",
+    "cleanup_failures",
 )
 
 
@@ -86,15 +100,24 @@ async def run_fixed_external_smoke(
         errors.append("fixed external smoke requires format-only.v1")
     accepted = not errors and suite.acceptance.accepted and len(suite.cases) == 3
     return FixedExternalSmokeOutcome(
-        suite, accepted, tuple(errors), provider, model, grounding, minimum_policy_call_interval_s,
+        suite,
+        accepted,
+        tuple(errors),
+        provider,
+        model,
+        grounding,
+        minimum_policy_call_interval_s,
     )
 
 
 def _manifest(seed: int, policy, instrumentations: list[BenchmarkInstrumentation]) -> BenchmarkManifest:
     cases = tuple(_case(item, seed, policy, instrumentations) for item in EXTERNAL_SMOKE_MANIFEST.cases)
     return BenchmarkManifest(
-        "browsergym-fixed-external-smoke.v1", "browsergym-fixed-external-smoke",
-        "mistral-format-only-mechanical", seed, cases,
+        "browsergym-fixed-external-smoke.v1",
+        "browsergym-fixed-external-smoke",
+        "mistral-format-only-mechanical",
+        seed,
+        cases,
     )
 
 
@@ -103,11 +126,13 @@ def _case(external_case, seed, policy, instrumentations) -> BenchmarkCase:
 
     def environment_factory(instrumentation):
         environment, task = open_browsergym_case(
-            external_case.benchmark_task_id, seed, max_turns=external_case.max_turns,
+            external_case.benchmark_task_id,
+            seed,
+            max_turns=external_case.max_turns,
         )
         holder.update(environment=environment, task=task)
         instrumentations.append(instrumentation)
-        return InstrumentedBrowserGymEnvironment(environment, instrumentation)
+        return InstrumentedBrowserGymSurfaceAdapter(environment, instrumentation)
 
     def task_factory():
         return holder["task"]
@@ -115,7 +140,8 @@ def _case(external_case, seed, policy, instrumentations) -> BenchmarkCase:
     def composition_factory(_instrumentation):
         environment = holder["environment"]
         return BenchmarkComposition(
-            policy, ProductionActionEvaluator(),
+            policy,
+            ProductionActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
         )
 
@@ -130,7 +156,15 @@ def _case(external_case, seed, policy, instrumentations) -> BenchmarkCase:
         MetricExpectation("cleanup_failures", MetricExpectationOperator.ZERO),
     )
     return BenchmarkCase(
-        external_case.case_id, "browsergym-fixed-external-smoke", external_case.description,
-        task_factory, environment_factory, composition_factory, (AgentLoopStatus.DONE,),
-        external_case.timeout_s, seed, _REQUIRED, expectations,
+        external_case.case_id,
+        "browsergym-fixed-external-smoke",
+        external_case.description,
+        task_factory,
+        environment_factory,
+        composition_factory,
+        (AgentLoopStatus.DONE,),
+        external_case.timeout_s,
+        seed,
+        _REQUIRED,
+        expectations,
     )

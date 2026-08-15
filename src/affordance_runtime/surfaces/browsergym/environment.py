@@ -1,25 +1,15 @@
-"""Reusable BrowserGym WorldEnvironment with active typed acquisition."""
+"""BrowserGym grouped backend behind the product acquisition coordinator."""
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
-from affordance_runtime.surfaces.browsergym.acquisition import (
-    episode_identity,
-    failed_acquisition,
-    not_sent_outcome,
-    page_identity,
-    probe_episode,
-    source_revision,
-    task_info,
-)
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymBindingStore,
     BrowserGymElementBinding,
-    BrowserGymPrivateBinding,
     BrowserGymVisualBinding,
 )
 from affordance_runtime.surfaces.browsergym.currentness import (
@@ -38,6 +28,13 @@ from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
 from affordance_runtime.surfaces.browsergym.execution import browsergym_action
+from affordance_runtime.surfaces.browsergym.lifecycle_identity import (
+    episode_identity,
+    page_identity,
+    probe_episode,
+    source_revision,
+    task_info,
+)
 from affordance_runtime.surfaces.browsergym.projection import (
     BrowserGymProjection,
     project_browsergym_observation,
@@ -74,27 +71,13 @@ from affordance_runtime.surfaces.visual.grounding import (
 from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    AcquisitionOrigin,
-    AcquisitionStatus,
-    ExecutionOutcome,
-    ObservationAcquisition,
-    ObservationCapabilities,
-    ObservationNeedResult,
-    ObservationNeedSatisfactionStatus,
     ObservationOffer,
     ObservationPurpose,
-    ObservationRequestKind,
-    ObservationSelectionPlan,
     SelectedObservationRequest,
-    SourceAcquisitionResult,
+    SelectedObservationResult,
     SourceAcquisitionStatus,
-    SourceRequirement,
     VisionEvidenceNeed,
-    WorldObservationRequest,
-    selected_observation_requests,
 )
-from affordance_runtime.world.fusion import FusionStatus, WorldFusion
-from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
 
 
 class BrowserGymPort(Protocol):
@@ -108,7 +91,7 @@ class BrowserGymPort(Protocol):
 
 
 @dataclass
-class BrowserGymEnvironment:
+class BrowserGymSurfaceAdapter:
     task_id: str
     seed: int
     gym_environment: BrowserGymPort
@@ -168,7 +151,6 @@ class BrowserGymEnvironment:
     structural_binding_dispatch_count: int = 0
     visual_binding_dispatch_count: int = 0
     _observation_serial: int = 0
-    _current_observation_id: str = ""
     _current_source_revision: str = ""
     _task_state: BrowserGymTaskStateSnapshot | None = None
     _diagnostic: BrowserGymDiagnosticSnapshot | None = None
@@ -176,22 +158,44 @@ class BrowserGymEnvironment:
     _terminated: bool = False
     _closed: bool = False
     last_currentness_decision: BrowserGymCurrentnessDecision | None = None
-    observation_orchestrator: ObservationOrchestrator = field(default_factory=ObservationOrchestrator)
     entity_identity: BrowserGymEntityIdentityMap = field(
         default_factory=BrowserGymEntityIdentityMap,
         repr=False,
     )
+    _pending_raw: dict[str, object] | None = field(default=None, init=False, repr=False)
+    _pending_snapshot: BrowserGymTaskStateSnapshot | None = field(default=None, init=False, repr=False)
+    _pending_observation_id: str = field(default="", init=False, repr=False)
+    _pending_revision: str = field(default="", init=False, repr=False)
+    _pending_acquisition_id: str = field(default="", init=False, repr=False)
+    _pending_projection: BrowserGymProjection | None = field(default=None, init=False, repr=False)
+    _pending_error_code: str = field(default="", init=False, repr=False)
+
+    surface: str = field(default="browsergym", init=False)
+
+    @property
+    def physical_environment_id(self) -> str:
+        return f"browsergym:{self.task_run_id}"
+
+    @property
+    def owns_physical_reset(self) -> bool:
+        return True
+
+    @property
+    def supports_independent_capture(self) -> bool:
+        return bool(getattr(self.gym_environment, "supports_capture_current", False))
 
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
         group = f"browsergym:{self.task_run_id}"
         visual_purposes = [ObservationPurpose.WORLD_GROUNDING]
         if self.visual_region_proposer is not None:
-            visual_purposes.extend((
-                ObservationPurpose.ENTITY_DISCOVERY,
-                ObservationPurpose.EFFECT_VERIFICATION,
-                ObservationPurpose.CRITERION_VERIFICATION,
-            ))
+            visual_purposes.extend(
+                (
+                    ObservationPurpose.ENTITY_DISCOVERY,
+                    ObservationPurpose.EFFECT_VERIFICATION,
+                    ObservationPurpose.CRITERION_VERIFICATION,
+                )
+            )
         if self.visual_candidate_disambiguator is not None or self.marked_candidate_policy_available:
             visual_purposes.append(ObservationPurpose.TARGET_DISAMBIGUATION)
         return (
@@ -206,11 +210,6 @@ class BrowserGymEnvironment:
             ),
         )
 
-    @property
-    def observation_capabilities(self) -> ObservationCapabilities:
-        independent = bool(getattr(self.gym_environment, "supports_capture_current", False))
-        return ObservationCapabilities(independent, True, self.observation_offers)
-
     @classmethod
     def open(
         cls,
@@ -223,7 +222,7 @@ class BrowserGymEnvironment:
         visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
         visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
         marked_candidate_policy_available: bool = False,
-    ) -> BrowserGymEnvironment:
+    ) -> BrowserGymSurfaceAdapter:
         if not task_id.strip():
             raise ValueError("BrowserGym task ID must be nonempty")
         if gym_factory is None:
@@ -258,13 +257,23 @@ class BrowserGymEnvironment:
             gym_environment.close()
             raise
 
-    async def reset(self, task: TaskGoal) -> ObservationAcquisition:
-        self.logical_reset_calls += 1
-        if self._closed or self._prepared_initial_raw is None or self.logical_reset_calls != 1:
-            return failed_acquisition(AcquisitionOrigin.RESET, "prepared_initial_observation_unavailable")
+    def initialize_task(self, task: TaskGoal) -> None:
+        if self._closed:
+            raise RuntimeError("BrowserGym backend is closed")
         if task.instruction != self.goal_instruction:
             raise ValueError("TaskGoal instruction must be the public BrowserGym goal")
+        if self._task is not None and (
+            task.task_id != self._task.task_id or task.revision not in {self._task.revision, self._task.revision + 1}
+        ):
+            raise ValueError("BrowserGym task revision must be current or consecutive")
         self._task = task
+
+    async def reset_physical(self) -> None:
+        self.logical_reset_calls += 1
+        if self._closed or self._prepared_initial_raw is None or self.logical_reset_calls != 1:
+            raise RuntimeError("prepared_initial_observation_unavailable")
+        if self._task is None:
+            raise RuntimeError("BrowserGym task must be initialized before reset")
         self.bindings.clear()
         self.dispatched_request_ids.clear()
         raw = self._prepared_initial_raw
@@ -280,110 +289,111 @@ class BrowserGymEnvironment:
             truncated=False,
             task_info=self._prepared_task_info,
         )
-        request = WorldObservationRequest(
-            ObservationRequestKind.POLICY_REQUEST,
-            "initial task grounding",
-        )
-        selection = self.observation_orchestrator.select(self.observation_offers, request)
-        if selection.plan is None:
-            return ObservationAcquisition(
-                selection.status,
-                AcquisitionOrigin.RESET,
-                None,
-                selection.reason_code,
-            )
-        return self._project(
-            raw,
-            snapshot,
-            AcquisitionOrigin.RESET,
-            observation_id,
-            revision,
-            selection.plan,
-            request,
-            selected_observation_requests(
-                selection.plan, request, self.observation_offers, observation_id
-            ),
-        )
+        self._prepare_frame(raw, snapshot, observation_id, revision)
 
-    async def revise_task(self, task: TaskGoal) -> None:
-        if self._closed or self._task is None:
-            raise RuntimeError("BrowserGym environment must be reset before task revision")
-        if task.task_id != self._task.task_id or task.revision != self._task.revision + 1:
-            raise ValueError("BrowserGym task revision must be consecutive for the active task")
-        self._task = task
+    async def acquire(
+        self,
+        request: SelectedObservationRequest,
+    ) -> SelectedObservationResult:
+        return (await self.acquire_group((request,)))[0]
 
-    async def capture(self, request: WorldObservationRequest) -> ObservationAcquisition:
+    async def acquire_group(
+        self,
+        requests: tuple[SelectedObservationRequest, ...],
+    ) -> tuple[SelectedObservationResult, ...]:
+        if not requests:
+            return ()
         if self._closed or self._task is None:
-            return failed_acquisition(AcquisitionOrigin.INDEPENDENT_CAPTURE, "environment_not_ready")
-        if not self.observation_capabilities.independent_capture:
-            return ObservationAcquisition(
-                AcquisitionStatus.CAPABILITY_UNAVAILABLE,
-                AcquisitionOrigin.INDEPENDENT_CAPTURE,
-                None,
-                "independent_capture_unsupported",
+            return tuple(
+                SelectedObservationResult.failed(request, SourceAcquisitionStatus.FAILED, "environment_not_ready")
+                for request in requests
             )
-        self.capture_calls += 1
-        selection = self.observation_orchestrator.select(
-            self.observation_offers,
-            request,
-        )
-        if selection.plan is None:
-            return ObservationAcquisition(
-                selection.status,
-                AcquisitionOrigin.INDEPENDENT_CAPTURE,
-                None,
-                selection.reason_code,
-            )
+        if len({item.acquisition_id for item in requests}) != 1:
+            raise ValueError("BrowserGym grouped acquisition must conserve one identity")
+        acquisition_id = requests[0].acquisition_id
         try:
-            raw, probe = self.gym_environment.capture_current()
-            self._page_identity = page_identity(raw)
-            self._episode_identity = probe_episode(probe, self._episode_identity)
-            observation_id, revision = self._next_identity()
-            snapshot = task_state_from_probe(
-                task_run_id=self.task_run_id,
-                observation_id=observation_id,
-                source_observation_id=observation_id,
-                probe=probe,
-            )
-            return self._project(
-                raw,
-                snapshot,
-                AcquisitionOrigin.INDEPENDENT_CAPTURE,
-                observation_id,
-                revision,
-                selection.plan,
-                request,
-                selected_observation_requests(
-                    selection.plan, request, self.observation_offers, observation_id
-                ),
-            )
+            if self._pending_raw is not None and not self._pending_acquisition_id:
+                self._pending_acquisition_id = acquisition_id
+            elif self._pending_acquisition_id != acquisition_id:
+                if not getattr(self.gym_environment, "supports_capture_current", False):
+                    return tuple(
+                        SelectedObservationResult.failed(
+                            request,
+                            SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                            "independent_capture_unsupported",
+                        )
+                        for request in requests
+                    )
+                self.capture_calls += 1
+                raw, probe = self.gym_environment.capture_current()
+                self._page_identity = page_identity(raw)
+                self._episode_identity = probe_episode(probe, self._episode_identity)
+                observation_id, revision = self._next_identity()
+                snapshot = task_state_from_probe(
+                    task_run_id=self.task_run_id,
+                    observation_id=observation_id,
+                    source_observation_id=observation_id,
+                    probe=probe,
+                )
+                self._prepare_frame(raw, snapshot, observation_id, revision)
+            self._pending_acquisition_id = acquisition_id
+            return self._project_requests(requests)
         except Exception:
-            return failed_acquisition(AcquisitionOrigin.INDEPENDENT_CAPTURE, "browsergym_capture_failed")
+            return tuple(
+                SelectedObservationResult.failed(
+                    request,
+                    SourceAcquisitionStatus.FAILED,
+                    self._pending_error_code or "browsergym_capture_failed",
+                )
+                for request in requests
+            )
 
-    async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:
+    async def execute(self, request: BoundActionRequest) -> ActionResult:
         private = self.bindings.get(request.binding.binding_id)
         error, physical_probe_count = self._probe_currentness(request, private)
         if error is not None:
-            return not_sent_outcome(request, error, probe_count=physical_probe_count)
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                request.binding.executor_id,
+                False,
+                error,
+                {"currentness_probe_count": physical_probe_count, "effectful_dispatch_count": 0},
+            )
         assert private is not None
         try:
             action = browsergym_action(request, private)
         except ValueError:
-            return not_sent_outcome(request, ActionError.INVALID_PARAMETERS)
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                request.binding.executor_id,
+                False,
+                ActionError.INVALID_PARAMETERS,
+                {"currentness_probe_count": 1, "effectful_dispatch_count": 0},
+            )
         self._record_dispatch(request)
+        self._pending_raw = None
+        self._pending_snapshot = None
+        self._pending_projection = None
+        self._pending_acquisition_id = ""
         try:
             raw, reward, terminated, truncated, info = self.gym_environment.step(action)
         except BaseException:
-            result = ActionResult(
-                request.request_id, DispatchStatus.SENT_UNKNOWN, "browsergym", False,
+            self._pending_error_code = "step_failed_after_dispatch"
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.SENT_UNKNOWN,
+                "browsergym",
+                False,
                 ActionError.EXECUTION_FAILED,
                 {"currentness_probe_count": 1, "effectful_dispatch_count": 1},
             )
-            return ExecutionOutcome(
-                result, failed_acquisition(AcquisitionOrigin.POST_ACTION, "step_failed_after_dispatch"),
-            )
         result = ActionResult(
-            request.request_id, DispatchStatus.SENT, "browsergym", True,
+            request.request_id,
+            DispatchStatus.SENT,
+            "browsergym",
+            True,
             adapter_evidence={"currentness_probe_count": 1, "effectful_dispatch_count": 1},
         )
         try:
@@ -402,45 +412,15 @@ class BrowserGymEnvironment:
                 truncated=truncated,
                 task_info=current_task_info,
             )
-            post_request = WorldObservationRequest(
-                ObservationRequestKind.POST_ACTION_FALLBACK,
-                "post action",
-                request.verification_needs,
-            )
-            selection = self.observation_orchestrator.select(
-                self.observation_offers,
-                post_request,
-                route_source=request.binding.surface,
-            )
-            if selection.plan is None:
-                post = ObservationAcquisition(
-                    selection.status,
-                    AcquisitionOrigin.POST_ACTION,
-                    None,
-                    selection.reason_code,
-                )
-                return ExecutionOutcome(result, post)
-            post = self._project(
-                raw,
-                snapshot,
-                AcquisitionOrigin.POST_ACTION,
-                observation_id,
-                revision,
-                selection.plan,
-                post_request,
-                selected_observation_requests(
-                    selection.plan, post_request, self.observation_offers, observation_id
-                ),
-            )
+            self._prepare_frame(raw, snapshot, observation_id, revision)
         except Exception:
-            post = failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_action_projection_failed")
-        return ExecutionOutcome(result, post)
+            self._pending_error_code = "post_action_projection_failed"
+        return result
 
     def is_current(self, request: BoundActionRequest) -> bool:
         private = self.bindings.get(request.binding.binding_id)
         return bool(
             private
-            and request.world_observation_id == self._current_observation_id
             and request.binding.source_observation_id == private.source_observation_id
             and request.binding.source_revision == private.source_revision
         )
@@ -467,297 +447,197 @@ class BrowserGymEnvironment:
             if getattr(unwrapped, name, None) is not None:
                 raise RuntimeError("BrowserGym cleanup left an owned browser resource open")
 
-    def _project(
+    def _prepare_frame(
         self,
-        raw,
+        raw: dict[str, object],
         snapshot: BrowserGymTaskStateSnapshot,
-        origin,
-        observation_id,
-        revision,
-        plan: ObservationSelectionPlan,
-        request: WorldObservationRequest,
-        acquisition_requests: tuple[SelectedObservationRequest, ...],
-    ) -> ObservationAcquisition:
-        initial_requests_by_source = {
-            item.source: item for item in acquisition_requests
-        }
-        if "browsergym" not in initial_requests_by_source:
-            return failed_acquisition(origin, "structural_source_not_selected")
+        observation_id: str,
+        revision: str,
+    ) -> None:
+        self._pending_raw = raw
+        self._pending_snapshot = snapshot
+        self._pending_observation_id = observation_id
+        self._pending_revision = revision
+        self._pending_acquisition_id = ""
+        self._pending_projection = None
+        self._pending_error_code = ""
+
+    def _structural_projection(self) -> BrowserGymProjection:
+        if self._pending_projection is not None:
+            return self._pending_projection
+        if self._pending_raw is None or self._pending_snapshot is None:
+            raise RuntimeError(self._pending_error_code or "browsergym_frame_unavailable")
         try:
-            projection: BrowserGymProjection = project_browsergym_observation(
-                raw,
-                observation_id=observation_id,
-                source_revision=revision,
+            projection = project_browsergym_observation(
+                self._pending_raw,
+                observation_id=self._pending_observation_id,
+                source_revision=self._pending_revision,
                 page_identity=self._page_identity,
                 episode_identity=self._episode_identity,
-                task_state=snapshot,
+                task_state=self._pending_snapshot,
                 entity_identity=self.entity_identity,
             )
         except BrowserGymSemanticError as exc:
-            return failed_acquisition(origin, f"browsergym_semantic_{exc.code.value}")
-        refined = self.observation_orchestrator.select_after_baseline(
-            self.observation_offers,
-            request,
-            projection.world.sources[0],
-            terminal=snapshot.terminal_hint,
-            route_source=next(
-                (
-                    item.source
-                    for item in plan.selections
-                    if item.reason_code == "route_source_refresh"
-                ),
-                "",
-            ),
-        )
-        if refined.plan is None:
-            return ObservationAcquisition(
-                refined.status,
-                origin,
-                None,
-                refined.reason_code,
-            )
-        plan = refined.plan
-        acquisition_requests = selected_observation_requests(
-            plan,
-            request,
-            self.observation_offers,
-            acquisition_requests[0].acquisition_id,
-        )
-        requests_by_source = {item.source: item for item in acquisition_requests}
-        selected = {item.source: item for item in plan.selections}
-        if "browsergym_visual" in selected:
-            self.visual_gate_selected_count += 1
-        else:
-            self.visual_gate_skipped_count += 1
-        sources = [projection.world.sources[0]]
-        private_bindings: list[BrowserGymPrivateBinding] = list(projection.private_bindings)
-        results: list[SourceAcquisitionResult] = [SourceAcquisitionResult(
-            "browsergym",
-            selected["browsergym"].requirement,
-            SourceAcquisitionStatus.ACQUIRED,
-            "source_acquired",
-            projection.world.sources[0],
-            self._need_results(
-                requests_by_source["browsergym"],
-                tuple(item.need_id for item in requests_by_source["browsergym"].needs),
-            ),
-        )]
-        self.structural_source_acquired_count += 1
-        visual_selection = selected.get("browsergym_visual")
-        visual_request = requests_by_source.get("browsergym_visual")
-        candidate_binding_filter: set[str] | None = None
-        if visual_selection is None:
-            results.append(SourceAcquisitionResult(
-                "browsergym_visual",
-                SourceRequirement.UNSELECTED,
-                SourceAcquisitionStatus.NOT_ACQUIRED,
-                "source_not_selected",
-            ))
-        elif visual_selection is not None:
-            try:
-                assert self._task is not None
-                visual_observation_id = f"{observation_id}:visual"
-                visual_private_bindings: tuple[BrowserGymVisualBinding, ...]
-                assert visual_request is not None
-                visual_purpose = self._visual_purpose(visual_request)
-                target_disambiguated = False
-                if visual_purpose is ObservationPurpose.WORLD_GROUNDING or (
-                    visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
-                    and self.visual_candidate_disambiguator is None
-                    and self.marked_candidate_policy_available
-                ):
-                    visual_source = project_browsergym_screenshot_source(
-                        raw,
-                        observation_id=visual_observation_id,
-                        acquisition_root_id=observation_id,
-                    )
-                    visual_private_bindings = ()
-                    target_disambiguated = (
-                        visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
-                    )
-                elif visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
-                    assert self.visual_candidate_disambiguator is not None
-                    self.visual_disambiguator_calls += 1
-                    disambiguation = project_browsergym_visual_disambiguation_source(
-                        raw,
-                        observation_id=visual_observation_id,
-                        acquisition_root_id=observation_id,
-                        instruction=self._task.instruction,
-                        structured_source=projection.world.sources[0],
-                        disambiguator=self.visual_candidate_disambiguator,
-                        evidence_need=VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
-                    )
-                    visual_source = disambiguation.source
-                    target_disambiguated = bool(disambiguation.selected_target_id)
-                    if disambiguation.selected_target_id:
-                        self.visual_disambiguator_selection_count += 1
-                        self.visual_correspondence_matched_count += 1
-                    candidate_binding_filter = {
-                        binding.binding_id
-                        for binding in sources[0].bindings
-                        if binding.target_id == disambiguation.selected_target_id
-                    }
-                    private_bindings = [
-                        binding
-                        for binding in private_bindings
-                        if binding.binding_id in candidate_binding_filter
-                    ]
-                    visual_private_bindings = ()
-                else:
-                    if self.visual_region_proposer is not None:
-                        self.visual_proposer_calls += 1
-                    visual = project_browsergym_visual_source(
-                        raw,
-                        observation_id=visual_observation_id,
-                        acquisition_root_id=observation_id,
-                        page_identity=self._page_identity,
-                        episode_identity=self._episode_identity,
-                        task=self._task,
-                        proposer=self.visual_region_proposer,
-                        # Point grounders are isolated benchmark arms.  The
-                        # BrowserGym mainline may observe unmatched V-refs but
-                        # cannot turn them into action authority.
-                        point_grounder=None,
-                        structured_source=projection.world.sources[0],
-                    )
-                    visual_source = visual.source
-                    visual_private_bindings = visual.private_bindings
-                    if visual.point_grounding_attempted:
-                        self.visual_point_grounder_calls += 1
-                    if visual.point_grounding_succeeded:
-                        self.visual_point_grounder_success_count += 1
-                    if visual.provider_failure is not None:
-                        self._record_visual_provider_failure(visual.provider_failure)
-                    self._record_correspondence_metrics(visual.correspondence_decisions)
-                sources.append(visual_source)
-                private_bindings.extend(visual_private_bindings)
-                fulfilled_visual_need_ids: tuple[str, ...]
-                if visual_purpose is ObservationPurpose.WORLD_GROUNDING:
-                    fulfilled_visual_need_ids = tuple(
-                        item.need_id
-                        for item in visual_request.needs
-                        if item.purpose is ObservationPurpose.WORLD_GROUNDING
-                    )
-                elif visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
-                    fulfilled_visual_need_ids = tuple(
-                        item.need_id
-                        for item in visual_request.needs
-                        if item.purpose is ObservationPurpose.TARGET_DISAMBIGUATION
-                        and target_disambiguated
-                    )
-                else:
-                    fulfilled_visual_need_ids = tuple(
-                        item.need_id
-                        for item in visual_request.needs
-                        if (
-                            item.purpose is ObservationPurpose.ENTITY_DISCOVERY
-                            and bool(visual_source.targets)
-                        )
-                        or (
-                            item.purpose in {
-                                ObservationPurpose.EFFECT_VERIFICATION,
-                                ObservationPurpose.CRITERION_VERIFICATION,
-                            }
-                            and bool(visual_source.facts)
-                            and (
-                                not item.subject_ids
-                                or bool(
-                                    set(item.subject_ids)
-                                    & {target.target_id for target in visual_source.targets}
-                                )
-                            )
-                        )
-                    )
-                results.append(SourceAcquisitionResult(
-                    "browsergym_visual",
-                    visual_selection.requirement,
-                    SourceAcquisitionStatus.ACQUIRED,
-                    "source_acquired",
-                    visual_source,
-                    self._need_results(
-                        visual_request,
-                        fulfilled_visual_need_ids,
-                        "visual_need_unresolved",
-                    ),
-                ))
-                self.visual_source_acquired_count += 1
-                self.visual_binding_acquired_count += len(visual_private_bindings)
-            except Exception as exc:
-                stage = VisualProviderStage.REGION_PROPOSAL
-                if (
-                    visual_request is not None
-                    and self._visual_purpose(visual_request)
-                    is ObservationPurpose.TARGET_DISAMBIGUATION
-                    and self.visual_candidate_disambiguator is not None
-                ):
-                    stage = VisualProviderStage.CANDIDATE_DISAMBIGUATION
-                self._record_visual_provider_failure(
-                    classify_visual_provider_failure(stage, exc)
-                )
-                results.append(SourceAcquisitionResult(
-                    "browsergym_visual",
-                    visual_selection.requirement,
-                    SourceAcquisitionStatus.FAILED,
-                    "source_acquisition_failed",
-                    None,
-                    self._need_results(
-                        visual_request,
-                        (),
-                        "source_acquisition_failed",
-                    )
-                    if visual_request is not None
-                    else (),
-                ))
-        if any(
-            item.requirement is SourceRequirement.REQUIRED
-            and item.status is not SourceAcquisitionStatus.ACQUIRED
-            for item in results
-        ):
-            return ObservationAcquisition(
-                AcquisitionStatus.FAILED,
-                origin,
-                None,
-                "required_source_exhausted",
-                plan,
-                tuple(results),
-            )
-        fused = WorldFusion().fuse(tuple(sources))
-        if fused.status is not FusionStatus.FUSED or fused.observation is None:
-            return failed_acquisition(origin, fused.reason_code)
-        world = fused.observation
-        if candidate_binding_filter is not None:
-            world = replace(
-                world,
-                bindings=tuple(
-                    binding
-                    for binding in world.bindings
-                    if binding.binding_id in candidate_binding_filter
-                ),
-            )
-        self.bindings.replace(tuple(private_bindings))
-        self._current_observation_id = world.observation_id
-        self._current_source_revision = revision
-        self._task_state = snapshot
+            raise RuntimeError(f"browsergym_semantic_{exc.code.value}") from exc
+        self._pending_projection = projection
+        self.bindings.replace(tuple(projection.private_bindings))
+        self._current_source_revision = self._pending_revision
+        self._task_state = self._pending_snapshot
         self._diagnostic = diagnostic_snapshot(
             projection.semantic_analysis,
-            projection.world.sources[0].semantic_inventory,
+            projection.source.semantic_inventory,
         )
-        self.full_observation_count += 1
-        return ObservationAcquisition(
-            AcquisitionStatus.ACQUIRED,
-            origin,
-            world,
-            "world_acquired_with_unresolved_need"
-            if any(item.unfulfilled_need_ids for item in results)
-            else "world_acquired_with_optional_gap"
-            if any(
-                item.requirement is SourceRequirement.OPTIONAL
-                and item.status is not SourceAcquisitionStatus.ACQUIRED
-                for item in results
+        return projection
+
+    def _project_requests(
+        self,
+        requests: tuple[SelectedObservationRequest, ...],
+    ) -> tuple[SelectedObservationResult, ...]:
+        projection = self._structural_projection()
+        results: list[SelectedObservationResult] = []
+        for request in requests:
+            if request.source == "browsergym":
+                results.append(
+                    SelectedObservationResult.acquired(
+                        request,
+                        projection.source,
+                        fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+                    )
+                )
+                self.structural_source_acquired_count += 1
+                continue
+            if request.source != "browsergym_visual":
+                results.append(
+                    SelectedObservationResult.failed(
+                        request,
+                        SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                        "source_not_owned",
+                    )
+                )
+                continue
+            results.append(self._project_visual_request(request, projection))
+        self.full_observation_count += int(bool(results))
+        return tuple(results)
+
+    def _project_visual_request(
+        self,
+        request: SelectedObservationRequest,
+        projection: BrowserGymProjection,
+    ) -> SelectedObservationResult:
+        self.visual_gate_selected_count += 1
+        try:
+            assert self._task is not None and self._pending_raw is not None
+            visual_observation_id = f"{self._pending_observation_id}:visual"
+            visual_purpose = self._visual_purpose(request)
+            target_disambiguated = False
+            if visual_purpose is ObservationPurpose.WORLD_GROUNDING or (
+                visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
+                and self.visual_candidate_disambiguator is None
+                and self.marked_candidate_policy_available
+            ):
+                visual_source = project_browsergym_screenshot_source(
+                    self._pending_raw,
+                    observation_id=visual_observation_id,
+                    acquisition_root_id=self._pending_observation_id,
+                )
+                visual_private_bindings: tuple[BrowserGymVisualBinding, ...] = ()
+                target_disambiguated = visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
+            elif visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
+                assert self.visual_candidate_disambiguator is not None
+                self.visual_disambiguator_calls += 1
+                disambiguation = project_browsergym_visual_disambiguation_source(
+                    self._pending_raw,
+                    observation_id=visual_observation_id,
+                    acquisition_root_id=self._pending_observation_id,
+                    instruction=self._task.instruction,
+                    structured_source=projection.source,
+                    disambiguator=self.visual_candidate_disambiguator,
+                    evidence_need=VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
+                )
+                visual_source = disambiguation.source
+                visual_private_bindings = ()
+                target_disambiguated = bool(disambiguation.selected_target_id)
+                if target_disambiguated:
+                    self.visual_disambiguator_selection_count += 1
+                    self.visual_correspondence_matched_count += 1
+            else:
+                if self.visual_region_proposer is not None:
+                    self.visual_proposer_calls += 1
+                visual = project_browsergym_visual_source(
+                    self._pending_raw,
+                    observation_id=visual_observation_id,
+                    acquisition_root_id=self._pending_observation_id,
+                    page_identity=self._page_identity,
+                    episode_identity=self._episode_identity,
+                    task=self._task,
+                    proposer=self.visual_region_proposer,
+                    point_grounder=None,
+                    structured_source=projection.source,
+                )
+                visual_source = visual.source
+                visual_private_bindings = visual.private_bindings
+                if visual.provider_failure is not None:
+                    self._record_visual_provider_failure(visual.provider_failure)
+                self._record_correspondence_metrics(visual.correspondence_decisions)
+            if visual_private_bindings:
+                self.bindings.replace((*self.bindings.values, *visual_private_bindings))
+            fulfilled = self._fulfilled_visual_needs(
+                request,
+                visual_source,
+                visual_purpose,
+                target_disambiguated,
             )
-            else "browsergym_observation_acquired",
-            plan,
-            tuple(results),
+            self.visual_source_acquired_count += 1
+            self.visual_binding_acquired_count += len(visual_private_bindings)
+            return SelectedObservationResult.acquired(
+                request,
+                visual_source,
+                fulfilled_need_ids=fulfilled,
+                unfulfilled_reason_code="visual_need_unresolved",
+            )
+        except Exception as exc:
+            stage = (
+                VisualProviderStage.CANDIDATE_DISAMBIGUATION
+                if self._visual_purpose(request) is ObservationPurpose.TARGET_DISAMBIGUATION
+                and self.visual_candidate_disambiguator is not None
+                else VisualProviderStage.REGION_PROPOSAL
+            )
+            self._record_visual_provider_failure(classify_visual_provider_failure(stage, exc))
+            return SelectedObservationResult.failed(
+                request, SourceAcquisitionStatus.FAILED, "source_acquisition_failed"
+            )
+
+    @staticmethod
+    def _fulfilled_visual_needs(
+        request: SelectedObservationRequest,
+        visual_source,
+        visual_purpose: ObservationPurpose,
+        target_disambiguated: bool,
+    ) -> tuple[str, ...]:
+        if visual_purpose is ObservationPurpose.WORLD_GROUNDING:
+            return tuple(item.need_id for item in request.needs if item.purpose is ObservationPurpose.WORLD_GROUNDING)
+        if visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
+            return tuple(
+                item.need_id
+                for item in request.needs
+                if item.purpose is ObservationPurpose.TARGET_DISAMBIGUATION and target_disambiguated
+            )
+        return tuple(
+            item.need_id
+            for item in request.needs
+            if (item.purpose is ObservationPurpose.ENTITY_DISCOVERY and bool(visual_source.targets))
+            or (
+                item.purpose
+                in {
+                    ObservationPurpose.EFFECT_VERIFICATION,
+                    ObservationPurpose.CRITERION_VERIFICATION,
+                }
+                and bool(visual_source.facts)
+                and (
+                    not item.subject_ids
+                    or bool(set(item.subject_ids) & {target.target_id for target in visual_source.targets})
+                )
+            )
         )
 
     def _visual_purpose(
@@ -775,29 +655,6 @@ class BrowserGymEnvironment:
             if purpose in purposes:
                 return purpose
         raise ValueError("selected visual source has no typed observation purpose")
-
-    @staticmethod
-    def _need_results(
-        request: SelectedObservationRequest,
-        fulfilled_need_ids: tuple[str, ...],
-        unfulfilled_reason_code: str = "need_unresolved",
-    ) -> tuple[ObservationNeedResult, ...]:
-        fulfilled = frozenset(fulfilled_need_ids)
-        expected = {item.need_id for item in request.needs}
-        if not fulfilled <= expected:
-            raise ValueError("fulfilled need IDs must belong to selected request")
-        return tuple(
-            ObservationNeedResult(
-                item.need_id,
-                ObservationNeedSatisfactionStatus.FULFILLED
-                if item.need_id in fulfilled
-                else ObservationNeedSatisfactionStatus.UNFULFILLED,
-                "need_fulfilled"
-                if item.need_id in fulfilled
-                else unfulfilled_reason_code,
-            )
-            for item in request.needs
-        )
 
     def _record_correspondence_metrics(self, decisions) -> None:
         for item in decisions:

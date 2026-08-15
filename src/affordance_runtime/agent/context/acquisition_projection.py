@@ -20,13 +20,20 @@ def project_acquisition_offers(
 ) -> tuple[ObservationCapabilityView, ...]:
     if not capabilities.independent_capture:
         return ()
-    offers = {
-        (ObservationModality(offer.modality).value, ObservationAssurance(offer.assurance).value): tuple(
+    purposes_by_quality: dict[tuple[str, str], set[str]] = {}
+    for offer in capabilities.offers:
+        quality = (
+            ObservationModality(offer.modality).value,
+            ObservationAssurance(offer.assurance).value,
+        )
+        purposes_by_quality.setdefault(quality, set()).update(
             purpose.value for purpose in offer.supported_purposes
         )
-        for offer in capabilities.offers
-    }
     return tuple(
-        ObservationCapabilityView(modality, assurance, offers[(modality, assurance)])
-        for modality, assurance in sorted(offers)
+        ObservationCapabilityView(
+            modality,
+            assurance,
+            tuple(sorted(purposes_by_quality[(modality, assurance)])),
+        )
+        for modality, assurance in sorted(purposes_by_quality)
     )

@@ -5,7 +5,7 @@ import uuid
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.surfaces.browsergym.environment import BrowserGymEnvironment
+from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
@@ -52,14 +52,11 @@ def ax_node(
 
 def raw_observation(*nodes, goal='Click the "okay" button.', url="file:///fixed/task.html"):
     copied = [dict(node) for node in nodes]
-    select_indexes = [
-        index for index, node in enumerate(copied)
-        if node["role"]["value"] in {"combobox", "listbox"}
-    ]
+    select_indexes = [index for index, node in enumerate(copied) if node["role"]["value"] in {"combobox", "listbox"}]
     for index in select_indexes:
         owner = copied[index]
         options = []
-        for option in copied[index + 1:]:
+        for option in copied[index + 1 :]:
             if option["role"]["value"] != "option":
                 break
             option["parentId"] = owner["nodeId"]
@@ -71,7 +68,8 @@ def raw_observation(*nodes, goal='Click the "okay" button.', url="file:///fixed/
         if role == "option":
             continue
         owned = [
-            option for option in copied
+            option
+            for option in copied
             if option.get("parentId") == node["nodeId"] and option["role"]["value"] == "option"
         ]
         physical[str(node["browsergym_id"])] = {
@@ -80,18 +78,13 @@ def raw_observation(*nodes, goal='Click the "okay" button.', url="file:///fixed/
             "enabled": True,
             "readonly": False,
             "editable": role in {"textbox", "searchbox", "combobox", "listbox"},
-            "options": [
-                {"label": option["name"]["value"], "value": option["name"]["value"]}
-                for option in owned
-            ],
+            "options": [{"label": option["name"]["value"], "value": option["name"]["value"]} for option in owned],
         }
     return {
         "goal": goal,
         "url": url,
         "axtree_object": {"nodes": copied},
-        "extra_element_properties": {
-            str(node["browsergym_id"]): {"visibility": 1.0} for node in copied
-        },
+        "extra_element_properties": {str(node["browsergym_id"]): {"visibility": 1.0} for node in copied},
         PRIVATE_CONTROL_PROPERTIES_KEY: physical,
     }
 
@@ -139,10 +132,12 @@ class FakeBrowserGym:
             self.step_reward,
             self.step_terminated,
             self.step_truncated,
-            {"task_info": task_info(
-                reward=self.step_raw_reward,
-                done=self.step_done,
-            )},
+            {
+                "task_info": task_info(
+                    reward=self.step_raw_reward,
+                    done=self.step_done,
+                )
+            },
         )
 
     def currentness_probe(self, bid):
@@ -194,19 +189,57 @@ def open_fake(fake: FakeBrowserGym, task_id="browsergym/miniwob.click-button"):
     return open_surface(task_id, 7, gym_factory=lambda *_args, **_kwargs: fake)
 
 
+class BrowserGymTestEnvironment:
+    """Test facade that keeps BrowserGym behind the product coordinator."""
+
+    def __init__(self, surface):
+        from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+
+        self.surface = surface
+        self.world = UnifiedWorldEnvironment((surface,))
+
+    def __getattr__(self, name):
+        return getattr(self.surface, name)
+
+    @property
+    def observation_capabilities(self):
+        return self.world.observation_capabilities
+
+    async def reset(self, task):
+        return await self.world.reset(task)
+
+    async def revise_task(self, task):
+        return await self.world.revise_task(task)
+
+    async def capture(self, request):
+        return await self.world.capture(request)
+
+    async def execute(self, request):
+        return await self.world.execute(request)
+
+    def is_current(self, request):
+        return self.world.is_current(request)
+
+    async def close(self):
+        return await self.surface.close()
+
+
 def open_surface(task_id: str, seed: int, *, max_turns: int = 20, **kwargs):
-    environment = BrowserGymEnvironment.open(task_id, seed, **kwargs)
-    intake = ThinTaskIntake().compile(NaturalLanguageTaskRequest(
-        f"task:{uuid.uuid4().hex}",
-        environment.goal_instruction,
-        TaskBoundary(
-            allowed_effects=("external_ui_interaction",),
-            forbidden_effects=("external_network_side_effect", "credential_use"),
-            risk_profile=RiskProfile.LOW,
-            loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
-        ),
-        source_ref=f"browsergym:{task_id}:goal",
-    ))
+    surface = BrowserGymSurfaceAdapter.open(task_id, seed, **kwargs)
+    environment = BrowserGymTestEnvironment(surface)
+    intake = ThinTaskIntake().compile(
+        NaturalLanguageTaskRequest(
+            f"task:{uuid.uuid4().hex}",
+            environment.goal_instruction,
+            TaskBoundary(
+                allowed_effects=("external_ui_interaction",),
+                forbidden_effects=("external_network_side_effect", "credential_use"),
+                risk_profile=RiskProfile.LOW,
+                loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+            ),
+            source_ref=f"browsergym:{task_id}:goal",
+        )
+    )
     assert isinstance(intake, ReadyTask)
     return environment, intake.task
 

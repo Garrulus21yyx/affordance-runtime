@@ -32,6 +32,7 @@ from affordance_runtime.agent.control_transition import (
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.world import (
@@ -40,7 +41,6 @@ from affordance_runtime.world import (
     ObservationRequestKind,
 )
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def test_transition_is_frozen_bounded_and_strips_adapter_payload() -> None:
@@ -185,9 +185,9 @@ def test_each_terminal_accepted_decision_creates_one_root(
             return decision_factory(context.context_id)
 
     async def scenario() -> None:
-        session = await (
-            AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(StaticEnvironment([_world("before", False)]), _task())
+        session = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(initial_observation=_world("before", False)), _task()
+        )
         await session.run_until_pause()
 
         expected_roots = 2 if expected_reason == "action_outside_current_page" else 1
@@ -196,9 +196,7 @@ def test_each_terminal_accepted_decision_creates_one_root(
         assert transition.reason_code == expected_reason
         assert transition.before_observation_id == "before"
         if expected_roots == 2:
-            assert session.state.recent_control_transitions[1].reason_code == (
-                "no_progress_control_repetition"
-            )
+            assert session.state.recent_control_transitions[1].reason_code == ("no_progress_control_repetition")
 
     asyncio.run(scenario())
 
@@ -223,18 +221,19 @@ def test_refresh_decision_and_following_abort_each_create_one_root(kind: str) ->
             )
 
     async def scenario() -> None:
-        session = await (
-            AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(StaticEnvironment([_world("before", False), _world("fresh", False)]), _task())
+        session = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False), independent_observations=(_world("fresh", False),)
+            ),
+            _task(),
+        )
         await session.run_until_pause()
 
         assert session.state.control_transition_total_count == 2
         refresh = session.state.recent_control_transitions[0]
         assert refresh.acquisition is not None
         assert refresh.acquisition.request_kind == str(
-            ObservationRequestKind.WAIT_REFRESH
-            if kind == "wait"
-            else ObservationRequestKind.POLICY_REQUEST
+            ObservationRequestKind.WAIT_REFRESH if kind == "wait" else ObservationRequestKind.POLICY_REQUEST
         )
         assert refresh.after_observation_id == "fresh"
 
@@ -247,10 +246,12 @@ def test_action_transition_retains_typed_control_facts_once() -> None:
             return SelectAction(context.context_id, context.actions.options[0].action_id)
 
     async def scenario() -> None:
-        session = await (
-            AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(
-            StaticEnvironment([_world("before", False), _world("after", True)], [_sent()]),
+        session = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
             _task(),
         )
         result = await session.run_until_pause()
@@ -277,9 +278,9 @@ def test_provider_failure_before_decision_creates_no_transition() -> None:
             return PolicyFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "provider unavailable")
 
     async def scenario() -> None:
-        session = await (
-            AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
-        ).start(StaticEnvironment([_world("before", False)]), _task())
+        session = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
+            ScriptedEnvironment(initial_observation=_world("before", False)), _task()
+        )
         await session.run_until_pause()
         assert session.state.control_transition_total_count == 0
 

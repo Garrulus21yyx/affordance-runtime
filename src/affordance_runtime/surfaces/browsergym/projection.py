@@ -47,8 +47,6 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
-    WorldFusion,
-    WorldObservation,
 )
 from affordance_runtime.world.regular_lattice import (
     SpatialNode,
@@ -65,7 +63,7 @@ MAX_STRUCTURE_NODES = 512
 
 @dataclass(frozen=True)
 class BrowserGymProjection:
-    world: WorldObservation
+    source: SurfaceObservation
     private_bindings: tuple[BrowserGymElementBinding, ...]
     target_count_total: int
     fact_count_total: int
@@ -300,12 +298,8 @@ def project_browsergym_observation(
         structure=structure,
         structure_total_count=len(analysis.structure),
     )
-    fused = WorldFusion().fuse((source,))
-    if fused.observation is None:
-        raise ValueError(f"BrowserGym source did not fuse: {fused.reason_code}")
-    world = fused.observation
     return BrowserGymProjection(
-        world,
+        source,
         tuple(private),
         len(candidates),
         fact_total,

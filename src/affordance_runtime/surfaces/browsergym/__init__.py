@@ -1,8 +1,8 @@
 """Reusable BrowserGym surface acquisition, projection, binding, and execution."""
 
 from affordance_runtime.surfaces.browsergym.environment import (
-    BrowserGymEnvironment,
     BrowserGymPort,
+    BrowserGymSurfaceAdapter,
 )
 from affordance_runtime.surfaces.browsergym.inventory import (
     BrowserGymApiInventory,
@@ -15,7 +15,7 @@ from affordance_runtime.surfaces.browsergym.task_state import (
 
 __all__ = [
     "BrowserGymApiInventory",
-    "BrowserGymEnvironment",
+    "BrowserGymSurfaceAdapter",
     "BrowserGymPort",
     "BrowserGymTaskStateSnapshot",
     "BrowserGymTaskStateSource",

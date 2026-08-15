@@ -13,9 +13,6 @@ from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.surfaces.browsergym.projection import (
-    project_browsergym_observation,
-)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
@@ -28,6 +25,9 @@ from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     raw_observation,
     request_for,
     reset_task_state,
+)
+from tests.support.surfaces.browsergym.projection_support import (
+    project_browsergym_observation,
 )
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-action-evaluator-tests")

@@ -6,6 +6,7 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.agent import AgentLoopStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCase,
     BenchmarkComposition,
@@ -28,7 +29,6 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.world import fused_world
 
 
@@ -43,18 +43,22 @@ class NeverPolicy:
 
 class ActionEvaluator:
     async def evaluate(self, task, before, request, result, after):
-        return ActionEvaluation(request.request_id, before.observation_id, after.observation_id, ActionEvaluationStatus.UNKNOWN, "unused")
+        return ActionEvaluation(
+            request.request_id, before.observation_id, after.observation_id, ActionEvaluationStatus.UNKNOWN, "unused"
+        )
 
 
 class CompleteEvaluator:
     async def evaluate(self, task, observation):
-        return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.BLOCKED, "fixture terminal")
+        return TaskEvaluation(
+            task.task_id, observation.observation_id, TaskEvaluationStatus.BLOCKED, "fixture terminal"
+        )
 
 
 def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
     events = []
 
-    class Environment(StaticEnvironment):
+    class Environment(ScriptedEnvironment):
         async def reset(self, task):
             events.append(f"start:{task.task_id}")
             return await super().reset(task)
@@ -64,20 +68,33 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
 
     def case(identity):
         return BenchmarkCase(
-            identity, "suite", identity,
+            identity,
+            "suite",
+            identity,
             lambda: TaskGoal(identity, "Already complete"),
-            lambda _metrics: Environment([
-                fused_world(identity, surface="static")
-            ]),
+            lambda _metrics: Environment(
+                initial_observation=fused_world(identity, surface="static"),
+            ),
             lambda _metrics: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
-            (AgentLoopStatus.BLOCKED,), 2.0, 7, ("observations",),
+            (AgentLoopStatus.BLOCKED,),
+            2.0,
+            7,
+            ("observations",),
         )
 
     from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
 
-    result = asyncio.run(run_suite(BenchmarkManifest(
-        "target-loop-manifest.v1", "suite", "deterministic", 7, (case("a"), case("b")),
-    )))
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case("a"), case("b")),
+            )
+        )
+    )
     assert result.acceptance.accepted
     assert events == ["start:a", "close:a", "start:b", "close:b"]
     assert [item.case_id for item in result.cases] == ["a", "b"]
@@ -103,14 +120,30 @@ def _action_world(observation_id: str) -> WorldObservation:
     target = SemanticTarget("target:button", "button", "Continue")
     fact = StateFact(f"fact:{observation_id}:enabled", target.target_id, "enabled", True, observation_id)
     binding = ActionBinding(
-        f"binding:{observation_id}", observation_id, observation_id, f"revision:{observation_id}",
-        f"fingerprint:{observation_id}", target.target_id, target.target_id, "dom", "dom",
-        "activate", "click", "local_reversible", ("advanced",),
-        {"type": "object", "properties": {}, "additionalProperties": False}, {},
+        f"binding:{observation_id}",
+        observation_id,
+        observation_id,
+        f"revision:{observation_id}",
+        f"fingerprint:{observation_id}",
+        target.target_id,
+        target.target_id,
+        "dom",
+        "dom",
+        "activate",
+        "click",
+        "local_reversible",
+        ("advanced",),
+        {"type": "object", "properties": {}, "additionalProperties": False},
+        {},
     )
     source = SurfaceObservation(
-        observation_id, "dom", f"revision:{observation_id}", ObservationSourceProfile.dom(),
-        (target,), (fact,), (binding,),
+        observation_id,
+        "dom",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (target,),
+        (fact,),
+        (binding,),
     )
     fused = WorldFusion().fuse((source,))
     assert fused.observation is not None
@@ -138,23 +171,42 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
 
     def task():
         return TaskGoal(
-            "timeout", "Exercise timeout snapshot", allowed_effects=("advanced",),
-            risk_profile=RiskProfile.LOW, loop_budget=LoopBudget(4, 6),
+            "timeout",
+            "Exercise timeout snapshot",
+            allowed_effects=("advanced",),
+            risk_profile=RiskProfile.LOW,
+            loop_budget=LoopBudget(4, 6),
         )
+
     case = BenchmarkCase(
-        "timeout", "suite", "timeout snapshot", task,
-        lambda _metrics: StaticEnvironment(
-            [_action_world("observation:one"), _action_world("observation:two")],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        "timeout",
+        "suite",
+        "timeout snapshot",
+        task,
+        lambda _metrics: ScriptedEnvironment(
+            initial_observation=_action_world("observation:one"),
+            post_observations=(_action_world("observation:two"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         ),
         lambda _metrics: BenchmarkComposition(policy, ActionEvaluator(), IncompleteEvaluator()),
-        (AgentLoopStatus.FAILED,), 0.05, 7, ("observations", "executions", "turns"),
+        (AgentLoopStatus.FAILED,),
+        0.05,
+        7,
+        ("observations", "executions", "turns"),
     )
     from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
 
-    result = asyncio.run(run_suite(BenchmarkManifest(
-        "target-loop-manifest.v1", "suite", "deterministic", 7, (case,),
-    ))).cases[0]
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            )
+        )
+    ).cases[0]
 
     assert result.failure_reason == "case timeout"
     assert result.termination_origin == "harness_watchdog"
@@ -185,16 +237,30 @@ def test_component_timeout_error_is_not_classified_as_watchdog() -> None:
             )
 
     case = BenchmarkCase(
-        "component-timeout", "suite", "component timeout", lambda: TaskGoal("t", "t"),
-        lambda _metrics: StaticEnvironment([_action_world("observation:one")]),
+        "component-timeout",
+        "suite",
+        "component timeout",
+        lambda: TaskGoal("t", "t"),
+        lambda _metrics: ScriptedEnvironment(initial_observation=_action_world("observation:one")),
         lambda _metrics: BenchmarkComposition(RaisingPolicy(), ActionEvaluator(), IncompleteEvaluator()),
-        (AgentLoopStatus.FAILED,), 2.0, 7, ("observations",),
+        (AgentLoopStatus.FAILED,),
+        2.0,
+        7,
+        ("observations",),
     )
     from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
 
-    result = asyncio.run(run_suite(BenchmarkManifest(
-        "target-loop-manifest.v1", "suite", "deterministic", 7, (case,),
-    ))).cases[0]
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            )
+        )
+    ).cases[0]
     assert result.case_failure_code != "case_timeout"
     assert result.failure_origin is not CaseFailureOrigin.HARNESS_WATCHDOG
     assert result.exception_class == "TimeoutError"
@@ -231,7 +297,7 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
         "suite",
         "typed failure",
         task,
-        lambda _metrics: StaticEnvironment(
+        lambda _metrics: ScriptedEnvironment(
             initial_observation=_action_world("observation:one"),
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
             observation_capabilities=ObservationCapabilities(False, True),

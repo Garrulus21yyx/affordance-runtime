@@ -10,10 +10,10 @@ import pytest
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.context import ModelFailureKind
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 @dataclass
@@ -100,12 +100,12 @@ def test_local_http_model_port_bridge_completes_one_safe_runtime_action() -> Non
     behavior = FixtureBehavior()
     server, thread = _serve(behavior)
     policy = _policy(server)
-    environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
+    environment = ScriptedEnvironment(
+        initial_observation=_world("before", False), post_observations=(_world("after", True),), results=[_sent()]
+    )
     try:
         result = asyncio.run(
-            (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
-                environment, _task()
-            )
+            (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
         )
     finally:
         _close(server, thread)
@@ -160,12 +160,12 @@ def test_local_http_model_port_bridge_completes_one_safe_runtime_action() -> Non
 def test_local_http_failures_are_bounded_typed_and_zero_execution(behavior, expected_kind) -> None:
     server, thread = _serve(behavior)
     deadline = 0.02 if behavior.delay_s else 2.0
-    environment = StaticEnvironment([_world("before", False)])
+    environment = ScriptedEnvironment(initial_observation=_world("before", False))
     try:
         result = asyncio.run(
-            (
-                AgentLoop(_policy(server, deadline=deadline), SharedActionEvaluator(), SharedTaskEvaluator())
-            ).run(environment, _task())
+            (AgentLoop(_policy(server, deadline=deadline), SharedActionEvaluator(), SharedTaskEvaluator())).run(
+                environment, _task()
+            )
         )
     finally:
         _close(server, thread)

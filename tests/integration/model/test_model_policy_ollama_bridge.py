@@ -5,11 +5,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
 from affordance_runtime.model.policy.spec import AgentDecisionPayload
 from affordance_runtime.model.providers.port import ModelConfig, OllamaModelPort
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def _serve() -> tuple[ThreadingHTTPServer, threading.Thread, list[dict[str, Any]]]:
@@ -60,12 +60,12 @@ def test_exact_ollama_agent_decision_schema_completes_one_runtime_action() -> No
         prompt_version="p5-m2-ollama-fixture",
     )
     policy = ModelBackedAgentPolicy(ModelPortDecisionAdapter(transport, config), call_timeout_s=2)
-    environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
+    environment = ScriptedEnvironment(
+        initial_observation=_world("before", False), post_observations=(_world("after", True),), results=[_sent()]
+    )
     try:
         result = asyncio.run(
-            (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
-                environment, _task()
-            )
+            (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, _task())
         )
     finally:
         server.shutdown()

@@ -33,8 +33,9 @@ LocalObjective proposal/reducer experiment is not a dormant extension path.
 Each causal phase has one closed immutable aggregate; later phases compose that
 value rather than replacing it with a lossy control summary. Model, telemetry,
 benchmark and persistence values are one-way projections and cannot re-enter
-Runtime authority. Repeated A.2 reopenings keep this full-chain contract open
-until the duplicate acquisition composition root and lossy DTOs are deleted.
+Runtime authority. R1 has removed the duplicate acquisition composition root.
+Repeated A.2 reopenings keep the full-chain contract open until R2/R3 delete
+the remaining lossy control DTOs and close one-way projections.
 Schemas and invariants remain solely in the
 authority map and scoped normative contracts linked above.
 

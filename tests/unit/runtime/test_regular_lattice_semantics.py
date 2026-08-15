@@ -15,9 +15,6 @@ from affordance_runtime.model.policy.grounded_tool_catalog import compile_ground
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.surfaces.browsergym.projection import (
-    project_browsergym_observation,
-)
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
@@ -29,6 +26,9 @@ from affordance_runtime.world.regular_lattice import (
     derive_regular_lattice,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
+from tests.support.surfaces.browsergym.projection_support import (
+    project_browsergym_observation,
+)
 
 
 def _nodes(group: str = "grid") -> tuple[SpatialNode, ...]:

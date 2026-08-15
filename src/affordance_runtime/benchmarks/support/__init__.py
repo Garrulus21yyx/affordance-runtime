@@ -1,5 +1,5 @@
 """Private support owned by shipped benchmark runners."""
 
-from .static_environment import StaleEnvironmentBinding, StaticEnvironment
+from .scripted_environment import ScriptedEnvironment, StaleEnvironmentBinding
 
-__all__ = ["StaticEnvironment", "StaleEnvironmentBinding"]
+__all__ = ["ScriptedEnvironment", "StaleEnvironmentBinding"]

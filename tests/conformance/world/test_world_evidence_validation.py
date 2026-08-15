@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.world import (
@@ -13,7 +14,6 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedTaskEvaluator, _sent, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def test_world_evidence_index_contains_current_facts_and_controlled_artifact_refs() -> None:
@@ -40,12 +40,20 @@ def test_world_evidence_index_contains_current_facts_and_controlled_artifact_ref
 
 def test_semantic_evidence_ids_may_contain_security_vocabulary() -> None:
     source = SurfaceObservation(
-        "obs-security-vocabulary", "dom", "revision:1", ObservationSourceProfile.dom(),
+        "obs-security-vocabulary",
+        "dom",
+        "revision:1",
+        ObservationSourceProfile.dom(),
         targets=(SemanticTarget("service", "service", "service"),),
-        facts=(StateFact(
-            "fact:api-token-enabled", "service", "authorization-ready", True,
-            "obs-security-vocabulary",
-        ),),
+        facts=(
+            StateFact(
+                "fact:api-token-enabled",
+                "service",
+                "authorization-ready",
+                True,
+                "obs-security-vocabulary",
+            ),
+        ),
     )
     fused = WorldFusion().fuse((source,))
     assert fused.observation is not None
@@ -128,10 +136,12 @@ def test_agent_loop_rejects_evidence_not_resolved_in_after_world(evidence_ref: s
 
     async def scenario() -> None:
         evaluator = FailIfCalledTaskEvaluator()
-        environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
-        result = await (
-            AgentLoop(ScriptedPolicy(["first"]), InvalidEvidenceEvaluator(), evaluator)
-        ).run(environment, _task())
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False), post_observations=(_world("after", True),), results=[_sent()]
+        )
+        result = await (AgentLoop(ScriptedPolicy(["first"]), InvalidEvidenceEvaluator(), evaluator)).run(
+            environment, _task()
+        )
 
         assert result.status == AgentLoopStatus.FAILED
         assert "evidence" in result.message

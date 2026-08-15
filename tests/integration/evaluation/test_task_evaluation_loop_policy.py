@@ -3,27 +3,22 @@ import asyncio
 import pytest
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import (
-    ActionEvaluation,
-    ActionEvaluationStatus,
     CriterionEvaluation,
     CriterionEvaluationStatus,
-    ProductionTaskEvaluator,
     TaskEvaluation,
     TaskEvaluationStatus,
     TaskOutcomeFact,
     TaskOutcomeKind,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
-from affordance_runtime.world import ObservationCapabilities, ObservationOffer
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedActionEvaluator, _task, _world
 from tests.integration.agent.test_confirmation_continuation import ActionEvaluator, FirstPolicy
 from tests.integration.agent.test_confirmation_continuation import _task as confirmation_task
 from tests.integration.agent.test_confirmation_continuation import _world as confirmation_world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 class SequencedTaskEvaluator:
@@ -34,15 +29,19 @@ class SequencedTaskEvaluator:
         status = self.statuses.pop(0)
         complete = status == TaskEvaluationStatus.COMPLETE
         fact_ref = observation.facts[0].fact_id
-        criteria = tuple(
-            CriterionEvaluation(
-                criterion_id(item),
-                CriterionEvaluationStatus.SATISFIED,
-                (fact_ref,),
-                "criterion satisfied",
+        criteria = (
+            tuple(
+                CriterionEvaluation(
+                    criterion_id(item),
+                    CriterionEvaluationStatus.SATISFIED,
+                    (fact_ref,),
+                    "criterion satisfied",
+                )
+                for item in task.success_criteria
             )
-            for item in task.success_criteria
-        ) if complete else ()
+            if complete
+            else ()
+        )
         return TaskEvaluation(
             task.task_id,
             observation.observation_id,
@@ -72,72 +71,13 @@ def test_initial_non_incomplete_task_evaluation_controls_loop(status, loop_statu
     async def scenario() -> None:
         evaluator = SequencedTaskEvaluator(status)
         loop = AgentLoop(FailIfCalledPolicy(), SharedActionEvaluator(), evaluator)
-        environment = StaticEnvironment([_world("initial", False)])
+        environment = ScriptedEnvironment(initial_observation=_world("initial", False))
 
         result = await (loop).run(environment, _task())
 
         assert result.status == loop_status
         assert result.execution_count == 0
         assert result.message == f"task evaluation is {status.value}"
-
-    asyncio.run(scenario())
-
-
-def test_observable_unknown_effect_requires_observation_before_another_action() -> None:
-    class UnknownActionEvaluator:
-        async def evaluate(self, task, before, request, result, after):
-            del task, result
-            return ActionEvaluation(
-                request.request_id,
-                before.observation_id,
-                after.observation_id,
-                ActionEvaluationStatus.UNKNOWN,
-                "business effect requires authoritative observation",
-            )
-
-    async def scenario() -> None:
-        task = TaskGoal(
-            "observable-unknown",
-            "Enable shared state and verify the persisted setting",
-            allowed_effects=("shared_state_enabled",),
-            success_criteria=({
-                "id": "persisted",
-                "kind": "fact_equals",
-                "subject_id": "settings",
-                "predicate": "enabled",
-                "expected_value": True,
-                "required_assurance": "authoritative",
-            },),
-            risk_profile=RiskProfile.LOW,
-        )
-        environment = StaticEnvironment(
-            initial_observation=_world("before", False),
-            post_observations=(_world("after", False),),
-            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
-            observation_capabilities=ObservationCapabilities(True, True, (
-                ObservationOffer("dom", "structural", "structural", "low"),
-                ObservationOffer(
-                    "http_json",
-                    "environment_state",
-                    "authoritative",
-                    "medium",
-                ),
-            )),
-        )
-        session = await (AgentLoop(
-            ScriptedPolicy(["first", "first"]),
-            UnknownActionEvaluator(),
-            ProductionTaskEvaluator(),
-        )).start(environment, task)
-
-        result = await session.run_until_pause()
-
-        assert result.status is AgentLoopStatus.BLOCKED
-        assert result.reason_code == "effect_unknown"
-        assert result.execution_count == 1
-        assert environment.execute_calls == 1
-        assert session.state.unresolved_observable_request is None
-        assert session.state.pending_unknown_request is None
 
     asyncio.run(scenario())
 
@@ -154,8 +94,9 @@ def test_confirmation_fresh_task_evaluation_prevents_execution(status, loop_stat
     async def scenario() -> None:
         evaluator = SequencedTaskEvaluator(TaskEvaluationStatus.INCOMPLETE, status)
         loop = AgentLoop(FirstPolicy(), ActionEvaluator(), evaluator)
-        environment = StaticEnvironment(
-            [confirmation_world("initial", False, "#initial"), confirmation_world("fresh", status == TaskEvaluationStatus.COMPLETE, "#fresh")]
+        environment = ScriptedEnvironment(
+            initial_observation=confirmation_world("initial", False, "#initial"),
+            independent_observations=(confirmation_world("fresh", status == TaskEvaluationStatus.COMPLETE, "#fresh"),),
         )
         session = await (loop).start(environment, confirmation_task())
         paused = await session.run_until_pause()
@@ -182,9 +123,10 @@ def test_post_action_blocked_stops_before_another_policy_turn() -> None:
             TaskEvaluationStatus.INCOMPLETE,
             TaskEvaluationStatus.BLOCKED,
         )
-        environment = StaticEnvironment(
-            [_world("before", False), _world("after", True)],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), SharedActionEvaluator(), evaluator)
 
@@ -219,7 +161,8 @@ def test_canonical_task_terminal_failure_is_absorbing_without_runtime_failure() 
         evaluator = TerminalEvaluator()
         loop = AgentLoop(FailIfCalledPolicy(), SharedActionEvaluator(), evaluator)
         session = await (loop).start(
-            StaticEnvironment([_world("initial", False)]), _task(),
+            ScriptedEnvironment(initial_observation=_world("initial", False)),
+            _task(),
         )
 
         first = await session.run_until_pause()

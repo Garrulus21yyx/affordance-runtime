@@ -108,13 +108,15 @@ def _visual_request():
     return WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         "structural actions do not ground the visible target",
-        (ObservationNeed(
-            "agent:visual:current-world",
-            ObservationPurpose.ENTITY_DISCOVERY,
-            ("current_world",),
-            ObservationModality.VISUAL,
-            ObservationAssurance.WEAK,
-        ),),
+        (
+            ObservationNeed(
+                "agent:visual:current-world",
+                ObservationPurpose.ENTITY_DISCOVERY,
+                ("current_world",),
+                ObservationModality.VISUAL,
+                ObservationAssurance.WEAK,
+            ),
+        ),
     )
 
 
@@ -182,32 +184,32 @@ def test_multi_purpose_visual_activation_reports_only_the_executed_purpose() -> 
         )
         try:
             await environment.reset(task)
-            acquisition = await environment.capture(WorldObservationRequest(
-                ObservationRequestKind.POLICY_REQUEST,
-                "two visual purposes",
-                (
-                    ObservationNeed(
-                        "need:disambiguate",
-                        ObservationPurpose.TARGET_DISAMBIGUATION,
-                        ("current_world",),
-                        ObservationModality.VISUAL,
-                        ObservationAssurance.WEAK,
+            acquisition = await environment.capture(
+                WorldObservationRequest(
+                    ObservationRequestKind.POLICY_REQUEST,
+                    "two visual purposes",
+                    (
+                        ObservationNeed(
+                            "need:disambiguate",
+                            ObservationPurpose.TARGET_DISAMBIGUATION,
+                            ("current_world",),
+                            ObservationModality.VISUAL,
+                            ObservationAssurance.WEAK,
+                        ),
+                        ObservationNeed(
+                            "need:discover",
+                            ObservationPurpose.ENTITY_DISCOVERY,
+                            ("current_world",),
+                            ObservationModality.VISUAL,
+                            ObservationAssurance.WEAK,
+                        ),
                     ),
-                    ObservationNeed(
-                        "need:discover",
-                        ObservationPurpose.ENTITY_DISCOVERY,
-                        ("current_world",),
-                        ObservationModality.VISUAL,
-                        ObservationAssurance.WEAK,
-                    ),
-                ),
-            ))
+                )
+            )
         finally:
             await environment.close()
 
-        visual = next(
-            item for item in acquisition.source_results if item.source == "browsergym_visual"
-        )
+        visual = next(item for item in acquisition.source_results if item.source == "browsergym_visual")
         assert visual.status is SourceAcquisitionStatus.ACQUIRED
         assert visual.fulfilled_need_ids == ("need:disambiguate",)
         assert visual.unfulfilled_need_ids == ("need:discover",)
@@ -386,9 +388,13 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
             assert "request_evidence" in {item.name for item in catalog.specs}
             decision = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("request_evidence", {
-                    "purpose": "entity_discovery", "subject": "current_world",
-                }),
+                ToolCall(
+                    "request_evidence",
+                    {
+                        "purpose": "entity_discovery",
+                        "subject": "current_world",
+                    },
+                ),
                 expected_context_id=context.context_id,
             )
             from affordance_runtime.model.policy.grounded_tool_contracts import (

@@ -8,6 +8,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.result import AgentFailureCode
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -25,7 +26,6 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def _world(observation_id: str, value: str) -> WorldObservation:
@@ -131,7 +131,7 @@ def _loop(policy) -> AgentLoop:
 def test_already_satisfied_selection_is_zero_call_then_typed_failure() -> None:
     async def scenario() -> None:
         policy = RepeatedFillPolicy()
-        environment = StaticEnvironment([_world("observation:one", "desired")])
+        environment = ScriptedEnvironment(initial_observation=_world("observation:one", "desired"))
         loop = _loop(policy)
         binder = CountingBinder()
         loop.binder = binder
@@ -163,9 +163,10 @@ def test_already_satisfied_selection_is_zero_call_then_typed_failure() -> None:
 def test_effectful_fill_executes_once_then_repeat_is_contained() -> None:
     async def scenario() -> None:
         policy = RepeatedFillPolicy()
-        environment = StaticEnvironment(
-            [_world("observation:one", ""), _world("observation:two", "desired")],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("observation:one", ""),
+            post_observations=(_world("observation:two", "desired"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         session = await (_loop(policy)).start(environment, _task())
         result = await session.run_until_pause()

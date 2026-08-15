@@ -13,8 +13,8 @@ from typing import Any, Callable, Protocol
 
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.surfaces.browsergym.environment import (
-    BrowserGymEnvironment,
     BrowserGymPort,
+    BrowserGymSurfaceAdapter,
 )
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
@@ -28,6 +28,7 @@ from affordance_runtime.task import (
     TaskGoal,
     ThinTaskIntake,
 )
+from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 
 @dataclass(frozen=True)
@@ -96,9 +97,7 @@ class ExternalVerifierResult:
         expected_reason = {
             ExternalVerifierStatus.SUCCESS: ExternalVerifierReason.VERIFIED_SUCCESS,
             ExternalVerifierStatus.INCOMPLETE: ExternalVerifierReason.VERIFIED_RUNNING,
-            ExternalVerifierStatus.TERMINAL_TASK_FAILURE: (
-                ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE
-            ),
+            ExternalVerifierStatus.TERMINAL_TASK_FAILURE: (ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE),
         }.get(self.status)
         if expected_reason is not None and self.reason is not expected_reason:
             raise ValueError("external verifier status and reason conflict")
@@ -119,7 +118,8 @@ class BrowserGymCaseEnvironment:
     """Benchmark case policy around the reusable BrowserGym surface."""
 
     benchmark_task_id: str
-    surface: BrowserGymEnvironment
+    surface: BrowserGymSurfaceAdapter
+    world: UnifiedWorldEnvironment
     verifier_queries: int = 0
     official_success_count: int = 0
 
@@ -128,22 +128,22 @@ class BrowserGymCaseEnvironment:
 
     @property
     def observation_capabilities(self):
-        return self.surface.observation_capabilities
+        return self.world.observation_capabilities
 
     async def reset(self, task):
-        return await self.surface.reset(task)
+        return await self.world.reset(task)
 
     async def revise_task(self, task):
-        return await self.surface.revise_task(task)
+        return await self.world.revise_task(task)
 
     async def capture(self, request):
-        return await self.surface.capture(request)
+        return await self.world.capture(request)
 
     async def execute(self, request):
-        return await self.surface.execute(request)
+        return await self.world.execute(request)
 
     def is_current(self, request):
-        return self.surface.is_current(request)
+        return self.world.is_current(request)
 
     async def close(self) -> None:
         await self.surface.close()
@@ -157,9 +157,7 @@ class BrowserGymCaseEnvironment:
         )
 
         self.verifier_queries += 1
-        result = as_external_result(
-            assess_browsergym_task_state(self.surface.current_task_state())
-        )
+        result = as_external_result(assess_browsergym_task_state(self.surface.current_task_state()))
         if result.status is ExternalVerifierStatus.SUCCESS:
             self.official_success_count += 1
         return result
@@ -185,7 +183,7 @@ def open_browsergym_case(
     admitted = frozenset(REVIEWED_TASK_IDS) if admitted_task_ids is None else admitted_task_ids
     if benchmark_task_id not in admitted:
         raise ValueError("BrowserGym task ID is outside the reviewed fixed manifest")
-    surface = BrowserGymEnvironment.open(
+    surface = BrowserGymSurfaceAdapter.open(
         benchmark_task_id,
         seed,
         gym_factory=gym_factory,
@@ -213,10 +211,12 @@ def open_browsergym_case(
             )
         )
         if not isinstance(intake, ReadyTask):
-            raise RuntimeError(
-                f"BrowserGym task intake rejected its reviewed profile: {intake.status.value}"
-            )
-        return BrowserGymCaseEnvironment(benchmark_task_id, surface), intake.task
+            raise RuntimeError(f"BrowserGym task intake rejected its reviewed profile: {intake.status.value}")
+        return BrowserGymCaseEnvironment(
+            benchmark_task_id,
+            surface,
+            UnifiedWorldEnvironment((surface,)),
+        ), intake.task
     except BaseException:
         surface.gym_environment.close()
         raise
@@ -262,11 +262,11 @@ class ExternalEnvironmentTaskEvaluator:
         }[verifier_result.status]
         refs = verifier_result.evidence_refs
         return TaskEvaluation(
-            task.task_id, observation.observation_id, mapped,
+            task.task_id,
+            observation.observation_id,
+            mapped,
             f"environment-native verifier: {verifier_result.reason.value}",
-            completion_evidence_refs=(
-                refs if outcome_kind is TaskOutcomeKind.TERMINAL_SUCCESS else ()
-            ),
+            completion_evidence_refs=(refs if outcome_kind is TaskOutcomeKind.TERMINAL_SUCCESS else ()),
             outcome=TaskOutcomeFact(outcome_kind, verifier_result.reason.value, refs),
         )
 

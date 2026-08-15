@@ -9,6 +9,7 @@ import pytest
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.world import AcquisitionOrigin, WorldFusion
@@ -21,7 +22,6 @@ from tests.integration.agent.test_agent_loop import (
     _task,
     _world,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 class RaisingActionEvaluator:
@@ -55,16 +55,20 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
     async def scenario() -> None:
         action_evaluator = (
             RaisingActionEvaluator(RuntimeError("private evaluator detail"))
-            if stage == "action" else SharedActionEvaluator()
+            if stage == "action"
+            else SharedActionEvaluator()
         )
         task_evaluator = (
             SecondCallTaskEvaluator(RuntimeError("private evaluator detail"))
-            if stage == "task" else SharedTaskEvaluator()
+            if stage == "task"
+            else SharedTaskEvaluator()
         )
-        session = await (
-            AgentLoop(ScriptedPolicy(["first"]), action_evaluator, task_evaluator)
-        ).start(
-            StaticEnvironment([_world("before", False), _world("after", True)], [_sent()]),
+        session = await (AgentLoop(ScriptedPolicy(["first"]), action_evaluator, task_evaluator)).start(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
             _task(),
         )
 
@@ -108,7 +112,11 @@ def test_evaluator_cancellation_preserves_facts_and_propagates() -> None:
                 SharedTaskEvaluator(),
             )
         ).start(
-            StaticEnvironment([_world("before", False), _world("after", True)], [_sent()]),
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
             _task(),
         )
         with pytest.raises(asyncio.CancelledError):
@@ -130,7 +138,7 @@ def test_evaluator_cancellation_preserves_facts_and_propagates() -> None:
 
 @pytest.mark.parametrize("exc", (RuntimeError("execute failed"), asyncio.CancelledError()))
 def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(exc) -> None:
-    class RaisingEnvironment(StaticEnvironment):
+    class RaisingEnvironment(ScriptedEnvironment):
         async def execute(self, request):
             self.execute_calls += 1
             self.executed_requests.append(request)
@@ -138,7 +146,7 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
 
     async def scenario() -> None:
         policy = ScriptedPolicy(["first"])
-        environment = RaisingEnvironment([_world("before", False)])
+        environment = RaisingEnvironment(initial_observation=_world("before", False))
         session = await (_loop(policy)).start(environment, _task())
         with pytest.raises(type(exc)):
             await session.run_until_pause()
@@ -147,23 +155,17 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
         root = session.state.recent_control_transitions[0]
         assert terminal is session.last_result
         assert terminal.status is (
-            AgentLoopStatus.CANCELLED
-            if isinstance(exc, asyncio.CancelledError)
-            else AgentLoopStatus.FAILED
+            AgentLoopStatus.CANCELLED if isinstance(exc, asyncio.CancelledError) else AgentLoopStatus.FAILED
         )
         assert root.reason_code == (
-            "runtime_cancelled"
-            if isinstance(exc, asyncio.CancelledError)
-            else "runtime_exception"
+            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError) else "runtime_exception"
         )
         assert policy.decisions == []
         assert environment.execute_calls == 1
         assert session.state.control_transition_total_count == 1
         assert terminal.runtime_failure is not None
         assert terminal.runtime_failure.stage is (
-            FailureStage.SESSION
-            if isinstance(exc, asyncio.CancelledError)
-            else FailureStage.EXECUTION
+            FailureStage.SESSION if isinstance(exc, asyncio.CancelledError) else FailureStage.EXECUTION
         )
         assert terminal.runtime_failure.root_id == root.transition_id
         assert terminal.runtime_failure.attempt_id == root.attempt_receipts[-1].attempt_id
@@ -174,16 +176,17 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
 def test_foreign_execute_exception_name_cannot_break_physical_accounting() -> None:
     foreign_error = type("Execute.Error!" * 12, (Exception,), {})("private execute detail")
 
-    class RaisingEnvironment(StaticEnvironment):
+    class RaisingEnvironment(ScriptedEnvironment):
         async def execute(self, request):
             self.execute_calls += 1
             self.executed_requests.append(request)
             raise foreign_error
 
     async def scenario() -> None:
-        environment = RaisingEnvironment([_world("before", False)])
+        environment = RaisingEnvironment(initial_observation=_world("before", False))
         session = await (_loop(ScriptedPolicy(["first"]))).start(
-            environment, _task(),
+            environment,
+            _task(),
         )
         with pytest.raises(type(foreign_error)):
             await session.run_until_pause()
@@ -209,23 +212,19 @@ def test_predecision_component_exception_keeps_typed_stage_without_root(componen
             raise RuntimeError("private evaluation detail")
 
     async def scenario() -> None:
-        session = await (AgentLoop(
-            RaisingPolicy() if component == "policy" else ScriptedPolicy(["first"]),
-            SharedActionEvaluator(),
-            RaisingInitialTaskEvaluator()
-            if component == "initial_task_evaluator"
-            else SharedTaskEvaluator(),
-        )).start(StaticEnvironment([_world("before", False)]), _task())
+        session = await (
+            AgentLoop(
+                RaisingPolicy() if component == "policy" else ScriptedPolicy(["first"]),
+                SharedActionEvaluator(),
+                RaisingInitialTaskEvaluator() if component == "initial_task_evaluator" else SharedTaskEvaluator(),
+            )
+        ).start(ScriptedEnvironment(initial_observation=_world("before", False)), _task())
         with pytest.raises(TimeoutError if component == "policy" else RuntimeError):
             await session.run_until_pause()
         assert session.last_result is not None
         failure = session.last_result.runtime_failure
         assert failure is not None
-        assert failure.stage is (
-            FailureStage.POLICY
-            if component == "policy"
-            else FailureStage.EVALUATION
-        )
+        assert failure.stage is (FailureStage.POLICY if component == "policy" else FailureStage.EVALUATION)
         assert failure.kind is FailureKind.CALL_FAILED
         assert not failure.root_id and not failure.attempt_id
         assert failure.exception_class in {"TimeoutError", "RuntimeError"}
@@ -234,16 +233,17 @@ def test_predecision_component_exception_keeps_typed_stage_without_root(componen
 
 
 def test_malformed_execute_return_is_one_failed_physical_attempt() -> None:
-    class MalformedEnvironment(StaticEnvironment):
+    class MalformedEnvironment(ScriptedEnvironment):
         async def execute(self, request):
             self.execute_calls += 1
             self.executed_requests.append(request)
             return object()
 
     async def scenario() -> None:
-        environment = MalformedEnvironment([_world("before", False)])
+        environment = MalformedEnvironment(initial_observation=_world("before", False))
         session = await (_loop(ScriptedPolicy(["first"]))).start(
-            environment, _task(),
+            environment,
+            _task(),
         )
         with pytest.raises(TypeError, match="malformed contract"):
             await session.run_until_pause()
@@ -260,7 +260,11 @@ def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() ->
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)
         session = await (_loop(ScriptedPolicy(["first"]))).start(
-            StaticEnvironment([_world("before", False), _world("after", True)], [result]),
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[result],
+            ),
             _task(),
         )
         terminal = await session.run_until_pause()
@@ -275,9 +279,7 @@ def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() ->
         assert root.acquisition is not None and root.acquisition.attempts == 1
         assert session.execution_count == 1
         assert session.observation_count == 2
-        assert tuple(item.origin for item in root.acquisition_attempts) == (
-            AcquisitionOrigin.POST_ACTION,
-        )
+        assert tuple(item.origin for item in root.acquisition_attempts) == (AcquisitionOrigin.POST_ACTION,)
 
     asyncio.run(scenario())
 
@@ -288,7 +290,11 @@ def test_foreign_execution_identity_is_private_across_transition_and_turn() -> N
     async def scenario() -> None:
         result = ActionResult(marker, DispatchStatus.SENT, marker, True)
         session = await (_loop(ScriptedPolicy(["first"]))).start(
-            StaticEnvironment([_world("before", False), _world("after", True)], [result]),
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[result],
+            ),
             _task(),
         )
         terminal = await session.run_until_pause()
@@ -317,7 +323,8 @@ def test_matching_private_backend_identity_is_always_opaque_in_transition() -> N
         before = fused.observation
         result = ActionResult("*", DispatchStatus.SENT, marker, True)
         session = await (_loop(ScriptedPolicy(["first"]))).start(
-            StaticEnvironment([before, after], [result]), _task(),
+            ScriptedEnvironment(initial_observation=before, post_observations=(after,), results=[result]),
+            _task(),
         )
         terminal = await session.run_until_pause()
         root = session.state.recent_control_transitions[0]
@@ -330,17 +337,22 @@ def test_matching_private_backend_identity_is_always_opaque_in_transition() -> N
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    "invalid", (True, -1, 1.5, float("nan"), float("inf"), "1")
-)
+@pytest.mark.parametrize("invalid", (True, -1, 1.5, float("nan"), float("inf"), "1"))
 def test_invalid_probe_metadata_fails_closed_without_polluting_counts(invalid) -> None:
     async def scenario() -> None:
         result = ActionResult(
-            "*", DispatchStatus.SENT, "dom", True,
+            "*",
+            DispatchStatus.SENT,
+            "dom",
+            True,
             adapter_evidence={"currentness_probe_count": invalid},
         )
         session = await (_loop(ScriptedPolicy(["first"]))).start(
-            StaticEnvironment([_world("before", False), _world("after", True)], [result]),
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[result],
+            ),
             _task(),
         )
         terminal = await session.run_until_pause()

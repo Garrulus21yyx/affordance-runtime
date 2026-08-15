@@ -163,7 +163,7 @@ P5-M4.5-B control/failure contract: INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENC
 P5-M4.5-C same-profile diagnostic: COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED
 P5-M4.6 evidence-directed short-loop remediation: IN_PROGRESS / M4.6-A COMPLETE_NON_DEFAULT_FOR_DECLARED_CURRENTNESS_SCOPE / M4.6-B COMPLETE_NON_DEFAULT_FOR_DECLARED_VERIFIER_SCOPE / M4.6-C COMPLETE_NON_DEFAULT_FOR_DECLARED_INVENTORY_SCOPE / M4.6-D REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED / M4.6-E DOM_FIRST_VISION_CONVERGENCE_FULL_VERIFIED / LIVE_GATE_FAILED_DIAGNOSTIC
 P5-M4.6-F latest-transition P0: IMPLEMENTED_LOCALLY / FULL_VERIFIED_2485_PASS_27_SKIP / LIVE_UNVERIFIED
-R0 runtime authority aggregate convergence: R0_REVIEW_COMPLETE / CONTRACT_ALGEBRA_FROZEN / CONSUMER_INVENTORY_COMPLETE / ATOMIC_MIGRATION_MAP_READY / R1_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN
+R1 runtime authority acquisition convergence: R1_IMPLEMENTED / SINGLE_ACQUISITION_COORDINATOR / EXACT_OBSERVATION_ACQUISITION_AGGREGATE / GENERIC_BROWSERGYM_CONVERGED / ACQUISITION_PROPERTIES_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_COMPLETE / R2_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN
 M4.6-B residual contract implementation: `880e65fef0c2541be9f4b5af121e610f858685db`; accepted targeted run remains bound to original `07895ede392bdff065ba3b4c0a6384ba18904143`
 P5-M4.7 supported-subset multi-seed: NOT_STARTED / BLOCKED_BY_M4_6_GATES
 P5-E verified long-horizon frontier: NOT_STARTED / BLOCKED_BY_BREADTH_GATES
@@ -321,8 +321,10 @@ and the second acquisition lifecycle before any lossless/closure claim returns.
 R0 is complete as an audit/contract slice, with its constructor/consumer
 inventory, legal algebra, redlines, file order and deletion gates in
 [the R0 evidence record](../../evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md).
-It made no production cutover. R1 is the active implementation boundary; R2
-and R3 remain pending.
+R1 now makes the acquisition production cutover described above: one
+coordinator, exact terminal aggregate, grouped BrowserGym backend and no direct
+static acquisition fixture. R1 property, package and independent-review gates
+pass. R2 is implementation-ready; R3 remains pending behind it.
 
 Implementation and closure are separate. R0–R3 completion requires generated
 state-machine properties across normal, partial, unavailable, failure,

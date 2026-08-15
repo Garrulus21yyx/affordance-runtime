@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.execution.contracts import ActionResult
 from affordance_runtime.world.contracts import SurfaceObservation, WorldObservation
+from affordance_runtime.world.fusion import FusionStatus, WorldFusionResult
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
 from affordance_runtime.world.source_profile import AcquisitionCost, ObservationAssurance, ObservationModality
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 _PRIVATE_MARKERS = (
-    "credential", "password", "payload", "secret", "selector", "token", "url",
+    "credential",
+    "password",
+    "payload",
+    "secret",
+    "selector",
+    "token",
+    "url",
 )
 
 
@@ -21,6 +29,51 @@ class AcquisitionStatus(StrEnum):
     ACQUIRED = "acquired"
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AcquisitionStage(StrEnum):
+    PRE_SELECTION_UNAVAILABLE = "pre_selection_unavailable"
+    INITIALIZATION_FAILED = "initialization_failed"
+    SOURCE_ACQUISITION_FAILED = "source_acquisition_failed"
+    FUSION_FAILED = "fusion_failed"
+    CANCELLED = "cancelled"
+    ACQUIRED_ALL_NEEDS_FULFILLED = "acquired_all_needs_fulfilled"
+    ACQUIRED_WITH_UNRESOLVED_NEEDS = "acquired_with_unresolved_needs"
+
+
+class AcquisitionReasonKind(StrEnum):
+    UNAVAILABLE = "unavailable"
+    INITIALIZATION_FAILURE = "initialization_failure"
+    SOURCE_FAILURE = "source_failure"
+    FUSION_FAILURE = "fusion_failure"
+    CANCELLATION = "cancellation"
+    ALL_NEEDS_FULFILLED = "all_needs_fulfilled"
+    UNRESOLVED_NEEDS = "unresolved_needs"
+
+
+@dataclass(frozen=True)
+class AcquisitionReason:
+    kind: AcquisitionReasonKind
+    code: str
+    stage: AcquisitionStage
+    source_ids: tuple[str, ...] = ()
+    need_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, AcquisitionReasonKind):
+            raise TypeError("acquisition reason kind must be typed")
+        if not isinstance(self.stage, AcquisitionStage):
+            raise TypeError("acquisition reason stage must be typed")
+        _validate_reason_code(self.code)
+        object.__setattr__(self, "source_ids", tuple(self.source_ids))
+        object.__setattr__(self, "need_ids", tuple(self.need_ids))
+        if any(not item.strip() for item in (*self.source_ids, *self.need_ids)):
+            raise ValueError("acquisition reason identities cannot be blank")
+        if len(set(self.source_ids)) != len(self.source_ids):
+            raise ValueError("acquisition reason source identities cannot repeat")
+        if len(set(self.need_ids)) != len(self.need_ids):
+            raise ValueError("acquisition reason need identities cannot repeat")
 
 
 class SourceAcquisitionStatus(StrEnum):
@@ -28,6 +81,7 @@ class SourceAcquisitionStatus(StrEnum):
     ACQUIRED = "acquired"
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class SourceRequirement(StrEnum):
@@ -39,6 +93,7 @@ class SourceRequirement(StrEnum):
 class ObservationNeedSatisfactionStatus(StrEnum):
     FULFILLED = "fulfilled"
     UNFULFILLED = "unfulfilled"
+    CANCELLED = "cancelled"
 
 
 class AcquisitionOrigin(StrEnum):
@@ -148,9 +203,7 @@ class ObservationSelectionPlan:
             raise ValueError("source selection references an unknown observation need")
         if any(item.need_ids for item in self.unselected):
             raise ValueError("unselected sources cannot own observation needs")
-        selected_need_ids = tuple(
-            need_id for item in self.selections for need_id in item.need_ids
-        )
+        selected_need_ids = tuple(need_id for item in self.selections for need_id in item.need_ids)
         if (
             any(not item.need_ids for item in self.selections)
             or len(set(selected_need_ids)) != len(selected_need_ids)
@@ -241,17 +294,13 @@ class SelectedObservationResult:
     @property
     def fulfilled_need_ids(self) -> tuple[str, ...]:
         return tuple(
-            item.need_id
-            for item in self.need_results
-            if item.status is ObservationNeedSatisfactionStatus.FULFILLED
+            item.need_id for item in self.need_results if item.status is ObservationNeedSatisfactionStatus.FULFILLED
         )
 
     @property
     def unfulfilled_need_ids(self) -> tuple[str, ...]:
         return tuple(
-            item.need_id
-            for item in self.need_results
-            if item.status is ObservationNeedSatisfactionStatus.UNFULFILLED
+            item.need_id for item in self.need_results if item.status is not ObservationNeedSatisfactionStatus.FULFILLED
         )
 
     @classmethod
@@ -278,9 +327,7 @@ class SelectedObservationResult:
                     ObservationNeedSatisfactionStatus.FULFILLED
                     if item.need_id in fulfilled
                     else ObservationNeedSatisfactionStatus.UNFULFILLED,
-                    "need_fulfilled"
-                    if item.need_id in fulfilled
-                    else unfulfilled_reason_code,
+                    "need_fulfilled" if item.need_id in fulfilled else unfulfilled_reason_code,
                 )
                 for item in request.needs
             ),
@@ -296,6 +343,7 @@ class SelectedObservationResult:
         if status not in {
             SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
             SourceAcquisitionStatus.FAILED,
+            SourceAcquisitionStatus.CANCELLED,
         }:
             raise ValueError("selected observation failure requires a failure status")
         return cls(
@@ -306,7 +354,9 @@ class SelectedObservationResult:
             tuple(
                 ObservationNeedResult(
                     item.need_id,
-                    ObservationNeedSatisfactionStatus.UNFULFILLED,
+                    ObservationNeedSatisfactionStatus.CANCELLED
+                    if status is SourceAcquisitionStatus.CANCELLED
+                    else ObservationNeedSatisfactionStatus.UNFULFILLED,
                     reason_code,
                 )
                 for item in request.needs
@@ -331,15 +381,12 @@ class SourceAcquisitionResult:
         acquired = self.status is SourceAcquisitionStatus.ACQUIRED
         if acquired != isinstance(self.observation, SurfaceObservation):
             raise ValueError("source ACQUIRED requires exactly one observation")
-        if (self.requirement is SourceRequirement.UNSELECTED) != (
-            self.status is SourceAcquisitionStatus.NOT_ACQUIRED
-        ):
+        if (self.requirement is SourceRequirement.UNSELECTED) != (self.status is SourceAcquisitionStatus.NOT_ACQUIRED):
             raise ValueError("only unselected sources may be NOT_ACQUIRED")
         object.__setattr__(self, "need_results", tuple(self.need_results))
-        if (
-            any(not isinstance(item, ObservationNeedResult) for item in self.need_results)
-            or len({item.need_id for item in self.need_results}) != len(self.need_results)
-        ):
+        if any(not isinstance(item, ObservationNeedResult) for item in self.need_results) or len(
+            {item.need_id for item in self.need_results}
+        ) != len(self.need_results):
             raise ValueError("source acquisition need outcomes must be unique")
         if self.status is not SourceAcquisitionStatus.ACQUIRED and self.fulfilled_need_ids:
             raise ValueError("failed source cannot report fulfilled selected needs")
@@ -348,17 +395,13 @@ class SourceAcquisitionResult:
     @property
     def fulfilled_need_ids(self) -> tuple[str, ...]:
         return tuple(
-            item.need_id
-            for item in self.need_results
-            if item.status is ObservationNeedSatisfactionStatus.FULFILLED
+            item.need_id for item in self.need_results if item.status is ObservationNeedSatisfactionStatus.FULFILLED
         )
 
     @property
     def unfulfilled_need_ids(self) -> tuple[str, ...]:
         return tuple(
-            item.need_id
-            for item in self.need_results
-            if item.status is ObservationNeedSatisfactionStatus.UNFULFILLED
+            item.need_id for item in self.need_results if item.status is not ObservationNeedSatisfactionStatus.FULFILLED
         )
 
 
@@ -373,49 +416,196 @@ class ObservationCapabilities:
 
 
 @dataclass(frozen=True)
-class ObservationAcquisition:
-    status: AcquisitionStatus
-    origin: AcquisitionOrigin
-    observation: WorldObservation | None
-    reason_code: str
-    selection_plan: ObservationSelectionPlan | None = None
-    source_results: tuple[SourceAcquisitionResult, ...] = ()
+class ProviderActivation:
+    request: SelectedObservationRequest
+    result: SelectedObservationResult
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, AcquisitionStatus):
-            raise TypeError("acquisition status must be typed")
+        if self.result.source != self.request.source:
+            raise ValueError("provider activation source identity must be conserved")
+        expected = {item.need_id for item in self.request.needs}
+        actual = {item.need_id for item in self.result.need_results}
+        if actual != expected:
+            raise ValueError("provider activation must close every selected need exactly once")
+
+
+@dataclass(frozen=True)
+class ObservationAcquisition:
+    acquisition_id: str
+    origin: AcquisitionOrigin
+    request: WorldObservationRequest
+    stage: AcquisitionStage
+    selection_plan: ObservationSelectionPlan | None
+    activations: tuple[ProviderActivation, ...]
+    fusion_outcome: WorldFusionResult | None
+    status: AcquisitionStatus
+    reason: AcquisitionReason
+
+    def __post_init__(self) -> None:
+        if not self.acquisition_id.strip() or len(self.acquisition_id) > 200:
+            raise ValueError("observation acquisition requires a bounded identity")
         if not isinstance(self.origin, AcquisitionOrigin):
             raise TypeError("acquisition origin must be typed")
-        acquired = self.status is AcquisitionStatus.ACQUIRED
-        if acquired != isinstance(self.observation, WorldObservation):
-            raise ValueError(
-                "ACQUIRED requires a WorldObservation and other statuses forbid one"
-            )
-        _validate_reason_code(self.reason_code)
-        object.__setattr__(self, "source_results", tuple(self.source_results))
-        if self.selection_plan is not None and not isinstance(
-            self.selection_plan, ObservationSelectionPlan
-        ):
+        if not isinstance(self.request, WorldObservationRequest):
+            raise TypeError("acquisition request must be exact and typed")
+        if not isinstance(self.stage, AcquisitionStage):
+            raise TypeError("acquisition stage must be typed")
+        if not isinstance(self.status, AcquisitionStatus):
+            raise TypeError("acquisition status must be typed")
+        if self.reason.stage is not self.stage:
+            raise ValueError("acquisition reason must name the terminal stage")
+        object.__setattr__(self, "activations", tuple(self.activations))
+        if self.selection_plan is not None and not isinstance(self.selection_plan, ObservationSelectionPlan):
             raise TypeError("acquisition selection plan must be typed")
+        if self.fusion_outcome is not None and not isinstance(self.fusion_outcome, WorldFusionResult):
+            raise TypeError("acquisition fusion outcome must be exact and typed")
+        self._validate_correlation()
+        self._validate_stage_shape()
+
+    @property
+    def observation(self) -> WorldObservation | None:
+        return None if self.fusion_outcome is None else self.fusion_outcome.observation
+
+    @property
+    def reason_code(self) -> str:
+        return self.reason.code
+
+    @property
+    def per_need_outcomes(self) -> tuple[ObservationNeedResult, ...]:
+        by_id = {result.need_id: result for activation in self.activations for result in activation.result.need_results}
         if self.selection_plan is None:
-            if self.source_results:
-                raise ValueError("acquisition without a plan cannot carry source results")
+            return ()
+        return tuple(by_id[item.need_id] for item in self.selection_plan.needs if item.need_id in by_id)
+
+    @property
+    def source_results(self) -> tuple[SourceAcquisitionResult, ...]:
+        if self.selection_plan is None:
+            return ()
+        by_source = {item.request.source: item for item in self.activations}
+        unselected = tuple(
+            SourceAcquisitionResult(
+                item.source,
+                SourceRequirement.UNSELECTED,
+                SourceAcquisitionStatus.NOT_ACQUIRED,
+                "source_not_selected",
+            )
+            for item in self.selection_plan.unselected
+        )
+        selected = tuple(
+            SourceAcquisitionResult(
+                item.source,
+                item.requirement,
+                by_source[item.source].result.status,
+                by_source[item.source].result.reason_code,
+                by_source[item.source].result.observation,
+                by_source[item.source].result.need_results,
+            )
+            for item in self.selection_plan.selections
+            if item.source in by_source
+        )
+        return (*selected, *unselected)
+
+    def _validate_correlation(self) -> None:
+        if self.selection_plan is None:
+            if self.activations:
+                raise ValueError("acquisition without a plan cannot activate providers")
             return
-        expected = {
-            item.source: item
-            for item in self.selection_plan.selections + self.selection_plan.unselected
-        }
-        actual = {item.source: item for item in self.source_results}
-        if len(actual) != len(self.source_results) or actual.keys() != expected.keys():
-            raise ValueError("acquisition source results must exactly conserve the plan")
-        for source, disposition in expected.items():
-            result = actual[source]
-            if result.requirement is not disposition.requirement:
-                raise ValueError("acquisition result requirement must conserve selection")
-            if set(result.fulfilled_need_ids + result.unfulfilled_need_ids) != set(
-                disposition.need_ids
-            ):
-                raise ValueError("acquisition result must partition its selected needs")
+        selected = {item.source: item for item in self.selection_plan.selections}
+        activation_sources = tuple(item.request.source for item in self.activations)
+        if len(set(activation_sources)) != len(activation_sources):
+            raise ValueError("selected provider can have at most one terminal activation")
+        if set(activation_sources) - set(selected):
+            raise ValueError("provider activation must belong to the final selection plan")
+        for activation in self.activations:
+            selection = selected[activation.request.source]
+            if activation.request.acquisition_id != self.acquisition_id:
+                raise ValueError("provider activation must conserve acquisition identity")
+            if activation.request.lifecycle_kind is not self.request.kind:
+                raise ValueError("provider activation must conserve lifecycle kind")
+            if activation.request.selection != selection:
+                raise ValueError("provider activation must conserve final source selection")
+
+    def _validate_stage_shape(self) -> None:
+        complete = bool(
+            self.selection_plan is not None
+            and {item.request.source for item in self.activations}
+            == {item.source for item in self.selection_plan.selections}
+        )
+        fused = bool(
+            self.fusion_outcome is not None
+            and self.fusion_outcome.status is FusionStatus.FUSED
+            and self.fusion_outcome.observation is not None
+        )
+        legal = {
+            AcquisitionStage.PRE_SELECTION_UNAVAILABLE: (
+                self.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+                and self.selection_plan is None
+                and not self.activations
+                and self.fusion_outcome is None
+                and self.reason.kind is AcquisitionReasonKind.UNAVAILABLE
+            ),
+            AcquisitionStage.INITIALIZATION_FAILED: (
+                self.status is AcquisitionStatus.FAILED
+                and self.selection_plan is not None
+                and not self.activations
+                and self.fusion_outcome is None
+                and self.reason.kind is AcquisitionReasonKind.INITIALIZATION_FAILURE
+            ),
+            AcquisitionStage.SOURCE_ACQUISITION_FAILED: (
+                self.status in {AcquisitionStatus.CAPABILITY_UNAVAILABLE, AcquisitionStatus.FAILED}
+                and complete
+                and self.fusion_outcome is None
+                and self.reason.kind is AcquisitionReasonKind.SOURCE_FAILURE
+            ),
+            AcquisitionStage.FUSION_FAILED: (
+                self.status is AcquisitionStatus.FAILED
+                and complete
+                and self.fusion_outcome is not None
+                and not fused
+                and self.reason.kind is AcquisitionReasonKind.FUSION_FAILURE
+            ),
+            AcquisitionStage.CANCELLED: (
+                self.status is AcquisitionStatus.CANCELLED
+                and self.selection_plan is not None
+                and self.fusion_outcome is None
+                and self.reason.kind is AcquisitionReasonKind.CANCELLATION
+                and (
+                    (
+                        self.reason.code == "initialization_cancelled"
+                        and not self.activations
+                    )
+                    or (
+                        self.reason.code
+                        in {"source_acquisition_cancelled", "fusion_cancelled"}
+                        and complete
+                    )
+                )
+            ),
+            AcquisitionStage.ACQUIRED_ALL_NEEDS_FULFILLED: (
+                self.status is AcquisitionStatus.ACQUIRED
+                and complete
+                and fused
+                and all(item.status is ObservationNeedSatisfactionStatus.FULFILLED for item in self.per_need_outcomes)
+                and self.reason.kind is AcquisitionReasonKind.ALL_NEEDS_FULFILLED
+            ),
+            AcquisitionStage.ACQUIRED_WITH_UNRESOLVED_NEEDS: (
+                self.status is AcquisitionStatus.ACQUIRED
+                and complete
+                and fused
+                and any(
+                    item.status is not ObservationNeedSatisfactionStatus.FULFILLED for item in self.per_need_outcomes
+                )
+                and self.reason.kind is AcquisitionReasonKind.UNRESOLVED_NEEDS
+            ),
+        }[self.stage]
+        if not legal:
+            raise ValueError("observation acquisition has an illegal terminal stage shape")
+
+
+class AcquisitionCancelled(asyncio.CancelledError):
+    def __init__(self, acquisition: ObservationAcquisition) -> None:
+        super().__init__(acquisition.reason_code)
+        self.acquisition = acquisition
 
 
 @dataclass(frozen=True)

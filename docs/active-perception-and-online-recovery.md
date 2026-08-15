@@ -105,16 +105,19 @@ capture(request) → ObservationAcquisition(request, plan, activations, fusion)
 execute(request) → ExecutionOutcome(exact bound request, ActionResult, post acquisition?)
 ```
 
-`ObservationAcquisition` is `ACQUIRED`, `CAPABILITY_UNAVAILABLE`, or `FAILED`,
+`ObservationAcquisition` is `ACQUIRED`, `CAPABILITY_UNAVAILABLE`, `FAILED`, or
+`CANCELLED`,
 identifies reset/independent/post-action origin, and retains the exact request,
 reached plan/provider/need/fusion outcomes and typed failure stage. Successful
 reset must provide the initial acquired observation. `capture()` is a total typed request:
 a backend without independent capture reports `CAPABILITY_UNAVAILABLE`; an
 available acquisition that fails reports `FAILED`. Expected capability limits
-must not escape as a bare RuntimeError. `ExecutionOutcome.post_acquisition` is
-absent only for `NOT_SENT`; `SENT` and `SENT_UNKNOWN` retain the exact typed
-primary acquisition, so unsupported and failed remain distinct without
-fabricating a post acquisition for zero dispatch.
+must not escape as a bare RuntimeError. The final R2
+`ExecutionOutcome.post_acquisition` is absent only for `NOT_SENT`; `SENT` and
+`SENT_UNKNOWN` retain the exact typed primary acquisition. R1 does not yet
+implement this shape: compatibility execution still carries a typed synthetic
+pre-selection-unavailable post slot for `NOT_SENT`. That slot is not dispatch
+or capture evidence and must be removed in R2.
 
 The two aggregate capabilities are a minimum adapter-level statement. A
 multi-source backend may additionally scope offers by source, modality,
@@ -141,8 +144,9 @@ The detailed policy, selection matrix and SOTA reuse boundary are defined by the
 [Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
 Its closure is withdrawn under
 [Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md):
-implemented selection/provider components remain, but the aggregate is narrowed
-before control/model consumers and BrowserGym still owns a second lifecycle.
+R1 now closes the exact acquisition aggregate and removes BrowserGym's second
+lifecycle. R2 still narrows it into control summaries and R3 must finish the
+one-way model/benchmark projection boundary.
 Agent-side open semantic gaps continue to enter through the sole semantic
 `request_evidence` tool; Runtime alone admits assurance, selects sources and
 owns acquisition. The next context must expose the result of that exact need,
@@ -251,16 +255,11 @@ downgraded or replayed because after-acquisition failed.
 ## 6. Current migration note
 
 Existing active perception and canonical observation are retained assets.
-Current PerceptionSession/BrowserSession special-casing and broad recovery
-protocol are migration debt described in Implementation Status. At the P5-M4
-baseline, the pinned BrowserGym adapter consumed a one-use raw snapshot from
-reset/step and its public `observe()` name overstated independent-capture
-capability. M4.5-A replaced that mismatch: logical reset returns the prepared
-initial acquisition, execute returns its post acquisition directly, and
-owner-thread `capture()` performs a fresh read-only current-world acquisition
-with origin/freshness validation and page-native verifier reacquisition.
-The legacy BrowserSession coordinator may still derive task-level visual needs
-and use heuristic semantic grouping; it is not correspondence or execution
-authority for the Unified target path. Until migrated, it must not be used as
-closure evidence for DOM/visual fusion, and new visual capability work belongs
-behind the Unified evidence gate and source ports.
+PerceptionSession/BrowserSession special-casing and broad recovery remain
+migration debt outside the Unified target path. R1 routes logical reset,
+independent capture and post-action capture through the single
+`ObservationAcquisitionCoordinator`. `BrowserGymSurfaceAdapter` owns grouped
+physical frame acquisition/reuse and private execution mechanics only; it
+cannot select, fuse or finalize an acquisition. R2 control-transition
+composition and R3 projection boundaries remain open, so this is not A.2
+closure evidence.

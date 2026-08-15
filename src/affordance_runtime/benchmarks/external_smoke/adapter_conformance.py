@@ -25,11 +25,25 @@ from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.surfaces.browsergym.inventory import browsergym_api_inventory
 
 _REQUIRED_METRICS = (
-    "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
-    "dom_action_calls", "fill_calls", "select_calls", "official_verifier_queries",
-    "official_success_count", "observations", "executions", "turns", "policy_calls",
-    "provider_attempts", "provider_retry_count", "fallback_count", "sent_unknown_count",
-    "duplicate_unknown_attempts", "forbidden_effect_attempts", "stale_zero_call_violations",
+    "browsergym_reset_calls",
+    "browsergym_step_calls",
+    "browsergym_probe_calls",
+    "dom_action_calls",
+    "fill_calls",
+    "select_calls",
+    "official_verifier_queries",
+    "official_success_count",
+    "observations",
+    "executions",
+    "turns",
+    "policy_calls",
+    "provider_attempts",
+    "provider_retry_count",
+    "fallback_count",
+    "sent_unknown_count",
+    "duplicate_unknown_attempts",
+    "forbidden_effect_attempts",
+    "stale_zero_call_violations",
     "cleanup_failures",
 )
 _EXPECTATIONS = (
@@ -47,8 +61,16 @@ _EXPECTATIONS = (
     MetricExpectation("cleanup_failures", MetricExpectationOperator.ZERO),
 )
 _ORACLE_MARKERS = (
-    "expected_answer", "target_answer", "reference_action", "reference_trajectory",
-    "success_script", "hidden_state", "raw_reward", "benchmark_oracle", "selector", "private bid",
+    "expected_answer",
+    "target_answer",
+    "reference_action",
+    "reference_trajectory",
+    "success_script",
+    "hidden_state",
+    "raw_reward",
+    "benchmark_oracle",
+    "selector",
+    "private bid",
 )
 
 
@@ -62,7 +84,7 @@ class AdapterConformanceOutcome:
 
 
 @dataclass
-class InstrumentedBrowserGymEnvironment:
+class InstrumentedBrowserGymSurfaceAdapter:
     wrapped: BrowserGymCaseEnvironment
     instrumentation: object
 
@@ -146,9 +168,7 @@ async def run_adapter_conformance(seed: int = 7) -> AdapterConformanceOutcome:
         errors.append("pinned BrowserGym dependency inventory is not accepted")
     registered = frozenset(inventory.registered_task_ids)
     missing_tasks = tuple(
-        case.benchmark_task_id
-        for case in EXTERNAL_SMOKE_MANIFEST.cases
-        if case.benchmark_task_id not in registered
+        case.benchmark_task_id for case in EXTERNAL_SMOKE_MANIFEST.cases if case.benchmark_task_id not in registered
     )
     if missing_tasks:
         errors.append("reviewed benchmark tasks are absent from the BrowserGym registry")
@@ -159,8 +179,11 @@ async def run_adapter_conformance(seed: int = 7) -> AdapterConformanceOutcome:
 def _manifest(seed: int, ports: list[BrowserGymStructuredDecisionPort]) -> BenchmarkManifest:
     cases = tuple(_case(item, seed, ports) for item in EXTERNAL_SMOKE_MANIFEST.cases)
     return BenchmarkManifest(
-        "browsergym-adapter-conformance.v1", "browsergym-adapter-conformance",
-        "scripted-structured-mechanical", seed, cases,
+        "browsergym-adapter-conformance.v1",
+        "browsergym-adapter-conformance",
+        "scripted-structured-mechanical",
+        seed,
+        cases,
     )
 
 
@@ -169,10 +192,12 @@ def _case(external_case, seed: int, ports: list[BrowserGymStructuredDecisionPort
 
     def environment_factory(instrumentation):
         environment, task = open_browsergym_case(
-            external_case.benchmark_task_id, seed, max_turns=external_case.max_turns,
+            external_case.benchmark_task_id,
+            seed,
+            max_turns=external_case.max_turns,
         )
         holder.update(environment=environment, task=task)
-        return InstrumentedBrowserGymEnvironment(environment, instrumentation)
+        return InstrumentedBrowserGymSurfaceAdapter(environment, instrumentation)
 
     def task_factory():
         return holder["task"]
@@ -185,9 +210,17 @@ def _case(external_case, seed: int, ports: list[BrowserGymStructuredDecisionPort
 
     expectations = (*_EXPECTATIONS, *_primitive_expectations(external_case.allowed_primitives))
     return BenchmarkCase(
-        external_case.case_id, "browsergym-adapter-conformance", external_case.description,
-        task_factory, environment_factory, composition_factory, (AgentLoopStatus.DONE,),
-        external_case.timeout_s, seed, _REQUIRED_METRICS, expectations,
+        external_case.case_id,
+        "browsergym-adapter-conformance",
+        external_case.description,
+        task_factory,
+        environment_factory,
+        composition_factory,
+        (AgentLoopStatus.DONE,),
+        external_case.timeout_s,
+        seed,
+        _REQUIRED_METRICS,
+        expectations,
     )
 
 

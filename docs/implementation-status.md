@@ -102,8 +102,8 @@ conflicted evidence/confidence cannot enter accepted identity. Accurate status
 is `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
 A.2_COMPONENTS_IMPLEMENTED / A.2_CLOSURE_WITHDRAWN /
-REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW /
-CROSS_BOUNDARY_AGGREGATE_LOSS / DUPLICATE_ACQUISITION_COMPOSITION_ROOT /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / R1_ACQUISITION_CONVERGED /
+R2_R3_CROSS_BOUNDARY_LOSS_OPEN /
 STATEFACT_CUTOVER_PARTIAL /
 ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
 LIVE_NOT_RUN`.
@@ -115,28 +115,25 @@ stage two, conserves fallback verification needs, and deletes the reachable
 `dynamic_tools.v1` product protocol. Its full `1622 passed, 27 skipped`, Ruff
 and mypy results remain valid implementation regression evidence.
 
-A repository-wide review nevertheless withdraws A.2 closure. The public
-`ObservationAcquisition` still discards acquisition identity/original request;
-`FreshAcquisition` discards its plan/source/need outcomes; `AcquisitionSummary`
-narrows it again before `ControlTransition`; BrowserGym and
-`UnifiedWorldEnvironment` both own selection/activation/fusion/finalization;
-BrowserGym post-selection failures can be planless; capability projection is
-order-dependent; route-source ownership can be reconstructed; and copied
-static environments bypass the production acquisition state machine. These
-are one cross-boundary aggregate-conservation defect class. R0–R3 from
-[Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md)
-are not implemented.
+A repository-wide review withdrew A.2 closure for one cross-boundary
+aggregate-conservation defect class. R1 now closes the acquisition portion:
+`ObservationAcquisition` retains identity, request, plan, correlated provider
+activations, need results, fusion outcome and typed terminal stage;
+`ObservationAcquisitionCoordinator` is its sole production owner; generic and
+BrowserGym paths converge there; exact binding-source lineage is consumed; and
+`FreshAcquisition`, BrowserGym's second lifecycle and both copied static
+environments are deleted. R2 summary narrowing and exact execution/evaluation/
+transition composition, plus R3 projection redlines, remain open. See the
+[R1 evidence](evidence/2026-08-15-runtime-authority-r1-closure.md).
 
-R0 is complete only as a repository-wide consumer audit and frozen migration
-contract. It found and classified every relevant production constructor,
-projection, benchmark/test bypass and exceptional path, and fixed the R1–R3
-atomic order and deletion gates. No production authority type or owner changed:
-the current duplicate acquisition composition roots, lossy summaries,
-compatibility `Turn`, mandatory synthetic post-acquisition shape and planless
-fixtures remain code truth until their respective R1/R2/R3 cutovers. Accurate
-status is `R0_REVIEW_COMPLETE / CONTRACT_ALGEBRA_FROZEN /
-CONSUMER_INVENTORY_COMPLETE / ATOMIC_MIGRATION_MAP_READY /
-R1_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`.
+R0 remains the frozen audit and migration contract. R1 is implemented,
+property-verified and independently reviewed. The lossy execution/acquisition
+summaries, compatibility `Turn`, and mandatory synthetic `NOT_SENT` post slot
+remain honest R2 code truth. Accurate status is `R1_IMPLEMENTED /
+SINGLE_ACQUISITION_COORDINATOR / EXACT_OBSERVATION_ACQUISITION_AGGREGATE /
+GENERIC_BROWSERGYM_CONVERGED / ACQUISITION_PROPERTIES_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_COMPLETE / R2_IMPLEMENTATION_READY /
+A.2_STILL_OPEN / LIVE_NOT_RUN`.
 
 The repair keeps the existing
 `SurfaceObservation -> WorldFusion -> WorldObservation -> ActorWorldSnapshot`
@@ -252,18 +249,18 @@ The target path now has:
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | Wave-A InteractionCapability owner spine | `IMPLEMENTED_WAVE_A_CLOSURE / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / A.1_CLOSURE_ADMITTED / A.2_COMPONENTS_IMPLEMENTED / A.2_CLOSURE_WITHDRAWN / REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; interaction owners and world-graph A.1 remain admitted; A.2 cannot close until R0–R3 conserve the full chain; five not-yet-produced actions remain semantic-only |
-| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE / A.1_CLOSURE_ADMITTED / REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW`; package topology passed its prior review, but BrowserGym and generic acquisition still contain duplicate lifecycle composition within that topology |
-| Multi-source observed-world graph | `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; A.1 identity/fusion decisions remain admitted; acquisition aggregate conservation is separately reopened: [2026-08-15](evidence/2026-08-15-world-graph-a1-closure.md) |
-| Adaptive observation policy A.2 | `DESIGN_RETAINED / A.2_COMPONENTS_IMPLEMENTED / CLOSURE_WITHDRAWN / REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / CROSS_BOUNDARY_AGGREGATE_LOSS / DUPLICATE_ACQUISITION_COMPOSITION_ROOT / PROPERTY_EVIDENCE_INSUFFICIENT_FOR_CLOSURE / LIVE_NOT_RUN`; `grounded_tools.v2` remains the sole product ingress, but exact acquisition/need truth is lost before control/model consumers: [A.2 record](plans/2026-08-15-adaptive-observation-policy-a2.md), [superseding acceptance contract](runtime-authority-aggregate-convergence.md) |
+| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE / A.1_CLOSURE_ADMITTED / R1_SINGLE_ACQUISITION_COORDINATOR`; BrowserGym and generic acquisition now share one lifecycle owner; R2/R3 full-chain convergence remains open |
+| Multi-source observed-world graph | `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED / R1_ACQUISITION_CONVERGED / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; A.1 identity/fusion decisions remain admitted and R1 now conserves their acquisition aggregate; R2/R3 remain separate open work: [2026-08-15](evidence/2026-08-15-world-graph-a1-closure.md) |
+| Adaptive observation policy A.2 | `DESIGN_RETAINED / A.2_COMPONENTS_IMPLEMENTED / CLOSURE_WITHDRAWN / R1_ACQUISITION_CONVERGED / R2_R3_CROSS_BOUNDARY_LOSS_OPEN / LIVE_NOT_RUN`; `grounded_tools.v2` remains the sole product ingress and R1 retains exact acquisition/need truth, but R2 control summaries and R3 projections still prevent closure: [A.2 record](plans/2026-08-15-adaptive-observation-policy-a2.md), [superseding acceptance contract](runtime-authority-aggregate-convergence.md) |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
-| ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT / REOPENED_AGGREGATE_CONVERGENCE`; typed statuses exist, but acquisition lacks root request/acquisition identity and execution/control consumers narrow exact outcomes |
+| ObservationAcquisition / ExecutionOutcome target contracts | `R1_ACQUISITION_IMPLEMENTED / R2_EXECUTION_OPEN`; acquisition has one owner and exact root request/plan/activation/fusion lifecycle; execution/control still narrow exact outcomes and retain a synthetic NOT_SENT post slot |
 | ActionIntent / BoundActionRequest / ActionResult | `INTEGRATED_NON_DEFAULT`; admitted selection identity retained through binding |
 | Evaluator-owned completion and bounded transition state | `INTEGRATED_NON_DEFAULT`; evaluations are retained on canonical ControlTransition values |
 | lossless ControlTransition | `INTEGRATED_NON_DEFAULT / REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED`; one root slot and reducer exist, but `ExecutionSummary`/`AcquisitionSummary` are lossy independent representations and must be replaced by exact aggregate composition |
 | local ProgressController | `CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS`; other semantic actions are not precondition-contained and this owner is not a planner |
 | SurfaceAdapter / UnifiedWorldEnvironment | complete for DOM, Visual-only, and WoT single-surface minimums; semantic fusion pending |
-| StaticEnvironment | `INTEGRATED_NON_DEFAULT` on new World contracts |
+| ScriptedSurfaceAdapter test/benchmark composition | `R1_MIGRATED_TO_PRODUCTION_COORDINATOR`; both direct `StaticEnvironment` acquisition owners are deleted |
 | real-browser DOM short loop | `INTEGRATED_NON_DEFAULT`, positive C1 proof |
 | Visual new-loop vertical | `INTEGRATED_NON_DEFAULT`, positive C2 proof |
 | WoT new-loop vertical | `INTEGRATED_NON_DEFAULT`, local-simulation positive C3 proof |

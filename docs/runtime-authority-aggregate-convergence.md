@@ -3,10 +3,11 @@
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
 > **Updated:** 2026-08-15
 > **Scope:** end-to-end authority conservation, phase aggregates, composition roots, and projections in the target GUI loop
-> **Status:** `R0_REVIEW_COMPLETE / CONTRACT_ALGEBRA_FROZEN / CONSUMER_INVENTORY_COMPLETE / ATOMIC_MIGRATION_MAP_READY / R1_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`
+> **Status:** `R1_IMPLEMENTED / SINGLE_ACQUISITION_COORDINATOR / EXACT_OBSERVATION_ACQUISITION_AGGREGATE / GENERIC_BROWSERGYM_CONVERGED / ACQUISITION_PROPERTIES_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_COMPLETE / R2_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`
 > **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 > **R0 evidence:** [Runtime authority R0 consumer inventory](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md)
+> **R1 evidence:** [Runtime authority R1 acquisition convergence](evidence/2026-08-15-runtime-authority-r1-closure.md)
 
 ## 1. Decision
 
@@ -494,6 +495,15 @@ R2 or R3 target owner is implemented.
 - fix order-independent capability union and exact binding-source routing;
 - delete `FreshAcquisition`, BrowserGym's second lifecycle and direct static
   environment acquisition construction.
+
+Implemented on 2026-08-15. `ObservationAcquisitionCoordinator` is the sole
+production aggregate constructor. `UnifiedWorldEnvironment` is its product
+facade; `BrowserGymSurfaceAdapter` is a grouped backend only. The exact root
+request, plan, correlated activations, per-need outcomes, fusion outcome,
+terminal stage/status/reason and cancellation reachability are enforced.
+`FreshAcquisition`, BrowserGym's second lifecycle and both direct static
+fixtures are deleted. Property, package and independent fresh-context gates pass
+as recorded in the linked R1 record. R2 is ready; R2 and R3 remain open.
 
 ### R2 — execution/evaluation/transition composition
 

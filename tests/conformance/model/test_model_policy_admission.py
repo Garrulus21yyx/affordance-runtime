@@ -7,6 +7,7 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.context import ContextBuilder, ContextProjectionBudget
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -20,7 +21,6 @@ from affordance_runtime.world import (
     StateFact,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.world import fused_world
 
 
@@ -97,7 +97,7 @@ def test_hidden_destination_is_rejected_before_execution() -> None:
             return SelectAction(context.context_id, option.action_id, destination_id="person:bob")
 
     async def scenario() -> None:
-        environment = StaticEnvironment([_destination_world("before", False)])
+        environment = ScriptedEnvironment(initial_observation=_destination_world("before", False))
         result = await (
             AgentLoop(
                 Policy(),
@@ -124,9 +124,10 @@ def test_visible_destination_is_accepted() -> None:
             return SelectAction(context.context_id, option.action_id, destination_id="person:alice")
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_destination_world("before", False), _destination_world("after", True)],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_destination_world("before", False),
+            post_observations=(_destination_world("after", True),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         result = await (
             AgentLoop(

@@ -22,7 +22,7 @@ from affordance_runtime.benchmarks.external_breadth.progress import (
     ProgressEventObserver,
     case_progress_digest,
 )
-from affordance_runtime.benchmarks.external_smoke.adapter_conformance import InstrumentedBrowserGymEnvironment
+from affordance_runtime.benchmarks.external_smoke.adapter_conformance import InstrumentedBrowserGymSurfaceAdapter
 from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalEnvironmentTaskEvaluator,
     open_browsergym_case,
@@ -353,7 +353,7 @@ def _marked_candidate_policy_available(policy: object) -> bool:
     return False
 
 
-class _BreadthEnvironment(InstrumentedBrowserGymEnvironment):
+class _BreadthEnvironment(InstrumentedBrowserGymSurfaceAdapter):
     async def close(self):
         try:
             await super().close()

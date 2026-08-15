@@ -14,6 +14,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,
@@ -22,7 +23,6 @@ from affordance_runtime.model.policy import (
 )
 from affordance_runtime.model.policy.parser import parse_agent_decision
 from tests.integration.agent.test_agent_loop import SharedTaskEvaluator, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 async def _context():
@@ -184,7 +184,7 @@ def test_provider_outputs_and_failures_are_distinct_from_model_authored_abort() 
 
 def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("before", False)])
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
         result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))),

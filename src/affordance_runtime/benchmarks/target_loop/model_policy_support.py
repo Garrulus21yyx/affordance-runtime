@@ -5,14 +5,14 @@ import threading
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from affordance_runtime.benchmarks.support import StaticEnvironment
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.support import shared_environment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 
 
 @dataclass
-class ModelPolicyHttpEnvironment(StaticEnvironment):
+class ModelPolicyHttpEnvironment(ScriptedEnvironment):
     server: ThreadingHTTPServer | None = field(default=None, init=False)
     thread: threading.Thread | None = field(default=None, init=False)
     http_requests: int = field(default=0, init=False)
@@ -27,14 +27,19 @@ class ModelPolicyHttpEnvironment(StaticEnvironment):
                 context = json.loads(body["messages"][1]["content"])
                 option = context["actions"]["options"][0]
                 decision = {
-                    "type": "select_action", "context_id": context["context_id"],
-                    "action_id": option["action_id"], "parameters": {}, "destination_id": "",
+                    "type": "select_action",
+                    "context_id": context["context_id"],
+                    "action_id": option["action_id"],
+                    "parameters": {},
+                    "destination_id": "",
                 }
-                payload = json.dumps({
-                    "id": "response:m3-http-policy",
-                    "choices": [{"message": {"content": json.dumps(decision)}}],
-                    "usage": {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
-                }).encode()
+                payload = json.dumps(
+                    {
+                        "id": "response:m3-http-policy",
+                        "choices": [{"message": {"content": json.dumps(decision)}}],
+                        "usage": {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+                    }
+                ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))
@@ -58,7 +63,11 @@ class ModelPolicyHttpEnvironment(StaticEnvironment):
 
 def local_http_policy_environment(surface: str) -> ModelPolicyHttpEnvironment:
     fixture = shared_environment(surface)
-    environment = ModelPolicyHttpEnvironment(fixture.observations, fixture.results)
+    environment = ModelPolicyHttpEnvironment(
+        initial_observation=fixture.initial_observation,
+        post_observations=fixture.post_observations,
+        results=fixture.results,
+    )
     environment.start_server()
     return environment
 
@@ -66,11 +75,16 @@ def local_http_policy_environment(surface: str) -> ModelPolicyHttpEnvironment:
 def local_http_policy(environment: ModelPolicyHttpEnvironment) -> ModelBackedAgentPolicy:
     assert environment.server is not None
     transport = OpenAICompatibleModelPort(
-        f"http://127.0.0.1:{environment.server.server_port}", "fixture-key",
-        "fixture-model", "local-http-fixture", "local-fixture",
+        f"http://127.0.0.1:{environment.server.server_port}",
+        "fixture-key",
+        "fixture-model",
+        "local-http-fixture",
+        "local-fixture",
     )
     config = ModelConfig(
-        timeout_s=1.0, rate_limit_retries=0, transient_retries=0,
+        timeout_s=1.0,
+        rate_limit_retries=0,
+        transient_retries=0,
         prompt_version="p5-m3-http-policy",
     )
     return ModelBackedAgentPolicy(ModelPortDecisionAdapter(transport, config), call_timeout_s=2.0)

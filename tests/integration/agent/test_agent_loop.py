@@ -18,6 +18,7 @@ from affordance_runtime.agent import (
     Wait,
 )
 from affordance_runtime.agent.control_transition import PendingKind
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -45,7 +46,6 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.LOW) -> WorldObservation:
@@ -170,7 +170,7 @@ def _sent(status: DispatchStatus = DispatchStatus.SENT, success: bool = True) ->
 
 def test_initial_satisfaction_is_zero_execution_done() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", True)])
+        environment = ScriptedEnvironment(initial_observation=_world("obs-1", True))
         result = await (_loop(ScriptedPolicy([]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 0
@@ -182,9 +182,10 @@ def test_initial_satisfaction_is_zero_execution_done() -> None:
 
 def test_sent_unknown_confirmed_effect_executes_once_and_completes() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", True)],
-            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            post_observations=(_world("obs-2", True),),
+            results=[_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
         result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
@@ -196,9 +197,10 @@ def test_sent_unknown_confirmed_effect_executes_once_and_completes() -> None:
 
 def test_sent_unknown_unconfirmed_effect_waits_without_replay() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", False)],
-            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            post_observations=(_world("obs-2", False),),
+            results=[_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
         result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
@@ -252,9 +254,10 @@ def test_nonterminal_task_fact_preserves_sent_unknown_pending_without_replay(
             )
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", False)],
-            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            post_observations=(_world("obs-2", False),),
+            results=[_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
         policy = ScriptedPolicy(["first"])
         loop = AgentLoop(policy, SharedActionEvaluator(), CanonicalTaskEvaluator())
@@ -308,9 +311,8 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
             )
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", False)],
-            [_sent()],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False), post_observations=(_world("obs-2", False),), results=[_sent()]
         )
         result = await (
             AgentLoop(
@@ -332,7 +334,7 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
 
 def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> None:
     async def scenario(decision) -> AgentLoopStatus:
-        environment = StaticEnvironment([_world("obs-1", False)])
+        environment = ScriptedEnvironment(initial_observation=_world("obs-1", False))
         result = await (_loop(ScriptedPolicy([decision, decision]))).run(environment, _task())
         assert result.execution_count == 0
         return result.status
@@ -353,7 +355,7 @@ def test_selector_injection_on_offered_action_is_rejected() -> None:
             return SelectAction(context.context_id, action_space.options[0].action_id, {"selector": "#other"})
 
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False)])
+        environment = ScriptedEnvironment(initial_observation=_world("obs-1", False))
         result = await (_loop(InjectingPolicy())).run(environment, _task())
         assert result.status == AgentLoopStatus.BLOCKED
         assert result.execution_count == 0
@@ -363,8 +365,10 @@ def test_selector_injection_on_offered_action_is_rejected() -> None:
 
 def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False)])
-        environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", True)], [_sent()])
+        environment = ScriptedEnvironment(initial_observation=_world("obs-1", False))
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False), post_observations=(_world("obs-2", True),), results=[_sent()]
+        )
         proposal = ProposeDone("context:test", (), (), "claim done", ())
         result = await (_loop(ScriptedPolicy([proposal, "first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
@@ -376,9 +380,8 @@ def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
 
 def test_transport_success_without_state_change_is_not_done() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", False)],
-            [_sent()],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False), post_observations=(_world("obs-2", False),), results=[_sent()]
         )
         abort = Abort("context:test", "no progress", "policy")
         result = await (_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
@@ -391,17 +394,17 @@ def test_transport_success_without_state_change_is_not_done() -> None:
 
 def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False), _world("obs-1", True)], [_sent()])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False), post_observations=(_world("obs-1", True),), results=[_sent()]
+        )
         result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
-        assert result.message == "static_capture_failed"
-        assert result.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
+        assert result.message == "required_source_exhausted"
+        assert result.failure_code is AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE
         assert result.observation_count == 3
         assert result.final_observation.observation_id == "obs-1"
         assert environment.executed_requests[0].verification_needs
-        assert environment.capture_requests[0].needs == (
-            environment.executed_requests[0].verification_needs
-        )
+        assert environment.capture_requests[0].needs == (environment.executed_requests[0].verification_needs)
         transition = result.control_transitions[0]
         assert tuple(item.origin for item in transition.acquisition_attempts) == (
             AcquisitionOrigin.POST_ACTION,
@@ -409,7 +412,7 @@ def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None
         )
         assert tuple(item.reason_code for item in transition.acquisition_attempts) == (
             "observation_identity_reused",
-            "static_capture_failed",
+            "required_source_exhausted",
         )
 
     asyncio.run(scenario())
@@ -417,7 +420,7 @@ def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None
 
 def test_non_low_risk_action_waits_for_confirmation_with_zero_execution() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("obs-1", False, risk=ActionRisk.MEDIUM)])
+        environment = ScriptedEnvironment(initial_observation=_world("obs-1", False, risk=ActionRisk.MEDIUM))
         result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_CONFIRMATION
         assert result.execution_count == 0
@@ -429,7 +432,7 @@ def test_non_low_risk_action_waits_for_confirmation_with_zero_execution() -> Non
 def test_medium_or_high_task_waits_even_for_low_risk_option(risk_profile: RiskProfile) -> None:
     async def scenario() -> None:
         task = replace(_task(), risk_profile=risk_profile)
-        environment = StaticEnvironment([_world("obs-1", False)])
+        environment = ScriptedEnvironment(initial_observation=_world("obs-1", False))
         result = await (_loop(ScriptedPolicy(["first"]))).run(environment, task)
 
         assert result.status == AgentLoopStatus.WAITING_CONFIRMATION
@@ -444,7 +447,7 @@ def test_read_only_task_cannot_select_an_effectful_option() -> None:
         world = _world("obs-1", False)
         effectful_option = _loop(ScriptedPolicy([])).action_space_builder.build(_task(), world).options[0]
         task = TaskGoal("inspect", "Inspect shared state")
-        environment = StaticEnvironment([world])
+        environment = ScriptedEnvironment(initial_observation=world)
         result = await (
             _loop(
                 ScriptedPolicy(
@@ -463,13 +466,12 @@ def test_read_only_task_cannot_select_an_effectful_option() -> None:
 
 
 def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
-    class StaleEnvironment(StaticEnvironment):
-        def is_current(self, request):
-            del request
-            return False
-
     async def scenario() -> None:
-        environment = StaleEnvironment([_world("obs-1", False), _world("obs-2", False)])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            independent_observations=(_world("obs-2", False),),
+        )
+        environment.adapter.is_current = lambda _request: False
         abort = Abort("context:test", "still stale", "policy")
         result = await (_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
@@ -496,10 +498,14 @@ def test_recent_turns_are_bounded() -> None:
             assert fused.observation is not None
             observations.append(fused.observation)
         decisions = [
-            RequestObservation("context:test", "criterion_verification", "current_world", "", "refresh") for _ in range(15)
+            RequestObservation("context:test", "criterion_verification", "current_world", "", "refresh")
+            for _ in range(15)
         ] + [Abort("context:test", "enough", "policy")]
         result = await (_loop(ScriptedPolicy(decisions))).run(
-            StaticEnvironment(observations),
+            ScriptedEnvironment(
+                initial_observation=observations[0],
+                independent_observations=tuple(observations[1:]),
+            ),
             _task(),
         )
         assert len(result.turns) == 12
@@ -518,9 +524,10 @@ def test_sent_unknown_verified_effect_waits_when_task_is_incomplete() -> None:
             )
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", True)],
-            [_sent(DispatchStatus.SENT_UNKNOWN, False)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            post_observations=(_world("obs-2", True),),
+            results=[_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
         abort = Abort("context:test", "next objective unavailable", "policy")
         loop = AgentLoop(ScriptedPolicy(["first", abort]), SharedActionEvaluator(), IncompleteTaskEvaluator())
@@ -541,7 +548,9 @@ def test_observation_budget_is_reserved_before_execution() -> None:
             risk_profile=RiskProfile.LOW,
             loop_budget=LoopBudget(max_turns=2, max_observations=2),
         )
-        environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", False)])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False), independent_observations=(_world("obs-2", False),)
+        )
         request = RequestObservation("context:test", "criterion_verification", "current_world", "", "refresh")
         result = await (_loop(ScriptedPolicy([request, "first"]))).run(environment, task)
         assert result.status == AgentLoopStatus.FAILED
@@ -573,15 +582,10 @@ def test_last_turn_refresh_is_evaluated_before_turn_budget(
     async def scenario() -> None:
         task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=2))
         policy = OneRefreshPolicy()
-        environment = StaticEnvironment(
-            [
-                _world("initial", False),
-                _world("fresh", fresh_enabled),
-            ]
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False), independent_observations=(_world("fresh", fresh_enabled),)
         )
-        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
-            environment, task
-        )
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(environment, task)
 
         assert result.status is expected
         assert policy.calls == 1
@@ -594,9 +598,10 @@ def test_last_turn_refresh_is_evaluated_before_turn_budget(
 
 def test_wrong_action_result_lineage_is_rejected_before_evaluation() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False), _world("obs-2", True)],
-            [ActionResult("wrong-request", DispatchStatus.SENT, "wrong-backend", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            post_observations=(_world("obs-2", True),),
+            results=[ActionResult("wrong-request", DispatchStatus.SENT, "wrong-backend", True)],
         )
         result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
@@ -618,17 +623,10 @@ def test_not_sent_wrong_lineage_fails_before_evaluation(request_id: str, backend
             raise AssertionError("ActionEvaluator must not run for wrong NOT_SENT lineage")
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("obs-1", False)],
-            [
-                ActionResult(
-                    request_id,
-                    DispatchStatus.NOT_SENT,
-                    backend,
-                    False,
-                    ActionError.EXECUTION_FAILED,
-                )
-            ],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("obs-1", False),
+            post_observations=(_world("obs-1", False),),
+            results=[ActionResult(request_id, DispatchStatus.NOT_SENT, backend, False, ActionError.EXECUTION_FAILED)],
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), FailIfEvaluated(), SharedTaskEvaluator())
         result = await (loop).run(environment, _task())

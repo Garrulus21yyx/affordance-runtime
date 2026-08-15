@@ -34,10 +34,7 @@ def test_target_benchmark_uses_production_runtime_composition_root() -> None:
 def test_target_composition_owner_has_no_benchmark_dependency() -> None:
     composition = RUNTIME / "app" / "composition.py"
 
-    assert not any(
-        name.startswith("affordance_runtime.benchmarks")
-        for name in _imports(composition)
-    )
+    assert not any(name.startswith("affordance_runtime.benchmarks") for name in _imports(composition))
 
 
 def test_target_runtime_owns_lifecycle_without_legacy_coordinator_or_runner() -> None:
@@ -54,19 +51,12 @@ def test_target_runtime_owns_lifecycle_without_legacy_coordinator_or_runner() ->
 def test_product_action_evaluator_has_no_benchmark_dependency() -> None:
     evaluator = RUNTIME / "evaluation" / "action_evaluator.py"
 
-    assert not any(
-        name.startswith("affordance_runtime.benchmarks")
-        for name in _imports(evaluator)
-    )
+    assert not any(name.startswith("affordance_runtime.benchmarks") for name in _imports(evaluator))
 
 
 def test_http_fact_surface_is_product_owned_and_has_no_fixture_or_benchmark_oracle() -> None:
     surface = RUNTIME / "surfaces" / "http_json"
-    imports = {
-        imported
-        for path in surface.rglob("*.py")
-        for imported in _imports(path)
-    }
+    imports = {imported for path in surface.rglob("*.py") for imported in _imports(path)}
 
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
     assert "affordance_runtime.fixtures" not in imports
@@ -76,11 +66,7 @@ def test_http_fact_surface_is_product_owned_and_has_no_fixture_or_benchmark_orac
 
 def test_dom_document_projection_is_product_owned_and_has_no_reference_oracle() -> None:
     surface = RUNTIME / "surfaces" / "dom"
-    imports = {
-        imported
-        for path in surface.rglob("*.py")
-        for imported in _imports(path)
-    }
+    imports = {imported for path in surface.rglob("*.py") for imported in _imports(path)}
 
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
     assert "affordance_runtime.fixtures" not in imports
@@ -96,10 +82,7 @@ def test_target_product_entry_has_no_legacy_or_benchmark_dependency() -> None:
         "surfaces/dom/thread_session.py",
     ):
         imports = _imports(RUNTIME / relative)
-        assert not any(
-            name.startswith("affordance_runtime.benchmarks")
-            for name in imports
-        )
+        assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
         assert "affordance_runtime.coordinator" not in imports
         assert "affordance_runtime.composition" not in imports
         assert "affordance_runtime.runtime_client" not in imports
@@ -221,21 +204,25 @@ def test_target_intake_does_not_import_workflow_or_gui_execution_authority() -> 
     imports = _imports(intake)
 
     assert not any(
-        name.startswith((
-            "affordance_runtime.benchmarks",
-            "affordance_runtime.surfaces",
-            "affordance_runtime.executors",
-        ))
+        name.startswith(
+            (
+                "affordance_runtime.benchmarks",
+                "affordance_runtime.surfaces",
+                "affordance_runtime.executors",
+            )
+        )
         for name in imports
     )
-    assert imports.isdisjoint({
-        "affordance_runtime.task_intake",
-        "affordance_runtime.task_spec_authority",
-        "affordance_runtime.task_plan_contracts",
-        "affordance_runtime.state_kernel",
-        "affordance_runtime.runtime_committer",
-        "affordance_runtime.actions.binder",
-    })
+    assert imports.isdisjoint(
+        {
+            "affordance_runtime.task_intake",
+            "affordance_runtime.task_spec_authority",
+            "affordance_runtime.task_plan_contracts",
+            "affordance_runtime.state_kernel",
+            "affordance_runtime.runtime_committer",
+            "affordance_runtime.actions.binder",
+        }
+    )
 
 
 def test_browsergym_case_policy_owns_intake_and_surface_is_task_list_agnostic() -> None:
@@ -263,11 +250,9 @@ def test_browsergym_reusable_implementation_has_one_surface_owner() -> None:
     benchmark_environment = (benchmark / "case_environment.py").read_text(encoding="utf-8")
     assert "BrowserGymCaseEnvironment" in benchmark_environment
     assert "open_browsergym_case" in benchmark_environment
-    benchmark_sources = "\n".join(
-        path.read_text(encoding="utf-8") for path in benchmark.glob("*.py")
-    )
+    benchmark_sources = "\n".join(path.read_text(encoding="utf-8") for path in benchmark.glob("*.py"))
     for implementation_owner in (
-        "class BrowserGymEnvironment",
+        "class BrowserGymSurfaceAdapter",
         "class ThreadBoundBrowserGym",
         "class BrowserGymBindingStore",
         "def project_browsergym_observation",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from enum import StrEnum
 
 from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
@@ -24,7 +25,9 @@ from affordance_runtime.agent.runtime_failure import (
 )
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.world.acquisition import (
+    AcquisitionCancelled,
     AcquisitionOrigin,
+    AcquisitionStage,
     AcquisitionStatus,
     ObservationAcquisition,
     ObservationRequestKind,
@@ -32,30 +35,95 @@ from affordance_runtime.world.acquisition import (
 )
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
-from affordance_runtime.world.source_profile import assurance_satisfies
+
+
+class FreshnessStatus(StrEnum):
+    FRESH = "fresh"
+    REUSED = "reused"
+    NOT_ACQUIRED = "not_acquired"
+    ORIGIN_MISMATCH = "origin_mismatch"
+
+
+class AcquisitionRelationship(StrEnum):
+    POST_ACTION_FALLBACK = "post_action_fallback"
 
 
 @dataclass(frozen=True)
-class FreshAcquisition:
-    observation: WorldObservation | None
-    attempts: int
-    status: AcquisitionStatus
-    reason_code: str
+class LinkedAcquisition:
+    relationship: AcquisitionRelationship
+    primary_acquisition_id: str
+    acquisition: ObservationAcquisition
+
+    def __post_init__(self) -> None:
+        if self.primary_acquisition_id == self.acquisition.acquisition_id:
+            raise ValueError("linked fallback requires a distinct acquisition identity")
+
+
+@dataclass(frozen=True)
+class FreshObservationOutcome:
+    acquisition: ObservationAcquisition
+    expected_origin: AcquisitionOrigin
+    freshness: FreshnessStatus
     failure_code: AgentFailureCode | None = None
-    used_fallback: bool = False
-    expected_origin: AcquisitionOrigin | None = None
-    actual_origin: AcquisitionOrigin | None = None
-    request_kind: ObservationRequestKind | None = None
+    linked_fallback: LinkedAcquisition | None = None
+    consumed_acquisition_id: str = ""
+
+    @property
+    def consumed_acquisition(self) -> ObservationAcquisition:
+        if self.linked_fallback is not None and (
+            self.consumed_acquisition_id == self.linked_fallback.acquisition.acquisition_id
+        ):
+            return self.linked_fallback.acquisition
+        return self.acquisition
+
+    @property
+    def observation(self) -> WorldObservation | None:
+        if self.freshness is not FreshnessStatus.FRESH:
+            return None
+        return self.consumed_acquisition.observation
+
+    @property
+    def attempts(self) -> int:
+        return _physical_attempt_count(self.acquisition) + (
+            0 if self.linked_fallback is None else _physical_attempt_count(self.linked_fallback.acquisition)
+        )
+
+    @property
+    def status(self) -> AcquisitionStatus:
+        if self.freshness in {FreshnessStatus.REUSED, FreshnessStatus.ORIGIN_MISMATCH}:
+            return AcquisitionStatus.FAILED
+        return self.consumed_acquisition.status
+
+    @property
+    def reason_code(self) -> str:
+        if self.freshness is FreshnessStatus.REUSED:
+            return "observation_identity_reused"
+        if self.freshness is FreshnessStatus.ORIGIN_MISMATCH:
+            return (
+                "post_action_origin_invalid"
+                if self.expected_origin is AcquisitionOrigin.POST_ACTION
+                else "independent_capture_origin_invalid"
+            )
+        return self.consumed_acquisition.reason_code
+
+    @property
+    def used_fallback(self) -> bool:
+        return self.linked_fallback is not None
+
+    @property
+    def actual_origin(self) -> AcquisitionOrigin:
+        return self.consumed_acquisition.origin
+
+    @property
+    def request_kind(self) -> ObservationRequestKind:
+        return self.consumed_acquisition.request.kind
 
 
 async def capture_fresh(
     environment: WorldEnvironment,
     previous_id: str,
     request: WorldObservationRequest,
-) -> FreshAcquisition:
-    unavailable = capture_admission_failure(environment, request)
-    if unavailable is not None:
-        return unavailable
+) -> FreshObservationOutcome:
     acquisition = await environment.capture(request)
     fresh = validate_fresh_acquisition(
         acquisition,
@@ -63,7 +131,7 @@ async def capture_fresh(
         expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
         attempts_override=1,
     )
-    return _with_request(fresh, request.kind)
+    return fresh
 
 
 def validate_fresh_acquisition(
@@ -73,53 +141,39 @@ def validate_fresh_acquisition(
     expected_origin: AcquisitionOrigin,
     post_action: bool = False,
     attempts_override: int | None = None,
-) -> FreshAcquisition:
-    attempts = (
-        acquisition_attempt_count(acquisition)
-        if attempts_override is None else attempts_override
-    )
+) -> FreshObservationOutcome:
+    del attempts_override
     if acquisition.origin is not expected_origin:
-        return FreshAcquisition(
-            None,
-            attempts,
-            AcquisitionStatus.FAILED,
-            "post_action_origin_invalid"
-            if post_action else "independent_capture_origin_invalid",
-            AgentFailureCode.POST_ACTION_ORIGIN_INVALID
-            if post_action else AgentFailureCode.OBSERVATION_ORIGIN_INVALID,
-            expected_origin=expected_origin,
-            actual_origin=acquisition.origin,
+        return FreshObservationOutcome(
+            acquisition,
+            expected_origin,
+            FreshnessStatus.ORIGIN_MISMATCH,
+            AgentFailureCode.POST_ACTION_ORIGIN_INVALID if post_action else AgentFailureCode.OBSERVATION_ORIGIN_INVALID,
         )
     if acquisition.status is AcquisitionStatus.ACQUIRED:
         assert acquisition.observation is not None
         if acquisition.observation.observation_id == previous_id:
-            return FreshAcquisition(
-                None,
-                attempts,
-                AcquisitionStatus.FAILED,
-                "observation_identity_reused",
+            return FreshObservationOutcome(
+                acquisition,
+                expected_origin,
+                FreshnessStatus.REUSED,
                 _failure_code(AcquisitionStatus.ACQUIRED, post_action, freshness=True),
-                expected_origin=expected_origin,
-                actual_origin=acquisition.origin,
             )
-        return FreshAcquisition(
-            acquisition.observation, attempts, acquisition.status, acquisition.reason_code,
-            expected_origin=expected_origin,
-            actual_origin=acquisition.origin,
+        return FreshObservationOutcome(
+            acquisition,
+            expected_origin,
+            FreshnessStatus.FRESH,
         )
-    return FreshAcquisition(
-        None,
-        attempts,
-        acquisition.status,
-        acquisition.reason_code,
+    return FreshObservationOutcome(
+        acquisition,
+        expected_origin,
+        FreshnessStatus.NOT_ACQUIRED,
         _failure_code(acquisition.status, post_action),
-        expected_origin=expected_origin,
-        actual_origin=acquisition.origin,
     )
 
 
 def acquisition_attempt_count(acquisition: ObservationAcquisition) -> int:
-    return int(acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED})
+    return _physical_attempt_count(acquisition)
 
 
 def no_fresh_after_result(
@@ -127,7 +181,7 @@ def no_fresh_after_result(
     decision,
     request,
     result,
-    acquisition: FreshAcquisition,
+    acquisition: FreshObservationOutcome,
     scope: ControlTransitionScope | ControlContinuationScope,
 ):
     state = session.state
@@ -140,40 +194,6 @@ def no_fresh_after_result(
     )
 
 
-def capture_admission_failure(
-    environment: WorldEnvironment,
-    request: WorldObservationRequest,
-) -> FreshAcquisition | None:
-    capabilities = environment.observation_capabilities
-    if not capabilities.independent_capture:
-        return _unavailable("independent_capture_unsupported")
-    if request.kind is not ObservationRequestKind.POLICY_REQUEST:
-        return None
-    if not request.needs:
-        return None
-    offered = all(
-        any(
-            (need.required_modality is None or offer.modality is need.required_modality)
-            and need.purpose in offer.supported_purposes
-            and assurance_satisfies(offer.assurance, need.required_assurance)
-            for offer in capabilities.offers
-        )
-        for need in request.needs
-    )
-    return None if offered else _unavailable("observation_capability_not_offered")
-
-
-def _unavailable(reason_code: str) -> FreshAcquisition:
-    return FreshAcquisition(
-        None,
-        0,
-        AcquisitionStatus.CAPABILITY_UNAVAILABLE,
-        reason_code,
-        AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE,
-        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
-    )
-
-
 def _failure_code(
     status: AcquisitionStatus,
     post_action: bool,
@@ -183,56 +203,63 @@ def _failure_code(
     if freshness:
         return (
             AgentFailureCode.POST_ACTION_FRESHNESS_INVALID
-            if post_action else AgentFailureCode.OBSERVATION_FRESHNESS_INVALID
+            if post_action
+            else AgentFailureCode.OBSERVATION_FRESHNESS_INVALID
         )
     if status is AcquisitionStatus.CAPABILITY_UNAVAILABLE:
         return (
             AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE
-            if post_action else AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE
+            if post_action
+            else AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE
         )
     return (
         AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
-        if post_action else AgentFailureCode.OBSERVATION_ACQUISITION_FAILED
+        if post_action
+        else AgentFailureCode.OBSERVATION_ACQUISITION_FAILED
     )
 
 
 def _post_action_fallback_failure(
-    primary: FreshAcquisition,
-    fallback: FreshAcquisition,
-) -> FreshAcquisition:
+    primary: FreshObservationOutcome,
+    fallback: FreshObservationOutcome,
+) -> FreshObservationOutcome:
     if fallback.failure_code is AgentFailureCode.OBSERVATION_FRESHNESS_INVALID:
         failure_code = AgentFailureCode.POST_ACTION_FRESHNESS_INVALID
     elif fallback.failure_code is AgentFailureCode.OBSERVATION_ORIGIN_INVALID:
         failure_code = AgentFailureCode.POST_ACTION_ORIGIN_INVALID
     else:
         failure_code = _failure_code(fallback.status, True)
-    return FreshAcquisition(
-        None,
-        primary.attempts + fallback.attempts,
-        fallback.status,
-        fallback.reason_code,
+    linked = LinkedAcquisition(
+        AcquisitionRelationship.POST_ACTION_FALLBACK,
+        primary.acquisition.acquisition_id,
+        fallback.acquisition,
+    )
+    return FreshObservationOutcome(
+        primary.acquisition,
+        primary.expected_origin,
+        fallback.freshness,
         failure_code,
-        True,
-        fallback.expected_origin,
-        fallback.actual_origin,
-        fallback.request_kind,
+        linked,
+        fallback.acquisition.acquisition_id,
     )
 
 
 def post_action_fallback_result(
-    primary: FreshAcquisition,
-    fallback: FreshAcquisition,
-) -> FreshAcquisition:
+    primary: FreshObservationOutcome,
+    fallback: FreshObservationOutcome,
+) -> FreshObservationOutcome:
     if fallback.observation is not None:
-        return FreshAcquisition(
-            fallback.observation,
-            primary.attempts + fallback.attempts,
-            fallback.status,
-            fallback.reason_code,
-            used_fallback=True,
-            expected_origin=fallback.expected_origin,
-            actual_origin=fallback.actual_origin,
-            request_kind=fallback.request_kind,
+        linked = LinkedAcquisition(
+            AcquisitionRelationship.POST_ACTION_FALLBACK,
+            primary.acquisition.acquisition_id,
+            fallback.acquisition,
+        )
+        return FreshObservationOutcome(
+            primary.acquisition,
+            primary.expected_origin,
+            FreshnessStatus.FRESH,
+            linked_fallback=linked,
+            consumed_acquisition_id=fallback.acquisition.acquisition_id,
         )
     return _post_action_fallback_failure(primary, fallback)
 
@@ -242,33 +269,42 @@ async def capture_for_session(
     previous_id: str,
     request: WorldObservationRequest,
     scope: ControlTransitionScope | ControlContinuationScope,
-) -> FreshAcquisition:
+) -> FreshObservationOutcome:
     """Perform and monotonically account one Runtime-owned capture boundary."""
-    unavailable = capture_admission_failure(session.environment, request)
-    if unavailable is not None:
-        scope.record_acquisition(
-            unavailable.status,
-            unavailable.actual_origin,
-            unavailable.reason_code,
-            0,
-            request.kind,
-            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
-        )
-        return _with_request(unavailable, request.kind)
     attempt_id = session.accounting.next_attempt_id()
     try:
         acquisition = await session.environment.capture(request)
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as exc:
+        acquisition = exc.acquisition if isinstance(exc, AcquisitionCancelled) else None
+        if acquisition is not None:
+            scope.record_acquisition(
+                acquisition.status,
+                acquisition.origin,
+                acquisition.reason_code,
+                acquisition_attempt_count(acquisition),
+                acquisition.request.kind,
+                expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+            )
         _record_capture_exception(
-            session, scope, request, attempt_id, "capture_cancelled",
-            AttemptDisposition.CANCELLED, "CancelledError",
+            session,
+            scope,
+            request,
+            attempt_id,
+            "capture_cancelled",
+            AttemptDisposition.CANCELLED,
+            "CancelledError",
         )
         raise
     except Exception as exc:
         exception_class = safe_exception_class(exc)
         _record_capture_exception(
-            session, scope, request, attempt_id, "capture_exception",
-            AttemptDisposition.THREW, exception_class,
+            session,
+            scope,
+            request,
+            attempt_id,
+            "capture_exception",
+            AttemptDisposition.THREW,
+            exception_class,
         )
         session.pending_runtime_failure = RuntimeFailure(
             FailureStage.ACQUISITION,
@@ -279,8 +315,13 @@ async def capture_for_session(
         raise
     if not isinstance(acquisition, ObservationAcquisition):
         _record_capture_exception(
-            session, scope, request, attempt_id, "capture_malformed",
-            AttemptDisposition.MALFORMED, "",
+            session,
+            scope,
+            request,
+            attempt_id,
+            "capture_malformed",
+            AttemptDisposition.MALFORMED,
+            "",
         )
         session.pending_runtime_failure = RuntimeFailure(
             FailureStage.ACQUISITION,
@@ -288,28 +329,33 @@ async def capture_for_session(
             "capture_malformed",
         )
         raise TypeError("WorldEnvironment.capture returned a malformed contract")
-    acquired = _with_request(
-        validate_fresh_acquisition(
-            acquisition,
-            previous_id,
-            expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
-            attempts_override=1,
-        ),
-        request.kind,
+    acquired = validate_fresh_acquisition(
+        acquisition,
+        previous_id,
+        expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        attempts_override=1,
     )
     receipt = AttemptReceipt(
         attempt_id,
         AttemptOperation.CAPTURE,
         str(request.kind),
         AcquisitionOrigin.INDEPENDENT_CAPTURE,
-        acquired.actual_origin,
+        (
+            None
+            if acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE and not acquired.attempts
+            else acquired.actual_origin
+        ),
         AttemptDisposition.RETURNED,
         acquired.reason_code,
-        1,
+        acquired.attempts,
         0,
         0,
         0,
-        acquisition_status=acquired.status,
+        acquisition_status=(
+            AcquisitionStatus.FAILED
+            if acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE and acquired.attempts
+            else acquired.status
+        ),
     )
     session.accounting.record(receipt)
     scope.record_attempt(receipt)
@@ -317,8 +363,13 @@ async def capture_for_session(
 
 
 def _record_capture_exception(
-    session, scope, request, attempt_id: str, reason_code: str,
-    disposition: AttemptDisposition, exception_class: str,
+    session,
+    scope,
+    request,
+    attempt_id: str,
+    reason_code: str,
+    disposition: AttemptDisposition,
+    exception_class: str,
 ) -> None:
     receipt = AttemptReceipt(
         attempt_id,
@@ -339,18 +390,5 @@ def _record_capture_exception(
     scope.record_attempt(receipt)
 
 
-def _with_request(
-    acquisition: FreshAcquisition,
-    request_kind: ObservationRequestKind,
-) -> FreshAcquisition:
-    return FreshAcquisition(
-        acquisition.observation,
-        acquisition.attempts,
-        acquisition.status,
-        acquisition.reason_code,
-        acquisition.failure_code,
-        acquisition.used_fallback,
-        acquisition.expected_origin,
-        acquisition.actual_origin,
-        request_kind,
-    )
+def _physical_attempt_count(acquisition: ObservationAcquisition) -> int:
+    return int(acquisition.stage is not AcquisitionStage.PRE_SELECTION_UNAVAILABLE)

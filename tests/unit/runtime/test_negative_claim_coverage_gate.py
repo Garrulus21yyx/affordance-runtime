@@ -1,6 +1,7 @@
 import asyncio
 
 from affordance_runtime.agent import Abort, AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     TaskEvaluation,
@@ -18,7 +19,6 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.world import fused_world
 
 
@@ -63,10 +63,8 @@ def _run(world: WorldObservation, policy: _AbortPolicy):
             "Find whether the requested item exists",
             loop_budget=LoopBudget(max_turns=3, max_observations=3),
         )
-        environment = StaticEnvironment([world])
-        result = await (AgentLoop(policy, _UnusedActionEvaluator(), _IncompleteEvaluator())).run(
-            environment, task
-        )
+        environment = ScriptedEnvironment(initial_observation=world)
+        result = await (AgentLoop(policy, _UnusedActionEvaluator(), _IncompleteEvaluator())).run(environment, task)
         return result, environment
 
     return asyncio.run(scenario())

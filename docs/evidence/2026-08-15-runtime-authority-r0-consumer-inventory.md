@@ -7,6 +7,11 @@
 > **Status:** `R0_REVIEW_COMPLETE / CONTRACT_ALGEBRA_FROZEN / CONSUMER_INVENTORY_COMPLETE / ATOMIC_MIGRATION_MAP_READY / R1_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`
 > **Implementation boundary:** this record freezes contracts and migration/deletion gates; it does not claim that R1, R2, or R3 types or owners exist in production
 
+> **Disposition update (2026-08-15):** R1 has implemented the acquisition
+> portion of this map. See [R1 acquisition convergence](2026-08-15-runtime-authority-r1-closure.md).
+> The tables below remain the immutable pre-cutover inventory; R2/R3 entries are
+> still pending.
+
 ## 1. Review method and bounded conclusion
 
 The review mechanically searched production and tests for definitions,

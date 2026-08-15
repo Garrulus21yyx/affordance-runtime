@@ -69,13 +69,13 @@ from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.backend import _effective_visibility
 from affordance_runtime.surfaces.browsergym.entity_identity import BrowserGymEntityIdentityMap
-from affordance_runtime.surfaces.browsergym.projection import project_browsergym_observation
 from affordance_runtime.surfaces.browsergym.semantics import PRIVATE_CONTROL_PROPERTIES_KEY
 from affordance_runtime.task import (
     RiskProfile,
     TaskGoal,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
+from tests.support.surfaces.browsergym.projection_support import project_browsergym_observation
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 

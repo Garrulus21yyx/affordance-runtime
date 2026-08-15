@@ -3,9 +3,9 @@ import asyncio
 import pytest
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedTaskEvaluator, _sent, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 @pytest.mark.parametrize(
@@ -48,9 +48,8 @@ def test_agent_loop_rejects_action_evaluation_with_wrong_lineage(wrong_field: st
 
     async def scenario() -> None:
         task_evaluator = FailIfCalledTaskEvaluator()
-        environment = StaticEnvironment(
-            [_world("before", False), _world("after", True)],
-            [_sent()],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False), post_observations=(_world("after", True),), results=[_sent()]
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), WrongLineageEvaluator(), task_evaluator)
 

@@ -10,6 +10,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -22,15 +23,13 @@ from affordance_runtime.risk import RiskDecisionKind, RiskPolicy
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionOrigin,
-    AcquisitionStatus,
-    ObservationAcquisition,
     ObservationCapabilities,
     ObservationRequestKind,
     SemanticTarget,
     StateFact,
     WorldObservation,
 )
-from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.observation_acquisition import acquired_acquisition
 from tests.support.world import fused_world
 
 
@@ -99,9 +98,7 @@ class ActionEvaluator:
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED
-            if changed
-            else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+            ActionEvaluationStatus.EFFECT_CONFIRMED if changed else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
             "changed" if changed else "authoritatively unchanged",
             (after.facts[0].fact_id,),
         )
@@ -119,9 +116,11 @@ def _decision(result, kind=ConfirmationDecisionKind.CONFIRM) -> ConfirmationDeci
 
 def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("old", False, "#old"), _world("fresh", False, "#fresh"), _world("after", True, "#after")],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("old", False, "#old"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         policy = FirstPolicy()
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
@@ -154,7 +153,7 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
 
 def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("old", False, "#old")])
+        environment = ScriptedEnvironment(initial_observation=_world("old", False, "#old"))
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         request = paused.confirmation_request
@@ -167,7 +166,7 @@ def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() ->
         assert session.state.pending_confirmation is not None
         assert environment.executed_requests == []
 
-        denied_environment = StaticEnvironment([_world("old", False, "#old")])
+        denied_environment = ScriptedEnvironment(initial_observation=_world("old", False, "#old"))
         denied_session = await (_loop()).start(denied_environment, _task())
         denied_pause = await denied_session.run_until_pause()
         denied = await denied_session.resolve_confirmation(_decision(denied_pause, ConfirmationDecisionKind.DENY))
@@ -181,7 +180,7 @@ def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() ->
 def test_confirmation_observation_budget_exhaustion_closes_original_root() -> None:
     async def scenario() -> None:
         task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=1))
-        environment = StaticEnvironment([_world("old", False, "#old")])
+        environment = ScriptedEnvironment(initial_observation=_world("old", False, "#old"))
         session = await (_loop()).start(environment, task)
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
@@ -206,7 +205,7 @@ def test_confirmation_observation_budget_exhaustion_closes_original_root() -> No
     ("failure_kind", "reason_code", "capture_calls"),
     (
         ("unavailable", "independent_capture_unsupported", 0),
-        ("failed", "static_capture_failed", 1),
+        ("failed", "required_source_exhausted", 1),
         ("wrong_origin", "independent_capture_origin_invalid", 1),
         ("stale", "observation_identity_reused", 1),
     ),
@@ -216,30 +215,28 @@ def test_confirmation_refresh_failure_closes_original_root(
     reason_code: str,
     capture_calls: int,
 ) -> None:
-    class WrongOriginEnvironment(StaticEnvironment):
+    class WrongOriginEnvironment(ScriptedEnvironment):
         async def capture(self, request):
             self.capture_calls += 1
             self.capture_requests.append(request)
-            return ObservationAcquisition(
-                AcquisitionStatus.ACQUIRED,
-                AcquisitionOrigin.RESET,
+            return acquired_acquisition(
                 _world("fresh", False, "#fresh"),
-                "static_capture_acquired",
+                AcquisitionOrigin.RESET,
+                kind=request.kind,
             )
 
     async def scenario() -> None:
         old = _world("old", False, "#old")
         if failure_kind == "unavailable":
-            environment = StaticEnvironment(
-                [old],
-                observation_capabilities=ObservationCapabilities(False, True),
+            environment = ScriptedEnvironment(
+                initial_observation=old, observation_capabilities=ObservationCapabilities(False, True)
             )
         elif failure_kind == "wrong_origin":
-            environment = WrongOriginEnvironment([old])
+            environment = WrongOriginEnvironment(initial_observation=old)
         elif failure_kind == "stale":
-            environment = StaticEnvironment([old, old])
+            environment = ScriptedEnvironment(initial_observation=old, independent_observations=(old,))
         else:
-            environment = StaticEnvironment([old])
+            environment = ScriptedEnvironment(initial_observation=old)
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
@@ -292,12 +289,11 @@ def test_confirmation_fresh_task_terminal_closes_root_without_execution(
 
     async def scenario() -> None:
         evaluator = FreshStatusEvaluator()
-        environment = StaticEnvironment(
-            [_world("old", False, "#old"), _world("fresh", True, "#fresh")]
+        environment = ScriptedEnvironment(
+            initial_observation=_world("old", False, "#old"),
+            independent_observations=(_world("fresh", True, "#fresh"),),
         )
-        session = await (
-            AgentLoop(FirstPolicy(), ActionEvaluator(), evaluator)
-        ).start(environment, _task())
+        session = await (AgentLoop(FirstPolicy(), ActionEvaluator(), evaluator)).start(environment, _task())
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
 
@@ -319,8 +315,9 @@ def test_confirmation_fresh_task_terminal_closes_root_without_execution(
 
 def test_confirmation_subject_change_requires_new_confirmation() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("old", False, "#old"), _world("fresh", False, "#fresh", risk=ActionRisk.HIGH)]
+        environment = ScriptedEnvironment(
+            initial_observation=_world("old", False, "#old"),
+            independent_observations=(_world("fresh", False, "#fresh", risk=ActionRisk.HIGH),),
         )
         policy = FirstPolicy()
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
@@ -356,13 +353,10 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
                 )
             return ActionResult(request.request_id, DispatchStatus.SENT, "dom", True)
 
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("confirmed", False, "#confirmed"),
-                _world("rebound", False, "#rebound"),
-                _world("after", True, "#after"),
-            ],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("confirmed", False, "#confirmed"), _world("rebound", False, "#rebound")),
+            post_observations=(_world("after", True, "#after"),),
             execute_fn=execute,
         )
         session = await (_loop()).start(environment, _task())
@@ -384,9 +378,9 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
         ]
         assert len(root.acquisition_attempts) == 3
         assert [item.reason_code for item in root.acquisition_attempts] == [
-            "static_capture_acquired",
-            "static_capture_acquired",
-            "static_post_acquired",
+            "world_acquired",
+            "world_acquired",
+            "world_acquired",
         ]
 
     asyncio.run(scenario())
@@ -394,21 +388,11 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
 
 def test_sent_unknown_no_effect_consumes_confirmation_and_waits_without_replay() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("confirmed", False, "#confirmed"),
-                _world("after", False, "#after"),
-            ],
-            [
-                ActionResult(
-                    "*",
-                    DispatchStatus.SENT_UNKNOWN,
-                    "dom",
-                    False,
-                    ActionError.EXECUTION_FAILED,
-                )
-            ],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("confirmed", False, "#confirmed"),),
+            post_observations=(_world("after", False, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT_UNKNOWN, "dom", False, ActionError.EXECUTION_FAILED)],
         )
         session = await (_loop()).start(environment, _task())
         first = await session.run_until_pause()
@@ -436,17 +420,13 @@ def test_confirmed_execution_exception_closes_root_and_propagates(
             raise exc
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("confirmed", False, "#confirmed"),
-                _world("after", True, "#after"),
-            ],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("confirmed", False, "#confirmed"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await (
-            AgentLoop(FirstPolicy(), RaisingEvaluator(), TaskEvaluator())
-        ).start(environment, _task())
+        session = await (AgentLoop(FirstPolicy(), RaisingEvaluator(), TaskEvaluator())).start(environment, _task())
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
 
@@ -459,9 +439,7 @@ def test_confirmed_execution_exception_closes_root_and_propagates(
         assert root.execution.dispatch_status is DispatchStatus.SENT
         assert root.after_observation_id == "after"
         assert root.reason_code == (
-            "runtime_cancelled"
-            if isinstance(exc, asyncio.CancelledError)
-            else "runtime_exception"
+            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError) else "runtime_exception"
         )
         assert root.pending_kind.value == "none"
         assert session.execution_count == 1
@@ -484,21 +462,11 @@ def test_sent_unknown_unknown_waits_for_user_and_never_replays() -> None:
             )
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("confirmed", False, "#confirmed"),
-                _world("after", False, "#after"),
-            ],
-            [
-                ActionResult(
-                    "*",
-                    DispatchStatus.SENT_UNKNOWN,
-                    "dom",
-                    False,
-                    ActionError.EXECUTION_FAILED,
-                )
-            ],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("confirmed", False, "#confirmed"),),
+            post_observations=(_world("after", False, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT_UNKNOWN, "dom", False, ActionError.EXECUTION_FAILED)],
         )
         loop = AgentLoop(FirstPolicy(), UnknownEvaluator(), TaskEvaluator())
         session = await (loop).start(environment, _task())
@@ -517,9 +485,11 @@ def test_sent_unknown_unknown_waits_for_user_and_never_replays() -> None:
 
 def test_confirmation_decision_cannot_be_reused_after_effectful_send() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("initial", False, "#initial"), _world("fresh", False, "#fresh"), _world("after", True, "#after")],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
@@ -539,7 +509,7 @@ def test_confirmation_decision_cannot_be_reused_after_effectful_send() -> None:
 def test_confirmation_requires_a_fresh_observation_identity() -> None:
     async def scenario() -> None:
         repeated = _world("same", False, "#same")
-        environment = StaticEnvironment([repeated, repeated])
+        environment = ScriptedEnvironment(initial_observation=repeated, independent_observations=(repeated,))
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
 
@@ -556,17 +526,13 @@ def test_confirmation_continues_after_last_policy_turn_and_executes_once() -> No
     async def scenario() -> None:
         task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=3))
         policy = FirstPolicy()
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("confirmed", False, "#confirmed"),
-                _world("after", True, "#after"),
-            ],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("confirmed", False, "#confirmed"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await (
-            AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
-        ).start(environment, task)
+        session = await (AgentLoop(policy, ActionEvaluator(), TaskEvaluator())).start(environment, task)
         paused = await session.run_until_pause()
 
         completed = await session.resolve_confirmation(_decision(paused))
@@ -580,19 +546,20 @@ def test_confirmation_continues_after_last_policy_turn_and_executes_once() -> No
 
 
 def test_wrong_origin_confirmation_records_expected_and_actual_origin() -> None:
-    class WrongOriginEnvironment(StaticEnvironment):
+    class WrongOriginEnvironment(ScriptedEnvironment):
         async def capture(self, request):
             self.capture_calls += 1
             self.capture_requests.append(request)
-            return ObservationAcquisition(
-                AcquisitionStatus.ACQUIRED,
-                AcquisitionOrigin.RESET,
+            return acquired_acquisition(
                 _world("fresh", False, "#fresh"),
-                "static_capture_acquired",
+                AcquisitionOrigin.RESET,
+                kind=request.kind,
             )
 
     async def scenario() -> None:
-        environment = WrongOriginEnvironment([_world("old", False, "#old")])
+        environment = WrongOriginEnvironment(
+            initial_observation=_world("old", False, "#old"),
+        )
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         await session.resolve_confirmation(_decision(paused))
@@ -625,10 +592,10 @@ def test_confirmed_already_satisfied_closes_root_before_new_policy_decision() ->
         loop = AgentLoop(policy, ValueActionEvaluator(), IncompleteTaskEvaluator())
         loop.binder = binder
         task = replace(fill_task(), risk_profile=RiskProfile.MEDIUM)
-        environment = StaticEnvironment([
-            fill_world("initial", ""),
-            fill_world("confirmed", "desired"),
-        ])
+        environment = ScriptedEnvironment(
+            initial_observation=fill_world("initial", ""),
+            independent_observations=(fill_world("confirmed", "desired"),),
+        )
         session = await (loop).start(environment, task)
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
@@ -654,14 +621,14 @@ def test_confirmed_already_satisfied_closes_root_before_new_policy_decision() ->
 
 @pytest.mark.parametrize("exc", (RuntimeError("capture failed"), asyncio.CancelledError()))
 def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
-    class RaisingCaptureEnvironment(StaticEnvironment):
+    class RaisingCaptureEnvironment(ScriptedEnvironment):
         async def capture(self, request):
             self.capture_calls += 1
             self.capture_requests.append(request)
             raise exc
 
     async def scenario() -> None:
-        environment = RaisingCaptureEnvironment([_world("old", False, "#old")])
+        environment = RaisingCaptureEnvironment(initial_observation=_world("old", False, "#old"))
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(type(exc)):
@@ -675,17 +642,14 @@ def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
         assert session.observation_count == 2
         assert session.state.control_transition_total_count == 1
         assert root.reason_code == (
-            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError)
-            else "runtime_exception"
+            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError) else "runtime_exception"
         )
         assert session.approved_confirmation is None
         assert session.confirmation_continuation_scope is None
         assert session.last_result is not None
         assert session.last_result.runtime_failure is not None
         assert session.last_result.runtime_failure.stage is (
-            FailureStage.SESSION
-            if isinstance(exc, asyncio.CancelledError)
-            else FailureStage.ACQUISITION
+            FailureStage.SESSION if isinstance(exc, asyncio.CancelledError) else FailureStage.ACQUISITION
         )
         assert session.last_result.runtime_failure.root_id == root.transition_id
         assert session.last_result.runtime_failure.attempt_id == root.attempt_receipts[-1].attempt_id
@@ -694,14 +658,14 @@ def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
 
 
 def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None:
-    class MalformedCaptureEnvironment(StaticEnvironment):
+    class MalformedCaptureEnvironment(ScriptedEnvironment):
         async def capture(self, request):
             self.capture_calls += 1
             self.capture_requests.append(request)
             return object()
 
     async def scenario() -> None:
-        environment = MalformedCaptureEnvironment([_world("old", False, "#old")])
+        environment = MalformedCaptureEnvironment(initial_observation=_world("old", False, "#old"))
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(TypeError, match="malformed contract"):
@@ -724,14 +688,14 @@ def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None
 def test_foreign_capture_exception_name_cannot_break_physical_accounting() -> None:
     foreign_error = type("捕获-" * 70, (Exception,), {})("private capture detail")
 
-    class RaisingCaptureEnvironment(StaticEnvironment):
+    class RaisingCaptureEnvironment(ScriptedEnvironment):
         async def capture(self, request):
             self.capture_calls += 1
             self.capture_requests.append(request)
             raise foreign_error
 
     async def scenario() -> None:
-        environment = RaisingCaptureEnvironment([_world("old", False, "#old")])
+        environment = RaisingCaptureEnvironment(initial_observation=_world("old", False, "#old"))
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(type(foreign_error)):
@@ -756,10 +720,10 @@ def test_confirmation_action_space_exception_closes_same_root_after_capture() ->
             return super().build(task, observation)
 
     async def scenario() -> None:
-        environment = StaticEnvironment([
-            _world("initial", False, "#initial"),
-            _world("fresh", False, "#fresh"),
-        ])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+        )
         loop = _loop()
         loop.action_space_builder = RaisingSecondBuilder()
         session = await (loop).start(environment, _task())
@@ -783,33 +747,6 @@ def test_confirmation_action_space_exception_closes_same_root_after_capture() ->
     asyncio.run(scenario())
 
 
-def test_confirmation_capability_accessor_exception_is_not_a_physical_capture() -> None:
-    class RaisingCapabilitiesEnvironment(StaticEnvironment):
-        raise_capability = False
-
-        def __getattribute__(self, name):
-            if (
-                name == "observation_capabilities"
-                and object.__getattribute__(self, "raise_capability")
-            ):
-                raise RuntimeError("private capability detail")
-            return super().__getattribute__(name)
-
-    async def scenario() -> None:
-        environment = RaisingCapabilitiesEnvironment([_world("old", False, "#old")])
-        session = await (_loop()).start(environment, _task())
-        paused = await session.run_until_pause()
-        environment.raise_capability = True
-        with pytest.raises(RuntimeError, match="private capability detail"):
-            await session.resolve_confirmation(_decision(paused))
-        root = session.state.recent_control_transitions[0]
-        assert environment.capture_calls == 0
-        assert root.acquisition_attempts == ()
-        assert session.observation_count == 1
-
-    asyncio.run(scenario())
-
-
 def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> None:
     class BlockingFreshRisk:
         calls = 0
@@ -826,10 +763,10 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
             return assessment
 
     async def scenario() -> None:
-        environment = StaticEnvironment([
-            _world("initial", False, "#initial"),
-            _world("fresh", False, "#fresh"),
-        ])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+        )
         loop = _loop()
         loop.risk_policy = BlockingFreshRisk()
         session = await (loop).start(environment, _task())
@@ -852,14 +789,16 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("malformed", (object(), type("FakeRisk", (), {"decision": RiskDecisionKind.ALLOW, "reason": "allow"})()))
+@pytest.mark.parametrize(
+    "malformed", (object(), type("FakeRisk", (), {"decision": RiskDecisionKind.ALLOW, "reason": "allow"})())
+)
 def test_malformed_risk_policy_result_fails_closed_without_execution(malformed) -> None:
     class MalformedRiskPolicy:
         def assess(self, task, selection):
             return malformed
 
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("initial", False, "#initial")])
+        environment = ScriptedEnvironment(initial_observation=_world("initial", False, "#initial"))
         loop = _loop()
         loop.risk_policy = MalformedRiskPolicy()
         result = await (loop).run(environment, _task())
@@ -882,7 +821,7 @@ def test_risk_assessment_for_another_selection_cannot_authorize_current_action()
             )
 
     async def scenario() -> None:
-        environment = StaticEnvironment([_world("initial", False, "#initial")])
+        environment = ScriptedEnvironment(initial_observation=_world("initial", False, "#initial"))
         loop = _loop()
         loop.risk_policy = WrongSubjectRiskPolicy()
         result = await (loop).run(environment, _task())
@@ -910,17 +849,15 @@ def test_confirmed_task_evaluator_exception_preserves_action_epoch_only(exc) -> 
             return await super().evaluate(task, observation)
 
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("confirmed", False, "#confirmed"),
-                _world("after", True, "#after"),
-            ],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("confirmed", False, "#confirmed"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await (
-            AgentLoop(FirstPolicy(), ActionEvaluator(), RaisingThirdTaskEvaluator())
-        ).start(environment, _task())
+        session = await (AgentLoop(FirstPolicy(), ActionEvaluator(), RaisingThirdTaskEvaluator())).start(
+            environment, _task()
+        )
         paused = await session.run_until_pause()
 
         with pytest.raises(type(exc)):
@@ -932,8 +869,7 @@ def test_confirmed_task_evaluator_exception_preserves_action_epoch_only(exc) -> 
         assert root.action_evaluation.after_observation_id == "after"
         assert root.task_evaluation is None
         assert root.reason_code == (
-            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError)
-            else "runtime_exception"
+            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError) else "runtime_exception"
         )
 
     asyncio.run(scenario())

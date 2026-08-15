@@ -2,11 +2,11 @@ import asyncio
 from dataclasses import replace
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, AskUser, SelectAction
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import WorldFusion, WorldObservation
 from tests.integration.agent.test_confirmation_continuation import ActionEvaluator, TaskEvaluator, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 class ReselectPolicy:
@@ -72,8 +72,9 @@ def _expanded_task() -> TaskGoal:
 def test_no_exact_subject_returns_to_policy_and_uses_its_new_selection() -> None:
     async def scenario() -> None:
         policy = ReselectPolicy()
-        environment = StaticEnvironment(
-            [_world("initial", False, "#initial"), _changed_candidates_world()]
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_changed_candidates_world(),),
         )
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
         session = await (loop).start(environment, _expanded_task())
@@ -93,8 +94,9 @@ def test_no_exact_subject_returns_to_policy_and_uses_its_new_selection() -> None
 def test_no_exact_subject_allows_policy_to_ask_user() -> None:
     async def scenario() -> None:
         policy = ReselectPolicy("ask")
-        environment = StaticEnvironment(
-            [_world("initial", False, "#initial"), _changed_candidates_world()]
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_changed_candidates_world(),),
         )
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
         session = await (loop).start(environment, _expanded_task())
@@ -130,7 +132,9 @@ def test_unavailable_confirmed_action_does_not_authorize_another_target() -> Non
         fused = WorldFusion().fuse((source,))
         assert fused.observation is not None
         fresh = fused.observation
-        environment = StaticEnvironment([_world("initial", False, "#initial"), fresh])
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"), independent_observations=(fresh,)
+        )
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
         session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()

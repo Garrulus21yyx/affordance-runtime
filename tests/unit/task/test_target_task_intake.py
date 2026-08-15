@@ -9,6 +9,7 @@ from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app import (
     TargetRuntime,
 )
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import (
     LoopBudget,
@@ -21,7 +22,6 @@ from affordance_runtime.task import (
     TaskUnsupported,
     ThinTaskIntake,
 )
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.world import fused_world
 
 
@@ -48,20 +48,22 @@ class BlockedTaskEvaluator:
 
 
 def test_thin_intake_admits_stable_semantics_without_gui_identity() -> None:
-    outcome = ThinTaskIntake().compile(NaturalLanguageTaskRequest(
-        "task:save",
-        "Save the current form",
-        TaskBoundary(
-            constraints=("use the current account",),
-            allowed_effects=("form_saved",),
-            forbidden_effects=("account_deleted",),
-            inputs={"display_name": "Ada"},
-            success_criteria=({"id": "saved", "predicate": "saved", "value": True},),
-            risk_profile=RiskProfile.LOW,
-            loop_budget=LoopBudget(4, 8),
-        ),
-        source_ref="user-message:1",
-    ))
+    outcome = ThinTaskIntake().compile(
+        NaturalLanguageTaskRequest(
+            "task:save",
+            "Save the current form",
+            TaskBoundary(
+                constraints=("use the current account",),
+                allowed_effects=("form_saved",),
+                forbidden_effects=("account_deleted",),
+                inputs={"display_name": "Ada"},
+                success_criteria=({"id": "saved", "predicate": "saved", "value": True},),
+                risk_profile=RiskProfile.LOW,
+                loop_budget=LoopBudget(4, 8),
+            ),
+            source_ref="user-message:1",
+        )
+    )
 
     assert isinstance(outcome, ReadyTask)
     assert outcome.task.task_id == "task:save"
@@ -75,25 +77,31 @@ def test_thin_intake_admits_stable_semantics_without_gui_identity() -> None:
 
 
 def test_thin_intake_returns_closed_nonready_outcomes() -> None:
-    missing_effect_authority = ThinTaskIntake().compile(NaturalLanguageTaskRequest(
-        "task:effect-unknown",
-        "Change the current record",
-        TaskBoundary(risk_profile=RiskProfile.LOW),
-    ))
-    conflicting_effects = ThinTaskIntake().compile(NaturalLanguageTaskRequest(
-        "task:effect-conflict",
-        "Change the current record",
-        TaskBoundary(
-            allowed_effects=("record_changed",),
-            forbidden_effects=("record_changed",),
-            risk_profile=RiskProfile.LOW,
-        ),
-    ))
-    private_execution_input = ThinTaskIntake().compile(NaturalLanguageTaskRequest(
-        "task:private-input",
-        "Click the current control",
-        TaskBoundary(inputs={"selector": "#save"}),
-    ))
+    missing_effect_authority = ThinTaskIntake().compile(
+        NaturalLanguageTaskRequest(
+            "task:effect-unknown",
+            "Change the current record",
+            TaskBoundary(risk_profile=RiskProfile.LOW),
+        )
+    )
+    conflicting_effects = ThinTaskIntake().compile(
+        NaturalLanguageTaskRequest(
+            "task:effect-conflict",
+            "Change the current record",
+            TaskBoundary(
+                allowed_effects=("record_changed",),
+                forbidden_effects=("record_changed",),
+                risk_profile=RiskProfile.LOW,
+            ),
+        )
+    )
+    private_execution_input = ThinTaskIntake().compile(
+        NaturalLanguageTaskRequest(
+            "task:private-input",
+            "Click the current control",
+            TaskBoundary(inputs={"selector": "#save"}),
+        )
+    )
 
     assert isinstance(missing_effect_authority, TaskInputRequired)
     assert missing_effect_authority.requested_fields == ("allowed_effects",)
@@ -106,17 +114,19 @@ def test_thin_intake_returns_closed_nonready_outcomes() -> None:
 
 def test_target_runtime_starts_a_natural_language_request_through_intake() -> None:
     observation = fused_world("observation:initial", surface="static")
-    environment = StaticEnvironment((observation,))
+    environment = ScriptedEnvironment(initial_observation=observation)
     runtime = TargetRuntime(
         AgentDecisionPorts(NeverPolicy()),
         UnusedActionEvaluator(),
         BlockedTaskEvaluator(),
     )
 
-    started = asyncio.run(runtime.start_request(
-        environment,
-        NaturalLanguageTaskRequest("task:read", "Inspect the current page"),
-    ))
+    started = asyncio.run(
+        runtime.start_request(
+            environment,
+            NaturalLanguageTaskRequest("task:read", "Inspect the current page"),
+        )
+    )
 
     assert started.started
     assert isinstance(started.intake, ReadyTask)
@@ -141,14 +151,16 @@ def test_target_runtime_does_not_touch_environment_for_nonready_intake() -> None
         UnusedActionEvaluator(),
         BlockedTaskEvaluator(),
     )
-    outcome = asyncio.run(runtime.start_request(
-        environment,
-        NaturalLanguageTaskRequest(
-            "task:missing-authority",
-            "Modify the record",
-            TaskBoundary(risk_profile=RiskProfile.LOW),
-        ),
-    ))
+    outcome = asyncio.run(
+        runtime.start_request(
+            environment,
+            NaturalLanguageTaskRequest(
+                "task:missing-authority",
+                "Modify the record",
+                TaskBoundary(risk_profile=RiskProfile.LOW),
+            ),
+        )
+    )
 
     assert not outcome.started
     assert isinstance(outcome.intake, TaskInputRequired)

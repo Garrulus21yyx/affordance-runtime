@@ -55,6 +55,7 @@ not an ingress, compatibility layer, or hidden capability of `AgentLoop`.
 | observed world | `WorldFusion` + `WorldObservation` | selected source observations in one acquisition | canonical current graph, including source-owned structural documents and media | task semantics, action authority, source selection |
 | BrowserGym structural representation | BrowserGym `SurfaceAdapter` | bounded current AX tree + rendering | semantic targets plus a separate bounded structure document with explicit target links | bindings for structure-only nodes, Actor formatting |
 | raw screenshot acquisition | BrowserGym environment | current captured viewport | independently selectable visual source containing media only | semantic interpretation, bindings, actions |
+
 | legal actions | `actions/ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `actions/ActionSpace` | observed-world contract owner, model, benchmark, deleted workflow/LocalObjective code |
 | public action candidates | `ContextBuilder` | current action page + public grounded targets | referentially closed `AgentContext.actions` options | legality, private binding, durable identity, screen coordinates |
 | concrete action rows and flat tools | `GroundedToolCompiler` | complete closed action candidates | shared semantic skeleton, minimal exact public ToolSpec, private resolution table | world lookup, legality, provider grouping, fuzzy matching |
@@ -71,6 +72,11 @@ not an ingress, compatibility layer, or hidden capability of `AgentLoop`.
 | effect/task truth | evaluators | exact execution/acquisition lineage + fresh world + TaskGoal | correlated `EvaluationOutcome` | executor receipt or model narration |
 | accepted-decision closure | transition reducer | exact decision/admission/acquisition/execution/evaluation outcomes | one bounded `ControlTransition` | reconstruction from summaries, telemetry or model views |
 | benchmark | harness | manifest + public outcomes | measurements/evidence | production branches or task semantics |
+
+R1 implementation note (2026-08-15): the acquisition-lifecycle row is now
+realized by `ObservationAcquisitionCoordinator` behind
+`UnifiedWorldEnvironment`; `BrowserGymSurfaceAdapter` is the grouped backend.
+R2/R3 rows and whole-chain closure remain pending.
 
 ## Identity timing
 

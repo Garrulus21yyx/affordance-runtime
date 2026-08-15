@@ -19,6 +19,7 @@ from affordance_runtime.agent import (
     SelectAction,
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
@@ -27,7 +28,6 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 @dataclass(frozen=True)
@@ -240,7 +240,7 @@ def test_hidden_page_action_id_is_rejected_with_zero_execution() -> None:
             return SelectAction(context.context_id, hidden_id)
 
     async def scenario() -> None:
-        environment = StaticEnvironment([before])
+        environment = ScriptedEnvironment(initial_observation=before)
         result = await (
             AgentLoop(
                 Policy(),
@@ -276,7 +276,7 @@ def test_page_request_changes_context_and_old_page_decision_is_stale_zero_call()
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([before])
+        environment = ScriptedEnvironment(initial_observation=before)
         result = await (
             AgentLoop(
                 policy,
@@ -307,9 +307,7 @@ def test_page_a_to_b_to_a_never_revalidates_first_page_decision() -> None:
             self.calls += 1
             self.context_ids.append(context.context_id)
             if self.calls == 1:
-                self.first_page_decision = SelectAction(
-                    context.context_id, context.actions.options[0].action_id
-                )
+                self.first_page_decision = SelectAction(context.context_id, context.actions.options[0].action_id)
                 return RequestActionPage(context.context_id, target_id="z-other-toggle")
             if self.calls == 2:
                 return RequestActionPage(context.context_id)
@@ -319,7 +317,7 @@ def test_page_a_to_b_to_a_never_revalidates_first_page_decision() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        environment = StaticEnvironment([before])
+        environment = ScriptedEnvironment(initial_observation=before)
         result = await (
             AgentLoop(
                 policy,
@@ -357,7 +355,7 @@ def test_next_page_action_is_selectable_and_model_sees_active_cursor_state() -> 
             return SelectAction(context.context_id, context.actions.options[0].action_id)
 
     async def scenario() -> None:
-        environment = StaticEnvironment([before, after], [_sent()])
+        environment = ScriptedEnvironment(initial_observation=before, post_observations=(after,), results=[_sent()])
         result = await (
             AgentLoop(
                 Policy(),
@@ -395,7 +393,7 @@ def test_page_cursor_requires_exact_current_continuation(mode: str) -> None:
             return RequestActionPage(context.context_id, cursor=self.first_cursor)
 
     async def scenario() -> None:
-        environment = StaticEnvironment([before])
+        environment = ScriptedEnvironment(initial_observation=before)
         result = await (
             AgentLoop(
                 Policy(),
@@ -425,7 +423,7 @@ def test_previous_page_action_is_rejected_even_with_current_context_id() -> None
             return SelectAction(context.context_id, self.previous_action_id)
 
     async def scenario() -> None:
-        environment = StaticEnvironment([before])
+        environment = ScriptedEnvironment(initial_observation=before)
         result = await (
             AgentLoop(
                 Policy(),
@@ -458,9 +456,11 @@ def test_confirmed_hidden_action_gets_a_coherent_private_execution_page() -> Non
 
     async def scenario() -> None:
         task = replace(_paging_task(), risk_profile=RiskProfile.MEDIUM)
-        environment = StaticEnvironment(
-            [medium_world("before", False), medium_world("fresh", False), medium_world("after", True)],
-            [_sent()],
+        environment = ScriptedEnvironment(
+            initial_observation=medium_world("before", False),
+            independent_observations=(medium_world("fresh", False),),
+            post_observations=(medium_world("after", True),),
+            results=[_sent()],
         )
         session = await (
             AgentLoop(

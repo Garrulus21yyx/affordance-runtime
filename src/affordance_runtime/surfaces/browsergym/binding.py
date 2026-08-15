@@ -72,3 +72,7 @@ class BrowserGymBindingStore:
     @property
     def count(self) -> int:
         return len(self._bindings)
+
+    @property
+    def values(self) -> tuple[BrowserGymPrivateBinding, ...]:
+        return tuple(self._bindings.values())

@@ -13,6 +13,7 @@ from affordance_runtime.agent.context import ContextBuilder, ModelFailure, Model
 from affordance_runtime.agent.context.context import AgentImageInput
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.model_port_bridge import (
@@ -32,7 +33,6 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputError,
 )
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 async def _context():
@@ -147,12 +147,14 @@ def test_bridge_repairs_one_invalid_decision_schema_without_creating_a_gui_turn(
                 latency_ms=4,
                 response_id="response:repaired",
             )
-            return output_schema.model_validate({
-                "type": "abort",
-                "context_id": context["context_id"],
-                "reason": "fixture complete",
-                "category": "policy",
-            })
+            return output_schema.model_validate(
+                {
+                    "type": "abort",
+                    "context_id": context["context_id"],
+                    "reason": "fixture complete",
+                    "category": "policy",
+                }
+            )
 
     async def scenario() -> None:
         port = RepairingPort()
@@ -300,7 +302,7 @@ def test_policy_deadline_cancels_one_hanging_provider_attempt() -> None:
 
     async def scenario() -> None:
         port = HangingPort()
-        environment = StaticEnvironment([_world("before", False)])
+        environment = ScriptedEnvironment(initial_observation=_world("before", False))
         result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(port, call_timeout_s=0.01),

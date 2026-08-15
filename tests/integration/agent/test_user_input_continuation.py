@@ -24,6 +24,7 @@ from affordance_runtime.agent.user_input import (
 from affordance_runtime.app import (
     TargetRuntime,
 )
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import (
     NaturalLanguageTaskRequest,
@@ -33,16 +34,13 @@ from affordance_runtime.task import (
     TaskInputRequired,
 )
 from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
-from tests.support.agent.static_environment import StaticEnvironment
 from tests.support.world import fused_world
 
 
 def _world() -> WorldObservation:
     target = SemanticTarget("page", "document", "Current page")
     fact = StateFact("fact:page:available", "page", "available", True, "observation:initial")
-    return fused_world(
-        "observation:initial", (target,), (fact,), surface="static"
-    )
+    return fused_world("observation:initial", (target,), (fact,), surface="static")
 
 
 class UnusedActionEvaluator:
@@ -105,7 +103,7 @@ def _request(*, task_id: str = "task:clarify", revision: int = 1, account: str =
 
 def test_waiting_user_resumes_with_one_admitted_task_revision() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment((_world(),))
+        environment = ScriptedEnvironment(initial_observation=_world())
         policy = AskForAccountPolicy()
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
@@ -169,7 +167,7 @@ def test_resume_invalidates_old_context_and_appends_a_new_revision_root() -> Non
             UnusedActionEvaluator(),
             AlwaysIncompleteTaskEvaluator(),
         )
-        started = await runtime.start_request(StaticEnvironment((_world(),)), _request())
+        started = await runtime.start_request(ScriptedEnvironment(initial_observation=_world()), _request())
         assert started.session is not None
         session = started.session
         paused = await session.run_until_pause()
@@ -211,7 +209,7 @@ def test_rejected_submission_keeps_the_waiting_session_unchanged(
     expected: UserInputResumeRejectionCode,
 ) -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment((_world(),))
+        environment = ScriptedEnvironment(initial_observation=_world())
         runtime = TargetRuntime(
             AgentDecisionPorts(AskForAccountPolicy()),
             UnusedActionEvaluator(),
@@ -244,7 +242,7 @@ def test_rejected_submission_keeps_the_waiting_session_unchanged(
 
 def test_nonready_revised_intake_never_mutates_the_waiting_session() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment((_world(),))
+        environment = ScriptedEnvironment(initial_observation=_world())
         runtime = TargetRuntime(
             AgentDecisionPorts(AskForAccountPolicy()),
             UnusedActionEvaluator(),
@@ -277,7 +275,7 @@ def test_nonready_revised_intake_never_mutates_the_waiting_session() -> None:
 
 def test_environment_without_revision_port_fails_closed() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment((_world(),))
+        environment = ScriptedEnvironment(initial_observation=_world())
         environment.revise_task = None
         runtime = TargetRuntime(
             AgentDecisionPorts(AskForAccountPolicy()),
@@ -307,7 +305,7 @@ def test_environment_without_revision_port_fails_closed() -> None:
 
 def test_terminal_session_rejects_new_user_input_without_mutation() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment((_world(),))
+        environment = ScriptedEnvironment(initial_observation=_world())
         policy = AskForAccountPolicy()
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),

@@ -3,10 +3,10 @@ import asyncio
 import pytest
 
 from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from tests.integration.agent.test_confirmation_continuation import _decision, _loop, _task, _world
-from tests.support.agent.static_environment import StaticEnvironment
 
 
 def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None:
@@ -19,13 +19,11 @@ def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None
 
     async def scenario() -> None:
         evaluator = RaisingEvaluator()
-        environment = StaticEnvironment(
-            [
-                _world("initial", False, "#initial"),
-                _world("fresh", False, "#fresh"),
-                _world("after", True, "#after"),
-            ],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         loop = _loop()
         loop.action_evaluator = evaluator
@@ -35,9 +33,9 @@ def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None
             await session.resolve_confirmation(_decision(paused))
 
         terminal = await session.run_until_pause()
-        repeated = await session.resolve_confirmation(ConfirmationDecision(
-            "confirmation:unused", "subject:unused", ConfirmationDecisionKind.DENY
-        ))
+        repeated = await session.resolve_confirmation(
+            ConfirmationDecision("confirmation:unused", "subject:unused", ConfirmationDecisionKind.DENY)
+        )
         assert terminal is repeated is session.last_result
         assert terminal.status is AgentLoopStatus.FAILED
         assert terminal.reason_code == "runtime_exception"
@@ -52,11 +50,11 @@ def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None
 def test_confirmation_without_pending_does_not_create_a_fake_pause() -> None:
     async def scenario() -> None:
         session = await (_loop()).start(
-            StaticEnvironment([_world("initial", False, "#initial")]), _task()
+            ScriptedEnvironment(initial_observation=_world("initial", False, "#initial")), _task()
         )
-        rejected = await session.resolve_confirmation(ConfirmationDecision(
-            "confirmation:unused", "subject:unused", ConfirmationDecisionKind.DENY
-        ))
+        rejected = await session.resolve_confirmation(
+            ConfirmationDecision("confirmation:unused", "subject:unused", ConfirmationDecisionKind.DENY)
+        )
         assert rejected.status is not AgentLoopStatus.WAITING_CONFIRMATION
         assert rejected.confirmation_request is None
         assert session.last_result is rejected
@@ -70,9 +68,11 @@ def test_confirmation_without_pending_does_not_create_a_fake_pause() -> None:
 
 def test_done_session_returns_original_result_after_repeated_confirmation() -> None:
     async def scenario() -> None:
-        environment = StaticEnvironment(
-            [_world("initial", False, "#initial"), _world("fresh", False, "#fresh"), _world("after", True, "#after")],
-            [ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        environment = ScriptedEnvironment(
+            initial_observation=_world("initial", False, "#initial"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
@@ -96,7 +96,7 @@ def test_done_session_returns_original_result_after_repeated_confirmation() -> N
 
 def test_cancelled_and_failed_sessions_cannot_be_rewritten() -> None:
     async def scenario() -> None:
-        cancelled_environment = StaticEnvironment([_world("cancel", False, "#cancel")])
+        cancelled_environment = ScriptedEnvironment(initial_observation=_world("cancel", False, "#cancel"))
         cancelled_session = await (_loop()).start(cancelled_environment, _task())
         pause = await cancelled_session.run_until_pause()
         deny = _decision(pause, ConfirmationDecisionKind.DENY)
@@ -108,7 +108,7 @@ def test_cancelled_and_failed_sessions_cannot_be_rewritten() -> None:
         assert cancelled_environment.executed_requests == []
 
         repeated = _world("same", False, "#same")
-        failed_environment = StaticEnvironment([repeated, repeated])
+        failed_environment = ScriptedEnvironment(initial_observation=repeated, independent_observations=(repeated,))
         failed_session = await (_loop()).start(failed_environment, _task())
         failed_pause = await failed_session.run_until_pause()
         confirm = _decision(failed_pause)
