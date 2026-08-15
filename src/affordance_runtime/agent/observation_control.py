@@ -190,10 +190,16 @@ def capture_admission_failure(
         return _unavailable("independent_capture_unsupported")
     if request.kind is not ObservationRequestKind.POLICY_REQUEST:
         return None
-    offered = any(
-        offer.modality == request.modality
-        and assurance_satisfies(offer.assurance, request.required_assurance)
-        for offer in capabilities.offers
+    if not request.needs:
+        return None
+    offered = all(
+        any(
+            (need.required_modality is None or offer.modality is need.required_modality)
+            and need.purpose in offer.supported_purposes
+            and assurance_satisfies(offer.assurance, need.required_assurance)
+            for offer in capabilities.offers
+        )
+        for need in request.needs
     )
     return None if offered else _unavailable("observation_capability_not_offered")
 

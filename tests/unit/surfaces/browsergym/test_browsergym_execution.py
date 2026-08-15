@@ -8,7 +8,7 @@ from affordance_runtime.surfaces.browsergym.currentness import (
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
-from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
+from affordance_runtime.world import AcquisitionStatus, ObservationRequestKind, WorldObservationRequest
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
     ax_node,
@@ -30,6 +30,24 @@ def _fixture(*, fail_step=False, fail_probe=False):
     fake = FakeBrowserGym(raw, raw, fail_step=fail_step, fail_probe=fail_probe)
     environment, task = open_fake(fake)
     return fake, environment, task, start_environment(environment, task)
+
+
+def test_reset_offer_is_independent_from_optional_independent_capture_capability() -> None:
+    raw = raw_observation(ax_node("1", "button", "okay"))
+    fake = FakeBrowserGym(raw, raw)
+    fake.supports_capture_current = False
+    environment, task = open_fake(fake)
+
+    initial = asyncio.run(environment.reset(task))
+    capture = asyncio.run(environment.capture(WorldObservationRequest(
+        ObservationRequestKind.CURRENTNESS_REFRESH,
+        "explicit refresh",
+    )))
+
+    assert initial.status is AcquisitionStatus.ACQUIRED
+    assert capture.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+    assert capture.reason_code == "independent_capture_unsupported"
+    asyncio.run(environment.close())
 
 
 def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
@@ -191,8 +209,6 @@ def test_independent_capture_is_active_fresh_and_does_not_step() -> None:
     acquisition = asyncio.run(environment.capture(WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         "refresh current browser world",
-        modality="structural",
-        required_assurance="structural",
     )))
     after = acquisition.observation
     assert after is not None

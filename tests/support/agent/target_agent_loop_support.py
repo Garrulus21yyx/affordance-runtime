@@ -17,7 +17,11 @@ def shared_state_task() -> TaskGoal:
         "enable-shared",
         "Enable shared state",
         allowed_effects=("shared_state_enabled",),
-        success_criteria=({"predicate": "expanded", "value": True},),
+        success_criteria=({
+            "predicate": "expanded",
+            "value": True,
+            "required_assurance": "weak",
+        },),
         risk_profile=RiskProfile.LOW,
     )
 

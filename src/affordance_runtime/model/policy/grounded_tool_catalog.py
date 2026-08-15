@@ -59,6 +59,8 @@ def compile_grounded_tool_catalog(
             if capability.modality in seen_modalities:
                 continue
             seen_modalities.add(capability.modality)
+            if not _observation_tool_needed(context, capability):
+                continue
             specs.append(
                 ToolSpec(
                     f"observe_{capability.modality}",
@@ -231,3 +233,17 @@ def _observation_tool_description(context: AgentContext, capability) -> str:
             f"{current.projection_coverage} projection; refresh only when new currentness evidence is needed."
         )
     return f"{state} This tool takes no arguments; Runtime supplies the declared {capability.assurance} assurance."
+
+
+def _observation_tool_needed(context: AgentContext, capability) -> bool:
+    current = tuple(
+        source
+        for source in context.world.sources
+        if source.modality == capability.modality
+        and source.freshness == "current"
+    )
+    return not current or any(
+        source.projection_coverage != "complete"
+        or source.conflict_status != "clear"
+        for source in current
+    )

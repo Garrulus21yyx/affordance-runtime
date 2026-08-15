@@ -40,8 +40,6 @@ def test_real_backend_active_capture_is_fresh_read_only_and_thread_owned() -> No
             captured = await environment.capture(WorldObservationRequest(
                 ObservationRequestKind.POLICY_REQUEST,
                 "real active capture conformance",
-                modality="structural",
-                required_assurance="structural",
             ))
             assert captured.status is AcquisitionStatus.ACQUIRED
             assert captured.origin is AcquisitionOrigin.INDEPENDENT_CAPTURE

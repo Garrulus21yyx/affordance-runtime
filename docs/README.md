@@ -48,9 +48,10 @@ independent fresh-context review; A.1 closure is admitted while StateFact
 cutover, activate-effect authority, new interaction actions, and live benchmark
 evidence remain open. The closure contract and evidence are in the
 [Wave A.1 plan](plans/2026-08-15-world-graph-a1.md). The adaptive observation
-policy A.2 slice is admitted but not started at that boundary; it converges
-existing structure-first selection into one selector and one bounded canonical
-model lens: [Wave A.2 design](plans/2026-08-15-adaptive-observation-policy-a2.md).
+policy A.2 slice is now implemented and property-verified: one
+`ObservationOrchestrator` owns immutable bounded selection plans, only selected
+sources enter fusion, and missing capability fails closed. No live benchmark
+was run: [Wave A.2 design and evidence](plans/2026-08-15-adaptive-observation-policy-a2.md).
 
 ## 2. Current implementation truth and work
 

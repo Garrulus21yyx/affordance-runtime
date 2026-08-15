@@ -40,6 +40,11 @@ from affordance_runtime.world.contracts import (
     WorldObservation,
 )
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion, WorldFusionResult
+from affordance_runtime.world.observation_needs import (
+    FreshnessRequirement,
+    ObservationNeed,
+    ObservationPurpose,
+)
 from affordance_runtime.world.observation_orchestrator import (
     ObservationOrchestrator,
     ObservationSelectionResult,
@@ -59,10 +64,7 @@ from affordance_runtime.world.source_profile import (
 )
 from affordance_runtime.world.view import AgentTargetView, AgentWorldView, build_agent_world_view
 from affordance_runtime.world.vision_escalation import (
-    VisionEscalationDecision,
-    VisionEscalationMode,
     VisionEvidenceNeed,
-    decide_visual_escalation,
     derive_visual_evidence_needs,
 )
 
@@ -86,6 +88,7 @@ __all__ = [
     "EntitySourceLink",
     "ExecutionOutcome",
     "FusionStatus",
+    "FreshnessRequirement",
     "ObservationAcquisition",
     "ObservationAssurance",
     "ObservationCapabilities",
@@ -94,9 +97,11 @@ __all__ = [
     "ObservationMedia",
     "ObservationMediaVariant",
     "ObservationModality",
+    "ObservationNeed",
     "ObservationOffer",
     "ObservationOrchestrator",
     "ObservationRequestKind",
+    "ObservationPurpose",
     "ObservationSelectionPlan",
     "ObservationSelectionResult",
     "ObservationSourceProfile",
@@ -113,8 +118,6 @@ __all__ = [
     "StateFact",
     "SurfaceObservation",
     "VerificationStrength",
-    "VisionEscalationDecision",
-    "VisionEscalationMode",
     "VisionEvidenceNeed",
     "WorldFusion",
     "WorldFusionResult",
@@ -122,6 +125,5 @@ __all__ = [
     "WorldObservationRequest",
     "assurance_satisfies",
     "build_agent_world_view",
-    "decide_visual_escalation",
     "derive_visual_evidence_needs",
 ]

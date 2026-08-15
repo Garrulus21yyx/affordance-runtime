@@ -14,7 +14,8 @@ property writes, one bounded same-model tool-intent re-emission, corrected
 normalization telemetry, and a sealed action-specific verification-contract
 digest chain. Observed-world graph A.1 is repaired, property-verified, and
 admitted after independent fresh-context review. Adaptive observation policy
-A.2 is admitted but not started at that boundary. StateFact producer cutover
+A.2 is implemented and property-verified with one source-selection owner;
+`LIVE_NOT_RUN` remains. StateFact producer cutover
 remains a separate open slice; no scroll/press/focus/drag/hover binding is
 admitted and no live benchmark was run.
 
@@ -2529,7 +2530,7 @@ properties.
 
 ### 14.2.2 Wave A.2 — select sources before fusion
 
-A.2 begins only after the A.1 repair gate. It retains the current
+A.2 began only after the A.1 repair gate. It retains the current
 `ObservationOrchestrator` as the one selection owner and converges the existing
 request/offer/structure-first/vision-escalation code. Physical multi-channel
 capture, semantic source activation, selected-set fusion and Actor delivery are
@@ -2537,7 +2538,7 @@ separate layers. Normal structurally sufficient turns activate one semantic
 source; at most one targeted complementary source is selected for a typed
 residual coverage, ambiguity, visual-property or verification need.
 
-The slice deletes observe-all compatibility and adapter-local plan mutation;
+The implemented slice deletes observe-all compatibility and adapter-local plan mutation;
 `WorldFusion` never selects a source, adapters never add one after selection,
 and the Actor never receives parallel raw DOM/AX/SoM/visual dumps. The complete
 selection matrix, model-lens contract, upstream reuse boundary and exit

@@ -19,8 +19,12 @@ from affordance_runtime.world import (
     AcquisitionStatus,
     ExecutionOutcome,
     ObservationAcquisition,
+    ObservationAssurance,
     ObservationCapabilities,
+    ObservationModality,
+    ObservationNeed,
     ObservationOffer,
+    ObservationPurpose,
     ObservationRequestKind,
     WorldObservation,
     WorldObservationRequest,
@@ -418,8 +422,12 @@ def test_policy_request_requires_explicit_offer_even_when_projection_is_misleadi
             WorldObservationRequest(
                 ObservationRequestKind.POLICY_REQUEST,
                 "policy refresh",
-                modality="structural",
-                required_assurance="structural",
+                (ObservationNeed(
+                    "test:policy-refresh",
+                    ObservationPurpose.CURRENTNESS_REFRESH,
+                    required_modality=ObservationModality.STRUCTURAL,
+                    required_assurance=ObservationAssurance.STRUCTURAL,
+                ),),
             ),
         )
         assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
@@ -454,8 +462,12 @@ def test_forged_model_offer_cannot_override_environment_capture_authority() -> N
             WorldObservationRequest(
                 ObservationRequestKind.POLICY_REQUEST,
                 "policy refresh",
-                modality=forged_projection[0].modality,
-                required_assurance=forged_projection[0].assurance,
+                (ObservationNeed(
+                    "test:forged-projection",
+                    ObservationPurpose.CURRENTNESS_REFRESH,
+                    required_modality=ObservationModality(forged_projection[0].modality),
+                    required_assurance=ObservationAssurance(forged_projection[0].assurance),
+                ),),
             ),
         )
         assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE

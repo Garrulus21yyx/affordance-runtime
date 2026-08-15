@@ -8,6 +8,8 @@ from enum import StrEnum
 
 from affordance_runtime.execution.contracts import ActionResult
 from affordance_runtime.world.contracts import SurfaceObservation, WorldObservation
+from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
+from affordance_runtime.world.source_profile import AcquisitionCost, ObservationAssurance, ObservationModality
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 _PRIVATE_MARKERS = (
@@ -53,24 +55,45 @@ class ObservationRequestKind(StrEnum):
 class WorldObservationRequest:
     kind: ObservationRequestKind
     reason: str
-    subject_id: str = ""
-    modality: str = ""
-    required_assurance: str = ""
+    needs: tuple[ObservationNeed, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ObservationRequestKind):
+            raise TypeError("observation request kind must be typed")
+        if not self.reason.strip() or len(self.reason) > 500:
+            raise ValueError("observation request requires a bounded reason")
+        object.__setattr__(self, "needs", tuple(self.needs))
+        if any(not isinstance(item, ObservationNeed) for item in self.needs):
+            raise TypeError("observation request needs must be typed")
+        if len({item.need_id for item in self.needs}) != len(self.needs):
+            raise ValueError("observation request need IDs cannot repeat")
 
 
 @dataclass(frozen=True, order=True)
 class ObservationOffer:
     source: str
-    modality: str
-    assurance: str
-    acquisition_cost: str
+    modality: ObservationModality | str
+    assurance: ObservationAssurance | str
+    acquisition_cost: AcquisitionCost | str
     acquisition_group: str = ""
+    supported_purposes: tuple[ObservationPurpose, ...] = ()
 
     def __post_init__(self) -> None:
-        if not all(value.strip() for value in (
-            self.source, self.modality, self.assurance, self.acquisition_cost,
-        )):
-            raise ValueError("observation offer fields cannot be blank")
+        if not self.source.strip():
+            raise ValueError("observation offer source cannot be blank")
+        try:
+            modality = ObservationModality(self.modality)
+            assurance = ObservationAssurance(self.assurance)
+            acquisition_cost = AcquisitionCost(self.acquisition_cost)
+        except ValueError as exc:
+            raise ValueError("observation offer requires typed quality fields") from exc
+        object.__setattr__(self, "modality", modality)
+        object.__setattr__(self, "assurance", assurance)
+        object.__setattr__(self, "acquisition_cost", acquisition_cost)
+        purposes = tuple(self.supported_purposes) or _default_purposes(modality)
+        if any(not isinstance(item, ObservationPurpose) for item in purposes):
+            raise TypeError("observation offer purposes must be typed")
+        object.__setattr__(self, "supported_purposes", purposes)
 
 
 @dataclass(frozen=True)
@@ -78,24 +101,52 @@ class SourceSelection:
     source: str
     requirement: SourceRequirement
     reason_code: str
+    need_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.source.strip() or not isinstance(self.requirement, SourceRequirement):
             raise ValueError("source selection requires typed source identity")
         _validate_reason_code(self.reason_code)
+        object.__setattr__(self, "need_ids", tuple(self.need_ids))
+        if any(not item.strip() for item in self.need_ids):
+            raise ValueError("selected observation need IDs cannot be blank")
 
 
 @dataclass(frozen=True)
 class ObservationSelectionPlan:
     selections: tuple[SourceSelection, ...]
-    max_source_calls: int
+    unselected: tuple[SourceSelection, ...]
+    acquisition_budget: int
+    needs: tuple[ObservationNeed, ...]
+    reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "selections", tuple(self.selections))
-        if self.max_source_calls < 1 or len(self.selections) > self.max_source_calls:
+        object.__setattr__(self, "unselected", tuple(self.unselected))
+        object.__setattr__(self, "needs", tuple(self.needs))
+        object.__setattr__(self, "reason_codes", tuple(self.reason_codes))
+        if self.acquisition_budget < 1 or len(self.selections) > self.acquisition_budget:
             raise ValueError("source selection exceeds its bounded call budget")
         if len({item.source for item in self.selections}) != len(self.selections):
             raise ValueError("source selection cannot repeat a source")
+        if any(item.requirement is SourceRequirement.UNSELECTED for item in self.selections):
+            raise ValueError("selected sources cannot have UNSELECTED requirement")
+        if any(item.requirement is not SourceRequirement.UNSELECTED for item in self.unselected):
+            raise ValueError("unselected offers require UNSELECTED requirement")
+        all_sources = self.selections + self.unselected
+        if len({item.source for item in all_sources}) != len(all_sources):
+            raise ValueError("selection plan source disposition must be unique")
+        if len({item.need_id for item in self.needs}) != len(self.needs):
+            raise ValueError("selection plan need IDs cannot repeat")
+        known_needs = {item.need_id for item in self.needs}
+        if any(set(item.need_ids) - known_needs for item in all_sources):
+            raise ValueError("source selection references an unknown observation need")
+        for reason_code in self.reason_codes:
+            _validate_reason_code(reason_code)
+
+    @property
+    def need_ids(self) -> tuple[str, ...]:
+        return tuple(item.need_id for item in self.needs)
 
 
 @dataclass(frozen=True)
@@ -177,3 +228,21 @@ def _validate_reason_code(value: str) -> None:
         raise ValueError("reason_code must be a bounded stable snake-case code")
     if any(marker in value for marker in _PRIVATE_MARKERS):
         raise ValueError("reason_code must not name private or secret-bearing data")
+
+
+def _default_purposes(modality: ObservationModality) -> tuple[ObservationPurpose, ...]:
+    if modality is ObservationModality.VISUAL:
+        return (
+            ObservationPurpose.WORLD_GROUNDING,
+            ObservationPurpose.ENTITY_DISCOVERY,
+            ObservationPurpose.TARGET_DISAMBIGUATION,
+            ObservationPurpose.EFFECT_VERIFICATION,
+            ObservationPurpose.CRITERION_VERIFICATION,
+            ObservationPurpose.CURRENTNESS_REFRESH,
+        )
+    return (
+        ObservationPurpose.WORLD_GROUNDING,
+        ObservationPurpose.EFFECT_VERIFICATION,
+        ObservationPurpose.CRITERION_VERIFICATION,
+        ObservationPurpose.CURRENTNESS_REFRESH,
+    )

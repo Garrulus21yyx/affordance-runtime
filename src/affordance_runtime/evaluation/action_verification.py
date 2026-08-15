@@ -16,7 +16,12 @@ from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.source_profile import ObservationAssurance
+from affordance_runtime.world.observation_needs import (
+    FreshnessRequirement,
+    ObservationNeed,
+    ObservationPurpose,
+)
+from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 
 class VerificationObligationKind(StrEnum):
@@ -64,6 +69,7 @@ def derive_action_verification_obligations(
     if getattr(selection, "effect_category", "") == EffectCategory.INTERACTION:
         obligations.append(RuntimeVerificationObligation(
             VerificationObligationKind.STRUCTURAL_WORLD_CHANGE,
+            required_assurance=ObservationAssurance.WEAK,
         ))
     primitive = _primitive_value_obligation(request)
     if primitive is not None:
@@ -96,6 +102,41 @@ def derive_action_verification_obligations(
             VerificationObligationKind.ARTIFACT_CREATED, output_id=output_id,
         ))
     return tuple(obligations)
+
+
+def observation_needs_for_verification(
+    request_id: str,
+    obligations: tuple[RuntimeVerificationObligation, ...],
+) -> tuple[ObservationNeed, ...]:
+    """Project sealed evaluator obligations into acquisition needs once."""
+
+    needs: list[ObservationNeed] = []
+    for index, obligation in enumerate(obligations):
+        purpose = (
+            ObservationPurpose.CRITERION_VERIFICATION
+            if obligation.kind in {
+                VerificationObligationKind.CRITERION_PROGRESS,
+                VerificationObligationKind.ARTIFACT_CREATED,
+            }
+            else ObservationPurpose.EFFECT_VERIFICATION
+        )
+        assurance = ObservationAssurance(
+            obligation.required_assurance or ObservationAssurance.STRUCTURAL
+        )
+        modality = (
+            ObservationModality.ENVIRONMENT_STATE
+            if assurance is ObservationAssurance.AUTHORITATIVE
+            else None
+        )
+        needs.append(ObservationNeed(
+            f"verification:{request_id}:{index}",
+            purpose,
+            tuple(item for item in (obligation.subject_id,) if item),
+            modality,
+            assurance,
+            FreshnessRequirement.FRESH_ACQUISITION,
+        ))
+    return tuple(needs)
 
 
 def _primitive_value_obligation(request: BoundActionRequest) -> RuntimeVerificationObligation | None:

@@ -24,6 +24,10 @@ from affordance_runtime.surfaces.visual.grounding import (
     VisualRegionProposalRequest,
 )
 from affordance_runtime.world import (
+    ObservationAssurance,
+    ObservationModality,
+    ObservationNeed,
+    ObservationPurpose,
     ObservationRequestKind,
     SourceAcquisitionStatus,
     WorldObservationRequest,
@@ -104,13 +108,17 @@ def _visual_request():
     return WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         "structural actions do not ground the visible target",
-        subject_id="current_world",
-        modality="visual",
-        required_assurance="weak",
+        (ObservationNeed(
+            "agent:visual:current-world",
+            ObservationPurpose.ENTITY_DISCOVERY,
+            ("current_world",),
+            ObservationModality.VISUAL,
+            ObservationAssurance.WEAK,
+        ),),
     )
 
 
-def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acquisition() -> None:
+def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
@@ -119,21 +127,18 @@ def test_missing_structured_action_evidence_triggers_bounded_initial_visual_acqu
             initial = await environment.reset(task)
             assert initial.observation is not None
             assert initial.observation.bindings == ()
-            assert len(proposer.calls) == 1
-            assert environment.visual_proposer_calls == 1
+            assert len(proposer.calls) == 0
+            assert environment.visual_proposer_calls == 0
             assert [(item.source, item.status) for item in initial.source_results] == [
                 ("browsergym", SourceAcquisitionStatus.ACQUIRED),
-                ("browsergym_visual", SourceAcquisitionStatus.ACQUIRED),
+                ("browsergym_visual", SourceAcquisitionStatus.NOT_ACQUIRED),
             ]
-            assert {source.surface for source in initial.observation.sources} == {
-                "browsergym",
-                "browsergym_visual",
-            }
+            assert {source.surface for source in initial.observation.sources} == {"browsergym"}
 
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
             assert fake.capture_count == 1
-            assert len(proposer.calls) == 2
+            assert len(proposer.calls) == 1
             assert {source.surface for source in acquired.observation.sources} == {
                 "browsergym",
                 "browsergym_visual",
@@ -186,7 +191,7 @@ def test_point_grounder_cannot_create_browsergym_mainline_action_authority() -> 
             assert environment.dom_action_calls == 0
             assert environment.structural_binding_dispatch_count == 0
             assert environment.visual_binding_dispatch_count == 0
-            assert len(proposer.calls) == 2
+            assert len(proposer.calls) == 1
         finally:
             await environment.close()
 
@@ -263,7 +268,8 @@ def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
         )
         environment, task = _open(fake, proposer, with_point=False)
         try:
-            acquired = await environment.reset(task)
+            await environment.reset(task)
+            acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
             visual = next(source for source in acquired.observation.sources if source.surface == "browsergym_visual")
             assert len(visual.targets) == 2
@@ -282,7 +288,7 @@ def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
     asyncio.run(scenario())
 
 
-def test_optional_visual_failure_preserves_structural_world_with_typed_gap() -> None:
+def test_required_visual_failure_returns_typed_failed_acquisition() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
         environment, task = open_surface(
@@ -294,11 +300,10 @@ def test_optional_visual_failure_preserves_structural_world_with_typed_gap() -> 
         try:
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
-            assert acquired.observation is not None
-            assert acquired.reason_code == "world_acquired_with_optional_gap"
+            assert acquired.observation is None
+            assert acquired.reason_code == "required_source_exhausted"
             result = next(item for item in acquired.source_results if item.source == "browsergym_visual")
             assert result.status is SourceAcquisitionStatus.FAILED
-            assert acquired.observation.bindings == ()
             assert fake.capture_count == 1
         finally:
             await environment.close()

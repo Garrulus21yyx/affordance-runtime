@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import io
-from dataclasses import dataclass, field, replace
+from dataclasses import FrozenInstanceError, dataclass, field, replace
 
+import pytest
 from PIL import Image
 
 from affordance_runtime.actions import (
@@ -28,11 +29,15 @@ from affordance_runtime.world import (
     EntityAlignmentDisposition,
     EntityAlignmentProposal,
     EntityAllocation,
+    ObservationAssurance,
     ObservationGroundingRegion,
     ObservationMedia,
     ObservationMediaVariant,
+    ObservationModality,
+    ObservationNeed,
     ObservationOffer,
     ObservationOrchestrator,
+    ObservationPurpose,
     ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
@@ -53,6 +58,19 @@ def _task() -> TaskGoal:
         "task:any-name", "Enable it", allowed_effects=("enabled", "shared_state_enabled"),
         success_criteria=({"id": "enabled", "predicate": "enabled", "value": True},),
         risk_profile=RiskProfile.LOW,
+    )
+
+
+def _need(
+    purpose: ObservationPurpose,
+    modality: ObservationModality,
+    assurance: ObservationAssurance,
+) -> ObservationNeed:
+    return ObservationNeed(
+        f"test:{purpose.value}",
+        purpose,
+        required_modality=modality,
+        required_assurance=assurance,
     )
 
 
@@ -127,13 +145,15 @@ def test_selection_skips_expensive_visual_until_typed_visual_need() -> None:
     visual = selector.select(
         offers,
         WorldObservationRequest(
-            ObservationRequestKind.POLICY_REQUEST, "spatial gap", modality="visual",
+            ObservationRequestKind.POLICY_REQUEST,
+            "spatial gap",
+            (_need(ObservationPurpose.ENTITY_DISCOVERY, ObservationModality.VISUAL, ObservationAssurance.WEAK),),
         ),
     )
 
     assert [item.source for item in ordinary.plan.selections] == ["dom"]  # type: ignore[union-attr]
     assert [item.source for item in visual.plan.selections] == ["dom", "visual"]  # type: ignore[union-attr]
-    assert visual.plan.selections[1].requirement.value == "optional"  # type: ignore[union-attr]
+    assert visual.plan.selections[1].requirement.value == "required"  # type: ignore[union-attr]
 
 
 def test_environment_state_is_required_and_structural_world_is_augmented() -> None:
@@ -148,17 +168,141 @@ def test_environment_state_is_required_and_structural_world_is_augmented() -> No
         WorldObservationRequest(
             ObservationRequestKind.POLICY_REQUEST,
             "verify device state",
-            modality="environment_state",
-            required_assurance="authoritative",
+            (_need(
+                ObservationPurpose.CRITERION_VERIFICATION,
+                ObservationModality.ENVIRONMENT_STATE,
+                ObservationAssurance.AUTHORITATIVE,
+            ),),
         ),
     )
 
     assert selected.plan is not None
-    assert [item.source for item in selected.plan.selections] == ["wot", "dom"]
-    assert [item.requirement.value for item in selected.plan.selections] == [
-        "required",
-        "optional",
-    ]
+    assert [item.source for item in selected.plan.selections] == ["wot"]
+    assert [item.requirement.value for item in selected.plan.selections] == ["required"]
+
+
+def test_selection_is_offer_order_invariant_and_plan_is_immutable() -> None:
+    selector = ObservationOrchestrator()
+    offers = (
+        ObservationOffer("dom", "structural", "structural", "low"),
+        ObservationOffer("visual", "visual", "weak", "high"),
+    )
+    request = WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "discover visual entity",
+        (_need(ObservationPurpose.ENTITY_DISCOVERY, ObservationModality.VISUAL, ObservationAssurance.WEAK),),
+    )
+
+    forward = selector.select(offers, request)
+    reverse = selector.select(tuple(reversed(offers)), request)
+
+    assert forward == reverse
+    assert forward.plan is not None
+    assert forward.plan.need_ids == ("test:entity_discovery",)
+    assert [item.source for item in forward.plan.unselected] == []
+    with pytest.raises(FrozenInstanceError):
+        forward.plan.acquisition_budget = 3  # type: ignore[misc]
+
+
+def test_first_version_budget_fails_closed_before_a_third_source() -> None:
+    selector = ObservationOrchestrator()
+    offers = (
+        ObservationOffer("dom", "structural", "structural", "low"),
+        ObservationOffer("state", "environment_state", "authoritative", "medium"),
+        ObservationOffer("visual", "visual", "weak", "high"),
+    )
+    request = WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "three independent evidence needs",
+        (
+            ObservationNeed(
+                "need:structural", ObservationPurpose.WORLD_GROUNDING,
+                required_modality=ObservationModality.STRUCTURAL,
+                required_assurance=ObservationAssurance.STRUCTURAL,
+            ),
+            ObservationNeed(
+                "need:state", ObservationPurpose.CRITERION_VERIFICATION,
+                required_modality=ObservationModality.ENVIRONMENT_STATE,
+                required_assurance=ObservationAssurance.AUTHORITATIVE,
+            ),
+            ObservationNeed(
+                "need:visual", ObservationPurpose.ENTITY_DISCOVERY,
+                required_modality=ObservationModality.VISUAL,
+                required_assurance=ObservationAssurance.WEAK,
+            ),
+        ),
+    )
+
+    selected = selector.select(offers, request)
+
+    assert selected.plan is None
+    assert selected.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+    assert selected.reason_code == "source_budget_exhausted"
+
+
+def test_same_orchestrator_adds_one_visual_source_for_residual_ambiguity() -> None:
+    structured = _source("dom")
+    second_target = replace(structured.targets[0], target_id="target:second")
+    second_binding = replace(
+        structured.bindings[0],
+        binding_id="dom:binding:second",
+        target_id=second_target.target_id,
+        source_target_id=second_target.target_id,
+    )
+    structured = replace(
+        structured,
+        targets=structured.targets + (second_target,),
+        bindings=structured.bindings + (second_binding,),
+    )
+    offers = (
+        ObservationOffer("dom", "structural", "structural", "low"),
+        ObservationOffer("visual", "visual", "weak", "high"),
+    )
+
+    selected = ObservationOrchestrator().select_after_baseline(
+        offers,
+        WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "ordinary"),
+        structured,
+        terminal=False,
+    )
+
+    assert selected.plan is not None
+    assert [item.source for item in selected.plan.selections] == ["dom", "visual"]
+    visual = selected.plan.selections[1]
+    assert visual.reason_code == "visual_target_disambiguation"
+    assert visual.need_ids == ("residual:target_disambiguation",)
+
+
+def test_public_state_distinction_closes_ambiguity_without_visual_source() -> None:
+    structured = _source("dom")
+    second_target = replace(
+        structured.targets[0], target_id="target:second", state={"selected": True}
+    )
+    second_binding = replace(
+        structured.bindings[0],
+        binding_id="dom:binding:second",
+        target_id=second_target.target_id,
+        source_target_id=second_target.target_id,
+    )
+    structured = replace(
+        structured,
+        targets=structured.targets + (second_target,),
+        bindings=structured.bindings + (second_binding,),
+    )
+    offers = (
+        ObservationOffer("dom", "structural", "structural", "low"),
+        ObservationOffer("visual", "visual", "weak", "high"),
+    )
+
+    selected = ObservationOrchestrator().select_after_baseline(
+        offers,
+        WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "ordinary"),
+        structured,
+        terminal=False,
+    )
+
+    assert selected.plan is not None
+    assert [item.source for item in selected.plan.selections] == ["dom"]
 
 
 @dataclass
@@ -195,7 +339,44 @@ class OfferedAdapter:
         )
 
 
-def test_optional_source_failure_preserves_required_world_and_typed_gap() -> None:
+@dataclass
+class NoOfferAdapter:
+    surface: str = "undeclared"
+    reset_calls: int = 0
+    observe_calls: int = 0
+
+    @property
+    def observation_offers(self):
+        return ()
+
+    async def reset(self, task):
+        del task
+        self.reset_calls += 1
+
+    async def observe(self, reason):
+        del reason
+        self.observe_calls += 1
+        return _source(self.surface)
+
+    async def execute(self, request):
+        raise AssertionError(f"unexpected execution: {request.request_id}")
+
+
+def test_missing_offer_fails_closed_without_observing_every_adapter() -> None:
+    async def scenario() -> None:
+        adapter = NoOfferAdapter()
+        environment = UnifiedWorldEnvironment((adapter,))
+
+        acquired = await environment.reset(_task())
+
+        assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
+        assert acquired.reason_code == "no_source_offer"
+        assert adapter.reset_calls == adapter.observe_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_required_visual_need_failure_returns_typed_failed_acquisition() -> None:
     async def scenario() -> None:
         dom = OfferedAdapter(
             "dom", ObservationOffer("dom", "structural", "structural", "low"), _source("dom"),
@@ -211,13 +392,14 @@ def test_optional_source_failure_preserves_required_world_and_typed_gap() -> Non
             SourceAcquisitionStatus.ACQUIRED,
         ]
         acquired = await environment.capture(WorldObservationRequest(
-            ObservationRequestKind.POLICY_REQUEST, "spatial gap", modality="visual",
+            ObservationRequestKind.POLICY_REQUEST,
+            "spatial gap",
+            (_need(ObservationPurpose.ENTITY_DISCOVERY, ObservationModality.VISUAL, ObservationAssurance.WEAK),),
         ))
 
-        assert acquired.status is AcquisitionStatus.ACQUIRED
-        assert acquired.reason_code == "world_acquired_with_optional_gap"
-        assert acquired.observation is not None
-        assert {item.surface for item in acquired.observation.source_manifest} == {"dom"}
+        assert acquired.status is AcquisitionStatus.FAILED
+        assert acquired.reason_code == "required_source_exhausted"
+        assert acquired.observation is None
         assert [item.status for item in acquired.source_results] == [
             SourceAcquisitionStatus.ACQUIRED,
             SourceAcquisitionStatus.FAILED,
@@ -226,7 +408,7 @@ def test_optional_source_failure_preserves_required_world_and_typed_gap() -> Non
     asyncio.run(scenario())
 
 
-def test_post_action_reacquires_route_owner_and_prior_required_source() -> None:
+def test_post_action_visual_route_does_not_inherit_prior_structural_selection() -> None:
     async def scenario() -> None:
         dom = OfferedAdapter(
             "dom", ObservationOffer("dom", "structural", "structural", "low"), _source("dom"),
@@ -239,7 +421,9 @@ def test_post_action_reacquires_route_owner_and_prior_required_source() -> None:
         task = _task()
         await environment.reset(task)
         acquired = await environment.capture(WorldObservationRequest(
-            ObservationRequestKind.POLICY_REQUEST, "spatial gap", modality="visual",
+            ObservationRequestKind.POLICY_REQUEST,
+            "spatial gap",
+            (_need(ObservationPurpose.ENTITY_DISCOVERY, ObservationModality.VISUAL, ObservationAssurance.WEAK),),
         ))
         assert acquired.observation is not None
         option = next(
@@ -257,11 +441,56 @@ def test_post_action_reacquires_route_owner_and_prior_required_source() -> None:
 
         assert outcome.result.dispatch_status is DispatchStatus.SENT
         assert outcome.post_acquisition.selection_plan is not None
-        assert {
-            (item.source, item.requirement.value)
-            for item in outcome.post_acquisition.selection_plan.selections
-        } == {("dom", "required"), ("visual", "required")}
-        assert dom.observe_calls == 3 and visual.observe_calls == 2
+        assert [
+            item.source for item in outcome.post_acquisition.selection_plan.selections
+        ] == ["visual"]
+        assert dom.observe_calls == 2 and visual.observe_calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_post_action_dom_route_does_not_reuse_prior_visual_selection() -> None:
+    async def scenario() -> None:
+        dom = OfferedAdapter(
+            "dom", ObservationOffer("dom", "structural", "structural", "low"), _source("dom"),
+        )
+        visual = OfferedAdapter(
+            "visual", ObservationOffer("visual", "visual", "weak", "high"),
+            _source("visual", profile=ObservationSourceProfile.visual()),
+        )
+        environment = UnifiedWorldEnvironment((dom, visual))
+        task = _task()
+        await environment.reset(task)
+        acquired = await environment.capture(WorldObservationRequest(
+            ObservationRequestKind.POLICY_REQUEST,
+            "explicit visual discovery",
+            (_need(
+                ObservationPurpose.ENTITY_DISCOVERY,
+                ObservationModality.VISUAL,
+                ObservationAssurance.WEAK,
+            ),),
+        ))
+        assert acquired.observation is not None
+        option = next(
+            item for item in ActionSpaceBuilder().build(task, acquired.observation).options
+            if any(
+                binding.binding_id in item.eligible_binding_ids and binding.surface == "dom"
+                for binding in acquired.observation.bindings
+            )
+        )
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(option, {}), acquired.observation, "context:test",
+        )
+
+        outcome = await environment.execute(request)
+
+        assert outcome.result.dispatch_status is DispatchStatus.SENT
+        assert outcome.post_acquisition.selection_plan is not None
+        assert [
+            item.source for item in outcome.post_acquisition.selection_plan.selections
+        ] == ["dom"]
+        assert dom.observe_calls == 3
+        assert visual.observe_calls == 1
 
     asyncio.run(scenario())
 
@@ -550,7 +779,9 @@ def test_shared_acquisition_group_has_one_reset_owner_and_one_group_capture() ->
         environment = UnifiedWorldEnvironment((dom, visual))
         await environment.reset(_task())
         acquired = await environment.capture(WorldObservationRequest(
-            ObservationRequestKind.POLICY_REQUEST, "spatial gap", modality="visual",
+            ObservationRequestKind.POLICY_REQUEST,
+            "spatial gap",
+            (_need(ObservationPurpose.ENTITY_DISCOVERY, ObservationModality.VISUAL, ObservationAssurance.WEAK),),
         ))
 
         assert acquired.status is AcquisitionStatus.ACQUIRED

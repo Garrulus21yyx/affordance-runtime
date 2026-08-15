@@ -1153,7 +1153,8 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
     previous = _bound_public_context(context)["history"]["items"][0]
     assert previous["decision_details"]["modality"] == "structural"
     descriptions = {item.name: item.description for item in catalog.specs}
-    assert "current structural source is already present" in descriptions["observe_structural"]
+    assert "observe_structural" not in descriptions
+    assert "observe_visual" in descriptions
     assert "No current visual source is present" in descriptions["observe_visual"]
 
 

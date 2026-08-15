@@ -7,19 +7,9 @@ runtime facts; it performs no acquisition or model I/O.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.world.contracts import SurfaceObservation
-
-
-class VisionEscalationMode(StrEnum):
-    SKIP = "skip"
-    CAPTURE_SCREENSHOT = "capture_screenshot"
-    VERIFY_STRUCTURED_CANDIDATES = "verify_structured_candidates"
-    DISCOVER_VISUAL_ENTITIES = "discover_visual_entities"
-    DIAGNOSE_POSTCONDITION = "diagnose_postcondition"
-    UNAVAILABLE = "unavailable"
 
 
 class VisionEvidenceNeed(StrEnum):
@@ -30,22 +20,6 @@ class VisionEvidenceNeed(StrEnum):
     OPEN_WORLD_ENTITY_DISCOVERY = "open_world_entity_discovery"
     SINGLE_TARGET_DISAMBIGUATION = "single_target_disambiguation"
     POSTCONDITION_DIAGNOSIS = "postcondition_diagnosis"
-
-
-@dataclass(frozen=True)
-class VisionEscalationDecision:
-    mode: VisionEscalationMode
-    reason_code: str
-    evidence_need: VisionEvidenceNeed = VisionEvidenceNeed.NONE
-
-    @property
-    def selects_visual(self) -> bool:
-        return self.mode in {
-            VisionEscalationMode.CAPTURE_SCREENSHOT,
-            VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES,
-            VisionEscalationMode.DISCOVER_VISUAL_ENTITIES,
-            VisionEscalationMode.DIAGNOSE_POSTCONDITION,
-        }
 
 
 def derive_visual_evidence_needs(
@@ -63,83 +37,9 @@ def derive_visual_evidence_needs(
         return (VisionEvidenceNeed.RAW_SCREENSHOT,)
     if postcondition_unresolved:
         return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
-    if not structured.bindings:
-        return (VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY,)
     if _actionable_targets_are_ambiguous(structured):
         return (VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,)
     return ()
-
-
-def decide_visual_escalation(
-    evidence_needs: tuple[VisionEvidenceNeed, ...],
-    *,
-    visual_available: bool,
-    candidate_verification_available: bool | None = None,
-    discovery_available: bool | None = None,
-    diagnosis_available: bool | None = None,
-    marked_candidate_policy_available: bool = False,
-) -> VisionEscalationDecision:
-    """Route typed evidence obligations to one optional visual capability."""
-
-    if not evidence_needs:
-        return VisionEscalationDecision(
-            VisionEscalationMode.SKIP,
-            "structured_evidence_sufficient",
-        )
-    evidence_need = evidence_needs[0]
-    if evidence_need is VisionEvidenceNeed.RAW_SCREENSHOT:
-        if not visual_available:
-            return VisionEscalationDecision(
-                VisionEscalationMode.UNAVAILABLE,
-                "visual_capability_unavailable",
-                evidence_need,
-            )
-        if discovery_available:
-            return VisionEscalationDecision(
-                VisionEscalationMode.DISCOVER_VISUAL_ENTITIES,
-                "explicit_visual_semantic_discovery",
-                evidence_need,
-            )
-        return VisionEscalationDecision(
-            VisionEscalationMode.CAPTURE_SCREENSHOT,
-            "raw_screenshot_requested",
-            evidence_need,
-        )
-    if evidence_need is VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY:
-        requested_mode = VisionEscalationMode.DISCOVER_VISUAL_ENTITIES
-        reason_code = "open_world_entity_discovery_required"
-    elif evidence_need is VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS:
-        requested_mode = VisionEscalationMode.DIAGNOSE_POSTCONDITION
-        reason_code = "postcondition_visual_diagnosis"
-    elif evidence_need is VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION:
-        if marked_candidate_policy_available:
-            return VisionEscalationDecision(
-                VisionEscalationMode.SKIP,
-                "marked_candidate_choice_delegated_to_screenshot_policy",
-                VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
-            )
-        requested_mode = VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES
-        reason_code = "structured_candidates_ambiguous"
-    else:
-        return VisionEscalationDecision(
-            VisionEscalationMode.UNAVAILABLE,
-            "unsupported_visual_evidence_need",
-            evidence_need,
-        )
-    mode_available = {
-        VisionEscalationMode.VERIFY_STRUCTURED_CANDIDATES: candidate_verification_available,
-        VisionEscalationMode.DISCOVER_VISUAL_ENTITIES: discovery_available,
-        VisionEscalationMode.DIAGNOSE_POSTCONDITION: diagnosis_available,
-    }[requested_mode]
-    if mode_available is None:
-        mode_available = visual_available
-    if not visual_available or not mode_available:
-        return VisionEscalationDecision(
-            VisionEscalationMode.UNAVAILABLE,
-            "visual_capability_unavailable",
-            evidence_need,
-        )
-    return VisionEscalationDecision(requested_mode, reason_code, evidence_need)
 
 
 def _actionable_targets_are_ambiguous(structured: SurfaceObservation) -> bool:
@@ -149,8 +49,26 @@ def _actionable_targets_are_ambiguous(structured: SurfaceObservation) -> bool:
     ]
     if len(candidates) < 2:
         return False
-    descriptors = [
-        (target.role.casefold().strip(), target.label.casefold().strip())
-        for target in candidates
-    ]
+    descriptors = [_public_disambiguation_descriptor(target) for target in candidates]
     return len(set(descriptors)) < len(descriptors)
+
+
+def _public_disambiguation_descriptor(target) -> tuple[object, ...]:
+    within = target.relations.get("within")
+    if isinstance(within, dict):
+        within_value: object = tuple(sorted((str(key), repr(value)) for key, value in within.items()))
+    else:
+        within_value = repr(within)
+    return (
+        target.role.casefold().strip(),
+        target.label.casefold().strip(),
+        tuple(sorted((str(key), repr(value)) for key, value in target.state.items())),
+        within_value,
+        tuple(
+            sorted(
+                (str(key), repr(value))
+                for key, value in target.relations.items()
+                if key != "within"
+            )
+        ),
+    )

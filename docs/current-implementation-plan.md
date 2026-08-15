@@ -70,7 +70,7 @@ WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
 VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
 WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_ADMITTED_NOT_STARTED / ACTIVATE_EFFECT_AUTHORITY_OPEN /
+A.2_IMPLEMENTED / PROPERTY_VERIFIED / ACTIVATE_EFFECT_AUTHORITY_OPEN /
 NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`
 
 The implemented interaction-owner portion routes existing `activate`,
@@ -129,7 +129,8 @@ Status:
 `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
 T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_ADMITTED_NOT_STARTED`
+A.2_IMPLEMENTED / PROPERTY_VERIFIED / FULL_VERIFIED_1642_PASS_27_SKIP /
+LIVE_NOT_RUN`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
@@ -199,7 +200,7 @@ as `KEEP_MOVE`; isolation, not deletion, is the A.1 boundary.
 Status:
 `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_ADMITTED_NOT_STARTED / STATEFACT_CUTOVER_PARTIAL /
+A.2_IMPLEMENTED / PROPERTY_VERIFIED / STATEFACT_CUTOVER_PARTIAL /
 ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
 LIVE_NOT_RUN`
 
@@ -282,10 +283,11 @@ decision/link structural conservation and disposition/reason coherence only.
 Architecture tests forbid any second production constructor or decision
 producer.
 
-## Admitted next slice — adaptive observation policy A.2
+## Implemented slice — adaptive observation policy A.2
 
 Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_ADMITTED_NOT_STARTED / LIVE_NOT_RUN`
+A.2_IMPLEMENTED / PROPERTY_VERIFIED / FULL_VERIFIED_1642_PASS_27_SKIP /
+LIVE_NOT_RUN`
 
 A.2 keeps the current `ObservationOrchestrator` as the sole source-selection
 owner. It separates physical multi-channel capture from semantic provider
@@ -295,12 +297,14 @@ structural/authoritative source; one targeted complementary visual source is
 admitted only for a typed residual coverage, ambiguity, visual-property, or
 verification need.
 
-The implementation will converge existing request/offer/plan,
-`VisionEvidenceNeed`, BrowserGym and model-image-gating code. It must delete the
-generic observe-all compatibility fallback, BrowserGym-local plan mutation and
-always-visible redundant observation tools in the same slice; it must not add
-a parallel selector or source-specific task rules. The full contract and SOTA
-reuse boundary are in the
+The implementation converges existing request/offer/plan,
+`VisionEvidenceNeed`, BrowserGym and model-image-gating code. The generic
+observe-all compatibility fallback, BrowserGym-local plan mutation, hidden
+visual-selection state, prior-plan post-action reuse and redundant current
+observation tools are removed or gated. Typed missing capability and budget
+exhaustion fail closed; no parallel selector or source-specific task rule was
+added. The full contract, implementation evidence and SOTA reuse boundary are
+in the
 [Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
 
 ## Active target-default convergence queue

@@ -1,21 +1,42 @@
-"""Pure bounded observation-source selection; it performs no acquisition I/O."""
+"""Sole pure owner of bounded observation-source selection."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from affordance_runtime.world.acquisition import (
     AcquisitionStatus,
     ObservationOffer,
+    ObservationRequestKind,
     ObservationSelectionPlan,
     SourceRequirement,
     SourceSelection,
     WorldObservationRequest,
 )
-from affordance_runtime.world.source_profile import assurance_satisfies
+from affordance_runtime.world.contracts import SurfaceObservation
+from affordance_runtime.world.observation_needs import (
+    FreshnessRequirement,
+    ObservationNeed,
+    ObservationPurpose,
+)
+from affordance_runtime.world.source_profile import (
+    AcquisitionCost,
+    ObservationAssurance,
+    ObservationModality,
+    assurance_satisfies,
+)
+from affordance_runtime.world.vision_escalation import (
+    VisionEvidenceNeed,
+    derive_visual_evidence_needs,
+)
 
-_COST = {"low": 0, "medium": 1, "high": 2}
-_MODALITY = {"structural": 0, "environment_state": 1, "visual": 2, "user": 3}
+_COST = {AcquisitionCost.LOW: 0, AcquisitionCost.MEDIUM: 1, AcquisitionCost.HIGH: 2}
+_MODALITY = {
+    ObservationModality.STRUCTURAL: 0,
+    ObservationModality.ENVIRONMENT_STATE: 1,
+    ObservationModality.VISUAL: 2,
+    ObservationModality.USER: 3,
+}
 
 
 @dataclass(frozen=True)
@@ -31,82 +52,256 @@ class ObservationSelectionResult:
 
 @dataclass(frozen=True)
 class ObservationOrchestrator:
-    max_source_calls: int = 2
+    acquisition_budget: int = 2
+
+    def __post_init__(self) -> None:
+        if self.acquisition_budget not in {1, 2}:
+            raise ValueError("A.2 supports an acquisition budget of one or two sources")
 
     def select(
         self,
         offers: tuple[ObservationOffer, ...],
         request: WorldObservationRequest,
+        *,
+        route_source: str = "",
     ) -> ObservationSelectionResult:
         ordered = tuple(sorted(offers, key=_offer_rank))
         if not ordered:
-            return ObservationSelectionResult(None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "no_source_offer")
-        desired_modality = request.modality.strip()
-        desired_assurance = request.required_assurance.strip()
-        adequate = tuple(
-            item for item in ordered
-            if (not desired_modality or item.modality == desired_modality)
-            and (not desired_assurance or assurance_satisfies(item.assurance, desired_assurance))
-        )
-        if desired_modality == "visual":
-            structural = next((item for item in ordered if item.modality == "structural"), None)
-            visual = next((item for item in adequate if item.modality == "visual"), None)
-            if visual is None:
+            return ObservationSelectionResult(
+                None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "no_source_offer"
+            )
+        needs = request.needs or (_lifecycle_need(request),)
+        unresolved_needs = needs
+        selected: dict[str, SourceSelection] = {}
+        if route_source:
+            route_offer = next((item for item in ordered if item.source == route_source), None)
+            if route_offer is None:
                 return ObservationSelectionResult(
-                    None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "requested_modality_unavailable",
+                    None,
+                    AcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                    "route_source_unavailable",
                 )
-            selections = []
-            if structural is not None:
-                selections.append(SourceSelection(structural.source, SourceRequirement.REQUIRED, "structured_grounding"))
-                selections.append(SourceSelection(
-                    visual.source,
-                    SourceRequirement.OPTIONAL,
-                    "explicit_visual_assistance",
-                ))
-            else:
-                selections.append(SourceSelection(visual.source, SourceRequirement.REQUIRED, "visual_grounding"))
-            return self._bounded(selections)
-        if desired_modality == "environment_state":
-            state = next((item for item in adequate if item.modality == "environment_state"), None)
-            if state is None:
-                return ObservationSelectionResult(
-                    None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "requested_modality_unavailable",
-                )
-            selections = [SourceSelection(
-                state.source,
+            selected[route_source] = SourceSelection(
+                route_source,
                 SourceRequirement.REQUIRED,
-                "authoritative_state_grounding",
-            )]
-            structural = next((item for item in ordered if item.modality == "structural"), None)
-            if structural is not None:
-                selections.append(SourceSelection(
-                    structural.source,
-                    SourceRequirement.OPTIONAL,
-                    "structural_world_augmentation",
-                ))
-            return self._bounded(selections)
-        if not adequate:
-            reason = "requested_assurance_unavailable" if desired_assurance else "requested_modality_unavailable"
-            return ObservationSelectionResult(None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, reason)
-        preferred = next((item for item in adequate if item.modality == "structural"), adequate[0])
-        return self._bounded([
-            SourceSelection(preferred.source, SourceRequirement.REQUIRED, "primary_grounding"),
-        ])
-
-    def _bounded(self, selections: list[SourceSelection]) -> ObservationSelectionResult:
-        selected = tuple(selections[: self.max_source_calls])
-        if not selected or not any(item.requirement is SourceRequirement.REQUIRED for item in selected):
-            return ObservationSelectionResult(None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "source_budget_exhausted")
+                "route_source_refresh",
+                tuple(need.need_id for need in needs)
+                if not request.needs
+                else tuple(
+                    need.need_id for need in needs if _offer_satisfies(route_offer, need)
+                ),
+            )
+            if not request.needs:
+                unresolved_needs = ()
+        for need in sorted(unresolved_needs, key=lambda item: item.need_id):
+            if _selected_satisfies(selected, ordered, need):
+                continue
+            if (
+                need.required_modality is ObservationModality.VISUAL
+                and not any(
+                    _offer(item.source, ordered).modality is ObservationModality.STRUCTURAL
+                    for item in selected.values()
+                )
+            ):
+                structural = next(
+                    (
+                        item
+                        for item in ordered
+                        if item.modality is ObservationModality.STRUCTURAL
+                        and ObservationPurpose.WORLD_GROUNDING in item.supported_purposes
+                    ),
+                    None,
+                )
+                if structural is not None:
+                    failure = self._add(
+                        selected,
+                        structural,
+                        SourceSelection(
+                            structural.source,
+                            SourceRequirement.REQUIRED,
+                            "structured_baseline",
+                        ),
+                    )
+                    if failure is not None:
+                        return failure
+            adequate = tuple(item for item in ordered if _offer_satisfies(item, need))
+            if not adequate:
+                reason = (
+                    "requested_assurance_unavailable"
+                    if any(
+                        (need.required_modality is None or item.modality is need.required_modality)
+                        and need.purpose in item.supported_purposes
+                        for item in ordered
+                    )
+                    else "requested_modality_unavailable"
+                )
+                return ObservationSelectionResult(
+                    None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, reason
+                )
+            chosen = next((item for item in adequate if item.source not in selected), adequate[0])
+            if chosen.source in selected:
+                existing = selected[chosen.source]
+                selected[chosen.source] = replace(
+                    existing,
+                    need_ids=tuple(sorted(set(existing.need_ids) | {need.need_id})),
+                )
+                continue
+            failure = self._add(
+                selected,
+                chosen,
+                SourceSelection(
+                    chosen.source,
+                    SourceRequirement.REQUIRED,
+                    _selection_reason(need, chosen),
+                    (need.need_id,),
+                ),
+            )
+            if failure is not None:
+                return failure
+        selections = tuple(selected[item.source] for item in ordered if item.source in selected)
+        if not selections:
+            return ObservationSelectionResult(
+                None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "no_sufficient_source"
+            )
+        unselected = tuple(
+            SourceSelection(
+                item.source,
+                SourceRequirement.UNSELECTED,
+                "source_not_needed",
+            )
+            for item in ordered
+            if item.source not in selected
+        )
+        reasons = tuple(dict.fromkeys(item.reason_code for item in selections))
         return ObservationSelectionResult(
-            ObservationSelectionPlan(selected, self.max_source_calls),
+            ObservationSelectionPlan(
+                selections,
+                unselected,
+                self.acquisition_budget,
+                tuple(sorted(needs, key=lambda item: item.need_id)),
+                reasons,
+            ),
             AcquisitionStatus.ACQUIRED,
             "sources_selected",
         )
 
+    def select_after_baseline(
+        self,
+        offers: tuple[ObservationOffer, ...],
+        request: WorldObservationRequest,
+        structured: SurfaceObservation,
+        *,
+        terminal: bool,
+    ) -> ObservationSelectionResult:
+        """Complete stage two using typed residual need, without adapter selection."""
+
+        residual = _residual_needs(request, structured, terminal=terminal)
+        needs = tuple(dict.fromkeys((request.needs or (_lifecycle_need(request),)) + residual))
+        return self.select(offers, replace(request, needs=needs))
+
+    def _add(
+        self,
+        selected: dict[str, SourceSelection],
+        offer: ObservationOffer,
+        selection: SourceSelection,
+    ) -> ObservationSelectionResult | None:
+        if offer.source in selected:
+            return None
+        if len(selected) >= self.acquisition_budget:
+            return ObservationSelectionResult(
+                None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "source_budget_exhausted"
+            )
+        selected[offer.source] = selection
+        return None
+
+
+def _lifecycle_need(request: WorldObservationRequest) -> ObservationNeed:
+    purpose = (
+        ObservationPurpose.WORLD_GROUNDING
+        if request.kind is ObservationRequestKind.POLICY_REQUEST
+        else ObservationPurpose.CURRENTNESS_REFRESH
+    )
+    return ObservationNeed(
+        f"lifecycle:{request.kind.value}",
+        purpose,
+        required_assurance=ObservationAssurance.WEAK,
+        freshness=FreshnessRequirement.FRESH_ACQUISITION,
+    )
+
+
+def _residual_needs(
+    request: WorldObservationRequest,
+    structured: SurfaceObservation,
+    *,
+    terminal: bool,
+) -> tuple[ObservationNeed, ...]:
+    evidence_needs = derive_visual_evidence_needs(structured, terminal=terminal)
+    residual: list[ObservationNeed] = []
+    for evidence_need in evidence_needs:
+        purpose = {
+            VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION: ObservationPurpose.TARGET_DISAMBIGUATION,
+            VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY: ObservationPurpose.ENTITY_DISCOVERY,
+            VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS: ObservationPurpose.EFFECT_VERIFICATION,
+            VisionEvidenceNeed.RAW_SCREENSHOT: ObservationPurpose.WORLD_GROUNDING,
+        }.get(evidence_need)
+        if purpose is None or any(item.purpose is purpose for item in request.needs):
+            continue
+        residual.append(ObservationNeed(
+            f"residual:{purpose.value}",
+            purpose,
+            required_modality=ObservationModality.VISUAL,
+            required_assurance=ObservationAssurance.WEAK,
+            freshness=FreshnessRequirement.FRESH_ACQUISITION,
+        ))
+    return tuple(residual)
+
+
+def _offer_satisfies(offer: ObservationOffer, need: ObservationNeed) -> bool:
+    return (
+        (need.required_modality is None or offer.modality is need.required_modality)
+        and need.purpose in offer.supported_purposes
+        and assurance_satisfies(offer.assurance, need.required_assurance)
+    )
+
+
+def _selected_satisfies(
+    selected: dict[str, SourceSelection],
+    offers: tuple[ObservationOffer, ...],
+    need: ObservationNeed,
+) -> bool:
+    for source, selection in tuple(selected.items()):
+        if not _offer_satisfies(_offer(source, offers), need):
+            continue
+        selected[source] = replace(
+            selection,
+            need_ids=tuple(sorted(set(selection.need_ids) | {need.need_id})),
+        )
+        return True
+    return False
+
+
+def _offer(source: str, offers: tuple[ObservationOffer, ...]) -> ObservationOffer:
+    return next(item for item in offers if item.source == source)
+
+
+def _selection_reason(need: ObservationNeed, offer: ObservationOffer) -> str:
+    if offer.modality is ObservationModality.VISUAL:
+        return {
+            ObservationPurpose.ENTITY_DISCOVERY: "visual_entity_discovery",
+            ObservationPurpose.TARGET_DISAMBIGUATION: "visual_target_disambiguation",
+            ObservationPurpose.EFFECT_VERIFICATION: "visual_effect_verification",
+            ObservationPurpose.CRITERION_VERIFICATION: "visual_criterion_verification",
+        }.get(need.purpose, "visual_grounding")
+    if offer.modality is ObservationModality.ENVIRONMENT_STATE:
+        return "authoritative_state_grounding"
+    if need.purpose is ObservationPurpose.CURRENTNESS_REFRESH:
+        return "currentness_refresh"
+    return "primary_grounding"
+
 
 def _offer_rank(offer: ObservationOffer) -> tuple[int, int, str]:
     return (
-        _COST.get(offer.acquisition_cost, 99),
-        _MODALITY.get(offer.modality, 99),
+        _COST[AcquisitionCost(offer.acquisition_cost)],
+        _MODALITY[ObservationModality(offer.modality)],
         offer.source,
     )

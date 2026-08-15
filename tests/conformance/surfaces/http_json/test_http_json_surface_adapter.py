@@ -18,7 +18,11 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionStatus,
     CoverageState,
+    ObservationAssurance,
+    ObservationModality,
+    ObservationNeed,
     ObservationOffer,
+    ObservationPurpose,
     ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
@@ -175,7 +179,7 @@ class StructuralAdapter:
         return ActionResult(request.request_id, DispatchStatus.SENT, self.surface, True)
 
 
-def test_authoritative_capture_fuses_http_facts_and_dom_into_one_world() -> None:
+def test_authoritative_capture_projects_only_the_selected_http_source() -> None:
     async def scenario() -> None:
         dom = StructuralAdapter()
         http = HttpJsonSurfaceAdapter(
@@ -191,17 +195,20 @@ def test_authoritative_capture_fuses_http_facts_and_dom_into_one_world() -> None
         acquired = await environment.capture(WorldObservationRequest(
             ObservationRequestKind.POLICY_REQUEST,
             "verify persisted setting",
-            "settings",
-            "environment_state",
-            "authoritative",
+            (ObservationNeed(
+                "criterion:settings",
+                ObservationPurpose.CRITERION_VERIFICATION,
+                ("settings",),
+                ObservationModality.ENVIRONMENT_STATE,
+                ObservationAssurance.AUTHORITATIVE,
+            ),),
         ))
 
         assert acquired.status is AcquisitionStatus.ACQUIRED
         assert acquired.observation is not None
-        assert {source.surface for source in acquired.observation.sources} == {"dom", "http_json"}
+        assert {source.surface for source in acquired.observation.sources} == {"http_json"}
         assert {target.target_id for target in acquired.observation.targets} == {
             "settings",
-            "settings-button",
         }
         authoritative = next(
             fact for fact in acquired.observation.facts
@@ -210,6 +217,6 @@ def test_authoritative_capture_fuses_http_facts_and_dom_into_one_world() -> None
         assert authoritative.value == "enabled"
         assert {
             item.surface: item.coverage for item in acquired.observation.source_manifest
-        } == {"dom": CoverageState.COMPLETE, "http_json": CoverageState.COMPLETE}
+        } == {"http_json": CoverageState.COMPLETE}
 
     asyncio.run(scenario())

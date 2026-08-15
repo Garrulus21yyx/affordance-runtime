@@ -12,6 +12,7 @@ from affordance_runtime.schema_digest import schema_digest
 if TYPE_CHECKING:
     from affordance_runtime.actions.space_contracts import AdmittedActionSelection
     from affordance_runtime.world.contracts import ActionBinding
+    from affordance_runtime.world.observation_needs import ObservationNeed
 
 
 class DispatchStatus(StrEnum):
@@ -53,6 +54,7 @@ class BoundActionRequest:
     selection: AdmittedActionSelection
     binding: ActionBinding
     timeout_ms: int = 5_000
+    verification_needs: tuple[ObservationNeed, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -88,6 +90,9 @@ class BoundActionRequest:
             raise ValueError("bound request must retain its admitted option and binding group")
         if self.timeout_ms <= 0:
             raise ValueError("timeout must be positive")
+        object.__setattr__(self, "verification_needs", tuple(self.verification_needs))
+        if len({item.need_id for item in self.verification_needs}) != len(self.verification_needs):
+            raise ValueError("bound request verification need IDs cannot repeat")
 
     @property
     def observation_id(self) -> str:

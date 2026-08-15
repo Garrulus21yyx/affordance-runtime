@@ -126,7 +126,6 @@ def test_target_settings_confirms_action_then_completes_from_unified_authoritati
             assert completed.execution_count == 1
             assert policy.calls == 2
             assert {source.surface for source in completed.final_observation.sources} == {
-                "dom",
                 "http_json",
             }
             persisted = next(

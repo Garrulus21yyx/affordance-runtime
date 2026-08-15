@@ -137,9 +137,11 @@ first A.2 budget is one normal source and at most one complementary source.
 The detailed owner, selection matrix, existing-code convergence and SOTA reuse
 boundary are defined by the
 [Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
-Its current status is `A.2_ADMITTED_NOT_STARTED` after the independent A.1
-closure review passed; the existing observe-all compatibility fallback and
-BrowserGym-local plan mutation remain implementation debt until that slice.
+Its current status is `A.2_IMPLEMENTED / PROPERTY_VERIFIED /
+FULL_VERIFIED_1642_PASS_27_SKIP / LIVE_NOT_RUN` after the independent A.1
+closure review. The observe-all fallback, BrowserGym plan mutation and hidden
+visual state, prior-plan post-action reuse, and redundant same-modality
+observation tools are deleted or gated at their owner boundary.
 
 One accepted semantic action selects one current route. A typed `NOT_SENT` may
 admit one bounded alternate only after fresh acquisition/fusion and semantic

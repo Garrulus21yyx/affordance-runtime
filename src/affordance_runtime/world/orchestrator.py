@@ -35,10 +35,7 @@ class UnifiedWorldEnvironment:
     _source_observation_ids: frozenset[str] = field(default_factory=frozenset, init=False)
     _world_observation_id: str = field(default="", init=False)
     _offers: tuple[ObservationOffer, ...] = field(default=(), init=False)
-    _selected_sources: tuple[str, ...] = field(default=(), init=False)
-    _selection_plan: ObservationSelectionPlan | None = field(default=None, init=False, repr=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
-    _compatibility_observe_all: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.adapters = tuple(self.adapters)
@@ -46,16 +43,13 @@ class UnifiedWorldEnvironment:
             raise ValueError("world environment requires at least one surface adapter")
         if len({adapter.surface for adapter in self.adapters}) != len(self.adapters):
             raise ValueError("surface adapter names must be unique")
-        declared = tuple(
+        self._offers = tuple(
             offer
             for adapter in self.adapters
-            for offer in tuple(getattr(adapter, "observation_offers", ()))
+            for offer in adapter.observation_offers
         )
-        self._compatibility_observe_all = not declared
-        self._offers = declared or tuple(
-            ObservationOffer(adapter.surface, "structural", "structural", "low")
-            for adapter in self.adapters
-        )
+        if len({offer.source for offer in self._offers}) != len(self._offers):
+            raise ValueError("observation offer source identities must be unique")
 
     @property
     def observation_capabilities(self) -> ObservationCapabilities:
@@ -64,8 +58,6 @@ class UnifiedWorldEnvironment:
     async def reset(self, task: TaskGoal) -> ObservationAcquisition:
         self._source_observation_ids = frozenset()
         self._world_observation_id = ""
-        self._selected_sources = ()
-        self._selection_plan = None
         self._task = task
         request = WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "initial task grounding")
         selected = self._select(request)
@@ -107,16 +99,14 @@ class UnifiedWorldEnvironment:
         selected = plan or self._select(request)
         if isinstance(selected, ObservationAcquisition):
             return replace(selected, origin=origin)
-        selected_names = {item.source for item in selected.selections}
         results: list[SourceAcquisitionResult] = [
             SourceAcquisitionResult(
-                offer.source,
+                item.source,
                 SourceRequirement.UNSELECTED,
                 SourceAcquisitionStatus.NOT_ACQUIRED,
                 "source_not_selected",
             )
-            for offer in self._offers
-            if offer.source not in selected_names
+            for item in selected.unselected
         ]
         acquired: list[SurfaceObservation] = []
         projected: dict[str, SurfaceObservation | None] = {}
@@ -191,8 +181,6 @@ class UnifiedWorldEnvironment:
             source.observation_id for source in world.sources
         )
         self._world_observation_id = world.observation_id
-        self._selected_sources = tuple(item.source for item in selected.selections)
-        self._selection_plan = selected
         reason = "world_acquired_with_optional_gap" if any(
             item.requirement is SourceRequirement.OPTIONAL
             and item.status is not SourceAcquisitionStatus.ACQUIRED
@@ -203,12 +191,6 @@ class UnifiedWorldEnvironment:
         )
 
     def _select(self, request: WorldObservationRequest) -> ObservationSelectionPlan | ObservationAcquisition:
-        if self._compatibility_observe_all:
-            selections = tuple(
-                SourceSelection(adapter.surface, SourceRequirement.REQUIRED, "compatibility_source")
-                for adapter in self.adapters
-            )
-            return ObservationSelectionPlan(selections, max(1, len(selections)))
         outcome = self.observation_orchestrator.select(self._offers, request)
         if outcome.plan is None:
             return ObservationAcquisition(
@@ -254,26 +236,33 @@ class UnifiedWorldEnvironment:
         post_request = WorldObservationRequest(
             ObservationRequestKind.POST_ACTION_FALLBACK,
             "post action",
+            request.verification_needs,
         )
-        post_plan = self._post_action_plan(request.binding.surface)
+        post_plan = self._post_action_plan(post_request, request.binding.surface)
+        if isinstance(post_plan, ObservationAcquisition):
+            return ExecutionOutcome(result, post_plan)
         post = await self._acquire(
             post_request, AcquisitionOrigin.POST_ACTION, post_plan,
         )
         return ExecutionOutcome(result, post)
 
-    def _post_action_plan(self, route_source: str) -> ObservationSelectionPlan:
-        selections = [
-            SourceSelection(route_source, SourceRequirement.REQUIRED, "route_source_refresh"),
-        ]
-        if self._selection_plan is not None:
-            selections.extend(
-                SourceSelection(item.source, item.requirement, "evaluator_source_refresh")
-                for item in self._selection_plan.selections
-                if item.source != route_source and item.requirement is SourceRequirement.REQUIRED
-            )
-        bounded = tuple(selections[: self.observation_orchestrator.max_source_calls])
-        return ObservationSelectionPlan(
-            bounded, self.observation_orchestrator.max_source_calls,
+    def _post_action_plan(
+        self,
+        request: WorldObservationRequest,
+        route_source: str,
+    ) -> ObservationSelectionPlan | ObservationAcquisition:
+        outcome = self.observation_orchestrator.select(
+            self._offers,
+            request,
+            route_source=route_source,
+        )
+        if outcome.plan is not None:
+            return outcome.plan
+        return ObservationAcquisition(
+            outcome.status,
+            AcquisitionOrigin.POST_ACTION,
+            None,
+            outcome.reason_code,
         )
 
     def _offer_for(self, source: str) -> ObservationOffer:

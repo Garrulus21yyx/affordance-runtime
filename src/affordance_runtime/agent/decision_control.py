@@ -65,12 +65,18 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
+from affordance_runtime.world.observation_needs import (
+    FreshnessRequirement,
+    ObservationNeed,
+    ObservationPurpose,
+)
 from affordance_runtime.world.public_semantic_digest import (
     action_page_request_digest,
     observation_request_digest,
     policy_observation_result_digest,
     public_action_page_result_digest,
 )
+from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 SelectionExecutor = Callable[
     [
@@ -326,9 +332,14 @@ async def _policy_observation(
     request = WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
         decision.reason,
-        decision.subject_id,
-        decision.modality,
-        decision.required_assurance,
+        (ObservationNeed(
+            f"agent:{decision.modality}:{decision.subject_id}",
+            ObservationPurpose.WORLD_GROUNDING,
+            (decision.subject_id,),
+            ObservationModality(decision.modality),
+            ObservationAssurance(decision.required_assurance),
+            FreshnessRequirement.FRESH_ACQUISITION,
+        ),),
     )
     state = session.state
     request_digest = observation_request_digest(

@@ -11,6 +11,7 @@ from affordance_runtime.execution import ActionResult, BoundActionRequest, Dispa
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
+    ObservationOffer,
     ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
@@ -26,6 +27,12 @@ class SequencedAdapter:
     sequence: int = 0
     executions: list[BoundActionRequest] = field(default_factory=list)
     current_source_id: str = ""
+
+    @property
+    def observation_offers(self):
+        if self.surface == "dom":
+            return (ObservationOffer("dom", "structural", "structural", "low"),)
+        return (ObservationOffer("wot", "environment_state", "authoritative", "medium"),)
 
     async def reset(self, task: TaskGoal) -> None:
         del task

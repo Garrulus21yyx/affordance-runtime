@@ -1,7 +1,8 @@
 # Wave A.2 adaptive observation policy and bounded world lens
 
 Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_ADMITTED_NOT_STARTED / LIVE_NOT_RUN`
+A.2_IMPLEMENTED / PROPERTY_VERIFIED / FULL_VERIFIED_1642_PASS_27_SKIP /
+LIVE_NOT_RUN`
 
 Scope: select which available observation sources are semantically activated
 for one acquisition, fuse only those source observations, and project one
@@ -346,3 +347,33 @@ Exit properties:
 
 Fresh benchmark evidence follows the bounded architecture gate; it does not
 replace the invariant tests and is not part of A.1 repair.
+
+## 11. Implementation record
+
+A.2 is implemented as an atomic owner convergence. `WorldObservationRequest`
+now carries lifecycle kind separately from immutable typed `ObservationNeed`s;
+every surface port declares `observation_offers`; and
+`ObservationOrchestrator` is the only production constructor of an immutable
+`ObservationSelectionPlan`. Offer ordering cannot change selection, ordinary
+grounding uses one cheapest sufficient source, an explicit or residual need may
+raise the bounded plan to two sources, and a third-source requirement fails
+with typed `CAPABILITY_UNAVAILABLE`.
+
+The generic world environment no longer has observe-all compatibility or
+synthetic offers. BrowserGym no longer mutates a selected plan or retains a
+hidden visual escalation decision: the same orchestrator selects the baseline
+and derives the one permitted residual visual need after structural projection.
+Same-group DOM/AX/screenshot raw capture remains one physical read, while only
+selected semantic sources enter `WorldFusion`. Post-action planning uses the
+executed route owner plus sealed evaluator verification needs, never prior plan
+membership. Current complete source modalities no longer expose redundant
+observation tools.
+
+Architecture redlines make the deleted owner paths physically absent and make
+`ObservationOrchestrator` the sole plan constructor. Property and integration
+coverage verifies order invariance, plan immutability, two-source budget
+failure, residual ambiguity versus public state distinction, explicit-offer
+fail-closed behavior, selected-source-only fusion, shared capture reuse,
+required-source failure, and post-action non-reuse. Repository verification is
+`1642 passed, 27 skipped`; Ruff, mypy over 336 source files, and
+`git diff --check` pass. No live benchmark was run.

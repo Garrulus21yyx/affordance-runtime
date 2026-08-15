@@ -98,6 +98,10 @@ class CountingAdapter:
     def surface(self) -> str:
         return self.wrapped.surface
 
+    @property
+    def observation_offers(self):
+        return self.wrapped.observation_offers
+
     async def reset(self, task: TaskGoal) -> None:
         return await self.wrapped.reset(task)
 

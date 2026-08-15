@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 from affordance_runtime.actions.binder import ActionBinder, BindingError
 from affordance_runtime.actions.space_contracts import (
@@ -45,6 +46,10 @@ from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import (
     task_evaluation_disposition_for_world,
+)
+from affordance_runtime.evaluation.action_verification import (
+    derive_action_verification_obligations,
+    observation_needs_for_verification,
 )
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
@@ -90,6 +95,11 @@ async def execute_cycle(
             AgentLoopStatus.BLOCKED, "stale_bound_request",
             "bound request context is not current",
         )
+    verification_needs = observation_needs_for_verification(
+        request.request_id,
+        derive_action_verification_obligations(task, request, before),
+    )
+    request = replace(request, verification_needs=verification_needs)
     outcome = await _execute_boundary(
         session, request, before.observation_id, scope,
     )
