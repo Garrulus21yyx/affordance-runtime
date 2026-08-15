@@ -36,14 +36,17 @@ def _task(*, hybrid=False, outputs=(), required_assurance=""):
     return TaskGoal("semantic", "Create and review report", success_criteria=(criterion,))
 
 
-def _world(*, coverage=CoverageState.COMPLETE, artifacts=None):
+def _world(*, coverage=CoverageState.COMPLETE, artifacts=None, include_decoy=False):
     facts = (
         StateFact("fact:report:content", "report:1", "content", "clear", "source:1"),
         StateFact("fact:report:private", "report:1", "internal", "hidden second fact", "source:1"),
     )
     source = SurfaceObservation(
         "source:1", "dom", "revision:1", ObservationSourceProfile.dom(),
-        targets=(SemanticTarget("report:1", "content", "report"),),
+        targets=(
+            *((SemanticTarget("decoy:1", "content", "decoy"),) if include_decoy else ()),
+            SemanticTarget("report:1", "content", "report"),
+        ),
         facts=facts, artifacts=artifacts or {}, coverage=coverage,
     )
     fused = WorldFusion().fuse((source,))
@@ -53,11 +56,7 @@ def _world(*, coverage=CoverageState.COMPLETE, artifacts=None):
 
 def test_semantic_request_hides_mechanical_expected_value_and_pins_scope() -> None:
     task = _task(hybrid=True)
-    world = _world()
-    world = replace(
-        world,
-        targets=(SemanticTarget("decoy:1", "content", "decoy"), *world.targets),
-    )
+    world = _world(include_decoy=True)
     request = build_semantic_judge_request(
         task, normalize_task_criteria(task), world, WorldEvidenceIndex.from_observation(world),
         ContextProjectionBudget(max_targets=1),

@@ -118,20 +118,28 @@ multi-source backend may additionally scope offers by source, modality,
 assurance and cost. Capability=true never asserts that a particular call
 succeeded, and high-assurance evidence never grants an unavailable capture.
 
-`ObservationOrchestrator` selects surfaces from TaskGoal, LocalObjective,
-budget, coverage gaps and conflicts. `WorldFusion` returns accepted semantic
-targets, explicit conflicts, or a need to reobserve; it does not maintain a
-long-lived probabilistic execution authority.
+`ObservationOrchestrator` is the sole source-selection owner. It selects from
+typed epistemic need, current coverage/freshness/conflict, evaluator obligation,
+available offers, assurance, acquisition group, cost and budget. TaskGoal or a
+model may contribute a public evidence need, but cannot select a private source
+or route. `WorldFusion` adjudicates only the selected, normalized observations;
+it never chooses or acquires a source. The Actor projector renders only the
+accepted world and cannot escalate acquisition.
 
-This is the normative Unified contract, not the current implementation claim.
-As of M4.6-E step 11, `UnifiedWorldEnvironment` can host several adapters but
-still observes all of them and concatenates their values; semantic fusion and
-explicit route selection remain pending. M4.6-E step 12 closes that seam before
-visual execution binding. It separates three decisions: Runtime acquisition-
-source selection, deterministic world fusion, and bounded model-presentation
-selection. A model may request public modality/assurance/subject information,
-but Runtime selects the source and private route. The selector must use typed
-requirements/offers/gaps rather than task slugs or benchmark cohort metadata.
+Physical capture, semantic source activation, world fusion and Actor delivery
+are distinct. A BrowserGym/Playwright read may return screenshot, DOM and AX
+together, while the normal semantic plan activates only one sufficient
+structural lens. Raw channel availability does not automatically make it a
+fused source or model input. A second targeted source is admitted only for a
+typed residual coverage, ambiguity, visual-property or verification need. The
+first A.2 budget is one normal source and at most one complementary source.
+
+The detailed owner, selection matrix, existing-code convergence and SOTA reuse
+boundary are defined by the
+[Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
+Its current status is `A.2_ADMITTED_NOT_STARTED` after the independent A.1
+closure review passed; the existing observe-all compatibility fallback and
+BrowserGym-local plan mutation remain implementation debt until that slice.
 
 One accepted semantic action selects one current route. A typed `NOT_SENT` may
 admit one bounded alternate only after fresh acquisition/fusion and semantic
@@ -152,6 +160,12 @@ Observation policy starts with fresh low-cost structured sources, then requests
 targeted DOM/AX/WoT/API/Device/CLI reads or visual capture when coverage, conflict,
 or evidence gaps justify them. Full screenshot/VLM recapture is not the default
 when a smaller observation can answer the question.
+
+An empty binding set or repeated role/label is not by itself a visual need.
+Runtime first considers terminal/read-only state and distinctions already
+available through canonical structure, `within`, state, relations and the
+current ActionSpace. Visual escalation is valid only when a relevant typed need
+remains unresolved.
 
 Budgets account for observation count, visual/model calls, latency, and
 stability waits. The policy may return reuse, targeted augment, recapture, or

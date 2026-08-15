@@ -102,8 +102,11 @@ def test_source_less_confirmed_action_claim_is_downgraded() -> None:
     before, request = _request()
     after = replace(
         _world("after", True),
+        targets=(),
+        bindings=(),
         sources=(),
         source_manifest=(),
+        entity_alignment_decisions=(),
         entity_source_links=(),
         media=(),
     )

@@ -15,8 +15,11 @@ from affordance_runtime.world import (
     AcquisitionCost,
     CoverageState,
     EntityAlignmentBasis,
+    EntityAlignmentDecision,
     EntityAlignmentDisposition,
     EntityAlignmentProposal,
+    EntityAllocation,
+    EntitySourceLink,
     FusionStatus,
     ObservationAssurance,
     ObservationGroundingRegion,
@@ -100,7 +103,13 @@ def test_source_permutation_preserves_links_conflicts_and_canonical_claims() -> 
     signatures = []
     for ordered in permutations((dom, visual)):
         world = _fused(*ordered)
-        signatures.append((world.targets, world.facts, world.conflicts, world.entity_source_links))
+        signatures.append((
+            world.targets,
+            world.facts,
+            world.conflicts,
+            world.entity_alignment_decisions,
+            world.entity_source_links,
+        ))
         assert "enabled" not in world.targets[0].state
         assert not world.facts
     assert signatures[0] == signatures[1]
@@ -168,7 +177,8 @@ def test_rejected_and_conflicted_proposals_allocate_every_target_independently()
         item for item in rejected_world.entity_source_links
         if item.source_observation_id == rejected.observation_id
     )
-    assert rejected_link.disposition is EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
+    assert rejected_link.allocation is EntityAllocation.INDEPENDENT
+    assert rejected_world.entity_alignment_decisions[0].disposition is EntityAlignmentDisposition.REJECTED
     assert len(rejected_world.targets) == 2
 
     left = _source(
@@ -190,9 +200,10 @@ def test_rejected_and_conflicted_proposals_allocate_every_target_independently()
     )
     conflicted_world = _fused(left, right)
     assert len(conflicted_world.targets) == 3
+    assert all(item.allocation is EntityAllocation.INDEPENDENT for item in conflicted_world.entity_source_links)
     assert all(
-        item.disposition is EntityAlignmentDisposition.CONFLICTED_ALLOCATED
-        for item in conflicted_world.entity_source_links
+        item.disposition is EntityAlignmentDisposition.CONFLICTED
+        for item in conflicted_world.entity_alignment_decisions
     )
 
 
@@ -297,7 +308,214 @@ def test_alignment_across_untransformed_coordinate_spaces_is_rejected() -> None:
 
     world = _fused(visual, dom)
     assert len(world.targets) == 2
-    assert all(
-        item.disposition is EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
-        for item in world.entity_source_links
+    assert all(item.allocation is EntityAllocation.INDEPENDENT for item in world.entity_source_links)
+    assert world.entity_alignment_decisions[0].disposition is EntityAlignmentDisposition.REJECTED
+
+
+def test_each_proposal_has_one_decision_and_each_endpoint_one_final_link() -> None:
+    dom = _source("dom:decisions", "dom-target")
+    visual = _source(
+        "visual:decisions",
+        "visual-target",
+        profile=ObservationSourceProfile.visual(),
+        proposals=(
+            _proposal(
+                "proposal:accepted",
+                "visual:decisions",
+                "visual-target",
+                "dom:decisions",
+                "dom-target",
+            ),
+            _proposal(
+                "proposal:rejected",
+                "visual:decisions",
+                "visual-target",
+                "missing:source",
+                "missing-target",
+            ),
+        ),
     )
+
+    world = _fused(dom, visual)
+
+    assert tuple(item.proposal_id for item in world.entity_alignment_decisions) == (
+        "proposal:accepted",
+        "proposal:rejected",
+    )
+    assert tuple(item.disposition for item in world.entity_alignment_decisions) == (
+        EntityAlignmentDisposition.ACCEPTED,
+        EntityAlignmentDisposition.REJECTED,
+    )
+    assert len(world.entity_source_links) == 2
+    assert len({(item.source_observation_id, item.source_target_id) for item in world.entity_source_links}) == 2
+    assert all(item.allocation is EntityAllocation.EQUIVALENT for item in world.entity_source_links)
+
+
+def test_invalid_proposal_cannot_contaminate_accepted_component_under_permutation() -> None:
+    accepted = _proposal(
+        "proposal:accepted",
+        "visual:mixed",
+        "visual-target",
+        "dom:mixed",
+        "dom-target",
+    )
+    rejected = replace(
+        _proposal(
+            "proposal:rejected",
+            "visual:mixed",
+            "visual-target",
+            "missing:source",
+            "missing-target",
+        ),
+        evidence_refs=("evidence:must-not-contaminate",),
+        confidence=1.0,
+    )
+    dom = _source("dom:mixed", "dom-target")
+    signatures = []
+    for proposals in permutations((accepted, rejected)):
+        visual = _source(
+            "visual:mixed",
+            "visual-target",
+            profile=ObservationSourceProfile.visual(),
+            proposals=tuple(proposals),
+        )
+        for sources in permutations((dom, visual)):
+            world = _fused(*sources)
+            accepted_decision = next(
+                item for item in world.entity_alignment_decisions
+                if item.proposal_id == "proposal:accepted"
+            )
+            assert accepted_decision.evidence_refs == ("evidence:proposal:accepted",)
+            assert accepted_decision.confidence == 0.9
+            assert all(not hasattr(item, "evidence_refs") for item in world.entity_source_links)
+            signatures.append((
+                world.entity_alignment_decisions,
+                world.entity_source_links,
+                world.targets,
+                world.facts,
+                world.conflicts,
+            ))
+    assert all(item == signatures[0] for item in signatures[1:])
+
+
+@pytest.mark.parametrize("relation", [
+    {"parent_id": "missing"},
+    {"child_ids": ("missing",)},
+    {"label_for_id": "missing"},
+])
+def test_unresolved_supported_relation_fails_typed(relation: dict[str, object]) -> None:
+    source = _source(
+        "dom:relation",
+        "target",
+        targets=(SemanticTarget("target", "button", "Save", relations=relation),),
+    )
+
+    result = WorldFusion().fuse((source,))
+
+    assert result.status is FusionStatus.INCONCLUSIVE
+    assert result.observation is None
+    assert result.reason_code == "unresolved_source_relation"
+
+
+def test_world_observation_rejects_forged_link_allocations() -> None:
+    source = _source(
+        "dom:forged",
+        "unused",
+        targets=(
+            SemanticTarget("first", "button", "First"),
+            SemanticTarget("second", "button", "Second"),
+        ),
+    )
+    world = _fused(source)
+    first, second = world.entity_source_links
+
+    forged_sets = (
+        world.entity_source_links[:-1],
+        (*world.entity_source_links, EntitySourceLink(
+            "phantom:source",
+            "phantom-target",
+            first.canonical_target_id,
+            "capture:shared",
+            EntityAllocation.INDEPENDENT,
+        )),
+        (replace(first, acquisition_root_id="wrong:root"), second),
+        (first, replace(second, canonical_target_id=first.canonical_target_id)),
+        (replace(first, allocation=EntityAllocation.EQUIVALENT), second),
+    )
+
+    for links in forged_sets:
+        with pytest.raises(ValueError):
+            replace(world, entity_source_links=links)
+
+
+def test_world_observation_rejects_decision_inconsistent_links() -> None:
+    dom = _source("dom:decision-forge", "dom-target")
+    visual = _source(
+        "visual:decision-forge",
+        "visual-target",
+        profile=ObservationSourceProfile.visual(),
+        proposals=(_proposal(
+            "proposal:accepted",
+            "visual:decision-forge",
+            "visual-target",
+            "dom:decision-forge",
+            "dom-target",
+        ),),
+    )
+    world = _fused(dom, visual)
+    links = tuple(
+        replace(
+            item,
+            canonical_target_id=f"independent:{index}",
+            allocation=EntityAllocation.INDEPENDENT,
+        )
+        for index, item in enumerate(world.entity_source_links)
+    )
+    forged_targets = tuple(
+        replace(item, target_id=f"independent:{index}")
+        for index, item in enumerate(world.targets * 2)
+    )
+
+    with pytest.raises(ValueError, match="accepted alignment decisions"):
+        replace(world, targets=forged_targets, entity_source_links=links)
+
+
+def test_decision_contract_rejects_duplicate_or_forged_proposal_outcomes() -> None:
+    dom = _source("dom:decision-contract", "dom-target")
+    visual = _source(
+        "visual:decision-contract",
+        "visual-target",
+        profile=ObservationSourceProfile.visual(),
+        proposals=(_proposal(
+            "proposal:accepted",
+            "visual:decision-contract",
+            "visual-target",
+            "dom:decision-contract",
+            "dom-target",
+        ),),
+    )
+    world = _fused(dom, visual)
+    decision = world.entity_alignment_decisions[0]
+
+    with pytest.raises(ValueError, match="exactly one alignment decision"):
+        replace(world, entity_alignment_decisions=(decision, decision))
+    forged = EntityAlignmentDecision(
+        decision.proposal_id,
+        decision.disposition,
+        decision.basis,
+        ("forged:evidence",),
+        decision.confidence,
+        decision.reason_code,
+    )
+    with pytest.raises(ValueError, match="proposal evidence"):
+        replace(world, entity_alignment_decisions=(forged,))
+
+    with pytest.raises(ValueError, match="disposition and reason disagree"):
+        EntityAlignmentDecision(
+            decision.proposal_id,
+            EntityAlignmentDisposition.ACCEPTED,
+            decision.basis,
+            decision.evidence_refs,
+            decision.confidence,
+            "alignment_role_mismatch",
+        )

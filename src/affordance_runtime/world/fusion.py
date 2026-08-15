@@ -12,9 +12,10 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CanonicalObservationMedia,
-    EntityAlignmentBasis,
+    EntityAlignmentDecision,
     EntityAlignmentDisposition,
     EntityAlignmentProposal,
+    EntityAllocation,
     EntitySourceLink,
     ObservationConflict,
     SemanticTarget,
@@ -48,6 +49,7 @@ class WorldFusionResult:
 
 @dataclass(frozen=True)
 class _AlignmentPlan:
+    decisions: tuple[EntityAlignmentDecision, ...]
     links: tuple[EntitySourceLink, ...]
     mapping: dict[SourceEntityEndpoint, str]
     canonical_order: tuple[str, ...]
@@ -195,18 +197,19 @@ class WorldFusion:
             for source in ordered_sources
         )
         world = WorldObservation(
-            world_id,
-            tuple(targets),
-            tuple(facts),
-            tuple(bindings),
-            manifests,
-            tuple(sorted(
+            observation_id=world_id,
+            targets=tuple(targets),
+            facts=tuple(facts),
+            bindings=tuple(bindings),
+            source_manifest=manifests,
+            conflicts=tuple(sorted(
                 {(item.subject_id, item.predicate): item for item in conflicts}.values(),
                 key=lambda item: (item.subject_id, item.predicate),
             )),
-            ordered_sources,
-            plan.links,
-            canonical_media,
+            sources=ordered_sources,
+            entity_alignment_decisions=plan.decisions,
+            entity_source_links=plan.links,
+            media=canonical_media,
         )
         return WorldFusionResult(FusionStatus.FUSED, world, "world_fused")
 
@@ -228,7 +231,25 @@ def _source_domain_error(sources: tuple[SurfaceObservation, ...]) -> str:
             for region in media.grounding_regions
         ):
             return "unresolved_source_media_region"
+        if any(_has_unresolved_relation(target.relations, local_ids) for target in source.targets):
+            return "unresolved_source_relation"
     return ""
+
+
+def _has_unresolved_relation(relations: dict[str, object], local_ids: set[str]) -> bool:
+    for key in ("parent_id", "label_for_id"):
+        if key not in relations:
+            continue
+        value = relations[key]
+        if not isinstance(value, str) or value not in local_ids:
+            return True
+    if "child_ids" in relations:
+        value = relations["child_ids"]
+        if not isinstance(value, tuple | list) or any(
+            not isinstance(item, str) or item not in local_ids for item in value
+        ):
+            return True
+    return False
 
 
 def _proposal_set_error(sources: tuple[SurfaceObservation, ...]) -> str:
@@ -272,40 +293,41 @@ def _alignment_plan(sources: tuple[SurfaceObservation, ...]) -> _AlignmentPlan:
     }
     proposals = tuple(item for source in sources for item in source.alignment_proposals)
     valid: list[EntityAlignmentProposal] = []
-    invalid: list[EntityAlignmentProposal] = []
+    rejected: list[EntityAlignmentDecision] = []
     for proposal in proposals:
         left_source = source_by_id.get(proposal.source.source_observation_id)
         right_source = source_by_id.get(proposal.candidate.source_observation_id)
         left_target = target_by_endpoint.get(proposal.source)
         right_target = target_by_endpoint.get(proposal.candidate)
-        if (
-            left_source is None
-            or right_source is None
-            or left_target is None
-            or right_target is None
-            or proposal.source.source_observation_id == proposal.candidate.source_observation_id
-            or not left_source.acquisition_root_id
+        reason = ""
+        if left_source is None or right_source is None or left_target is None or right_target is None:
+            reason = "alignment_endpoint_unresolved"
+        elif proposal.source.source_observation_id == proposal.candidate.source_observation_id:
+            reason = "alignment_same_source_forbidden"
+        elif (
+            not left_source.acquisition_root_id
             or left_source.acquisition_root_id != right_source.acquisition_root_id
-            or left_target.role != right_target.role
-            or not _coordinate_spaces_compatible(
-                left_source,
-                proposal.source.source_target_id,
-                right_source,
-                proposal.candidate.source_target_id,
-            )
         ):
-            invalid.append(proposal)
+            reason = "alignment_acquisition_root_mismatch"
+        elif left_target.role != right_target.role:
+            reason = "alignment_role_mismatch"
+        elif not _coordinate_spaces_compatible(
+            left_source,
+            proposal.source.source_target_id,
+            right_source,
+            proposal.candidate.source_target_id,
+        ):
+            reason = "alignment_coordinate_space_mismatch"
+        if reason:
+            rejected.append(_decision(
+                proposal,
+                EntityAlignmentDisposition.REJECTED,
+                reason,
+            ))
         else:
             valid.append(proposal)
 
     adjacency: dict[SourceEntityEndpoint, set[SourceEntityEndpoint]] = defaultdict(set)
-    evidence_by_endpoint: dict[SourceEntityEndpoint, set[str]] = defaultdict(set)
-    confidence_by_endpoint: dict[SourceEntityEndpoint, list[float]] = defaultdict(list)
-    for proposal in proposals:
-        for endpoint in (proposal.source, proposal.candidate):
-            if endpoint in target_by_endpoint:
-                evidence_by_endpoint[endpoint].update(proposal.evidence_refs)
-                confidence_by_endpoint[endpoint].append(proposal.confidence)
     for proposal in valid:
         adjacency[proposal.source].add(proposal.candidate)
         adjacency[proposal.candidate].add(proposal.source)
@@ -327,26 +349,49 @@ def _alignment_plan(sources: tuple[SurfaceObservation, ...]) -> _AlignmentPlan:
         components.append(tuple(sorted(component_set)))
 
     conflicted: set[SourceEntityEndpoint] = set()
-    accepted_components: list[tuple[SourceEntityEndpoint, ...]] = []
     for endpoint_component in components:
         source_ids = [item.source_observation_id for item in endpoint_component]
         if len(source_ids) != len(set(source_ids)):
             conflicted.update(endpoint_component)
-        else:
-            accepted_components.append(endpoint_component)
-    rejected = {
-        endpoint
-        for proposal in invalid
-        for endpoint in (proposal.source, proposal.candidate)
-        if endpoint in target_by_endpoint
-    }
 
-    final_components = [
-        (endpoint,)
-        for endpoint in sorted(conflicted)
-    ] + [
-        component for component in accepted_components if not conflicted.intersection(component)
-    ]
+    decisions = [*rejected]
+    for proposal in valid:
+        if proposal.source in conflicted or proposal.candidate in conflicted:
+            decisions.append(_decision(
+                proposal,
+                EntityAlignmentDisposition.CONFLICTED,
+                "alignment_component_conflicted",
+            ))
+        else:
+            decisions.append(_decision(
+                proposal,
+                EntityAlignmentDisposition.ACCEPTED,
+                "explicit_equivalence_accepted",
+            ))
+
+    accepted_adjacency: dict[SourceEntityEndpoint, set[SourceEntityEndpoint]] = defaultdict(set)
+    proposals_by_id = {item.proposal_id: item for item in proposals}
+    for decision in decisions:
+        if decision.disposition is not EntityAlignmentDisposition.ACCEPTED:
+            continue
+        proposal = proposals_by_id[decision.proposal_id]
+        accepted_adjacency[proposal.source].add(proposal.candidate)
+        accepted_adjacency[proposal.candidate].add(proposal.source)
+    final_components: list[tuple[SourceEntityEndpoint, ...]] = []
+    visited = set()
+    for endpoint in sorted(target_by_endpoint):
+        if endpoint in visited:
+            continue
+        pending = [endpoint]
+        component: set[SourceEntityEndpoint] = set()
+        while pending:
+            current = pending.pop()
+            if current in component:
+                continue
+            component.add(current)
+            pending.extend(accepted_adjacency[current])
+        visited.update(component)
+        final_components.append(tuple(sorted(component)))
     source_rank = {
         source.observation_id: (
             {
@@ -410,37 +455,33 @@ def _alignment_plan(sources: tuple[SurfaceObservation, ...]) -> _AlignmentPlan:
         for endpoint in endpoint_component:
             mapping[endpoint] = canonical_id
             source = source_by_id[endpoint.source_observation_id]
-            if endpoint in conflicted:
-                disposition = EntityAlignmentDisposition.CONFLICTED_ALLOCATED
-                reason = "alignment_component_conflicted"
-            elif accepted:
-                disposition = EntityAlignmentDisposition.EQUIVALENCE_ACCEPTED
-                reason = "explicit_equivalence_accepted"
-            elif endpoint in rejected:
-                disposition = EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
-                reason = "alignment_proposal_rejected"
-            else:
-                disposition = EntityAlignmentDisposition.UNMATCHED_ALLOCATED
-                reason = "source_identity_allocated"
             links.append(EntitySourceLink(
                 endpoint.source_observation_id,
                 endpoint.source_target_id,
                 canonical_id,
                 source.acquisition_root_id or source.observation_id,
-                disposition,
-                (
-                    EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE
-                    if disposition is EntityAlignmentDisposition.EQUIVALENCE_ACCEPTED
-                    else EntityAlignmentBasis.SOURCE_IDENTITY_ALLOCATED
-                ),
-                tuple(sorted(evidence_by_endpoint[endpoint])),
-                max(confidence_by_endpoint[endpoint], default=1.0),
-                reason,
+                EntityAllocation.EQUIVALENT if accepted else EntityAllocation.INDEPENDENT,
             ))
     return _AlignmentPlan(
+        tuple(sorted(decisions, key=lambda item: item.proposal_id)),
         tuple(sorted(links, key=lambda item: (item.source_observation_id, item.source_target_id))),
         mapping,
         tuple(canonical_order),
+    )
+
+
+def _decision(
+    proposal: EntityAlignmentProposal,
+    disposition: EntityAlignmentDisposition,
+    reason_code: str,
+) -> EntityAlignmentDecision:
+    return EntityAlignmentDecision(
+        proposal.proposal_id,
+        disposition,
+        proposal.basis,
+        proposal.evidence_refs,
+        proposal.confidence,
+        reason_code,
     )
 
 

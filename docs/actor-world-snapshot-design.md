@@ -1,6 +1,7 @@
 # Actor World Snapshot Convergence Design
 
-> **Status:** single-source structure implemented; multi-source correspondence and dedup convergence open; live not run
+> **Status:** multi-source owner spine implemented; A.1 closure reopened for
+> proposal/link/world-invariant and structure-free fallback repair; live not run
 > **Baseline:** `cf20e78de16ce7263f3b2abc7ae1a5665ba888f5`
 > **Scope:** existing `activate`, `type_text`, `select_option`, and `read`
 
@@ -129,12 +130,13 @@ reconstructs explicit correspondence, collision fallback or modality-specific
 identity rules.
 
 Maps, coverage and manifests use unique `source_observation_id` keys; `surface`
-is only an adapter/capability attribute. Every retained source target receives
-one typed link disposition (accepted equivalence, unmatched allocation,
-rejected-proposal allocation, or conflicted-proposal allocation) with basis,
-evidence and reason. Non-equivalence dispositions retain a distinct canonical
-entity. Predicate acceptance is owned by the immutable fusion policy and is
-source-permutation invariant; input order cannot select role, label or state.
+is only an adapter/capability attribute. Every proposal receives one typed
+alignment decision, and every retained source target receives one final
+`equivalent` or `independent` link. Rejected/conflicted proposal evidence stays
+on its decision and cannot support an accepted link. Independent allocation
+retains a distinct canonical entity. Predicate acceptance is owned by the
+immutable fusion policy and is source-permutation invariant; input order cannot
+select role, label or state.
 
 ## Snapshot contract
 
@@ -317,9 +319,15 @@ Properties and representative witnesses must establish:
 - same-surface multiple source instances keep distinct maps/coverage, and
   permuting source input leaves canonical values/conflicts/Actor output equal;
 - invalid or conflicting alignment proposals retain distinct canonical
-  entities with typed reasons rather than being dropped or guessed equal;
+  entities with typed decisions rather than being dropped or guessed equal;
+- mixed accepted/rejected proposals cannot contaminate accepted-link evidence
+  or confidence, and forged/non-injective/wrong-root link sets cannot construct
+  a `WorldObservation`;
 - A.1: two agreeing sources emit one Actor entity node carrying both source
   refs, without claiming that repeated fact/relation rows are already migrated;
+- A.1: two or more sources without structure produce valid per-document
+  fallback counts rather than comparing each document with a global target
+  count;
 - Step 15: agreeing fact/relation rows become one canonical claim carrying all
   evidence refs, with no projection-only dedup owner left behind;
 - conflicting sources emit one entity with bounded typed alternatives;

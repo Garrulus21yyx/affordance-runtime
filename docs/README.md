@@ -43,6 +43,15 @@ order stay inside the observation-grounded loop.
 DOM, AX, Visual, SVG, WoT, API, Device, and CLI are symmetric surface adapters under
 one world interface. Internal transaction submission is not the product center.
 
+The multi-source world-graph A.1 repair is property-verified and has passed an
+independent fresh-context review; A.1 closure is admitted while StateFact
+cutover, activate-effect authority, new interaction actions, and live benchmark
+evidence remain open. The closure contract and evidence are in the
+[Wave A.1 plan](plans/2026-08-15-world-graph-a1.md). The adaptive observation
+policy A.2 slice is admitted but not started at that boundary; it converges
+existing structure-first selection into one selector and one bounded canonical
+model lens: [Wave A.2 design](plans/2026-08-15-adaptive-observation-policy-a2.md).
+
 ## 2. Current implementation truth and work
 
 - [Implementation Status](implementation-status.md) alone states what code at the reviewed baseline actually does.

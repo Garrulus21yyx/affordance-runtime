@@ -38,15 +38,31 @@ class CoverageState(StrEnum):
 
 
 class EntityAlignmentDisposition(StrEnum):
-    EQUIVALENCE_ACCEPTED = "equivalence_accepted"
-    UNMATCHED_ALLOCATED = "unmatched_allocated"
-    PROPOSAL_REJECTED_ALLOCATED = "proposal_rejected_allocated"
-    CONFLICTED_ALLOCATED = "conflicted_allocated"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    CONFLICTED = "conflicted"
 
 
 class EntityAlignmentBasis(StrEnum):
-    SOURCE_IDENTITY_ALLOCATED = "source_identity_allocated"
     EXPLICIT_PROVIDER_CORRESPONDENCE = "explicit_provider_correspondence"
+
+
+class EntityAllocation(StrEnum):
+    EQUIVALENT = "equivalent"
+    INDEPENDENT = "independent"
+
+
+_ALIGNMENT_DECISION_REASONS = {
+    EntityAlignmentDisposition.ACCEPTED: frozenset({"explicit_equivalence_accepted"}),
+    EntityAlignmentDisposition.REJECTED: frozenset({
+        "alignment_endpoint_unresolved",
+        "alignment_same_source_forbidden",
+        "alignment_acquisition_root_mismatch",
+        "alignment_role_mismatch",
+        "alignment_coordinate_space_mismatch",
+    }),
+    EntityAlignmentDisposition.CONFLICTED: frozenset({"alignment_component_conflicted"}),
+}
 
 
 class ObservationMediaVariant(StrEnum):
@@ -94,16 +110,38 @@ class EntityAlignmentProposal:
 
 
 @dataclass(frozen=True)
-class EntitySourceLink:
-    source_observation_id: str
-    source_target_id: str
-    canonical_target_id: str
-    acquisition_root_id: str
+class EntityAlignmentDecision:
+    proposal_id: str
     disposition: EntityAlignmentDisposition
     basis: EntityAlignmentBasis
     evidence_refs: tuple[str, ...]
     confidence: float
     reason_code: str
+
+    def __post_init__(self) -> None:
+        if not self.proposal_id.strip() or not self.reason_code.strip():
+            raise ValueError("entity alignment decision requires identity and reason")
+        if not isinstance(self.disposition, EntityAlignmentDisposition) or not isinstance(
+            self.basis, EntityAlignmentBasis
+        ):
+            raise TypeError("entity alignment decision disposition and basis must be typed")
+        if self.reason_code not in _ALIGNMENT_DECISION_REASONS[self.disposition]:
+            raise ValueError("entity alignment decision disposition and reason disagree")
+        evidence = tuple(self.evidence_refs)
+        if not evidence or any(not item.strip() for item in evidence):
+            raise ValueError("entity alignment decision requires proposal evidence")
+        if len(set(evidence)) != len(evidence) or not 0 <= self.confidence <= 1:
+            raise ValueError("entity alignment decision evidence or confidence is invalid")
+        object.__setattr__(self, "evidence_refs", evidence)
+
+
+@dataclass(frozen=True)
+class EntitySourceLink:
+    source_observation_id: str
+    source_target_id: str
+    canonical_target_id: str
+    acquisition_root_id: str
+    allocation: EntityAllocation
 
     def __post_init__(self) -> None:
         if not all(
@@ -113,17 +151,11 @@ class EntitySourceLink:
                 self.source_target_id,
                 self.canonical_target_id,
                 self.acquisition_root_id,
-                self.reason_code,
             )
         ):
-            raise ValueError("entity source link requires complete identity and reason")
-        if not isinstance(self.disposition, EntityAlignmentDisposition) or not isinstance(
-            self.basis, EntityAlignmentBasis
-        ):
-            raise TypeError("entity source link disposition and basis must be typed")
-        if not 0 <= self.confidence <= 1:
-            raise ValueError("entity source link confidence is invalid")
-        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+            raise ValueError("entity source link requires complete identity")
+        if not isinstance(self.allocation, EntityAllocation):
+            raise TypeError("entity source link allocation must be typed")
 
 
 @dataclass(frozen=True)
@@ -614,6 +646,7 @@ class WorldObservation:
     source_manifest: tuple[SourceObservationManifest, ...]
     conflicts: tuple[ObservationConflict, ...] = ()
     sources: tuple[SurfaceObservation, ...] = ()
+    entity_alignment_decisions: tuple[EntityAlignmentDecision, ...] = ()
     entity_source_links: tuple[EntitySourceLink, ...] = ()
     media: tuple[CanonicalObservationMedia, ...] = ()
 
@@ -639,6 +672,7 @@ class WorldObservation:
         object.__setattr__(self, "conflicts", tuple(self.conflicts))
         object.__setattr__(self, "sources", tuple(self.sources))
         manifests = tuple(self.source_manifest)
+        decisions = tuple(self.entity_alignment_decisions)
         links = tuple(self.entity_source_links)
         media = tuple(self.media)
         if any(not isinstance(item, SourceObservationManifest) for item in manifests):
@@ -666,6 +700,29 @@ class WorldObservation:
             raise ValueError("world source manifest attributes contradict their source instance")
         if any(not isinstance(item, EntitySourceLink) for item in links):
             raise TypeError("world entity source links must be typed")
+        if any(not isinstance(item, EntityAlignmentDecision) for item in decisions):
+            raise TypeError("world entity alignment decisions must be typed")
+        proposals = tuple(
+            proposal
+            for source in self.sources
+            for proposal in source.alignment_proposals
+        )
+        proposal_ids = [item.proposal_id for item in proposals]
+        decision_ids = [item.proposal_id for item in decisions]
+        if (
+            len(set(proposal_ids)) != len(proposal_ids)
+            or len(set(decision_ids)) != len(decision_ids)
+            or set(decision_ids) != set(proposal_ids)
+        ):
+            raise ValueError("every proposal requires exactly one alignment decision")
+        proposals_by_id = {item.proposal_id: item for item in proposals}
+        if any(
+            decision.basis is not proposals_by_id[decision.proposal_id].basis
+            or decision.evidence_refs != proposals_by_id[decision.proposal_id].evidence_refs
+            or decision.confidence != proposals_by_id[decision.proposal_id].confidence
+            for decision in decisions
+        ):
+            raise ValueError("alignment decision must conserve proposal evidence and confidence")
         endpoints = {(item.source_observation_id, item.source_target_id) for item in links}
         expected_endpoints = {
             (source.observation_id, target.target_id)
@@ -676,6 +733,83 @@ class WorldObservation:
             raise ValueError("every retained source target requires exactly one entity source link")
         if any(item.canonical_target_id not in target_ids for item in links):
             raise ValueError("entity source link must resolve to a canonical current target")
+        if {item.canonical_target_id for item in links} != target_ids:
+            raise ValueError("every canonical target requires entity source link coverage")
+        if len({
+            (item.source_observation_id, item.canonical_target_id)
+            for item in links
+        }) != len(links):
+            raise ValueError("source-to-canonical allocation must be injective within a source")
+        if any(
+            item.acquisition_root_id
+            != manifests_by_id[item.source_observation_id].acquisition_root_id
+            for item in links
+        ):
+            raise ValueError("entity source link acquisition root contradicts its source")
+
+        typed_endpoints = {
+            SourceEntityEndpoint(source_id, target_id)
+            for source_id, target_id in expected_endpoints
+        }
+        accepted_adjacency: dict[SourceEntityEndpoint, set[SourceEntityEndpoint]] = {
+            endpoint: set() for endpoint in typed_endpoints
+        }
+        for decision in decisions:
+            if decision.disposition is not EntityAlignmentDisposition.ACCEPTED:
+                continue
+            proposal = proposals_by_id[decision.proposal_id]
+            if proposal.source not in typed_endpoints or proposal.candidate not in typed_endpoints:
+                raise ValueError("accepted alignment decision endpoints must be retained")
+            accepted_adjacency[proposal.source].add(proposal.candidate)
+            accepted_adjacency[proposal.candidate].add(proposal.source)
+
+        expected_components: set[frozenset[SourceEntityEndpoint]] = set()
+        remaining_endpoints = set(typed_endpoints)
+        while remaining_endpoints:
+            pending = [min(remaining_endpoints)]
+            component: set[SourceEntityEndpoint] = set()
+            while pending:
+                endpoint = pending.pop()
+                if endpoint in component:
+                    continue
+                component.add(endpoint)
+                pending.extend(accepted_adjacency[endpoint])
+            remaining_endpoints.difference_update(component)
+            expected_components.add(frozenset(component))
+
+        actual_by_canonical: dict[str, set[SourceEntityEndpoint]] = {}
+        for link in links:
+            actual_by_canonical.setdefault(link.canonical_target_id, set()).add(
+                SourceEntityEndpoint(link.source_observation_id, link.source_target_id)
+            )
+        actual_components = {frozenset(component) for component in actual_by_canonical.values()}
+        if actual_components != expected_components:
+            raise ValueError("entity source links must match accepted alignment decisions")
+        for expected_component in expected_components:
+            expected_allocation = (
+                EntityAllocation.EQUIVALENT
+                if len(expected_component) > 1
+                else EntityAllocation.INDEPENDENT
+            )
+            component_links = tuple(
+                link
+                for link in links
+                if SourceEntityEndpoint(link.source_observation_id, link.source_target_id)
+                in expected_component
+            )
+            if any(link.allocation is not expected_allocation for link in component_links):
+                raise ValueError("entity link allocation contradicts its accepted component")
+            if len(expected_component) > 1:
+                roots = {
+                    next(
+                        source.acquisition_root_id
+                        for source in self.sources
+                        if source.observation_id == endpoint.source_observation_id
+                    )
+                    for endpoint in expected_component
+                }
+                if "" in roots or len(roots) != 1:
+                    raise ValueError("equivalent component requires one non-empty acquisition root")
         for source in self.sources:
             local_ids = {item.target_id for item in source.targets}
             if any(fact.subject_id not in local_ids for fact in source.facts):
@@ -703,6 +837,7 @@ class WorldObservation:
         ):
             raise ValueError("world media grounding must use canonical identities")
         object.__setattr__(self, "source_manifest", manifests)
+        object.__setattr__(self, "entity_alignment_decisions", decisions)
         object.__setattr__(self, "entity_source_links", links)
         object.__setattr__(self, "media", media)
         _validate_derived_target_states(

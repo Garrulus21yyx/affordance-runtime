@@ -27,6 +27,7 @@ from affordance_runtime.world import (
     EntityAlignmentBasis,
     EntityAlignmentDisposition,
     EntityAlignmentProposal,
+    EntityAllocation,
     ObservationGroundingRegion,
     ObservationMedia,
     ObservationMediaVariant,
@@ -285,8 +286,12 @@ def test_fusion_merges_only_explicit_correspondence_and_conserves_provenance() -
         for item in result.observation.entity_source_links
     } == {("dom:obs", "dom-target"), ("wot:obs", "wot-target")}
     assert all(
-        item.disposition is EntityAlignmentDisposition.EQUIVALENCE_ACCEPTED
+        item.allocation is EntityAllocation.EQUIVALENT
         for item in result.observation.entity_source_links
+    )
+    assert all(
+        item.disposition is EntityAlignmentDisposition.ACCEPTED
+        for item in result.observation.entity_alignment_decisions
     )
 
 
@@ -392,7 +397,8 @@ def test_visual_correspondence_with_different_acquisition_is_rejected_and_retain
         item for item in result.observation.entity_source_links
         if item.source_observation_id == visual.observation_id
     )
-    assert visual_link.disposition is EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
+    assert visual_link.allocation is EntityAllocation.INDEPENDENT
+    assert result.observation.entity_alignment_decisions[0].disposition is EntityAlignmentDisposition.REJECTED
 
 
 def test_visual_correspondence_with_missing_endpoint_is_rejected_and_retained() -> None:
@@ -412,7 +418,8 @@ def test_visual_correspondence_with_missing_endpoint_is_rejected_and_retained() 
     assert next(
         item for item in result.observation.entity_source_links
         if item.source_observation_id == visual.observation_id
-    ).disposition is EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
+    ).allocation is EntityAllocation.INDEPENDENT
+    assert result.observation.entity_alignment_decisions[0].disposition is EntityAlignmentDisposition.REJECTED
 
 
 def test_corresponded_visual_entity_cannot_retain_coordinate_binding() -> None:

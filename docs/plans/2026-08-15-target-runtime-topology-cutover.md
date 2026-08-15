@@ -3,7 +3,12 @@
 Date: 2026-08-15
 
 Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
-T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_ADMITTED_NOT_STARTED`
+T5_COMPLETE / WAVE_A_ADMITTED / DOWNSTREAM_WORLD_GRAPH_STATUS_OWNED_BY_CURRENT_PLAN`
+
+This plan attests topology prerequisites only. A.1 was subsequently
+implemented and its semantic closure reopened; its current status is owned by
+[Current Implementation Plan](../current-implementation-plan.md), not by this
+completed topology record.
 
 ## Goal
 

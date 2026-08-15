@@ -23,6 +23,8 @@ from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDe
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     SemanticTarget,
+    StateFact,
+    WorldFusion,
 )
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _world
 from tests.support.agent.static_environment import StaticEnvironment
@@ -198,7 +200,23 @@ def _two_action_world(identity: str, enabled: bool):
         source_target_id=second_target.target_id,
         target_fingerprint=f"fingerprint:{identity}:other",
     )
-    return replace(base, targets=(*base.targets, second_target), bindings=(*base.bindings, second_binding))
+    source = base.sources[0]
+    second_fact = StateFact(
+        f"fact:{identity}:other:enabled",
+        second_target.target_id,
+        "enabled",
+        enabled,
+        identity,
+    )
+    source = replace(
+        source,
+        targets=(*source.targets, second_target),
+        facts=(*source.facts, second_fact),
+        bindings=(*source.bindings, second_binding),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _paging_task() -> TaskGoal:

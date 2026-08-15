@@ -12,7 +12,7 @@ from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import (
-    EntityAlignmentDisposition,
+    EntityAllocation,
     SourceEntityEndpoint,
     WorldObservation,
 )
@@ -355,12 +355,6 @@ def project_actor_world_snapshot(
             bool(parent_by_id.get(target_id) and parent_by_id[target_id] not in visible),
         )
 
-    roots_by_source: dict[str, list[ActorWorldNodeView]] = defaultdict(list)
-    for target_id in visible:
-        root_parent_id = parent_by_id.get(target_id)
-        if root_parent_id in visible:
-            continue
-        roots_by_source[primary_source.get(target_id, fallback_source)].append(node(target_id))
     summaries = tuple(world.sources)
     sources = tuple(
         ActorWorldSourceView(
@@ -429,18 +423,32 @@ def project_actor_world_snapshot(
             ))
             remaining_nodes -= len(source_ids)
     if not documents:
-        documents = tuple(
-            ActorWorldDocumentView(
+        fallback_documents: list[ActorWorldDocumentView] = []
+        remaining_nodes = max_structure_nodes
+        for source in sources:
+            all_source_ids = tuple(
+                target_id
+                for target_id in visible
+                if primary_source.get(target_id, fallback_source) == source.source_ref
+            )
+            if not all_source_ids:
+                continue
+            retained_ids = frozenset(all_source_ids[:remaining_nodes])
+            roots = tuple(
+                node(target_id, allowed=retained_ids)
+                for target_id in visible
+                if target_id in retained_ids and parent_by_id.get(target_id) not in retained_ids
+            )
+            fallback_documents.append(ActorWorldDocumentView(
                 source.source_ref,
                 source.modality,
-                tuple(roots_by_source[source.source_ref]),
-                len(visible),
-                world.targets.total_count,
-                world.targets.truncated,
-            )
-            for source in sources
-            if roots_by_source.get(source.source_ref)
-        )
+                roots,
+                len(retained_ids),
+                len(all_source_ids),
+                len(retained_ids) < len(all_source_ids),
+            ))
+            remaining_nodes -= len(retained_ids)
+        documents = tuple(fallback_documents)
     if not documents and visible:
         documents = (ActorWorldDocumentView(
             fallback_source,
@@ -609,8 +617,8 @@ def _structure_documents(
         SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.canonical_target_id
         for item in observation.entity_source_links
     }
-    disposition_by_endpoint = {
-        SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.disposition
+    allocation_by_endpoint = {
+        SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.allocation
         for item in observation.entity_source_links
     }
     next_context_ref = 1
@@ -653,14 +661,10 @@ def _structure_documents(
                 )
                 or (
                     item.semantic_target_id
-                    and disposition_by_endpoint.get(
+                    and allocation_by_endpoint.get(
                         SourceEntityEndpoint(source.observation_id, item.semantic_target_id)
                     )
-                    in {
-                        EntityAlignmentDisposition.UNMATCHED_ALLOCATED,
-                        EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED,
-                        EntityAlignmentDisposition.CONFLICTED_ALLOCATED,
-                    }
+                    is EntityAllocation.INDEPENDENT
                     and canonical_for_structure.get(item.structure_id) not in emitted_entities
                 )
             }

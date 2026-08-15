@@ -68,7 +68,9 @@ ActionSpace, or benchmark-specific semantic projection was introduced.
 Status: `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE /
 WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
 VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
-WORLD_GRAPH_A.1_COMPLETE / ACTIVATE_EFFECT_AUTHORITY_OPEN /
+WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
+A.2_ADMITTED_NOT_STARTED / ACTIVATE_EFFECT_AUTHORITY_OPEN /
 NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`
 
 The implemented interaction-owner portion routes existing `activate`,
@@ -125,7 +127,9 @@ Evidence and the remaining producer/consumer inventory are recorded in
 
 Status:
 `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
-T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_COMPLETE`
+T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
+A.2_ADMITTED_NOT_STARTED`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
@@ -190,10 +194,12 @@ remaining benchmark-only tail is isolated, has an explicit final disposition
 the deleted product runtime. Supported runner/reporting invariants may remain
 as `KEEP_MOVE`; isolation, not deletion, is the A.1 boundary.
 
-## Implemented closure slice — multi-source observed-world graph
+## Implemented repair slice — multi-source observed-world graph
 
 Status:
-`WORLD_GRAPH_A.1_COMPLETE / STATEFACT_CUTOVER_PARTIAL /
+`WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
+A.2_ADMITTED_NOT_STARTED / STATEFACT_CUTOVER_PARTIAL /
 ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
 LIVE_NOT_RUN`
 
@@ -204,7 +210,7 @@ alignment, `WorldObservation` owns accepted current truth, and
 for a graph database, a second world model, or new DOM/AX/OCR/automation
 engines.
 
-The A.1 closure now:
+The implemented and locally property-verified A.1 owner spine:
 
 1. migrate fusion maps, coverage and source manifests from `surface` keys to
    unique source-observation-instance keys so multiple lenses from one adapter
@@ -212,10 +218,10 @@ The A.1 closure now:
 2. materialize the fusion-accepted source-to-canonical map once as
    `WorldObservation.entity_source_links` and use it for target, fact, binding,
    destination, media-region and structure semantic links;
-3. give every source target a typed accepted-equivalence, unmatched-allocation,
-   rejected-allocation or conflicted-allocation result with basis/evidence and
-   retain non-equivalent targets independently; migrate the current trusted
-   `EntityCorrespondence` into a validated proposal contract;
+3. separates proposal outcome from final source allocation: every proposal has
+   one immutable `EntityAlignmentDecision`; only accepted decisions form
+   equivalence components; every retained endpoint has one allocation-only
+   `EntitySourceLink`;
 4. add the fusion-owned predicate/source-profile policy so accepted values and
    conflicts are invariant to source input order and disputed values do not
    leak through legacy target state;
@@ -249,13 +255,53 @@ immediate correspondence fix does not wait for that larger migration, but it
 must use the same target graph contract and must not introduce a compatibility
 map in the Actor renderer.
 
-Closure verification is recorded in
+The original offline verification is preserved but explicitly reopened in
 [Wave A.1 observed-world graph closure](evidence/2026-08-15-world-graph-a1-closure.md).
-The completed owner-sliced plan is
+The active repair contract is in
 [Wave A.1 source-instance owner spine](plans/2026-08-15-world-graph-a1.md).
-The full offline suite passes with `1621 passed, 27 skipped`; Ruff, repository
-mypy, architecture redlines, `git diff --check`, and clean-wheel public export
-checks pass. No live benchmark was run.
+The repair gate passes with focused `47 passed`, full `1632 passed, 27 skipped`,
+Ruff, repository mypy over 335 source files, architecture redlines and
+`git diff --check`. The repair deletes link-level proposal disposition,
+evidence, confidence and rejection reason; `WorldObservation` now validates
+accepted-decision/link component agreement, exact endpoint and canonical
+coverage, within-source injectivity and acquisition roots. Supported unresolved
+relations return typed `INCONCLUSIVE / unresolved_source_relation`, and the
+multi-source structure-free Actor fallback reports per-document counts. No
+live benchmark was run.
+
+The implementation and local property gate are complete, and the independent
+fresh-context review passed. A.1 closure is admitted without widening its
+scope. The repair adds no new interaction, StateFact migration, general
+relation vocabulary, SemanticDelta, or benchmark branch. Wave A.2 is admitted
+but not started at this commit boundary.
+
+Decision truth remains single-owned rather than re-adjudicated at construction:
+`WorldFusion` is the only production producer of `EntityAlignmentDecision` and
+the only production constructor of `WorldObservation`. The latter validates
+decision/link structural conservation and disposition/reason coherence only.
+Architecture tests forbid any second production constructor or decision
+producer.
+
+## Admitted next slice — adaptive observation policy A.2
+
+Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
+A.2_ADMITTED_NOT_STARTED / LIVE_NOT_RUN`
+
+A.2 keeps the current `ObservationOrchestrator` as the sole source-selection
+owner. It separates physical multi-channel capture from semantic provider
+activation, fuses only selected normalized observations, and sends the Actor
+one bounded canonical lens. Ordinary structurally complete turns select one
+structural/authoritative source; one targeted complementary visual source is
+admitted only for a typed residual coverage, ambiguity, visual-property, or
+verification need.
+
+The implementation will converge existing request/offer/plan,
+`VisionEvidenceNeed`, BrowserGym and model-image-gating code. It must delete the
+generic observe-all compatibility fallback, BrowserGym-local plan mutation and
+always-visible redundant observation tools in the same slice; it must not add
+a parallel selector or source-specific task rules. The full contract and SOTA
+reuse boundary are in the
+[Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
 
 ## Active target-default convergence queue
 
@@ -395,7 +441,7 @@ execute-returned post acquisition; closed Runtime admission against
 environment-owned capabilities; and added BrowserGym owner-thread active
 capture without reusing old verifier evidence.
 
-The A.1 closure makes the public package facades lazy without changing their
+The M4.5-A.1 acquisition closure makes the public package facades lazy without changing their
 API, validates `INDEPENDENT_CAPTURE` origin, preserves the final fallback
 status/reason with post-action failure semantics, and counts acquisitions that
 already occurred before ActionResult lineage rejection. Real pinned active

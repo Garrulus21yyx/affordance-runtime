@@ -220,3 +220,37 @@ def test_primary_lens_bound_preserves_ancestor_closure_and_native_child_order() 
     assert len(document.roots) == 1
     assert document.roots[0].label == "Document"
     assert tuple(item.label for item in document.roots[0].children) == ("Two",)
+
+
+def test_multiple_structure_free_sources_have_truthful_per_document_counts() -> None:
+    first = SurfaceObservation(
+        "dom:no-structure",
+        "browser",
+        "revision:dom",
+        ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("dom-target", "button", "DOM"),),
+        acquisition_root_id="capture:shared",
+    )
+    second = SurfaceObservation(
+        "visual:no-structure",
+        "browser",
+        "revision:visual",
+        ObservationSourceProfile.visual(),
+        targets=(SemanticTarget("visual-target", "button", "Visual"),),
+        acquisition_root_id="capture:shared",
+    )
+
+    _, snapshot = _snapshot((second, first))
+
+    assert len(snapshot.documents) == 2
+    assert tuple(
+        (item.source_ref, item.retained_node_count, item.total_node_count, item.truncated)
+        for item in snapshot.documents
+    ) == (("S1", 1, 1, False), ("S2", 1, 1, False))
+    assert len({node.ref for node in _nodes(snapshot) if node.ref.startswith("E")}) == 2
+
+    _, bounded = _snapshot((first, second), bound=1)
+    assert tuple(
+        (item.source_ref, item.retained_node_count, item.total_node_count, item.truncated)
+        for item in bounded.documents
+    ) == (("S1", 1, 1, False), ("S2", 0, 1, True))

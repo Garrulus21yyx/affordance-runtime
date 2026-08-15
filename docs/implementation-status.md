@@ -91,41 +91,37 @@ world contains the selected visual source. Grounded provider schema failures
 retain bounded redacted validation paths/codes and repair outcome in telemetry;
 raw provider payloads remain absent.
 
-Multi-source observed-world convergence remains open. `WorldObservation`
-already retains source envelopes, BrowserGym retains source-local AX structure,
-and `ActorWorldSnapshot` is non-flat; those owners are not being replaced.
-However, `_source_memberships()` applies source correspondence while
-`_structure_documents()` still resolves a structure node's source-local
-`semantic_target_id` directly against canonical visible IDs. A corresponded
-multi-source node can therefore lose its canonical E-ref/state/facts. The
-accepted `_canonical_maps()` output is not retained on `WorldObservation`, so
-downstream helpers can reconstruct only part of it; fused source media is also
-canonicalized while the rest of its source envelope remains local. The current
-`EntityCorrespondence` is trusted input rather than a proposal with a typed
-accept/reject/conflict decision. The current
-fusion maps and coverage are keyed by `surface`, so multiple source instances
-from one adapter are not yet a closed case. Target/state merging still retains
-the first input claim while recording a conflict, and therefore does not meet
-the designed source-permutation/predicate-authority invariant. The current
-per-source document renderer does not yet prove one Actor entity node or the
-closed primary/novel-lens policy under agreeing DOM/AX/visual sources. Accurate
-status is
-`SOURCE_ENVELOPE_RETAINED / SINGLE_SOURCE_STRUCTURE_IMPLEMENTED /
-MULTISOURCE_CORRESPONDENCE_AND_DEDUP_OPEN`.
+The multi-source observed-world closure repair is implemented and locally
+property-verified. `WorldObservation` retains source envelopes, the complete
+proposal-level `entity_alignment_decisions`, and the one final
+`entity_source_links` allocation map; source manifests are instance-keyed and
+the Actor primary/novel lens does not reconstruct correspondence. Fusion now
+decides every proposal before forming accepted components, so rejected or
+conflicted evidence/confidence cannot enter accepted identity. Accurate status
+is `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
+A.2_ADMITTED_NOT_STARTED / STATEFACT_CUTOVER_PARTIAL /
+ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
+LIVE_NOT_RUN`.
 
-The accepted design keeps the existing
+The repair keeps the existing
 `SurfaceObservation -> WorldFusion -> WorldObservation -> ActorWorldSnapshot`
-chain and requires one correspondence rewrite, evidence-preserving canonical
-coalescing, a typed predicate/source-profile policy, typed alignment outcomes,
-source-instance keys, source-local structural lenses, and one bounded
-Actor node per canonical entity. The accepted map will be materialized once as
-`WorldObservation.entity_source_links`; downstream reconstruction and the
-parallel fusion-result provenance authority will be removed. BrowserGym/
-Playwright and future established
-platform accessibility/OCR providers remain the source engines; no parallel
-fusion pipeline, parser, detector, graph store or automation framework is
-authorized. Current `1589 passed, 27 skipped` evidence does not cover these new
-multi-source properties.
+chain. Fusion decides proposals; fusion contracts represent exactly one result
+per proposal; `WorldObservation` validates accepted current truth; the Actor
+projector owns its fallback accounting; and source/fusion normalization returns
+typed unresolved-relation outcomes. BrowserGym/Playwright and established
+platform accessibility/OCR providers remain source engines; no parallel fusion
+pipeline, parser, detector, graph store or automation framework is authorized.
+The focused repair gate passes at 47 tests and the full repository passes at
+`1632 passed, 27 skipped`; Ruff, repository mypy over 335 files and
+`git diff --check` pass. An independent fresh-context review subsequently
+passed, so A.1 closure is admitted without widening the repair scope.
+
+`WorldFusion` is the sole production `EntityAlignmentDecision` producer and
+`WorldObservation` constructor. The constructor enforces the closed
+disposition/reason shape and structural decision/component/link conservation;
+it intentionally does not duplicate semantic adjudication. An architecture
+redline forbids any second production producer or constructor.
 
 A.1 closes canonical identity and Actor entity-node duplication. It does not
 claim that agreeing `StateFact`/future `RelationFact` rows are coalesced; that
@@ -218,9 +214,10 @@ The target path now has:
 | canonical workflow TaskPlan / StepSpec contracts | `DELETED_WITH_LEGACY_RUNTIME_T3`; no AgentLoop ingress or compatibility projection remains |
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
-| Wave-A InteractionCapability owner spine | `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE / WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED / VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / WORLD_GRAPH_A.1_COMPLETE / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; old vocabulary/canonicalizer/embedded-normalizer owners deleted; five not-yet-produced actions remain semantic-only |
-| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_COMPLETE`; the sole `TargetRuntime -> AgentLoop -> AgentRunSession` lifecycle and owner import direction remain verified; `affordance_runtime.testing` is deleted from source and a clean wheel, benchmark and test fixtures have separate owners, four root helpers live below `tests/support/*`, and 229 executable root tests moved below `unit/integration/conformance/benchmarks` plus owner packages; architecture redlines prevent root-test, implicit-import, support-dependency and wheel-package regressions |
-| Multi-source observed-world graph | `WORLD_GRAPH_A.1_COMPLETE / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; `WorldFusion` solely accepts source-local alignment proposals and materializes one `entity_source_links` mapping, source manifests/currentness are source-instance keyed, canonical media preserves capture/variant/coordinate lineage, and the Actor primary/novel lens consumes accepted links without correspondence reconstruction; offline closure evidence: [2026-08-15](evidence/2026-08-15-world-graph-a1-closure.md) |
+| Wave-A InteractionCapability owner spine | `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE / WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED / VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED / A.2_ADMITTED_NOT_STARTED / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; interaction owners and world-graph A.1 are admitted; old vocabulary/canonicalizer/embedded-normalizer owners remain deleted; five not-yet-produced actions remain semantic-only |
+| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED / A.2_ADMITTED_NOT_STARTED`; the physical `TargetRuntime -> AgentLoop -> AgentRunSession` topology and world-graph repair passed independent review; `affordance_runtime.testing` is deleted from source and a clean wheel, benchmark and test fixtures have separate owners, four root helpers live below `tests/support/*`, and 229 executable root tests moved below `unit/integration/conformance/benchmarks` plus owner packages; architecture redlines prevent root-test, implicit-import, support-dependency and wheel-package regressions |
+| Multi-source observed-world graph | `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED / A.2_ADMITTED_NOT_STARTED / STATEFACT_CUTOVER_PARTIAL / ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`; one decision per proposal, accepted-only components, allocation-only links, accepted-world construction invariants, typed supported-relation failure and per-document structure-free Actor counts passed independent review: [2026-08-15](evidence/2026-08-15-world-graph-a1-closure.md) |
+| Adaptive observation policy A.2 | `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED / A.2_ADMITTED_NOT_STARTED / LIVE_NOT_RUN`; the current orchestrator/request/offer/at-most-two-source and structure-first pieces will be converged into one selector; observe-all compatibility, BrowserGym plan mutation and redundant observation-tool exposure remain current debt; design: [2026-08-15](plans/2026-08-15-adaptive-observation-policy-a2.md) |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
@@ -602,10 +599,12 @@ with `browsergym-miniwob==0.14.3` and `playwright==1.44.0` passes all eleven
 pinned BrowserGym adapter, local-progress, dependency-inventory and real
 active-capture tests
 against the reviewed MiniWoB source at commit `7fd85d71a4b60325c6585396ec4f48377d049838`.
-The A.1 closure additionally rejects non-independent capture origins, reports
+The A.1 implementation additionally rejects non-independent capture origins, reports
 the final fallback attempt's typed cause and exact attempt count, counts an
 already-performed post acquisition on ActionResult lineage failure, and removes
-package-facade import-order dependence without moving projection authority.
+package-facade import-order dependence without moving projection authority;
+these properties remain valid but do not restore the reopened world-graph
+closure.
 M4.5-B is integrated on the non-default path but reopened for architecture-first
 contract convergence. The previous B.1/B.2/B.3 completion claims and their test
 counts are not current closure evidence. No current reviewed implementation SHA

@@ -12,8 +12,11 @@
 The Wave-A closure foundation now includes restored generic WoT native-value
 property writes, one bounded same-model tool-intent re-emission, corrected
 normalization telemetry, and a sealed action-specific verification-contract
-digest chain. StateFact producer cutover and observed-world graph A.1 remain
-separate open slices; no scroll/press/focus/drag/hover binding is admitted.
+digest chain. Observed-world graph A.1 is repaired, property-verified, and
+admitted after independent fresh-context review. Adaptive observation policy
+A.2 is admitted but not started at that boundary. StateFact producer cutover
+remains a separate open slice; no scroll/press/focus/drag/hover binding is
+admitted and no live benchmark was run.
 
 ## 1. Decision
 
@@ -1640,15 +1643,28 @@ class EntityAlignmentProposal:
 
 
 class EntityAlignmentDisposition(StrEnum):
-    EQUIVALENCE_ACCEPTED = "equivalence_accepted"
-    UNMATCHED_ALLOCATED = "unmatched_allocated"
-    PROPOSAL_REJECTED_ALLOCATED = "proposal_rejected_allocated"
-    CONFLICTED_ALLOCATED = "conflicted_allocated"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    CONFLICTED = "conflicted"
 
 
 class EntityAlignmentBasis(StrEnum):
-    SOURCE_IDENTITY_ALLOCATED = "source_identity_allocated"
     EXPLICIT_PROVIDER_CORRESPONDENCE = "explicit_provider_correspondence"
+
+
+@dataclass(frozen=True)
+class EntityAlignmentDecision:
+    proposal_id: str
+    disposition: EntityAlignmentDisposition
+    basis: EntityAlignmentBasis
+    evidence_refs: tuple[str, ...]
+    confidence: float
+    reason_code: str
+
+
+class EntityAllocation(StrEnum):
+    EQUIVALENT = "equivalent"
+    INDEPENDENT = "independent"
 
 
 @dataclass(frozen=True)
@@ -1657,11 +1673,7 @@ class EntitySourceLink:
     source_target_id: str
     canonical_target_id: str
     acquisition_root_id: str
-    disposition: EntityAlignmentDisposition
-    basis: EntityAlignmentBasis
-    evidence_refs: tuple[str, ...]
-    confidence: float
-    reason_code: str
+    allocation: EntityAllocation
 ```
 
 Proposals name two source-local endpoints because a canonical endpoint does not
@@ -1672,40 +1684,43 @@ endpoints must exist in the selected source set. This replaces the current
 input shape that lets an adapter write a value named `canonical_target_id`
 before canonical acceptance.
 
-Fusion validates all proposals before forming equivalence components. A valid
+Fusion validates every proposal and emits exactly one
+`EntityAlignmentDecision` before forming equivalence components. A valid
 component may contain at most one endpoint from each source observation and
-must satisfy acquisition-root, role/profile and evidence requirements. One
-valid component yields `EQUIVALENCE_ACCEPTED` links for its endpoints. No
-proposal yields independent `UNMATCHED_ALLOCATED`; an invalid-only proposal set
-yields `PROPOSAL_REJECTED_ALLOCATED`; multiple individually valid candidates
-that cannot form one legal component yield `CONFLICTED_ALLOCATED`. Rejected or
-conflicted endpoints are isolated rather than partially merged. Canonical IDs
-are allocated from the sorted complete endpoint component, so proposal/source
-input order cannot change them.
+must satisfy acquisition-root, role/profile and evidence requirements. Only
+`ACCEPTED` decisions contribute edges, evidence or confidence to an
+equivalence component. `REJECTED` and `CONFLICTED` decisions remain auditable
+proposal outcomes but never support a final equivalence link. Endpoints not in
+an accepted component are allocated independently. Canonical IDs are allocated
+from the sorted complete endpoint component, so proposal/source input order
+cannot change them.
 
 There is exactly one link for every retained source target. The
 `(source_observation_id, source_target_id)` endpoint is unique and resolves to
 exactly one current canonical entity. Within one source observation, at most
 one local target may link to a given canonical entity; multiple different
 source observations may contribute to the same canonical entity. This
-collection covers accepted explicit provider correspondences, ordinary
-unmatched identity allocation, rejected/conflicting proposal isolation, and
-collision-renamed IDs; consumers never recompute any of those cases.
-Adapter-supplied `EntityCorrespondence` values are fusion proposals, not the
-accepted map.
+collection records only final `EQUIVALENT` or `INDEPENDENT` allocation;
+consumers never recompute proposal outcomes, accepted components, unmatched
+allocation, rejection/conflict isolation, or collision-renamed IDs.
+Adapter-supplied correspondence values are fusion proposals, not the accepted
+map.
 
-Every proposal receives one typed disposition. `EQUIVALENCE_ACCEPTED` requires
+Every proposal receives one typed decision. `ACCEPTED` requires
 both endpoints to exist, compatible source profiles and roles, the same
 non-empty acquisition root, explicit evidence refs, a supported basis, valid
-confidence and the scoped one-to-one rule above. Missing proposals become
-`UNMATCHED_ALLOCATED`. Invalid proposals become
-`PROPOSAL_REJECTED_ALLOCATED`; mutually incompatible valid proposals become
-`CONFLICTED_ALLOCATED`. All three non-equivalence outcomes retain the source
-target as a distinct canonical entity and carry the rejection/conflict reason;
-they never drop it or guess an equivalence. Unknown bases fail typed before
-fusion.
+confidence and the scoped one-to-one rule above. Invalid proposals become
+`REJECTED`; mutually incompatible valid proposals become `CONFLICTED`.
+Endpoints without an accepted decision are retained by `INDEPENDENT` links;
+they are never dropped or guessed equal. Unknown bases fail typed before
+fusion. Rejected/conflicted evidence belongs only to its decision and cannot be
+unioned into accepted-component evidence. `EntitySourceLink` does not copy
+proposal evidence or confidence; accepted lineage is derived through the
+component's accepted decision IDs when diagnostics require it.
 
-`WorldObservation.entity_source_links` is the accepted current mapping and the
+`WorldObservation.entity_alignment_decisions` is the complete proposal outcome
+set. `WorldObservation.entity_source_links` is the accepted current allocation
+mapping and the
 sole input for source membership, structure projection and media alignment.
 The current `WorldFusionResult.entity_provenance` sidecar must either move into
 that field or become a pure derived view of it; it cannot remain a parallel
@@ -1727,6 +1742,23 @@ migrates to a typed source-instance manifest containing
 `source_observation_id`, surface, modality, profile, acquisition root and
 coverage. Adapter-class summaries, when useful, are derived aggregations and
 cannot replace per-instance coverage.
+
+Construction of `WorldObservation` validates the accepted-world boundary, not
+merely dataclass shape. Link endpoints exactly cover all retained source
+targets; links name only existing canonical targets; every canonical target has
+link coverage; endpoint allocation is functional and within-source injective;
+equivalent groups have one non-empty acquisition root; and equivalent versus
+independent allocation is consistent with the accepted decision components.
+Forged, phantom, incomplete, wrong-root, non-injective, or decision-inconsistent
+link collections fail construction.
+
+The A.1 relation boundary is deliberately narrow. Existing identity-bearing
+`parent_id`, `child_ids`, and `label_for_id` values must reference declared
+source-local endpoints and are rewritten through `entity_source_links`.
+Unknown endpoints return typed `FusionStatus.INCONCLUSIVE` with reason
+`unresolved_source_relation`; they do not escape as a bare exception. Step 15,
+not A.1 repair, introduces the general typed/provenance-bearing relation
+vocabulary.
 
 #### 9.0.2 Fusion algebra
 
@@ -2443,14 +2475,20 @@ deleted. Offered actions, dispatch and evaluator results do not yet change.
 
 ### 14.2.1 Wave A.1 — close the observed-world graph owner spine
 
-This is a separate open architecture slice, not a retroactive claim that the
-implemented interaction-registry slice already met multi-source exit criteria:
+This is a separate architecture slice, not a retroactive claim that the
+implemented interaction-registry slice already met multi-source exit criteria.
+The owner spine is implemented, but closure is reopened because the original
+gate did not prove proposal-level decision conservation, accepted-link lineage,
+accepted-world construction invariants, typed unresolved-relation failure, or
+the structure-free multi-source Actor fallback:
 
 - key every fusion map, coverage record and source manifest by source instance,
   not adapter/surface name;
-- materialize the one fusion-accepted source-to-canonical identity map as
-  `WorldObservation.entity_source_links`, including typed disposition, basis,
-  evidence and rejection/conflict reason for every retained source target;
+- materialize exactly one decision per proposal and the one final
+  source-to-canonical allocation map as
+  `WorldObservation.entity_alignment_decisions` and
+  `WorldObservation.entity_source_links`; proposal rejection/conflict evidence
+  never becomes accepted-link evidence;
 - replace the current trusted `EntityCorrespondence` input with a typed
   proposal carrying basis/evidence/confidence; validate acquisition lineage,
   endpoint existence, role/profile compatibility and scoped one-to-one rules;
@@ -2470,13 +2508,17 @@ implemented interaction-registry slice already met multi-source exit criteria:
 - preserve source-local structure/media in Runtime with truthful per-instance
   coverage, while emitting each canonical entity once in the bounded snapshot.
 
-Exit: source permutation does not change the canonical graph, conflicts or
-Actor payload; same-surface multiple source instances do not overwrite maps or
-coverage; a corresponded structure node retains the canonical E-ref/state/facts
-of its entity; agreeing sources produce one Actor entity node with aggregated
-source refs;
-and rejected/conflicted alignment proposals retain independent entities with a
-typed reason. No binder/provider reconstructs identity or lens selection.
+Exit: source/proposal permutation does not change decisions, accepted links,
+the canonical graph, conflicts or Actor payload; mixed valid/invalid proposals
+cannot contaminate accepted evidence or confidence; same-surface multiple
+source instances do not overwrite maps or coverage; forged or inconsistent
+link sets cannot construct accepted world truth; unresolved supported relation
+endpoints fail typed; structure-free multi-source input projects correctly; a
+corresponded structure node retains the canonical E-ref/state/facts of its
+entity; agreeing sources produce one Actor entity node with aggregated source
+refs; and rejected/conflicted alignment proposals retain independent entities
+with their typed decision. No binder/provider reconstructs identity or lens
+selection.
 
 A.1 does not claim canonical fact/relation evidence coalescing. Until Step 15,
 the one entity node may still contain the existing repeated agreeing fact rows;
@@ -2484,6 +2526,23 @@ it must not invent a projection-only canonical claim to hide that migration.
 Step 15 replaces those rows with one canonical fact/relation claim carrying
 aggregated evidence and activates the corresponding no-duplicate-claim exit
 properties.
+
+### 14.2.2 Wave A.2 — select sources before fusion
+
+A.2 begins only after the A.1 repair gate. It retains the current
+`ObservationOrchestrator` as the one selection owner and converges the existing
+request/offer/structure-first/vision-escalation code. Physical multi-channel
+capture, semantic source activation, selected-set fusion and Actor delivery are
+separate layers. Normal structurally sufficient turns activate one semantic
+source; at most one targeted complementary source is selected for a typed
+residual coverage, ambiguity, visual-property or verification need.
+
+The slice deletes observe-all compatibility and adapter-local plan mutation;
+`WorldFusion` never selects a source, adapters never add one after selection,
+and the Actor never receives parallel raw DOM/AX/SoM/visual dumps. The complete
+selection matrix, model-lens contract, upstream reuse boundary and exit
+properties are in the
+[adaptive observation policy design](plans/2026-08-15-adaptive-observation-policy-a2.md).
 
 ### 14.3 Wave B — migrate existing actions and correct effect authority
 
@@ -2657,11 +2716,16 @@ the whole onboarding chain.
 
 ### 15.3 State, relation, and delta properties
 
+- every alignment proposal has exactly one typed decision, and only accepted
+  decisions contribute equivalence edges, evidence or confidence;
 - every source-local identity-bearing reference is rewritten by the same
   accepted correspondence map or is explicitly retained as unmatched;
 - every retained source target has exactly one `EntitySourceLink`; source
   order, explicit correspondence and canonical-ID collision cases produce the
   same links for every consumer;
+- link endpoints exactly cover retained source targets; canonical coverage,
+  within-source injectivity, acquisition-root consistency and accepted-decision
+  lineage are construction invariants of `WorldObservation`;
 - `SurfaceObservation` identities remain source-local and
   `WorldObservation` top-level identities remain canonical; mixed-domain source
   envelopes are rejected;
