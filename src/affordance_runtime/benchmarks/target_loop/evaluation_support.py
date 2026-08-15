@@ -13,12 +13,12 @@ from affordance_runtime.actions import (
     ActionBinding,
     ActionRisk,
 )
+from affordance_runtime.benchmarks.support import StaticEnvironment
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 from affordance_runtime.task import EvaluationSpec, RiskProfile, TaskGoal
-from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     CoverageState,
     ObservationSourceProfile,

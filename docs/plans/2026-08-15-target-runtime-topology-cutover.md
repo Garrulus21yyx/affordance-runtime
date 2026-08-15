@@ -2,8 +2,8 @@
 
 Date: 2026-08-15
 
-Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE /
-WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
+Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
+T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_ADMITTED_NOT_STARTED`
 
 ## Goal
 
@@ -360,6 +360,14 @@ the product composition/start boundary; context projections live under
 `agent/context`; the surface port is world-owned; and DOM snapshot projection
 is surface-owned. Closure evidence is
 [T5 topology closure](../evidence/2026-08-15-target-runtime-topology-t5-closure.md).
+
+The reopened test-ownership gap is also closed. The shipped benchmark package
+owns its deterministic environment fixture independently; tests own their
+fixture and failure catalogue below `tests/support`; the former production
+`affordance_runtime.testing` package is absent from source and a clean wheel.
+All 229 executable root test modules moved below the declared test kinds and
+owner subpackages. The complete disposition is recorded in the
+[test-topology closure inventory](../evidence/2026-08-15-target-runtime-test-topology-inventory.md).
 
 ## Test migration plan
 

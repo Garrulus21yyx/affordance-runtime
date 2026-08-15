@@ -28,6 +28,7 @@ from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
 from affordance_runtime.app.composition import compose_target_runtime
+from affordance_runtime.benchmarks.support import StaticEnvironment
 from affordance_runtime.benchmarks.target_loop.support import (
     CurrentFactActionEvaluator,
     SharedTaskEvaluator,
@@ -36,7 +37,6 @@ from affordance_runtime.benchmarks.target_loop.support import (
     shared_task,
     shared_world,
 )
-from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     StateFact,
     SurfaceObservation,

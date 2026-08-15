@@ -46,7 +46,7 @@ REFERENCE_TARGET_READINESS = (
         "pricing",
         frozenset(),
         (
-            "tests/test_reference_target_pricing.py::"
+            "tests/benchmarks/surfaces/dom/test_reference_target_pricing.py::"
             "test_target_pricing_reveals_records_and_returns_current_structured_dom_output"
         ),
     ),
@@ -54,7 +54,7 @@ REFERENCE_TARGET_READINESS = (
         "settings",
         frozenset(),
         (
-            "tests/test_reference_target_settings.py::"
+            "tests/benchmarks/surfaces/dom/test_reference_target_settings.py::"
             "test_target_settings_confirms_action_then_completes_from_unified_authoritative_world"
         ),
     ),

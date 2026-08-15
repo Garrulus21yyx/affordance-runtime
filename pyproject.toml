@@ -52,7 +52,7 @@ affordance_runtime = ["model/policy/prompts/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tests", "."]
+pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 120

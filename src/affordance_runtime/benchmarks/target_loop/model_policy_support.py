@@ -5,10 +5,10 @@ import threading
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from affordance_runtime.benchmarks.support import StaticEnvironment
 from affordance_runtime.benchmarks.target_loop.support import shared_environment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
-from affordance_runtime.testing import StaticEnvironment
 
 
 @dataclass

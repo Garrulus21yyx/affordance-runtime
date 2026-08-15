@@ -11,6 +11,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent import Abort, RequestActionPage, SelectAction
 from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decision_capability import DecisionCapability
+from affordance_runtime.benchmarks.support import StaticEnvironment
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -24,7 +25,6 @@ from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadat
 from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_to_decision
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
-from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     CoverageState,
     ObservationSourceProfile,

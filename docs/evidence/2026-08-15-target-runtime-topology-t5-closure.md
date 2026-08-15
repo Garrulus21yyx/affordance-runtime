@@ -6,8 +6,11 @@ Status: `T5_COMPLETE / STATIC_AND_OFFLINE_VERIFIED / LIVE_NOT_RUN`
 
 ## Closure result
 
-The Target Runtime physical topology is closed for its declared static and
-offline scope. The installed product command resolves only to
+The Target Runtime production and test topology is closed for its declared
+static and offline scope. The reopened test-ownership review found and removed
+the remaining production testing package, separated shipped benchmark fixtures
+from test-only fixtures, and physically classified the executable test suite.
+The installed product command resolves only to
 `affordance_runtime.app.cli:main`; the separate benchmark command resolves only
 to `affordance_runtime.benchmarks.cli:main`. The root module entrypoint delegates
 to the same product CLI.
@@ -64,15 +67,32 @@ projections are bounded representation adapters; none constructs a Runtime,
 loop, session, ActionSpace or dispatch route and none makes an old module
 importable.
 
+## Test ownership closure
+
+- `StaticEnvironment` has independent benchmark and test owners; benchmark
+  code cannot import `tests.support`.
+- `failure_injection` and the four former root helpers live only below their
+  corresponding `tests/support/*` owners.
+- `affordance_runtime.testing` is physically absent, and a clean wheel contains
+  no file below that package path.
+- 229 executable root test modules moved below
+  `unit/integration/conformance/benchmarks` and owner subpackages. No root
+  `test_*.py`, bare cross-test import, or pytest `tests` path injection remains.
+- architecture tests guard source/package absence, support import direction,
+  benchmark fixture ownership, test classification and implicit-import
+  removal. The full move map is in the
+  [test-topology inventory](2026-08-15-target-runtime-test-topology-inventory.md).
+
 ## Verification
 
-- focused topology, lifecycle, context/model, world/surface and conformance
-  tests: `162 passed`;
-- full pytest: `1598 passed, 27 skipped`;
+- focused architecture/conformance and representative AgentLoop tests:
+  `468 passed, 8 skipped`;
+- full pytest: `1604 passed, 27 skipped`;
 - collection: 1625 tests;
 - Ruff: passed;
-- repository-standard mypy: no issues in 335 source files;
-- isolated sdist and wheel build: passed;
+- repository-standard mypy: no issues in 334 source files;
+- clean isolated wheel build: passed; the wheel contains benchmark support and
+  no `affordance_runtime.testing` entry;
 - installed product and benchmark console scripts: exact owner identities and
   separated help surfaces verified;
 - installed representative old-module import-spec checks: all unreachable;

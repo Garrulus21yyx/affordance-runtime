@@ -123,8 +123,8 @@ Evidence and the remaining producer/consumer inventory are recorded in
 ## Implemented cleanup slice — Target Runtime topology cutover
 
 Status:
-`T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE /
-WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
+`T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
+T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_ADMITTED_NOT_STARTED`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
@@ -264,7 +264,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
 | Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
-| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE` | target façade/CLI/loop wrappers and BrowserGym product-surface ownership cut over atomically; surviving owners are selectively organized under `app/agent/actions/model/surfaces`, with only four package-root modules, one-way lifecycle/adapter dependencies and installed-package absence checks for displaced paths |
+| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_COMPLETE` | production façade/CLI/loop/surface owners are converged; the production testing package is deleted, benchmark and test fixtures have separate owners, and all executable tests are classified below `unit/integration/conformance/benchmarks` plus owner subpackages with architecture redlines preventing topology regression |
 | Root default switch | `T1_COMPLETE` | target-only product CLI/public API; benchmark commands have a separate entrypoint |
 | Legacy deletion | `T3_COMPLETE / T5_REVALIDATED` | 180 production paths plus sole-purpose tests/scripts deleted owner-by-owner; retained contracts have target/surface/test owners and no runtime compatibility shim |
 
