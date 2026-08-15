@@ -13,8 +13,7 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_action_evaluation
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.world import (
-    ObservationSourceProfile,
-    SurfaceObservation,
+    WorldFusion,
 )
 from tests.integration.agent.test_agent_loop import _task, _world
 
@@ -22,11 +21,10 @@ from tests.integration.agent.test_agent_loop import _task, _world
 def _request(*, risk=ActionRisk.LOW, category="local_reversible"):
     world = _world("before", False, risk=risk)
     binding = replace(world.bindings[0], effect_category=category, risk=risk)
-    source = SurfaceObservation(
-        world.observation_id, "dom", f"revision:{world.observation_id}",
-        ObservationSourceProfile.dom(), facts=world.facts, bindings=(binding,),
-    )
-    world = replace(world, bindings=(binding,), sources=(source,))
+    source = replace(world.sources[0], bindings=(binding,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
     option = ActionSpaceBuilder().build(_task(), world).options[0]
     selection = ActionSpaceBuilder().admit(option, {})
     return world, ActionBinder().bind(selection, world, "context:policy")
@@ -102,7 +100,13 @@ def test_validated_task_completion_precedes_action_inconclusive_policy() -> None
 
 def test_source_less_confirmed_action_claim_is_downgraded() -> None:
     before, request = _request()
-    after = replace(_world("after", True), sources=())
+    after = replace(
+        _world("after", True),
+        sources=(),
+        source_manifest=(),
+        entity_source_links=(),
+        media=(),
+    )
     proposal = ActionEvaluation(
         request.request_id, before.observation_id, after.observation_id,
         ActionEvaluationStatus.EFFECT_CONFIRMED, "claimed", (after.facts[0].fact_id,),

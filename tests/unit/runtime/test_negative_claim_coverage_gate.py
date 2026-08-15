@@ -15,9 +15,11 @@ from affordance_runtime.world import (
     ObservationSourceProfile,
     SemanticTarget,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 class _IncompleteEvaluator:
@@ -47,12 +49,10 @@ class _AbortPolicy:
 
 
 def _many_target_world(count: int = 65) -> WorldObservation:
-    return WorldObservation(
+    return fused_world(
         "world:many",
         tuple(SemanticTarget(f"target:{index}", "StaticText", f"Item {index}") for index in range(count)),
-        (),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
 
 
@@ -114,14 +114,9 @@ def test_partial_inventory_yields_typed_unknown_instead_of_negative_claim() -> N
             issue_codes=(EntityInventoryIssueCode.ENTITY_CAPACITY_EXCEEDED,),
         ),
     )
-    world = WorldObservation(
-        "world:partial",
-        (target,),
-        (),
-        (),
-        {"dom": CoverageState.TRUNCATED},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
     policy = _AbortPolicy("unsupported")
 
     result, _environment = _run(world, policy)

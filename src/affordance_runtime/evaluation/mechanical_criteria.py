@@ -57,7 +57,9 @@ def _fact_equals(criterion, observation, index) -> CriterionEvaluation:
 
 
 def _coverage_complete(observation: WorldObservation) -> bool:
-    return bool(observation.coverage) and all(value == CoverageState.COMPLETE for value in observation.coverage.values())
+    return bool(observation.source_manifest) and all(
+        item.coverage == CoverageState.COMPLETE for item in observation.source_manifest
+    )
 
 
 def _unknown(criterion, reason: str) -> CriterionEvaluation:

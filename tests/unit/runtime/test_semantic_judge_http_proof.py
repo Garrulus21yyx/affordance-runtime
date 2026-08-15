@@ -14,11 +14,11 @@ from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 
@@ -80,12 +80,13 @@ def _serve(behavior: JudgeBehavior) -> tuple[ThreadingHTTPServer, threading.Thre
 def _world() -> WorldObservation:
     fact = StateFact("fact:report", "report:1", "content", "Clear report with conclusion", "source:report")
     source = SurfaceObservation(
-        "source:report", "dom", "revision:1", ObservationSourceProfile.dom(), facts=(fact,)
+        "source:report", "dom", "revision:1", ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("report:1", "content", "report", {"content": fact.value}),),
+        facts=(fact,),
     )
-    return WorldObservation(
-        "world:semantic", (SemanticTarget("report:1", "content", "report"),), (fact,), (),
-        {"dom": CoverageState.COMPLETE}, sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _task() -> TaskGoal:

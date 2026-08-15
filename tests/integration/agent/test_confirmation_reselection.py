@@ -4,7 +4,7 @@ from dataclasses import replace
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, AskUser, SelectAction
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.task import TaskGoal
-from affordance_runtime.world import WorldObservation
+from affordance_runtime.world import WorldFusion, WorldObservation
 from tests.integration.agent.test_confirmation_continuation import ActionEvaluator, TaskEvaluator, _task, _world
 from tests.support.agent.static_environment import StaticEnvironment
 
@@ -56,7 +56,10 @@ def _changed_candidates_world() -> WorldObservation:
         payload={"selector": "#second"},
         verification_contract_digest="",
     )
-    return replace(base, bindings=(first, second))
+    source = replace(base.sources[0], bindings=(first, second))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _expanded_task() -> TaskGoal:
@@ -117,7 +120,16 @@ def test_unavailable_confirmed_action_does_not_authorize_another_target() -> Non
             target_id="other-target",
             source_target_id="other-target",
         )
-        fresh = replace(other, targets=(other_target,), bindings=(other_binding,))
+        other_fact = replace(other.facts[0], subject_id="other-target")
+        source = replace(
+            other.sources[0],
+            targets=(other_target,),
+            facts=(other_fact,),
+            bindings=(other_binding,),
+        )
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        fresh = fused.observation
         environment = StaticEnvironment([_world("initial", False, "#initial"), fresh])
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
         session = await (loop).start(environment, _task())

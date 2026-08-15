@@ -10,12 +10,12 @@ from affordance_runtime.evaluation.evidence_applicability import EvidenceApplica
 from affordance_runtime.evaluation.mechanical_criteria import MechanicalCriterionEvaluator
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationConflict,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 
@@ -27,27 +27,27 @@ def _world(
     artifacts: dict[str, object] | None = None,
     conflicts: tuple[ObservationConflict, ...] = (),
 ) -> WorldObservation:
-    source = SurfaceObservation(
-        "source:1",
-        "dom" if profile is None else profile.debug_source,
-        "revision:1",
-        profile or ObservationSourceProfile.dom(),
-        facts=facts,
-        artifacts=artifacts or {},
-    )
     targets = tuple(
         SemanticTarget(subject, "state", subject, {fact.predicate: fact.value for fact in facts if fact.subject_id == subject})
         for subject in sorted({fact.subject_id for fact in facts})
     )
-    return WorldObservation(
-        "world:1",
-        targets,
-        facts,
-        (),
-        {source.surface: CoverageState.COMPLETE},
-        conflicts,
-        (source,),
+    resolved_profile = profile or ObservationSourceProfile.dom()
+    source = SurfaceObservation(
+        "source:1",
+        "dom" if profile is None else profile.debug_source,
+        "revision:1",
+        resolved_profile,
+        targets=targets,
+        facts=facts,
+        artifacts=artifacts or {},
+        visual_only_target_ids=(
+            tuple(target.target_id for target in targets)
+            if resolved_profile.modality.value == "visual" else ()
+        ),
     )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return replace(fused.observation, conflicts=conflicts)
 
 
 def test_criterion_normalization_supports_legacy_and_explicit_minimum_profiles() -> None:

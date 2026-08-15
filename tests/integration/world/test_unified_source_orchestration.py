@@ -24,15 +24,19 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionStatus,
     CoverageState,
-    EntityCorrespondence,
+    EntityAlignmentBasis,
+    EntityAlignmentDisposition,
+    EntityAlignmentProposal,
     ObservationGroundingRegion,
     ObservationMedia,
+    ObservationMediaVariant,
     ObservationOffer,
     ObservationOrchestrator,
     ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
     SourceAcquisitionStatus,
+    SourceEntityEndpoint,
     StateFact,
     SurfaceObservation,
     WorldFusion,
@@ -40,13 +44,14 @@ from affordance_runtime.world import (
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, _loop, _world
-from tests.integration.agent.test_agent_loop import _task as shared_task
 from tests.support.agent.static_environment import StaticEnvironment
 
 
 def _task() -> TaskGoal:
     return TaskGoal(
-        "task:any-name", "Enable it", allowed_effects=("enabled",), risk_profile=RiskProfile.LOW,
+        "task:any-name", "Enable it", allowed_effects=("enabled", "shared_state_enabled"),
+        success_criteria=({"id": "enabled", "predicate": "enabled", "value": True},),
+        risk_profile=RiskProfile.LOW,
     )
 
 
@@ -55,13 +60,14 @@ def _source(
     *,
     profile: ObservationSourceProfile | None = None,
     local_id: str = "target",
-    canonical_id: str = "",
+    observation_id: str = "",
+    align_to: SourceEntityEndpoint | None = None,
     value: object = False,
     confidence: float = 1.0,
     media: tuple[ObservationMedia, ...] = (),
     acquisition_root_id: str = "root:shared",
 ) -> SurfaceObservation:
-    observation_id = f"{surface}:obs"
+    observation_id = observation_id or f"{surface}:obs"
     revision = f"{surface}:rev"
     binding = ActionBinding(
         f"{surface}:binding",
@@ -93,9 +99,16 @@ def _source(
         CoverageState.COMPLETE,
         media=media,
         acquisition_root_id=acquisition_root_id,
-        correspondences=(EntityCorrespondence(local_id, canonical_id),) if canonical_id else (),
+        alignment_proposals=(EntityAlignmentProposal(
+            f"proposal:{observation_id}:{local_id}",
+            SourceEntityEndpoint(observation_id, local_id),
+            align_to,
+            EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE,
+            (f"evidence:{observation_id}:{local_id}",),
+            confidence,
+        ),) if align_to is not None else (),
         visual_only_target_ids=(local_id,)
-        if (profile or ObservationSourceProfile.dom()).modality.value == "visual" and not canonical_id
+        if (profile or ObservationSourceProfile.dom()).modality.value == "visual" and align_to is None
         else (),
     )
 
@@ -203,7 +216,7 @@ def test_optional_source_failure_preserves_required_world_and_typed_gap() -> Non
         assert acquired.status is AcquisitionStatus.ACQUIRED
         assert acquired.reason_code == "world_acquired_with_optional_gap"
         assert acquired.observation is not None
-        assert acquired.observation.coverage["visual"] is CoverageState.FAILED
+        assert {item.surface for item in acquired.observation.source_manifest} == {"dom"}
         assert [item.status for item in acquired.source_results] == [
             SourceAcquisitionStatus.ACQUIRED,
             SourceAcquisitionStatus.FAILED,
@@ -254,29 +267,33 @@ def test_post_action_reacquires_route_owner_and_prior_required_source() -> None:
 
 def test_fusion_merges_only_explicit_correspondence_and_conserves_provenance() -> None:
     left = _source(
-        "dom", local_id="dom-target", canonical_id="entity:shared",
-        acquisition_root_id="root:dom",
+        "dom", local_id="dom-target", acquisition_root_id="root:shared",
     )
     right = _source(
         "wot", profile=ObservationSourceProfile.wot(), local_id="wot-target",
-        canonical_id="entity:shared", acquisition_root_id="root:wot",
+        align_to=SourceEntityEndpoint(left.observation_id, "dom-target"),
+        acquisition_root_id="root:shared",
     )
     result = WorldFusion().fuse((left, right))
 
     assert result.observation is not None
-    assert [item.target_id for item in result.observation.targets] == ["entity:shared"]
-    assert {item.target_id for item in result.observation.bindings} == {"entity:shared"}
-    assert result.entity_provenance[0].source_refs == (
-        ("dom", "dom-target"), ("wot", "wot-target"),
+    assert len(result.observation.targets) == 1
+    canonical_id = result.observation.targets[0].target_id
+    assert {item.target_id for item in result.observation.bindings} == {canonical_id}
+    assert {
+        (item.source_observation_id, item.source_target_id)
+        for item in result.observation.entity_source_links
+    } == {("dom:obs", "dom-target"), ("wot:obs", "wot-target")}
+    assert all(
+        item.disposition is EntityAlignmentDisposition.EQUIVALENCE_ACCEPTED
+        for item in result.observation.entity_source_links
     )
-    assert len(result.entity_provenance[0].acquisition_roots) == 2
 
 
 def test_visual_correspondence_adds_non_overlapping_state_without_replacing_dom_identity() -> None:
     dom = _source(
         "dom",
         local_id="dom-target",
-        canonical_id="entity:shared",
         acquisition_root_id="root:shared",
     )
     visual = replace(
@@ -284,7 +301,7 @@ def test_visual_correspondence_adds_non_overlapping_state_without_replacing_dom_
             "visual",
             profile=ObservationSourceProfile.visual(),
             local_id="visual-target",
-            canonical_id="entity:shared",
+            align_to=SourceEntityEndpoint(dom.observation_id, "dom-target"),
             acquisition_root_id="root:shared",
         ),
         bindings=(),
@@ -300,7 +317,6 @@ def test_visual_correspondence_adds_non_overlapping_state_without_replacing_dom_
 
     assert result.observation is not None
     target = result.observation.targets[0]
-    assert target.target_id == "entity:shared"
     assert target.state["visually_selected"] is True
 
 
@@ -353,67 +369,75 @@ def test_visual_coordinate_binding_cannot_bypass_missing_structural_root() -> No
     assert result.reason_code == "visual_binding_requires_shared_acquisition"
 
 
-def test_visual_correspondence_requires_shared_acquisition_without_coordinate_binding() -> None:
+def test_visual_correspondence_with_different_acquisition_is_rejected_and_retained() -> None:
+    dom = _source("dom", local_id="dom-target", acquisition_root_id="root:dom")
     visual = replace(
         _source(
             "visual",
             profile=ObservationSourceProfile.visual(),
-            canonical_id="entity:shared",
+            align_to=SourceEntityEndpoint(dom.observation_id, "dom-target"),
             acquisition_root_id="root:visual",
         ),
         bindings=(),
     )
 
     result = WorldFusion().fuse((
-        _source(
-            "dom", local_id="dom-target", canonical_id="entity:shared",
-            acquisition_root_id="root:dom",
-        ),
+        dom,
         visual,
     ))
 
-    assert result.observation is None
-    assert result.reason_code == "visual_correspondence_requires_shared_acquisition"
+    assert result.observation is not None
+    assert len(result.observation.targets) == 2
+    visual_link = next(
+        item for item in result.observation.entity_source_links
+        if item.source_observation_id == visual.observation_id
+    )
+    assert visual_link.disposition is EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
 
 
-def test_visual_correspondence_must_resolve_to_structural_identity() -> None:
+def test_visual_correspondence_with_missing_endpoint_is_rejected_and_retained() -> None:
     visual = replace(
         _source(
             "visual",
             profile=ObservationSourceProfile.visual(),
-            canonical_id="entity:missing",
+            align_to=SourceEntityEndpoint("dom:obs", "missing"),
         ),
         bindings=(),
     )
 
     result = WorldFusion().fuse((_source("dom"), visual))
 
-    assert result.observation is None
-    assert result.reason_code == "visual_correspondence_target_unresolved"
+    assert result.observation is not None
+    assert len(result.observation.targets) == 2
+    assert next(
+        item for item in result.observation.entity_source_links
+        if item.source_observation_id == visual.observation_id
+    ).disposition is EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
 
 
 def test_corresponded_visual_entity_cannot_retain_coordinate_binding() -> None:
     visual = _source(
         "visual",
         profile=ObservationSourceProfile.visual(),
-        canonical_id="entity:shared",
+        align_to=SourceEntityEndpoint("dom:obs", "target"),
     )
 
     result = WorldFusion().fuse((
-        _source("dom", canonical_id="entity:shared"),
+        _source("dom"),
         visual,
     ))
 
     assert result.observation is None
-    assert result.reason_code == "corresponded_visual_binding_forbidden"
+    assert result.reason_code == "proposed_visual_binding_forbidden"
 
 
 def test_material_conflict_blocks_only_affected_action_option() -> None:
+    dom = _source("dom", local_id="dom", value=False)
     conflicted = WorldFusion().fuse((
-        _source("dom", local_id="dom", canonical_id="entity:shared", value=False),
+        dom,
         _source(
             "wot", profile=ObservationSourceProfile.wot(), local_id="wot",
-            canonical_id="entity:shared", value=True,
+            align_to=SourceEntityEndpoint(dom.observation_id, "dom"), value=True,
         ),
     )).observation
     assert conflicted is not None and conflicted.conflicts
@@ -424,11 +448,12 @@ def test_material_conflict_blocks_only_affected_action_option() -> None:
 
 
 def test_route_selector_is_deterministic_and_model_never_selects_private_route() -> None:
+    dom = _source("dom", local_id="dom", confidence=0.8)
     world = WorldFusion().fuse((
-        _source("dom", local_id="dom", canonical_id="entity:shared", confidence=0.8),
+        dom,
         _source(
             "wot", profile=ObservationSourceProfile.wot(), local_id="wot",
-            canonical_id="entity:shared", confidence=0.9,
+            align_to=SourceEntityEndpoint(dom.observation_id, "dom"), confidence=0.9,
         ),
     )).observation
     assert world is not None
@@ -455,15 +480,25 @@ def _png() -> bytes:
 def test_marked_truth_depends_only_on_media_selected_for_this_model_call() -> None:
     marked_media = ObservationMedia(
         "marked", "screenshot", "image/png", _png(),
-        (ObservationGroundingRegion("target", (1, 1, 5, 5)),),
+        (ObservationGroundingRegion(
+            "target", (1, 1, 5, 5), coordinate_space_id="viewport"
+        ),),
+        "capture:marked",
+        ObservationMediaVariant.RAW,
+        (20, 20),
+        "viewport",
     )
-    plain_media = ObservationMedia("plain", "screenshot", "image/png", _png())
+    plain_media = ObservationMedia(
+        "plain", "screenshot", "image/png", _png(), capture_group_id="capture:plain",
+        variant=ObservationMediaVariant.RAW, dimensions=(20, 20), coordinate_space_id="viewport",
+    )
     source = _source("dom", media=(marked_media, plain_media))
     world = WorldFusion().fuse((source,)).observation
     assert world is not None
     model_world = project_model_world(world, ContextProjectionBudget())
+    canonical_target_id = world.targets[0].target_id
     option = AgentActionOptionView(
-        "action", "activate", "target", "Enable", False, BoundedSection((), 0, False),
+        "action", "activate", canonical_target_id, "Enable", False, BoundedSection((), 0, False),
         {"type": "object", "properties": {}, "additionalProperties": False},
         "activate target", ("enabled",), ActionRisk.LOW, True,
     )
@@ -522,10 +557,13 @@ def test_shared_acquisition_group_has_one_reset_owner_and_one_group_capture() ->
 
 def _equivalent_route_world(observation_id: str, enabled: bool):
     base = _world(observation_id, enabled)
-    dom_binding = replace(base.bindings[0], confidence=0.8)
+    dom_source = base.sources[0]
+    root_id = f"root:{observation_id}"
+    dom_binding = replace(dom_source.bindings[0], confidence=0.8)
+    dom_source = replace(dom_source, bindings=(dom_binding,), acquisition_root_id=root_id)
     wot_source_id = f"wot:{observation_id}"
     wot_binding = replace(
-        base.bindings[0],
+        dom_binding,
         binding_id=f"wot:binding:{observation_id}",
         source_observation_id=wot_source_id,
         source_revision=f"wot:revision:{observation_id}",
@@ -538,16 +576,22 @@ def _equivalent_route_world(observation_id: str, enabled: bool):
         "wot",
         f"wot:revision:{observation_id}",
         ObservationSourceProfile.wot(),
-        base.targets,
-        tuple(replace(item, source_id=wot_source_id) for item in base.facts),
+        dom_source.targets,
+        tuple(replace(item, source_id=wot_source_id) for item in dom_source.facts),
         (wot_binding,),
+        acquisition_root_id=root_id,
+        alignment_proposals=(EntityAlignmentProposal(
+            f"proposal:{wot_source_id}",
+            SourceEntityEndpoint(wot_source_id, dom_source.targets[0].target_id),
+            SourceEntityEndpoint(dom_source.observation_id, dom_source.targets[0].target_id),
+            EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE,
+            (f"evidence:{wot_source_id}",),
+            1.0,
+        ),),
     )
-    return replace(
-        base,
-        bindings=(dom_binding, wot_binding),
-        coverage={"dom": CoverageState.COMPLETE, "wot": CoverageState.COMPLETE},
-        sources=(replace(base.sources[0], bindings=(dom_binding,)), wot_source),
-    )
+    fused = WorldFusion().fuse((dom_source, wot_source))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def test_not_sent_may_use_one_equivalent_alternate_and_dispatch_once() -> None:
@@ -572,7 +616,7 @@ def test_not_sent_may_use_one_equivalent_alternate_and_dispatch_once() -> None:
             execute_fn=execute,
         )
         result = await (_loop(ScriptedPolicy(["first"]))).run(
-            environment, shared_task(),
+            environment, _task(),
         )
 
         assert result.status is AgentLoopStatus.DONE
@@ -609,7 +653,7 @@ def test_sent_unknown_closes_reroute_even_when_equivalent_route_exists() -> None
             execute_fn=execute,
         )
         await (_loop(ScriptedPolicy(["first"]))).run(
-            environment, shared_task(),
+            environment, _task(),
         )
 
         assert environment.execute_calls == 1

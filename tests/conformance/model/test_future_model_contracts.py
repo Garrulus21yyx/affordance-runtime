@@ -8,16 +8,16 @@ from affordance_runtime.agent.context.failures import ModelFailure, ModelFailure
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionError, ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import CoverageState, SemanticTarget, StateFact, WorldObservation
+from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
+from tests.support.world import fused_world
 
 
 def _world() -> WorldObservation:
-    return WorldObservation(
+    return fused_world(
         "world:1",
         (SemanticTarget("target:1", "control", "Target"),),
         (StateFact("fact:1", "target:1", "enabled", True, "world:1"),),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
 
 

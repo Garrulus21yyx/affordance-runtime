@@ -17,7 +17,12 @@ from affordance_runtime.surfaces.browsergym.projection import (
     project_browsergym_observation,
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import CoverageState, ObservationConflict, ObservationSourceProfile
+from affordance_runtime.world import (
+    CoverageState,
+    ObservationConflict,
+    ObservationSourceProfile,
+    WorldFusion,
+)
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     ax_node,
     raw_observation,
@@ -62,10 +67,15 @@ def _world(
     source = world.sources[0]
     if coverage != CoverageState.COMPLETE:
         source = replace(source, coverage=coverage)
-        world = replace(world, coverage={"browsergym": coverage}, sources=(source,))
     if weak:
-        source = replace(source, source_profile=ObservationSourceProfile.visual())
-        world = replace(world, sources=(source,))
+        source = replace(
+            source,
+            source_profile=ObservationSourceProfile.visual(),
+            visual_only_target_ids=tuple(target.target_id for target in source.targets),
+        )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
     if conflict:
         target = world.targets[0]
         world = replace(world, conflicts=(
@@ -164,7 +174,13 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
         task_state=reset_task_state("obs:before"),
         entity_identity=_IDENTITY,
     ).world
-    after = replace(before, observation_id="obs:after", bindings=(), sources=())
+    after = project_browsergym_observation(
+        raw_observation(ax_node("private-button", "button", "Submit")),
+        observation_id="obs:after", source_revision="revision:after",
+        page_identity="page:opaque", episode_identity="0",
+        task_state=reset_task_state("obs:after"),
+        entity_identity=_IDENTITY,
+    ).world
     request = request_for(before, task, "activate")
     result = ActionResult(request.request_id, DispatchStatus.SENT, "browsergym", True)
     evaluation = asyncio.run(ProductionActionEvaluator().evaluate(

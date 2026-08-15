@@ -11,7 +11,7 @@ from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.world import AcquisitionOrigin
+from affordance_runtime.world import AcquisitionOrigin, WorldFusion
 from tests.integration.agent.test_agent_loop import (
     ScriptedPolicy,
     SharedActionEvaluator,
@@ -312,7 +312,9 @@ def test_matching_private_backend_identity_is_always_opaque_in_transition() -> N
         after = _world("after", True)
         binding = replace(before.bindings[0], executor_id=marker)
         source = replace(before.sources[0], bindings=(binding,))
-        before = replace(before, bindings=(binding,), sources=(source,))
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        before = fused.observation
         result = ActionResult("*", DispatchStatus.SENT, marker, True)
         session = await (_loop(ScriptedPolicy(["first"]))).start(
             StaticEnvironment([before, after], [result]), _task(),

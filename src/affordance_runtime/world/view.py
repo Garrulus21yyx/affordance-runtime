@@ -65,6 +65,9 @@ def build_agent_world_view(observation: WorldObservation) -> AgentWorldView:
             }
             for fact in observation.facts
         ),
-        coverage=dict(observation.coverage),
+        coverage={
+            item.source_observation_id: item.coverage
+            for item in observation.source_manifest
+        },
         conflict_summaries=tuple(conflict.summary for conflict in observation.conflicts),
     )

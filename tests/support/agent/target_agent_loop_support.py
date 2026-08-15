@@ -64,8 +64,8 @@ class SharedStateActionEvaluator:
         was_expanded = any(target.state.get("expanded") is True for target in before.targets)
         is_expanded = any(target.state.get("expanded") is True for target in after.targets)
         changed = not was_expanded and is_expanded
-        coverage_complete = bool(after.coverage) and all(
-            item == CoverageState.COMPLETE for item in after.coverage.values()
+        coverage_complete = bool(after.source_manifest) and all(
+            item.coverage == CoverageState.COMPLETE for item in after.source_manifest
         )
         if not changed and not coverage_complete:
             return ActionEvaluation(

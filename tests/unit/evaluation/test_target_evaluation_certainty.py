@@ -4,15 +4,15 @@ from types import SimpleNamespace
 from affordance_runtime.evaluation import ActionEvaluationStatus
 from affordance_runtime.world import CoverageState, SemanticTarget, StateFact, WorldObservation
 from tests.support.agent.target_agent_loop_support import SharedStateActionEvaluator, shared_state_task
+from tests.support.world import fused_world
 
 
 def _observation(identity: str, expanded: bool, coverage: CoverageState) -> WorldObservation:
-    return WorldObservation(
+    return fused_world(
         identity,
         (SemanticTarget("shared", "control", "Shared", {"expanded": expanded}),),
         (StateFact(f"fact:{identity}:expanded", "shared", "expanded", expanded, identity),),
-        (),
-        {"fixture": coverage},
+        coverage=coverage,
     )
 
 

@@ -7,21 +7,27 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
+    SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
+from tests.support.world import fused_world
 
 
 def _world(identity: str, value: bool, profile: ObservationSourceProfile, *, unrelated: bool = False) -> WorldObservation:
     subject = "other:1" if unrelated else "target:1"
     fact = StateFact(f"fact:{identity}", subject, "enabled", value, f"source:{identity}")
     source = SurfaceObservation(
-        f"source:{identity}", profile.debug_source, f"revision:{identity}", profile, facts=(fact,)
+        f"source:{identity}", profile.debug_source, f"revision:{identity}", profile,
+        targets=(SemanticTarget(subject, "state", subject, {"enabled": value}),),
+        facts=(fact,),
     )
-    return WorldObservation(identity, (), (fact,), (), {source.surface: CoverageState.COMPLETE}, sources=(source,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _request(*, expected_outcome=None):
@@ -62,7 +68,7 @@ def test_changed_relevant_fact_supports_effect_but_unrelated_fact_does_not() -> 
 
 
 def test_after_only_fact_without_matching_before_predicate_cannot_support_effect() -> None:
-    before = WorldObservation("before", (), (), (), {"dom": CoverageState.COMPLETE})
+    before = fused_world("before", surface="dom")
     after = _world("after", True, ObservationSourceProfile.dom())
     proposal = ActionEvaluation(
         "request:1", "before", "after", ActionEvaluationStatus.EFFECT_CONFIRMED,
@@ -96,9 +102,9 @@ def test_current_after_only_scoped_artifact_supports_creation_effect() -> None:
         "source:after", "dom", "revision:after", ObservationSourceProfile.dom(),
         artifacts={"report": {"public_summary": "report created"}},
     )
-    after = WorldObservation(
-        "after", (), (), (), {"dom": CoverageState.COMPLETE}, sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    after = fused.observation
     evidence_ref = "artifact:source:after:report"
     proposal = ActionEvaluation(
         "request:1", "before", "after", ActionEvaluationStatus.EFFECT_CONFIRMED,

@@ -23,7 +23,6 @@ from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,
-    CoverageState,
     ObservationAcquisition,
     ObservationCapabilities,
     ObservationRequestKind,
@@ -32,6 +31,7 @@ from affordance_runtime.world import (
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 def _world(identity: str, enabled: bool, selector: str, *, risk: ActionRisk = ActionRisk.MEDIUM) -> WorldObservation:
@@ -55,7 +55,7 @@ def _world(identity: str, enabled: bool, selector: str, *, risk: ActionRisk = Ac
         risk=risk,
     )
     fact = StateFact(f"fact:{identity}:enabled", target.target_id, "enabled", enabled, identity)
-    return WorldObservation(identity, (target,), (fact,), (binding,), {"dom": CoverageState.COMPLETE})
+    return fused_world(identity, (target,), (fact,), (binding,), surface="dom")
 
 
 def _task() -> TaskGoal:

@@ -18,20 +18,15 @@ from affordance_runtime.app import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import ReadyTask, RiskProfile, TaskInputRequired
-from affordance_runtime.world import CoverageState, SemanticTarget, StateFact, WorldObservation
+from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 def _world() -> WorldObservation:
     target = SemanticTarget("page", "document", "Current page")
     fact = StateFact("fact:page:available", "page", "available", True, "observation:runtime")
-    return WorldObservation(
-        "observation:runtime",
-        (target,),
-        (fact,),
-        (),
-        {"static": CoverageState.COMPLETE},
-    )
+    return fused_world("observation:runtime", (target,), (fact,), surface="static")
 
 
 class UnusedActionEvaluator:

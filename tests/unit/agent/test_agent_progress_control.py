@@ -22,6 +22,7 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 
@@ -62,19 +63,14 @@ def _world(
         (fact,),
         (),
         coverage,
+        visual_only_target_ids=((target.target_id,) if not structural else ()),
     )
     conflicts = (
         ObservationConflict("conflict:value", target.target_id, "value", "material disagreement"),
     ) if conflict else ()
-    return WorldObservation(
-        observation_id,
-        (target,),
-        (fact,),
-        (),
-        {source.surface: coverage},
-        conflicts,
-        (source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return replace(fused.observation, conflicts=conflicts)
 
 
 def _task_evaluation(observation_id: str, *, satisfied: bool = False) -> TaskEvaluation:

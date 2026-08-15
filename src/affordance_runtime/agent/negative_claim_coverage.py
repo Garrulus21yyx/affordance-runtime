@@ -67,7 +67,7 @@ def _requires_negative_coverage(decision: AgentDecision) -> bool:
 
 
 def _inventory_unavailable_reason(observation: WorldObservation) -> str:
-    if any(coverage is not CoverageState.COMPLETE for coverage in observation.coverage.values()):
+    if any(item.coverage is not CoverageState.COMPLETE for item in observation.source_manifest):
         return "negative_claim_source_coverage_unavailable"
     if any(
         source.entity_inventory.status in {EntityInventoryStatus.PARTIAL, EntityInventoryStatus.UNAVAILABLE}

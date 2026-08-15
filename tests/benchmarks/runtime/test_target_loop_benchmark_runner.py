@@ -20,15 +20,16 @@ from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStat
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationCapabilities,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 @dataclass
@@ -65,7 +66,9 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
         return BenchmarkCase(
             identity, "suite", identity,
             lambda: TaskGoal(identity, "Already complete"),
-            lambda _metrics: Environment([WorldObservation(identity, (), (), (), {"static": CoverageState.COMPLETE})]),
+            lambda _metrics: Environment([
+                fused_world(identity, surface="static")
+            ]),
             lambda _metrics: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
             (AgentLoopStatus.BLOCKED,), 2.0, 7, ("observations",),
         )
@@ -109,10 +112,9 @@ def _action_world(observation_id: str) -> WorldObservation:
         observation_id, "dom", f"revision:{observation_id}", ObservationSourceProfile.dom(),
         (target,), (fact,), (binding,),
     )
-    return WorldObservation(
-        observation_id, (target,), (fact,), (binding,), {"dom": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:

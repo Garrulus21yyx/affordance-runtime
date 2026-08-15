@@ -58,8 +58,8 @@ class ProductionTaskEvaluator:
             success = evaluate_success_expression(expression, {item.criterion_id: item.status for item in evaluations})
             status = _status(success, evaluations)
             if task.requested_outputs and len(outputs) != len(task.requested_outputs):
-                complete_inventory = bool(observation.coverage) and all(
-                    value == CoverageState.COMPLETE for value in observation.coverage.values()
+                complete_inventory = bool(observation.source_manifest) and all(
+                    item.coverage == CoverageState.COMPLETE for item in observation.source_manifest
                 )
                 output_status = TaskEvaluationStatus.INCOMPLETE if complete_inventory else TaskEvaluationStatus.UNKNOWN
                 if status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.INCOMPLETE}:

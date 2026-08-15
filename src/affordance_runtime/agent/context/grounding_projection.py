@@ -48,9 +48,9 @@ class GroundingProjection:
             )
         }
         raw_candidates = tuple(
-            (source, media)
-            for source in observation.sources
-            for media in source.media
+            (item.source_observation_id, item.media)
+            for item in observation.media
+            for media in (item.media,)
             if media.kind == "screenshot"
             and (not selected_media_ids or media.media_id in selected_media_ids)
         )
@@ -109,8 +109,9 @@ class GroundingProjection:
             ))
         images = []
         media_refs = []
-        for source, media in candidates:
-            artifact_ref = canonical_artifact_ref(source.observation_id, media.media_id)
+        source_by_id = {item.observation_id: item for item in observation.sources}
+        for source_observation_id, media in candidates:
+            artifact_ref = canonical_artifact_ref(source_observation_id, media.media_id)
             marks = tuple(
                 VisualMark(
                     target_refs[region.target_id],
@@ -119,7 +120,7 @@ class GroundingProjection:
                     region.confidence,
                     artifact_ref,
                     observation.observation_id,
-                    source.revision,
+                    source_by_id[source_observation_id].revision,
                     f"grounding:{region.target_id}",
                 )
                 for region in media.grounding_regions
@@ -138,24 +139,31 @@ class GroundingProjection:
 
 
 def _deduplicated_media(candidates):
-    """Keep one transmitted image per digest while retaining all public regions."""
+    """Select one deterministic full-frame capture variant after fusion alignment."""
 
     grouped = {}
-    order = []
-    for source, media in candidates:
-        if media.sha256 not in grouped:
-            grouped[media.sha256] = [source, media, {}]
-            order.append(media.sha256)
-        regions = grouped[media.sha256][2]
+    for source_observation_id, media in sorted(
+        candidates,
+        key=lambda item: (
+            item[1].capture_group_id,
+            0 if str(item[1].variant) == "raw" else 1,
+            item[0],
+            item[1].media_id,
+        ),
+    ):
+        key = (media.capture_group_id, media.dimensions, media.coordinate_space_id)
+        if key not in grouped:
+            grouped[key] = [source_observation_id, media, {}]
+        regions = grouped[key][2]
         for region in media.grounding_regions:
             regions.setdefault(region.target_id, region)
     return tuple(
         (
-            grouped[digest][0],
+            grouped[key][0],
             replace(
-                grouped[digest][1],
-                grounding_regions=tuple(grouped[digest][2].values()),
+                grouped[key][1],
+                grounding_regions=tuple(grouped[key][2].values()),
             ),
         )
-        for digest in order
+        for key in sorted(grouped)
     )

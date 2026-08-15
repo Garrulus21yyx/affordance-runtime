@@ -8,10 +8,10 @@ from affordance_runtime.actions import (
 from affordance_runtime.actions.classification import EffectCategory
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
-    WorldObservation,
 )
+from tests.support.world import fused_world
 
 SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -38,12 +38,12 @@ def _binding(action: str, category: str, effects: tuple[str, ...], risk: ActionR
 
 
 def _space(task: TaskGoal, bindings: tuple[ActionBinding, ...]):
-    observation = WorldObservation(
+    observation = fused_world(
         "observation:1",
         (SemanticTarget("target:1", "property", "Shared state"),),
-        (),
-        bindings,
-        {"wot": CoverageState.COMPLETE},
+        bindings=bindings,
+        surface="wot",
+        profile=ObservationSourceProfile.wot(),
     )
     return ActionSpaceBuilder().build(task, observation)
 

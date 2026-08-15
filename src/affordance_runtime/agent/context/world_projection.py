@@ -157,10 +157,11 @@ def project_model_world(
         item for item in artifact_values if item.output_id not in pinned_outputs
     )
     shown_artifacts = artifacts[: budget.max_artifact_summaries]
+    manifests = {item.source_observation_id: item for item in observation.source_manifest}
     source_summaries = tuple(
         project_observation_source(
             source,
-            observation.coverage.get(source.surface, source.coverage),
+            manifests[source.observation_id].coverage,
             conflicted=bool(observation.conflicts),
         )
         for source in observation.sources

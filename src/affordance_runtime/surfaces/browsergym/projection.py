@@ -40,12 +40,14 @@ from affordance_runtime.world import (
     EntityInventorySummary,
     ObservationGroundingRegion,
     ObservationMedia,
+    ObservationMediaVariant,
     ObservationSourceProfile,
     ObservationStructureNode,
     SemanticInventorySummary,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 from affordance_runtime.world.regular_lattice import (
@@ -240,8 +242,13 @@ def project_browsergym_observation(
     }
     screenshot_media = _screenshot_media(
         raw,
+        observation_id,
         tuple(
-            ObservationGroundingRegion(target_ids[node.private_node_id], node.private_bbox)
+            ObservationGroundingRegion(
+                target_ids[node.private_node_id],
+                node.private_bbox,
+                coordinate_space_id="browsergym:viewport_pixels",
+            )
             for node in projected
             if node.private_bbox is not None
         ),
@@ -293,14 +300,10 @@ def project_browsergym_observation(
         structure=structure,
         structure_total_count=len(analysis.structure),
     )
-    world = WorldObservation(
-        observation_id,
-        tuple(targets),
-        tuple(facts),
-        tuple(bindings),
-        {"browsergym": coverage},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    if fused.observation is None:
+        raise ValueError(f"BrowserGym source did not fuse: {fused.reason_code}")
+    world = fused.observation
     return BrowserGymProjection(
         world,
         tuple(private),
@@ -485,6 +488,7 @@ def _owns_form_control(
 
 def _screenshot_media(
     raw: dict[str, object],
+    observation_id: str,
     grounding_regions: tuple[ObservationGroundingRegion, ...],
 ) -> tuple[ObservationMedia, ...]:
     screenshot = raw.get("screenshot")
@@ -501,6 +505,10 @@ def _screenshot_media(
                 "image/png",
                 output.getvalue(),
                 grounding_regions,
+                capture_group_id=str(raw.get("capture_group_id") or observation_id),
+                variant=ObservationMediaVariant.RAW,
+                dimensions=image.size,
+                coordinate_space_id="browsergym:viewport_pixels",
             ),
         )
     except (AttributeError, TypeError, ValueError, OSError) as exc:

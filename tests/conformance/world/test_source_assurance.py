@@ -11,7 +11,7 @@ from affordance_runtime.world import (
     ObservationSourceProfile,
     SurfaceObservation,
     VerificationStrength,
-    WorldObservation,
+    WorldFusion,
 )
 from affordance_runtime.world.source_profile import assurance_satisfies
 
@@ -48,13 +48,7 @@ def test_source_assurance_profile_contains_no_action_or_risk_authority() -> None
 
 
 def test_model_source_summary_excludes_debug_source_and_private_payload() -> None:
-    profile = ObservationSourceProfile(
-        ObservationModality.STRUCTURAL,
-        ObservationAssurance.STRUCTURAL,
-        VerificationStrength.STRUCTURAL,
-        AcquisitionCost.LOW,
-        "private-dom-backend",
-    )
+    profile = ObservationSourceProfile.dom()
     source = SurfaceObservation(
         "source:1",
         "dom",
@@ -63,13 +57,15 @@ def test_model_source_summary_excludes_debug_source_and_private_payload() -> Non
         coverage=CoverageState.COMPLETE,
         artifacts={"selector": "#private", "summary": "private-value"},
     )
-    world = WorldObservation("world:1", (), (), (), {"dom": CoverageState.COMPLETE}, sources=(source,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
 
     view = project_model_world(world, ContextProjectionBudget())
 
     assert view.sources[0].modality == ObservationModality.STRUCTURAL
     assert view.sources[0].assurance == ObservationAssurance.STRUCTURAL
-    assert "private-dom-backend" not in repr(view)
+    assert profile.debug_source not in repr(view)
     assert "#private" not in repr(view)
     assert "private-value" not in repr(view)
     assert view.sources[0].freshness == "current"
@@ -84,7 +80,9 @@ def test_failed_source_evidence_and_operational_capability_are_independent() -> 
         ObservationSourceProfile.visual(),
         coverage=CoverageState.FAILED,
     )
-    world = WorldObservation("world:failed", (), (), (), {"visual": CoverageState.FAILED}, sources=(source,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
 
     capabilities = ObservationCapabilities(
         True,

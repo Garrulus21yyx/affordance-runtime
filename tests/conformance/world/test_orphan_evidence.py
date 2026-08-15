@@ -7,7 +7,7 @@ from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.task import TaskGoal
-from affordance_runtime.world import CoverageState, StateFact, WorldObservation
+from affordance_runtime.world import StateFact, WorldObservation
 
 
 class _Request:
@@ -22,11 +22,11 @@ def test_orphan_fact_cannot_resolve_task_or_action_claim() -> None:
     )
     before = WorldObservation(
         "before", (), (StateFact("fact:before", "target:1", "enabled", False, "orphan"),),
-        (), {"dom": CoverageState.COMPLETE},
+        (), (),
     )
     after = WorldObservation(
         "after", (), (StateFact("fact:after", "target:1", "enabled", True, "orphan"),),
-        (), {"dom": CoverageState.COMPLETE},
+        (), (),
     )
     proposal = ActionEvaluation(
         "request", "before", "after", ActionEvaluationStatus.EFFECT_CONFIRMED,

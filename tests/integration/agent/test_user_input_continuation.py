@@ -32,19 +32,16 @@ from affordance_runtime.task import (
     TaskGoal,
     TaskInputRequired,
 )
-from affordance_runtime.world import CoverageState, SemanticTarget, StateFact, WorldObservation
+from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 def _world() -> WorldObservation:
     target = SemanticTarget("page", "document", "Current page")
     fact = StateFact("fact:page:available", "page", "available", True, "observation:initial")
-    return WorldObservation(
-        "observation:initial",
-        (target,),
-        (fact,),
-        (),
-        {"static": CoverageState.COMPLETE},
+    return fused_world(
+        "observation:initial", (target,), (fact,), surface="static"
     )
 
 

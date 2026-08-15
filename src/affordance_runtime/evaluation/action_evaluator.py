@@ -86,7 +86,11 @@ def _current_value_evidence(observation, target_id: str) -> tuple[object, str] |
     if (
         source is None
         or source.coverage != CoverageState.COMPLETE
-        or observation.coverage.get(source.surface) != CoverageState.COMPLETE
+        or not any(
+            item.source_observation_id == source.observation_id
+            and item.coverage == CoverageState.COMPLETE
+            for item in observation.source_manifest
+        )
         or not evidence_source_is_current(record, observation)
         or not assurance_satisfies(record.source_assurance, "structural")
     ):
@@ -226,7 +230,11 @@ def _source_coverage_complete(source_observation_id: str, observation) -> bool:
     return bool(
         source is not None
         and source.coverage == CoverageState.COMPLETE
-        and observation.coverage.get(source.surface) == CoverageState.COMPLETE
+        and any(
+            item.source_observation_id == source.observation_id
+            and item.coverage == CoverageState.COMPLETE
+            for item in observation.source_manifest
+        )
     )
 
 

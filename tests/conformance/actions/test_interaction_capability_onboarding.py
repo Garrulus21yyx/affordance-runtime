@@ -52,12 +52,13 @@ from affordance_runtime.surfaces.wot.interaction_profile import (
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     WorldObservation,
     build_agent_world_view,
 )
+from tests.support.world import fused_world
 
 _ROOT = Path(__file__).resolve().parents[3]
 _CURRENT_ACTIONS = {"activate", "type_text", "select_option", "read"}
@@ -101,13 +102,7 @@ def _type_text_world() -> tuple[TaskGoal, WorldObservation]:
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    world = WorldObservation(
-        "obs:1",
-        (target,),
-        (fact,),
-        (binding,),
-        {"dom": CoverageState.COMPLETE},
-    )
+    world = fused_world("obs:1", (target,), (fact,), (binding,), surface="dom")
     return task, world
 
 
@@ -204,12 +199,11 @@ def test_composer_and_schema_contracts_fail_closed_with_typed_issues() -> None:
 
 def test_profile_support_never_creates_an_action_space_member() -> None:
     task = TaskGoal("task:none", "Observe", risk_profile=RiskProfile.READ_ONLY)
-    world = WorldObservation(
+    world = fused_world(
         "obs:none",
         (SemanticTarget("viewport:1", "viewport", "Viewport"),),
-        (),
-        (),
-        {"visual": CoverageState.COMPLETE},
+        surface="visual",
+        profile=ObservationSourceProfile.visual(),
     )
 
     assert "set_value" in {
@@ -285,12 +279,11 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
 
 def test_state_compatibility_projection_rejects_contradiction_at_construction() -> None:
     with pytest.raises(ValueError, match="contradicts canonical StateFact"):
-        WorldObservation(
+        fused_world(
             "obs:contradiction",
             (SemanticTarget("field:1", "textbox", "Name", {"value": "old"}),),
             (StateFact("state:value", "field:1", "value", "new", "obs:contradiction"),),
-            (),
-            {"dom": CoverageState.COMPLETE},
+            surface="dom",
         )
 
 

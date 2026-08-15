@@ -239,9 +239,14 @@ def _binding_is_current(binding: ActionBinding, observation: WorldObservation) -
         return False
     if not observation.sources:
         return binding.source_observation_id == observation.observation_id
-    source = next((item for item in observation.sources if item.surface == binding.surface), None)
+    source = next(
+        (item for item in observation.sources if item.observation_id == binding.source_observation_id),
+        None,
+    )
     return bool(
-        source and binding.source_observation_id == source.observation_id and binding.source_revision == source.revision
+        source
+        and binding.surface == source.surface
+        and binding.source_revision == source.revision
     )
 
 

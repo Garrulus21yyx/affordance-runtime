@@ -6,11 +6,11 @@ from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
+    SemanticTarget,
     StateFact,
     SurfaceObservation,
-    WorldObservation,
+    WorldFusion,
 )
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedTaskEvaluator, _sent, _task, _world
 from tests.support.agent.static_environment import StaticEnvironment
@@ -22,17 +22,14 @@ def test_world_evidence_index_contains_current_facts_and_controlled_artifact_ref
         "visual",
         "revision:after",
         ObservationSourceProfile.visual(),
+        targets=(SemanticTarget("target:1", "control", "target"),),
         facts=(StateFact("fact:after", "target:1", "enabled", True, "surface:after"),),
         artifacts={"screenshot": {"digest": "private-value"}},
+        visual_only_target_ids=("target:1",),
     )
-    world = WorldObservation(
-        "world:after",
-        (),
-        source.facts,
-        (),
-        {"visual": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
 
     index = WorldEvidenceIndex.from_observation(world)
 
@@ -42,13 +39,17 @@ def test_world_evidence_index_contains_current_facts_and_controlled_artifact_ref
 
 
 def test_semantic_evidence_ids_may_contain_security_vocabulary() -> None:
-    observation = WorldObservation(
-        "obs-security-vocabulary",
-        (),
-        (StateFact("fact:api-token-enabled", "service", "authorization-ready", True, "source"),),
-        (),
-        {"dom": CoverageState.COMPLETE},
+    source = SurfaceObservation(
+        "obs-security-vocabulary", "dom", "revision:1", ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("service", "service", "service"),),
+        facts=(StateFact(
+            "fact:api-token-enabled", "service", "authorization-ready", True,
+            "obs-security-vocabulary",
+        ),),
     )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    observation = fused.observation
 
     index = WorldEvidenceIndex.from_observation(observation)
 
@@ -61,16 +62,14 @@ def test_unicode_fact_and_artifact_identity_is_canonicalized_without_failure() -
         "visual",
         "revision:1",
         ObservationSourceProfile.visual(),
+        targets=(SemanticTarget("设备 一", "device", "设备"),),
         artifacts={"截图 摘要": {"private": "value"}},
+        facts=(StateFact("状态 已启用", "设备 一", "已启用", True, "surface:视觉"),),
+        visual_only_target_ids=("设备 一",),
     )
-    observation = WorldObservation(
-        "world:unicode",
-        (),
-        (StateFact("状态 已启用", "设备 一", "已启用", True, "surface:视觉"),),
-        (),
-        {"visual": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    observation = fused.observation
 
     index = WorldEvidenceIndex.from_observation(observation)
 

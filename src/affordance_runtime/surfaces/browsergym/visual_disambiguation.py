@@ -14,11 +14,14 @@ from affordance_runtime.surfaces.visual.disambiguation import (
 )
 from affordance_runtime.world import (
     CoverageState,
-    EntityCorrespondence,
+    EntityAlignmentBasis,
+    EntityAlignmentProposal,
     ObservationGroundingRegion,
     ObservationMedia,
+    ObservationMediaVariant,
     ObservationSourceProfile,
     SemanticTarget,
+    SourceEntityEndpoint,
     StateFact,
     SurfaceObservation,
     VisionEvidenceNeed,
@@ -90,7 +93,7 @@ def project_browsergym_visual_disambiguation_source(
     selected = next((item for item in candidates if item.ref == selected_ref), None)
     projected_targets: tuple[SemanticTarget, ...] = ()
     facts: tuple[StateFact, ...] = ()
-    correspondences: tuple[EntityCorrespondence, ...] = ()
+    alignment_proposals: tuple[EntityAlignmentProposal, ...] = ()
     grounding_regions: tuple[ObservationGroundingRegion, ...] = ()
     selected_target_id = ""
     if selected is not None:
@@ -110,14 +113,27 @@ def project_browsergym_visual_disambiguation_source(
             True,
             observation_id,
         ),)
-        correspondences = (EntityCorrespondence(local_id, selected.target_id),)
-        grounding_regions = (ObservationGroundingRegion(local_id, selected.bbox),)
+        alignment_proposals = (EntityAlignmentProposal(
+            f"proposal:{observation_id}:{local_id}",
+            SourceEntityEndpoint(observation_id, local_id),
+            SourceEntityEndpoint(structured_source.observation_id, selected.target_id),
+            EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE,
+            (f"media:{observation_id}:visual-disambiguation-screenshot:{local_id}",),
+            1.0,
+        ),)
+        grounding_regions = (ObservationGroundingRegion(
+            local_id, selected.bbox, coordinate_space_id="browsergym:viewport_pixels"
+        ),)
     media = ObservationMedia(
         "visual-disambiguation-screenshot",
         "screenshot",
         "image/png",
         frame.image_bytes,
         grounding_regions,
+        capture_group_id=acquisition_root_id,
+        variant=ObservationMediaVariant.RAW,
+        dimensions=(frame.image_width, frame.image_height),
+        coordinate_space_id="browsergym:viewport_pixels",
     )
     source = SurfaceObservation(
         observation_id,
@@ -137,6 +153,6 @@ def project_browsergym_visual_disambiguation_source(
         },
         media=(media,),
         acquisition_root_id=acquisition_root_id,
-        correspondences=correspondences,
+        alignment_proposals=alignment_proposals,
     )
     return BrowserGymVisualDisambiguationProjection(source, selected_target_id)

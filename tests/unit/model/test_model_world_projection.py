@@ -30,8 +30,9 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
-    WorldObservation,
+    WorldFusion,
 )
+from tests.support.world import fused_world
 
 
 def test_source_inventory_projection_is_one_way_wire_truth_and_budget_invariant() -> None:
@@ -57,14 +58,9 @@ def test_source_inventory_projection_is_one_way_wire_truth_and_budget_invariant(
         coverage=CoverageState.COMPLETE,
         semantic_inventory=inventory,
     )
-    observation = WorldObservation(
-        "world:inventory",
-        targets,
-        (),
-        (),
-        {"dom": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    observation = fused.observation
 
     full = project_model_world(observation, ContextProjectionBudget(max_targets=2))
     clipped = project_model_world(observation, ContextProjectionBudget(max_targets=1))
@@ -83,7 +79,7 @@ def test_source_inventory_projection_is_one_way_wire_truth_and_budget_invariant(
 
 
 def test_model_world_projection_is_bounded_and_route_free() -> None:
-    observation = WorldObservation(
+    observation = fused_world(
         "world:private-observation",
         tuple(
             SemanticTarget(
@@ -96,10 +92,11 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
             for index in range(5)
         ),
         tuple(StateFact(f"fact:{index}", "target:0", "ready", True, "source:private") for index in range(9)),
-        (),
-        {"dom": CoverageState.COMPLETE},
-        (ObservationConflict("conflict:private", "target:0", "ready", "sources disagree"),),
+        surface="dom",
     )
+    observation = replace(observation, conflicts=(
+        ObservationConflict("conflict:private", "target:0", "ready", "sources disagree"),
+    ))
     budget = ContextProjectionBudget(max_targets=2, max_facts=3, max_facts_per_target=2)
 
     view = project_model_world(observation, budget)
@@ -114,15 +111,14 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
 
 
 def test_progress_verified_facts_require_evaluation_evidence() -> None:
-    observation = WorldObservation(
+    observation = fused_world(
         "world:progress",
         (SemanticTarget("target:1", "status", "Status"),),
         (
             StateFact("fact:weak", "target:1", "weak", True, "source:1"),
             StateFact("fact:verified", "target:1", "verified", True, "source:1"),
         ),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
     criterion = {"criterion_id": "criterion:verified", "target_id": "target:1"}
     task = TaskGoal("progress", "Inspect verified state", success_criteria=(criterion,))
@@ -161,14 +157,9 @@ def test_model_artifact_view_exposes_resolvable_identity_but_not_private_value()
         ObservationSourceProfile.visual(),
         artifacts={"receipt": {"path": "/private/receipt.pdf", "credential": "secret"}},
     )
-    observation = WorldObservation(
-        "world:artifact",
-        (),
-        (),
-        (),
-        {"visual": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    observation = fused.observation
     task = TaskGoal("artifact", "Inspect receipt")
     evaluation = TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.INCOMPLETE, "pending")
 
@@ -190,12 +181,10 @@ def test_model_artifact_view_exposes_resolvable_identity_but_not_private_value()
 def test_target_state_filters_private_fields_before_applying_public_limit() -> None:
     private = {f"selector_{index}": f"#{index}" for index in range(8)}
     public = {"api_token_enabled": True, "public_after_private": "visible"}
-    observation = WorldObservation(
+    observation = fused_world(
         "world:filter-order",
         (SemanticTarget("target:1", "region", "Target", {**private, **public}),),
-        (),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
 
     target = project_model_world(observation, ContextProjectionBudget()).targets.items[0]
@@ -207,7 +196,7 @@ def test_target_state_filters_private_fields_before_applying_public_limit() -> N
 
 
 def test_complete_agent_context_respects_total_serialized_byte_budget() -> None:
-    observation = WorldObservation(
+    observation = fused_world(
         "world:bounded",
         tuple(
             SemanticTarget(
@@ -219,9 +208,7 @@ def test_complete_agent_context_respects_total_serialized_byte_budget() -> None:
             )
             for index in range(64)
         ),
-        (),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
     task = TaskGoal("bounded", "Inspect the bounded context")
     state = AgentLoopState(observation)
@@ -246,12 +233,10 @@ def test_complete_agent_context_respects_total_serialized_byte_budget() -> None:
 
 
 def test_action_options_share_the_total_context_byte_budget_truthfully() -> None:
-    observation = WorldObservation(
+    observation = fused_world(
         "world:actions",
         (SemanticTarget("target:0", "form", "Target"),),
-        (),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
     schema = {
         "type": "object",
@@ -292,7 +277,7 @@ def test_action_options_share_the_total_context_byte_budget_truthfully() -> None
 
 def test_context_budget_limits_actions_and_destinations_truthfully() -> None:
     targets = tuple(SemanticTarget(f"target:{index}", "option", f"Target {index}") for index in range(8))
-    observation = WorldObservation("world:budget", targets, (), (), {"dom": CoverageState.COMPLETE})
+    observation = fused_world("world:budget", targets, surface="dom")
     options = tuple(
         ActionOption(
             f"action:{index}",
@@ -336,12 +321,10 @@ def test_context_budget_limits_actions_and_destinations_truthfully() -> None:
 
 
 def test_malformed_schema_is_rejected_before_action_page_projection() -> None:
-    observation = WorldObservation(
+    observation = fused_world(
         "world:schema-page",
         (SemanticTarget("target:0", "button", "Target"),),
-        (),
-        (),
-        {"dom": CoverageState.COMPLETE},
+        surface="dom",
     )
     valid = ActionOption(
         "action:valid",
@@ -360,7 +343,7 @@ def test_malformed_schema_is_rejected_before_action_page_projection() -> None:
 
 def test_current_page_targets_are_pinned_into_bounded_model_world() -> None:
     targets = tuple(SemanticTarget(f"target:{index}", "button", f"Target {index}") for index in range(5))
-    observation = WorldObservation("world:pinned", targets, (), (), {"dom": CoverageState.COMPLETE})
+    observation = fused_world("world:pinned", targets, surface="dom")
     option = ActionOption(
         "action:pinned",
         observation.observation_id,
@@ -392,7 +375,7 @@ def test_current_page_targets_are_pinned_into_bounded_model_world() -> None:
 
 
 def test_history_bound_keeps_newest_semantic_turns() -> None:
-    observation = WorldObservation("world:history", (), (), (), {"dom": CoverageState.COMPLETE})
+    observation = fused_world("world:history", surface="dom")
     task = TaskGoal("history", "Keep newest history")
     evaluation = TaskEvaluation(
         task.task_id,
@@ -420,7 +403,7 @@ def test_history_bound_keeps_newest_semantic_turns() -> None:
 
 
 def test_total_byte_compaction_drops_oldest_history_before_newest() -> None:
-    observation = WorldObservation("world:history-bytes", (), (), (), {"dom": CoverageState.COMPLETE})
+    observation = fused_world("world:history-bytes", surface="dom")
     task = TaskGoal("history-bytes", "Keep the newest turn during byte compaction")
     evaluation = TaskEvaluation(
         task.task_id,

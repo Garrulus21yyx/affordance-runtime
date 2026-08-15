@@ -9,12 +9,11 @@ from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.providers.port import FallbackModelPort, ModelConfig, model_port_from_environment
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
-    WorldObservation,
+    WorldFusion,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -37,12 +36,12 @@ def test_opt_in_live_semantic_evaluator_is_one_attempt_and_side_effect_free() ->
         "source:live-smoke",
     )
     source = SurfaceObservation(
-        "source:live-smoke", "static", "revision:1", ObservationSourceProfile.dom(), facts=(fact,)
+        "source:live-smoke", "static", "revision:1", ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("report:live-smoke", "content", "internal report"),), facts=(fact,)
     )
-    world = WorldObservation(
-        "world:live-smoke", (SemanticTarget("report:live-smoke", "content", "internal report"),),
-        (fact,), (), {"static": CoverageState.COMPLETE}, sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
     task = TaskGoal(
         "task:live-smoke", "Evaluate an internal static sentence",
         success_criteria=({

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions import (
     ActionBinding,
@@ -26,11 +26,11 @@ from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_t
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 
@@ -140,8 +140,17 @@ def shared_world(identity: str, expanded: bool, surface: str) -> WorldObservatio
         {"type": "object", "properties": {}, "additionalProperties": False},
         {"backend_private": surface}, risk=ActionRisk.LOW,
     )
-    source = SurfaceObservation(identity, surface, f"revision:{identity}", profile, (target,), (fact,), (binding,))
-    return WorldObservation(identity, (target,), (fact,), (binding,), {surface: CoverageState.COMPLETE}, sources=(source,))
+    source = SurfaceObservation(
+        identity,
+        surface,
+        f"revision:{identity}",
+        profile,
+        (target,),
+        (fact,),
+        (binding,),
+        visual_only_target_ids=(target.target_id,) if surface == "visual" else (),
+    )
+    return _fuse_source(source)
 
 
 def shared_environment(surface: str, *, sent_unknown: bool = False) -> StaticEnvironment:
@@ -158,7 +167,12 @@ def shared_environment(surface: str, *, sent_unknown: bool = False) -> StaticEnv
 def paging_world(identity: str, expanded: bool) -> WorldObservation:
     targets, bindings = [], []
     for index in range(40):
-        target = SemanticTarget(f"target:{index:02d}", "control", f"control {index}", {"expanded": expanded})
+        target = SemanticTarget(
+            "shared:1" if index == 0 else f"target:{index:02d}",
+            "control",
+            f"control {index}",
+            {"expanded": expanded},
+        )
         targets.append(target)
         bindings.append(ActionBinding(
             f"binding:{identity}:{index}", identity, identity, f"revision:{identity}", f"fingerprint:{identity}:{index}",
@@ -171,9 +185,14 @@ def paging_world(identity: str, expanded: bool) -> WorldObservation:
         identity, "dom", f"revision:{identity}", ObservationSourceProfile.dom(),
         tuple(targets), (fact,), tuple(bindings),
     )
-    return WorldObservation(
-        identity, tuple(targets), (fact,), tuple(bindings), {"dom": CoverageState.COMPLETE}, sources=(source,),
-    )
+    return _fuse_source(source)
+
+
+def _fuse_source(source: SurfaceObservation) -> WorldObservation:
+    result = WorldFusion().fuse((source,))
+    if result.observation is None:
+        raise ValueError(result.reason_code)
+    return result.observation
 
 
 def paging_environment() -> StaticEnvironment:
@@ -233,19 +252,12 @@ def confirmation_task() -> TaskGoal:
 
 def _risk_world(identity: str, expanded: bool, risk: ActionRisk) -> WorldObservation:
     world = shared_world(identity, expanded, "dom")
-    binding = world.bindings[0]
-    replacement = ActionBinding(
-        binding.binding_id, binding.world_observation_id, binding.source_observation_id,
-        binding.source_revision, binding.target_fingerprint, binding.target_id,
-        binding.source_target_id, binding.surface, binding.executor_id, binding.semantic_action,
-        binding.primitive_action, binding.effect_category, binding.semantic_effects,
-        binding.parameter_schema, binding.payload, risk=risk,
-    )
-    source = SurfaceObservation(
-        identity, "dom", f"revision:{identity}", ObservationSourceProfile.dom(),
-        world.targets, world.facts, (replacement,),
-    )
-    return WorldObservation(identity, world.targets, world.facts, (replacement,), world.coverage, sources=(source,))
+    source = world.sources[0]
+    replacement = replace(source.bindings[0], risk=risk)
+    fused = WorldFusion().fuse((replace(source, bindings=(replacement,)),))
+    if fused.observation is None:
+        raise ValueError(fused.reason_code)
+    return fused.observation
 
 
 @dataclass
@@ -268,14 +280,20 @@ def forbidden_environment() -> ForbiddenRouteEnvironment:
         "external", ("forbidden_effect",), allowed.parameter_schema, {"route": "forbidden"},
         risk=ActionRisk.HIGH,
     )
-    source = SurfaceObservation(
-        before.observation_id, "dom", "revision:forbidden:before", ObservationSourceProfile.dom(),
-        before.targets, before.facts, (allowed, forbidden),
+    source = before.sources[0]
+    local_allowed = source.bindings[0]
+    local_forbidden = replace(
+        forbidden,
+        world_observation_id=source.observation_id,
+        target_id=local_allowed.target_id,
+        source_target_id=local_allowed.source_target_id,
+        source_observation_id=source.observation_id,
+        source_revision=source.revision,
     )
-    before = WorldObservation(
-        before.observation_id, before.targets, before.facts, (allowed, forbidden),
-        before.coverage, sources=(source,),
-    )
+    fused = WorldFusion().fuse((replace(source, bindings=(local_allowed, local_forbidden)),))
+    if fused.observation is None:
+        raise ValueError(fused.reason_code)
+    before = fused.observation
     return ForbiddenRouteEnvironment(
         (before, shared_world("forbidden:after", True, "dom")),
         (ActionResult("*", DispatchStatus.SENT, "dom", True),),

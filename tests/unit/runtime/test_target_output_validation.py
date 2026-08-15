@@ -7,7 +7,7 @@ from affordance_runtime.evaluation import EvaluatedOutput, TaskEvaluation, TaskE
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_task_evaluation
 from affordance_runtime.task import EvaluationSpec, RiskProfile, TaskGoal
-from affordance_runtime.world import ObservationSourceProfile, SurfaceObservation
+from affordance_runtime.world import WorldFusion
 from tests.integration.agent.test_agent_loop import _world
 
 
@@ -39,14 +39,11 @@ def _proposal(outputs=()) -> TaskEvaluation:
 def _validate(task: TaskGoal, proposal: TaskEvaluation, *, artifact: dict | None = None) -> None:
     observation = _world("after", True)
     if artifact is not None:
-        source = SurfaceObservation(
-            "source:output",
-            "dom",
-            "revision:output",
-            ObservationSourceProfile.dom(),
-            artifacts={"report": artifact},
-        )
-        observation = replace(observation, sources=(source,))
+        source = replace(observation.sources[0], artifacts={"report": artifact})
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        observation = fused.observation
+        proposal = replace(proposal, observation_id=observation.observation_id)
     validate_task_evaluation(
         proposal,
         task,
@@ -70,7 +67,7 @@ def test_required_output_path_and_sha256_fail_closed(tmp_path) -> None:
     missing = tmp_path / "missing.txt"
     digest = hashlib.sha256(b"report").hexdigest()
     value = {"path": str(missing), "sha256": digest}
-    output = EvaluatedOutput("report", value, ("artifact:source:output:report",))
+    output = EvaluatedOutput("report", value, ("artifact:after:report",))
     with pytest.raises(ValueError, match="regular file"):
         _validate(_task(str(missing), digest), _proposal((output,)), artifact=value)
 
@@ -78,7 +75,7 @@ def test_required_output_path_and_sha256_fail_closed(tmp_path) -> None:
     path.write_text("report", encoding="utf-8")
     wrong_digest = "0" * 64
     value = {"path": str(path), "sha256": wrong_digest}
-    output = EvaluatedOutput("report", value, ("artifact:source:output:report",))
+    output = EvaluatedOutput("report", value, ("artifact:after:report",))
     with pytest.raises(ValueError, match="required output SHA-256 does not match"):
         _validate(_task(str(path), wrong_digest), _proposal((output,)), artifact=value)
 
@@ -88,7 +85,7 @@ def test_matching_file_integrity_and_current_evidence_allows_complete(tmp_path) 
     path.write_text("report", encoding="utf-8")
     digest = hashlib.sha256(b"report").hexdigest()
     value = {"path": str(path), "sha256": digest}
-    output = EvaluatedOutput("report", value, ("artifact:source:output:report",))
+    output = EvaluatedOutput("report", value, ("artifact:after:report",))
 
     _validate(_task(str(path), digest), _proposal((output,)), artifact=value)
 
@@ -100,7 +97,7 @@ def test_symlink_to_regular_file_is_not_the_regular_output_profile(tmp_path) -> 
     link.symlink_to(target)
     digest = hashlib.sha256(b"report").hexdigest()
     value = {"path": str(link), "sha256": digest}
-    output = EvaluatedOutput("report", value, ("artifact:source:output:report",))
+    output = EvaluatedOutput("report", value, ("artifact:after:report",))
 
     with pytest.raises(ValueError, match="regular file"):
         _validate(_task(str(link), digest), _proposal((output,)), artifact=value)

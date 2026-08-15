@@ -40,7 +40,7 @@ def assess_semantic_readiness(
         return SemanticReadiness.INCONCLUSIVE
     if window is not None and window.eligible_count > window.visible_count:
         return SemanticReadiness.INCONCLUSIVE
-    complete = bool(observation.coverage) and all(
-        item == CoverageState.COMPLETE for item in observation.coverage.values()
+    complete = bool(observation.source_manifest) and all(
+        item.coverage == CoverageState.COMPLETE for item in observation.source_manifest
     )
     return SemanticReadiness.NOT_READY if complete else SemanticReadiness.INCONCLUSIVE

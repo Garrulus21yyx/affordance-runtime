@@ -21,8 +21,8 @@ from affordance_runtime.task import (
     TaskUnsupported,
     ThinTaskIntake,
 )
-from affordance_runtime.world import CoverageState, WorldObservation
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 class NeverPolicy:
@@ -105,13 +105,7 @@ def test_thin_intake_returns_closed_nonready_outcomes() -> None:
 
 
 def test_target_runtime_starts_a_natural_language_request_through_intake() -> None:
-    observation = WorldObservation(
-        "observation:initial",
-        (),
-        (),
-        (),
-        {"static": CoverageState.COMPLETE},
-    )
+    observation = fused_world("observation:initial", surface="static")
     environment = StaticEnvironment((observation,))
     runtime = TargetRuntime(
         AgentDecisionPorts(NeverPolicy()),

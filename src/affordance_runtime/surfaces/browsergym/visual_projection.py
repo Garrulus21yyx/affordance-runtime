@@ -39,11 +39,14 @@ from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERA
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     CoverageState,
-    EntityCorrespondence,
+    EntityAlignmentBasis,
+    EntityAlignmentProposal,
     ObservationGroundingRegion,
     ObservationMedia,
+    ObservationMediaVariant,
     ObservationSourceProfile,
     SemanticTarget,
+    SourceEntityEndpoint,
     StateFact,
     SurfaceObservation,
 )
@@ -73,15 +76,18 @@ class VisualCorrespondenceStatus(StrEnum):
 class VisualCorrespondenceDecision:
     source_target_id: str
     status: VisualCorrespondenceStatus
-    canonical_target_id: str = ""
+    candidate_source_observation_id: str = ""
+    candidate_source_target_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.source_target_id.strip():
             raise ValueError("visual correspondence decision requires source identity")
-        if (self.status is VisualCorrespondenceStatus.MATCHED) != bool(
-            self.canonical_target_id.strip()
-        ):
-            raise ValueError("only matched correspondence carries canonical identity")
+        has_candidate = bool(
+            self.candidate_source_observation_id.strip()
+            and self.candidate_source_target_id.strip()
+        )
+        if (self.status is VisualCorrespondenceStatus.MATCHED) != has_candidate:
+            raise ValueError("only matched correspondence carries a source-local candidate endpoint")
 
 
 def browsergym_visual_frame(raw: dict[str, object], observation_id: str) -> VisualFrame:
@@ -132,6 +138,10 @@ def project_browsergym_screenshot_source(
             "screenshot",
             "image/png",
             frame.image_bytes,
+            capture_group_id=acquisition_root_id,
+            variant=ObservationMediaVariant.RAW,
+            dimensions=(frame.image_width, frame.image_height),
+            coordinate_space_id="browsergym:viewport_pixels",
         ),),
         acquisition_root_id=acquisition_root_id,
     )
@@ -200,10 +210,10 @@ def project_browsergym_visual_source(
     targets = tuple(
         SemanticTarget(
             region.region_id,
-            structured_targets[decision_by_id[region.region_id].canonical_target_id].role
+            structured_targets[decision_by_id[region.region_id].candidate_source_target_id].role
             if decision_by_id[region.region_id].status is VisualCorrespondenceStatus.MATCHED
             else region.role,
-            structured_targets[decision_by_id[region.region_id].canonical_target_id].label
+            structured_targets[decision_by_id[region.region_id].candidate_source_target_id].label
             if decision_by_id[region.region_id].status is VisualCorrespondenceStatus.MATCHED
             else region.label,
             project_visual_semantic_state(dict(region.state)),
@@ -241,6 +251,7 @@ def project_browsergym_visual_source(
             region.region_id,
             _integer_bbox(region, frame.image_width, frame.image_height),
             region.confidence,
+            "browsergym:viewport_pixels",
         )
         for region in regions
     )
@@ -250,6 +261,10 @@ def project_browsergym_visual_source(
         "image/png",
         frame.image_bytes,
         grounding_regions,
+        capture_group_id=acquisition_root_id,
+        variant=ObservationMediaVariant.RAW,
+        dimensions=(frame.image_width, frame.image_height),
+        coordinate_space_id="browsergym:viewport_pixels",
     )
     unsupported = tuple(
         region.primitive_action for region in regions if region.primitive_action != "point_activate"
@@ -273,8 +288,18 @@ def project_browsergym_visual_source(
         },
         media=(media,),
         acquisition_root_id=acquisition_root_id,
-        correspondences=tuple(
-            EntityCorrespondence(item.source_target_id, item.canonical_target_id)
+        alignment_proposals=tuple(
+            EntityAlignmentProposal(
+                f"proposal:{observation_id}:{item.source_target_id}",
+                SourceEntityEndpoint(observation_id, item.source_target_id),
+                SourceEntityEndpoint(
+                    item.candidate_source_observation_id,
+                    item.candidate_source_target_id,
+                ),
+                EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE,
+                (f"media:{observation_id}:visual-screenshot:{item.source_target_id}",),
+                1.0,
+            )
             for item in decisions
             if item.status is VisualCorrespondenceStatus.MATCHED
         ),
@@ -380,6 +405,7 @@ def _correspondence_decision(
         return VisualCorrespondenceDecision(
             region.region_id,
             VisualCorrespondenceStatus.MATCHED,
+            structured_source.observation_id,
             compatible[0][0],
         )
     if len(compatible) > 1:
@@ -402,6 +428,7 @@ def _correspondence_decision(
         return VisualCorrespondenceDecision(
             region.region_id,
             VisualCorrespondenceStatus.MATCHED,
+            structured_source.observation_id,
             exact_semantic[0],
         )
     if len(exact_semantic) > 1:

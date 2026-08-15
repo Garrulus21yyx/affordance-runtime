@@ -7,6 +7,7 @@ from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model.providers.port import ModelConfig
+from affordance_runtime.world import WorldFusion
 from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 from tests.support.agent.static_environment import StaticEnvironment
 from tests.unit.runtime.test_dynamic_tool_bridge import _CompactPort
@@ -28,7 +29,9 @@ def _value_world(observation_id, enabled):
         verification_contract_digest="",
     )
     source = replace(world.sources[0], bindings=(binding,))
-    return replace(world, bindings=(binding,), sources=(source,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def test_dynamic_tool_facade_dispatches_only_through_existing_agent_loop() -> None:

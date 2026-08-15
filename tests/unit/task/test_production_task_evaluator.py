@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 
@@ -17,8 +17,10 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
+from tests.support.world import fused_world
 
 
 def _world(
@@ -32,17 +34,15 @@ def _world(
 ) -> WorldObservation:
     chosen = profile or ObservationSourceProfile.dom()
     fact = StateFact("fact:current", subject, predicate, value, source_id)
+    target = SemanticTarget(subject, "content", subject, {predicate: value})
     source = SurfaceObservation(
-        source_id, chosen.debug_source, "revision:1", chosen, facts=(fact,), artifacts=artifacts or {}
+        source_id, chosen.debug_source, "revision:1", chosen,
+        targets=(target,), facts=(fact,), artifacts=artifacts or {},
+        visual_only_target_ids=((subject,) if chosen.modality.value == "visual" else ()),
     )
-    return WorldObservation(
-        "world:1",
-        (SemanticTarget(subject, "content", subject, {predicate: value}),),
-        (fact,),
-        (),
-        {source.surface: CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _mechanical_task(*, expression=None, evaluation_spec=None) -> TaskGoal:
@@ -73,11 +73,11 @@ def test_production_mechanical_status_is_runtime_computed_without_semantic_call(
         satisfied = await evaluator.evaluate(_mechanical_task(), _world(True))
         unsatisfied = await evaluator.evaluate(_mechanical_task(), _world(False))
         ambiguous_world = _world(True)
-        ambiguous_world = WorldObservation(
-            ambiguous_world.observation_id,
-            ambiguous_world.targets,
-            ambiguous_world.facts + (StateFact("fact:other", "target:2", "ready", True, "source:1"),),
-            (), ambiguous_world.coverage, sources=ambiguous_world.sources,
+        ambiguous_world = replace(
+            ambiguous_world,
+            facts=ambiguous_world.facts + (
+                StateFact("fact:other", "target:2", "ready", True, "source:1"),
+            ),
         )
         unknown = await evaluator.evaluate(_mechanical_task(), ambiguous_world)
 
@@ -134,10 +134,7 @@ def test_semantic_missing_extra_or_wrong_target_proposals_are_unknown() -> None:
 
     world = _world("clear conclusion", subject="report:1", predicate="content")
     unrelated_fact = StateFact("fact:other", "other:1", "content", "unrelated", "source:1")
-    world = WorldObservation(
-        world.observation_id, world.targets, world.facts + (unrelated_fact,), (),
-        world.coverage, sources=world.sources,
-    )
+    world = replace(world, facts=world.facts + (unrelated_fact,))
     proposal = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:other",), "wrong scope")
     extra = (
         proposal,
@@ -176,10 +173,7 @@ def test_hybrid_requires_both_mechanical_and_semantic_components() -> None:
     def hybrid_world(value):
         world = _world(value, subject="report:1")
         semantic = StateFact("fact:semantic", "report:1", "content", "clear conclusion", "source:1")
-        return WorldObservation(
-            world.observation_id, world.targets, world.facts + (semantic,), (),
-            world.coverage, sources=world.sources,
-        )
+        return replace(world, facts=world.facts + (semantic,))
 
     mechanical_failed = asyncio.run(ProductionTaskEvaluator(failed_judge).evaluate(task, hybrid_world(False)))
     semantic_unknown = asyncio.run(ProductionTaskEvaluator(ScriptedJudge((unknown,))).evaluate(task, hybrid_world(True)))
@@ -208,10 +202,7 @@ def test_hybrid_mechanical_unknown_skips_semantic_judge() -> None:
     task = _semantic_task("hybrid")
     world = _world(True, subject="report:1")
     duplicate = StateFact("fact:duplicate", "report:1", "ready", True, "source:1")
-    world = WorldObservation(
-        world.observation_id, world.targets, world.facts + (duplicate,), (),
-        world.coverage, sources=world.sources,
-    )
+    world = replace(world, facts=world.facts + (duplicate,))
     judge = ScriptedJudge(())
 
     result = asyncio.run(ProductionTaskEvaluator(judge).evaluate(task, world))
@@ -241,8 +232,14 @@ def test_bounded_success_expression_all_any_not(expression, expected) -> None:
         StateFact("fact:a", "target:1", "a", True, "source:1"),
         StateFact("fact:b", "target:1", "b", False, "source:1"),
     )
-    source = SurfaceObservation("source:1", "dom", "revision:1", ObservationSourceProfile.dom(), facts=facts)
-    world = WorldObservation("world:1", (SemanticTarget("target:1", "state", "target"),), facts, (), {"dom": CoverageState.COMPLETE}, sources=(source,))
+    source = SurfaceObservation(
+        "source:1", "dom", "revision:1", ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("target:1", "state", "target", {"a": True, "b": False}),),
+        facts=facts,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
 
     result = asyncio.run(ProductionTaskEvaluator().evaluate(task, world))
     assert result.status == expected
@@ -261,10 +258,7 @@ def test_authoritative_checks_and_strict_current_source_lineage() -> None:
     authoritative = asyncio.run(ProductionTaskEvaluator().evaluate(weak_task, _world(True, profile=ObservationSourceProfile.wot())))
     orphan_world = _world(True)
     orphan_fact = StateFact("fact:current", "target:1", "ready", True, "orphan")
-    orphan_world = WorldObservation(
-        orphan_world.observation_id, orphan_world.targets, (orphan_fact,), (),
-        orphan_world.coverage, sources=orphan_world.sources,
-    )
+    orphan_world = replace(orphan_world, facts=(orphan_fact,))
     orphan = asyncio.run(ProductionTaskEvaluator().evaluate(strict_task, orphan_world))
 
     assert structural.status == TaskEvaluationStatus.UNKNOWN
@@ -277,7 +271,7 @@ def test_authoritative_or_strict_semantic_absence_without_evidence_is_unknown() 
         "id": "quality", "adjudicator": "semantic", "kind": "semantic_rubric",
         "rubric": "A report exists", "evidence_scope_target_ids": ["report:1"],
     }
-    absent = WorldObservation("absent", (), (), (), {"dom": CoverageState.COMPLETE})
+    absent = fused_world("absent", surface="dom")
     authoritative = TaskGoal(
         "authoritative", "Create report", success_criteria=(criterion,),
         evaluation_spec=EvaluationSpec({"criterion": "quality"}, authoritative_checks=("quality",)),
@@ -297,10 +291,10 @@ def test_missing_required_output_is_incomplete_when_inventory_is_complete() -> N
         requested_outputs=("report",),
     )
     complete_inventory = _world(True)
-    truncated = WorldObservation(
-        complete_inventory.observation_id, complete_inventory.targets, complete_inventory.facts,
-        (), {"dom": CoverageState.TRUNCATED}, sources=complete_inventory.sources,
-    )
+    source = replace(complete_inventory.sources[0], coverage=CoverageState.TRUNCATED)
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    truncated = fused.observation
     assert asyncio.run(ProductionTaskEvaluator().evaluate(task, complete_inventory)).status == TaskEvaluationStatus.INCOMPLETE
     assert asyncio.run(ProductionTaskEvaluator().evaluate(task, truncated)).status == TaskEvaluationStatus.UNKNOWN
 
@@ -313,10 +307,7 @@ def test_missing_required_output_does_not_overwrite_unknown_criterion() -> None:
     )
     world = _world(True)
     ambiguous = StateFact("fact:ambiguous", "target:2", "ready", False, "source:1")
-    world = WorldObservation(
-        world.observation_id, world.targets, (*world.facts, ambiguous), (),
-        world.coverage, sources=world.sources,
-    )
+    world = replace(world, facts=(*world.facts, ambiguous))
 
     assert asyncio.run(ProductionTaskEvaluator().evaluate(task, world)).status == TaskEvaluationStatus.UNKNOWN
 

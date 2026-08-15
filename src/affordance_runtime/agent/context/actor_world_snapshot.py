@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.contracts import (
+    EntityAlignmentDisposition,
+    SourceEntityEndpoint,
+    WorldObservation,
+)
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
 if TYPE_CHECKING:
@@ -272,7 +276,10 @@ def project_actor_world_snapshot(
     refs = dict(grounding.target_refs)
     visible = {item.target_id: item for item in world.targets.items}
     entity_by_ref = {item.ref: item for item in grounding.entities}
-    source_refs = {id(source): f"S{index}" for index, source in enumerate(observation.sources, 1)}
+    source_refs = {
+        source.observation_id: f"S{index}"
+        for index, source in enumerate(observation.sources, 1)
+    }
     memberships = _source_memberships(observation, visible, source_refs)
     primary_source = {
         target_id: memberships[target_id][0]
@@ -396,12 +403,15 @@ def project_actor_world_snapshot(
             for item in _walk_nodes(root)
         }
         missing_ids = {target_id for target_id, ref in refs.items() if ref not in represented}
+        remaining_nodes = max(0, max_structure_nodes - len(represented))
         for source in sources:
-            source_ids = frozenset(
+            all_source_ids = tuple(
                 target_id
-                for target_id in missing_ids
+                for target_id in visible
+                if target_id in missing_ids
                 if primary_source.get(target_id, fallback_source) == source.source_ref
             )
+            source_ids = frozenset(all_source_ids[:remaining_nodes])
             if not source_ids:
                 continue
             roots = tuple(
@@ -414,9 +424,10 @@ def project_actor_world_snapshot(
                 source.modality,
                 roots,
                 len(source_ids),
-                len(source_ids),
-                False,
+                len(all_source_ids),
+                len(source_ids) < len(all_source_ids),
             ))
+            remaining_nodes -= len(source_ids)
     if not documents:
         documents = tuple(
             ActorWorldDocumentView(
@@ -575,15 +586,10 @@ def _ref_order(value: str) -> tuple[str, int]:
 def _source_memberships(observation, visible, source_refs) -> dict[str, tuple[str, ...]]:
     memberships: dict[str, list[str]] = defaultdict(list)
     canonical_ids = set(visible)
-    for source in observation.sources:
-        source_ref = source_refs[id(source)]
-        correspondence = {
-            item.source_target_id: item.canonical_target_id for item in source.correspondences
-        }
-        for target in source.targets:
-            canonical = correspondence.get(target.target_id, target.target_id)
-            if canonical in canonical_ids and source_ref not in memberships[canonical]:
-                memberships[canonical].append(source_ref)
+    for link in observation.entity_source_links:
+        source_ref = source_refs[link.source_observation_id]
+        if link.canonical_target_id in canonical_ids and source_ref not in memberships[link.canonical_target_id]:
+            memberships[link.canonical_target_id].append(source_ref)
     return {key: tuple(value) for key, value in memberships.items()}
 
 
@@ -599,19 +605,67 @@ def _structure_documents(
 ) -> tuple[ActorWorldDocumentView, ...]:
     if max_structure_nodes < 1:
         raise ValueError("Actor structure node bound must be positive")
+    canonical_by_endpoint = {
+        SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.canonical_target_id
+        for item in observation.entity_source_links
+    }
+    disposition_by_endpoint = {
+        SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.disposition
+        for item in observation.entity_source_links
+    }
     next_context_ref = 1
     documents: list[ActorWorldDocumentView] = []
     remaining = max_structure_nodes
-    for index, source in enumerate(observation.sources):
+    emitted_entities: set[str] = set()
+    structural_sources = sorted(
+        (
+            (index, source)
+            for index, source in enumerate(observation.sources)
+            if source.structure
+        ),
+        key=lambda item: (
+            0 if str(item[1].source_profile.assurance) == "structural" else 1,
+            0 if str(item[1].coverage) == "complete" else 1,
+            item[1].observation_id,
+        ),
+    )
+    for lens_index, (index, source) in enumerate(structural_sources):
         if not source.structure or remaining <= 0:
             continue
         source_ref = f"S{index + 1}"
         by_id = {item.structure_id: item for item in source.structure}
-        required = {
-            item.structure_id
+        canonical_for_structure = {
+            item.structure_id: canonical_by_endpoint.get(
+                SourceEntityEndpoint(source.observation_id, item.semantic_target_id)
+            )
             for item in source.structure
-            if item.semantic_target_id in visible
+            if item.semantic_target_id
         }
+        if lens_index == 0:
+            required = set(by_id)
+        else:
+            required = {
+                item.structure_id
+                for item in source.structure
+                if (
+                    (canonical := canonical_for_structure.get(item.structure_id)) in visible
+                    and canonical not in emitted_entities
+                )
+                or (
+                    item.semantic_target_id
+                    and disposition_by_endpoint.get(
+                        SourceEntityEndpoint(source.observation_id, item.semantic_target_id)
+                    )
+                    in {
+                        EntityAlignmentDisposition.UNMATCHED_ALLOCATED,
+                        EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED,
+                        EntityAlignmentDisposition.CONFLICTED_ALLOCATED,
+                    }
+                    and canonical_for_structure.get(item.structure_id) not in emitted_entities
+                )
+            }
+            if not required:
+                continue
         for structure_id in tuple(required):
             current = by_id[structure_id]
             while current.parent_structure_id and current.parent_structure_id in by_id:
@@ -619,15 +673,20 @@ def _structure_documents(
                     break
                 required.add(current.parent_structure_id)
                 current = by_id[current.parent_structure_id]
-        ordered = [item for item in source.structure if item.structure_id in required]
-        ordered.extend(item for item in source.structure if item.structure_id not in required)
+        ordered = _forest_order(source.structure, required)
         retained = tuple(ordered[:remaining])
         retained_ids = {item.structure_id for item in retained}
         actor_refs: dict[str, str] = {}
         for item in retained:
-            semantic_ref = refs.get(item.semantic_target_id)
-            if semantic_ref is not None:
+            canonical_id = canonical_for_structure.get(item.structure_id)
+            semantic_ref = refs.get(canonical_id or "")
+            if (
+                semantic_ref is not None
+                and canonical_id is not None
+                and canonical_id not in emitted_entities
+            ):
                 actor_refs[item.structure_id] = semantic_ref
+                emitted_entities.add(canonical_id)
             else:
                 actor_refs[item.structure_id] = f"N{next_context_ref}"
                 next_context_ref += 1
@@ -636,8 +695,10 @@ def _structure_documents(
             if structure_id in active:
                 raise ValueError("Actor source structure contains a cycle")
             item = by_id[structure_id]
-            target = visible.get(item.semantic_target_id)
-            target_ref = refs.get(item.semantic_target_id)
+            canonical_id = canonical_for_structure.get(structure_id)
+            is_entity_occurrence = actor_refs[structure_id].startswith("E")
+            target = visible.get(canonical_id or "") if is_entity_occurrence else None
+            target_ref = refs.get(canonical_id or "") if is_entity_occurrence else None
             entity = entity_by_ref.get(target_ref or "")
             children = tuple(
                 node(child, active | {structure_id})
@@ -649,10 +710,22 @@ def _structure_documents(
                 target.role if target is not None else item.role,
                 target.label if target is not None else item.label,
                 target.state if target is not None else item.state,
-                evidence_by_subject.get(item.semantic_target_id, {}),
-                tuple(facts_by_subject.get(item.semantic_target_id, ())),
+                evidence_by_subject.get(canonical_id or "", {}),
+                tuple(facts_by_subject.get(canonical_id or "", ())),
                 _non_tree_relations(target, refs) if target is not None else {},
-                (source_ref,),
+                (
+                    tuple(
+                        f"S{source_index + 1}"
+                        for source_index, candidate_source in enumerate(observation.sources)
+                        if any(
+                            link.source_observation_id == candidate_source.observation_id
+                            and link.canonical_target_id == canonical_id
+                            for link in observation.entity_source_links
+                        )
+                    )
+                    if target is not None
+                    else (source_ref,)
+                ),
                 entity.marked if entity is not None else False,
                 children,
                 item.parent_outside_structure
@@ -669,11 +742,35 @@ def _structure_documents(
             sources[index].modality,
             roots,
             len(retained),
-            source.structure_total_count,
-            len(retained) < source.structure_total_count,
+            source.structure_total_count if lens_index == 0 else len(ordered),
+            len(retained) < (source.structure_total_count if lens_index == 0 else len(ordered)),
         ))
         remaining -= len(retained)
     return tuple(documents)
+
+
+def _forest_order(structure, allowed: set[str]) -> list:
+    """Return parent-first native forest order while preserving each child tuple."""
+
+    by_id = {item.structure_id: item for item in structure}
+    ordered: list = []
+    visited: set[str] = set()
+
+    def visit(structure_id: str) -> None:
+        if structure_id in visited or structure_id not in allowed:
+            return
+        visited.add(structure_id)
+        item = by_id[structure_id]
+        ordered.append(item)
+        for child_id in item.child_structure_ids:
+            visit(child_id)
+
+    for item in structure:
+        if not item.parent_structure_id or item.parent_structure_id not in allowed:
+            visit(item.structure_id)
+    for item in structure:
+        visit(item.structure_id)
+    return ordered
 
 
 def _non_tree_relations(target: ModelTargetView, refs: Mapping[str, str]) -> dict[str, object]:
@@ -713,21 +810,19 @@ def _rendering_coverage(source) -> str:
     return "current_screenshot_available" if any(item.kind == "screenshot" for item in source.media) else "not_available"
 
 
-def _media_source_ref(observation, evidence_ref: str, source_refs: Mapping[int, str]) -> str:
-    for source in observation.sources:
-        for media in source.media:
-            if canonical_artifact_ref(source.observation_id, media.media_id) == evidence_ref:
-                return source_refs[id(source)]
+def _media_source_ref(observation, evidence_ref: str, source_refs: Mapping[str, str]) -> str:
+    for item in observation.media:
+        if canonical_artifact_ref(item.source_observation_id, item.media.media_id) == evidence_ref:
+            return source_refs[item.source_observation_id]
     return ""
 
 
 def _media_aligned_refs(observation, evidence_ref: str, refs: Mapping[str, str]) -> tuple[str, ...]:
-    for source in observation.sources:
-        for media in source.media:
-            if canonical_artifact_ref(source.observation_id, media.media_id) == evidence_ref:
-                return tuple(
-                    refs[item.target_id]
-                    for item in media.grounding_regions
-                    if item.target_id in refs
-                )
+    for item in observation.media:
+        if canonical_artifact_ref(item.source_observation_id, item.media.media_id) == evidence_ref:
+            return tuple(
+                refs[region.target_id]
+                for region in item.media.grounding_regions
+                if region.target_id in refs
+            )
     return ()

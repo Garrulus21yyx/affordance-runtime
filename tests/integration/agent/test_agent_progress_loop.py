@@ -18,11 +18,11 @@ from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
@@ -62,14 +62,9 @@ def _world(observation_id: str, value: str) -> WorldObservation:
         (fact,),
         (binding,),
     )
-    return WorldObservation(
-        observation_id,
-        (target,),
-        (fact,),
-        (binding,),
-        {"dom": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _task() -> TaskGoal:

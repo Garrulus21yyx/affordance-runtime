@@ -17,7 +17,6 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,
-    CoverageState,
     ExecutionOutcome,
     ObservationAcquisition,
     ObservationCapabilities,
@@ -27,10 +26,11 @@ from affordance_runtime.world import (
     WorldObservationRequest,
 )
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 def _world(identity: str) -> WorldObservation:
-    return WorldObservation(identity, (), (), (), {"static": CoverageState.COMPLETE})
+    return fused_world(identity, surface="static")
 
 
 def _task() -> TaskGoal:

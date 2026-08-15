@@ -74,7 +74,10 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         type(state.recent_control_transitions[-1].decision).__name__ if state.recent_control_transitions else "",
         len(session.current_action_space.options) if session.current_action_space is not None else 0,
         len(state.current_observation.targets),
-        _coverage_summary(state.current_observation.coverage),
+        _coverage_summary({
+            item.source_observation_id: item.coverage
+            for item in state.current_observation.source_manifest
+        }),
         _pending_kind(session),
         tuple(sorted(state.control_transition_kind_counts.items())),
         str(latest_control.resulting_status)

@@ -1,20 +1,32 @@
-"""Pure deterministic fusion of selected source observations into one world."""
+"""Pure deterministic fusion of source-local observations into one canonical world."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import (
     ActionBinding,
+    CanonicalObservationMedia,
+    EntityAlignmentBasis,
+    EntityAlignmentDisposition,
+    EntityAlignmentProposal,
+    EntitySourceLink,
     ObservationConflict,
     SemanticTarget,
+    SourceEntityEndpoint,
+    SourceObservationManifest,
     StateFact,
     SurfaceObservation,
     WorldObservation,
+)
+from affordance_runtime.world.predicate_fusion import (
+    OBSERVATION_PREDICATE_REGISTRY,
+    PredicateFusionError,
 )
 
 
@@ -24,17 +36,9 @@ class FusionStatus(StrEnum):
 
 
 @dataclass(frozen=True)
-class FusedEntityProvenance:
-    canonical_target_id: str
-    source_refs: tuple[tuple[str, str], ...]
-    acquisition_roots: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class WorldFusionResult:
     status: FusionStatus
     observation: WorldObservation | None
-    entity_provenance: tuple[FusedEntityProvenance, ...]
     reason_code: str
 
     def __post_init__(self) -> None:
@@ -43,232 +47,515 @@ class WorldFusionResult:
 
 
 @dataclass(frozen=True)
+class _AlignmentPlan:
+    links: tuple[EntitySourceLink, ...]
+    mapping: dict[SourceEntityEndpoint, str]
+    canonical_order: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class WorldFusion:
     def fuse(self, sources: tuple[SurfaceObservation, ...]) -> WorldFusionResult:
         if not sources:
-            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, (), "no_acquired_source")
-        authority_error = _visual_authority_error(sources)
-        if authority_error:
-            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, (), authority_error)
-        for source in sources:
-            local_ids = {item.target_id for item in source.targets}
-            if any(item.subject_id not in local_ids for item in source.facts) or any(
-                item.target_id not in local_ids
-                or any(destination not in local_ids for destination in item.eligible_destination_ids)
-                for item in source.bindings
-            ):
-                return WorldFusionResult(
-                    FusionStatus.INCONCLUSIVE, None, (), "unresolved_source_subject",
-                )
-        world_id = _world_id(sources)
-        maps = _canonical_maps(sources)
-        targets: dict[str, SemanticTarget] = {}
-        provenance: dict[str, list[tuple[str, str, str]]] = {}
-        conflicts: list[ObservationConflict] = []
-        facts: list[StateFact] = []
-        fact_values: dict[tuple[str, str], tuple[object, str]] = {}
-        fact_ids: set[str] = set()
-        bindings: list[ActionBinding] = []
-        fused_sources: list[SurfaceObservation] = []
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, "no_acquired_source")
+        if len({source.observation_id for source in sources}) != len(sources):
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, "duplicate_source_observation_id")
+        ordered_sources = tuple(sorted(sources, key=lambda item: item.observation_id))
+        try:
+            for source in ordered_sources:
+                OBSERVATION_PREDICATE_REGISTRY.validate_source(source)
+        except PredicateFusionError as exc:
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, str(exc))
+        source_error = _source_domain_error(ordered_sources)
+        if source_error:
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, source_error)
+        visual_error = _visual_binding_authority_error(ordered_sources)
+        if visual_error:
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, visual_error)
+        proposal_error = _proposal_set_error(ordered_sources)
+        if proposal_error:
+            return WorldFusionResult(FusionStatus.INCONCLUSIVE, None, proposal_error)
 
-        for source in sources:
-            mapping = maps[source.surface]
-            for target in source.targets:
-                canonical_id = mapping[target.target_id]
-                rewritten = replace(
-                    target,
-                    target_id=canonical_id,
-                    relations=_rewrite_relations(dict(target.relations), mapping),
+        plan = _alignment_plan(ordered_sources)
+        world_id = _world_id(ordered_sources)
+        source_by_id = {source.observation_id: source for source in ordered_sources}
+        targets: list[SemanticTarget] = []
+        facts: list[StateFact] = []
+        conflicts: list[ObservationConflict] = []
+        bindings: list[ActionBinding] = []
+        links_by_canonical: dict[str, list[EntitySourceLink]] = defaultdict(list)
+        for link in plan.links:
+            links_by_canonical[link.canonical_target_id].append(link)
+
+        for canonical_id in plan.canonical_order:
+            endpoint_targets = tuple(
+                (
+                    source_by_id[link.source_observation_id],
+                    next(
+                        target
+                        for target in source_by_id[link.source_observation_id].targets
+                        if target.target_id == link.source_target_id
+                    ),
                 )
-                prior_target = targets.get(canonical_id)
-                if prior_target is None:
-                    targets[canonical_id] = rewritten
-                else:
-                    conflicts.extend(_target_conflicts(canonical_id, prior_target, rewritten))
-                    targets[canonical_id] = _merge_non_authoritative_target_evidence(
-                        prior_target,
-                        rewritten,
-                    )
-                provenance.setdefault(canonical_id, []).append(
-                    (source.surface, target.target_id, source.acquisition_root_id or source.observation_id)
+                for link in sorted(
+                    links_by_canonical[canonical_id],
+                    key=lambda item: (item.source_observation_id, item.source_target_id),
                 )
+            )
+            target, target_conflicts = _fuse_target(canonical_id, endpoint_targets, plan.mapping)
+            targets.append(target)
+            conflicts.extend(target_conflicts)
+
+        conflicted_keys = {(item.subject_id, item.predicate) for item in conflicts}
+        fact_claims: dict[tuple[str, str], list[tuple[SurfaceObservation, StateFact]]] = defaultdict(list)
+        for source in ordered_sources:
             for fact in source.facts:
-                canonical_id = mapping[fact.subject_id]
-                key = (canonical_id, fact.predicate)
-                prior_fact = fact_values.get(key)
-                encoded = json.dumps(to_json_compatible(fact.value), sort_keys=True, separators=(",", ":"))
-                if prior_fact is not None and prior_fact[0] != encoded:
-                    conflicts.append(ObservationConflict(
-                        _conflict_id(canonical_id, fact.predicate), canonical_id, fact.predicate,
-                        "material source claims disagree",
-                    ))
-                else:
-                    fact_values.setdefault(key, (encoded, fact.source_id))
+                endpoint = SourceEntityEndpoint(source.observation_id, fact.subject_id)
+                fact_claims[(plan.mapping[endpoint], fact.predicate)].append((source, fact))
+        used_fact_ids: set[str] = set()
+        for key in sorted(fact_claims):
+            claims = tuple(fact_claims[key])
+            _, disputed = OBSERVATION_PREDICATE_REGISTRY.resolve(
+                "state", tuple((source, fact.value) for source, fact in claims)
+            )
+            if disputed:
+                if key not in conflicted_keys:
+                    conflicts.append(_conflict(*key))
+                    conflicted_keys.add(key)
+                continue
+            for source, fact in sorted(claims, key=lambda item: (item[0].observation_id, item[1].fact_id)):
                 fact_id = fact.fact_id
-                if fact_id in fact_ids:
-                    duplicate_key = "\0".join((source.surface, fact.fact_id))
-                    fact_id = f"fact:{hashlib.sha256(duplicate_key.encode()).hexdigest()}"
-                fact_ids.add(fact_id)
-                facts.append(replace(fact, fact_id=fact_id, subject_id=canonical_id))
+                if fact_id in used_fact_ids:
+                    fact_id = "fact:" + _digest(source.observation_id, fact.fact_id)
+                used_fact_ids.add(fact_id)
+                facts.append(replace(fact, fact_id=fact_id, subject_id=key[0]))
+
+        conflicted_by_target: dict[str, set[str]] = defaultdict(set)
+        for conflict in conflicts:
+            conflicted_by_target[conflict.subject_id].add(conflict.predicate)
+        targets = [
+            replace(
+                target,
+                state={
+                    key: value
+                    for key, value in target.state.items()
+                    if key not in conflicted_by_target[target.target_id]
+                },
+            )
+            for target in targets
+        ]
+
+        for source in ordered_sources:
             for binding in source.bindings:
+                endpoint = SourceEntityEndpoint(source.observation_id, binding.target_id)
                 bindings.append(replace(
                     binding,
                     world_observation_id=world_id,
-                    target_id=mapping[binding.target_id],
-                    source_target_id=binding.source_target_id or binding.target_id,
-                    eligible_destination_ids=tuple(mapping[item] for item in binding.eligible_destination_ids),
+                    target_id=plan.mapping[endpoint],
+                    eligible_destination_ids=tuple(
+                        plan.mapping[SourceEntityEndpoint(source.observation_id, item)]
+                        for item in binding.eligible_destination_ids
+                    ),
                 ))
-            fused_sources.append(replace(
-                source,
-                media=tuple(
-                    replace(media, grounding_regions=tuple(
-                        replace(region, target_id=mapping[region.target_id])
+
+        canonical_media = tuple(sorted((
+            CanonicalObservationMedia(
+                source.observation_id,
+                replace(
+                    media,
+                    grounding_regions=tuple(
+                        replace(
+                            region,
+                            target_id=plan.mapping[
+                                SourceEntityEndpoint(source.observation_id, region.target_id)
+                            ],
+                        )
                         for region in media.grounding_regions
-                        if region.target_id in mapping
-                    ))
-                    for media in source.media
+                    ),
                 ),
-            ))
-        unique_conflicts = {
-            (item.subject_id, item.predicate): item for item in conflicts
-        }
+            )
+            for source in ordered_sources
+            for media in source.media
+        ), key=lambda item: (
+            item.media.capture_group_id,
+            str(item.media.variant),
+            item.media.coordinate_space_id,
+            item.source_observation_id,
+            item.media.media_id,
+        )))
+        manifests = tuple(
+            SourceObservationManifest(
+                source.observation_id,
+                source.surface,
+                str(source.source_profile.modality),
+                source.source_profile.debug_source,
+                source.acquisition_root_id or source.observation_id,
+                source.coverage,
+            )
+            for source in ordered_sources
+        )
         world = WorldObservation(
             world_id,
-            tuple(sorted(targets.values(), key=lambda item: item.target_id)),
+            tuple(targets),
             tuple(facts),
             tuple(bindings),
-            {source.surface: source.coverage for source in sources},
-            tuple(sorted(unique_conflicts.values(), key=lambda item: (item.subject_id, item.predicate))),
-            tuple(fused_sources),
+            manifests,
+            tuple(sorted(
+                {(item.subject_id, item.predicate): item for item in conflicts}.values(),
+                key=lambda item: (item.subject_id, item.predicate),
+            )),
+            ordered_sources,
+            plan.links,
+            canonical_media,
         )
-        provenance_view = tuple(
-            FusedEntityProvenance(
-                canonical_id,
-                tuple((surface, local_id) for surface, local_id, _ in values),
-                tuple(dict.fromkeys(root for _, _, root in values)),
-            )
-            for canonical_id, values in sorted(provenance.items())
-        )
-        return WorldFusionResult(FusionStatus.FUSED, world, provenance_view, "world_fused")
+        return WorldFusionResult(FusionStatus.FUSED, world, "world_fused")
 
 
-def _world_id(sources: tuple[SurfaceObservation, ...]) -> str:
-    payload = "\0".join(
-        f"{item.surface}\0{item.observation_id}\0{item.revision}\0{item.acquisition_root_id}"
-        for item in sorted(sources, key=lambda value: value.surface)
-    )
-    return sources[0].observation_id if len(sources) == 1 else f"world:{hashlib.sha256(payload.encode()).hexdigest()}"
+def _source_domain_error(sources: tuple[SurfaceObservation, ...]) -> str:
+    for source in sources:
+        local_ids = {item.target_id for item in source.targets}
+        if any(item.subject_id not in local_ids for item in source.facts):
+            return "unresolved_source_subject"
+        if any(
+            item.target_id not in local_ids
+            or any(destination not in local_ids for destination in item.eligible_destination_ids)
+            for item in source.bindings
+        ):
+            return "unresolved_source_binding"
+        if any(
+            region.target_id not in local_ids
+            for media in source.media
+            for region in media.grounding_regions
+        ):
+            return "unresolved_source_media_region"
+    return ""
 
 
-def _visual_authority_error(
-    sources: tuple[SurfaceObservation, ...],
-) -> str:
-    structural_sources = tuple(
-        item for item in sources if item.source_profile.modality.value == "structural"
-    )
-    if not structural_sources:
-        return ""
+def _proposal_set_error(sources: tuple[SurfaceObservation, ...]) -> str:
+    proposals = tuple(item for source in sources for item in source.alignment_proposals)
+    if len({item.proposal_id for item in proposals}) != len(proposals):
+        return "duplicate_alignment_proposal_id"
+    pairs = {tuple(sorted((item.source, item.candidate))) for item in proposals}
+    if len(pairs) != len(proposals):
+        return "duplicate_alignment_endpoint_pair"
+    return ""
+
+
+def _visual_binding_authority_error(sources: tuple[SurfaceObservation, ...]) -> str:
     structural_roots = {
-        item.acquisition_root_id
-        for item in structural_sources
-        if item.acquisition_root_id
-    }
-    structural_target_ids = {
-        correspondence.canonical_target_id
-        for source in structural_sources
-        for correspondence in source.correspondences
-    } | {
-        target.target_id
-        for source in structural_sources
-        for target in source.targets
-        if target.target_id not in {
-            correspondence.source_target_id for correspondence in source.correspondences
-        }
+        source.acquisition_root_id or source.observation_id
+        for source in sources
+        if source.source_profile.modality.value == "structural"
     }
     for source in sources:
-        if source.source_profile.modality.value != "visual":
-            continue
-        if source.correspondences:
-            if (
-                not source.acquisition_root_id
-                or source.acquisition_root_id not in structural_roots
-            ):
-                return "visual_correspondence_requires_shared_acquisition"
-            if any(
-                item.canonical_target_id not in structural_target_ids
-                for item in source.correspondences
-            ):
-                return "visual_correspondence_target_unresolved"
-        if not source.bindings:
+        if source.source_profile.modality.value != "visual" or not source.bindings:
             continue
         bound_ids = {item.target_id for item in source.bindings}
-        corresponded_ids = {item.source_target_id for item in source.correspondences}
-        if bound_ids.intersection(corresponded_ids):
-            return "corresponded_visual_binding_forbidden"
+        proposed_ids = {item.source.source_target_id for item in source.alignment_proposals}
+        if bound_ids.intersection(proposed_ids):
+            return "proposed_visual_binding_forbidden"
         if not bound_ids.issubset(source.visual_only_target_ids):
             return "visual_binding_identity_unclassified"
-        if not source.acquisition_root_id or source.acquisition_root_id not in structural_roots:
+        if structural_roots and (
+            source.acquisition_root_id or source.observation_id
+        ) not in structural_roots:
             return "visual_binding_requires_shared_acquisition"
     return ""
 
 
-def _canonical_maps(sources: tuple[SurfaceObservation, ...]) -> dict[str, dict[str, str]]:
-    used: dict[str, tuple[str, str]] = {}
-    values: dict[str, dict[str, str]] = {}
-    for source in sorted(sources, key=lambda item: item.surface):
-        explicit = {item.source_target_id: item.canonical_target_id for item in source.correspondences}
-        mapping: dict[str, str] = {}
-        for target in source.targets:
-            candidate = explicit.get(target.target_id, target.target_id)
-            owner = used.get(candidate)
-            if owner is not None and target.target_id not in explicit:
-                candidate = "entity:" + hashlib.sha256(
-                    f"{source.surface}\0{target.target_id}".encode()
-                ).hexdigest()
-            used.setdefault(candidate, (source.surface, target.target_id))
-            mapping[target.target_id] = candidate
-        values[source.surface] = mapping
-    return values
+def _alignment_plan(sources: tuple[SurfaceObservation, ...]) -> _AlignmentPlan:
+    source_by_id = {source.observation_id: source for source in sources}
+    target_by_endpoint = {
+        SourceEntityEndpoint(source.observation_id, target.target_id): target
+        for source in sources
+        for target in source.targets
+    }
+    proposals = tuple(item for source in sources for item in source.alignment_proposals)
+    valid: list[EntityAlignmentProposal] = []
+    invalid: list[EntityAlignmentProposal] = []
+    for proposal in proposals:
+        left_source = source_by_id.get(proposal.source.source_observation_id)
+        right_source = source_by_id.get(proposal.candidate.source_observation_id)
+        left_target = target_by_endpoint.get(proposal.source)
+        right_target = target_by_endpoint.get(proposal.candidate)
+        if (
+            left_source is None
+            or right_source is None
+            or left_target is None
+            or right_target is None
+            or proposal.source.source_observation_id == proposal.candidate.source_observation_id
+            or not left_source.acquisition_root_id
+            or left_source.acquisition_root_id != right_source.acquisition_root_id
+            or left_target.role != right_target.role
+            or not _coordinate_spaces_compatible(
+                left_source,
+                proposal.source.source_target_id,
+                right_source,
+                proposal.candidate.source_target_id,
+            )
+        ):
+            invalid.append(proposal)
+        else:
+            valid.append(proposal)
+
+    adjacency: dict[SourceEntityEndpoint, set[SourceEntityEndpoint]] = defaultdict(set)
+    evidence_by_endpoint: dict[SourceEntityEndpoint, set[str]] = defaultdict(set)
+    confidence_by_endpoint: dict[SourceEntityEndpoint, list[float]] = defaultdict(list)
+    for proposal in proposals:
+        for endpoint in (proposal.source, proposal.candidate):
+            if endpoint in target_by_endpoint:
+                evidence_by_endpoint[endpoint].update(proposal.evidence_refs)
+                confidence_by_endpoint[endpoint].append(proposal.confidence)
+    for proposal in valid:
+        adjacency[proposal.source].add(proposal.candidate)
+        adjacency[proposal.candidate].add(proposal.source)
+
+    components: list[tuple[SourceEntityEndpoint, ...]] = []
+    visited: set[SourceEntityEndpoint] = set()
+    for endpoint in sorted(target_by_endpoint):
+        if endpoint in visited:
+            continue
+        pending = [endpoint]
+        component_set: set[SourceEntityEndpoint] = set()
+        while pending:
+            current = pending.pop()
+            if current in component_set:
+                continue
+            component_set.add(current)
+            pending.extend(adjacency[current])
+        visited.update(component_set)
+        components.append(tuple(sorted(component_set)))
+
+    conflicted: set[SourceEntityEndpoint] = set()
+    accepted_components: list[tuple[SourceEntityEndpoint, ...]] = []
+    for endpoint_component in components:
+        source_ids = [item.source_observation_id for item in endpoint_component]
+        if len(source_ids) != len(set(source_ids)):
+            conflicted.update(endpoint_component)
+        else:
+            accepted_components.append(endpoint_component)
+    rejected = {
+        endpoint
+        for proposal in invalid
+        for endpoint in (proposal.source, proposal.candidate)
+        if endpoint in target_by_endpoint
+    }
+
+    final_components = [
+        (endpoint,)
+        for endpoint in sorted(conflicted)
+    ] + [
+        component for component in accepted_components if not conflicted.intersection(component)
+    ]
+    source_rank = {
+        source.observation_id: (
+            {
+                "structural": 0,
+                "environment_state": 1,
+                "user": 2,
+                "visual": 3,
+            }.get(source.source_profile.modality.value, 99),
+            source.observation_id,
+        )
+        for source in sources
+    }
+    target_rank = {
+        (source.observation_id, target.target_id): index
+        for source in sources
+        for index, target in enumerate(source.targets)
+    }
+    final_components.sort(key=lambda component: min(
+        (*source_rank[endpoint.source_observation_id], target_rank[
+            (endpoint.source_observation_id, endpoint.source_target_id)
+        ])
+        for endpoint in component
+    ))
+    mapping: dict[SourceEntityEndpoint, str] = {}
+    links: list[EntitySourceLink] = []
+    canonical_order: list[str] = []
+    used_canonical_ids: set[str] = set()
+    for endpoint_component in final_components:
+        primary = min(
+            endpoint_component,
+            key=lambda endpoint: (
+                {
+                    "structural": 0,
+                    "environment_state": 1,
+                    "user": 2,
+                    "visual": 3,
+                }.get(
+                    str(source_by_id[endpoint.source_observation_id].source_profile.modality),
+                    9,
+                ),
+                endpoint.source_target_id,
+                endpoint.source_observation_id,
+            ),
+        )
+        local_ids = {item.source_target_id for item in endpoint_component}
+        canonical_id = (
+            primary.source_target_id
+            if len(local_ids) == 1
+            else "entity:" + _digest(*(
+                f"{item.source_observation_id}\0{item.source_target_id}"
+                for item in sorted(endpoint_component)
+            ))
+        )
+        if canonical_id in used_canonical_ids:
+            canonical_id = "entity:" + _digest(
+                *(f"{item.source_observation_id}\0{item.source_target_id}" for item in endpoint_component)
+            )
+        used_canonical_ids.add(canonical_id)
+        canonical_order.append(canonical_id)
+        accepted = len(endpoint_component) > 1
+        for endpoint in endpoint_component:
+            mapping[endpoint] = canonical_id
+            source = source_by_id[endpoint.source_observation_id]
+            if endpoint in conflicted:
+                disposition = EntityAlignmentDisposition.CONFLICTED_ALLOCATED
+                reason = "alignment_component_conflicted"
+            elif accepted:
+                disposition = EntityAlignmentDisposition.EQUIVALENCE_ACCEPTED
+                reason = "explicit_equivalence_accepted"
+            elif endpoint in rejected:
+                disposition = EntityAlignmentDisposition.PROPOSAL_REJECTED_ALLOCATED
+                reason = "alignment_proposal_rejected"
+            else:
+                disposition = EntityAlignmentDisposition.UNMATCHED_ALLOCATED
+                reason = "source_identity_allocated"
+            links.append(EntitySourceLink(
+                endpoint.source_observation_id,
+                endpoint.source_target_id,
+                canonical_id,
+                source.acquisition_root_id or source.observation_id,
+                disposition,
+                (
+                    EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE
+                    if disposition is EntityAlignmentDisposition.EQUIVALENCE_ACCEPTED
+                    else EntityAlignmentBasis.SOURCE_IDENTITY_ALLOCATED
+                ),
+                tuple(sorted(evidence_by_endpoint[endpoint])),
+                max(confidence_by_endpoint[endpoint], default=1.0),
+                reason,
+            ))
+    return _AlignmentPlan(
+        tuple(sorted(links, key=lambda item: (item.source_observation_id, item.source_target_id))),
+        mapping,
+        tuple(canonical_order),
+    )
+
+
+def _coordinate_spaces_compatible(
+    left_source: SurfaceObservation,
+    left_target_id: str,
+    right_source: SurfaceObservation,
+    right_target_id: str,
+) -> bool:
+    left_spaces = {
+        region.coordinate_space_id
+        for media in left_source.media
+        for region in media.grounding_regions
+        if region.target_id == left_target_id
+    }
+    right_spaces = {
+        region.coordinate_space_id
+        for media in right_source.media
+        for region in media.grounding_regions
+        if region.target_id == right_target_id
+    }
+    return not left_spaces or not right_spaces or left_spaces == right_spaces
+
+
+def _fuse_target(
+    canonical_id: str,
+    endpoint_targets: tuple[tuple[SurfaceObservation, SemanticTarget], ...],
+    mapping: dict[SourceEntityEndpoint, str],
+) -> tuple[SemanticTarget, list[ObservationConflict]]:
+    conflicts: list[ObservationConflict] = []
+    role, role_conflicted = OBSERVATION_PREDICATE_REGISTRY.resolve(
+        "role", tuple((source, target.role) for source, target in endpoint_targets)
+    )
+    label, label_conflicted = OBSERVATION_PREDICATE_REGISTRY.resolve(
+        "label", tuple((source, target.label) for source, target in endpoint_targets)
+    )
+    if role_conflicted:
+        conflicts.append(_conflict(canonical_id, "role"))
+    if label_conflicted:
+        conflicts.append(_conflict(canonical_id, "label"))
+    predicates = sorted({key for _, target in endpoint_targets for key in target.state})
+    state: dict[str, object] = {}
+    for predicate in predicates:
+        value, disputed = OBSERVATION_PREDICATE_REGISTRY.resolve(
+            "state",
+            tuple(
+                (source, target.state[predicate])
+                for source, target in endpoint_targets
+                if predicate in target.state
+            ),
+        )
+        if disputed:
+            conflicts.append(_conflict(canonical_id, predicate))
+        elif value is not None:
+            state[predicate] = value
+    relation_claims: dict[str, list[object]] = defaultdict(list)
+    for source, target in endpoint_targets:
+        local_mapping = {
+            endpoint.source_target_id: canonical
+            for endpoint, canonical in mapping.items()
+            if endpoint.source_observation_id == source.observation_id
+        }
+        for key, value in _rewrite_relations(dict(target.relations), local_mapping).items():
+            relation_claims[key].append(value)
+    relations: dict[str, object] = {}
+    for key in sorted(relation_claims):
+        encoded = {
+            json.dumps(to_json_compatible(value), sort_keys=True, separators=(",", ":")): value
+            for value in relation_claims[key]
+        }
+        if len(encoded) == 1:
+            relations[key] = next(iter(encoded.values()))
+        else:
+            conflicts.append(_conflict(canonical_id, f"relation:{key}"))
+    return SemanticTarget(
+        canonical_id,
+        str(role) if role is not None else "unknown",
+        str(label) if label is not None else "",
+        state,
+        relations,
+    ), conflicts
 
 
 def _rewrite_relations(relations: dict[str, object], mapping: dict[str, str]) -> dict[str, object]:
     for key in ("parent_id", "label_for_id"):
         value = relations.get(key)
-        if isinstance(value, str) and value in mapping:
+        if isinstance(value, str):
+            if value not in mapping:
+                raise ValueError("source relation endpoint is unresolved")
             relations[key] = mapping[value]
-    for key in ("child_ids",):
-        value = relations.get(key)
-        if isinstance(value, tuple | list):
-            relations[key] = tuple(mapping.get(str(item), str(item)) for item in value)
+    value = relations.get("child_ids")
+    if isinstance(value, tuple | list):
+        if any(str(item) not in mapping for item in value):
+            raise ValueError("source relation endpoint is unresolved")
+        relations["child_ids"] = tuple(mapping[str(item)] for item in value)
     return relations
 
 
-def _target_conflicts(subject: str, left: SemanticTarget, right: SemanticTarget) -> list[ObservationConflict]:
-    conflicts = []
-    if left.role != right.role:
-        conflicts.append(ObservationConflict(_conflict_id(subject, "role"), subject, "role", "material source claims disagree"))
-    if left.label != right.label:
-        conflicts.append(ObservationConflict(_conflict_id(subject, "label"), subject, "label", "material source claims disagree"))
-    for key in left.state.keys() & right.state.keys():
-        if left.state[key] != right.state[key]:
-            conflicts.append(ObservationConflict(_conflict_id(subject, key), subject, key, "material source claims disagree"))
-    return conflicts
+def _world_id(sources: tuple[SurfaceObservation, ...]) -> str:
+    if len(sources) == 1:
+        return sources[0].observation_id
+    return "world:" + _digest(*(
+        f"{item.observation_id}\0{item.revision}\0{item.acquisition_root_id or item.observation_id}"
+        for item in sources
+    ))
 
 
-def _merge_non_authoritative_target_evidence(
-    authoritative: SemanticTarget,
-    projection: SemanticTarget,
-) -> SemanticTarget:
-    """Add non-overlapping projection fields without replacing control identity."""
-
-    state = dict(authoritative.state)
-    for key, value in projection.state.items():
-        state.setdefault(key, value)
-    relations = dict(authoritative.relations)
-    for key, value in projection.relations.items():
-        relations.setdefault(key, value)
-    return replace(authoritative, state=state, relations=relations)
+def _conflict(subject: str, predicate: str) -> ObservationConflict:
+    return ObservationConflict(
+        "conflict:" + _digest(subject, predicate),
+        subject,
+        predicate,
+        "material source claims disagree",
+    )
 
 
-def _conflict_id(subject: str, predicate: str) -> str:
-    return "conflict:" + hashlib.sha256(f"{subject}\0{predicate}".encode()).hexdigest()
+def _digest(*parts: str) -> str:
+    return hashlib.sha256("\0".join(parts).encode()).hexdigest()

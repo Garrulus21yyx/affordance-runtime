@@ -105,7 +105,9 @@ def _require_resolved(refs: tuple[str, ...], index: WorldEvidenceIndex, label: s
 
 
 def _semantic_scope_absent_with_complete_coverage(spec, observation, index) -> bool:
-    complete = bool(observation.coverage) and all(str(value) == "complete" for value in observation.coverage.values())
+    complete = bool(observation.source_manifest) and all(
+        str(item.coverage) == "complete" for item in observation.source_manifest
+    )
     present = any(
         record.kind == "fact" and record.subject_id in spec.evidence_scope_target_ids
         or record.kind == "artifact" and record.output_id in spec.evidence_scope_output_ids

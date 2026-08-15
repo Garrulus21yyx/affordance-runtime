@@ -16,12 +16,12 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     SemanticTarget,
     StateFact,
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
+from tests.support.world import fused_world
 
 
 def _destination_world(identity: str, delivered: bool) -> WorldObservation:
@@ -51,7 +51,7 @@ def _destination_world(identity: str, delivered: bool) -> WorldObservation:
         eligible_destination_ids=("person:alice", "person:bob"),
     )
     fact = StateFact(f"fact:{identity}:delivered", "message:1", "delivered", delivered, identity)
-    return WorldObservation(identity, targets, (fact,), (binding,), {"dom": CoverageState.COMPLETE})
+    return fused_world(identity, targets, (fact,), (binding,), surface="dom")
 
 
 def _destination_task() -> TaskGoal:

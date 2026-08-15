@@ -16,11 +16,11 @@ from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionPr
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
@@ -45,10 +45,9 @@ def _world(identity: str, *, report: bool) -> WorldObservation:
         identity, "static", f"revision:{identity}", ObservationSourceProfile.dom(),
         tuple(targets), tuple(facts), (binding,),
     )
-    return WorldObservation(
-        identity, tuple(targets), tuple(facts), (binding,), {"static": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _task() -> TaskGoal:

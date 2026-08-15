@@ -37,12 +37,12 @@ from affordance_runtime.task import (
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
     AcquisitionOrigin,
-    CoverageState,
     ObservationRequestKind,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 from tests.support.agent.static_environment import StaticEnvironment
@@ -83,14 +83,9 @@ def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.
         (fact,),
         (binding,),
     )
-    return WorldObservation(
-        observation_id,
-        (target,),
-        (fact,),
-        (binding,),
-        {"dom": CoverageState.COMPLETE},
-        sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _task() -> TaskGoal:
@@ -493,7 +488,9 @@ def test_recent_turns_are_bounded() -> None:
             world = _world(f"obs-{index}", False)
             target = replace(world.targets[0], label=f"Enable shared state revision {index}")
             source = replace(world.sources[0], targets=(target,))
-            observations.append(replace(world, targets=(target,), sources=(source,)))
+            fused = WorldFusion().fuse((source,))
+            assert fused.observation is not None
+            observations.append(fused.observation)
         decisions = [
             RequestObservation("context:test", "world", "structural", "structural", "refresh") for _ in range(15)
         ] + [Abort("context:test", "enough", "policy")]

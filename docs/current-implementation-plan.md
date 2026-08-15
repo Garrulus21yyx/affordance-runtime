@@ -68,7 +68,8 @@ ActionSpace, or benchmark-specific semantic projection was introduced.
 Status: `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE /
 WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
 VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
-OBSERVED_WORLD_GRAPH_A.1_OPEN / LIVE_NOT_RUN`
+WORLD_GRAPH_A.1_COMPLETE / ACTIVATE_EFFECT_AUTHORITY_OPEN /
+NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`
 
 The implemented interaction-owner portion routes existing `activate`,
 `type_text`, `select_option`, and `read`
@@ -124,7 +125,7 @@ Evidence and the remaining producer/consumer inventory are recorded in
 
 Status:
 `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
-T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_ADMITTED_NOT_STARTED`
+T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_COMPLETE`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
@@ -189,10 +190,12 @@ remaining benchmark-only tail is isolated, has an explicit final disposition
 the deleted product runtime. Supported runner/reporting invariants may remain
 as `KEEP_MOVE`; isolation, not deletion, is the A.1 boundary.
 
-## Open convergence slice — multi-source observed-world graph
+## Implemented closure slice — multi-source observed-world graph
 
 Status:
-`SOURCE_ENVELOPE_RETAINED / SINGLE_SOURCE_STRUCTURE_WORKS / MULTISOURCE_CORRESPONDENCE_AND_DEDUP_OPEN`
+`WORLD_GRAPH_A.1_COMPLETE / STATEFACT_CUTOVER_PARTIAL /
+ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
+LIVE_NOT_RUN`
 
 The existing architecture is retained: adapters produce immutable
 `SurfaceObservation`s, `WorldFusion` owns within-observation canonical
@@ -201,7 +204,7 @@ alignment, `WorldObservation` owns accepted current truth, and
 for a graph database, a second world model, or new DOM/AX/OCR/automation
 engines.
 
-The next architecture closure slice must:
+The A.1 closure now:
 
 1. migrate fusion maps, coverage and source manifests from `surface` keys to
    unique source-observation-instance keys so multiple lenses from one adapter
@@ -245,6 +248,14 @@ canonical claim row and does not add projection-only fact deduplication. The
 immediate correspondence fix does not wait for that larger migration, but it
 must use the same target graph contract and must not introduce a compatibility
 map in the Actor renderer.
+
+Closure verification is recorded in
+[Wave A.1 observed-world graph closure](evidence/2026-08-15-world-graph-a1-closure.md).
+The completed owner-sliced plan is
+[Wave A.1 source-instance owner spine](plans/2026-08-15-world-graph-a1.md).
+The full offline suite passes with `1621 passed, 27 skipped`; Ruff, repository
+mypy, architecture redlines, `git diff --check`, and clean-wheel public export
+checks pass. No live benchmark was run.
 
 ## Active target-default convergence queue
 

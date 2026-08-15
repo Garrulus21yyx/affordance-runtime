@@ -208,7 +208,16 @@ async def _run_case(
         "projection_complete": projection_complete,
         "cleanup_complete": cleanup_complete,
         "projection_coverage": (
-            str(world.coverage.get("browsergym")) if world is not None else "not_acquired"
+            next(
+                (
+                    str(item.coverage)
+                    for item in world.source_manifest
+                    if item.surface == "browsergym"
+                ),
+                "not_acquired",
+            )
+            if world is not None
+            else "not_acquired"
         ),
         "inventory_profile_id": inventory.profile_id,
         "inventory_status": inventory.status.value,

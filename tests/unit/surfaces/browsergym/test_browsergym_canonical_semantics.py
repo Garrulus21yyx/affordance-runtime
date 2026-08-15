@@ -132,7 +132,7 @@ def test_dom_clickable_svg_symbol_becomes_identity_bound_activate_control() -> N
     assert projection.world.sources[0].media[0].grounding_regions[0].bbox == (22, 97, 14, 14)
     public = repr(projection.world)
     assert "svg-point" not in public
-    assert "point_activate" not in public and "coordinate" not in public
+    assert "action_point_xy" not in public and "private_element_id" not in public
 
 
 def test_dom_clickable_drawing_nodes_are_hittable_filtered_and_deduplicated() -> None:

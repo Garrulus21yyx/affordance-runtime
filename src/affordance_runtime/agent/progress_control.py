@@ -262,7 +262,11 @@ def _fact_has_complete_structural_source(source_id: str, observation: WorldObser
     return bool(
         source
         and source.coverage == CoverageState.COMPLETE
-        and observation.coverage.get(source.surface) == CoverageState.COMPLETE
+        and any(
+            item.source_observation_id == source.observation_id
+            and item.coverage is CoverageState.COMPLETE
+            for item in observation.source_manifest
+        )
         and assurance_satisfies(source.source_profile.assurance, ObservationAssurance.STRUCTURAL)
     )
 

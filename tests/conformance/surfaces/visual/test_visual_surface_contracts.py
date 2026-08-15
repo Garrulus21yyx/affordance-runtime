@@ -10,9 +10,10 @@ from affordance_runtime.actions import (
 from affordance_runtime.surfaces.visual.grounding import VisualRegion
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
-    WorldObservation,
+    SurfaceObservation,
+    WorldFusion,
     build_agent_world_view,
 )
 
@@ -86,7 +87,7 @@ def test_visual_region_point_must_remain_inside_region() -> None:
 
 def test_visual_private_geometry_never_enters_policy_view() -> None:
     _, frame, region = _visual_values()
-    target = SemanticTarget("visual:M0", region.role, region.label, dict(region.state))
+    target = SemanticTarget(region.region_id, region.role, region.label, dict(region.state))
     binding = ActionBinding(
         binding_id="visual-binding",
         world_observation_id=frame.observation_id,
@@ -104,13 +105,18 @@ def test_visual_private_geometry_never_enters_policy_view() -> None:
         parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
         payload=region.private_payload(),
     )
-    world = WorldObservation(
+    source = SurfaceObservation(
         frame.observation_id,
+        "visual",
+        frame.source_revision,
+        ObservationSourceProfile.visual(),
         (target,),
-        (),
-        (binding,),
-        {"visual": CoverageState.COMPLETE},
+        bindings=(binding,),
+        visual_only_target_ids=(target.target_id,),
     )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
     task = TaskGoal(
         "shared",
         "Enable shared state",

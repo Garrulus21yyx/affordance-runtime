@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
@@ -10,11 +11,14 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
+    EntityAlignmentBasis,
+    EntityAlignmentProposal,
     ObservationSourceProfile,
+    SemanticTarget,
+    SourceEntityEndpoint,
     StateFact,
     SurfaceObservation,
-    WorldObservation,
+    WorldFusion,
 )
 
 
@@ -26,11 +30,15 @@ def _world(identity: str, facts: tuple[tuple[str, str, object], ...], *, profile
     )
     source = SurfaceObservation(
         f"source:{identity}", chosen.debug_source, f"revision:{identity}", chosen,
+        targets=tuple(
+            SemanticTarget(subject, "state", subject)
+            for subject in dict.fromkeys(item.subject_id for item in records)
+        ),
         facts=records, artifacts=artifacts or {},
     )
-    return WorldObservation(
-        identity, (), records, (), {source.surface: CoverageState.COMPLETE}, sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _request(*, expected_outcome=None, target="target:1"):
@@ -149,14 +157,27 @@ def test_no_effect_requires_all_current_sources_to_agree_and_be_referenced() -> 
     before = _world("before", (("target:1", "enabled", False),))
     dom_fact = StateFact("fact:after:dom", "target:1", "enabled", False, "source:dom")
     wot_fact = StateFact("fact:after:wot", "target:1", "enabled", False, "source:wot")
-    sources = (
-        SurfaceObservation("source:dom", "dom", "r:dom", ObservationSourceProfile.dom(), facts=(dom_fact,)),
-        SurfaceObservation("source:wot", "wot", "r:wot", ObservationSourceProfile.wot(), facts=(wot_fact,)),
+    dom = SurfaceObservation(
+        "source:dom", "dom", "r:dom", ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("target:1", "state", "target"),), facts=(dom_fact,),
+        acquisition_root_id="root:after",
     )
-    after = WorldObservation(
-        "after", (), (dom_fact, wot_fact), (),
-        {"dom": CoverageState.COMPLETE, "wot": CoverageState.COMPLETE}, sources=sources,
+    wot = SurfaceObservation(
+        "source:wot", "wot", "r:wot", ObservationSourceProfile.wot(),
+        targets=(SemanticTarget("target:1", "state", "target"),), facts=(wot_fact,),
+        acquisition_root_id="root:after",
+        alignment_proposals=(EntityAlignmentProposal(
+            "proposal:wot-dom",
+            SourceEntityEndpoint("source:wot", "target:1"),
+            SourceEntityEndpoint("source:dom", "target:1"),
+            EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE,
+            ("evidence:wot-dom",),
+            1.0,
+        ),),
     )
+    fused = WorldFusion().fuse((dom, wot))
+    assert fused.observation is not None
+    after = fused.observation
     partial = _apply(
         task, _request(), before, after, ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
         ("fact:after:dom",),
@@ -166,10 +187,9 @@ def test_no_effect_requires_all_current_sources_to_agree_and_be_referenced() -> 
         ("fact:after:dom", "fact:after:wot"),
     )
     changed = StateFact("fact:after:wot", "target:1", "enabled", True, "source:wot")
-    disagreement = WorldObservation(
-        "after", (), (dom_fact, changed), (), after.coverage,
-        sources=(sources[0], SurfaceObservation("source:wot", "wot", "r:wot", ObservationSourceProfile.wot(), facts=(changed,))),
-    )
+    fused_disagreement = WorldFusion().fuse((dom, replace(wot, facts=(changed,))))
+    assert fused_disagreement.observation is not None
+    disagreement = fused_disagreement.observation
     disputed = _apply(
         task, _request(), before, disagreement, ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
         ("fact:after:dom", "fact:after:wot"),

@@ -123,7 +123,10 @@ def _projected_metrics(world, action_space) -> dict[str, object]:
         "blank_label_count": sum(not value.strip() for value in labels),
         "duplicate_label_count": len(labels) - len(set(labels)),
         "select_option_counts": select_domains,
-        "projection_coverage": {key: str(value) for key, value in world.coverage.items()},
+        "projection_coverage": {
+            item.source_observation_id: str(item.coverage)
+            for item in world.source_manifest
+        },
     }
 
 

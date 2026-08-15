@@ -10,11 +10,11 @@ from affordance_runtime.benchmarks.external_smoke.case_environment import (
 from affordance_runtime.evaluation import TaskEvaluationStatus, TaskOutcomeKind
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SurfaceObservation,
-    WorldObservation,
+    WorldFusion,
 )
+from tests.support.world import fused_world
 
 
 class Verifier:
@@ -48,7 +48,7 @@ class Verifier:
 
 def test_external_task_evaluator_uses_only_environment_native_mechanical_status() -> None:
     task = TaskGoal("external", "Complete the local benchmark instruction")
-    observation = WorldObservation("current", (), (), (), {"external": CoverageState.COMPLETE})
+    observation = fused_world("current", surface="external")
     expected = {
         ExternalVerifierStatus.SUCCESS: TaskEvaluationStatus.COMPLETE,
         ExternalVerifierStatus.INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
@@ -84,9 +84,7 @@ def test_external_task_evaluator_fails_closed_on_latest_pointer_lineage_mismatch
             )
 
     task = TaskGoal("external", "Complete the local benchmark instruction")
-    observation = WorldObservation(
-        "current", (), (), (), {"external": CoverageState.COMPLETE},
-    )
+    observation = fused_world("current", surface="external")
     result = asyncio.run(ExternalEnvironmentTaskEvaluator(
         "browsergym/miniwob.click-button", StaleVerifier(),
     ).evaluate(task, observation))
@@ -122,14 +120,9 @@ def test_external_task_evaluator_accepts_current_structural_lineage_in_fused_wor
                 ("fact:status",),
             )
 
-    observation = WorldObservation(
-        "world:fused",
-        (),
-        (),
-        (),
-        {"browsergym": CoverageState.COMPLETE, "browsergym_visual": CoverageState.TRUNCATED},
-        sources=(structural, visual),
-    )
+    fused = WorldFusion().fuse((structural, visual))
+    assert fused.observation is not None
+    observation = fused.observation
     result = asyncio.run(ExternalEnvironmentTaskEvaluator(
         "browsergym/miniwob.click-button",
         FusedVerifier(),

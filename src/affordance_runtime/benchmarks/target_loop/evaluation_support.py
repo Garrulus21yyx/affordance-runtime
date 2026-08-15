@@ -20,11 +20,11 @@ from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 from affordance_runtime.task import EvaluationSpec, RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
+    WorldFusion,
     WorldObservation,
 )
 
@@ -66,7 +66,10 @@ def _output_world(identity: str, artifact) -> WorldObservation:
         identity, "dom", f"revision:{identity}", ObservationSourceProfile.dom(),
         (target,), (fact,), (binding,), artifacts=artifacts,
     )
-    return WorldObservation(identity, (target,), (fact,), (binding,), {"dom": CoverageState.COMPLETE}, sources=(source,))
+    result = WorldFusion().fuse((source,))
+    if result.observation is None:
+        raise ValueError(result.reason_code)
+    return result.observation
 
 
 def semantic_task() -> TaskGoal:
@@ -91,7 +94,10 @@ def semantic_world(identity: str, present: bool) -> WorldObservation:
         identity, "static", f"revision:{identity}", ObservationSourceProfile.dom(),
         tuple(targets), tuple(facts), (binding,),
     )
-    return WorldObservation(identity, tuple(targets), tuple(facts), (binding,), {"static": CoverageState.COMPLETE}, sources=(source,))
+    result = WorldFusion().fuse((source,))
+    if result.observation is None:
+        raise ValueError(result.reason_code)
+    return result.observation
 
 
 def _binding(identity, target_id, action, effect, *, surface="dom") -> ActionBinding:

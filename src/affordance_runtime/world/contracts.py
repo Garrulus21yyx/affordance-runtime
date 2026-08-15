@@ -37,6 +37,120 @@ class CoverageState(StrEnum):
     STALE = "stale"
 
 
+class EntityAlignmentDisposition(StrEnum):
+    EQUIVALENCE_ACCEPTED = "equivalence_accepted"
+    UNMATCHED_ALLOCATED = "unmatched_allocated"
+    PROPOSAL_REJECTED_ALLOCATED = "proposal_rejected_allocated"
+    CONFLICTED_ALLOCATED = "conflicted_allocated"
+
+
+class EntityAlignmentBasis(StrEnum):
+    SOURCE_IDENTITY_ALLOCATED = "source_identity_allocated"
+    EXPLICIT_PROVIDER_CORRESPONDENCE = "explicit_provider_correspondence"
+
+
+class ObservationMediaVariant(StrEnum):
+    RAW = "raw"
+    ANNOTATED = "annotated"
+    CROP = "crop"
+
+
+@dataclass(frozen=True, order=True)
+class SourceEntityEndpoint:
+    source_observation_id: str
+    source_target_id: str
+
+    def __post_init__(self) -> None:
+        if not self.source_observation_id.strip() or not self.source_target_id.strip():
+            raise ValueError("source entity endpoint requires source-local identity")
+
+
+@dataclass(frozen=True)
+class EntityAlignmentProposal:
+    proposal_id: str
+    source: SourceEntityEndpoint
+    candidate: SourceEntityEndpoint
+    basis: EntityAlignmentBasis
+    evidence_refs: tuple[str, ...]
+    confidence: float
+
+    def __post_init__(self) -> None:
+        if not self.proposal_id.strip():
+            raise ValueError("entity alignment proposal requires identity")
+        if not isinstance(self.source, SourceEntityEndpoint) or not isinstance(
+            self.candidate, SourceEntityEndpoint
+        ):
+            raise TypeError("alignment proposal endpoints must be source-local and typed")
+        if self.source == self.candidate:
+            raise ValueError("alignment proposal endpoints must be distinct")
+        if self.basis is not EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE:
+            raise ValueError("unsupported entity alignment proposal basis")
+        evidence = tuple(self.evidence_refs)
+        if not evidence or any(not item.strip() for item in evidence):
+            raise ValueError("entity alignment proposal requires evidence")
+        if len(set(evidence)) != len(evidence) or not 0 <= self.confidence <= 1:
+            raise ValueError("entity alignment proposal evidence or confidence is invalid")
+        object.__setattr__(self, "evidence_refs", evidence)
+
+
+@dataclass(frozen=True)
+class EntitySourceLink:
+    source_observation_id: str
+    source_target_id: str
+    canonical_target_id: str
+    acquisition_root_id: str
+    disposition: EntityAlignmentDisposition
+    basis: EntityAlignmentBasis
+    evidence_refs: tuple[str, ...]
+    confidence: float
+    reason_code: str
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.source_observation_id,
+                self.source_target_id,
+                self.canonical_target_id,
+                self.acquisition_root_id,
+                self.reason_code,
+            )
+        ):
+            raise ValueError("entity source link requires complete identity and reason")
+        if not isinstance(self.disposition, EntityAlignmentDisposition) or not isinstance(
+            self.basis, EntityAlignmentBasis
+        ):
+            raise TypeError("entity source link disposition and basis must be typed")
+        if not 0 <= self.confidence <= 1:
+            raise ValueError("entity source link confidence is invalid")
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+
+
+@dataclass(frozen=True)
+class SourceObservationManifest:
+    source_observation_id: str
+    surface: str
+    modality: str
+    profile: str
+    acquisition_root_id: str
+    coverage: CoverageState
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.source_observation_id,
+                self.surface,
+                self.modality,
+                self.profile,
+                self.acquisition_root_id,
+            )
+        ):
+            raise ValueError("source manifest requires complete source-instance attributes")
+        if not isinstance(self.coverage, CoverageState):
+            raise TypeError("source manifest coverage must be typed")
+
+
 class EntityInventoryStatus(StrEnum):
     UNASSESSED = "unassessed"
     COMPLETE = "complete"
@@ -119,9 +233,15 @@ class ObservationGroundingRegion:
     target_id: str
     bbox: tuple[int, int, int, int]
     confidence: float = 1.0
+    coordinate_space_id: str = ""
 
     def __post_init__(self) -> None:
-        if not self.target_id.strip() or len(self.bbox) != 4 or not 0 <= self.confidence <= 1:
+        if (
+            not self.target_id.strip()
+            or not self.coordinate_space_id.strip()
+            or len(self.bbox) != 4
+            or not 0 <= self.confidence <= 1
+        ):
             raise ValueError("observation grounding region is invalid")
         x, y, width, height = self.bbox
         if any(type(value) is not int for value in self.bbox) or x < 0 or y < 0 or width <= 0 or height <= 0:
@@ -136,6 +256,10 @@ class ObservationMedia:
     mime_type: str
     data: bytes = field(repr=False)
     grounding_regions: tuple[ObservationGroundingRegion, ...] = field(default=(), repr=False)
+    capture_group_id: str = ""
+    variant: ObservationMediaVariant = ObservationMediaVariant.RAW
+    dimensions: tuple[int, int] = (0, 0)
+    coordinate_space_id: str = ""
     sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -147,6 +271,11 @@ class ObservationMedia:
             or not isinstance(self.data, bytes)
             or not self.data
             or len(self.data) > 5 * 1024 * 1024
+            or not self.capture_group_id.strip()
+            or not self.coordinate_space_id.strip()
+            or not isinstance(self.variant, ObservationMediaVariant)
+            or len(self.dimensions) != 2
+            or any(type(value) is not int or value <= 0 for value in self.dimensions)
         ):
             raise ValueError("observation media is invalid or exceeds its bound")
         object.__setattr__(self, "sha256", hashlib.sha256(self.data).hexdigest())
@@ -155,7 +284,19 @@ class ObservationMedia:
             raise TypeError("observation grounding regions must be bounded and typed")
         if len({item.target_id for item in regions}) != len(regions):
             raise ValueError("observation grounding regions must have unique targets")
+        if any(item.coordinate_space_id != self.coordinate_space_id for item in regions):
+            raise ValueError("media grounding requires the declared coordinate space")
         object.__setattr__(self, "grounding_regions", regions)
+
+
+@dataclass(frozen=True)
+class CanonicalObservationMedia:
+    source_observation_id: str
+    media: ObservationMedia
+
+    def __post_init__(self) -> None:
+        if not self.source_observation_id.strip() or not isinstance(self.media, ObservationMedia):
+            raise ValueError("canonical media requires a source instance and typed media")
 
 
 @dataclass(frozen=True)
@@ -245,21 +386,6 @@ class ObservationConflict:
     subject_id: str
     predicate: str
     summary: str
-
-
-@dataclass(frozen=True)
-class EntityCorrespondence:
-    """Trusted adapter-supplied source-local to canonical entity link."""
-
-    source_target_id: str
-    canonical_target_id: str
-    relation: str = "explicit"
-
-    def __post_init__(self) -> None:
-        if not self.source_target_id.strip() or not self.canonical_target_id.strip():
-            raise ValueError("entity correspondence requires both identities")
-        if self.relation != "explicit":
-            raise ValueError("only explicit correspondence is supported")
 
 
 @dataclass(frozen=True)
@@ -395,7 +521,7 @@ class SurfaceObservation:
     media: tuple[ObservationMedia, ...] = ()
     entity_inventory: EntityInventorySummary = field(default_factory=EntityInventorySummary)
     acquisition_root_id: str = ""
-    correspondences: tuple[EntityCorrespondence, ...] = ()
+    alignment_proposals: tuple[EntityAlignmentProposal, ...] = ()
     visual_only_target_ids: tuple[str, ...] = ()
     structure: tuple[ObservationStructureNode, ...] = ()
     structure_total_count: int = 0
@@ -432,20 +558,27 @@ class SurfaceObservation:
                 raise ValueError("assessed semantic inventory must match unique binding targets")
         if not isinstance(self.entity_inventory, EntityInventorySummary):
             raise TypeError("surface entity inventory summary must be typed")
-        object.__setattr__(self, "correspondences", tuple(self.correspondences))
+        object.__setattr__(self, "alignment_proposals", tuple(self.alignment_proposals))
         object.__setattr__(self, "visual_only_target_ids", tuple(self.visual_only_target_ids))
-        if len({item.source_target_id for item in self.correspondences}) != len(self.correspondences):
-            raise ValueError("source entities may have only one explicit correspondence")
         local_ids = {item.target_id for item in self.targets}
-        if any(item.source_target_id not in local_ids for item in self.correspondences):
-            raise ValueError("entity correspondence must reference a source-local target")
+        proposal_ids = {item.proposal_id for item in self.alignment_proposals}
+        endpoint_pairs = {
+            tuple(sorted((item.source, item.candidate))) for item in self.alignment_proposals
+        }
+        if len(proposal_ids) != len(self.alignment_proposals):
+            raise ValueError("entity alignment proposal IDs must be unique within a source")
+        if len(endpoint_pairs) != len(self.alignment_proposals):
+            raise ValueError("entity alignment endpoint pairs must be unique within a source")
+        if any(
+            item.source.source_observation_id != self.observation_id
+            or item.source.source_target_id not in local_ids
+            for item in self.alignment_proposals
+        ):
+            raise ValueError("proposal source endpoint must belong to its source observation")
         if len(set(self.visual_only_target_ids)) != len(self.visual_only_target_ids) or any(
             item not in local_ids for item in self.visual_only_target_ids
         ):
             raise ValueError("visual-only identity must be unique and source-local")
-        corresponded = {item.source_target_id for item in self.correspondences}
-        if corresponded.intersection(self.visual_only_target_ids):
-            raise ValueError("a source target cannot be both corresponded and visual-only")
         if self.source_profile.modality.value != "visual" and self.visual_only_target_ids:
             raise ValueError("only a visual source may declare visual-only identities")
         structure = tuple(self.structure)
@@ -478,9 +611,11 @@ class WorldObservation:
     targets: tuple[SemanticTarget, ...]
     facts: tuple[StateFact, ...]
     bindings: tuple[ActionBinding, ...]
-    coverage: dict[str, CoverageState]
+    source_manifest: tuple[SourceObservationManifest, ...]
     conflicts: tuple[ObservationConflict, ...] = ()
     sources: tuple[SurfaceObservation, ...] = ()
+    entity_source_links: tuple[EntitySourceLink, ...] = ()
+    media: tuple[CanonicalObservationMedia, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip():
@@ -501,12 +636,78 @@ class WorldObservation:
         object.__setattr__(self, "targets", tuple(self.targets))
         object.__setattr__(self, "facts", tuple(self.facts))
         object.__setattr__(self, "bindings", tuple(self.bindings))
-        object.__setattr__(self, "coverage", freeze_json(self.coverage))
         object.__setattr__(self, "conflicts", tuple(self.conflicts))
         object.__setattr__(self, "sources", tuple(self.sources))
+        manifests = tuple(self.source_manifest)
+        links = tuple(self.entity_source_links)
+        media = tuple(self.media)
+        if any(not isinstance(item, SourceObservationManifest) for item in manifests):
+            raise TypeError("world source manifest must be typed")
+        if len({item.source_observation_id for item in manifests}) != len(manifests):
+            raise ValueError("world source manifest IDs must be unique")
+        source_ids = {item.observation_id for item in self.sources}
+        if len(source_ids) != len(self.sources):
+            raise ValueError("world source observation IDs must be unique")
+        if source_ids != {item.source_observation_id for item in manifests}:
+            raise ValueError("world source manifest must cover exactly the retained sources")
+        manifests_by_id = {item.source_observation_id: item for item in manifests}
+        if any(
+            manifests_by_id[source.observation_id]
+            != SourceObservationManifest(
+                source.observation_id,
+                source.surface,
+                str(source.source_profile.modality),
+                source.source_profile.debug_source,
+                source.acquisition_root_id or source.observation_id,
+                source.coverage,
+            )
+            for source in self.sources
+        ):
+            raise ValueError("world source manifest attributes contradict their source instance")
+        if any(not isinstance(item, EntitySourceLink) for item in links):
+            raise TypeError("world entity source links must be typed")
+        endpoints = {(item.source_observation_id, item.source_target_id) for item in links}
+        expected_endpoints = {
+            (source.observation_id, target.target_id)
+            for source in self.sources
+            for target in source.targets
+        }
+        if endpoints != expected_endpoints or len(endpoints) != len(links):
+            raise ValueError("every retained source target requires exactly one entity source link")
+        if any(item.canonical_target_id not in target_ids for item in links):
+            raise ValueError("entity source link must resolve to a canonical current target")
+        for source in self.sources:
+            local_ids = {item.target_id for item in source.targets}
+            if any(fact.subject_id not in local_ids for fact in source.facts):
+                raise ValueError("source envelope facts must remain source-local")
+            if any(
+                binding.target_id not in local_ids
+                or any(item not in local_ids for item in binding.eligible_destination_ids)
+                for binding in source.bindings
+            ):
+                raise ValueError("source envelope bindings must remain source-local")
+            if any(
+                region.target_id not in local_ids
+                for item in source.media
+                for region in item.grounding_regions
+            ):
+                raise ValueError("source envelope media grounding must remain source-local")
+        if any(not isinstance(item, CanonicalObservationMedia) for item in media):
+            raise TypeError("world canonical media must be typed")
+        if any(item.source_observation_id not in source_ids for item in media):
+            raise ValueError("canonical media must reference a retained source instance")
+        if any(
+            region.target_id not in target_ids
+            for item in media
+            for region in item.media.grounding_regions
+        ):
+            raise ValueError("world media grounding must use canonical identities")
+        object.__setattr__(self, "source_manifest", manifests)
+        object.__setattr__(self, "entity_source_links", links)
+        object.__setattr__(self, "media", media)
         _validate_derived_target_states(
             self.targets,
             self.facts,
             conflicts=self.conflicts,
-            require_complete=all(coverage is CoverageState.COMPLETE for coverage in self.coverage.values()),
+            require_complete=all(item.coverage is CoverageState.COMPLETE for item in manifests),
         )

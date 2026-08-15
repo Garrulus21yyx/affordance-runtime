@@ -16,10 +16,9 @@ from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     SemanticTarget,
-    WorldObservation,
 )
+from tests.support.world import fused_world
 
 SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -113,16 +112,15 @@ def test_destination_flows_from_policy_to_selection_intent_and_subject() -> None
         destination_required=True,
         eligible_destination_ids=("person:alice", "person:bob"),
     )
-    observation = WorldObservation(
+    observation = fused_world(
         "observation:1",
         (
             SemanticTarget("message:quarterly", "message", "Quarterly report"),
             SemanticTarget("person:alice", "person", "Alice"),
             SemanticTarget("person:bob", "person", "Bob"),
         ),
-        (),
-        (binding,),
-        {"dom": CoverageState.COMPLETE},
+        bindings=(binding,),
+        surface="dom",
     )
 
     request = ActionBinder().bind(selection, observation, "context:test")
@@ -244,11 +242,10 @@ def test_world_observation_requires_destination_targets_in_current_world() -> No
         destination_required=True,
         eligible_destination_ids=("person:alice",),
     )
-    with pytest.raises(ValueError, match="destination target"):
-        WorldObservation(
+    with pytest.raises(ValueError, match="unresolved_source_binding"):
+        fused_world(
             "observation:1",
             (SemanticTarget("message:quarterly", "message", "Quarterly report"),),
-            (),
-            (binding,),
-            {"dom": CoverageState.COMPLETE},
+            bindings=(binding,),
+            surface="dom",
         )

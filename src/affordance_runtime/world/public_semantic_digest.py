@@ -88,7 +88,10 @@ def public_world_semantics(observation: WorldObservation) -> dict[str, object]:
         "facts": facts,
         "conflicts": conflicts,
         "inventory": inventories,
-        "coverage": sorted((str(key), str(value)) for key, value in observation.coverage.items()),
+        "coverage": sorted(
+            (item.surface, item.modality, item.profile, str(item.coverage))
+            for item in observation.source_manifest
+        ),
     }
 
 

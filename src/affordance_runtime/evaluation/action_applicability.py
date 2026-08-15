@@ -46,7 +46,9 @@ def apply_action_evidence_profile(
     if evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
         supported = any(_effect_supported(item, records, before, after) for item in obligations)
         return evaluation if supported else _unknown(evaluation, "current evidence does not satisfy a verification obligation")
-    complete = bool(after.coverage) and all(value == CoverageState.COMPLETE for value in after.coverage.values())
+    complete = bool(after.source_manifest) and all(
+        item.coverage == CoverageState.COMPLETE for item in after.source_manifest
+    )
     checkable = not _has_relevant_conflict(after, obligations) and all(
         _no_effect_supported(item, records, before, after, after_index) for item in obligations
     )
@@ -143,7 +145,11 @@ def _source_coverage_complete(source_observation_id: str, observation) -> bool:
     return bool(
         source is not None
         and source.coverage == CoverageState.COMPLETE
-        and observation.coverage.get(source.surface) == CoverageState.COMPLETE
+        and any(
+            item.source_observation_id == source.observation_id
+            and item.coverage == CoverageState.COMPLETE
+            for item in observation.source_manifest
+        )
     )
 
 

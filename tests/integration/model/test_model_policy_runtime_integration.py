@@ -11,8 +11,7 @@ from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.context import ContextBuilder, ContextProjectionBudget
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.world import (
-    ObservationSourceProfile,
-    SurfaceObservation,
+    WorldFusion,
 )
 from tests.conformance.model.test_model_policy_admission import (
     _ActionEvaluator as DestinationActionEvaluator,
@@ -182,14 +181,13 @@ def test_model_propose_done_can_reference_current_artifact_without_bypassing_eva
 
     async def scenario() -> None:
         observation = _world("artifact", False)
-        source = SurfaceObservation(
-            observation.observation_id,
-            "dom",
-            "revision:artifact",
-            ObservationSourceProfile.dom(),
+        source = replace(
+            observation.sources[0],
             artifacts={"receipt": {"path": "/private/receipt", "value": "raw-secret"}},
         )
-        observation = replace(observation, sources=(source,))
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        observation = fused.observation
         evaluator = CountingEvaluator()
         port = ScriptedStructuredDecisionPort(script)
 

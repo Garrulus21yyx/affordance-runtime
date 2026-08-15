@@ -11,6 +11,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.control_feedback import current_semantic_scope
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.world import WorldFusion
 from affordance_runtime.world.public_semantic_digest import (
     action_page_request_digest,
     issue_digest,
@@ -82,7 +83,9 @@ def test_private_binding_payload_is_excluded_from_public_world_digest() -> None:
     world = _world("obs:one", False)
     binding = replace(world.bindings[0], payload={"selector": "#different-private-route"})
     source = replace(world.sources[0], bindings=(binding,))
-    changed = replace(world, bindings=(binding,), sources=(source,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    changed = fused.observation
 
     assert public_world_semantic_digest(world) == public_world_semantic_digest(changed)
 
@@ -94,7 +97,7 @@ def test_target_action_and_page_id_churn_with_same_semantics_is_ignored() -> Non
         first.facts[0],
         fact_id="fact:replacement",
         subject_id=target.target_id,
-        source_id="source:replacement",
+        source_id=first.sources[0].observation_id,
     )
     binding = replace(
         first.bindings[0],
@@ -105,7 +108,9 @@ def test_target_action_and_page_id_churn_with_same_semantics_is_ignored() -> Non
         payload={"selector": "#replacement"},
     )
     source = replace(first.sources[0], targets=(target,), facts=(fact,), bindings=(binding,))
-    second = replace(first, targets=(target,), facts=(fact,), bindings=(binding,), sources=(source,))
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    second = fused.observation
     first_space = ActionSpaceBuilder().build(_task(), first)
     second_space = ActionSpaceBuilder().build(_task(), second)
     first_page = ContextBuilder().page(first_space, AgentLoopState(first))

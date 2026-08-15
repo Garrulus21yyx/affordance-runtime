@@ -32,7 +32,7 @@ class UnifiedWorldEnvironment:
     adapters: tuple[SurfaceAdapter, ...]
     observation_orchestrator: ObservationOrchestrator = field(default_factory=ObservationOrchestrator)
     world_fusion: WorldFusion = field(default_factory=WorldFusion)
-    _source_observation_ids: dict[str, str] = field(default_factory=dict, init=False)
+    _source_observation_ids: frozenset[str] = field(default_factory=frozenset, init=False)
     _world_observation_id: str = field(default="", init=False)
     _offers: tuple[ObservationOffer, ...] = field(default=(), init=False)
     _selected_sources: tuple[str, ...] = field(default=(), init=False)
@@ -62,7 +62,7 @@ class UnifiedWorldEnvironment:
         return ObservationCapabilities(True, True, self._offers)
 
     async def reset(self, task: TaskGoal) -> ObservationAcquisition:
-        self._source_observation_ids.clear()
+        self._source_observation_ids = frozenset()
         self._world_observation_id = ""
         self._selected_sources = ()
         self._selection_plan = None
@@ -186,16 +186,10 @@ class UnifiedWorldEnvironment:
             return ObservationAcquisition(
                 AcquisitionStatus.FAILED, origin, None, fused.reason_code, selected, tuple(results),
             )
-        coverage = dict(fused.observation.coverage)
-        for result in results:
-            if result.status is SourceAcquisitionStatus.FAILED:
-                from affordance_runtime.world.contracts import CoverageState
-
-                coverage[result.source] = CoverageState.FAILED
-        world = replace(fused.observation, coverage=coverage)
-        self._source_observation_ids = {
-            source.surface: source.observation_id for source in world.sources
-        }
+        world = fused.observation
+        self._source_observation_ids = frozenset(
+            source.observation_id for source in world.sources
+        )
         self._world_observation_id = world.observation_id
         self._selected_sources = tuple(item.source for item in selected.selections)
         self._selection_plan = selected
@@ -239,8 +233,7 @@ class UnifiedWorldEnvironment:
         return self._adapter(request.binding.surface) is not None and (
             request.world_observation_id == self._world_observation_id
             and request.binding.world_observation_id == self._world_observation_id
-            and request.binding.source_observation_id
-            == self._source_observation_ids.get(request.binding.surface, "")
+            and request.binding.source_observation_id in self._source_observation_ids
         )
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:

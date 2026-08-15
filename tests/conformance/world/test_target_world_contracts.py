@@ -23,7 +23,10 @@ from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
+    ObservationSourceProfile,
     SemanticTarget,
+    SurfaceObservation,
+    WorldFusion,
     WorldObservation,
     build_agent_world_view,
 )
@@ -47,22 +50,26 @@ def _world() -> WorldObservation:
         parameter_schema={"type": "object", "properties": {}, "additionalProperties": False},
         payload={"selector": "#shared", "credential": "never-policy-visible"},
     )
-    return WorldObservation(
+    source = SurfaceObservation(
         "obs-1",
+        "dom",
+        "rev-1",
+        ObservationSourceProfile.dom(),
         (SemanticTarget("share-toggle", "button", "Enable shared state", {"enabled": False}),),
-        (),
-        (binding,),
-        {"dom": CoverageState.COMPLETE, "wot": CoverageState.NOT_ACQUIRED},
+        bindings=(binding,),
     )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
-def test_policy_view_hides_binding_payload_and_preserves_coverage_unknown() -> None:
+def test_policy_view_hides_binding_payload_and_preserves_source_instance_coverage() -> None:
     view = build_agent_world_view(_world())
 
     assert "selector" not in repr(view)
     assert "credential" not in repr(view)
     assert view.targets[0].supported_actions == ("activate",)
-    assert view.coverage["wot"] == CoverageState.NOT_ACQUIRED
+    assert view.coverage["obs-1"] == CoverageState.COMPLETE
 
 
 def test_action_space_is_current_and_schema_is_immutable() -> None:

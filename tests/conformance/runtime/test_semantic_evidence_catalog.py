@@ -17,8 +17,9 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
-    WorldObservation,
+    WorldFusion,
 )
+from tests.support.world import fused_world
 
 
 def _task(*, hybrid=False, outputs=(), required_assurance=""):
@@ -42,21 +43,20 @@ def _world(*, coverage=CoverageState.COMPLETE, artifacts=None):
     )
     source = SurfaceObservation(
         "source:1", "dom", "revision:1", ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("report:1", "content", "report"),),
         facts=facts, artifacts=artifacts or {}, coverage=coverage,
     )
-    return WorldObservation(
-        "world:1", (SemanticTarget("report:1", "content", "report"),), facts, (),
-        {"dom": coverage}, sources=(source,),
-    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def test_semantic_request_hides_mechanical_expected_value_and_pins_scope() -> None:
     task = _task(hybrid=True)
     world = _world()
-    world = WorldObservation(
-        world.observation_id,
-        (SemanticTarget("decoy:1", "content", "decoy"), *world.targets),
-        world.facts, (), world.coverage, sources=world.sources,
+    world = replace(
+        world,
+        targets=(SemanticTarget("decoy:1", "content", "decoy"), *world.targets),
     )
     request = build_semantic_judge_request(
         task, normalize_task_criteria(task), world, WorldEvidenceIndex.from_observation(world),
@@ -118,11 +118,13 @@ def test_semantic_readiness_distinguishes_present_absent_and_inconclusive_scope(
     present_request = build_semantic_judge_request(
         task, (criterion,), present, WorldEvidenceIndex.from_observation(present)
     )
-    absent = WorldObservation("absent", (), (), (), {"dom": CoverageState.COMPLETE})
+    absent = fused_world("absent", surface="dom")
     absent_request = build_semantic_judge_request(
         task, (criterion,), absent, WorldEvidenceIndex.from_observation(absent)
     )
-    truncated = WorldObservation("truncated", (), (), (), {"dom": CoverageState.TRUNCATED})
+    truncated = fused_world(
+        "truncated", coverage=CoverageState.TRUNCATED, surface="dom"
+    )
     truncated_request = build_semantic_judge_request(
         task, (criterion,), truncated, WorldEvidenceIndex.from_observation(truncated)
     )
@@ -152,10 +154,14 @@ def test_scoped_evidence_fully_hidden_by_budget_is_inconclusive() -> None:
 def test_scoped_evidence_below_required_assurance_is_inconclusive() -> None:
     task = _task(required_assurance="structural")
     criterion = normalize_task_criteria(task)[0]
-    weak = replace(
-        _world(),
-        sources=(replace(_world().sources[0], source_profile=ObservationSourceProfile.visual()),),
+    source = replace(
+        _world().sources[0],
+        source_profile=ObservationSourceProfile.visual(),
+        visual_only_target_ids=("report:1",),
     )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    weak = fused.observation
     request = build_semantic_judge_request(
         task, (criterion,), weak, WorldEvidenceIndex.from_observation(weak)
     )

@@ -50,7 +50,7 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     assert len(projected.world.targets) == 3
     assert len(projected.world.bindings) == 3
     assert projected.target_count_total == 3
-    assert str(projected.world.coverage["browsergym"]) == "complete"
+    assert str(projected.world.source_manifest[0].coverage) == "complete"
     public = repr(projected.world)
     assert "private-" not in public
     assert "selector" not in public and "bid" not in public
@@ -133,7 +133,8 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
         next(item for item in omitted.world.bindings if item.target_id == checkbox.target_id).semantic_action
         == "activate"
     )
-    assert omitted.world.coverage == baseline.world.coverage == {"browsergym": CoverageState.COMPLETE}
+    assert omitted.world.source_manifest[0].coverage is CoverageState.COMPLETE
+    assert baseline.world.source_manifest[0].coverage is CoverageState.COMPLETE
     task = TaskGoal(
         "task:inventory",
         "Save",
@@ -149,7 +150,7 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
 def test_static_text_is_projected_as_read_only_information() -> None:
     projected = _project(raw_observation(ax_node("static", "StaticText", "Information")))
     inventory = projected.world.sources[0].semantic_inventory
-    assert projected.world.coverage["browsergym"] is CoverageState.COMPLETE
+    assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
     assert inventory.recognized_target_count == 1
     assert len(projected.world.targets) == 1
@@ -329,7 +330,7 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
         )
     )
     truncated_inventory = truncated.world.sources[0].semantic_inventory
-    assert truncated.world.coverage["browsergym"] is CoverageState.TRUNCATED
+    assert truncated.world.source_manifest[0].coverage is CoverageState.TRUNCATED
     assert truncated_inventory.status is SemanticInventoryStatus.PARTIAL
     assert (
         truncated_inventory.recognized_target_count,
@@ -349,7 +350,7 @@ def test_fact_only_truncation_does_not_change_target_inventory(monkeypatch) -> N
         )
     )
     inventory = projected.world.sources[0].semantic_inventory
-    assert projected.world.coverage["browsergym"] is CoverageState.TRUNCATED
+    assert projected.world.source_manifest[0].coverage is CoverageState.TRUNCATED
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
     assert (inventory.recognized_target_count, inventory.projected_target_count) == (1, 1)
     retained = projected.world.sources[0].entity_inventory
@@ -364,7 +365,7 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
 
     assert len(projected.world.targets) == 65
     assert len(projected.world.bindings) == 65
-    assert projected.world.coverage["browsergym"] is CoverageState.COMPLETE
+    assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert projected.world.sources[0].entity_inventory.status is EntityInventoryStatus.COMPLETE
 
     task = TaskGoal("task:paging", "Click Button 64", allowed_effects=("external_ui_interaction",))

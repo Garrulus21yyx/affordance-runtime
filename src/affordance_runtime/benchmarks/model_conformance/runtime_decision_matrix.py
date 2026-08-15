@@ -40,6 +40,7 @@ from affordance_runtime.benchmarks.target_loop.support import (
 from affordance_runtime.world import (
     StateFact,
     SurfaceObservation,
+    WorldFusion,
 )
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -362,9 +363,11 @@ def _variant_name(decision) -> str:
 
 def _evidence_world(identity: str, refs) -> WorldObservation:
     base = shared_world(identity, False, "dom")
+    base_source = base.sources[0]
+    local_target = base_source.targets[0]
     fact_refs = tuple(ref for ref in refs if str(ref).startswith("fact:"))
     facts = tuple(
-        StateFact(ref, base.targets[0].target_id, "expanded", False, identity)
+        StateFact(ref, local_target.target_id, "expanded", False, identity)
         for ref in (fact_refs or (base.facts[0].fact_id,))
     )
     artifact_sources = []
@@ -376,10 +379,10 @@ def _evidence_world(identity: str, refs) -> WorldObservation:
                 artifacts={key: {"public_summary": "current benchmark evidence"}},
             ))
     source = SurfaceObservation(
-        identity, "dom", f"revision:{identity}", base.sources[0].source_profile,
-        base.targets, facts, base.bindings,
+        identity, "dom", f"revision:{identity}", base_source.source_profile,
+        base_source.targets, facts, base_source.bindings,
     )
-    return WorldObservation(
-        identity, base.targets, facts, base.bindings, base.coverage,
-        sources=(source, *artifact_sources),
-    )
+    result = WorldFusion().fuse((source, *artifact_sources))
+    if result.observation is None:
+        raise ValueError(result.reason_code)
+    return result.observation
