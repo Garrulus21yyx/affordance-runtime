@@ -53,7 +53,6 @@ from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model.policy.provider_orchestrator import ProviderCallOrchestrator
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
 from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
@@ -578,13 +577,8 @@ def _validate_formal_policy(
         raise TypeError("formal breadth campaign requires ModelBackedAgentPolicy")
     composed = policy.port
     if provider_recovery:
-        if not isinstance(composed, ProviderCallOrchestrator):
-            raise TypeError("formal recovery campaign requires ProviderCallOrchestrator")
-        if len(composed.ports) != 1 or composed.configured_retry_count != 2:
-            raise ValueError("formal recovery policy is not the frozen profile")
-        adapter = composed.primary_port
-    else:
-        adapter = composed
+        raise ValueError("provider recovery orchestration is outside the simplified Runtime")
+    adapter = composed
     if not isinstance(adapter, ModelPortDecisionAdapter):
         raise TypeError("formal breadth campaign requires the one-attempt model bridge")
     provider = getattr(adapter.port, "provider", "")

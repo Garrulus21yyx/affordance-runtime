@@ -41,7 +41,6 @@ from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model.policy.provider_orchestrator import ProviderCallOrchestrator
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
 PROFILE_ID = "MINIWOB_CAPABILITY_COVERED_PERCEPTION_AB"
@@ -428,8 +427,7 @@ def _adapter(
     *,
     require_frozen_mistral: bool = True,
 ) -> ModelPortDecisionAdapter | GroundedActionAdapter:
-    composed = policy.port
-    adapter = composed.primary_port if isinstance(composed, ProviderCallOrchestrator) else composed
+    adapter = policy.port
     if not isinstance(
         adapter,
         ModelPortDecisionAdapter | GroundedActionAdapter,

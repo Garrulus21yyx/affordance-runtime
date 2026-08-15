@@ -230,7 +230,7 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
     assert policy.port.model_id == "glm-4.7-flash"
     assert policy.port.supports_multimodal is False
 
-    with pytest.raises(ValueError, match="compact-JSON"):
+    with pytest.raises(ValueError, match="LLM_MODEL_ADAPTER=compact-json"):
         zhipu_pydantic_ai_policy_from_environment(
             {**base, "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx"},
             call_timeout_s=5.0,

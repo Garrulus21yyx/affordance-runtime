@@ -29,7 +29,6 @@ from affordance_runtime.benchmarks.external_breadth.selection import selection_k
 from affordance_runtime.benchmarks.external_smoke.adapter_reporting import _atomic_json
 from affordance_runtime.model.policy import model_policy_from_environment
 from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model.policy.provider_orchestrator import ProviderCallOrchestrator
 
 
 def main() -> int:
@@ -66,9 +65,7 @@ def main() -> int:
     if errors:
         print(json.dumps({"status": "NOT_RUN_UNAVAILABLE_CONFIG", "errors": errors}, sort_keys=True))
         return 1
-    policy = model_policy_from_environment(
-        provider_recovery=False,
-    )
+    policy = model_policy_from_environment()
     outcome = asyncio.run(run_breadth_campaign(
         manifest, policy, args.output_dir, provider_capacity=capacity,
     ))
@@ -123,6 +120,8 @@ def _write_frozen_evidence(path, census, manifest) -> None:
 
 def _configuration_errors(manifest, *, provider_recovery: bool = False) -> list[str]:
     errors = []
+    if provider_recovery:
+        errors.append("provider recovery orchestration is outside the simplified Runtime")
     expected = {
         "LLM_ACTIVE_PROFILE": "mistral",
         "LLM_MISTRAL_MODEL": manifest.model_profile,
@@ -142,23 +141,9 @@ def _configuration_errors(manifest, *, provider_recovery: bool = False) -> list[
     if not url.startswith("file://"):
         errors.append("MINIWOB_URL must use the reviewed local source fixture")
     try:
-        policy = model_policy_from_environment(
-            provider_recovery=provider_recovery,
-        )
+        policy = model_policy_from_environment()
         composed = policy.port
-        if provider_recovery and not isinstance(composed, ProviderCallOrchestrator):
-            errors.append("model policy does not use the admitted provider orchestrator")
-        elif provider_recovery:
-            assert isinstance(composed, ProviderCallOrchestrator)
-            orchestrator = composed
-            adapter = orchestrator.primary_port
-            if not isinstance(adapter, ModelPortDecisionAdapter):
-                errors.append("provider orchestrator does not wrap the one-attempt bridge")
-            elif adapter.config.rate_limit_retries or adapter.config.transient_retries:
-                errors.append("model transport retry count is nonzero")
-            if orchestrator.configured_retry_count != 2:
-                errors.append("provider orchestrator retry profile is invalid")
-        elif not isinstance(composed, ModelPortDecisionAdapter):
+        if not isinstance(composed, ModelPortDecisionAdapter):
             errors.append("model policy does not use the admitted one-attempt bridge")
         elif composed.config.rate_limit_retries or composed.config.transient_retries:
             errors.append("model transport retry count is nonzero")

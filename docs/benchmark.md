@@ -29,8 +29,9 @@ expected answers, or benchmark reward payloads exposed to the model.
 
 Every core-loop run must additionally record the prompt version, context schema version, tool-catalog schema version,
 Runtime engine, and model-adapter choice as metadata. These values support reproducibility but cannot alter product
-behavior. During cutover, `legacy` and `pydantic-ai` are compared with the same provider, model, prompt, context,
-catalog, cohort, seed, and step budget; provider changes are not attributed to the adapter.
+behavior. During cutover, `compact-json` and `pydantic-ai` are compared only where the same model supports both wire
+contracts, with the same provider, prompt, context, catalog, cohort, seed, and step budget. A model change is reported
+as a separate cohort and is not attributed to the adapter.
 
 ## Current evidence
 

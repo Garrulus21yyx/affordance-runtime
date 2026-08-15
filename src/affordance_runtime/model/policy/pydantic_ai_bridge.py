@@ -250,7 +250,7 @@ def zhipu_pydantic_ai_policy_from_environment(
     api_key = _required(env, "LLM_ZHIPU_API_KEY")
     model_id = _required(env, "LLM_ZHIPU_MODEL")
     if model_id.casefold() == "glm-4.1v-thinking-flashx":
-        raise ValueError("glm-4.1v-thinking-flashx requires the existing compact-JSON model adapter")
+        raise ValueError("glm-4.1v-thinking-flashx requires LLM_MODEL_ADAPTER=compact-json")
     selected_perception = DecisionPerceptionProfile(
         perception_profile
         or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)

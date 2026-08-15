@@ -91,9 +91,10 @@ affordance-runtime run \
 
 `task-boundary.json` supplies stable success criteria, allowed effects, requested outputs, and budgets.
 Provider configuration is read from environment variables; secrets never enter the public world or benchmark reports.
-During the measured cutover, set `LLM_MODEL_ADAPTER=pydantic-ai` for the selected PydanticAI path. The current verified
-adapter supports the Zhipu OpenAI-compatible profile; other profiles stay on the migration path until they have a live
-tool-call witness.
+Use `LLM_MODEL_ADAPTER=pydantic-ai` for models that return standard native tool calls. Use
+`LLM_MODEL_ADAPTER=compact-json` for `glm-4.1v-thinking-flashx`: the model is retained for visual operation, but its
+non-standard response envelope requires the bounded compact compatibility path. Both adapters feed the same catalog,
+context, typed decisions, and `CoreAgentLoop`.
 
 ## Current simplification boundary
 
@@ -101,5 +102,6 @@ The R2 checkpoint remains available in Git history. The current branch keeps the
 semantic-action, tool, execution, and evaluation boundaries and uses one `CoreAgentLoop`, one `RunState`, one
 `StepResult` per turn, one stable GUI-agent prompt, and one compact model projection. The public Runtime, CLI, and
 target benchmark harness all use this core. The former control reducer, transition, feedback, session, and legacy-loop
-modules have been removed. PydanticAI is now the selected model/provider and native tool-call layer; a measured adapter
-cutover and deletion of the superseded custom model transport precede the paired live benchmark gate.
+modules have been removed. PydanticAI owns standard native tool transport, while 4.1V keeps one bounded compact wire
+adapter. The redundant provider retry orchestrator is deleted; pruning the remaining superseded transport code and
+running paired live benchmarks are the next gates.

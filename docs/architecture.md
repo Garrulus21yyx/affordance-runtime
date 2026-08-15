@@ -7,8 +7,9 @@ multi-source observation: acquire cheap structured evidence first, add visual or
 and expose one current semantic world to the model.
 
 The simplification keeps the proven world, adapter, semantic-action, tool, execution, and evaluation boundaries. It
-uses PydanticAI for model/provider adaptation and tool-call transport, while retaining one project-owned thin GUI
-loop, one mutable `RunState`, one `StepResult` per turn, and one model-context projection.
+uses PydanticAI for standard native tool-call models and one bounded compact adapter for the non-standard 4.1V wire
+format, while retaining one project-owned thin GUI loop, one mutable `RunState`, one `StepResult` per turn, and one
+model-context projection.
 
 ## One loop
 
@@ -62,10 +63,11 @@ tool call but never executes Python or GUI code inside the framework. Runtime re
 current binding and remains the final validation authority.
 
 The temporary `PydanticAIGroundedDecisionPort` reuses the existing policy seam during migration. It is not a second
-permanent model abstraction. After the default path and benchmark runner use PydanticAI, the old custom HTTP provider,
-structured-response bridge, provider orchestrator, and duplicate tool normalizer are deleted. A narrowly scoped
-compact-JSON compatibility adapter may remain only for a benchmark model that demonstrably cannot emit native tool
-calls.
+permanent model abstraction. The single-provider retry orchestrator has already been deleted. The remaining custom
+HTTP and structured-response code is reduced to the bounded compact path plus historical conformance callers before
+superseded pieces are removed. The compact exception currently applies to `glm-4.1v-thinking-flashx`, whose
+OpenAI-compatible response envelope is not a standard chat-completion/tool-call response;
+`LLM_MODEL_ADAPTER=compact-json` selects it.
 
 ### CoreAgentLoop
 
@@ -239,8 +241,8 @@ validation:
 | 5. Connect benchmark runners to the core loop | done | target benchmark exclusively executes `CoreAgentLoop`; reports persist `runtime=core` and raw per-case evidence |
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
 | 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
-| 8. Cut the product and benchmark model path over to PydanticAI | in progress | the selected adapter is available through `LLM_MODEL_ADAPTER=pydantic-ai`; native final output replaces `propose_done`, and the same supported cohort passes before it becomes the default |
-| 9. Delete the superseded custom model transport cluster | pending | no production caller imports the old HTTP ports, structured bridge, provider orchestrator, or duplicate normalization path |
+| 8. Select model transport by actual wire capability | done | native tools use `pydantic-ai`; 4.1V uses `compact-json`; both pass the same real click-button Runtime witness and `propose_done` is not model-visible |
+| 9. Delete the superseded custom model transport cluster | in progress | the retry orchestrator is deleted; no production caller remains on superseded HTTP, structured bridge, or duplicate normalization code |
 | 10. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
 
 Any follow-up fixes must preserve this boundary and be justified by a shared invariant or benchmark evidence.

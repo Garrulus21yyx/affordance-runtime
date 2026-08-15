@@ -16,10 +16,6 @@ from affordance_runtime.model.policy.model_port_bridge import (
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
-from affordance_runtime.model.policy.provider_orchestrator import (
-    ProviderCallOrchestrator,
-    ProviderCallPolicy,
-)
 from affordance_runtime.model.providers.port import FallbackModelPort, ModelConfig, model_port_from_environment
 
 
@@ -27,13 +23,12 @@ def model_policy_from_environment(
     environment: Mapping[str, str] | None = None,
     *,
     call_timeout_s: float = 90.0,
-    provider_recovery: bool = True,
     perception_profile: DecisionPerceptionProfile | str | None = None,
 ) -> ModelBackedAgentPolicy:
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("model policy profile forbids provider fallback")
-    model_adapter = env.get("LLM_MODEL_ADAPTER", "legacy").strip().casefold()
+    model_adapter = env.get("LLM_MODEL_ADAPTER", "compact-json").strip().casefold()
     if model_adapter == "pydantic-ai":
         from affordance_runtime.model.policy.pydantic_ai_bridge import (
             zhipu_pydantic_ai_policy_from_environment,
@@ -44,7 +39,7 @@ def model_policy_from_environment(
             call_timeout_s=call_timeout_s,
             perception_profile=perception_profile,
         )
-    if model_adapter != "legacy":
+    if model_adapter not in {"compact-json", "legacy"}:
         raise ValueError(f"unsupported LLM_MODEL_ADAPTER: {model_adapter}")
     port = model_port_from_environment(environment)
     if isinstance(port, FallbackModelPort):
@@ -59,13 +54,12 @@ def model_policy_from_environment(
         selected_perception = DecisionPerceptionProfile(configured_perception)
     except ValueError as exc:
         raise ValueError("unsupported model decision perception profile") from exc
-    orchestrator_deadline = max(0.001, call_timeout_s - min(1.0, call_timeout_s * 0.05))
-    transport_timeout = min(30.0, max(0.001, orchestrator_deadline / 3))
+    transport_timeout = min(30.0, max(0.001, call_timeout_s - 1.0))
     config = ModelConfig(
         timeout_s=transport_timeout,
         rate_limit_retries=0,
         transient_retries=0,
-        provider_circuit_break_s=0.0 if provider_recovery else 60.0,
+        provider_circuit_break_s=0.0,
         prompt_version="p5-m1.1",
     )
     configured_protocol = env.get("LLM_INTERACTION_PROTOCOL", GROUNDED_TOOLS_PROTOCOL)
@@ -77,17 +71,8 @@ def model_policy_from_environment(
         config,
         perception_profile=selected_perception,
     )
-    if not provider_recovery:
-        return ModelBackedAgentPolicy(
-            adapter,
-            call_timeout_s=call_timeout_s,
-        )
-    orchestrator = ProviderCallOrchestrator(
-        (adapter,),
-        ProviderCallPolicy(total_elapsed_deadline_s=orchestrator_deadline),
-    )
     return ModelBackedAgentPolicy(
-        orchestrator,
+        adapter,
         call_timeout_s=call_timeout_s,
     )
 
