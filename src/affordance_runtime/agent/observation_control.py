@@ -118,47 +118,6 @@ def validate_fresh_acquisition(
     )
 
 
-async def post_action_observation(
-    environment: WorldEnvironment,
-    previous_id: str,
-    post_acquisition: ObservationAcquisition,
-    attempt_budget: int,
-) -> FreshAcquisition:
-    primary = validate_fresh_acquisition(
-        post_acquisition,
-        previous_id,
-        expected_origin=AcquisitionOrigin.POST_ACTION,
-        post_action=True,
-    )
-    if primary.observation is not None:
-        return primary
-    if (
-        not environment.observation_capabilities.independent_capture
-        or primary.attempts >= attempt_budget
-    ):
-        return primary
-    fallback = await capture_fresh(
-        environment,
-        previous_id,
-        WorldObservationRequest(
-            ObservationRequestKind.POST_ACTION_FALLBACK,
-            "post action acquisition fallback",
-        ),
-    )
-    if fallback.observation is not None:
-        return FreshAcquisition(
-            fallback.observation,
-            primary.attempts + fallback.attempts,
-            fallback.status,
-            fallback.reason_code,
-            used_fallback=True,
-            expected_origin=fallback.expected_origin,
-            actual_origin=fallback.actual_origin,
-            request_kind=fallback.request_kind,
-        )
-    return _post_action_fallback_failure(primary, fallback)
-
-
 def acquisition_attempt_count(acquisition: ObservationAcquisition) -> int:
     return int(acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED})
 

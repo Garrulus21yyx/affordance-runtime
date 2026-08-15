@@ -12,11 +12,11 @@ from affordance_runtime.model.policy.spec import (
 
 def test_canonical_schema_has_one_typed_decision_union() -> None:
     schema = decision_response_schema()
-    assert SCHEMA_VERSION == "agent-decision.v3"
+    assert SCHEMA_VERSION == "agent-decision.v4"
     assert schema["discriminator"]["propertyName"] == "type"
     assert set(schema["discriminator"]["mapping"]) == {
         "select_action",
-        "request_observation",
+        "request_evidence",
         "request_action_page",
         "ask_user",
         "propose_done",
@@ -31,11 +31,10 @@ def test_provider_schema_encodes_runtime_enums_and_forbids_extra_fields() -> Non
     encoded = json.dumps(decision_response_schema(), sort_keys=True)
 
     for value in (
-        "structural",
-        "visual",
-        "environment_state",
-        "weak",
-        "authoritative",
+        "entity_discovery",
+        "target_disambiguation",
+        "visual_property",
+        "criterion_verification",
         "direct",
         "enabling",
         "information",

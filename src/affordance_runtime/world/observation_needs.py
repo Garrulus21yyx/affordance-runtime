@@ -15,6 +15,9 @@ class ObservationPurpose(StrEnum):
     EFFECT_VERIFICATION = "effect_verification"
     CRITERION_VERIFICATION = "criterion_verification"
     CURRENTNESS_REFRESH = "currentness_refresh"
+    VISUAL_PROPERTY = "visual_property"
+    SPATIAL_RELATIONSHIP = "spatial_relationship"
+    TEXT_IN_IMAGE = "text_in_image"
 
 
 class FreshnessRequirement(StrEnum):
@@ -30,6 +33,7 @@ class ObservationNeed:
     required_modality: ObservationModality | None = None
     required_assurance: ObservationAssurance = ObservationAssurance.WEAK
     freshness: FreshnessRequirement = FreshnessRequirement.FRESH_ACQUISITION
+    evidence_property: str = ""
 
     def __post_init__(self) -> None:
         if not self.need_id.strip() or len(self.need_id) > 240:
@@ -49,3 +53,9 @@ class ObservationNeed:
             raise TypeError("required observation assurance must be typed")
         if not isinstance(self.freshness, FreshnessRequirement):
             raise TypeError("observation freshness requirement must be typed")
+        if len(self.evidence_property) > 120:
+            raise ValueError("observation evidence property exceeds its bound")
+        if (
+            self.purpose is ObservationPurpose.VISUAL_PROPERTY
+        ) != bool(self.evidence_property):
+            raise ValueError("visual property needs require exactly one evidence property")

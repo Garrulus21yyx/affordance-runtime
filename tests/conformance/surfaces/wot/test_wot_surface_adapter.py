@@ -17,6 +17,7 @@ from affordance_runtime.world import (
     build_agent_world_view,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from tests.support.observation_acquisition import acquire_observation
 
 
 def shared_td(*, security: str = "public", min_interval_ms: int = 0) -> dict:
@@ -146,7 +147,7 @@ def test_wot_unresolved_security_and_events_have_no_executable_binding() -> None
         transport = FakeWotTransport(shared_td(security="missing"))
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         await adapter.reset(_task())
-        observed = await adapter.observe("locked")
+        observed = await acquire_observation(adapter, "locked")
 
         assert observed.bindings == ()
         assert transport.reads == 0
@@ -331,7 +332,7 @@ def test_wot_partial_property_read_reports_truncated_coverage() -> None:
         transport = PartialTransport(td)
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         await adapter.reset(_task())
-        observed = await adapter.observe("partial")
+        observed = await acquire_observation(adapter, "partial")
         assert observed.coverage.value == "truncated"
         assert len(observed.targets) >= 2  # one property, one action, plus the event description
         assert observed.artifacts["read_errors"] == ("unavailable:read_failed",)
@@ -346,7 +347,7 @@ def test_wot_wrong_property_type_is_not_published_as_world_fact() -> None:
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         await adapter.reset(_task())
 
-        observed = await adapter.observe("invalid property")
+        observed = await acquire_observation(adapter, "invalid property")
 
         assert observed.coverage.value == "failed"
         assert not any(fact.key == "expanded" for fact in observed.facts)
@@ -365,7 +366,7 @@ def test_wot_property_action_event_names_have_source_local_identity() -> None:
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
         await adapter.reset(_task())
 
-        observed = await adapter.observe("same names")
+        observed = await acquire_observation(adapter, "same names")
         target_ids = {target.target_id for target in observed.targets}
 
         assert "wot:shared-state:property:enable" in target_ids
@@ -385,6 +386,6 @@ def test_wot_missing_explicit_thing_identity_fails_closed() -> None:
         )
         await adapter.reset(_task())
         with pytest.raises(ValueError, match="explicit thing identity"):
-            await adapter.observe("missing identity")
+            await acquire_observation(adapter, "missing identity")
 
     asyncio.run(scenario())

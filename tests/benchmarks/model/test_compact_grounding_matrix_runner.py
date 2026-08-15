@@ -60,12 +60,11 @@ def _payload(task, context_id, context, actions):
             "type": "request_action_page", "context_id": context_id, "query": "",
             "target_id": "", "relevance_role": "", "cursor": actions["next_cursor"],
         }
-    if "fresh structural" in task:
-        capability = context["world"]["observation_capabilities"][0]
+    if "criterion evidence" in task:
         return {
-            "type": "request_observation", "context_id": context_id,
-            "subject_id": "dom_button_1", "modality": capability["modality"],
-            "required_assurance": capability["assurance"], "reason": "refresh",
+            "type": "request_evidence", "context_id": context_id,
+            "purpose": "criterion_verification", "subject_id": "dom_button_1",
+            "evidence_property": "", "reason": "refresh",
         }
     options = actions["options"]
     selected = next((item for item in options if "Matches" in item["description"]), options[0])

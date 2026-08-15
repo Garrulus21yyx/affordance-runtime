@@ -19,13 +19,12 @@ from affordance_runtime.model.policy.spec import (
     WaitPayload,
 )
 from affordance_runtime.model.policy.strict_json import strict_json_loads
-from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 from .contracts import DecisionKind
 
 BRANCH_MODELS: Mapping[DecisionKind, type[BaseModel]] = {
     DecisionKind.SELECT_ACTION: SelectActionPayload,
-    DecisionKind.REQUEST_OBSERVATION: RequestObservationPayload,
+    DecisionKind.REQUEST_EVIDENCE: RequestObservationPayload,
     DecisionKind.REQUEST_ACTION_PAGE: RequestActionPagePayload,
     DecisionKind.ASK_USER: AskUserPayload,
     DecisionKind.PROPOSE_DONE: ProposeDonePayload,
@@ -80,15 +79,13 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
         if any(not option["destination_required"] for option in options):
             destination_ids.append("")
         properties["destination_id"] = _enum(destination_ids)
-    elif kind is DecisionKind.REQUEST_OBSERVATION:
+    elif kind is DecisionKind.REQUEST_EVIDENCE:
         properties["subject_id"] = _enum(_subject_ids(context))
         capabilities = world["observation_capabilities"]
-        properties["modality"] = _enum(item["modality"] for item in capabilities)
-        offered = tuple(item["assurance"] for item in capabilities)
-        properties["required_assurance"] = _enum(
-            item.value
-            for item in ObservationAssurance
-            if any(assurance_satisfies(candidate, item) for candidate in offered)
+        properties["purpose"] = _enum(
+            purpose
+            for item in capabilities
+            for purpose in item.get("purposes", ())
         )
     elif kind is DecisionKind.REQUEST_ACTION_PAGE:
         properties["cursor"] = _const(actions["next_cursor"])

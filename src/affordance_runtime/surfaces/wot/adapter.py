@@ -15,7 +15,11 @@ from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_
 from affordance_runtime.surfaces.wot.security import SecurityScheme
 from affordance_runtime.surfaces.wot.thing_description import ThingAffordanceModel, WotAdapter
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.acquisition import ObservationOffer
+from affordance_runtime.world.acquisition import (
+    ObservationOffer,
+    SelectedObservationRequest,
+    SelectedObservationResult,
+)
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -64,8 +68,7 @@ class WotSurfaceAdapter:
         self.prepare(task)
         self.transport.reset()
 
-    async def observe(self, reason: str) -> SurfaceObservation:
-        del reason
+    async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
         if self._task is None:
             raise RuntimeError("WoT surface adapter must be reset before observation")
         td = self.transport.fetch_thing_description()
@@ -91,7 +94,7 @@ class WotSurfaceAdapter:
         targets_by_id = {target.target_id: target for target in action_targets}
         targets_by_id.update({target.target_id: target for target in property_targets})
         targets_by_id.update({target.target_id: target for target in event_targets})
-        return SurfaceObservation(
+        observation = SurfaceObservation(
             observation_id,
             self.surface,
             td_digest,
@@ -108,6 +111,7 @@ class WotSurfaceAdapter:
             },
             acquisition_root_id=f"wot:{td_digest}",
         )
+        return SelectedObservationResult.acquired(request, observation)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         binding = request.binding

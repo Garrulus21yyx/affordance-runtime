@@ -11,7 +11,7 @@ class DecisionCapability(StrEnum):
     """One member of the action-policy decision algebra."""
 
     SELECT_ACTION = "select_action"
-    REQUEST_OBSERVATION = "request_observation"
+    REQUEST_EVIDENCE = "request_evidence"
     REQUEST_ACTION_PAGE = "request_action_page"
     ASK_USER = "ask_user"
     PROPOSE_DONE = "propose_done"
@@ -23,7 +23,7 @@ ALL_DECISION_CAPABILITIES = frozenset(DecisionCapability)
 TOOL_ACTION_DECISION_CAPABILITIES = frozenset(
     {
         DecisionCapability.SELECT_ACTION,
-        DecisionCapability.REQUEST_OBSERVATION,
+        DecisionCapability.REQUEST_EVIDENCE,
         DecisionCapability.REQUEST_ACTION_PAGE,
     }
 )

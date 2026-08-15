@@ -91,13 +91,12 @@ def test_model_policy_observation_and_wait_receive_a_fresh_context(kind: str) ->
             return {"type": "abort", "context_id": context["context_id"], "reason": "proof complete", "category": "policy"}
         if kind == "wait":
             return {"type": "wait", "context_id": context["context_id"], "reason": "settle", "max_wait_ms": 5}
-        capability = context["world"]["observation_capabilities"][0]
         return {
-            "type": "request_observation",
+            "type": "request_evidence",
             "context_id": context["context_id"],
+            "purpose": "criterion_verification",
             "subject_id": "shared-toggle",
-            "modality": capability["modality"],
-            "required_assurance": capability["assurance"],
+            "evidence_property": "",
             "reason": "refresh",
         }
 

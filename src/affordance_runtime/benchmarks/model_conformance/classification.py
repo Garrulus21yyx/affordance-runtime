@@ -82,7 +82,7 @@ def classify_policy_capabilities(
 
 
 _RECURRENT_VARIANTS = (
-    "select_action", "request_observation", "request_action_page", "ask_user",
+    "select_action", "request_evidence", "request_action_page", "ask_user",
     "propose_done", "wait", "abort",
 )
 

@@ -83,11 +83,13 @@ from affordance_runtime.world import (
     ObservationPurpose,
     ObservationRequestKind,
     ObservationSelectionPlan,
+    SelectedObservationRequest,
     SourceAcquisitionResult,
     SourceAcquisitionStatus,
     SourceRequirement,
     VisionEvidenceNeed,
     WorldObservationRequest,
+    selected_observation_requests,
 )
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
@@ -296,6 +298,9 @@ class BrowserGymEnvironment:
             revision,
             selection.plan,
             request,
+            selected_observation_requests(
+                selection.plan, request, self.observation_offers, observation_id
+            ),
         )
 
     async def revise_task(self, task: TaskGoal) -> None:
@@ -346,6 +351,9 @@ class BrowserGymEnvironment:
                 revision,
                 selection.plan,
                 request,
+                selected_observation_requests(
+                    selection.plan, request, self.observation_offers, observation_id
+                ),
             )
         except Exception:
             return failed_acquisition(AcquisitionOrigin.INDEPENDENT_CAPTURE, "browsergym_capture_failed")
@@ -418,6 +426,9 @@ class BrowserGymEnvironment:
                 revision,
                 selection.plan,
                 post_request,
+                selected_observation_requests(
+                    selection.plan, post_request, self.observation_offers, observation_id
+                ),
             )
         except Exception:
             post = failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_action_projection_failed")
@@ -463,7 +474,13 @@ class BrowserGymEnvironment:
         revision,
         plan: ObservationSelectionPlan,
         request: WorldObservationRequest,
+        acquisition_requests: tuple[SelectedObservationRequest, ...],
     ) -> ObservationAcquisition:
+        initial_requests_by_source = {
+            item.source: item for item in acquisition_requests
+        }
+        if "browsergym" not in initial_requests_by_source:
+            return failed_acquisition(origin, "structural_source_not_selected")
         try:
             projection: BrowserGymProjection = project_browsergym_observation(
                 raw,
@@ -481,6 +498,14 @@ class BrowserGymEnvironment:
             request,
             projection.world.sources[0],
             terminal=snapshot.terminal_hint,
+            route_source=next(
+                (
+                    item.source
+                    for item in plan.selections
+                    if item.reason_code == "route_source_refresh"
+                ),
+                "",
+            ),
         )
         if refined.plan is None:
             return ObservationAcquisition(
@@ -490,6 +515,13 @@ class BrowserGymEnvironment:
                 refined.reason_code,
             )
         plan = refined.plan
+        acquisition_requests = selected_observation_requests(
+            plan,
+            request,
+            self.observation_offers,
+            acquisition_requests[0].acquisition_id,
+        )
+        requests_by_source = {item.source: item for item in acquisition_requests}
         selected = {item.source: item for item in plan.selections}
         if "browsergym_visual" in selected:
             self.visual_gate_selected_count += 1
@@ -503,9 +535,11 @@ class BrowserGymEnvironment:
             SourceAcquisitionStatus.ACQUIRED,
             "source_acquired",
             projection.world.sources[0],
+            tuple(item.need_id for item in requests_by_source["browsergym"].needs),
         )]
         self.structural_source_acquired_count += 1
         visual_selection = selected.get("browsergym_visual")
+        visual_request = requests_by_source.get("browsergym_visual")
         candidate_binding_filter: set[str] | None = None
         if visual_selection is None:
             results.append(SourceAcquisitionResult(
@@ -519,7 +553,8 @@ class BrowserGymEnvironment:
                 assert self._task is not None
                 visual_observation_id = f"{observation_id}:visual"
                 visual_private_bindings: tuple[BrowserGymVisualBinding, ...]
-                visual_purpose = self._visual_purpose(plan, visual_selection)
+                assert visual_request is not None
+                visual_purpose = self._visual_purpose(visual_request)
                 if visual_purpose is ObservationPurpose.WORLD_GROUNDING or (
                     visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
                     and self.visual_candidate_disambiguator is None
@@ -592,13 +627,15 @@ class BrowserGymEnvironment:
                     SourceAcquisitionStatus.ACQUIRED,
                     "source_acquired",
                     visual_source,
+                    tuple(item.need_id for item in visual_request.needs),
                 ))
                 self.visual_source_acquired_count += 1
                 self.visual_binding_acquired_count += len(visual_private_bindings)
             except Exception as exc:
                 stage = VisualProviderStage.REGION_PROPOSAL
                 if (
-                    self._visual_purpose(plan, visual_selection)
+                    visual_request is not None
+                    and self._visual_purpose(visual_request)
                     is ObservationPurpose.TARGET_DISAMBIGUATION
                     and self.visual_candidate_disambiguator is not None
                 ):
@@ -611,6 +648,11 @@ class BrowserGymEnvironment:
                     visual_selection.requirement,
                     SourceAcquisitionStatus.FAILED,
                     "source_acquisition_failed",
+                    None,
+                    (),
+                    tuple(item.need_id for item in visual_request.needs)
+                    if visual_request is not None
+                    else (),
                 ))
         if any(
             item.requirement is SourceRequirement.REQUIRED
@@ -664,12 +706,9 @@ class BrowserGymEnvironment:
 
     def _visual_purpose(
         self,
-        plan: ObservationSelectionPlan,
-        selection,
+        request: SelectedObservationRequest,
     ) -> ObservationPurpose:
-        purposes = {
-            need.purpose for need in plan.needs if need.need_id in selection.need_ids
-        }
+        purposes = {need.purpose for need in request.needs}
         for purpose in (
             ObservationPurpose.TARGET_DISAMBIGUATION,
             ObservationPurpose.ENTITY_DISCOVERY,

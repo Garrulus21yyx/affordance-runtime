@@ -46,9 +46,8 @@ def test_page_observation_done_wait_and_abort_domains_are_exact() -> None:
     page_context = json.loads(cases["page"].serialized_context)
     page = build_variant_payload_schema(DecisionKind.REQUEST_ACTION_PAGE, cases["page"].serialized_context)
     assert page["properties"]["cursor"]["const"] == page_context["actions"]["next_cursor"]
-    observation = build_variant_payload_schema(DecisionKind.REQUEST_OBSERVATION, cases["observe"].serialized_context)
-    assert observation["properties"]["modality"]["enum"] == ["structural"]
-    assert observation["properties"]["required_assurance"]["enum"] == ["weak", "structural"]
+    observation = build_variant_payload_schema(DecisionKind.REQUEST_EVIDENCE, cases["observe"].serialized_context)
+    assert "criterion_verification" in observation["properties"]["purpose"]["enum"]
     done_context = json.loads(cases["done"].serialized_context)
     done = build_variant_payload_schema(DecisionKind.PROPOSE_DONE, cases["done"].serialized_context)
     criteria = [item["criterion_id"] for item in done_context["task"]["success_criteria"]["items"]]

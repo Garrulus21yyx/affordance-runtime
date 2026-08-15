@@ -27,7 +27,11 @@ from affordance_runtime.surfaces.visual.grounding import (
 )
 from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.acquisition import ObservationOffer
+from affordance_runtime.world.acquisition import (
+    ObservationOffer,
+    SelectedObservationRequest,
+    SelectedObservationResult,
+)
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -55,7 +59,7 @@ class VisualSurfaceAdapter:
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
         return (ObservationOffer(
-            self.surface, "visual", "weak", "high", f"browser:{id(self.session)}",
+            self.surface, "visual", "weak", "high",
         ),)
 
     def prepare(self, task: TaskGoal) -> None:
@@ -68,8 +72,7 @@ class VisualSurfaceAdapter:
         self.prepare(task)
         self.session.reset()
 
-    async def observe(self, reason: str) -> SurfaceObservation:
-        del reason
+    async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
         if self._task is None:
             raise RuntimeError("Visual surface adapter must be reset before observation")
         observation_id = f"visual:{uuid.uuid4().hex}"
@@ -128,7 +131,7 @@ class VisualSurfaceAdapter:
             for key, value in target.state.items()
         )
         unsupported = tuple(region.primitive_action for region, binding in zip(regions, candidate_bindings, strict=True) if binding is None)
-        return SurfaceObservation(
+        observation = SurfaceObservation(
             observation_id,
             self.surface,
             frame.source_revision,
@@ -143,6 +146,7 @@ class VisualSurfaceAdapter:
             acquisition_root_id=f"browser:{frame.source_revision}",
             visual_only_target_ids=tuple(region.region_id for region in regions),
         )
+        return SelectedObservationResult.acquired(request, observation)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         binding = request.binding

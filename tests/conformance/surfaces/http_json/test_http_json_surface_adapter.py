@@ -25,12 +25,14 @@ from affordance_runtime.world import (
     ObservationPurpose,
     ObservationRequestKind,
     ObservationSourceProfile,
+    SelectedObservationResult,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
     WorldObservationRequest,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from tests.support.observation_acquisition import acquire_observation
 
 
 def _task() -> TaskGoal:
@@ -79,7 +81,7 @@ def test_registered_http_json_projects_only_allowlisted_authoritative_facts() ->
         adapter = HttpJsonSurfaceAdapter(_registration(), transport)
         await adapter.reset(_task())
 
-        observation = await adapter.observe("verify persisted setting")
+        observation = await acquire_observation(adapter, "verify persisted setting")
 
         assert observation.source_profile == ObservationSourceProfile.http_json()
         assert observation.coverage is CoverageState.COMPLETE
@@ -113,7 +115,7 @@ def test_projection_failure_is_typed_and_does_not_publish_partial_authority() ->
         await adapter.reset(_task())
 
         with pytest.raises(HttpJsonProjectionError) as caught:
-            await adapter.observe("missing fact")
+            await acquire_observation(adapter, "missing fact")
 
         assert caught.value.code is HttpJsonProjectionErrorCode.MISSING_KEY
 
@@ -154,11 +156,10 @@ class StructuralAdapter:
     async def reset(self, task):
         del task
 
-    async def observe(self, reason):
-        del reason
+    async def acquire(self, request):
         self.observe_calls += 1
         observation_id = f"dom:{self.observe_calls}"
-        return SurfaceObservation(
+        observation = SurfaceObservation(
             observation_id,
             "dom",
             f"revision:{self.observe_calls}",
@@ -174,6 +175,7 @@ class StructuralAdapter:
             (),
             CoverageState.COMPLETE,
         )
+        return SelectedObservationResult.acquired(request, observation)
 
     async def execute(self, request):
         return ActionResult(request.request_id, DispatchStatus.SENT, self.surface, True)

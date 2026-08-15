@@ -361,17 +361,28 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
             del config, require_one
             self.calls += 1
             if self.calls == 1:
-                return (ToolCall("observe_visual", {"target": "E1"}),)
+                return (ToolCall("request_evidence", {"target": "E1"}),)
             self.repair_messages = tuple(messages)
             assert len(tools) == 1
-            assert tools[0].name == "observe_visual"
+            assert tools[0].name == "request_evidence"
             assert to_json_compatible(tools[0].input_schema) == {
                 "type": "object",
-                "properties": {},
-                "required": [],
+                "properties": {
+                    "purpose": {"type": "string", "enum": ["entity_discovery"]},
+                    "subject": {
+                        "type": "string", "enum": ["current_world", "E1", "E2", "E3"],
+                    },
+                    "property": {
+                        "type": "string",
+                        "enum": ["color", "icon", "visual_state", "appearance"],
+                    },
+                },
+                "required": ["purpose", "subject"],
                 "additionalProperties": False,
             }
-            return (ToolCall("observe_visual", {}),)
+            return (ToolCall("request_evidence", {
+                "purpose": "entity_discovery", "subject": "current_world",
+            }),)
 
     context = _context()
     context = replace(
@@ -379,8 +390,8 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
         world=replace(
             context.world,
             observation_capabilities=(
-                ObservationCapabilityView("structural", "structural"),
-                ObservationCapabilityView("visual", "weak"),
+                ObservationCapabilityView("structural", "structural", ("criterion_verification",)),
+                ObservationCapabilityView("visual", "weak", ("entity_discovery",)),
             ),
         ),
     )
@@ -395,25 +406,24 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
 
     assert not isinstance(outcome, ModelFailure)
     assert isinstance(outcome.decision, RequestObservation)
-    assert outcome.decision.modality == "visual"
+    assert outcome.decision.purpose == "entity_discovery"
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
     assert adapter.last_argument_violation_code == "invalid_action_parameters"
-    assert adapter.last_argument_violation_paths == ("parameters.target",)
-    assert adapter.last_selected_operation == "observe_visual"
+    assert adapter.last_argument_violation_paths == ("parameters.purpose",)
+    assert adapter.last_selected_operation == "request_evidence"
     assert adapter.last_repaired_operation_match is True
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["decision"] == {
         "kind": "RequestObservation",
         "context_id": context.context_id,
+        "purpose": "entity_discovery",
         "subject_id": "current_world",
-        "modality": "visual",
-        "required_assurance": "weak",
     }
     repair_system = port.repair_messages[0].content
     assert isinstance(repair_system, str)
-    assert '"selected_operation":"observe_visual"' in repair_system
-    assert '"field_paths":["parameters.target"]' in repair_system
+    assert '"selected_operation":"request_evidence"' in repair_system
+    assert '"field_paths":["parameters.purpose"]' in repair_system
 
 
 def test_native_transport_carries_unified_world_and_tools_once() -> None:
@@ -1126,8 +1136,8 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
         world=replace(
             context.world,
             observation_capabilities=(
-                ObservationCapabilityView("structural", "structural"),
-                ObservationCapabilityView("visual", "weak"),
+                ObservationCapabilityView("structural", "structural", ("criterion_verification",)),
+                ObservationCapabilityView("visual", "weak", ("entity_discovery",)),
             ),
         ),
         history=BoundedSection(
@@ -1137,8 +1147,8 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
                     reason="observation_no_information_gain",
                     semantic_summary={
                         "subject_id": "current_world",
-                        "modality": "structural",
-                        "required_assurance": "structural",
+                        "purpose": "criterion_verification",
+                        "evidence_property": "",
                         "reason": "refresh public state",
                     },
                 ),
@@ -1151,11 +1161,10 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
     previous = _bound_public_context(context)["history"]["items"][0]
-    assert previous["decision_details"]["modality"] == "structural"
+    assert previous["decision_details"]["purpose"] == "criterion_verification"
     descriptions = {item.name: item.description for item in catalog.specs}
-    assert "observe_structural" not in descriptions
-    assert "observe_visual" in descriptions
-    assert "No current visual source is present" in descriptions["observe_visual"]
+    assert "request_evidence" in descriptions
+    assert "Runtime admits the need" in descriptions["request_evidence"]
 
 
 def test_single_target_action_is_a_private_constant() -> None:

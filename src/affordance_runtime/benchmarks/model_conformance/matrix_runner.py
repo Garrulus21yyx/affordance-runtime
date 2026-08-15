@@ -251,7 +251,7 @@ def _provider_failure(kind: ModelFailureKind) -> str:
 def _variant(decision) -> str:
     names = {
         "SelectAction": "select_action",
-        "RequestObservation": "request_observation",
+        "RequestObservation": "request_evidence",
         "RequestActionPage": "request_action_page",
         "AskUser": "ask_user",
         "ProposeDone": "propose_done",

@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.world.acquisition import ObservationCapabilities
+from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 
 @dataclass(frozen=True)
 class ObservationCapabilityView:
     modality: str
     assurance: str
+    purposes: tuple[str, ...] = ()
 
 
 def project_acquisition_offers(
@@ -18,5 +20,13 @@ def project_acquisition_offers(
 ) -> tuple[ObservationCapabilityView, ...]:
     if not capabilities.independent_capture:
         return ()
-    pairs = {(offer.modality, offer.assurance) for offer in capabilities.offers}
-    return tuple(ObservationCapabilityView(*pair) for pair in sorted(pairs))
+    offers = {
+        (ObservationModality(offer.modality).value, ObservationAssurance(offer.assurance).value): tuple(
+            purpose.value for purpose in offer.supported_purposes
+        )
+        for offer in capabilities.offers
+    }
+    return tuple(
+        ObservationCapabilityView(modality, assurance, offers[(modality, assurance)])
+        for modality, assurance in sorted(offers)
+    )

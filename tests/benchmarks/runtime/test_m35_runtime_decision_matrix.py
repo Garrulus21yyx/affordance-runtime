@@ -19,7 +19,7 @@ def test_runtime_matrix_records_variant_specific_control_results() -> None:
         for item in asyncio.run(run_scripted_runtime_decision_matrix())
     }
     assert outcomes["select_action"].execution_count == 1
-    assert outcomes["request_observation"].observation_count == 2
+    assert outcomes["request_evidence"].observation_count == 2
     assert outcomes["request_action_page"].page_changed
     assert outcomes["ask_user"].pending_question
     assert outcomes["propose_done"].task_evaluation_calls >= 2

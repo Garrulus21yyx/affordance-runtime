@@ -34,6 +34,7 @@ class CompactActionDomain:
 @dataclass(frozen=True)
 class CompactObservationDomain:
     subject_ids: tuple[str, ...]
+    purposes: tuple[str, ...]
     modalities: tuple[str, ...]
     assurance_levels: tuple[str, ...]
     remaining_observations: int
@@ -194,6 +195,11 @@ def _guide(context, projected, truncated) -> CompactDecisionGuideV2:
         *(item.get("target_id", "") for item in actions.get("options", ())),
     ))
     modalities = _unique(item.get("modality", "") for item in capabilities)
+    purposes = _unique(
+        purpose
+        for item in capabilities
+        for purpose in item.get("purposes", ())
+    )
     offered = tuple(item.get("assurance", "") for item in capabilities)
     assurances = tuple(
         item.value for item in ObservationAssurance
@@ -206,7 +212,11 @@ def _guide(context, projected, truncated) -> CompactDecisionGuideV2:
     )
     remaining_wait = max(0, int(budgets.get("remaining_wait_ms", 0)))
     observation = CompactObservationDomain(
-        subject_ids, modalities, assurances, max(0, int(budgets.get("remaining_observations", 0))),
+        subject_ids,
+        purposes,
+        modalities,
+        assurances,
+        max(0, int(budgets.get("remaining_observations", 0))),
     )
     paging = CompactPagingDomain(
         bool(actions.get("has_more")), str(actions.get("next_cursor") or ""),
@@ -231,10 +241,10 @@ def _contracts(actions, observation, paging, completion, budget, missing):
             "action_id": "@action_domain.items.action_id", "parameters": "@selected.required_parameter_names",
             "destination_id": "@selected.visible_destination_ids|empty",
         }),
-        _contract("request_observation", observation.remaining_observations > 0 and bool(observation.modalities),
-                  (*common, "subject_id", "modality", "required_assurance", "reason"), {
-                      "subject_id": "@observation_domain.subject_ids", "modality": "@observation_domain.modalities",
-                      "required_assurance": "@observation_domain.assurance_levels", "reason": "text:1..500",
+        _contract("request_evidence", observation.remaining_observations > 0 and bool(observation.purposes),
+                  (*common, "purpose", "subject_id", "evidence_property", "reason"), {
+                      "purpose": "@observation_domain.purposes", "subject_id": "@observation_domain.subject_ids",
+                      "evidence_property": "text:0..120", "reason": "text:1..500",
                   }),
         _contract("request_action_page", bool(paging.next_cursor or paging.available_filters),
                   (*common, "query", "target_id", "relevance_role", "cursor"), {

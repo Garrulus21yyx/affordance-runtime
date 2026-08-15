@@ -164,7 +164,7 @@ class ActorWorldSnapshot:
     facet_collections: BoundedSection[ActorWorldFacetCollectionView]
     artifacts: tuple[Mapping[str, object], ...]
     conflicts: tuple[Mapping[str, object], ...]
-    observation_capabilities: tuple[Mapping[str, str], ...]
+    observation_capabilities: tuple[Mapping[str, object], ...]
     traversal: object = None
 
     def __post_init__(self) -> None:
@@ -481,7 +481,11 @@ def project_actor_world_snapshot(
         for item in world.conflicts.items
     )
     capabilities = tuple(
-        {"modality": item.modality, "assurance": item.assurance}
+        {
+            "modality": item.modality,
+            "assurance": item.assurance,
+            "purposes": item.purposes,
+        }
         for item in world.observation_capabilities
     )
     facet_collections = _facet_collections(

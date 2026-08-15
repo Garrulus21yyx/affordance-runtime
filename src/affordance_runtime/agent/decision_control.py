@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.paging import canonical_action_query
@@ -333,26 +333,42 @@ async def _policy_observation(
         ObservationRequestKind.POLICY_REQUEST,
         decision.reason,
         (ObservationNeed(
-            f"agent:{decision.modality}:{decision.subject_id}",
-            ObservationPurpose.WORLD_GROUNDING,
-            (decision.subject_id,),
-            ObservationModality(decision.modality),
-            ObservationAssurance(decision.required_assurance),
+            f"agent:{decision.purpose}:{decision.subject_id}",
+            ObservationPurpose(decision.purpose),
+            () if decision.subject_id == "current_world" else (decision.subject_id,),
+            _agent_evidence_modality(ObservationPurpose(decision.purpose)),
+            _agent_evidence_assurance(
+                session.task, ObservationPurpose(decision.purpose), decision.subject_id
+            ),
             FreshnessRequirement.FRESH_ACQUISITION,
+            decision.evidence_property,
         ),),
     )
     state = session.state
     request_digest = observation_request_digest(
         state.current_observation,
         subject_id=decision.subject_id,
-        modality=decision.modality,
-        required_assurance=decision.required_assurance,
+        purpose=decision.purpose,
+        evidence_property=decision.evidence_property,
     )
     before_result = policy_observation_result_digest(
         state.current_observation,
         action_space,
         prior_task_evaluation,
     )
+    repeated_no_gain = next(
+        (
+            transition.control_feedback
+            for transition in reversed(state.recent_control_transitions)
+            if transition.control_feedback is not None
+            and transition.control_feedback.source is ControlFeedbackSource.POLICY_OBSERVATION
+            and transition.control_feedback.request_digest == request_digest
+            and transition.control_feedback.result_digest == before_result
+        ),
+        None,
+    )
+    if repeated_no_gain is not None:
+        return route_feedback(state, scope, repeated_no_gain)
     acquired = await _fresh_observation(session, decision, request, scope)
     if not isinstance(acquired, Continue):
         return acquired
@@ -414,6 +430,31 @@ async def _policy_observation(
         public_field_paths=("observation",),
     )
     return route_feedback(state, scope, feedback)
+
+
+def _agent_evidence_modality(
+    purpose: ObservationPurpose,
+) -> ObservationModality | None:
+    if purpose is ObservationPurpose.CRITERION_VERIFICATION:
+        return None
+    return ObservationModality.VISUAL
+
+
+def _agent_evidence_assurance(task, purpose: ObservationPurpose, subject_id: str):
+    if purpose is not ObservationPurpose.CRITERION_VERIFICATION:
+        return ObservationAssurance.WEAK
+    required = tuple(
+        item.get("required_assurance", "")
+        for item in task.success_criteria
+        if isinstance(item, Mapping)
+        and item.get("subject_id", "") in {"", subject_id}
+        and item.get("required_assurance", "")
+    )
+    return max(
+        (ObservationAssurance(item) for item in required),
+        default=ObservationAssurance.WEAK,
+        key=lambda item: ("weak", "structural", "authoritative").index(item.value),
+    )
 
 
 def _policy_observation_page(

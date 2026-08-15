@@ -141,6 +141,17 @@ class ObservationSelectionPlan:
         known_needs = {item.need_id for item in self.needs}
         if any(set(item.need_ids) - known_needs for item in all_sources):
             raise ValueError("source selection references an unknown observation need")
+        if any(item.need_ids for item in self.unselected):
+            raise ValueError("unselected sources cannot own observation needs")
+        selected_need_ids = tuple(
+            need_id for item in self.selections for need_id in item.need_ids
+        )
+        if (
+            any(not item.need_ids for item in self.selections)
+            or len(set(selected_need_ids)) != len(selected_need_ids)
+            or set(selected_need_ids) != known_needs
+        ):
+            raise ValueError("selected sources must partition all observation needs")
         for reason_code in self.reason_codes:
             _validate_reason_code(reason_code)
 
@@ -150,12 +161,114 @@ class ObservationSelectionPlan:
 
 
 @dataclass(frozen=True)
+class SelectedObservationRequest:
+    acquisition_id: str
+    lifecycle_kind: ObservationRequestKind
+    reason: str
+    offer: ObservationOffer
+    selection: SourceSelection
+    needs: tuple[ObservationNeed, ...]
+
+    def __post_init__(self) -> None:
+        if not self.acquisition_id.strip() or len(self.acquisition_id) > 200:
+            raise ValueError("selected observation request requires a bounded acquisition ID")
+        if not isinstance(self.lifecycle_kind, ObservationRequestKind):
+            raise TypeError("selected observation lifecycle kind must be typed")
+        if not self.reason.strip() or len(self.reason) > 500:
+            raise ValueError("selected observation request requires a bounded reason")
+        if self.selection.requirement is SourceRequirement.UNSELECTED:
+            raise ValueError("selected observation request cannot carry an unselected offer")
+        if self.offer.source != self.selection.source:
+            raise ValueError("selected observation request source identity must be conserved")
+        object.__setattr__(self, "needs", tuple(self.needs))
+        need_ids = tuple(item.need_id for item in self.needs)
+        if not need_ids or set(need_ids) != set(self.selection.need_ids):
+            raise ValueError("selected observation request must carry exactly its selected needs")
+
+    @property
+    def source(self) -> str:
+        return self.offer.source
+
+    @property
+    def acquisition_group(self) -> str:
+        return self.offer.acquisition_group
+
+
+@dataclass(frozen=True)
+class SelectedObservationResult:
+    source: str
+    status: SourceAcquisitionStatus
+    reason_code: str
+    observation: SurfaceObservation | None
+    fulfilled_need_ids: tuple[str, ...]
+    unfulfilled_need_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("selected observation result requires source identity")
+        if self.status is SourceAcquisitionStatus.NOT_ACQUIRED:
+            raise ValueError("a selected provider cannot report NOT_ACQUIRED")
+        acquired = self.status is SourceAcquisitionStatus.ACQUIRED
+        if acquired != isinstance(self.observation, SurfaceObservation):
+            raise ValueError("selected provider ACQUIRED requires exactly one observation")
+        object.__setattr__(self, "fulfilled_need_ids", tuple(self.fulfilled_need_ids))
+        object.__setattr__(self, "unfulfilled_need_ids", tuple(self.unfulfilled_need_ids))
+        all_ids = self.fulfilled_need_ids + self.unfulfilled_need_ids
+        if (
+            any(not item.strip() for item in all_ids)
+            or len(set(all_ids)) != len(all_ids)
+            or (acquired and self.unfulfilled_need_ids)
+            or (not acquired and self.fulfilled_need_ids)
+        ):
+            raise ValueError("selected provider need outcome is incoherent")
+        _validate_reason_code(self.reason_code)
+
+    @classmethod
+    def acquired(
+        cls,
+        request: SelectedObservationRequest,
+        observation: SurfaceObservation,
+    ) -> SelectedObservationResult:
+        return cls(
+            request.source,
+            SourceAcquisitionStatus.ACQUIRED,
+            "source_acquired",
+            observation,
+            tuple(item.need_id for item in request.needs),
+            (),
+        )
+
+    @classmethod
+    def failed(
+        cls,
+        request: SelectedObservationRequest,
+        status: SourceAcquisitionStatus,
+        reason_code: str,
+    ) -> SelectedObservationResult:
+        if status not in {
+            SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+            SourceAcquisitionStatus.FAILED,
+        }:
+            raise ValueError("selected observation failure requires a failure status")
+        return cls(
+            request.source,
+            status,
+            reason_code,
+            None,
+            (),
+            tuple(item.need_id for item in request.needs),
+        )
+
+
+@dataclass(frozen=True)
 class SourceAcquisitionResult:
     source: str
     requirement: SourceRequirement
     status: SourceAcquisitionStatus
     reason_code: str
     observation: SurfaceObservation | None = None
+    fulfilled_need_ids: tuple[str, ...] = ()
+    unfulfilled_need_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.source.strip() or not isinstance(self.requirement, SourceRequirement):
@@ -169,6 +282,15 @@ class SourceAcquisitionResult:
             self.status is SourceAcquisitionStatus.NOT_ACQUIRED
         ):
             raise ValueError("only unselected sources may be NOT_ACQUIRED")
+        object.__setattr__(self, "fulfilled_need_ids", tuple(self.fulfilled_need_ids))
+        object.__setattr__(self, "unfulfilled_need_ids", tuple(self.unfulfilled_need_ids))
+        all_ids = self.fulfilled_need_ids + self.unfulfilled_need_ids
+        if any(not item.strip() for item in all_ids) or len(set(all_ids)) != len(all_ids):
+            raise ValueError("source acquisition need outcomes must be unique")
+        if self.status is SourceAcquisitionStatus.ACQUIRED and self.unfulfilled_need_ids:
+            raise ValueError("acquired source cannot retain unfulfilled selected needs")
+        if self.status is not SourceAcquisitionStatus.ACQUIRED and self.fulfilled_need_ids:
+            raise ValueError("failed source cannot report fulfilled selected needs")
         _validate_reason_code(self.reason_code)
 
 
@@ -223,6 +345,29 @@ class ExecutionOutcome:
             raise ValueError("execution post acquisition must have POST_ACTION origin")
 
 
+def selected_observation_requests(
+    plan: ObservationSelectionPlan,
+    request: WorldObservationRequest,
+    offers: tuple[ObservationOffer, ...],
+    acquisition_id: str,
+) -> tuple[SelectedObservationRequest, ...]:
+    offers_by_source = {item.source: item for item in offers}
+    if len(offers_by_source) != len(offers):
+        raise ValueError("observation offer source identities must be unique")
+    needs_by_id = {item.need_id: item for item in plan.needs}
+    return tuple(
+        SelectedObservationRequest(
+            acquisition_id,
+            request.kind,
+            request.reason,
+            offers_by_source[selection.source],
+            selection,
+            tuple(needs_by_id[need_id] for need_id in selection.need_ids),
+        )
+        for selection in plan.selections
+    )
+
+
 def _validate_reason_code(value: str) -> None:
     if len(value) > 64 or _REASON_CODE.fullmatch(value) is None:
         raise ValueError("reason_code must be a bounded stable snake-case code")
@@ -239,6 +384,9 @@ def _default_purposes(modality: ObservationModality) -> tuple[ObservationPurpose
             ObservationPurpose.EFFECT_VERIFICATION,
             ObservationPurpose.CRITERION_VERIFICATION,
             ObservationPurpose.CURRENTNESS_REFRESH,
+            ObservationPurpose.VISUAL_PROPERTY,
+            ObservationPurpose.SPATIAL_RELATIONSHIP,
+            ObservationPurpose.TEXT_IN_IMAGE,
         )
     return (
         ObservationPurpose.WORLD_GROUNDING,

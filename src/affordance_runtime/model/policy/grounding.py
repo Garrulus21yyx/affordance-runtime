@@ -26,7 +26,7 @@ from affordance_runtime.model.policy.spec import SCHEMA_VERSION
 FORMAT_ONLY_PROFILE_VERSION = "format-only.v1"
 COMPACT_CONTRACT_PROFILE_VERSION = "compact-contract.v1"
 _DECISION_TYPES = (
-    "select_action", "request_observation", "request_action_page", "ask_user",
+    "select_action", "request_evidence", "request_action_page", "ask_user",
     "propose_done", "wait", "abort",
 )
 __all__ = [

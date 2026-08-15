@@ -8,9 +8,17 @@ from typing import Any, TypeAlias
 
 from affordance_runtime.actions.relevance import ActionRelevanceRole
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
+from affordance_runtime.world.observation_needs import ObservationPurpose
 
 _MAX_REASON = 500
+_AGENT_EVIDENCE_PURPOSES = frozenset({
+    ObservationPurpose.ENTITY_DISCOVERY,
+    ObservationPurpose.TARGET_DISAMBIGUATION,
+    ObservationPurpose.VISUAL_PROPERTY,
+    ObservationPurpose.SPATIAL_RELATIONSHIP,
+    ObservationPurpose.TEXT_IN_IMAGE,
+    ObservationPurpose.CRITERION_VERIFICATION,
+})
 MAX_RESULT_SUMMARY_CHARS = 1_024
 _MAX_COLLECTION = 32
 
@@ -56,23 +64,28 @@ class SelectAction:
 @dataclass(frozen=True)
 class RequestObservation:
     context_id: str
+    purpose: str
     subject_id: str
-    modality: str
-    required_assurance: str
+    evidence_property: str
     reason: str
     cursor: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_bounded(self.subject_id, 240, "observation subject")
+        if len(self.evidence_property) > 120:
+            raise ValueError("observation evidence property exceeds its bound")
         _require_bounded(self.reason, _MAX_REASON, "observation reason")
         if len(self.cursor) > 512:
             raise ValueError("observation cursor exceeds its bound")
         try:
-            ObservationModality(self.modality)
-            ObservationAssurance(self.required_assurance)
+            purpose = ObservationPurpose(self.purpose)
         except ValueError as exc:
-            raise ValueError("observation request requires a supported modality and assurance") from exc
+            raise ValueError("observation request requires a supported evidence purpose") from exc
+        if purpose not in _AGENT_EVIDENCE_PURPOSES:
+            raise ValueError("observation purpose is not admitted for Agent requests")
+        if (purpose is ObservationPurpose.VISUAL_PROPERTY) != bool(self.evidence_property):
+            raise ValueError("visual property requests require exactly one evidence property")
 
 
 @dataclass(frozen=True)

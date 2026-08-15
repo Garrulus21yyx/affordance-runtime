@@ -183,6 +183,7 @@ async def execute_cycle(
         fallback_request = WorldObservationRequest(
             ObservationRequestKind.POST_ACTION_FALLBACK,
             "post action acquisition fallback",
+            request.verification_needs,
         )
         fallback = await capture_for_session(
             session, before.observation_id, fallback_request, scope,

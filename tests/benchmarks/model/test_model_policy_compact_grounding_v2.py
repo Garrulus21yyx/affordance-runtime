@@ -42,7 +42,7 @@ def test_v2_is_explicit_and_contains_symmetric_seven_decision_contracts() -> Non
     assert grounding_profile_version(DecisionGroundingVariant.COMPACT_CONTRACT_V2) == COMPACT_CONTRACT_V2_PROFILE_VERSION
     assert guide.profile_version == "compact-contract.v2"
     assert tuple(item.decision_type for item in guide.decision_contracts) == (
-        "select_action", "request_observation", "request_action_page", "ask_user",
+        "select_action", "request_evidence", "request_action_page", "ask_user",
         "propose_done", "wait", "abort",
     )
     assert all(item.required_fields and item.field_domains for item in guide.decision_contracts)

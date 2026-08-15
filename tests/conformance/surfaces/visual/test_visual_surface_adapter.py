@@ -15,6 +15,7 @@ from affordance_runtime.world import (
     build_agent_world_view,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from tests.support.observation_acquisition import acquire_observation
 
 
 def _png(width: int = 100, height: int = 80, suffix: bytes = b"") -> bytes:
@@ -172,7 +173,7 @@ def test_bounded_visual_proposer_reports_truncated_coverage_even_when_empty() ->
         adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
         await adapter.reset(_task())
 
-        observed = await adapter.observe("bounded empty")
+        observed = await acquire_observation(adapter, "bounded empty")
         assert observed.coverage.value == "truncated"
         assert observed.targets == ()
 
@@ -187,7 +188,7 @@ def test_explicitly_exhaustive_visual_proposer_may_report_complete_coverage() ->
         adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
         await adapter.reset(_task())
 
-        observed = await adapter.observe("exhaustive")
+        observed = await acquire_observation(adapter, "exhaustive")
         assert observed.coverage.value == "complete"
 
     asyncio.run(scenario())
@@ -203,7 +204,7 @@ def test_visual_proposer_exceeding_region_bound_fails_closed() -> None:
         await adapter.reset(_task())
 
         with pytest.raises(ValueError, match="region bound"):
-            await adapter.observe("too many")
+            await acquire_observation(adapter, "too many")
 
     asyncio.run(scenario())
 
@@ -309,7 +310,7 @@ def test_proposer_action_claim_is_normalized_to_observation_only() -> None:
         session = VisualSession()
         adapter = VisualSurfaceAdapter(session, Proposer("point_activate"))  # type: ignore[arg-type]
         await adapter.reset(_task())
-        observed = await adapter.observe("initial")
+        observed = await acquire_observation(adapter, "initial")
 
         assert len(observed.targets) == 1
         assert observed.bindings == ()

@@ -1,8 +1,9 @@
 # Wave A.2 adaptive observation policy and bounded world lens
 
 Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTED / PROPERTY_VERIFIED / FULL_VERIFIED_1642_PASS_27_SKIP /
-LIVE_NOT_RUN`
+A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED / ACQUISITION_PORT_CONVERGED /
+GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
+PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING / LIVE_NOT_RUN`
 
 Scope: select which available observation sources are semantically activated
 for one acquisition, fuse only those source observations, and project one
@@ -254,7 +255,7 @@ convergence of code already present in the repository.
 
 ## 8. SOTA alignment and reuse boundary
 
-- [BrowserGym's observation implementation](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/env.py#L616-L689)
+- [BrowserGym's observation implementation (reviewed 2026-08-15 at commit `9e779f0`)](https://github.com/ServiceNow/BrowserGym/blob/9e779f087de9a65668b6974d11f9ce9816026e96/browsergym/core/src/browsergym/core/env.py)
   captures DOM, AXTree, element properties, focus and screenshot together and
   injects shared BIDs before extraction. A.2 reuses that upstream capture and
   shared identity instead of post-hoc label/IoU matching.
@@ -348,9 +349,19 @@ Exit properties:
 Fresh benchmark evidence follows the bounded architecture gate; it does not
 replace the invariant tests and is not part of A.1 repair.
 
-## 11. Implementation record
+## 11. Reopened implementation record
 
-A.2 is implemented as an atomic owner convergence. `WorldObservationRequest`
+The earlier `A.2_IMPLEMENTED / PROPERTY_VERIFIED` attestation is withdrawn.
+Held-out review showed that selection authority converged, but the immutable
+plan did not cross the provider acquisition port: generic adapters still
+received only a reason string, offer source identity was implicitly equated to
+`adapter.surface`, generic acquisition did not run residual stage two, and the
+independent post-action fallback dropped verification needs. BrowserGym
+therefore had a richer acquisition contract than the generic world path. The
+earlier green suite did not cover those invariants and is historical execution
+evidence, not A.2 closure evidence.
+
+A.2's selector portion was implemented as an atomic owner convergence. `WorldObservationRequest`
 now carries lifecycle kind separately from immutable typed `ObservationNeed`s;
 every surface port declares `observation_offers`; and
 `ObservationOrchestrator` is the only production constructor of an immutable
@@ -363,17 +374,41 @@ The generic world environment no longer has observe-all compatibility or
 synthetic offers. BrowserGym no longer mutates a selected plan or retains a
 hidden visual escalation decision: the same orchestrator selects the baseline
 and derives the one permitted residual visual need after structural projection.
-Same-group DOM/AX/screenshot raw capture remains one physical read, while only
-selected semantic sources enter `WorldFusion`. Post-action planning uses the
-executed route owner plus sealed evaluator verification needs, never prior plan
-membership. Current complete source modalities no longer expose redundant
-observation tools.
+BrowserGym's same-group DOM/AX/screenshot raw capture remains one physical
+read, while only selected semantic sources enter `WorldFusion`. Generic DOM
+and visual adapters no longer advertise a shared acquisition group they cannot
+physically prove. Post-action planning uses the executed route owner plus
+sealed evaluator verification needs, never prior plan membership.
 
-Architecture redlines make the deleted owner paths physically absent and make
+The reopened repair now carries an immutable `SelectedObservationRequest`
+through each provider activation, including acquisition identity, lifecycle,
+selected offer, assigned needs and acquisition group. Providers report
+per-need fulfilled/unfulfilled IDs. Source aliases resolve through explicit
+source-to-owner registration rather than `adapter.surface`. The generic
+environment acquires a structural baseline, asks the same orchestrator for
+residual needs, and activates at most one complementary source. Its typed group
+port conserves acquisition identity across both stages.
+
+The model has one provider-neutral `request_evidence` ingress carrying a
+closed semantic purpose, current subject and optional visual property. Runtime
+maps it into the sole `ObservationNeed` algebra, derives assurance from
+task/evaluator obligations, and privately selects provider/source/group.
+Equivalent Agent requests after a no-gain result are rejected before another
+provider call when purpose, canonical subject and current semantic result
+fingerprint remain unchanged. Post-action independent fallback conserves the
+original verification needs; the competing unused fallback lifecycle was
+deleted.
+
+Existing architecture redlines make the deleted owner paths physically absent and make
 `ObservationOrchestrator` the sole plan constructor. Property and integration
 coverage verifies order invariance, plan immutability, two-source budget
 failure, residual ambiguity versus public state distinction, explicit-offer
 fail-closed behavior, selected-source-only fusion, shared capture reuse,
-required-source failure, and post-action non-reuse. Repository verification is
-`1642 passed, 27 skipped`; Ruff, mypy over 336 source files, and
-`git diff --check` pass. No live benchmark was run.
+required-source failure, and post-action non-reuse. The superseded `1642
+passed, 27 skipped` result remains historical only. The repair adds held-out
+source-alias, generic residual stage-two, acquisition-ID, per-need
+conservation, fallback need and semantic no-gain witnesses. The final clean
+run is `1640 passed, 27 skipped`; the A.2 focused gate is `117 passed`, the
+documentation-governance gate is `15 passed`, and Ruff, mypy over 336 source
+files, and `git diff --check` pass. A fresh-context independent review is still
+required before A.2 closure can be admitted. No live benchmark was run.

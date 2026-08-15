@@ -323,7 +323,7 @@ def test_recent_turn_projection_is_semantic_and_private_payload_free() -> None:
 @pytest.mark.parametrize(
     ("decision", "expected"),
     (
-        (RequestObservation("context:1", "target:1", "visual", "weak", "inspect"), "subject_id"),
+        (RequestObservation("context:1", "entity_discovery", "target:1", "", "inspect"), "subject_id"),
         (RequestActionPage("context:1", query="find"), "query"),
         (AskUser("context:1", "Which account?", ("account",)), "question"),
         (ProposeDone("context:1", ("criterion:1",), ("fact:1",), "done", ()), "claimed_criteria"),

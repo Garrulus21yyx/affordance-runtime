@@ -48,10 +48,12 @@ independent fresh-context review; A.1 closure is admitted while StateFact
 cutover, activate-effect authority, new interaction actions, and live benchmark
 evidence remain open. The closure contract and evidence are in the
 [Wave A.1 plan](plans/2026-08-15-world-graph-a1.md). The adaptive observation
-policy A.2 slice is now implemented and property-verified: one
-`ObservationOrchestrator` owns immutable bounded selection plans, only selected
-sources enter fusion, and missing capability fails closed. No live benchmark
-was run: [Wave A.2 design and evidence](plans/2026-08-15-adaptive-observation-policy-a2.md).
+policy A.2 repair is implemented and property-verified, pending independent
+fresh-context review. One `ObservationOrchestrator` owns selection; an immutable
+selected request now crosses the provider port, generic residual stage two is
+connected, and post-action fallback conserves verification needs. Agent semantic
+gaps use one provider-neutral `request_evidence` ingress. No live benchmark was
+run: [Wave A.2 convergence record](plans/2026-08-15-adaptive-observation-policy-a2.md).
 
 ## 2. Current implementation truth and work
 

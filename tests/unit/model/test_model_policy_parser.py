@@ -24,11 +24,11 @@ from affordance_runtime.model.policy.parser import parse_agent_decision
         ),
         (
             {
-                "type": "request_observation",
+                "type": "request_evidence",
                 "context_id": "context:1",
+                "purpose": "criterion_verification",
                 "subject_id": "target:1",
-                "modality": "structural",
-                "required_assurance": "structural",
+                "evidence_property": "",
                 "reason": "refresh",
             },
             RequestObservation,

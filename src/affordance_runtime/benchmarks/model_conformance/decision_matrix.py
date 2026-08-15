@@ -9,11 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 DECISION_VARIANTS = (
     "select_action",
-    "request_observation",
+    "request_evidence",
     "request_action_page",
     "ask_user",
     "propose_done",
@@ -58,7 +57,6 @@ def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixC
     action_id = str(option["action_id"])
     destinations = option.get("destinations", {}).get("items", [])
     destination_id = str(destinations[0]["destination_id"]) if destinations else ""
-    capability = base["world"]["observation_capabilities"][0]
     criterion_ids = tuple(
         str(item["criterion_id"])
         for item in base["task"].get("success_criteria", {}).get("items", [])
@@ -69,11 +67,11 @@ def build_seven_decision_cases(serialized_context: str) -> tuple[DecisionMatrixC
             "type": "select_action", "context_id": context_id,
             "action_id": action_id, "parameters": {}, "destination_id": destination_id,
         }),
-        ("observe", "request_observation", {
-            "type": "request_observation", "context_id": context_id,
+        ("observe", "request_evidence", {
+            "type": "request_evidence", "context_id": context_id,
+            "purpose": "criterion_verification",
             "subject_id": str(option["target_id"]),
-            "modality": capability["modality"],
-            "required_assurance": capability["assurance"], "reason": "refresh current evidence",
+            "evidence_property": "", "reason": "refresh current evidence",
         }),
         ("page", "request_action_page", {
             "type": "request_action_page", "context_id": context_id,
@@ -218,8 +216,8 @@ def _decision_context(base: dict[str, Any], variant: str) -> dict[str, Any]:
     task = context["task"]
     actions = context["actions"]
     progress = context["progress"]
-    if variant == "request_observation":
-        task["instruction"] = "Request a fresh structural observation before taking any action."
+    if variant == "request_evidence":
+        task["instruction"] = "Request criterion evidence before taking any action."
         actions["options"] = []
         actions["total_count"] = 0
         actions["page_size"] = 0
@@ -301,18 +299,18 @@ def _payload_expectation(variant, payload, context) -> DecisionPayloadExpectatio
     nonblank: tuple[str, ...] = ()
     if variant == "select_action":
         exact.update({key: payload[key] for key in ("action_id", "parameters", "destination_id")})
-    elif variant == "request_observation":
+    elif variant == "request_evidence":
         allowed["subject_id"] = tuple(dict.fromkeys([
             *(item["target_id"] for item in context["world"]["targets"]["items"]),
             *(item["target_id"] for item in context["actions"]["options"]),
         ]))
         capabilities = tuple(context["world"].get("observation_capabilities", ()))
-        allowed["modality"] = tuple(dict.fromkeys(item["modality"] for item in capabilities))
-        offered = tuple(item["assurance"] for item in capabilities)
-        allowed["required_assurance"] = tuple(
-            item.value for item in ObservationAssurance
-            if any(assurance_satisfies(candidate, item) for candidate in offered)
-        )
+        allowed["purpose"] = tuple(dict.fromkeys(
+            purpose
+            for item in capabilities
+            for purpose in item.get("purposes", ())
+        ))
+        exact["evidence_property"] = payload["evidence_property"]
         nonblank = ("reason",)
     elif variant == "request_action_page":
         exact.update({key: payload[key] for key in ("query", "target_id", "relevance_role", "cursor")})
@@ -339,7 +337,7 @@ def _payload_expectation(variant, payload, context) -> DecisionPayloadExpectatio
 
 def _decision_variant(decision: object) -> str:
     return {
-        "SelectAction": "select_action", "RequestObservation": "request_observation",
+        "SelectAction": "select_action", "RequestObservation": "request_evidence",
         "RequestActionPage": "request_action_page", "AskUser": "ask_user",
         "ProposeDone": "propose_done", "Wait": "wait", "Abort": "abort",
     }.get(type(decision).__name__, "")

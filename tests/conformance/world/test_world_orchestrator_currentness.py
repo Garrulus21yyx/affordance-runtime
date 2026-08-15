@@ -14,6 +14,7 @@ from affordance_runtime.world import (
     ObservationOffer,
     ObservationRequestKind,
     ObservationSourceProfile,
+    SelectedObservationResult,
     SemanticTarget,
     SurfaceObservation,
     WorldObservationRequest,
@@ -38,8 +39,7 @@ class SequencedAdapter:
         del task
         self.executions.clear()
 
-    async def observe(self, reason: str) -> SurfaceObservation:
-        del reason
+    async def acquire(self, request) -> SelectedObservationResult:
         self.sequence += 1
         source_id = f"{self.surface}:obs:{self.sequence}"
         revision = f"{self.surface}:rev:{self.sequence}"
@@ -63,7 +63,7 @@ class SequencedAdapter:
             payload={"private": source_id},
             risk=ActionRisk.LOW,
         )
-        return SurfaceObservation(
+        observation = SurfaceObservation(
             source_id,
             self.surface,
             revision,
@@ -72,6 +72,7 @@ class SequencedAdapter:
             bindings=(binding,),
             coverage=CoverageState.COMPLETE,
         )
+        return SelectedObservationResult.acquired(request, observation)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return request.binding.source_observation_id == self.current_source_id

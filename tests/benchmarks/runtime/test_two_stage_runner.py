@@ -41,8 +41,8 @@ class SemanticFollowingPort:
 
 def _kind(context):
     task = context["task"]["instruction"]
-    if "fresh structural" in task:
-        return "request_observation"
+    if "criterion evidence" in task:
+        return "request_evidence"
     if "next action page" in task:
         return "request_action_page"
     if "required value is missing" in task:
@@ -59,10 +59,9 @@ def _kind(context):
 def _payload(context):
     kind = _kind(context)
     context_id = context["context_id"]
-    if kind == "request_observation":
-        capability = context["world"]["observation_capabilities"][0]
+    if kind == "request_evidence":
         return {"type": kind, "context_id": context_id, "subject_id": "dom_button_1",
-                "modality": capability["modality"], "required_assurance": capability["assurance"],
+                "purpose": "criterion_verification", "evidence_property": "",
                 "reason": "refresh current evidence"}
     if kind == "request_action_page":
         actions = context["actions"]

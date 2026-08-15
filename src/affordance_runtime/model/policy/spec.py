@@ -24,7 +24,7 @@ from affordance_runtime.model.policy.strict_json import (
     validate_json_tree,
 )
 
-SCHEMA_VERSION = "agent-decision.v3"
+SCHEMA_VERSION = "agent-decision.v4"
 
 ContextId = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 Id240 = Annotated[str, StringConstraints(min_length=1, max_length=240)]
@@ -66,10 +66,17 @@ class SelectActionPayload(_Payload):
 
 
 class RequestObservationPayload(_Payload):
-    type: Literal["request_observation"]
+    type: Literal["request_evidence"]
+    purpose: Literal[
+        "entity_discovery",
+        "target_disambiguation",
+        "visual_property",
+        "spatial_relationship",
+        "text_in_image",
+        "criterion_verification",
+    ]
     subject_id: Id240
-    modality: Literal["structural", "visual", "environment_state", "user"]
-    required_assurance: Literal["weak", "structural", "authoritative"]
+    evidence_property: Optional120 = ""
     reason: Reason500
     cursor: Optional512 = ""
 
@@ -162,9 +169,9 @@ def payload_to_decision(payload: AgentDecisionPayload, expected_context_id: str)
     if isinstance(value, RequestObservationPayload):
         return RequestObservation(
             value.context_id,
+            value.purpose,
             value.subject_id,
-            value.modality,
-            value.required_assurance,
+            value.evidence_property,
             value.reason,
             value.cursor,
         )

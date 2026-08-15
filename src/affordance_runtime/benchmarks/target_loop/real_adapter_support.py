@@ -105,8 +105,8 @@ class CountingAdapter:
     async def reset(self, task: TaskGoal) -> None:
         return await self.wrapped.reset(task)
 
-    async def observe(self, reason: str):
-        return await self.wrapped.observe(reason)
+    async def acquire(self, request):
+        return await self.wrapped.acquire(request)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return self.wrapped.is_current(request)

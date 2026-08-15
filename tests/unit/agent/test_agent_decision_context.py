@@ -39,7 +39,7 @@ def test_all_agent_decisions_require_context_id(decision_type) -> None:
     "factory",
     (
         lambda: SelectAction("", "action:1"),
-        lambda: RequestObservation("", "target:1", "structural", "structural", "refresh"),
+        lambda: RequestObservation("", "criterion_verification", "target:1", "", "refresh"),
         lambda: RequestActionPage("", "query"),
         lambda: AskUser("", "question", ()),
         lambda: ProposeDone("", (), (), "done", ()),
@@ -55,8 +55,8 @@ def test_blank_context_id_fails_closed(factory) -> None:
 @pytest.mark.parametrize(
     "factory",
     (
-        lambda: RequestObservation("context:1", "target", "audio", "weak", "reason"),
-        lambda: RequestObservation("context:1", "target", "visual", "absolute", "reason"),
+        lambda: RequestObservation("context:1", "unsupported", "target", "", "reason"),
+        lambda: RequestObservation("context:1", "visual_property", "target", "", "reason"),
         lambda: RequestActionPage("context:1", "q" * 121),
         lambda: AskUser("context:1", "q" * 1_001),
         lambda: AskUser("context:1", "question", tuple(str(index) for index in range(33))),
@@ -202,12 +202,11 @@ def test_fresh_observation_decisions_reject_reused_identity(decision_kind: str) 
     class Policy:
         async def decide(self, context):
             if decision_kind == "observe":
-                capability = context.world.observation_capabilities[0]
                 return RequestObservation(
                     context.context_id,
+                    "criterion_verification",
                     "shared-toggle",
-                    capability.modality,
-                    capability.assurance,
+                    "",
                     "refresh",
                 )
             return Wait(context.context_id, "settle", 1)
@@ -378,12 +377,11 @@ def test_non_action_decisions_are_projected_into_recurrent_semantic_history() ->
         async def decide(self, context):
             self.calls += 1
             if self.calls == 1:
-                capability = context.world.observation_capabilities[0]
                 return RequestObservation(
                     context.context_id,
+                    "criterion_verification",
                     "shared-toggle",
-                    capability.modality,
-                    capability.assurance,
+                    "",
                     "refresh public state",
                 )
             if self.calls == 2:

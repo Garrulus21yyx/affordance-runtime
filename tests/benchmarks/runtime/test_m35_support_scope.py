@@ -20,7 +20,7 @@ def test_l0_l4_only_grants_action_selection_scope() -> None:
 
 def test_full_recurrent_support_requires_every_runtime_decision_twenty_of_twenty() -> None:
     complete = {variant: (20, 20) for variant in (
-        "select_action", "request_observation", "request_action_page", "ask_user",
+        "select_action", "request_evidence", "request_action_page", "ask_user",
         "propose_done", "wait", "abort",
     )}
     partial = {**complete, "wait": (19, 20)}

@@ -10,7 +10,7 @@ from affordance_runtime.agent import (
     AgentSessionStartError,
 )
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
-from affordance_runtime.agent.observation_control import capture_fresh, post_action_observation
+from affordance_runtime.agent.observation_control import capture_fresh
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
@@ -309,78 +309,6 @@ def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionO
         assert acquired.actual_origin is origin
         assert acquired.request_kind is ObservationRequestKind.WAIT_REFRESH
         assert environment.capture_calls == 1
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize(
-    ("primary_status", "independent", "expected_attempts", "expected_reason"),
-    (
-        (AcquisitionStatus.CAPABILITY_UNAVAILABLE, (_world("after"),), 1, "static_capture_acquired"),
-        (AcquisitionStatus.CAPABILITY_UNAVAILABLE, (), 1, "static_capture_failed"),
-        (AcquisitionStatus.FAILED, (), 2, "static_capture_failed"),
-    ),
-)
-def test_post_action_fallback_reports_last_attempt_truth(
-    primary_status: AcquisitionStatus,
-    independent: tuple[WorldObservation, ...],
-    expected_attempts: int,
-    expected_reason: str,
-) -> None:
-    async def scenario() -> None:
-        environment = StaticEnvironment(
-            initial_observation=_world("initial"),
-            independent_observations=independent,
-            repeat_last_observation=False,
-        )
-        await environment.reset(_task())
-        primary = ObservationAcquisition(
-            primary_status,
-            AcquisitionOrigin.POST_ACTION,
-            None,
-            "post_action_observation_unavailable"
-            if primary_status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
-            else "post_action_projection_failed",
-        )
-        acquired = await post_action_observation(environment, "initial", primary, 2)
-        assert acquired.attempts == expected_attempts
-        assert acquired.reason_code == expected_reason
-        assert acquired.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
-        assert acquired.actual_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
-        assert acquired.request_kind is ObservationRequestKind.POST_ACTION_FALLBACK
-        assert environment.capture_calls == 1
-        if independent:
-            assert acquired.status is AcquisitionStatus.ACQUIRED
-            assert acquired.observation is independent[0]
-            assert acquired.failure_code is None
-        else:
-            assert acquired.status is AcquisitionStatus.FAILED
-            assert acquired.observation is None
-            assert acquired.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
-
-    asyncio.run(scenario())
-
-
-def test_post_action_fallback_reused_identity_reports_final_freshness_failure() -> None:
-    async def scenario() -> None:
-        initial = _world("initial")
-        environment = StaticEnvironment(
-            initial_observation=initial,
-            independent_observations=(initial,),
-        )
-        await environment.reset(_task())
-        primary = ObservationAcquisition(
-            AcquisitionStatus.CAPABILITY_UNAVAILABLE,
-            AcquisitionOrigin.POST_ACTION,
-            None,
-            "post_action_observation_unavailable",
-        )
-        acquired = await post_action_observation(environment, "initial", primary, 2)
-        assert acquired.observation is None
-        assert acquired.attempts == 1
-        assert acquired.status is AcquisitionStatus.FAILED
-        assert acquired.reason_code == "observation_identity_reused"
-        assert acquired.failure_code is AgentFailureCode.POST_ACTION_FRESHNESS_INVALID
 
     asyncio.run(scenario())
 

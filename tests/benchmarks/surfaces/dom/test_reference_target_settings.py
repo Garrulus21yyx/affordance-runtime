@@ -45,9 +45,9 @@ class SettingsPolicy:
             return SelectAction(context.context_id, context.actions.options[0].action_id)
         return RequestObservation(
             context.context_id,
+            "criterion_verification",
             "settings",
-            "environment_state",
-            "authoritative",
+            "",
             "verify that notification settings were persisted",
         )
 

@@ -74,7 +74,7 @@ def test_all_seven_decisions_cross_production_bridge_schema_and_parser() -> None
     assert tuple(case.expected_variant for case in cases) == DECISION_VARIANTS
     expected_types = {
         "select_action": "SelectAction",
-        "request_observation": "RequestObservation",
+        "request_evidence": "RequestObservation",
         "request_action_page": "RequestActionPage",
         "ask_user": "AskUser",
         "propose_done": "ProposeDone",
@@ -96,7 +96,7 @@ def test_seven_decision_expectations_validate_complete_payload_domains() -> None
     assert page.expectation.exact_fields["cursor"] == "cursor:next"
 
     mutations = {
-        "request_observation": {"subject_id": "hidden-subject"},
+        "request_evidence": {"subject_id": "hidden-subject"},
         "request_action_page": {"cursor": ""},
         "ask_user": {"requested_fields": ["invented"]},
         "propose_done": {"evidence_refs": ["evidence:hidden"]},

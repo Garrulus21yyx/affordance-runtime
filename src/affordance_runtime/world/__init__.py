@@ -9,11 +9,14 @@ from affordance_runtime.world.acquisition import (
     ObservationOffer,
     ObservationRequestKind,
     ObservationSelectionPlan,
+    SelectedObservationRequest,
+    SelectedObservationResult,
     SourceAcquisitionResult,
     SourceAcquisitionStatus,
     SourceRequirement,
     SourceSelection,
     WorldObservationRequest,
+    selected_observation_requests,
 )
 from affordance_runtime.world.contracts import (
     CanonicalObservationMedia,
@@ -109,6 +112,8 @@ __all__ = [
     "SemanticInventoryStatus",
     "SemanticInventorySummary",
     "SemanticTarget",
+    "SelectedObservationRequest",
+    "SelectedObservationResult",
     "SourceEntityEndpoint",
     "SourceObservationManifest",
     "SourceAcquisitionResult",
@@ -126,4 +131,5 @@ __all__ = [
     "assurance_satisfies",
     "build_agent_world_view",
     "derive_visual_evidence_needs",
+    "selected_observation_requests",
 ]

@@ -70,7 +70,8 @@ class ObservationOrchestrator:
             return ObservationSelectionResult(
                 None, AcquisitionStatus.CAPABILITY_UNAVAILABLE, "no_source_offer"
             )
-        needs = request.needs or (_lifecycle_need(request),)
+        lifecycle_need = _lifecycle_need(request)
+        needs = request.needs or (lifecycle_need,)
         unresolved_needs = needs
         selected: dict[str, SourceSelection] = {}
         if route_source:
@@ -81,18 +82,15 @@ class ObservationOrchestrator:
                     AcquisitionStatus.CAPABILITY_UNAVAILABLE,
                     "route_source_unavailable",
                 )
+            if request.needs:
+                needs = _needs_by_id((lifecycle_need, *request.needs))
             selected[route_source] = SourceSelection(
                 route_source,
                 SourceRequirement.REQUIRED,
                 "route_source_refresh",
-                tuple(need.need_id for need in needs)
-                if not request.needs
-                else tuple(
-                    need.need_id for need in needs if _offer_satisfies(route_offer, need)
-                ),
+                (lifecycle_need.need_id,),
             )
-            if not request.needs:
-                unresolved_needs = ()
+            unresolved_needs = request.needs
         for need in sorted(unresolved_needs, key=lambda item: item.need_id):
             if _selected_satisfies(selected, ordered, need):
                 continue
@@ -113,6 +111,15 @@ class ObservationOrchestrator:
                     None,
                 )
                 if structural is not None:
+                    baseline_need = ObservationNeed(
+                        f"baseline:{need.need_id}",
+                        ObservationPurpose.WORLD_GROUNDING,
+                        need.subject_ids,
+                        ObservationModality.STRUCTURAL,
+                        ObservationAssurance.STRUCTURAL,
+                        need.freshness,
+                    )
+                    needs = (*needs, baseline_need)
                     failure = self._add(
                         selected,
                         structural,
@@ -120,6 +127,7 @@ class ObservationOrchestrator:
                             structural.source,
                             SourceRequirement.REQUIRED,
                             "structured_baseline",
+                            (baseline_need.need_id,),
                         ),
                     )
                     if failure is not None:
@@ -192,12 +200,19 @@ class ObservationOrchestrator:
         structured: SurfaceObservation,
         *,
         terminal: bool,
+        route_source: str = "",
     ) -> ObservationSelectionResult:
         """Complete stage two using typed residual need, without adapter selection."""
 
-        residual = _residual_needs(request, structured, terminal=terminal)
+        residual = tuple(
+            need
+            for need in _residual_needs(request, structured, terminal=terminal)
+            if any(_offer_satisfies(offer, need) for offer in offers)
+        )
         needs = tuple(dict.fromkeys((request.needs or (_lifecycle_need(request),)) + residual))
-        return self.select(offers, replace(request, needs=needs))
+        return self.select(
+            offers, replace(request, needs=needs), route_source=route_source
+        )
 
     def _add(
         self,
@@ -264,6 +279,13 @@ def _offer_satisfies(offer: ObservationOffer, need: ObservationNeed) -> bool:
     )
 
 
+def _needs_by_id(needs: tuple[ObservationNeed, ...]) -> tuple[ObservationNeed, ...]:
+    unique: dict[str, ObservationNeed] = {}
+    for need in needs:
+        unique.setdefault(need.need_id, need)
+    return tuple(unique.values())
+
+
 def _selected_satisfies(
     selected: dict[str, SourceSelection],
     offers: tuple[ObservationOffer, ...],
@@ -291,6 +313,9 @@ def _selection_reason(need: ObservationNeed, offer: ObservationOffer) -> str:
             ObservationPurpose.TARGET_DISAMBIGUATION: "visual_target_disambiguation",
             ObservationPurpose.EFFECT_VERIFICATION: "visual_effect_verification",
             ObservationPurpose.CRITERION_VERIFICATION: "visual_criterion_verification",
+            ObservationPurpose.VISUAL_PROPERTY: "visual_property_grounding",
+            ObservationPurpose.SPATIAL_RELATIONSHIP: "visual_spatial_grounding",
+            ObservationPurpose.TEXT_IN_IMAGE: "visual_text_grounding",
         }.get(need.purpose, "visual_grounding")
     if offer.modality is ObservationModality.ENVIRONMENT_STATE:
         return "authoritative_state_grounding"

@@ -17,7 +17,11 @@ from affordance_runtime.execution.contracts import (
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.acquisition import ObservationOffer
+from affordance_runtime.world.acquisition import (
+    ObservationOffer,
+    SelectedObservationRequest,
+    SelectedObservationResult,
+)
 from affordance_runtime.world.contracts import (
     CoverageState,
     ObservationSourceProfile,
@@ -59,8 +63,7 @@ class HttpJsonSurfaceAdapter:
     async def reset(self, task: TaskGoal) -> None:
         self.prepare(task)
 
-    async def observe(self, reason: str) -> SurfaceObservation:
-        del reason
+    async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
         if self._task is None:
             raise RuntimeError("HTTP JSON surface adapter must be reset before observation")
         payload = await self.transport.fetch_json(self.registration.endpoint)
@@ -81,7 +84,7 @@ class HttpJsonSurfaceAdapter:
             )
             for projection, value in projected
         )
-        return SurfaceObservation(
+        observation = SurfaceObservation(
             observation_id,
             self.surface,
             revision,
@@ -93,6 +96,7 @@ class HttpJsonSurfaceAdapter:
             {},
             acquisition_root_id=f"http-json:{self.registration.source_id}:{revision}",
         )
+        return SelectedObservationResult.acquired(request, observation)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         del request

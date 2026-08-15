@@ -15,16 +15,18 @@ from affordance_runtime.world.acquisition import (
     ObservationOffer,
     ObservationRequestKind,
     ObservationSelectionPlan,
+    SelectedObservationRequest,
+    SelectedObservationResult,
     SourceAcquisitionResult,
     SourceAcquisitionStatus,
     SourceRequirement,
-    SourceSelection,
     WorldObservationRequest,
+    selected_observation_requests,
 )
-from affordance_runtime.world.contracts import SurfaceObservation
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
-from affordance_runtime.world.surface_adapter import SurfaceAdapter
+from affordance_runtime.world.source_profile import ObservationModality
+from affordance_runtime.world.surface_adapter import GroupedObservationAdapter, SurfaceAdapter
 
 
 @dataclass
@@ -34,7 +36,10 @@ class UnifiedWorldEnvironment:
     world_fusion: WorldFusion = field(default_factory=WorldFusion)
     _source_observation_ids: frozenset[str] = field(default_factory=frozenset, init=False)
     _world_observation_id: str = field(default="", init=False)
+    _acquisition_sequence: int = field(default=0, init=False)
     _offers: tuple[ObservationOffer, ...] = field(default=(), init=False)
+    _source_owners: dict[str, SurfaceAdapter] = field(default_factory=dict, init=False, repr=False)
+    _surface_owners: dict[str, SurfaceAdapter] = field(default_factory=dict, init=False, repr=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -43,13 +48,16 @@ class UnifiedWorldEnvironment:
             raise ValueError("world environment requires at least one surface adapter")
         if len({adapter.surface for adapter in self.adapters}) != len(self.adapters):
             raise ValueError("surface adapter names must be unique")
-        self._offers = tuple(
-            offer
+        registrations = tuple(
+            (offer, adapter)
             for adapter in self.adapters
             for offer in adapter.observation_offers
         )
+        self._offers = tuple(offer for offer, _ in registrations)
         if len({offer.source for offer in self._offers}) != len(self._offers):
             raise ValueError("observation offer source identities must be unique")
+        self._source_owners = {offer.source: adapter for offer, adapter in registrations}
+        self._surface_owners = {adapter.surface: adapter for adapter in self.adapters}
 
     @property
     def observation_capabilities(self) -> ObservationCapabilities:
@@ -99,64 +107,113 @@ class UnifiedWorldEnvironment:
         selected = plan or self._select(request)
         if isinstance(selected, ObservationAcquisition):
             return replace(selected, origin=origin)
-        results: list[SourceAcquisitionResult] = [
-            SourceAcquisitionResult(
-                item.source,
-                SourceRequirement.UNSELECTED,
-                SourceAcquisitionStatus.NOT_ACQUIRED,
-                "source_not_selected",
-            )
-            for item in selected.unselected
+        self._acquisition_sequence += 1
+        acquisition_id = f"acquisition:{self._acquisition_sequence}"
+        all_initial_requests = selected_observation_requests(
+            selected, request, self._offers, acquisition_id
+        )
+        structural_requests = tuple(
+            item
+            for item in all_initial_requests
+            if ObservationModality(item.offer.modality) is ObservationModality.STRUCTURAL
+        )
+        stage_requests = (
+            structural_requests
+            if structural_requests and len(all_initial_requests) > 1
+            else all_initial_requests
+        )
+        provider_results = list(await self._acquire_selected(stage_requests))
+        acquired = [
+            item.observation
+            for item in provider_results
+            if item.status is SourceAcquisitionStatus.ACQUIRED and item.observation is not None
         ]
-        acquired: list[SurfaceObservation] = []
-        projected: dict[str, SurfaceObservation | None] = {}
-        grouped: dict[str, list[SourceSelection]] = {}
-        for item in selected.selections:
-            offer = self._offer_for(item.source)
-            grouped.setdefault(offer.acquisition_group or offer.source, []).append(item)
-        for items in grouped.values():
-            owner = self._adapter(items[0].source)
-            acquire_group = getattr(owner, "observe_group", None)
-            if len(items) > 1 and acquire_group is not None:
-                try:
-                    group_result = await acquire_group(
-                        request.reason, tuple(item.source for item in items),
+        baseline = next(
+            (
+                item
+                for item in acquired
+                if item.source_profile.modality.value == "structural"
+            ),
+            None,
+        )
+        if baseline is None and len(stage_requests) < len(all_initial_requests):
+            deferred = tuple(
+                item for item in all_initial_requests if item not in stage_requests
+            )
+            provider_results.extend(
+                SelectedObservationResult.failed(
+                    item,
+                    SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                    "baseline_dependency_unavailable",
+                )
+                for item in deferred
+            )
+            stage_requests = all_initial_requests
+        should_refine = bool(
+            baseline is not None
+            and len(stage_requests) < selected.acquisition_budget
+            and (
+                len(stage_requests) < len(all_initial_requests)
+                or selected.unselected
+            )
+        )
+        if should_refine:
+            assert baseline is not None
+            route_source = next(
+                (
+                    item.source
+                    for item in selected.selections
+                    if item.reason_code == "route_source_refresh"
+                ),
+                "",
+            )
+            refined = self.observation_orchestrator.select_after_baseline(
+                self._offers,
+                request,
+                baseline,
+                terminal=False,
+                route_source=route_source,
+            )
+            if refined.plan is None:
+                deferred = tuple(
+                    item for item in all_initial_requests if item not in stage_requests
+                )
+                provider_results.extend(
+                    SelectedObservationResult.failed(
+                        item,
+                        SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                        refined.reason_code,
                     )
-                    projected.update(dict(group_result))
-                except Exception:
-                    projected.update({item.source: None for item in items})
-        for item in selected.selections:
-            adapter = self._adapter(item.source)
-            if adapter is None:
-                results.append(SourceAcquisitionResult(
-                    item.source, item.requirement, SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
-                    "selected_source_unavailable",
-                ))
-                continue
-            try:
-                if item.source in projected:
-                    source = projected[item.source]
-                    if source is None:
-                        raise RuntimeError("shared acquisition failed")
-                else:
-                    source = await adapter.observe(request.reason)
-            except Exception:
-                results.append(SourceAcquisitionResult(
-                    item.source, item.requirement, SourceAcquisitionStatus.FAILED,
-                    "source_acquisition_failed",
-                ))
-                continue
-            if source.surface != item.source:
-                results.append(SourceAcquisitionResult(
-                    item.source, item.requirement, SourceAcquisitionStatus.FAILED,
-                    "source_identity_mismatch",
-                ))
-                continue
-            acquired.append(source)
-            results.append(SourceAcquisitionResult(
-                item.source, item.requirement, SourceAcquisitionStatus.ACQUIRED,
-                "source_acquired", source,
-            ))
+                    for item in deferred
+                )
+                return ObservationAcquisition(
+                    refined.status,
+                    origin,
+                    None,
+                    refined.reason_code,
+                    selected,
+                    self._source_results(
+                        selected, all_initial_requests, tuple(provider_results)
+                    ),
+                )
+            selected = refined.plan
+            final_requests = selected_observation_requests(
+                selected, request, self._offers, acquisition_id
+            )
+            acquired_sources = {item.source for item in stage_requests}
+            residual_requests = tuple(
+                item for item in final_requests if item.source not in acquired_sources
+            )
+            if residual_requests:
+                provider_results.extend(await self._acquire_selected(residual_requests))
+                acquired.extend(
+                    item.observation
+                    for item in provider_results[len(stage_requests) :]
+                    if item.status is SourceAcquisitionStatus.ACQUIRED
+                    and item.observation is not None
+                )
+            stage_requests = final_requests
+        results = self._source_results(selected, stage_requests, tuple(provider_results))
         required_failures = tuple(
             item for item in results
             if item.requirement is SourceRequirement.REQUIRED
@@ -190,6 +247,95 @@ class UnifiedWorldEnvironment:
             AcquisitionStatus.ACQUIRED, origin, world, reason, selected, tuple(results),
         )
 
+    async def _acquire_selected(
+        self,
+        requests: tuple[SelectedObservationRequest, ...],
+    ) -> tuple[SelectedObservationResult, ...]:
+        results: dict[str, SelectedObservationResult] = {}
+        grouped: dict[str, list[SelectedObservationRequest]] = {}
+        for request in requests:
+            grouped.setdefault(request.acquisition_group or request.source, []).append(request)
+        for group_requests in grouped.values():
+            owners = tuple(self._source_owner(item.source) for item in group_requests)
+            owner = owners[0]
+            if (
+                all(item is owner for item in owners)
+                and isinstance(owner, GroupedObservationAdapter)
+            ):
+                try:
+                    grouped_results = await owner.acquire_group(tuple(group_requests))
+                    by_source = {item.source: item for item in grouped_results}
+                    if len(by_source) != len(grouped_results):
+                        raise ValueError("group acquisition repeated a source result")
+                    for selected_request in group_requests:
+                        results[selected_request.source] = by_source[selected_request.source]
+                except Exception:
+                    for selected_request in group_requests:
+                        results[selected_request.source] = SelectedObservationResult.failed(
+                            selected_request,
+                            SourceAcquisitionStatus.FAILED,
+                            "source_acquisition_failed",
+                        )
+                continue
+            for selected_request, selected_owner in zip(
+                group_requests, owners, strict=True,
+            ):
+                try:
+                    results[selected_request.source] = await selected_owner.acquire(
+                        selected_request
+                    )
+                except Exception:
+                    results[selected_request.source] = SelectedObservationResult.failed(
+                        selected_request,
+                        SourceAcquisitionStatus.FAILED,
+                        "source_acquisition_failed",
+                    )
+        return tuple(results[item.source] for item in requests)
+
+    def _source_results(
+        self,
+        plan: ObservationSelectionPlan,
+        requests: tuple[SelectedObservationRequest, ...],
+        provider_results: tuple[SelectedObservationResult, ...],
+    ) -> tuple[SourceAcquisitionResult, ...]:
+        request_by_source = {item.source: item for item in requests}
+        provider_by_source = {item.source: item for item in provider_results}
+        selected_results: list[SourceAcquisitionResult] = []
+        for selection in plan.selections:
+            selected_request = request_by_source[selection.source]
+            result = provider_by_source[selection.source]
+            expected_need_ids = {item.need_id for item in selected_request.needs}
+            actual_need_ids = set(result.fulfilled_need_ids) | set(result.unfulfilled_need_ids)
+            identity_matches = (
+                result.source == selection.source
+                and actual_need_ids == expected_need_ids
+            )
+            if not identity_matches:
+                result = SelectedObservationResult.failed(
+                    selected_request,
+                    SourceAcquisitionStatus.FAILED,
+                    "source_result_contract_mismatch",
+                )
+            selected_results.append(SourceAcquisitionResult(
+                selection.source,
+                selection.requirement,
+                result.status,
+                result.reason_code,
+                result.observation,
+                result.fulfilled_need_ids,
+                result.unfulfilled_need_ids,
+            ))
+        unselected_results = tuple(
+            SourceAcquisitionResult(
+                item.source,
+                SourceRequirement.UNSELECTED,
+                SourceAcquisitionStatus.NOT_ACQUIRED,
+                "source_not_selected",
+            )
+            for item in plan.unselected
+        )
+        return (*unselected_results, *selected_results)
+
     def _select(self, request: WorldObservationRequest) -> ObservationSelectionPlan | ObservationAcquisition:
         outcome = self.observation_orchestrator.select(self._offers, request)
         if outcome.plan is None:
@@ -201,25 +347,23 @@ class UnifiedWorldEnvironment:
     def _physical_reset_owners(self, plan: ObservationSelectionPlan) -> tuple[SurfaceAdapter, ...]:
         selected: list[SurfaceAdapter] = []
         for item in plan.selections:
-            adapter = self._adapter(item.source)
-            if adapter is not None:
-                selected.append(adapter)
+            selected.append(self._source_owner(item.source))
         groups: dict[str, SurfaceAdapter] = {}
-        for adapter in selected:
-            offer = next(item for item in self._offers if item.source == adapter.surface)
+        for selection, adapter in zip(plan.selections, selected, strict=True):
+            offer = self._offer_for(selection.source)
             group = offer.acquisition_group or offer.source
             groups.setdefault(group, adapter)
         return tuple(groups.values())
 
     def is_current(self, request: BoundActionRequest) -> bool:
-        return self._adapter(request.binding.surface) is not None and (
+        return self._surface_adapter(request.binding.surface) is not None and (
             request.world_observation_id == self._world_observation_id
             and request.binding.world_observation_id == self._world_observation_id
             and request.binding.source_observation_id in self._source_observation_ids
         )
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:
-        adapter = self._adapter(request.binding.surface)
+        adapter = self._surface_adapter(request.binding.surface)
         if adapter is None:
             return _not_dispatched(ActionResult(
                 request.request_id, DispatchStatus.NOT_SENT, request.binding.executor_id,
@@ -238,7 +382,10 @@ class UnifiedWorldEnvironment:
             "post action",
             request.verification_needs,
         )
-        post_plan = self._post_action_plan(post_request, request.binding.surface)
+        post_plan = self._post_action_plan(
+            post_request,
+            self._route_source_for_surface(request.binding.surface),
+        )
         if isinstance(post_plan, ObservationAcquisition):
             return ExecutionOutcome(result, post_plan)
         post = await self._acquire(
@@ -268,8 +415,20 @@ class UnifiedWorldEnvironment:
     def _offer_for(self, source: str) -> ObservationOffer:
         return next(item for item in self._offers if item.source == source)
 
-    def _adapter(self, surface: str) -> SurfaceAdapter | None:
-        return next((adapter for adapter in self.adapters if adapter.surface == surface), None)
+    def _source_owner(self, source: str) -> SurfaceAdapter:
+        return self._source_owners[source]
+
+    def _route_source_for_surface(self, surface: str) -> str:
+        adapter = self._surface_owners[surface]
+        owned = tuple(
+            offer for offer in self._offers if self._source_owners[offer.source] is adapter
+        )
+        if not owned:
+            raise ValueError("executing surface has no observation source")
+        return min(owned, key=lambda item: (item.acquisition_cost, item.source)).source
+
+    def _surface_adapter(self, surface: str) -> SurfaceAdapter | None:
+        return self._surface_owners.get(surface)
 
 
 def _not_dispatched(result: ActionResult) -> ExecutionOutcome:

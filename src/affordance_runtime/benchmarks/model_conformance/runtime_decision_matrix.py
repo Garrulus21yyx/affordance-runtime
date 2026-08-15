@@ -77,13 +77,12 @@ class _Policy:
             return Abort(context.context_id, "runtime control proof complete", "no_progress")
         if self.variant == "select_action":
             return SelectAction(context.context_id, context.actions.options[0].action_id)
-        if self.variant == "request_observation":
-            capability = context.world.observation_capabilities[0]
+        if self.variant == "request_evidence":
             return RequestObservation(
                 context.context_id,
+                "criterion_verification",
                 context.world.targets.items[0].target_id,
-                capability.modality,
-                capability.assurance,
+                "",
                 "refresh current evidence",
             )
         if self.variant == "request_action_page":
@@ -134,7 +133,7 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
     paging = variant == "request_action_page"
     if paging:
         environment = paging_environment()
-    elif variant in {"request_observation", "wait"}:
+    elif variant in {"request_evidence", "wait"}:
         environment = StaticEnvironment((
             shared_world(f"{variant}:before", False, "dom"),
             shared_world(f"{variant}:fresh", False, "dom"),
@@ -178,7 +177,7 @@ def runtime_outcome_matches(outcome: RuntimeDecisionOutcome) -> bool:
     common = outcome.execution_count == 0 and not outcome.policy_failure
     if outcome.decision_variant == "select_action":
         return outcome.status == AgentLoopStatus.DONE and outcome.execution_count == 1
-    if outcome.decision_variant == "request_observation":
+    if outcome.decision_variant == "request_evidence":
         return common and outcome.observation_count == 2 and outcome.context_count == 2 and outcome.context_ids_unique
     if outcome.decision_variant == "request_action_page":
         return common and outcome.page_changed and outcome.target_action_visible and outcome.context_ids_unique
@@ -340,7 +339,7 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
 def _replay_matches(variant: str, outcome: ReplayedRuntimeOutcome) -> bool:
     if variant == "select_action":
         return outcome.execution_count == 1 and outcome.status == "continued"
-    if variant == "request_observation":
+    if variant == "request_evidence":
         return outcome.execution_count == 0 and outcome.observation_count == 2
     if variant == "request_action_page":
         return outcome.execution_count == 0 and outcome.page_changed
@@ -355,7 +354,7 @@ def _replay_matches(variant: str, outcome: ReplayedRuntimeOutcome) -> bool:
 
 def _variant_name(decision) -> str:
     return {
-        "SelectAction": "select_action", "RequestObservation": "request_observation",
+        "SelectAction": "select_action", "RequestObservation": "request_evidence",
         "RequestActionPage": "request_action_page", "AskUser": "ask_user",
         "ProposeDone": "propose_done", "Wait": "wait", "Abort": "abort",
     }.get(type(decision).__name__, "")

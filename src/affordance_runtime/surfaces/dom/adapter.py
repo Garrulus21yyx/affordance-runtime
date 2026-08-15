@@ -22,7 +22,11 @@ from affordance_runtime.execution.contracts import (
 from affordance_runtime.surfaces.dom.document import project_structured_document
 from affordance_runtime.surfaces.dom.interaction_profile import DOM_INTERACTION_CAPABILITIES
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.acquisition import ObservationOffer
+from affordance_runtime.world.acquisition import (
+    ObservationOffer,
+    SelectedObservationRequest,
+    SelectedObservationResult,
+)
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -61,7 +65,7 @@ class DomSurfaceAdapter:
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
         return (ObservationOffer(
-            self.surface, "structural", "structural", "low", f"browser:{id(self.session)}",
+            self.surface, "structural", "structural", "low",
         ),)
 
     def prepare(self, task: TaskGoal) -> None:
@@ -73,8 +77,7 @@ class DomSurfaceAdapter:
         self.prepare(task)
         self.session.reset()
 
-    async def observe(self, reason: str) -> SurfaceObservation:
-        del reason
+    async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
         snapshot = self.session.capture(page_id="agent-loop", task_instruction="")
         if self._task is None:
             raise RuntimeError("DOM surface adapter must be reset before observation")
@@ -117,7 +120,7 @@ class DomSurfaceAdapter:
         )
         self._observation_id = observation_id
         self._source_revision = snapshot.observation.page_revision
-        return SurfaceObservation(
+        observation = SurfaceObservation(
             observation_id,
             self.surface,
             snapshot.observation.page_revision,
@@ -134,6 +137,7 @@ class DomSurfaceAdapter:
             },
             acquisition_root_id=f"browser:{snapshot.observation.page_revision}",
         )
+        return SelectedObservationResult.acquired(request, observation)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return self._currentness(request)[0]

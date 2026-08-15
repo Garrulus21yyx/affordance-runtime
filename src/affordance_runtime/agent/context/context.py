@@ -170,6 +170,11 @@ class AgentGroundingIndexView:
         object.__setattr__(self, "entities", entities)
         object.__setattr__(self, "target_refs", freeze_json(mapping))
 
+    def private_subject_bindings(self) -> Mapping[str, str]:
+        """Return call-local public ref to canonical Runtime subject identity."""
+
+        return freeze_json({ref: target_id for target_id, ref in self.target_refs.items()})
+
 
 @dataclass(frozen=True)
 class AgentContext:

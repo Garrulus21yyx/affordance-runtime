@@ -398,6 +398,10 @@ def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None
         assert result.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
         assert result.observation_count == 3
         assert result.final_observation.observation_id == "obs-1"
+        assert environment.executed_requests[0].verification_needs
+        assert environment.capture_requests[0].needs == (
+            environment.executed_requests[0].verification_needs
+        )
         transition = result.control_transitions[0]
         assert tuple(item.origin for item in transition.acquisition_attempts) == (
             AcquisitionOrigin.POST_ACTION,
@@ -492,7 +496,7 @@ def test_recent_turns_are_bounded() -> None:
             assert fused.observation is not None
             observations.append(fused.observation)
         decisions = [
-            RequestObservation("context:test", "world", "structural", "structural", "refresh") for _ in range(15)
+            RequestObservation("context:test", "criterion_verification", "current_world", "", "refresh") for _ in range(15)
         ] + [Abort("context:test", "enough", "policy")]
         result = await (_loop(ScriptedPolicy(decisions))).run(
             StaticEnvironment(observations),
@@ -538,7 +542,7 @@ def test_observation_budget_is_reserved_before_execution() -> None:
             loop_budget=LoopBudget(max_turns=2, max_observations=2),
         )
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", False)])
-        request = RequestObservation("context:test", "world", "structural", "structural", "refresh")
+        request = RequestObservation("context:test", "criterion_verification", "current_world", "", "refresh")
         result = await (_loop(ScriptedPolicy([request, "first"]))).run(environment, task)
         assert result.status == AgentLoopStatus.FAILED
         assert "observation budget" in result.message
@@ -564,7 +568,7 @@ def test_last_turn_refresh_is_evaluated_before_turn_budget(
             self.calls += 1
             if kind == "wait":
                 return Wait(context.context_id, "settle", 1)
-            return RequestObservation(context.context_id, "world", "structural", "structural", "refresh")
+            return RequestObservation(context.context_id, "criterion_verification", "current_world", "", "refresh")
 
     async def scenario() -> None:
         task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=2))

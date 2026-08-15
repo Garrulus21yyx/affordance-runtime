@@ -49,9 +49,9 @@ class _NextObservationPageBinding:
 
 
 @dataclass(frozen=True)
-class _RefreshObservationBinding:
+class _EvidenceBinding:
     subjects: tuple[tuple[str, str], ...]
-    capabilities: tuple[tuple[str, str, str], ...]
+    purposes: tuple[str, ...]
 
 
 def compile_tool_catalog(serialized_context: str) -> ToolCatalog:
@@ -105,22 +105,26 @@ def compile_tool_catalog(serialized_context: str) -> ToolCatalog:
         ))
         bindings.append(_NextObservationPageBinding(default_subject, cursor))
 
-    capabilities = _capabilities(world)
-    if capabilities and targets:
+    purposes = _purposes(world)
+    if purposes and targets:
         specs.append(ToolSpec(
-            "refresh_observation",
-            "Request a fresh backend observation for one visible subject and offered capability.",
+            "request_evidence",
+            "Declare a semantic evidence gap; Runtime chooses the concrete source and assurance.",
             {
                 "type": "object",
                 "properties": {
                     "subject_ref": {"type": "string", "enum": [item[0] for item in targets]},
-                    "capability_ref": {"type": "string", "enum": [item[0] for item in capabilities]},
+                    "purpose": {"type": "string", "enum": list(purposes)},
+                    "property": {
+                        "type": "string",
+                        "enum": ["color", "icon", "visual_state", "appearance"],
+                    },
                 },
-                "required": ["subject_ref", "capability_ref"],
+                "required": ["subject_ref", "purpose"],
                 "additionalProperties": False,
             },
         ))
-        bindings.append(_RefreshObservationBinding(tuple(targets), tuple(capabilities)))
+        bindings.append(_EvidenceBinding(tuple(targets), purposes))
 
     if not specs:
         raise ToolResolutionError(ToolResolutionCode.CATALOG_INVALID)
@@ -188,28 +192,29 @@ def resolve_tool_call(
     elif isinstance(binding, _NextObservationPageBinding):
         decision = RequestObservation(
             expected_context_id,
+            "entity_discovery",
             binding.subject_id,
-            "structural",
-            "structural",
+            "",
             "continue retained observation traversal",
             binding.cursor,
         )
     else:
-        assert isinstance(binding, _RefreshObservationBinding)
+        assert isinstance(binding, _EvidenceBinding)
         subjects = dict(binding.subjects)
-        capabilities = {ref: (modality, assurance) for ref, modality, assurance in binding.capabilities}
         subject_ref = str(call.arguments["subject_ref"])
-        capability_ref = str(call.arguments["capability_ref"])
-        if subject_ref not in subjects or capability_ref not in capabilities:
+        purpose = str(call.arguments["purpose"])
+        if subject_ref not in subjects or purpose not in binding.purposes:
             raise ToolResolutionError(ToolResolutionCode.INVALID_ARGUMENTS)
-        modality, assurance = capabilities[capability_ref]
-        decision = RequestObservation(
-            expected_context_id,
-            subjects[subject_ref],
-            modality,
-            assurance,
-            "request fresh observation for selected public subject",
-        )
+        try:
+            decision = RequestObservation(
+                expected_context_id,
+                purpose,
+                subjects[subject_ref],
+                str(call.arguments.get("property", "")),
+                "agent declared semantic evidence gap",
+            )
+        except ValueError as exc:
+            raise ToolResolutionError(ToolResolutionCode.INVALID_ARGUMENTS) from exc
     return decision
 
 
@@ -275,15 +280,22 @@ def _world_targets(world: Mapping[str, object]) -> list[tuple[str, str]]:
     return result
 
 
-def _capabilities(world: Mapping[str, object]) -> list[tuple[str, str, str]]:
+def _purposes(world: Mapping[str, object]) -> tuple[str, ...]:
     values = world.get("observation_capabilities", ())
     if not isinstance(values, list):
         raise ToolResolutionError(ToolResolutionCode.CATALOG_INVALID)
-    result = []
-    for index, item in enumerate(values[:8], 1):
-        if isinstance(item, dict) and isinstance(item.get("modality"), str) and isinstance(item.get("assurance"), str):
-            result.append((f"capability_{index:02d}", item["modality"], item["assurance"]))
-    return result
+    admitted = {
+        "entity_discovery", "target_disambiguation", "visual_property",
+        "spatial_relationship", "text_in_image", "criterion_verification",
+    }
+    result = {
+        purpose
+        for item in values[:8]
+        if isinstance(item, dict) and isinstance(item.get("purposes"), list)
+        for purpose in item["purposes"]
+        if isinstance(purpose, str) and purpose in admitted
+    }
+    return tuple(sorted(result))
 
 
 def _empty_schema() -> dict[str, object]:

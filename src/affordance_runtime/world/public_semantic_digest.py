@@ -290,11 +290,11 @@ def observation_request_digest(
     observation: WorldObservation,
     *,
     subject_id: str,
-    modality: str,
-    required_assurance: str,
+    purpose: str,
+    evidence_property: str,
 ) -> str:
     return _digest((
-        public_subject_semantics(observation, subject_id), modality, required_assurance,
+        public_subject_semantics(observation, subject_id), purpose, evidence_property,
     ))
 
 

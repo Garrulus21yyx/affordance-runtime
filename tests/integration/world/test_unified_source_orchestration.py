@@ -40,6 +40,7 @@ from affordance_runtime.world import (
     ObservationPurpose,
     ObservationRequestKind,
     ObservationSourceProfile,
+    SelectedObservationResult,
     SemanticTarget,
     SourceAcquisitionStatus,
     SourceEntityEndpoint,
@@ -198,7 +199,10 @@ def test_selection_is_offer_order_invariant_and_plan_is_immutable() -> None:
 
     assert forward == reverse
     assert forward.plan is not None
-    assert forward.plan.need_ids == ("test:entity_discovery",)
+    assert forward.plan.need_ids == (
+        "baseline:test:entity_discovery",
+        "test:entity_discovery",
+    )
     assert [item.source for item in forward.plan.unselected] == []
     with pytest.raises(FrozenInstanceError):
         forward.plan.acquisition_budget = 3  # type: ignore[misc]
@@ -313,6 +317,7 @@ class OfferedAdapter:
     reset_calls: int = 0
     observe_calls: int = 0
     prepared: bool = False
+    requests: list = field(default_factory=list)
 
     @property
     def observation_offers(self):
@@ -326,12 +331,12 @@ class OfferedAdapter:
         del task
         self.reset_calls += 1
 
-    async def observe(self, reason):
-        del reason
+    async def acquire(self, request):
         self.observe_calls += 1
+        self.requests.append(request)
         if self.observation is None:
             raise RuntimeError("unavailable")
-        return self.observation
+        return SelectedObservationResult.acquired(request, self.observation)
 
     async def execute(self, request):
         return ActionResult(
@@ -353,10 +358,9 @@ class NoOfferAdapter:
         del task
         self.reset_calls += 1
 
-    async def observe(self, reason):
-        del reason
+    async def acquire(self, request):
         self.observe_calls += 1
-        return _source(self.surface)
+        return SelectedObservationResult.acquired(request, _source(self.surface))
 
     async def execute(self, request):
         raise AssertionError(f"unexpected execution: {request.request_id}")
@@ -372,6 +376,65 @@ def test_missing_offer_fails_closed_without_observing_every_adapter() -> None:
         assert acquired.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
         assert acquired.reason_code == "no_source_offer"
         assert adapter.reset_calls == adapter.observe_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_offer_source_alias_resolves_through_explicit_provider_registration() -> None:
+    async def scenario() -> None:
+        adapter = OfferedAdapter(
+            "dom",
+            ObservationOffer("semantic_dom", "structural", "structural", "low"),
+            _source("dom"),
+        )
+        acquired = await UnifiedWorldEnvironment((adapter,)).reset(_task())
+
+        assert acquired.status is AcquisitionStatus.ACQUIRED
+        assert adapter.observe_calls == 1
+        assert acquired.source_results[0].source == "semantic_dom"
+        assert acquired.observation is not None
+        assert acquired.observation.sources[0].surface == "dom"
+
+    asyncio.run(scenario())
+
+
+def test_generic_environment_runs_residual_stage_two_with_one_orchestrator() -> None:
+    async def scenario() -> None:
+        structured = _source("dom")
+        second_target = replace(structured.targets[0], target_id="target:second")
+        second_binding = replace(
+            structured.bindings[0],
+            binding_id="dom:binding:second",
+            target_id=second_target.target_id,
+            source_target_id=second_target.target_id,
+        )
+        structured = replace(
+            structured,
+            targets=structured.targets + (second_target,),
+            bindings=structured.bindings + (second_binding,),
+        )
+        dom = OfferedAdapter(
+            "dom", ObservationOffer("dom", "structural", "structural", "low"), _source("dom"),
+        )
+        visual = OfferedAdapter(
+            "visual",
+            ObservationOffer("visual", "visual", "weak", "high"),
+            _source("visual", profile=ObservationSourceProfile.visual()),
+        )
+        environment = UnifiedWorldEnvironment((dom, visual))
+        await environment.reset(_task())
+        dom.observation = structured
+
+        acquired = await environment.capture(WorldObservationRequest(
+            ObservationRequestKind.POLICY_REQUEST, "held out ambiguity",
+        ))
+
+        assert acquired.status is AcquisitionStatus.ACQUIRED
+        assert dom.observe_calls == 2 and visual.observe_calls == 1
+        assert dom.requests[-1].acquisition_id == visual.requests[-1].acquisition_id
+        assert tuple(need.purpose for need in visual.requests[-1].needs) == (
+            ObservationPurpose.TARGET_DISAMBIGUATION,
+        )
 
     asyncio.run(scenario())
 
@@ -753,14 +816,45 @@ def test_marked_truth_depends_only_on_media_selected_for_this_model_call() -> No
 
 
 @dataclass
-class SharedCaptureAdapter(OfferedAdapter):
-    group_observations: dict[str, SurfaceObservation] = field(default_factory=dict)
+class SharedCaptureAdapter:
+    surface: str
+    offers: tuple[ObservationOffer, ...]
+    group_observations: dict[str, SurfaceObservation]
+    reset_calls: int = 0
     group_calls: int = 0
+    physical_capture_calls: int = 0
+    acquisition_ids: list[str] = field(default_factory=list)
+    prepared: bool = False
 
-    async def observe_group(self, reason, sources):
-        del reason
+    @property
+    def observation_offers(self):
+        return self.offers
+
+    def prepare(self, task):
+        del task
+        self.prepared = True
+
+    async def reset(self, task):
+        del task
+        self.reset_calls += 1
+
+    async def acquire(self, request):
+        raise AssertionError("typed group port must own shared acquisition")
+
+    async def acquire_group(self, requests):
         self.group_calls += 1
-        return {source: self.group_observations[source] for source in sources}
+        self.acquisition_ids.extend(request.acquisition_id for request in requests)
+        if any(request.offer.modality is ObservationModality.STRUCTURAL for request in requests):
+            self.physical_capture_calls += 1
+        return tuple(
+            SelectedObservationResult.acquired(
+                request, self.group_observations[request.source]
+            )
+            for request in requests
+        )
+
+    async def execute(self, request):
+        return ActionResult(request.request_id, DispatchStatus.SENT, self.surface, True)
 
 
 def test_shared_acquisition_group_has_one_reset_owner_and_one_group_capture() -> None:
@@ -768,15 +862,15 @@ def test_shared_acquisition_group_has_one_reset_owner_and_one_group_capture() ->
         group = "browser:shared"
         dom_observation = _source("dom")
         visual_observation = _source("visual", profile=ObservationSourceProfile.visual())
-        dom = SharedCaptureAdapter(
-            "dom", ObservationOffer("dom", "structural", "structural", "low", group),
-            dom_observation, group_observations={"dom": dom_observation, "visual": visual_observation},
+        adapter = SharedCaptureAdapter(
+            "browser",
+            (
+                ObservationOffer("dom", "structural", "structural", "low", group),
+                ObservationOffer("visual", "visual", "weak", "high", group),
+            ),
+            {"dom": dom_observation, "visual": visual_observation},
         )
-        visual = OfferedAdapter(
-            "visual", ObservationOffer("visual", "visual", "weak", "high", group),
-            visual_observation,
-        )
-        environment = UnifiedWorldEnvironment((dom, visual))
+        environment = UnifiedWorldEnvironment((adapter,))
         await environment.reset(_task())
         acquired = await environment.capture(WorldObservationRequest(
             ObservationRequestKind.POLICY_REQUEST,
@@ -785,10 +879,14 @@ def test_shared_acquisition_group_has_one_reset_owner_and_one_group_capture() ->
         ))
 
         assert acquired.status is AcquisitionStatus.ACQUIRED
-        assert dom.group_calls == 1
-        assert dom.reset_calls == 1 and visual.reset_calls == 0
-        assert visual.prepared is True
-        assert visual.observe_calls == 0
+        assert adapter.group_calls == 3  # reset grounding, then structural + residual visual
+        assert adapter.physical_capture_calls == 2
+        assert adapter.acquisition_ids[-2:] == [
+            adapter.acquisition_ids[-1],
+            adapter.acquisition_ids[-1],
+        ]
+        assert adapter.reset_calls == 1
+        assert adapter.prepared is True
 
     asyncio.run(scenario())
 

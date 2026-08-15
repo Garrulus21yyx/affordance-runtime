@@ -16,7 +16,7 @@ CRITICAL_CASE_IDS = (
     "cross-action-destination",
 )
 _PRIMARY_CASES = {
-    "select_action": "select", "request_observation": "observe",
+    "select_action": "select", "request_evidence": "observe",
     "request_action_page": "page", "ask_user": "ask", "propose_done": "done",
     "wait": "wait", "abort": "abort",
 }

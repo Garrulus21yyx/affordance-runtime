@@ -214,12 +214,11 @@ def test_refresh_decision_and_following_abort_each_create_one_root(kind: str) ->
                 return Abort(context.context_id, "stop", "policy")
             if kind == "wait":
                 return Wait(context.context_id, "settle", 1)
-            offer = context.world.observation_capabilities[0]
             return RequestObservation(
                 context.context_id,
+                "criterion_verification",
                 "shared-toggle",
-                offer.modality,
-                offer.assurance,
+                "",
                 "refresh",
             )
 

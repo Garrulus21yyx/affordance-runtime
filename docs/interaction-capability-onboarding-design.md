@@ -14,8 +14,9 @@ property writes, one bounded same-model tool-intent re-emission, corrected
 normalization telemetry, and a sealed action-specific verification-contract
 digest chain. Observed-world graph A.1 is repaired, property-verified, and
 admitted after independent fresh-context review. Adaptive observation policy
-A.2 is implemented and property-verified with one source-selection owner;
-`LIVE_NOT_RUN` remains. StateFact producer cutover
+A.2 selector and acquisition ownership are converged and property-verified;
+generic residual stage two and post-action fallback conserve selected needs.
+Independent fresh-context review remains pending and `LIVE_NOT_RUN` remains. StateFact producer cutover
 remains a separate open slice; no scroll/press/focus/drag/hover binding is
 admitted and no live benchmark was run.
 
@@ -2538,7 +2539,10 @@ separate layers. Normal structurally sufficient turns activate one semantic
 source; at most one targeted complementary source is selected for a typed
 residual coverage, ambiguity, visual-property or verification need.
 
-The implemented slice deletes observe-all compatibility and adapter-local plan mutation;
+The partial slice deletes observe-all compatibility and adapter-local plan mutation;
+its remaining closure work is to carry the immutable selection through one
+generic provider request/result contract, connect generic residual stage two,
+and conserve verification needs through fallback;
 `WorldFusion` never selects a source, adapters never add one after selection,
 and the Actor never receives parallel raw DOM/AX/SoM/visual dumps. The complete
 selection matrix, model-lens contract, upstream reuse boundary and exit

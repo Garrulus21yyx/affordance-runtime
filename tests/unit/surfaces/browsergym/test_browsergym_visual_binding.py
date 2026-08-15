@@ -336,10 +336,12 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
             from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 
             catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-            assert "observe_visual" in {item.name for item in catalog.specs}
+            assert "request_evidence" in {item.name for item in catalog.specs}
             decision = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("observe_visual", {}),
+                ToolCall("request_evidence", {
+                    "purpose": "entity_discovery", "subject": "current_world",
+                }),
                 expected_context_id=context.context_id,
             )
             from affordance_runtime.model.policy.grounded_tool_contracts import (
@@ -348,8 +350,8 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
 
             assert isinstance(decision, GroundedActionResolution)
             assert isinstance(decision.decision, RequestObservation)
-            assert decision.decision.modality == "visual"
-            assert decision.decision.required_assurance == "weak"
+            assert decision.decision.purpose == "entity_discovery"
+            assert decision.decision.subject_id == "current_world"
         finally:
             await environment.close()
 

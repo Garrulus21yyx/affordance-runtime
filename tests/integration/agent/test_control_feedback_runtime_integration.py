@@ -195,9 +195,9 @@ def test_generated_request_view_churn_without_new_facts_is_bounded(
             if item is None:
                 return RequestObservation(
                     context.context_id,
+                    "criterion_verification",
                     "shared-toggle",
-                    "structural",
-                    "structural",
+                    "",
                     f"echo-{self.calls}",
                 )
             return RequestActionPage(context.context_id, query=f"no-match-{item}")
@@ -236,9 +236,9 @@ def test_page_and_unchanged_policy_observation_cannot_reset_each_other() -> None
                 return RequestActionPage(context.context_id, query="no-match")
             return RequestObservation(
                 context.context_id,
+                "criterion_verification",
                 "shared-toggle",
-                "structural",
-                "structural",
+                "",
                 f"request view {self.calls}",
             )
 
@@ -274,9 +274,9 @@ def test_policy_observation_fresh_identity_without_semantic_gain_is_bounded() ->
             self.calls += 1
             return RequestObservation(
                 context.context_id,
+                "criterion_verification",
                 "shared-toggle",
-                "structural",
-                "structural",
+                "",
                 f"free form reason {self.calls}",
             )
 
@@ -296,7 +296,7 @@ def test_policy_observation_fresh_identity_without_semantic_gain_is_bounded() ->
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "no_progress_control_repetition"
         assert policy.calls == 2
-        assert environment.capture_calls == 2
+        assert environment.capture_calls == 1
         assert environment.execute_calls == 0
         assert result.control_transitions[0].control_feedback is not None
         assert result.control_transitions[0].control_feedback.source.value == "policy_observation"
@@ -312,9 +312,9 @@ def test_policy_observation_task_terminal_precedes_no_gain_feedback() -> None:
             self.calls += 1
             return RequestObservation(
                 context.context_id,
+                "criterion_verification",
                 "shared-toggle",
-                "structural",
-                "structural",
+                "",
                 "refresh",
             )
 
@@ -521,9 +521,9 @@ def test_relevant_public_semantic_gain_resets_issue_budget() -> None:
             if self.calls == 2:
                 return RequestObservation(
                     context.context_id,
+                    "criterion_verification",
                     "shared-toggle",
-                    "structural",
-                    "structural",
+                    "",
                     "refresh semantics",
                 )
             return SelectAction(context.context_id, option.action_id)

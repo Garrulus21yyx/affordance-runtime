@@ -92,8 +92,8 @@ def project_decision_summary(
     if isinstance(decision, RequestObservation):
         return {
             "subject_id": _bounded(decision.subject_id),
-            "modality": decision.modality,
-            "required_assurance": decision.required_assurance,
+            "purpose": decision.purpose,
+            "evidence_property": decision.evidence_property,
             "reason": _bounded(decision.reason),
         }
     if isinstance(decision, RequestActionPage):

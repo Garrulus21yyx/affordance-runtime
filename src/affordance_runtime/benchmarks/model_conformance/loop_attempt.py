@@ -131,7 +131,7 @@ def _attributed(outcome, user):
 def _decision_variant(decision) -> str:
     return {
         "SelectAction": "select_action",
-        "RequestObservation": "request_observation",
+        "RequestObservation": "request_evidence",
         "RequestActionPage": "request_action_page",
         "AskUser": "ask_user",
         "ProposeDone": "propose_done",
